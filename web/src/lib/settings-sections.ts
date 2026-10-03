@@ -21,6 +21,9 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
 	{ id: 'tickets', label: 'Tickets', href: resolve('/einstellungen/tickets') },
 	{ id: 'darstellung', label: 'Darstellung', href: resolve('/einstellungen/darstellung') },
 	{ id: 'konto', label: 'Konto', href: resolve('/einstellungen/konto') },
+	// How the app protects itself and what can be set (ADR-0055 §8), on every server; the further
+	// hosts only for the folder app under Windows.
+	{ id: 'sicherheit', label: 'Sicherheit', href: resolve('/einstellungen/sicherheit') },
 	// Backups, target folder and passphrase (ADR-0046), only for a server on Windows.
 	{ id: 'sicherung', label: 'Sicherung', href: resolve('/einstellungen/sicherung') },
 	// What the app takes and what can be cleared (ADR-0047 §6), on every server; the parts of the
@@ -82,7 +85,9 @@ export const HELP_SECTIONS = [
 	// Backups and the emergency plan (ADR-0046 §8): linked from the page "Sicherung".
 	{ id: 'sicherung', label: 'Sicherung & Notfall' },
 	// What the app takes and what can be cleared (ADR-0047 §6): linked from the page "Speicher".
-	{ id: 'speicher', label: 'Speicher' }
+	{ id: 'speicher', label: 'Speicher' },
+	// The protection of the app (ADR-0055): linked from the page "Sicherheit".
+	{ id: 'sicherheit', label: 'Sicherheit' }
 ] as const;
 
 export type HelpSection = (typeof HELP_SECTIONS)[number]['id'];
@@ -90,4 +95,9 @@ export type HelpSection = (typeof HELP_SECTIONS)[number]['id'];
 /** Address of a section of the help page, e.g. "/einstellungen/hilfe#kurzsyntax". */
 export function helpHref(section: HelpSection): ResolvedPathname {
 	return `${resolve('/einstellungen/hilfe')}#${section}` as ResolvedPathname;
+}
+
+/** The protocol of failed sign-ins on the page "Sicherheit" (ADR-0055 §8). */
+export function securityLoginsHref(): ResolvedPathname {
+	return `${resolve('/einstellungen/sicherheit')}#anmeldungen` as ResolvedPathname;
 }

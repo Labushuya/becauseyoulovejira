@@ -377,3 +377,9 @@ Sichtbar ist höchstens ein Leerzeichen am Ende des Links; an allen heutigen Ste
 - **Katalog:** Kachel „Ordner“ mit eigenem Symbol (Ordner mit Auge, keine Marke).
 
 **Alternativen:** Ein Ordner-Auswahldialog des Browsers (verworfen: der Browser verrät keinen absoluten Pfad, und der Server liest, nicht der Browser); eine Verbindung je Ordner (verworfen wie bei GitHub: Intervall und Zielprojekt gelten für alle, Verschieben zwischen Ordnern einer Verbindung wird erkannt).
+
+## Nachtrag (2026-10-03, [ADR-0055](0055-sicherheits-haertung.md), SH-2): Seite „Sicherheit“
+
+- **Navigation:** „Sicherheit“ steht nach „Konto“: Kanäle, Datei-Importe, Tags, Tickets, Darstellung, Konto, Sicherheit, Sicherung, Speicher, System, Hilfe. Auf jedem Server wie „Speicher“ (nicht in `WINDOWS_ONLY`); was das Steuerskript braucht (zusätzliche Adressen), sagt die Seite selbst, wo es fehlt.
+- **Bausteine:** Überblick als Liste mit `Lozenge` je Punkt (Rot nie: kein Punkt ist ein Fehler der App) und „Was bedeutet das?“ als `<details>` mit dem Namen des Punkts für Screenreader; Stufe als Radiogruppe wie „Tickets“, Gültigkeit als natives `select`, zusätzliche Adressen als Liste mit Symbolknöpfen „… entfernen“ und einem Formular mit Feldfehler (ADR-0009); Ablehnungen der Routen und ein nötiger Neustart als `SectionMessage`, Erfolge als Flag. Kein Dialog.
+- Hilfe-Abschnitt „Sicherheit“ (`helpHref('sicherheit')`).

@@ -17,6 +17,8 @@
  *   input   - the route gives the command a JSON object on standard input (never arguments),
  *   backup  - a command of the page "Sicherung" (ADR-0046): its own routes in backup.pb.js run it;
  *             /api/byl/system/actions/{action} refuses it like an unknown name.
+ *   security - a command of the page "Sicherheit" (ADR-0055 §8): run by its route in
+ *             security.pb.js only, refused here like a command of the backup.
  */
 var LOG_LINES = 200;
 var ACTIONS = {
@@ -34,7 +36,9 @@ var ACTIONS = {
   'backup-verify': { method: 'POST', args: ['backup-verify', '-Json'], output: true, changes: true, input: true, backup: true },
   // Starts the restore as a process of its own (like restart -Detach); its answer is the state file
   // run/wiederherstellung.json, not a JSON line.
-  'backup-restore': { method: 'POST', args: ['restore', '-Detach', '-Quiet'], output: false, changes: true, input: true, backup: true }
+  'backup-restore': { method: 'POST', args: ['restore', '-Detach', '-Quiet'], output: false, changes: true, input: true, backup: true },
+  // The further hosts of byl-config.json (ADR-0055 §8), as { hosts } on standard input.
+  'security-configure': { method: 'POST', args: ['security-configure', '-Json'], output: true, changes: true, input: true, security: true }
 };
 
 // Windows PowerShell 5.1 below the system folder, never a name looked up in PATH; the script is the

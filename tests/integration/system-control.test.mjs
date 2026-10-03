@@ -319,6 +319,32 @@ describe('page System on a disposable copy (ADR-0043)', CASE_TIMEOUT, () => {
 		expect((await app('GET', '/api/byl/system')).body.status.verdict).toBe('current');
 	});
 
+	it('saves the further hosts of the page Sicherheit through security-configure and names the restart (ADR-0055 §8)', async () => {
+		const config = join(copy.dir, 'byl-config.json');
+		const before = readFileSync(config, 'utf8');
+		try {
+			const refused = await app('POST', '/api/byl/security/hosts', { body: { hosts: ['localhost'] } });
+			expect([refused.status, refused.body.problem, refused.body.invalid]).toEqual([400, 'invalid', ['localhost']]);
+			const saved = await app('POST', '/api/byl/security/hosts', { body: { hosts: ['Rechner.Tailnet.example'] } });
+			expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+			expect(saved.body.hosts).toMatchObject({ configured: ['rechner.tailnet.example'], active: [], editable: true });
+			expect(JSON.parse(readFileSync(config, 'utf8'))).toMatchObject({ port: copy.port, security: { hosts: ['rechner.tailnet.example'] } });
+			// The fingerprint sees the change: the server still runs with the hosts of its start.
+			const status = await app('GET', '/api/byl/system');
+			expect(status.body.status).toMatchObject({ verdict: 'restart', restartReasons: ['hosts'] });
+			// From the console: a wrong name changes nothing, no name removes them all.
+			const wrong = control('security-configure', 'http://x.example.org');
+			expect(wrong.code).toBe(1);
+			expect(wrong.output).toContain('Mindestens eine zus');
+			expect(JSON.parse(readFileSync(config, 'utf8')).security).toEqual({ hosts: ['rechner.tailnet.example'] });
+			expect(control('security-configure').code).toBe(0);
+			expect(JSON.parse(readFileSync(config, 'utf8'))).toEqual({ port: copy.port });
+			expect((await app('GET', '/api/byl/system')).body.status.verdict).toBe('current');
+		} finally {
+			writeFileSync(config, before);
+		}
+	});
+
 	it('"Umgebung prüfen" lists the checks of doctor with their German texts', async () => {
 		const answer = await app('GET', '/api/byl/system/doctor');
 		expect(answer.status).toBe(200);

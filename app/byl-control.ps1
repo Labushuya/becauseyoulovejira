@@ -54,7 +54,7 @@ $AppDir = $PSScriptRoot
 . ([System.IO.Path]::Combine($PSScriptRoot, 'byl-problems.ps1'))
 
 $BylCommands = @('start', 'stop', 'restart', 'reload', 'status', 'open', 'logs', 'doctor', 'port', 'autostart-on', 'autostart-off', 'mail-restart', 'reset-admin',
-    'backup-info', 'backup-configure', 'backup-passphrase', 'backup-export', 'backup-verify', 'restore', 'help')
+    'backup-info', 'backup-configure', 'backup-passphrase', 'backup-export', 'backup-verify', 'restore', 'security-configure', 'help')
 $Title = 'becauseyoulovejira'
 $HealthTimeoutSeconds = 30
 # PocketBase ends about 1 s after the console break (1 s for open requests, then the database).
@@ -118,6 +118,10 @@ Befehle:
   restore [Sicherung oder Pfad]
                   Stellt eine Sicherung wieder her (wiederherstellen.bat): prüfen, Rückfrage, Sicherheits-
                   kopie der jetzigen Daten, austauschen, starten; startet sie nicht, gilt wieder der alte Stand.
+  security-configure [Namen]
+                  Stellt die zusätzlichen Adressen ein (nur für späteren Zugriff von anderen Geräten, etwa
+                  über Tailscale; mit Komma getrennt, leer: keine; gespeichert in $BylConfigName, gilt nach
+                  einem Neustart).
   help            Diese Hilfe.
 
 Optionen:
@@ -2331,6 +2335,40 @@ function Invoke-BackupConfigure {
         }) -Text $text
 }
 
+function Invoke-SecurityConfigure {
+    # security-configure (ADR-0055 section 8): the further hosts of byl-config.json, from the page
+    # "Sicherheit" as { hosts: [...] } on standard input, from the console as $Value (names separated
+    # by commas or spaces; none removes them). Every name must be a valid further host
+    # (ConvertTo-BylExtraHost), at most $BylExtraHostsMax; otherwise nothing changes. They apply
+    # after a restart (part "hosts" of the fingerprint).
+    $request = Read-InputJson
+    $entries = if ($null -ne $request) { @(Get-InputValue $request 'hosts') } else { @(([string]$Value) -split '[,\s]+') }
+    $hosts = New-Object System.Collections.Generic.List[string]
+    $invalid = New-Object System.Collections.Generic.List[string]
+    foreach ($entry in $entries) {
+        if ($null -eq $entry -or ($entry -is [string] -and $entry.Trim() -eq '')) { continue }
+        $name = if ($entry -is [string]) { ConvertTo-BylExtraHost -Text $entry } else { $null }
+        if ($null -eq $name) { $invalid.Add(([string]$entry).Trim()) }
+        elseif (-not $hosts.Contains($name)) { $hosts.Add($name) }
+    }
+    if ($invalid.Count -gt 0 -or $hosts.Count -gt $BylExtraHostsMax) {
+        $script:LogDetail = 'problem=hosts'
+        return Write-BackupAnswer -Answer ([ordered]@{ ok = $false; problem = 'hosts'; invalid = @($invalid.ToArray()) }) `
+            -Code 'security-hosts' -Values @{ max = $BylExtraHostsMax }
+    }
+    $path = Get-BylConfigPath -AppDir $AppDir
+    try {
+        Write-TextFile -Path $path -Text (Merge-BylConfigText -Text (Read-TextFile -Path $path) -Hosts $hosts.ToArray())
+    }
+    catch {
+        throw (New-BylProblemError -Code 'config-write' -Values @{ detail = $_.Exception.GetType().Name })
+    }
+    $script:LogDetail = "hosts=$($hosts.Count)"
+    $text = if ($hosts.Count -eq 0) { 'Keine zusätzlichen Adressen.' } else { "Zusätzliche Adressen: $($hosts -join ', ')" }
+    return Write-BackupAnswer -Answer ([ordered]@{ ok = $true; hosts = @($hosts.ToArray()) }) `
+        -Text "$text Gilt nach einem Neustart (neu-starten.bat)."
+}
+
 # Codes of the problems of a passphrase for the app; the entry of the catalog is passphrase-<code>.
 $PassphraseProblemCode = @{ Mismatch = 'mismatch'; TooShort = 'too-short'; TooLong = 'too-long'; Character = 'character'; Unavailable = 'unavailable' }
 
@@ -3443,6 +3481,7 @@ try {
                 'backup-export' { Invoke-BackupExport }
                 'backup-verify' { Invoke-BackupVerify }
                 'restore' { Invoke-Restore -Config $config }
+                'security-configure' { Invoke-SecurityConfigure }
                 'help' {
                     Write-Host $HelpText
                     $BylExitOk
@@ -3473,7 +3512,7 @@ $exitCode = [int](@($exitCode)[-1])
 # Commands that change something go into byl-control.log, the others only after an error (status
 # and logs would flood it).
 if ($script:ProblemError -or @('start', 'stop', 'restart', 'reload', 'port', 'autostart-on', 'autostart-off', 'mail-restart', 'reset-admin',
-        'backup-configure', 'backup-passphrase', 'backup-export', 'backup-verify', 'restore') -contains $Command) {
+        'backup-configure', 'backup-passphrase', 'backup-export', 'backup-verify', 'restore', 'security-configure') -contains $Command) {
     Write-ControlLog -Name $Command -ExitCode $exitCode
 }
 # A run without window that went well clears the problem an earlier one kept (ADR-0048).

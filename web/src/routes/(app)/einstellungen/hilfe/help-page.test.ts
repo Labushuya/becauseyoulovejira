@@ -36,7 +36,7 @@ describe('help page (EH-9)', () => {
 		}
 	});
 
-	it('jumps to the sections that exist on the page, fourteen since the calendar', () => {
+	it('jumps to the sections that exist on the page, fifteen since the security', () => {
 		const { container } = render(Page);
 
 		const jump = within(screen.getByRole('navigation', { name: 'Auf dieser Seite' }));
@@ -55,7 +55,8 @@ describe('help page (EH-9)', () => {
 			'Häufige Fragen',
 			'Betrieb',
 			'Sicherung & Notfall',
-			'Speicher'
+			'Speicher',
+			'Sicherheit'
 		]);
 		for (const link of links) {
 			const id = link.getAttribute('href')?.slice(1) ?? '';
@@ -709,5 +710,26 @@ describe('help page (EH-9)', () => {
 		expect(within(section).getByRole('link', { name: 'Papierkorb' }).getAttribute('href')).toBe(
 			'/papierkorb'
 		);
+	});
+
+	it('explains the protection of the app, the protocol and the passwords (ADR-0055)', () => {
+		render(Page);
+		const section = screen.getByRole('region', { name: 'Sicherheit' });
+		const content = text(section);
+		for (const point of [
+			'Schutz vor Rateversuchen:',
+			'Nur die eigenen Adressen:',
+			'Verwaltung (/_/):',
+			'Fehlgeschlagene Anmeldungen',
+			'Zusätzliche Adressen'
+		]) {
+			expect(within(section).getByText(point).tagName, point).toBe('STRONG');
+		}
+		expect(content).toContain('Höchstens 10 Anmeldeversuche je Minute');
+		expect(content).toContain('etwa über Tailscale');
+		expect(content).toContain('admin-zuruecksetzen.bat');
+		expect(
+			within(section).getByRole('link', { name: 'Einstellungen → Sicherheit' }).getAttribute('href')
+		).toBe('/einstellungen/sicherheit');
 	});
 });

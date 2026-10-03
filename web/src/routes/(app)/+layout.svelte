@@ -13,6 +13,7 @@
 	import { isHelpKey, isQuickCaptureKey, isTypingTarget } from '$lib/domain/keyboard';
 	import { pb } from '$lib/pocketbase';
 	import { setQuickCaptureOpener } from '$lib/quick-capture-context';
+	import { securityLoginsHref } from '$lib/settings-sections';
 	import { startTour } from '$lib/tour/tour';
 	import { setTourStarter } from '$lib/tour/tour-context';
 	import {
@@ -36,8 +37,10 @@
 	import { getNotifyStore } from '$lib/attention-notify.svelte';
 	import { ackAttention } from '$lib/data/attention';
 	import { fetchBackupAttention } from '$lib/data/backup';
+	import { fetchSecurityNotice } from '$lib/data/security';
 	import { AttentionStore, attentionSource } from '$lib/stores/attention.svelte';
 	import { BackupAttention } from '$lib/stores/backup-attention';
+	import { SecurityAttention } from '$lib/stores/security-attention';
 	import { FlagStore, setFlagStore } from '$lib/stores/flags.svelte';
 	import { getTabContext } from '$lib/tab-presence';
 	import { InboxStore, inboxData, setInboxStore } from '$lib/stores/inbox.svelte';
@@ -250,11 +253,19 @@
 		flags,
 		open: () => void goto(resolve('/papierkorb'))
 	});
+	// Many failed sign-ins within a day (ADR-0055 §8, ADR-0035): the same quiet flag, once per
+	// newest failure.
+	const securityAttention = new SecurityAttention({
+		check: () => fetchSecurityNotice(pb),
+		flags,
+		open: () => void goto(securityLoginsHref())
+	});
 	$effect(() => {
 		if (auth.userId === null) return;
 		untrack(() => {
 			void backupAttention.announce();
 			void trashAttention.announce();
+			void securityAttention.announce();
 		});
 	});
 
@@ -273,6 +284,7 @@
 			rules.announceWaiting(openWaiting);
 			void backupAttention.announce();
 			void trashAttention.announce();
+			void securityAttention.announce();
 		}
 	});
 	$effect(() => untrack(() => notifyStore.connect()));

@@ -32,9 +32,19 @@ describe('whitelist', () => {
 			'logs',
 			'mail-restart',
 			'restart',
+			'security-configure',
 			'status'
 		]);
 		expect(rules.ACTIONS.status).toEqual({ method: 'GET', args: ['status', '-Json'], output: true, changes: false });
+		// ADR-0055 §8: the further hosts of the page "Sicherheit", run by its own route only.
+		expect(rules.ACTIONS['security-configure']).toEqual({
+			method: 'POST',
+			args: ['security-configure', '-Json'],
+			output: true,
+			changes: true,
+			input: true,
+			security: true
+		});
 		expect(rules.ACTIONS.restart).toEqual({ method: 'POST', args: ['restart', '-Detach', '-Quiet'], output: false, changes: true });
 		expect(rules.ACTIONS.logs.args).toEqual(['logs', '-Json', '-Lines', '200']);
 		// ADR-0046: the commands of the backup take their parameters on standard input only.

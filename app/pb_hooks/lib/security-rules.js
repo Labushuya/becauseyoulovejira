@@ -1,9 +1,10 @@
-// Pure rules of the security hardening (ADR-0055; plan docs/plan/sicherheit.md, SH-1): the levels
-// of the protection against guessing (rate limits of PocketBase), the hosts a request may name
-// besides this machine, the headers of every answer and the two narrow exceptions from the CORS
-// origins of the start (the browser extension and the landing page per file://). CommonJS module,
-// ES5 only, no dependencies (Goja runtime and Vitest load it the same way); the guard of every
-// request lives in security.pb.js with lib/security-service.js.
+// Pure rules of the security hardening (ADR-0055; plan docs/plan/sicherheit.md): the levels of the
+// protection against guessing (rate limits of PocketBase), the hosts a request may name besides
+// this machine, the headers of every answer and the two narrow exceptions from the CORS origins of
+// the start (the browser extension and the landing page per file://) (SH-1); the inputs and the
+// overview of the page "Einstellungen → Sicherheit" and the protocol of failed sign-ins (SH-2).
+// CommonJS module, ES5 only, no dependencies (Goja runtime and Vitest load it the same way); the
+// guard and the routes live in security.pb.js with lib/security-service.js.
 'use strict';
 
 /**
@@ -225,6 +226,199 @@ function logText(value) {
   return clean.length > 200 ? clean.slice(0, 200) + '…' : clean;
 }
 
+// --- Page "Einstellungen → Sicherheit" (ADR-0055 §8, SH-2) -----------------------------------------
+
+// Validity of a sign-in: authToken.duration of the collection users, as a limited choice in days.
+// The open app renews a token that expires within a day (ADR-0007), so the value is how long a
+// device stays signed in without opening the app. 5 days is the default of PocketBase 0.40.4.
+var SESSION_DAYS = [1, 5, 14, 30];
+var SESSION_DEFAULT_DAYS = 5;
+var DAY_SECONDS = 86400;
+
+function isRecord(value) {
+  return value !== null && typeof value === 'object' && !(value instanceof Array);
+}
+
+/** The choice of SESSION_DAYS a token duration in seconds equals, or null for any other. */
+function sessionDaysOf(seconds) {
+  var value = Number(seconds);
+  for (var i = 0; i < SESSION_DAYS.length; i++) {
+    if (SESSION_DAYS[i] * DAY_SECONDS === value) {
+      return SESSION_DAYS[i];
+    }
+  }
+  return null;
+}
+
+/**
+ * What the page changes ({ level?, days? }, at least one), or { problem }: 'empty' (nothing to
+ * change), 'level' (no level of LEVELS), 'days' (no choice of SESSION_DAYS).
+ */
+function settingsInput(body) {
+  if (!isRecord(body)) {
+    return { problem: 'empty' };
+  }
+  var result = {};
+  var any = false;
+  if (body.level !== undefined) {
+    if (typeof body.level !== 'string' || LEVELS.indexOf(body.level) === -1) {
+      return { problem: 'level' };
+    }
+    result.level = body.level;
+    any = true;
+  }
+  if (body.days !== undefined) {
+    if (typeof body.days !== 'number' || SESSION_DAYS.indexOf(body.days) === -1) {
+      return { problem: 'days' };
+    }
+    result.days = body.days;
+    any = true;
+  }
+  return any ? result : { problem: 'empty' };
+}
+
+/**
+ * The further hosts of a request ({ hosts: [...] }): { hosts } (lower case, once), or { problem,
+ * invalid }: 'format' (no list), 'invalid' (the entries that are no further host), 'too-many'
+ * (more than EXTRA_HOSTS_MAX). An empty list removes them.
+ */
+function hostsInput(body) {
+  if (!isRecord(body) || !(body.hosts instanceof Array)) {
+    return { problem: 'format', invalid: [] };
+  }
+  var hosts = [];
+  var invalid = [];
+  for (var i = 0; i < body.hosts.length; i++) {
+    var value = body.hosts[i];
+    var host = typeof value === 'string' ? normalizeExtraHost(value) : '';
+    if (host === '') {
+      invalid.push(logText(typeof value === 'string' ? value : JSON.stringify(value)));
+    } else if (hosts.indexOf(host) === -1) {
+      hosts.push(host);
+    }
+  }
+  if (invalid.length > 0) {
+    return { problem: 'invalid', invalid: invalid };
+  }
+  if (hosts.length > EXTRA_HOSTS_MAX) {
+    return { problem: 'too-many', invalid: [] };
+  }
+  return { hosts: hosts };
+}
+
+/**
+ * The further hosts of the text of byl-config.json (security.hosts), the way the control script
+ * reads them (ConvertFrom-BylSecurityConfig): valid entries, lower case, once, at most ten.
+ */
+function configuredHosts(configText) {
+  var value;
+  try {
+    value = JSON.parse(String(configText || ''));
+  } catch (err) {
+    return [];
+  }
+  if (!isRecord(value) || !isRecord(value.security)) {
+    return [];
+  }
+  var listed = value.security.hosts;
+  var entries = listed instanceof Array ? listed : typeof listed === 'string' ? [listed] : [];
+  var hosts = [];
+  for (var i = 0; i < entries.length && hosts.length < EXTRA_HOSTS_MAX; i++) {
+    var host = typeof entries[i] === 'string' ? normalizeExtraHost(entries[i]) : '';
+    if (host !== '' && hosts.indexOf(host) === -1) {
+      hosts.push(host);
+    }
+  }
+  return hosts;
+}
+
+/** The own addresses of this machine with the port of the server, as the Host header names them. */
+function ownHosts(port) {
+  return ['127.0.0.1:' + port, 'localhost:' + port];
+}
+
+/** The further hosts of the start: the hosts of --origins without the own addresses. */
+function activeExtraHosts(originsFlag, port) {
+  var own = ownHosts(port).concat(['[::1]:' + port]);
+  return originHosts(originsFlag).filter(function (host) {
+    return own.indexOf(host) === -1;
+  });
+}
+
+/** Whether the start restricts CORS: --origins is given and names no wildcard. */
+function corsRestricted(originsFlag) {
+  var value = text(originsFlag);
+  return value !== '' && value.indexOf('*') === -1;
+}
+
+/** Whether superuserIPs allows this machine only: 127.0.0.0/8 (prefix 8 or longer) and ::1. */
+function loopbackOnly(ips) {
+  var list = ips instanceof Array ? ips : [];
+  if (list.length === 0) {
+    return false;
+  }
+  for (var i = 0; i < list.length; i++) {
+    var value = text(String(list[i])).toLowerCase();
+    var v4 = /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}(?:\/(\d{1,2}))?$/.exec(value);
+    if (v4 !== null) {
+      if (v4[1] !== undefined && (Number(v4[1]) < 8 || Number(v4[1]) > 32)) {
+        return false;
+      }
+      continue;
+    }
+    if (value !== '::1' && value !== '::1/128') {
+      return false;
+    }
+  }
+  return true;
+}
+
+// Failed sign-ins (collection login_failures, migration 1790203600): no password, kept 30 days and
+// at most 5000; the page shows them grouped. 10 within 24 hours ask for attention when the app
+// opens (ADR-0035).
+var LOGIN_RETENTION_DAYS = 30;
+var LOGIN_MAX_ROWS = 5000;
+var LOGIN_GROUPS_MAX = 50;
+var IDENTITY_MAX = 200;
+var NOTICE_WINDOW_MS = 24 * 60 * 60 * 1000;
+var NOTICE_MIN = 10;
+
+/** Which sign-in failed: 'app' (users), 'admin' (the superusers of /_/), '' (not recorded). */
+function loginArea(collectionName) {
+  if (collectionName === 'users') {
+    return 'app';
+  }
+  return collectionName === '_superusers' ? 'admin' : '';
+}
+
+/**
+ * Where a sign-in came from: 'app' (the app or the admin UI, Sec-Fetch-Site same-origin), 'web'
+ * (another web page: any other Sec-Fetch-Site or an Origin), 'program' (neither: a script).
+ */
+function loginSource(origin, fetchSite) {
+  var site = text(fetchSite).toLowerCase();
+  if (site === 'same-origin') {
+    return 'app';
+  }
+  return site !== '' || text(origin) !== '' ? 'web' : 'program';
+}
+
+/** The entered account for the record: trimmed, without control characters, at most 200 characters. */
+function identityText(value) {
+  var clean = text(typeof value === 'string' ? value : '').replace(/[\u0000-\u001f\u007f]/g, '');
+  return clean.length > IDENTITY_MAX ? clean.slice(0, IDENTITY_MAX) : clean;
+}
+
+/** A time in the format of PocketBase (UTC, "2026-10-03 12:00:00.000Z"). */
+function pocketBaseTime(ms) {
+  return new Date(ms).toISOString().replace('T', ' ');
+}
+
+/** Whether the failures of the last 24 hours ask for attention. */
+function needsNotice(count) {
+  return typeof count === 'number' && count >= NOTICE_MIN;
+}
+
 module.exports = {
   LEVELS: LEVELS,
   PRESETS: PRESETS,
@@ -238,6 +432,27 @@ module.exports = {
   FRAME_POLICY: FRAME_POLICY,
   EXTENSION_PATH: EXTENSION_PATH,
   EXTRA_HOSTS_MAX: EXTRA_HOSTS_MAX,
+  SESSION_DAYS: SESSION_DAYS,
+  SESSION_DEFAULT_DAYS: SESSION_DEFAULT_DAYS,
+  DAY_SECONDS: DAY_SECONDS,
+  LOGIN_RETENTION_DAYS: LOGIN_RETENTION_DAYS,
+  LOGIN_MAX_ROWS: LOGIN_MAX_ROWS,
+  LOGIN_GROUPS_MAX: LOGIN_GROUPS_MAX,
+  NOTICE_WINDOW_MS: NOTICE_WINDOW_MS,
+  NOTICE_MIN: NOTICE_MIN,
+  sessionDaysOf: sessionDaysOf,
+  settingsInput: settingsInput,
+  hostsInput: hostsInput,
+  configuredHosts: configuredHosts,
+  ownHosts: ownHosts,
+  activeExtraHosts: activeExtraHosts,
+  corsRestricted: corsRestricted,
+  loopbackOnly: loopbackOnly,
+  loginArea: loginArea,
+  loginSource: loginSource,
+  identityText: identityText,
+  pocketBaseTime: pocketBaseTime,
+  needsNotice: needsNotice,
   rateLimitRules: rateLimitRules,
   sameRules: sameRules,
   levelOf: levelOf,

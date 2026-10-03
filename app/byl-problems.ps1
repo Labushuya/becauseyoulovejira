@@ -1206,6 +1206,22 @@ $BylProblemCatalog = [ordered]@{
         Offer   = ''
     }
 
+    # --- Security (ADR-0055) -------------------------------------------------------------------------
+
+    'security-hosts'           = @{
+        Exit    = 1
+        Level   = 'error'
+        Faq     = ''
+        Problem = 'Mindestens eine zusätzliche Adresse ist ungültig; nichts wurde geändert.'
+        Cause   = 'Erlaubt sind höchstens {max} DNS-Namen mit mindestens einem Punkt und optional einem Port, etwa rechner.tailnet.ts.net oder pi.example.org:8443; keine IP-Adressen, kein localhost, kein http:// davor.'
+        Steps   = @(
+            'Die Namen prüfen und unter Einstellungen → Sicherheit erneut eintragen.'
+            'Von Hand: die Namen mit Komma getrennt an security-configure geben; ohne Namen entfernt der Befehl alle.'
+        )
+        Command = '{control} security-configure rechner.tailnet.ts.net'
+        Offer   = ''
+    }
+
     # --- All scripts ---------------------------------------------------------------------------------
 
     'unexpected'               = @{
