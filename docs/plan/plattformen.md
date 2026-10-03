@@ -158,3 +158,24 @@ Die Bewertung vom 2026-09-27 hatte S0 bis S5 mit S2b und S4 als Optionen. Nach d
 | 2026-09-28 | S0 | **Linux-Job ist Pflicht-Check (AR-3):** Er lief in allen PRs seit #157 grün. `.github/rulesets/main.json` und das Live-Ruleset verlangen jetzt „Check, lint, build and test“ und „Linux build and test“. Für reine Doku-PRs werden beide übersprungen und gelten als bestanden (gleiche Bedingung, statisch geprüft in `tests/unit/ci-ruleset.test.mjs`). |
 | 2026-09-29 | S2b | **Nutzerentscheidung:** Die APK bekommt „Teilen mit“ (`ACTION_SEND`/`ACTION_SEND_MULTIPLE`, mindestens `text/plain` und Links; Bilder und Dateien später prüfen). Geteilte Inhalte gehen über den eigenen Eingang ([ADR-0038](../adr/0038-eigener-eingang-und-whatsapp-web.md) §1, `mode: manual`, Deduplizierung) in den Eingang. Das `share_target` der Web-App bleibt Vorstufe bzw. Alternative. Der Plattform-Ausbau bleibt zurückgestellt; umgesetzt wird nichts. Nachtrag in [ADR-0028](../adr/0028-plattform-strategie.md). |
 | 2026-09-29 | – | **Verworfen (Nutzerentscheidung):** WhatsApp Desktop unter Windows anbinden (Benachrichtigungen mitlesen, UI-Automation, lokale Datenbank auslesen). Begründung und Alternativen im Nachtrag vom 2026-09-29 zu [ADR-0038](../adr/0038-eigener-eingang-und-whatsapp-web.md); Wege für WhatsApp sind die Erweiterung für WhatsApp Web und künftig „Teilen mit“ aus der APK. |
+| 2026-10-03 | S2b | **Vorerst verworfen (Nutzerentscheidung):** eigenständige Android-APK mit eigener Datenbank und eigenen Kanälen. Ergebnis der Evaluierung in §6; ADR-0028 §1 („kein Server je Gerät“) bestätigt (Nachtrag in [ADR-0028](../adr/0028-plattform-strategie.md)). Der Plattform-Ausbau bleibt zurückgestellt. |
+
+## 6. Evaluierung eigenständige Android-APK (2026-10-03) – vorerst verworfen
+
+> **Nutzerentscheidung (2026-10-03):** „Idee erstmal verwerfen.“ Die Evaluierung bleibt hier festgehalten, damit sie bei einer Wiederaufnahme nicht neu erarbeitet werden muss. Der Vermerk „zurückgestellt auf Nutzerentscheidung“ (2026-09-28) oben gilt unverändert; nichts davon wird ohne ausdrückliche Freigabe begonnen.
+
+Die Bezeichnungen A bis C gelten nur für diese Evaluierung, nicht für die HTTPS-Wege aus ADR-0028 §3.
+
+- **Weg B, eigenständige APK mit eigener Datenbank und eigenen Kanälen:** technisch machbar, aber nur mit hohem Aufwand: eigener PocketBase-Go-Build mit CGO und NDK, IMAP und Sicherung in Go neu, Ordner-Kanal über SAF, eine neue Betriebsschicht und die Absicherung des Ports. Dagegen spricht:
+  1. **Kein verlässlicher Dauerbetrieb:** Android erlaubt keinen verlässlichen Dauerbetrieb eines lokalen Servers mit Cron-Jobs. Ein Foreground-Service vom Typ `dataSync` ist ab Android 15 auf 6 Stunden je 24 Stunden begrenzt, der Typ `specialUse` hängt an der Prüfung durch Google Play, und WorkManager läuft frühestens alle 15 Minuten, ohne Garantie.
+  2. **Zwei getrennte Datenbestände ohne Sync:** Telefon und PC hätten je einen eigenen Bestand; PocketBase hat keine Replikation. Folgen sind doppelte Nummernkreise und doppelte Kanal-Abrufe. Das widerspricht der Idee der zentralen Sammelstelle.
+  3. **Hürden bei Google Play:** Selbst-Update ist verboten (zwei Flavors nötig), `MANAGE_EXTERNAL_STORAGE` ist ausgeschlossen, neue private Konten brauchen 12 Tester über 14 Tage, dazu 16-KB-Seitengröße und Ziel-SDK 36.
+  4. **Entwickler-Verifizierung auch beim Sideloading,** weltweit ab 2027.
+- **Empfohlen, falls das Thema wieder aufgenommen wird:**
+  - **Weg A:** APK als Client des zentralen Servers, wie in ADR-0028 §4 und S2b geplant.
+  - **Weg C:** Weg A plus eine Warteschlange zum Offline-Erfassen, die über den eigenen Eingang ([ADR-0038](../adr/0038-eigener-eingang-und-whatsapp-web.md) §1) einliefert. CLAUDE.md §10 und ADR-0028 §1 schließen einen Offline-Modus bisher aus; Weg C bräuchte dafür eine eigene Entscheidung.
+- **Unabhängig vom Weg nötig:**
+  - **Mobile Tauglichkeit der Oberfläche:** Die Titelspalte ist bei 360 px Breite rechnerisch 0–32 px breit, die Tippflächen sind 24–36 px statt 48 dp groß, eine Safe-Area fehlt.
+  - **Sicherheits-Härtung.**
+  - **SemVer und Releases** (zurückgestellt, siehe §3 „S0“).
+- **Repo:** kein Fork, sondern dieses Repo mit dem Unterordner `android/`. S2b nennt bisher `mobile/android/`; der genaue Pfad wird mit S2b festgelegt.

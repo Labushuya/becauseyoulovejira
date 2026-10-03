@@ -150,3 +150,14 @@ Der Plattform-Ausbau bleibt **zurückgestellt auf Nutzerentscheidung** (Nachtrag
 - **Server-Logik:** Geteilte Inhalte (etwa aus WhatsApp, dem Browser oder einer Mail-App) werden Eingangseinträge über den eigenen Eingang aus [ADR-0038](0038-eigener-eingang-und-whatsapp-web.md) §1: `POST /api/byl/inbox/ingest` mit Zugangsschlüssel, `mode: manual`, Deduplizierung über den Fingerprint samt Tombstones. Es entsteht kein zweiter Weg in den Eingang.
 - **Beim Umsetzen festzulegen:** Kanalwert (eigener Wert mit Migration oder `api`), Bildung von `external_id`, Ablage des Schlüssels in der Hülle (Android-Keystore) und dass die Anfrage aus der nativen Schicht ohne `Origin` kommt (ADR-0038 §2 lässt Webseiten-Origins nicht zu). Einzelheiten in [docs/plan/plattformen.md](../plan/plattformen.md) §3 „S2b“.
 - **Verhältnis zu §4 und S2:** §4 nannte das Teilen-Menü schon als Einsatzzweck der APK; es ist jetzt verbindlich. Das Teilen-Ziel der Web-App (`share_target`, S2) bleibt als Vorstufe bzw. Alternative.
+
+## Nachtrag (2026-10-03, Nutzerentscheidung): Eigenständige Android-APK vorerst verworfen, §1 bestätigt
+
+Der Plattform-Ausbau bleibt **zurückgestellt auf Nutzerentscheidung** (Nachtrag vom 2026-09-28); umgesetzt wird nichts.
+
+- **Evaluiert:** eine eigenständige APK mit eigener Datenbank und eigenen Kanälen, also ein Server auf dem Telefon. Der Nutzer hat die Idee vorerst verworfen („Idee erstmal verwerfen.“). Ergebnis, Aufwand und Empfehlung stehen in [docs/plan/plattformen.md](../plan/plattformen.md) §6.
+- **§1 („Kein Server je Gerät“) ist erneut bestätigt,** mit neuen Belegen von 2026:
+  - Android erlaubt keinen verlässlichen Dauerbetrieb eines lokalen Servers mit Cron-Jobs (`dataSync` ab Android 15 auf 6 Stunden je 24 Stunden begrenzt, `specialUse` nur nach Prüfung durch Google Play, WorkManager frühestens alle 15 Minuten und ohne Garantie).
+  - Telefon und PC hätten zwei Datenbestände ohne Replikation, mit doppelten Nummernkreisen und doppelten Kanal-Abrufen (siehe Kontext).
+  - Google Play verbietet Selbst-Updates und schließt `MANAGE_EXTERNAL_STORAGE` aus; die Entwickler-Verifizierung gilt ab 2027 weltweit auch beim Sideloading.
+- **Bei einer Wiederaufnahme:** Client-APK nach §4 (S2b), wahlweise mit einer Warteschlange zum Offline-Erfassen über den eigenen Eingang; die bräuchte wegen §1 („kein Offline-Modus“) eine eigene Entscheidung. Unabhängig vom Weg nötig sind die mobile Tauglichkeit der Oberfläche, eine Sicherheits-Härtung sowie SemVer und Releases (§9).
