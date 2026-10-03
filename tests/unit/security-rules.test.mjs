@@ -228,3 +228,87 @@ describe('log values', () => {
 		expect(rules.logText(undefined)).toBe('');
 	});
 });
+
+describe('settings of the page "Sicherheit" (SH-2)', () => {
+	it('offers four durations of a sign-in and knows them back from seconds', () => {
+		expect(rules.SESSION_DAYS).toEqual([1, 5, 14, 30]);
+		expect(rules.SESSION_DEFAULT_DAYS).toBe(5);
+		expect(rules.sessionDaysOf(432000)).toBe(5);
+		expect(rules.sessionDaysOf('86400')).toBe(1);
+		for (const seconds of [0, 3600, 432001, 7 * 86400, null]) expect(rules.sessionDaysOf(seconds), String(seconds)).toBeNull();
+	});
+
+	it('takes a level and a duration, at least one, and nothing else', () => {
+		expect(rules.settingsInput({ level: 'strict' })).toEqual({ level: 'strict' });
+		expect(rules.settingsInput({ days: 14 })).toEqual({ days: 14 });
+		expect(rules.settingsInput({ level: 'normal', days: 1, other: true })).toEqual({ level: 'normal', days: 1 });
+		expect(rules.settingsInput({})).toEqual({ problem: 'empty' });
+		expect(rules.settingsInput(null)).toEqual({ problem: 'empty' });
+		expect(rules.settingsInput([])).toEqual({ problem: 'empty' });
+		for (const level of ['custom', 'off', 'STRICT', 1]) expect(rules.settingsInput({ level })).toEqual({ problem: 'level' });
+		for (const days of [7, '5', 0, 1.5]) expect(rules.settingsInput({ days })).toEqual({ problem: 'days' });
+	});
+
+	it('takes further hosts only when every entry is valid, at most ten; an empty list removes them', () => {
+		expect(rules.hostsInput({ hosts: [' Rechner.Tailnet.ts.net', 'rechner.tailnet.ts.net', 'pi.local:8443'] })).toEqual({
+			hosts: ['rechner.tailnet.ts.net', 'pi.local:8443']
+		});
+		expect(rules.hostsInput({ hosts: [] })).toEqual({ hosts: [] });
+		expect(rules.hostsInput({ hosts: ['ok.example.org', 'localhost', 42] })).toEqual({ problem: 'invalid', invalid: ['localhost', '42'] });
+		expect(rules.hostsInput({ hosts: Array.from({ length: 11 }, (_, i) => `h${i}.example.org`) })).toEqual({ problem: 'too-many', invalid: [] });
+		expect(rules.hostsInput({ hosts: 'rechner.tailnet.ts.net' })).toEqual({ problem: 'format', invalid: [] });
+		expect(rules.hostsInput(null)).toEqual({ problem: 'format', invalid: [] });
+	});
+
+	it('reads the further hosts of byl-config.json like the control script', () => {
+		expect(rules.configuredHosts(JSON.stringify({ port: 8091, security: { hosts: ['Rechner.tailnet.ts.net', 'localhost', 'rechner.tailnet.ts.net'] } }))).toEqual([
+			'rechner.tailnet.ts.net'
+		]);
+		expect(rules.configuredHosts(JSON.stringify({ security: { hosts: 'pi.local' } }))).toEqual(['pi.local']);
+		for (const text of ['', '{', '[]', '{"security":"x"}', '{"port":8090}']) expect(rules.configuredHosts(text), text).toEqual([]);
+		expect(rules.configuredHosts(JSON.stringify({ security: { hosts: Array.from({ length: 12 }, (_, i) => `h${i}.example.org`) } }))).toHaveLength(10);
+	});
+
+	it('names the further hosts of the start without the own ones, and whether CORS is restricted', () => {
+		const origins = 'http://127.0.0.1:8095,http://localhost:8095,https://rechner.tailnet.ts.net';
+		expect(rules.ownHosts(8095)).toEqual(['127.0.0.1:8095', 'localhost:8095']);
+		expect(rules.activeExtraHosts(origins, 8095)).toEqual(['rechner.tailnet.ts.net']);
+		expect(rules.activeExtraHosts('', 8095)).toEqual([]);
+		expect(rules.corsRestricted(origins)).toBe(true);
+		for (const flag of ['', '*', 'https://a.example.org,*']) expect(rules.corsRestricted(flag), flag).toBe(false);
+	});
+
+	it('knows when the admin UI takes this machine only', () => {
+		for (const ips of [['127.0.0.1', '::1'], ['127.0.0.0/8'], ['::1/128'], ['127.0.0.1/32']]) expect(rules.loopbackOnly(ips), ips.join()).toBe(true);
+		for (const ips of [[], null, ['10.0.0.0/24'], ['127.0.0.1', '192.168.1.2'], ['127.0.0.1/0'], ['127.0.0.1/7'], ['::/0']]) {
+			expect(rules.loopbackOnly(ips), String(ips)).toBe(false);
+		}
+	});
+});
+
+describe('failed sign-ins (SH-2)', () => {
+	it('records only the app and the admin UI, with where it came from', () => {
+		expect(rules.loginArea('users')).toBe('app');
+		expect(rules.loginArea('_superusers')).toBe('admin');
+		expect(rules.loginArea('andere')).toBe('');
+		expect(rules.loginSource('http://127.0.0.1:8090', 'same-origin')).toBe('app');
+		expect(rules.loginSource('https://evil.example', 'cross-site')).toBe('web');
+		expect(rules.loginSource('null', '')).toBe('web');
+		expect(rules.loginSource('', 'none')).toBe('web');
+		expect(rules.loginSource('', '')).toBe('program');
+	});
+
+	it('keeps the entered account short and without control characters, never more', () => {
+		expect(rules.identityText('  anna@example.com\r\n ')).toBe('anna@example.com');
+		expect(rules.identityText('x'.repeat(300))).toHaveLength(200);
+		expect(rules.identityText(undefined)).toBe('');
+	});
+
+	it('writes times like PocketBase and asks for attention from ten failures a day on', () => {
+		expect(rules.pocketBaseTime(Date.UTC(2026, 9, 3, 12, 0, 0))).toBe('2026-10-03 12:00:00.000Z');
+		expect([rules.LOGIN_RETENTION_DAYS, rules.LOGIN_MAX_ROWS, rules.NOTICE_MIN]).toEqual([30, 5000, 10]);
+		expect(rules.needsNotice(9)).toBe(false);
+		expect(rules.needsNotice(10)).toBe(true);
+		expect(rules.needsNotice(undefined)).toBe(false);
+	});
+});

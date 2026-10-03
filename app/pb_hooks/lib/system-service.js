@@ -266,7 +266,7 @@ function claim(store, now) {
 /** POST /api/byl/system/actions/{name}: restart, mail-restart, autostart-on, autostart-off. */
 function act(e, name) {
   var spec = rules.action(name);
-  if (spec === null || !spec.changes || spec.backup === true) {
+  if (spec === null || !spec.changes || spec.backup === true || spec.security === true) {
     return refuse(e, name, 'unknown');
   }
   var context = check(e, name, 'POST');

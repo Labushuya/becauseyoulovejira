@@ -1,18 +1,18 @@
 # E6-Plan, Teil „Sicherheit“
 
-- **Stand:** SH-1 (Server-Härtung) umgesetzt; SH-2 (Seite „Einstellungen → Sicherheit“) in Arbeit. Offen sind die manuellen Prüfungen.
+- **Stand:** SH-1 (Server-Härtung, #237) und SH-2 (Seite „Einstellungen → Sicherheit“) umgesetzt. Offen sind die manuellen Prüfungen.
 - **Grundlage:**
   - Nutzerwunsch und Freigabe (2026-10-03): „Ja, kannst Du starten. Und was auch immer nötig ist, kann man auch (sofern sinnvoll und auch ganzheitlich) in den Einstellungen verankern?“
   - Inventur des Advisors (Stand `main` vom 2026-10-03): kein Rate-Limiter, CORS `*`, DNS-Rebinding auf allen Routen von PocketBase, Präsenz-Routen ohne Geheimnis, Admin-Oberfläche ohne Adressbeschränkung.
-  - [ADR-0055](../adr/0055-sicherheits-haertung.md) (neu), Nachträge zu [ADR-0001](../adr/0001-betriebsmodell-lokal-mehrgeraete-spaeter.md), [ADR-0035](../adr/0035-start-einstieg-und-offene-tabs.md), [ADR-0038](../adr/0038-eigener-eingang-und-whatsapp-web.md), [ADR-0039](../adr/0039-betriebsskripte.md) und [ADR-0043](../adr/0043-system-seite.md)
-- **Einordnung:** Paketkürzel `SH`, Manifest ab `BYL-E6-1360`. Migration `1790203500_security_hardening.js` (SH-1).
+  - [ADR-0055](../adr/0055-sicherheits-haertung.md) (neu), Nachträge zu [ADR-0001](../adr/0001-betriebsmodell-lokal-mehrgeraete-spaeter.md), [ADR-0026](../adr/0026-einstellungsbereich-und-hinweis-bausteine.md), [ADR-0035](../adr/0035-start-einstieg-und-offene-tabs.md), [ADR-0038](../adr/0038-eigener-eingang-und-whatsapp-web.md), [ADR-0039](../adr/0039-betriebsskripte.md) und [ADR-0043](../adr/0043-system-seite.md)
+- **Einordnung:** Paketkürzel `SH`, Manifest ab `BYL-E6-1360`. Migrationen `1790203500_security_hardening.js` (SH-1) und `1790203600_login_failures.js` (SH-2).
 
 ## 1. Pakete
 
 | Paket | Inhalt | Manifest |
 |---|---|---|
 | SH-1 | Rate-Limiter per Migration (Stufen „Normal“ und „Streng“, Rückweg), `superuserIPs` nur Loopback, Guard vor jeder Anfrage (Host-Allowlist, Header, CORS-Ausnahmen für Erweiterung und Landing-Seite), `--origins` beim Start mit zusätzlichen Hosts aus `byl-config.json`, Teil `hosts` des Fingerabdrucks, Text der Anmeldeseite bei 429, Harness gleichwertig, Tests, ADR-0055 mit Nachträgen | BYL-E6-1360 bis BYL-E6-1372 |
-| SH-2 | Seite „Einstellungen → Sicherheit“: Statusübersicht, Stufe des Schutzes, zusätzliche Adressen (Steuerskript), Gültigkeit der Anmeldung, Anmeldeprotokoll mit Hinweis beim Öffnen, Konto-Hinweise, Hilfe „Sicherheit“ | ab BYL-E6-1380 |
+| SH-2 | Seite „Einstellungen → Sicherheit“: Statusübersicht, Stufe des Schutzes, zusätzliche Adressen (Steuerskript `security-configure`), Gültigkeit der Anmeldung, Anmeldeprotokoll (Migration `1790203600`) mit Hinweis beim Öffnen, Konto-Hinweise, Hilfe „Sicherheit“, Nachtrag ADR-0026 | BYL-E6-1380 bis BYL-E6-1393 |
 
 ## 2. SH-1: Härtung des Servers
 
@@ -49,7 +49,8 @@
 - **Einstellbar:** Stufe „Normal“/„Streng“ (PocketBase-Einstellungen, sofort), zusätzliche Adressen (`byl-config.json` über das Steuerskript, Neustart mit „Jetzt neu starten“), Gültigkeit der Anmeldung (`authToken.duration` der Collection `users`, Auswahl, sofort für neue Anmeldungen).
 - **Anmeldeprotokoll:** fehlgeschlagene Anmeldungen (Hook auf `onRecordAuthWithPasswordRequest`, ohne Passwort), 30 Tage, Hinweis beim Öffnen bei Häufungen (ADR-0035).
 - **Konto-Hinweise:** „Konto“ und `admin-zuruecksetzen.bat`; Hilfe-Abschnitt „Sicherheit“.
+- **Umgesetzt:** Server in `security.pb.js` und `lib/security-service.js` (rein `lib/security-rules.js`), Befehl `security-configure` mit Katalogeintrag `security-hosts`, Migration `1790203600_login_failures.js`; Oberfläche `components/security/SecurityView.svelte` und `SecurityHosts.svelte`, `stores/security.svelte.ts`, `stores/security-attention.ts`, `data/security.ts`, `domain/security.ts`; Tests `security-page.test.mjs`, `system-control.test.mjs` (Adressen über das Steuerskript, „Neustart nötig“ mit `hosts`), `web-security.test.mjs` (Gleichstand), `security-rules.test.mjs`, Rollback, und in `web/` Domain, Ansicht, Hinweis, Navigation und Hilfe. Einzelheiten in ADR-0055 §8.
 
 ## 4. Neustart
 
-Migration, Hooks und `--origins` wirken erst nach einem Neustart der App (`neu-starten.bat`); bis dahin bleibt alles wie vorher. `status.bat` und die Seite „System“ nennen „Neustart nötig“ (neue Migration, geänderte Server-Logik).
+Migrationen, Hooks und `--origins` wirken erst nach einem Neustart der App (`neu-starten.bat`); bis dahin bleibt alles wie vorher, und die Seite „Sicherheit“ sagt, dass sie erst nach dem Neustart verfügbar ist. `status.bat` und die Seite „System“ nennen „Neustart nötig“ (neue Migration, geänderte Server-Logik).

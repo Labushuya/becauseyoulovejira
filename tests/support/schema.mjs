@@ -332,6 +332,19 @@ export const EXPECTED_COLLECTIONS = {
 			'CREATE UNIQUE INDEX idx_inbox_keys_token_hash ON inbox_keys (token_hash)',
 			'CREATE INDEX idx_inbox_keys_owner ON inbox_keys (owner)'
 		]
+	},
+	// Failed sign-ins for the page "Sicherheit" (ADR-0055 §8, migration 1790203600); never a password.
+	login_failures: {
+		fields: {
+			area: select(['app', 'admin'], true),
+			identity: text({ max: 200 }),
+			known: bool(),
+			source: select(['app', 'web', 'program'], true),
+			host: text({ max: 201 }),
+			ip: text({ max: 64 }),
+			created: created()
+		},
+		indexes: ['CREATE INDEX idx_login_failures_created ON login_failures (created)']
 	}
 };
 
@@ -427,7 +440,9 @@ export const EXPECTED_RULES = {
 		createRule: null,
 		updateRule: null,
 		deleteRule: `${AUTH} && owner = @request.auth.id`
-	}
+	},
+	// Only the hooks write and read the failed sign-ins (ADR-0055 §8).
+	login_failures: { listRule: null, viewRule: null, ...READ_ONLY }
 };
 
 export const EXPECTED_USERS_RULES = {

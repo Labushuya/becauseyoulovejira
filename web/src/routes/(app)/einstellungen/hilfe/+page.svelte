@@ -1325,6 +1325,44 @@
 			App unter Windows aus ihrem Ordner <code>app</code> läuft; auf anderen Servern den Rest.
 		</p>
 	</section>
+
+	<section id="sicherheit" aria-labelledby="sicherheit-title">
+		<h3 id="sicherheit-title">Sicherheit</h3>
+		<p>
+			becauseyoulovejira ist nur auf diesem Rechner erreichbar. Jede Webseite, die du im Browser
+			öffnest, kann aber Anfragen an diesen Rechner schicken. Deshalb schützt sich die App selbst;
+			unter <a href={resolve('/einstellungen/sicherheit')}>Einstellungen → Sicherheit</a> siehst du, was
+			aktiv ist, und stellst ein, was sinnvoll ist.
+		</p>
+		<ul>
+			<li>
+				<strong>Schutz vor Rateversuchen:</strong> Höchstens 10 Anmeldeversuche je Minute („Streng“: 5
+				je 5 Minuten), für App- und Admin-Konto getrennt. Danach meldet die Anmeldung „Zu viele Anmeldeversuche“;
+				nach spätestens einer Minute (bzw. fünf) geht es wieder. Was du angemeldet tust, zählt nie.
+			</li>
+			<li>
+				<strong>Nur die eigenen Adressen:</strong> Die App antwortet nur unter 127.0.0.1 und localhost
+				mit ihrem Port, und nur sie selbst darf Antworten lesen. Die Browser-Erweiterung, der eigene Eingang
+				per Skript, das Bookmarklet und der Mail-Helfer funktionieren wie gewohnt.
+			</li>
+			<li>
+				<strong>Verwaltung (/_/):</strong> Admin-Anfragen gelten nur von diesem Rechner.
+			</li>
+			<li>
+				<strong>Fehlgeschlagene Anmeldungen</strong> der letzten 30 Tage stehen auf der Seite, ohne Passwort.
+				Gibt es in 24 Stunden zehn oder mehr, zeigt die App beim Öffnen einen Hinweis.
+			</li>
+			<li>
+				<strong>Zusätzliche Adressen</strong> brauchst du nur, wenn die App später von anderen Geräten
+				erreichbar sein soll, etwa über Tailscale; sie gelten nur über HTTPS und erst nach einem Neustart.
+			</li>
+		</ul>
+		<p>
+			Ein vergessenes Admin-Passwort setzt <code>admin-zuruecksetzen.bat</code> im Ordner
+			<code>app</code> neu, ohne Daten zu löschen; das Passwort des App-Kontos änderst du in der
+			Verwaltung (siehe <a href={resolve('/einstellungen/konto')}>Konto</a>).
+		</p>
+	</section>
 </div>
 
 <style>

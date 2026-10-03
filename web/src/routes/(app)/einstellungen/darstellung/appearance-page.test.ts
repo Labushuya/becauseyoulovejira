@@ -41,10 +41,11 @@ function accentRadios(): HTMLInputElement[] {
 }
 
 describe('appearance page (EH-8)', () => {
-	it('is a page of the settings before "Konto", "Sicherung" (ADR-0046), "Speicher" (ADR-0047), "System" (ADR-0043) and "Hilfe"', () => {
-		expect(SETTINGS_SECTIONS.map((section) => section.id).slice(-6)).toEqual([
+	it('is a page of the settings before "Konto", "Sicherheit" (ADR-0055), "Sicherung" (ADR-0046), "Speicher" (ADR-0047), "System" (ADR-0043) and "Hilfe"', () => {
+		expect(SETTINGS_SECTIONS.map((section) => section.id).slice(-7)).toEqual([
 			'darstellung',
 			'konto',
+			'sicherheit',
 			'sicherung',
 			'speicher',
 			'system',

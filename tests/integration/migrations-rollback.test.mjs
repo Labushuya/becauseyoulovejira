@@ -485,7 +485,7 @@ describe('migration rollback of the delete lock of inbox items (ADR-0014, addend
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
-				const schemaAfter = withoutTimestamps(readDataDir(dataDir).collections);
+				const schemaAfter = withoutLoginFailures(withoutTimestamps(readDataDir(dataDir).collections));
 				expect(inboxDeleteRuleOf(dataDir)).toBeNull();
 
 				const firstDown = await migrate(args, 'down', String(fromNoDelete.length));
@@ -537,7 +537,7 @@ describe('migration rollback of the delete lock of inbox items (ADR-0014, addend
 
 				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromNoDelete);
 				expect(inboxDeleteRuleOf(dataDir)).toBeNull();
-				expect(withoutTimestamps(readDataDir(dataDir).collections)).toEqual(schemaAfter);
+				expect(withoutLoginFailures(withoutTimestamps(readDataDir(dataDir).collections))).toEqual(schemaAfter);
 			});
 		}
 	);
@@ -850,6 +850,8 @@ const COLOR_MIGRATION = '1790203400_colors.js';
 // The security hardening (ADR-0055, 1790203500), which every earlier test runs along as well: only
 // settings (rate limiter, superuser addresses), no collection.
 const SECURITY_MIGRATION = '1790203500_security_hardening.js';
+// The protocol of failed sign-ins (ADR-0055 §8, 1790203600): the collection login_failures.
+const LOGIN_FAILURES_MIGRATION = '1790203600_login_failures.js';
 const COLOR_FIELDS = ['color'];
 const COLOR_COLLECTIONS = ['projects', 'tickets', 'recurrence_rules'];
 const LATER_RULE_FIELDS = [
@@ -959,9 +961,17 @@ const CHANNELS_BEFORE_OWN_INBOX = CHANNELS.filter(
 	(channel) => !OWN_INBOX_CHANNELS.includes(channel) && channel !== GITHUB_CHANNEL && channel !== FOLDER_CHANNEL
 );
 
-/** The collections without those that later migrations create (inbox_keys, 1790202400). */
+/**
+ * The collections without those that later migrations create (inbox_keys, 1790202400;
+ * login_failures, 1790203600).
+ */
 function withoutLaterCollections(collections) {
-	return collections.filter((collection) => collection.name !== OWN_INBOX_COLLECTION);
+	return withoutLoginFailures(collections).filter((collection) => collection.name !== OWN_INBOX_COLLECTION);
+}
+
+/** The collections without the protocol of failed sign-ins (1790203600), which every test runs along. */
+function withoutLoginFailures(collections) {
+	return collections.filter((collection) => collection.name !== 'login_failures');
 }
 
 /** A collection without the channels of the own inbox (1790202400). */
@@ -1297,7 +1307,8 @@ describe('migration rollback of "Jeden Termin einzeln anlegen" (plan OR-5)', () 
 				GITHUB_MIGRATION,
 				FOLDER_MIGRATION,
 				COLOR_MIGRATION,
-				SECURITY_MIGRATION
+				SECURITY_MIGRATION,
+				LOGIN_FAILURES_MIGRATION
 			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -1445,7 +1456,8 @@ describe('migration rollback of the trash (ADR-0037)', () => {
 				GITHUB_MIGRATION,
 				FOLDER_MIGRATION,
 				COLOR_MIGRATION,
-				SECURITY_MIGRATION
+				SECURITY_MIGRATION,
+				LOGIN_FAILURES_MIGRATION
 			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -1551,7 +1563,8 @@ describe('migration rollback of the own inbox (ADR-0038)', () => {
 				GITHUB_MIGRATION,
 				FOLDER_MIGRATION,
 				COLOR_MIGRATION,
-				SECURITY_MIGRATION
+				SECURITY_MIGRATION,
+				LOGIN_FAILURES_MIGRATION
 			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -1679,7 +1692,8 @@ describe('migration rollback of "Status beim Anlegen" (plan WV, ADR-0022 addendu
 				GITHUB_MIGRATION,
 				FOLDER_MIGRATION,
 				COLOR_MIGRATION,
-				SECURITY_MIGRATION
+				SECURITY_MIGRATION,
+				LOGIN_FAILURES_MIGRATION
 			]);
 			const ruleFields = [...STATUS_RULE_FIELDS, ...SUBTASKS_RULE_FIELDS];
 
@@ -1701,7 +1715,7 @@ describe('migration rollback of "Status beim Anlegen" (plan WV, ADR-0022 addendu
 					maxSelect: 1
 				});
 				expect(
-					withoutTimestamps(readDataDir(dataDir).collections)
+					withoutLoginFailures(withoutTimestamps(readDataDir(dataDir).collections))
 						.map(withoutStatusField)
 						.map(withoutPinField)
 						.map(withoutSubtasksField)
@@ -1778,7 +1792,8 @@ describe('migration rollback of the pinned comment (ADR-0044)', () => {
 				GITHUB_MIGRATION,
 				FOLDER_MIGRATION,
 				COLOR_MIGRATION,
-				SECURITY_MIGRATION
+				SECURITY_MIGRATION,
+				LOGIN_FAILURES_MIGRATION
 			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -1804,7 +1819,7 @@ describe('migration rollback of the pinned comment (ADR-0044)', () => {
 				// The exact statement is checked by assertSchema.
 				expect(ticketsOf(dataDir).indexes.filter((index) => PIN_INDEX.test(index))).toHaveLength(1);
 				expect(
-					withoutTimestamps(readDataDir(dataDir).collections)
+					withoutLoginFailures(withoutTimestamps(readDataDir(dataDir).collections))
 						.map(withoutPinField)
 						.map(withoutSubtasksField)
 						.map(withoutDeleteLock)
@@ -1877,7 +1892,8 @@ describe('migration rollback of the sub-tasks of the template (plan WV-3, ADR-00
 				GITHUB_MIGRATION,
 				FOLDER_MIGRATION,
 				COLOR_MIGRATION,
-				SECURITY_MIGRATION
+				SECURITY_MIGRATION,
+				LOGIN_FAILURES_MIGRATION
 			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -1893,7 +1909,7 @@ describe('migration rollback of the sub-tasks of the template (plan WV-3, ADR-00
 				assertSchema(readDataDir(dataDir).collections);
 				expect(subtasksField(dataDir)).toMatchObject({ type: 'json', required: false, maxSize: 40000 });
 				expect(
-					withoutTimestamps(readDataDir(dataDir).collections)
+					withoutLoginFailures(withoutTimestamps(readDataDir(dataDir).collections))
 						.map(withoutSubtasksField)
 						.map(withoutDeleteLock)
 						.map(withoutTargetFields)
@@ -1971,7 +1987,7 @@ describe('migration rollback of the target project (ADR-0049)', () => {
 		async () => {
 			// The GitHub channel (ADR-0050, 1790203200) follows and runs along; it changes no row.
 			const fromTarget = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(TARGET_MIGRATION));
-			expect(fromTarget).toEqual([TARGET_MIGRATION, GITHUB_MIGRATION, FOLDER_MIGRATION, COLOR_MIGRATION, SECURITY_MIGRATION]);
+			expect(fromTarget).toEqual([TARGET_MIGRATION, GITHUB_MIGRATION, FOLDER_MIGRATION, COLOR_MIGRATION, SECURITY_MIGRATION, LOGIN_FAILURES_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -2000,7 +2016,9 @@ describe('migration rollback of the target project (ADR-0049)', () => {
 				// The exact statement is checked by assertSchema.
 				expect(collectionOf(dataDir, 'inbox_items').indexes.filter((index) => TARGET_INDEX.test(index))).toHaveLength(1);
 				expect(
-					withoutTimestamps(readDataDir(dataDir).collections).map(withoutTargetFields).map(withoutGithubChannel)
+					withoutLoginFailures(withoutTimestamps(readDataDir(dataDir).collections))
+						.map(withoutTargetFields)
+						.map(withoutGithubChannel)
 				).toEqual(schemaBefore);
 				// No row changes: entries and connections of before have no target, users none either.
 				const migrated = withDatabase(dataDir, snapshot);
@@ -2066,7 +2084,7 @@ describe('migration rollback of the GitHub channel (ADR-0050)', () => {
 		async () => {
 			// The folder channel (ADR-0051, 1790203300) follows and runs along; it changes no row.
 			const fromGithub = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(GITHUB_MIGRATION));
-			expect(fromGithub).toEqual([GITHUB_MIGRATION, FOLDER_MIGRATION, COLOR_MIGRATION, SECURITY_MIGRATION]);
+			expect(fromGithub).toEqual([GITHUB_MIGRATION, FOLDER_MIGRATION, COLOR_MIGRATION, SECURITY_MIGRATION, LOGIN_FAILURES_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -2092,7 +2110,9 @@ describe('migration rollback of the GitHub channel (ADR-0050)', () => {
 				expect(fieldOf(dataDir, 'inbox_items', 'watch')).toMatchObject({ type: 'json', required: false, maxSize: 2000 });
 				// 1 MB with the GitHub channel, 8 MB since the folder channel.
 				expect(fieldOf(dataDir, 'connections', 'watch')).toMatchObject({ type: 'json', required: false, hidden: true, maxSize: 8388608 });
-				expect(withoutTimestamps(readDataDir(dataDir).collections).map(withoutGithubChannel)).toEqual(schemaBefore);
+				expect(withoutLoginFailures(withoutTimestamps(readDataDir(dataDir).collections)).map(withoutGithubChannel)).toEqual(
+					schemaBefore
+				);
 				// No row changes: entries and connections of before have no status and no state.
 				const migrated = withDatabase(dataDir, snapshot);
 				expect({
@@ -2177,7 +2197,7 @@ describe('migration rollback of the folder channel (ADR-0051)', () => {
 		async () => {
 			// The colors (ADR-0052, 1790203400) follow and run along; they change no row.
 			const fromFolder = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(FOLDER_MIGRATION));
-			expect(fromFolder).toEqual([FOLDER_MIGRATION, COLOR_MIGRATION, SECURITY_MIGRATION]);
+			expect(fromFolder).toEqual([FOLDER_MIGRATION, COLOR_MIGRATION, SECURITY_MIGRATION, LOGIN_FAILURES_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -2202,7 +2222,9 @@ describe('migration rollback of the folder channel (ADR-0051)', () => {
 				});
 				expect(fieldOf(dataDir, 'connections', 'secret_env')).toMatchObject({ required: false, pattern: '^BYL_[A-Z0-9_]{1,60}$' });
 				expect(fieldOf(dataDir, 'connections', 'watch')).toMatchObject({ hidden: true, maxSize: 8388608 });
-				expect(withoutTimestamps(readDataDir(dataDir).collections).map(withoutFolderChannel)).toEqual(schemaBefore);
+				expect(withoutLoginFailures(withoutTimestamps(readDataDir(dataDir).collections)).map(withoutFolderChannel)).toEqual(
+					schemaBefore
+				);
 				// No row changes.
 				expect(withDatabase(dataDir, snapshot)).toEqual(before);
 
@@ -2284,7 +2306,7 @@ describe('migration rollback of the colors (ADR-0052)', () => {
 		'adds a select field of the palette to projects, tickets and rules without changing a row; the way back loses only the colors',
 		async () => {
 			const fromColor = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(COLOR_MIGRATION));
-			expect(fromColor).toEqual([COLOR_MIGRATION, SECURITY_MIGRATION]);
+			expect(fromColor).toEqual([COLOR_MIGRATION, SECURITY_MIGRATION, LOGIN_FAILURES_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -2307,7 +2329,9 @@ describe('migration rollback of the colors (ADR-0052)', () => {
 				}
 				// No red in the palette (ADR-0009, ADR-0052).
 				expect(PROJECT_COLORS.join(' ')).not.toMatch(/rot|red|orange|pink|rosa/);
-				expect(withoutTimestamps(readDataDir(dataDir).collections).map(withoutColorFields)).toEqual(schemaBefore);
+				expect(withoutLoginFailures(withoutTimestamps(readDataDir(dataDir).collections)).map(withoutColorFields)).toEqual(
+					schemaBefore
+				);
 				// No row changes: data of before has no color.
 				const migrated = withDatabase(dataDir, rows);
 				expect(withoutColorColumns(migrated)).toEqual(before);
@@ -2352,16 +2376,17 @@ describe('migration of the security hardening (ADR-0055)', () => {
 		'switches the rate limiter on with "Normal" and the superusers to this machine, there and back, and keeps settings of the admin UI',
 		async () => {
 			const fromSecurity = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(SECURITY_MIGRATION));
-			expect(fromSecurity).toEqual([SECURITY_MIGRATION]);
+			expect(fromSecurity).toEqual([SECURITY_MIGRATION, LOGIN_FAILURES_MIGRATION]);
 			const settingsOf = (dataDir) => readDataDir(dataDir).settings;
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
-				const schema = withoutTimestamps(readDataDir(dataDir).collections);
+				// The protocol of failed sign-ins (1790203600) goes along on the way back.
+				const schema = withoutLoginFailures(withoutTimestamps(readDataDir(dataDir).collections));
 				expect(settingsOf(dataDir).rateLimits).toMatchObject({ enabled: true, rules: security.rateLimitRules('normal') });
 
 				const down = await migrate(args, 'down', String(fromSecurity.length));
-				expect(appliedFiles(down, 'Reverted')).toEqual(fromSecurity);
+				expect(appliedFiles(down, 'Reverted')).toEqual([...fromSecurity].reverse());
 				expect(settingsOf(dataDir).rateLimits).toMatchObject({ enabled: false, rules: security.POCKETBASE_DEFAULT_RULES });
 				expect(settingsOf(dataDir).superuserIPs ?? []).toEqual([]);
 				expect(withoutTimestamps(readDataDir(dataDir).collections)).toEqual(schema);
@@ -2384,6 +2409,41 @@ describe('migration of the security hardening (ADR-0055)', () => {
 				await migrate(args, 'down', String(fromSecurity.length));
 				expect(settingsOf(dataDir).rateLimits).toMatchObject({ enabled: true, rules: own });
 				expect(settingsOf(dataDir).superuserIPs).toEqual(['10.0.0.0/24']);
+			});
+		}
+	);
+});
+
+describe('migration rollback of the protocol of failed sign-ins (ADR-0055 §8)', () => {
+	const failuresOf = (dataDir) =>
+		readDataDir(dataDir).collections.find((collection) => collection.name === 'login_failures');
+
+	it(
+		'adds login_failures without API rules and removes it with its rows on the way back',
+		async () => {
+			const fromLogins = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(LOGIN_FAILURES_MIGRATION));
+			expect(fromLogins).toEqual([LOGIN_FAILURES_MIGRATION]);
+
+			await withTempDataDir(async ({ dataDir, args }) => {
+				await migrate(args, 'up');
+				assertSchema(readDataDir(dataDir).collections);
+				const created = failuresOf(dataDir);
+				for (const rule of RULE_NAMES) expect(created[rule], rule).toBeNull();
+				withDatabase(dataDir, (db) =>
+					db
+						.prepare('INSERT INTO login_failures (id, area, identity, known, source, host, ip, created) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+						.run('failure00000001', 'app', 'anna@example.com', 1, 'app', '127.0.0.1:8090', '127.0.0.1', STAMP)
+				);
+				const others = withoutLoginFailures(withoutTimestamps(readDataDir(dataDir).collections));
+
+				const down = await migrate(args, 'down', String(fromLogins.length));
+				expect(appliedFiles(down, 'Reverted')).toEqual(fromLogins);
+				expect(failuresOf(dataDir)).toBeUndefined();
+				expect(withoutTimestamps(readDataDir(dataDir).collections)).toEqual(others);
+
+				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromLogins);
+				assertSchema(readDataDir(dataDir).collections);
+				expect(withDatabase(dataDir, (db) => db.prepare('SELECT COUNT(*) AS n FROM login_failures').get().n)).toBe(0);
 			});
 		}
 	);
