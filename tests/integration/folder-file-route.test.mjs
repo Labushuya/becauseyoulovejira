@@ -284,8 +284,9 @@ describe('only the owner, from this machine, from the app itself', () => {
 		const cases = [
 			[{ 'X-Forwarded-For': '203.0.113.5' }, 'loopback'],
 			[{ Forwarded: 'for=203.0.113.5' }, 'loopback'],
-			[{ Host: 'evil.example' }, 'origin'],
-			[{ Host: '127.0.0.1:1' }, 'origin'],
+			// A foreign Host never reaches the route: the guard of every request refuses it (ADR-0055).
+			[{ Host: 'evil.example' }, 'host'],
+			[{ Host: '127.0.0.1:1' }, 'host'],
 			[{ Origin: 'https://evil.example' }, 'origin'],
 			[{ 'Sec-Fetch-Site': 'cross-site' }, 'origin'],
 			[{ 'Sec-Fetch-Site': 'same-site' }, 'origin']

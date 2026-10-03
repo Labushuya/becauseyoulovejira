@@ -98,3 +98,9 @@ Geprüft und vom Nutzer verworfen wurde, WhatsApp Desktop (Windows) anzubinden. 
 | **Lokale Datenbank von WhatsApp Desktop auslesen** (verschlüsselt) | Verworfen (Nutzerentscheidung 2026-09-29). |
 
 - **Begründung:** Nutzerentscheidung. Für WhatsApp bleiben die Erweiterung für WhatsApp Web (§3) und der Chat-Export; künftig kommt „Teilen mit“ aus der Android-APK dazu (Anforderung im Nachtrag vom 2026-09-29 zu [ADR-0028](0028-plattform-strategie.md), dieselbe Route `POST /api/byl/inbox/ingest` mit `mode: manual`; der Plattform-Ausbau bleibt zurückgestellt).
+
+## Nachtrag (2026-10-03, [ADR-0055](0055-sicherheits-haertung.md), SH-1): CORS nur noch auf der Route des Eingangs
+
+- **§2:** PocketBase läuft mit `--origins` für die eigenen Adressen statt `*`. Die Erweiterung braucht keine Origin darin: Ihr Service Worker ruft mit `host_permissions` für `127.0.0.1` und `localhost` auf, dafür gelten keine CORS-Beschränkungen. Als enges Sicherheitsnetz beantwortet der Guard aller Anfragen (`security.pb.js`) nur auf `/api/byl/inbox/ingest` und nur für `chrome-extension://<32 Buchstaben a–p>` (`originAllowed`) den Preflight (GET, POST; Authorization, Content-Type) und setzt `Access-Control-Allow-Origin` auf diese Origin. Jede andere Origin und jede andere Route bekommt keine Freigabe; der Integrationstest des Preflights gilt so weiter.
+- **Grenzen:** Neben der eigenen Grenze je Schlüssel (61. Anfrage einer Minute 429) zählt die Route als Anfrage ohne Konto beim Rate-Limiter von PocketBase mit (300 je 10 s für alle Programme dieses Rechners zusammen, ADR-0055 §1).
+- Belegt in `tests/integration/security.test.mjs` (Skript ohne `Origin` und Erweiterung mit Origin 201 bei eingeschaltetem Limiter, Preflight der Erweiterung) und `inbox-keys.test.mjs`.

@@ -237,8 +237,13 @@ describe('start', () => {
 	it('starts the server with the arguments from Get-ServerArgumentString and writes the state file', () => {
 		const start = functionBody(control(), 'Start-Server');
 		expect(start).toMatch(
-			/Start-Process -FilePath \$exe -ArgumentList \(Get-ServerArgumentString -AppDir \$AppDir -Port \$Port\)/
+			/Start-Process -FilePath \$exe -ArgumentList \(Get-ServerArgumentString -AppDir \$AppDir -Port \$Port -Hosts \$Hosts\)/
 		);
+		// Every start passes the further hosts of byl-config.json (ADR-0055), so --origins and the
+		// fingerprint follow the file.
+		const calls = control().match(/Start-Server -Port [^\r\n]*/g);
+		expect(calls.length).toBeGreaterThan(0);
+		for (const call of calls) expect(call).toContain('-Hosts $Config.Hosts');
 		expect(start.indexOf('ConvertTo-BylStateText -ProcessId $server.Id -Port $Port')).toBeGreaterThan(
 			start.indexOf('Start-Process -FilePath $exe')
 		);
@@ -561,7 +566,7 @@ describe('stop', () => {
 describe('status, reload, logs and doctor (ADR-0039 sections 5 to 7, BS-2)', () => {
 	it('stores the start fingerprint taken before the start, and rotates the logs of the run', () => {
 		const start = functionBody(control(), 'Start-Server');
-		const fingerprint = start.indexOf('$fingerprint = Get-BylFingerprint -AppDir $AppDir -Port $Port -EnvironmentHash $environmentHash');
+		const fingerprint = start.indexOf('$fingerprint = Get-BylFingerprint -AppDir $AppDir -Port $Port -Hosts $Hosts -EnvironmentHash $environmentHash');
 		expect(fingerprint).toBeGreaterThan(start.indexOf('Sync-BylEnvironment'));
 		expect(fingerprint).toBeLessThan(start.indexOf('Start-Process -FilePath $exe'));
 		expect(start.indexOf('$environmentHash = Get-EnvironmentFingerprint -Key $key')).toBeLessThan(fingerprint);
@@ -617,7 +622,7 @@ describe('status, reload, logs and doctor (ADR-0039 sections 5 to 7, BS-2)', () 
 
 	it('names every reason of a restart and returns the documented exit codes of status', () => {
 		const reasons = control().match(/\$RestartReasonText = @\{([\s\S]*?)\r\n\}/)[1];
-		for (const part of ['unknown', 'server', 'migrations', 'hooks', 'port', 'environment', 'mailHelper']) expect(reasons).toMatch(new RegExp(`\\b${part}\\s+=`));
+		for (const part of ['unknown', 'server', 'migrations', 'hooks', 'port', 'hosts', 'environment', 'mailHelper']) expect(reasons).toMatch(new RegExp(`\\b${part}\\s+=`));
 		expect(functionBody(control(), 'Invoke-Status')).toContain('Resolve-StatusExitCode -ServerState $data.ServerState -Verdict $data.Comparison.Verdict');
 		expect(functions()).toContain('$BylExitNotRunning = 3');
 		expect(functions()).toContain('$BylExitRestartNeeded = 6');

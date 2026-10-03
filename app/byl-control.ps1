@@ -149,6 +149,7 @@ $RestartReasonText = @{
     migrations  = 'neue oder geänderte Migration'
     hooks       = 'geänderte Server-Logik (pb_hooks)'
     port        = "anderer Port eingestellt ($BylConfigName)"
+    hosts       = "andere zusätzliche Adressen eingestellt ($BylConfigName)"
     environment = 'BYL_*-Variable angelegt, geändert oder entfernt'
     mailHelper  = 'neuer Mail-Hilfsprozess (byl-mail.exe)'
 }
@@ -567,16 +568,20 @@ function Write-TextFile {
 }
 
 function Get-Config {
-    # Settings of byl-config.json (ConvertFrom-BylConfig); an unreadable file counts as broken.
+    # Settings of byl-config.json: Port and Problem (ConvertFrom-BylConfig) and the further hosts
+    # (ConvertFrom-BylSecurityConfig, ADR-0055); an unreadable file counts as broken.
     $path = Get-BylConfigPath -AppDir $AppDir
-    if (-not [System.IO.File]::Exists($path)) { return ConvertFrom-BylConfig -Text '' }
-    try {
-        $text = [System.IO.File]::ReadAllText($path)
+    $text = ''
+    if ([System.IO.File]::Exists($path)) {
+        try {
+            $text = [System.IO.File]::ReadAllText($path)
+        }
+        catch {
+            return [pscustomobject]@{ Port = $BylDefaultPort; Problem = 'Json'; Hosts = [string[]]@() }
+        }
     }
-    catch {
-        return [pscustomobject]@{ Port = $BylDefaultPort; Problem = 'Json' }
-    }
-    return ConvertFrom-BylConfig -Text $text
+    $config = ConvertFrom-BylConfig -Text $text
+    return [pscustomobject]@{ Port = $config.Port; Problem = $config.Problem; Hosts = [string[]](ConvertFrom-BylSecurityConfig -Text $text).Hosts }
 }
 
 function Save-PortSetting {
@@ -1013,8 +1018,12 @@ function Show-PreStartNotice {
 
 function Start-Server {
     # Cold start of PocketBase: checks, start, state file with the start fingerprint, waiting for
-    # /api/health, first run.
-    param([Parameter(Mandatory = $true)][int]$Port, [Parameter(Mandatory = $true)][object[]]$Processes)
+    # /api/health, first run. $Hosts are the further hosts of byl-config.json (ADR-0055).
+    param(
+        [Parameter(Mandatory = $true)][int]$Port,
+        [AllowNull()][AllowEmptyCollection()][string[]]$Hosts = @(),
+        [Parameter(Mandatory = $true)][object[]]$Processes
+    )
 
     $exe = [System.IO.Path]::Combine($AppDir, 'pocketbase.exe')
     $log = Get-ServerLogPath -AppDir $AppDir
@@ -1052,10 +1061,10 @@ function Start-Server {
             $environmentHash = ''
             [void](Write-BylProblem -Code 'dpapi-start' -Values @{ detail = $_.Exception.GetType().Name })
         }
-        $fingerprint = Get-BylFingerprint -AppDir $AppDir -Port $Port -EnvironmentHash $environmentHash
+        $fingerprint = Get-BylFingerprint -AppDir $AppDir -Port $Port -Hosts $Hosts -EnvironmentHash $environmentHash
         Invoke-LogRotation -Path $log.Output
         Invoke-LogRotation -Path $log.Error
-        $server = Start-Process -FilePath $exe -ArgumentList (Get-ServerArgumentString -AppDir $AppDir -Port $Port) `
+        $server = Start-Process -FilePath $exe -ArgumentList (Get-ServerArgumentString -AppDir $AppDir -Port $Port -Hosts $Hosts) `
             -WorkingDirectory $AppDir -WindowStyle Hidden -PassThru `
             -RedirectStandardOutput $log.Output -RedirectStandardError $log.Error
     }
@@ -1126,13 +1135,13 @@ function Invoke-Start {
         'Unhealthy' {
             return Write-BylProblem -Code 'app-unhealthy' -Values @{ pid = $processId; url = $BylAppUrl } -Facts (Get-LogTailFacts) -Fix {
                 if ((Invoke-StopCore -Config $Config) -eq 'Failed') { return $BylExitError }
-                return Start-Server -Port $Config.Port -Processes $look.Processes
+                return Start-Server -Port $Config.Port -Hosts $Config.Hosts -Processes $look.Processes
             }
         }
         'Restart' {
             Write-Status "becauseyoulovejira (PID $processId) antwortet nicht; starte neu (-Force) ..."
             if ((Invoke-StopCore -Config $Config) -eq 'Failed') { return $BylExitError }
-            return Start-Server -Port $Config.Port -Processes $look.Processes
+            return Start-Server -Port $Config.Port -Hosts $Config.Hosts -Processes $look.Processes
         }
         'Wait' {
             # Own instance exists but does not answer yet (started a moment ago): no second server.
@@ -1145,7 +1154,7 @@ function Invoke-Start {
             if ($state -ne 'Ready') {
                 return Write-BylProblem -Code 'app-unhealthy' -Values @{ pid = $processId; url = $BylAppUrl } -Facts (Get-LogTailFacts) -Fix {
                     if ((Invoke-StopCore -Config $Config) -eq 'Failed') { return $BylExitError }
-                    return Start-Server -Port $Config.Port -Processes $look.Processes
+                    return Start-Server -Port $Config.Port -Hosts $Config.Hosts -Processes $look.Processes
                 }
             }
             Complete-Start -ProcessId $processId -ColdStart $true
@@ -1170,7 +1179,7 @@ function Invoke-Start {
             return $BylExitOk
         }
     }
-    return Start-Server -Port $Config.Port -Processes $look.Processes
+    return Start-Server -Port $Config.Port -Hosts $Config.Hosts -Processes $look.Processes
 }
 
 function Send-ConsoleBreak {
@@ -1400,7 +1409,7 @@ function Get-StatusData {
             if ($null -ne $key) { $environmentHash = Get-EnvironmentFingerprint -Key $key }
             elseif (-not [string]::IsNullOrEmpty($started['environment'])) { $environmentHash = 'unreadable' }
         }
-        $current = Get-BylFingerprint -AppDir $AppDir -Port $Config.Port -EnvironmentHash $environmentHash
+        $current = Get-BylFingerprint -AppDir $AppDir -Port $Config.Port -Hosts $Config.Hosts -EnvironmentHash $environmentHash
         $comparison = Compare-BylFingerprint -Started $started -Current $current
     }
     $helpers = @(Select-MailHelperProcess -Process $look.Processes -AppDir $AppDir -Url @("http://127.0.0.1:$port"))

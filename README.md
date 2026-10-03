@@ -285,6 +285,18 @@ Admin- und App-Konto dürfen dieselbe E-Mail-Adresse haben. Es bleiben trotzdem 
 - Der Link **„Forgotten password“** auf der Anmeldeseite der Verwaltung gehört fest zur PocketBase-Oberfläche und bleibt sichtbar. Er ist aber wirkungslos und führt nur zu dieser Fehlermeldung. Ein vergessenes Admin-Passwort setzt `admin-zuruecksetzen.bat` neu, ein App-Passwort die Verwaltung (siehe Tabelle).
 - Warnmails bei Anmeldungen von neuen Geräten sind aus demselben Grund abgeschaltet.
 
+### Sicherheit
+
+becauseyoulovejira ist nur auf diesem Rechner erreichbar. Weil aber jede Webseite in deinem Browser Anfragen an `127.0.0.1` schicken kann, schützt sich die App zusätzlich ([ADR-0055](docs/adr/0055-sicherheits-haertung.md)):
+
+- **Schutz vor Rateversuchen:** Höchstens 10 Anmeldeversuche je Minute, für App- und Admin-Konto getrennt. Danach meldet die Anmeldeseite „Zu viele Anmeldeversuche …“; nach spätestens einer Minute geht es wieder. Anfragen ohne Anmeldung sind auf 300 je 10 Sekunden begrenzt; was du angemeldet in der App tust, zählt nie.
+- **Nur die eigenen Adressen:** Die App antwortet nur unter `http://127.0.0.1:<Port>` und `http://localhost:<Port>` (fremde Namen, etwa bei DNS-Rebinding, bekommen 403), und nur sie darf Antworten per CORS lesen. Die Browser-Erweiterung für WhatsApp Web, der eigene Eingang per PowerShell oder curl, das Bookmarklet, der Mail-Hilfsprozess und `becauseyoulovejira.html` funktionieren wie vorher.
+- **Kein Einbetten in fremde Seiten** (`frame-ancestors 'none'`), kein Referrer nach außen, keine Kamera, kein Mikrofon, kein Standort.
+- **Verwaltung `/_/` nur von diesem Rechner:** Admin-Anfragen von einer anderen Adresse lehnt PocketBase ab.
+- **Zusätzliche Adressen** (nur für einen späteren Zugriff von anderen Geräten, etwa über Tailscale; standardmäßig keine): in `app\byl-config.json` als `"security": { "hosts": ["rechner.tailnet.ts.net"] }`, nur über HTTPS, danach `neu-starten.bat`. Ungültige Einträge werden ignoriert.
+
+Nach dem Update auf diese Version braucht die App einmal `neu-starten.bat`.
+
 ### Backup und Wiederherstellung
 
 Details und Begründung: [ADR-0046](docs/adr/0046-sicherung-pruefung-wiederherstellen.md) (vorher [ADR-0003](docs/adr/0003-pb-data-und-backups.md)). Alles Einstellbare steht unter **Einstellungen → Sicherung** (nur auf dem Rechner der App, nur für das zuerst angelegte App-Konto).
