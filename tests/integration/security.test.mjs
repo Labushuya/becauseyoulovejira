@@ -237,10 +237,12 @@ describe('rate limits in normal use', () => {
 		expect(extensionPreflight.headers['access-control-allow-origin']).toBe(EXTENSION);
 		expect(extensionPreflight.headers['access-control-allow-headers']).toBe('Authorization, Content-Type');
 
-		// The page System passes the guard and the limiter; the route itself answers (no own instance).
+		// The page System passes the guard and the limiter; the route itself answers: no own instance
+		// under Windows, no page at all elsewhere (ADR-0043).
+		const refusal = process.platform === 'win32' ? [503, 'unavailable'] : [404, 'platform'];
 		for (const host of [`127.0.0.1:${port}`, `localhost:${port}`]) {
 			const system = await call(instance, '/api/byl/system', { headers: { Host: host, Authorization: ownerPb.authStore.token } });
-			expect([system.status, system.json.reason], host).toEqual([503, 'unavailable']);
+			expect([system.status, system.json.reason], host).toEqual(refusal);
 		}
 	});
 
