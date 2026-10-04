@@ -21,6 +21,9 @@ $BylDependencyFolders = @('.', 'web', 'helpers/mail', 'helpers/backup', 'extensi
 $BylDependencyMarkerName = '.byl-lockfile.sha256'
 # Node.js the build needs (engines of package.json).
 $BylNodeMajor = 24
+# The ref build.ps1 -SkipTests checks HEAD against, and how many changed files its refusal names.
+$BylSkipTestsRef = 'refs/remotes/origin/main'
+$BylSkipTestsFactLimit = 10
 
 function Write-BylBuildProblem {
     # Prints the entry $Code of the catalog with the paths of this repository (Get-BylProblemValues
@@ -99,6 +102,58 @@ function Assert-BylNode {
         return Write-BylBuildProblem -Code 'npm-missing' -Values @{ path = $node.Source }
     }
     return $node
+}
+
+function Resolve-BylSkipTestsProblem {
+    # Whether build.ps1 may skip the tests (pure; Get-BylSkipTestsProblem asks git): only on a
+    # clean working tree whose HEAD is a commit of origin/main, a state the CI tested, so no local
+    # state goes live untested. $GitError: what failed when git could not tell; $Changes: the lines
+    # of "git status --porcelain"; $Head: HEAD, short; $OnMain: HEAD is origin/main or one of its
+    # ancestors. Returns $null, or the problem (Code, Values, Facts) for Write-BylBuildProblem.
+    param(
+        [AllowEmptyString()][string]$GitError = '',
+        [AllowNull()][AllowEmptyCollection()][string[]]$Changes = @(),
+        [AllowEmptyString()][string]$Head = '',
+        [bool]$OnMain = $false
+    )
+
+    if ($GitError -ne '') {
+        return [pscustomobject]@{ Code = 'build-skip-tests-git'; Values = @{ detail = $GitError }; Facts = @() }
+    }
+    $changed = @(@($Changes) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim() })
+    if ($changed.Count -gt 0) {
+        $facts = @($changed | Select-Object -First $BylSkipTestsFactLimit | ForEach-Object { "git status: $_" })
+        if ($changed.Count -gt $BylSkipTestsFactLimit) { $facts += "git status: ... ($($changed.Count - $BylSkipTestsFactLimit) weitere)" }
+        return [pscustomobject]@{ Code = 'build-skip-tests-dirty'; Values = @{}; Facts = $facts }
+    }
+    if (-not $OnMain) {
+        return [pscustomobject]@{ Code = 'build-skip-tests-off-main'; Values = @{ head = $Head }; Facts = @() }
+    }
+    return $null
+}
+
+function Get-BylSkipTestsProblem {
+    # Asks git in $Root what Resolve-BylSkipTestsProblem needs: "git status --porcelain" (new files
+    # count as well), HEAD and "git merge-base --is-ancestor HEAD origin/main" (exit code 0 yes, 1
+    # no, anything else an error). No fetch: origin/main as this clone knows it, so after
+    # "git pull --ff-only" HEAD is origin/main itself. Git writes its errors to standard error, which
+    # Windows PowerShell 5.1 turns into a terminating error under 'Stop' once it is redirected; here
+    # it runs under 'Continue' and the exit codes decide.
+    param([Parameter(Mandatory = $true)][string]$Root)
+
+    $ErrorActionPreference = 'Continue'
+    $git = Get-Command git -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $git) { return Resolve-BylSkipTestsProblem -GitError 'git nicht im PATH' }
+    $changes = @(& $git.Source -C $Root status --porcelain 2>$null)
+    if ($LASTEXITCODE -ne 0) { return Resolve-BylSkipTestsProblem -GitError "kein Git-Arbeitsbaum, git status: Exit-Code $LASTEXITCODE" }
+    $head = (& $git.Source -C $Root rev-parse --short HEAD 2>$null | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0) { return Resolve-BylSkipTestsProblem -GitError "kein Commit, git rev-parse HEAD: Exit-Code $LASTEXITCODE" }
+    & $git.Source -C $Root rev-parse --verify --quiet $BylSkipTestsRef 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) { return Resolve-BylSkipTestsProblem -GitError 'origin/main ist in diesem Klon unbekannt' }
+    & $git.Source -C $Root merge-base --is-ancestor HEAD $BylSkipTestsRef 2>$null | Out-Null
+    $code = $LASTEXITCODE
+    if ($code -ne 0 -and $code -ne 1) { return Resolve-BylSkipTestsProblem -GitError "git merge-base: Exit-Code $code" }
+    return Resolve-BylSkipTestsProblem -Changes $changes -Head $head -OnMain ($code -eq 0)
 }
 
 function Get-BylLockfileHash {
