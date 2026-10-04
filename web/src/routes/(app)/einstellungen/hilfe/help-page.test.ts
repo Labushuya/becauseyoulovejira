@@ -842,6 +842,11 @@ describe('help page (EH-9)', () => {
 		expect(content).toMatch(/„Zum Bereich … gewechselt“/);
 		expect(content).toMatch(/„Nur im privaten Bereich“/);
 		expect(content).toMatch(/Recht „Endgültig löschen“/);
+		// Without a household "Privat" and the "+" (addendum "+" of ADR-0059), with the way there.
+		expect(content).toMatch(/Oben steht nur „Privat“ und daneben ein kleines „\+“/);
+		expect(
+			within(section).getByRole('link', { name: 'Einstellungen → Haushalt' }).getAttribute('href')
+		).toBe('/einstellungen/haushalt');
 		// The section "Haushalt" points here.
 		const household = screen.getByRole('region', { name: 'Haushalt' });
 		expect(

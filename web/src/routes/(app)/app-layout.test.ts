@@ -350,15 +350,21 @@ beforeEach(() => {
 });
 
 describe('app layout', () => {
-	it('shows the header with app name and the signed-in user above the page, without an area switch while there is no household', async () => {
+	it('shows the header with app name and the signed-in user above the page, and only "Privat" while the household is not known', async () => {
 		await renderLayout();
 
 		const header = screen.getByRole('banner');
 		expect(within(header).getByRole('heading', { level: 1 }).textContent).toBe(
 			'becauseyoulovejira'
 		);
-		// No household, no choice (E7-3, ADR-0059 §1): the switch is not shown at all.
-		expect(within(header).queryByRole('group', { name: 'Bereich' })).toBeNull();
+		// No household known yet (E7-3, ADR-0059 §1 and addendum "+"): no choice, only "Privat" as the
+		// current area, and no "+" while the household store has not answered.
+		const area = within(header).getByRole('group', { name: 'Bereich' });
+		expect(area.querySelector('[aria-current="true"]')?.textContent?.trim()).toBe('Privat');
+		expect(within(area).queryByRole('button')).toBeNull();
+		expect(
+			within(header).queryByRole('link', { name: 'Haushalt gründen oder beitreten' })
+		).toBeNull();
 		expect(within(header).getByText(/^Angemeldet als/).textContent).toBe(
 			'Angemeldet als anna@example.com'
 		);
@@ -469,10 +475,61 @@ describe('app layout', () => {
 			).toBeGreaterThan(0)
 		);
 		expect(screen.getAllByText('Du bist jetzt im Bereich Privat.').length).toBeGreaterThan(0);
-		// No page reload: what was typed stays; the switch goes with the household.
+		// No page reload: what was typed stays; the switch goes with the household, and the "+" to a
+		// household is back (addendum "+" of ADR-0059).
 		expect(householdMocks.reload).not.toHaveBeenCalled();
-		expect(within(header).queryByRole('group', { name: 'Bereich' })).toBeNull();
+		expect(within(header).queryByRole('button', { name: 'Haus Beispiel' })).toBeNull();
+		expect(
+			within(header)
+				.getByRole('link', { name: 'Haushalt gründen oder beitreten' })
+				.getAttribute('href')
+		).toBe('/einstellungen/haushalt');
 		expect(localStorage.getItem('byl-area:user00000000001')).toBe('private');
+		localStorage.removeItem('byl-area:user00000000001');
+	});
+
+	it('offers the "+" to a household without one and drops it when the account joins, without a reload', async () => {
+		mocks.session.valid = true;
+		mocks.auth.userId = 'user00000000001';
+		const state = {
+			household: {
+				id: 'house0000000001',
+				name: 'Haus Beispiel',
+				created: '',
+				trashRetention: '30'
+			},
+			me: { member: 'member00000001', role: 'member', rights: [] },
+			members: [],
+			invites: null
+		};
+		// First no household, then the account joined in another tab.
+		householdMocks.answers = [null, state];
+		await renderLayout('/einstellungen/haushalt');
+		const header = screen.getByRole('banner');
+		const add = await vi.waitFor(() =>
+			within(header).getByRole('link', { name: 'Haushalt gründen oder beitreten' })
+		);
+		expect(add.getAttribute('href')).toBe('/einstellungen/haushalt');
+		expect(add.getAttribute('title')).toBe('Haushalt gründen oder beitreten');
+		expect(
+			within(header)
+				.getByRole('group', { name: 'Bereich' })
+				.querySelector('[aria-current="true"]')
+				?.textContent?.trim()
+		).toBe('Privat');
+		await vi.waitFor(() => expect(mocks.subscribed).toContain('byl/household'));
+
+		mocks.handlers['byl/household']?.({});
+		await vi.waitFor(() =>
+			expect(within(header).getByRole('button', { name: 'Haus Beispiel' })).toBeTruthy()
+		);
+		expect(
+			within(header).queryByRole('link', { name: 'Haushalt gründen oder beitreten' })
+		).toBeNull();
+		expect(
+			within(header).getByRole('button', { name: 'Privat' }).getAttribute('aria-pressed')
+		).toBe('true');
+		expect(householdMocks.reload).not.toHaveBeenCalled();
 		localStorage.removeItem('byl-area:user00000000001');
 	});
 

@@ -10,6 +10,8 @@ const RECORD_ID = /^[a-z0-9]{15}$/;
 export const AREA_TEXTS = Object.freeze({
 	group: 'Bereich',
 	private: 'Privat',
+	/** Name and tooltip of the "+" beside "Privat" for an account without a household. */
+	add: 'Haushalt gründen oder beitreten',
 	switched: (name: string) => `Zum Bereich ${name} gewechselt.`,
 	lost: 'Du bist jetzt im Bereich Privat.',
 	privateOnly: 'Nur im privaten Bereich',

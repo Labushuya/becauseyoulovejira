@@ -36,6 +36,17 @@ describe('AreaStore', () => {
 		expect(changed).not.toHaveBeenCalled();
 	});
 
+	it('knows whether there is a household only once the household store answered (the "+")', () => {
+		const { store } = setup();
+		store.begin(USER);
+		expect(store.known).toBe(false);
+		store.followHousehold(HOUSE);
+		expect(store.known).toBe(true);
+		store.followHousehold(null);
+		expect(store.known).toBe(true);
+		expect(store.visible).toBe(false);
+	});
+
 	it('takes the remembered household at once and keeps it while the account is a member', () => {
 		const { store, apply, changed } = setup(`household:${HOUSE.id}`);
 		store.begin(USER);
