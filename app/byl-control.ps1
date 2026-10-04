@@ -64,6 +64,12 @@ $HealthTimeoutSeconds = 30
 $StopGraceSeconds = 15
 # The child that sends the console break: about 0.5 s, up to about 12 s on a busy CI runner.
 $BreakSenderSeconds = 30
+# How long the sender waits for processes the server started (byl-control.ps1 of the cron job
+# byl-backup or of the page System, the hashing of the folders) to leave its console before the
+# break; they would get it as well (ST-1). Their usual tasks take seconds, a check of a backup more.
+$StopBusySeconds = 30
+# The entry of the catalog for a hard stop, by its reason (Resolve-HardStopReason).
+$HardStopProblemCode = @{ Timeout = 'hard-stop'; Busy = 'hard-stop-busy'; Refused = 'hard-stop-shared' }
 $PortFreeTimeoutSeconds = 10
 # restart -WaitForProcess: how long the detached restart waits for its caller to end.
 $CallerExitSeconds = 10
@@ -1213,20 +1219,21 @@ function Send-ConsoleBreak {
     # child (Resolve-BreakCode), -1 if it hung. While the child runs, the target is watched: once
     # it has ended, the break reached it, whatever the child still does (0; the child is ended).
     # The child needs a PowerShell start and a compiled type, about 0.5 s, some seconds under load
-    # (up to 12 s seen on a busy CI runner), so it gets $BreakSenderSeconds.
+    # (up to 12 s seen on a busy CI runner), so it gets $BreakSenderSeconds, plus the up to
+    # $StopBusySeconds it waits for processes the target started (ST-1).
     param([Parameter(Mandatory = $true)][int]$ProcessId)
 
     $target = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
     if ($null -eq $target) { return 0 }
     $startInfo = New-Object System.Diagnostics.ProcessStartInfo
     $startInfo.FileName = [System.IO.Path]::Combine($env:SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
-    $startInfo.Arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand ' + (Get-ConsoleBreakCommand -ProcessId $ProcessId)
+    $startInfo.Arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand ' + (Get-ConsoleBreakCommand -ProcessId $ProcessId -WaitMilliseconds ($StopBusySeconds * 1000))
     $startInfo.UseShellExecute = $false
     $startInfo.CreateNoWindow = $true
     $child = $null
     try {
         $child = [System.Diagnostics.Process]::Start($startInfo)
-        $deadline = [DateTime]::UtcNow.AddSeconds($BreakSenderSeconds)
+        $deadline = [DateTime]::UtcNow.AddSeconds($BreakSenderSeconds + $StopBusySeconds)
         while (-not $child.WaitForExit(100)) {
             $ended = $target.HasExited
             if ($ended -or [DateTime]::UtcNow -ge $deadline) {
@@ -1261,13 +1268,13 @@ function Stop-OwnProcess {
     # Stops the own processes of $Candidates through Stop-SelectedProcess (byl-functions.ps1): first
     # in order (Stop-Gracefully: console break, up to $StopGraceSeconds), only then hard with
     # Stop-Process -Force (TerminateProcess; SQLite in WAL mode treats that like a crash: committed
-    # transactions survive, see README). Hard stops are added to $Forced; emits the failures as
-    # single strings.
+    # transactions survive, see README). Hard stops are added to $Forced with their reason
+    # (Resolve-HardStopReason, for Write-HardStop); emits the failures as single strings.
     param(
         [AllowEmptyCollection()][object[]]$Candidates,
         [Parameter(Mandatory = $true)][scriptblock]$Select,
         [Parameter(Mandatory = $true)][string]$Name,
-        [Parameter(Mandatory = $true)][AllowEmptyCollection()][System.Collections.Generic.List[string]]$Forced
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][System.Collections.Generic.List[object]]$Forced
     )
 
     Stop-SelectedProcess -Candidates $Candidates -Select $Select -Name $Name -GetCurrent {
@@ -1275,14 +1282,32 @@ function Stop-OwnProcess {
         Get-CimInstance -ClassName Win32_Process -Filter "ProcessId = $([int]$processId)" -Property ProcessId, Name, ExecutablePath, CommandLine
     } -StopProcess {
         param($processId)
+        $codes = New-Object System.Collections.Generic.List[int]
         $result = Stop-Gracefully -ProcessId $processId -GraceMilliseconds ($StopGraceSeconds * 1000) `
             -SendBreak { param($id) Send-ConsoleBreak -ProcessId $id } `
             -WaitExit { param($id, $milliseconds) Wait-ProcessExit -ProcessId $id -Milliseconds $milliseconds } `
-            -Kill { param($id) Stop-Process -Id $id -Force } -Codes $script:BreakCodes
-        if ($result -eq 'Forced') { $Forced.Add("$Name (PID $processId)") }
+            -Kill { param($id) Stop-Process -Id $id -Force } -Codes $codes
+        foreach ($code in $codes) { $script:BreakCodes.Add($code) }
+        if ($result -eq 'Forced') {
+            $Forced.Add([pscustomobject]@{ Name = "$Name (PID $processId)"; Reason = (Resolve-HardStopReason -Codes $codes.ToArray()) })
+        }
     } -StillRunningText 'läuft nach dem Beenden noch' -Report {
         param($Text)
         Write-Status $Text
+    }
+}
+
+function Write-HardStop {
+    # The hint of a hard stop for the processes of $Forced (Stop-OwnProcess), one entry of the
+    # catalog per reason: no reaction in time, processes of the server still running after the wait
+    # (ST-1), or another program on its console.
+    param([Parameter(Mandatory = $true)][AllowEmptyCollection()][System.Collections.Generic.List[object]]$Forced)
+
+    foreach ($reason in @('Timeout', 'Busy', 'Refused')) {
+        $names = @($Forced | Where-Object { $_.Reason -eq $reason } | ForEach-Object { $_.Name })
+        if ($names.Count -gt 0) {
+            [void](Write-BylProblem -Code $HardStopProblemCode[$reason] -Values @{ name = $names -join ', '; seconds = $StopBusySeconds })
+        }
     }
 }
 
@@ -1333,16 +1358,14 @@ function Invoke-StopCore {
     }
     # Collected as single strings (Stop-SelectedProcess emits one per failure); empty means done.
     $failed = New-Object System.Collections.Generic.List[string]
-    $forced = New-Object System.Collections.Generic.List[string]
+    $forced = New-Object System.Collections.Generic.List[object]
     foreach ($line in @(Stop-OwnProcess -Candidates $helpers -Name 'byl-mail.exe' -Forced $forced -Select {
                 param($Process) Select-MailHelperProcess -Process $Process -AppDir $AppDir -Url $urls
             })) { $failed.Add([string]$line) }
     foreach ($line in @(Stop-OwnProcess -Candidates $own -Name 'PocketBase' -Forced $forced -Select {
                 param($Process) Select-AppProcess -Process $Process -AppDir $AppDir
             })) { $failed.Add([string]$line) }
-    if ($forced.Count -gt 0) {
-        [void](Write-BylProblem -Code 'hard-stop' -Values @{ name = $forced -join ', ' })
-    }
+    Write-HardStop -Forced $forced
     if ($failed.Count -gt 0) {
         [void](Write-BylProblem -Code 'stop-failed' -Facts $failed.ToArray())
         return 'Failed'
@@ -1631,13 +1654,11 @@ function Invoke-MailRestart {
     $urls = @($BylMailHelperUrl)
     $helpers = @(Select-MailHelperProcess -Process $look.Processes -AppDir $AppDir -Url $urls)
     $failed = New-Object System.Collections.Generic.List[string]
-    $forced = New-Object System.Collections.Generic.List[string]
+    $forced = New-Object System.Collections.Generic.List[object]
     foreach ($line in @(Stop-OwnProcess -Candidates $helpers -Name 'byl-mail.exe' -Forced $forced -Select {
                 param($Process) Select-MailHelperProcess -Process $Process -AppDir $AppDir -Url $urls
             })) { $failed.Add([string]$line) }
-    if ($forced.Count -gt 0) {
-        [void](Write-BylProblem -Code 'hard-stop' -Values @{ name = $forced -join ', ' })
-    }
+    Write-HardStop -Forced $forced
     if ($failed.Count -gt 0) {
         return Write-BylProblem -Code 'mail-stop-failed' -Facts $failed.ToArray()
     }

@@ -246,6 +246,32 @@ $BylProblemCatalog = [ordered]@{
         Command = '{control} logs skript'
         Offer   = ''
     }
+    'hard-stop-busy'           = @{
+        Exit    = 0
+        Level   = 'warning'
+        Faq     = ''
+        Problem = 'Nicht geordnet beendet, daher hart beendet: {name}. Eine Aufgabe der App lief nach {seconds} Sekunden noch.'
+        Cause   = 'Die App führte gerade eine eigene Aufgabe in einem Hilfsprozess aus, etwa die Sicherung, ihre Prüfung oder das Prüfen der Dateien eines Ordners. Das Signal zum Beenden hätte auch diese Aufgabe abgebrochen; deshalb wartet das Beenden, bis sie fertig ist, aber nicht länger als {seconds} Sekunden.'
+        Steps   = @(
+            'Nichts zu tun: Bereits gespeicherte Änderungen bleiben erhalten; SQLite übernimmt sie beim nächsten Start. Die Aufgabe selbst läuft zu Ende.'
+            'Passiert das öfter, die letzte Zeile von byl-control.log ansehen: break=5 heißt, dass eine Aufgabe der App noch lief.'
+        )
+        Command = '{control} logs skript'
+        Offer   = ''
+    }
+    'hard-stop-shared'         = @{
+        Exit    = 0
+        Level   = 'warning'
+        Faq     = ''
+        Problem = 'Nicht geordnet beendet, daher hart beendet: {name}.'
+        Cause   = 'Ein anderes Programm hängt an derselben Konsole, etwa weil der Server von Hand in einem Terminal gestartet wurde. Das Signal zum Beenden hätte auch dieses Programm getroffen und wurde deshalb nicht gesendet.'
+        Steps   = @(
+            'Nichts zu tun: Bereits gespeicherte Änderungen bleiben erhalten; SQLite übernimmt sie beim nächsten Start.'
+            'becauseyoulovejira künftig mit start.bat starten, nicht von Hand in einem Terminal.'
+        )
+        Command = '{control} logs skript'
+        Offer   = ''
+    }
     'port-still-busy'          = @{
         Exit    = 0
         Level   = 'warning'
