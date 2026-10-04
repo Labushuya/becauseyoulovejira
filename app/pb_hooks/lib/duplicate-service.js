@@ -89,8 +89,9 @@ function visibleOriginal(e, id) {
 }
 
 // The create rule of tickets for the duplicate: the acting user owns it, and a ticket of a
-// household may only be created by a member (an owner who left the household still sees the
-// original, but may not create there).
+// household may only be created by a member. Since 1790203900 an owner who left the household no
+// longer sees the original either (404 before this check, ADR-0058 §5); the check stays as the
+// create rule of the Record API.
 function assertMayCreate(app, userId, household) {
   if (household === '') {
     return;

@@ -861,6 +861,23 @@ const ACCOUNTS_MIGRATION = '1790203700_accounts_admin.js';
 const ACCOUNT_FIELDS = ['instance_admin', 'disabled'];
 const USERS_RULE_BEFORE_ACCOUNTS = 'id = @request.auth.id';
 const MEMBERS_RULE_BEFORE_ACCOUNTS = 'user = @request.auth.id';
+// Managing a household (ADR-0058, E7-2), which every earlier test runs along as well: the collection
+// household_invites and the rights of household_members (1790203800), the rule of joining in the
+// rate limiter (1790203810, only settings) and the owner branch of the API rules only for private
+// records (1790203900, only rules).
+const HOUSEHOLD_INVITES_MIGRATION = '1790203800_household_invites.js';
+const JOIN_LIMIT_MIGRATION = '1790203810_household_join_limit.js';
+const ACCESS_RULES_MIGRATION = '1790203900_household_access_rules.js';
+const HOUSEHOLD_MIGRATIONS = [HOUSEHOLD_INVITES_MIGRATION, JOIN_LIMIT_MIGRATION, ACCESS_RULES_MIGRATION];
+const HOUSEHOLD_INVITES_COLLECTION = 'household_invites';
+// [after, before] of the owner branch of 1790203900, of a record and of a record through its ticket.
+const PRIVATE_BRANCHES = [
+	['((owner = @request.auth.id && household = "") || (household != ""', '(owner = @request.auth.id || (household != ""'],
+	[
+		'((ticket.owner = @request.auth.id && ticket.household = "") || (ticket.household != ""',
+		'(ticket.owner = @request.auth.id || (ticket.household != ""'
+	]
+];
 const COLOR_FIELDS = ['color'];
 const COLOR_COLLECTIONS = ['projects', 'tickets', 'recurrence_rules'];
 const LATER_RULE_FIELDS = [
@@ -979,11 +996,37 @@ function withoutLaterCollections(collections) {
 }
 
 /**
- * The collections without the protocol of failed sign-ins (1790203600) and without what the accounts
- * add (1790203700, withoutAccounts), which every test runs along.
+ * The collections without the protocol of failed sign-ins (1790203600), without what the accounts
+ * add (1790203700, withoutAccounts) and without what managing a household adds (1790203800 to
+ * 1790203900, withoutHouseholdCollections), which every test runs along.
  */
 function withoutLoginFailures(collections) {
-	return collections.filter((collection) => collection.name !== 'login_failures').map(withoutAccounts);
+	return withoutHouseholdCollections(collections.filter((collection) => collection.name !== 'login_failures')).map(
+		withoutAccounts
+	);
+}
+
+/** The collections as before managing a household (ADR-0058): no household_invites, withoutHousehold. */
+function withoutHouseholdCollections(collections) {
+	return collections.filter((collection) => collection.name !== HOUSEHOLD_INVITES_COLLECTION).map(withoutHousehold);
+}
+
+/**
+ * A collection, or a set of its rules, as before managing a household (ADR-0058): household_members
+ * without the rights (1790203800), every rule with the owner branch of before (1790203900).
+ */
+function withoutHousehold(collection) {
+	const rules = {};
+	for (const rule of RULE_NAMES) {
+		let value = collection[rule];
+		if (typeof value === 'string') {
+			for (const [after, before] of PRIVATE_BRANCHES) value = value.split(after).join(before);
+		}
+		if (rule in collection) rules[rule] = value;
+	}
+	const plain = { ...collection, ...rules };
+	if (collection.name !== 'household_members' || !Array.isArray(collection.fields)) return plain;
+	return { ...plain, fields: collection.fields.filter((field) => field.name !== 'rights') };
 }
 
 /**
@@ -1340,7 +1383,8 @@ describe('migration rollback of "Jeden Termin einzeln anlegen" (plan OR-5)', () 
 				COLOR_MIGRATION,
 				SECURITY_MIGRATION,
 				LOGIN_FAILURES_MIGRATION,
-				ACCOUNTS_MIGRATION
+				ACCOUNTS_MIGRATION,
+				...HOUSEHOLD_MIGRATIONS
 			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -1490,7 +1534,8 @@ describe('migration rollback of the trash (ADR-0037)', () => {
 				COLOR_MIGRATION,
 				SECURITY_MIGRATION,
 				LOGIN_FAILURES_MIGRATION,
-				ACCOUNTS_MIGRATION
+				ACCOUNTS_MIGRATION,
+				...HOUSEHOLD_MIGRATIONS
 			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -1515,7 +1560,9 @@ describe('migration rollback of the trash (ADR-0037)', () => {
 				expect(withoutFields(migrated.users, LATER_USER_FIELDS)).toEqual(before.users);
 				expect(withoutFields(migrated.inbox_items, LATER_ITEM_FIELDS)).toEqual(before.inbox_items);
 				for (const [name, rules] of Object.entries(ruleSet(dataDir))) {
-					const { name: collectionName, ...plain } = withoutDeleteLock(withoutTrashRules({ name, ...rules }));
+					const { name: collectionName, ...plain } = withoutDeleteLock(
+						withoutTrashRules(withoutHousehold({ name, ...rules }))
+					);
 					expect(plain, collectionName).toEqual(rulesBefore[name]);
 				}
 
@@ -1598,7 +1645,8 @@ describe('migration rollback of the own inbox (ADR-0038)', () => {
 				COLOR_MIGRATION,
 				SECURITY_MIGRATION,
 				LOGIN_FAILURES_MIGRATION,
-				ACCOUNTS_MIGRATION
+				ACCOUNTS_MIGRATION,
+				...HOUSEHOLD_MIGRATIONS
 			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -1728,7 +1776,8 @@ describe('migration rollback of "Status beim Anlegen" (plan WV, ADR-0022 addendu
 				COLOR_MIGRATION,
 				SECURITY_MIGRATION,
 				LOGIN_FAILURES_MIGRATION,
-				ACCOUNTS_MIGRATION
+				ACCOUNTS_MIGRATION,
+				...HOUSEHOLD_MIGRATIONS
 			]);
 			const ruleFields = [...STATUS_RULE_FIELDS, ...SUBTASKS_RULE_FIELDS];
 
@@ -1829,7 +1878,8 @@ describe('migration rollback of the pinned comment (ADR-0044)', () => {
 				COLOR_MIGRATION,
 				SECURITY_MIGRATION,
 				LOGIN_FAILURES_MIGRATION,
-				ACCOUNTS_MIGRATION
+				ACCOUNTS_MIGRATION,
+				...HOUSEHOLD_MIGRATIONS
 			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -1930,7 +1980,8 @@ describe('migration rollback of the sub-tasks of the template (plan WV-3, ADR-00
 				COLOR_MIGRATION,
 				SECURITY_MIGRATION,
 				LOGIN_FAILURES_MIGRATION,
-				ACCOUNTS_MIGRATION
+				ACCOUNTS_MIGRATION,
+				...HOUSEHOLD_MIGRATIONS
 			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -2024,7 +2075,7 @@ describe('migration rollback of the target project (ADR-0049)', () => {
 		async () => {
 			// The GitHub channel (ADR-0050, 1790203200) follows and runs along; it changes no row.
 			const fromTarget = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(TARGET_MIGRATION));
-			expect(fromTarget).toEqual([TARGET_MIGRATION, GITHUB_MIGRATION, FOLDER_MIGRATION, COLOR_MIGRATION, SECURITY_MIGRATION, LOGIN_FAILURES_MIGRATION, ACCOUNTS_MIGRATION]);
+			expect(fromTarget).toEqual([TARGET_MIGRATION, GITHUB_MIGRATION, FOLDER_MIGRATION, COLOR_MIGRATION, SECURITY_MIGRATION, LOGIN_FAILURES_MIGRATION, ACCOUNTS_MIGRATION, ...HOUSEHOLD_MIGRATIONS]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -2121,7 +2172,7 @@ describe('migration rollback of the GitHub channel (ADR-0050)', () => {
 		async () => {
 			// The folder channel (ADR-0051, 1790203300) follows and runs along; it changes no row.
 			const fromGithub = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(GITHUB_MIGRATION));
-			expect(fromGithub).toEqual([GITHUB_MIGRATION, FOLDER_MIGRATION, COLOR_MIGRATION, SECURITY_MIGRATION, LOGIN_FAILURES_MIGRATION, ACCOUNTS_MIGRATION]);
+			expect(fromGithub).toEqual([GITHUB_MIGRATION, FOLDER_MIGRATION, COLOR_MIGRATION, SECURITY_MIGRATION, LOGIN_FAILURES_MIGRATION, ACCOUNTS_MIGRATION, ...HOUSEHOLD_MIGRATIONS]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -2234,7 +2285,7 @@ describe('migration rollback of the folder channel (ADR-0051)', () => {
 		async () => {
 			// The colors (ADR-0052, 1790203400) follow and run along; they change no row.
 			const fromFolder = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(FOLDER_MIGRATION));
-			expect(fromFolder).toEqual([FOLDER_MIGRATION, COLOR_MIGRATION, SECURITY_MIGRATION, LOGIN_FAILURES_MIGRATION, ACCOUNTS_MIGRATION]);
+			expect(fromFolder).toEqual([FOLDER_MIGRATION, COLOR_MIGRATION, SECURITY_MIGRATION, LOGIN_FAILURES_MIGRATION, ACCOUNTS_MIGRATION, ...HOUSEHOLD_MIGRATIONS]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -2343,7 +2394,7 @@ describe('migration rollback of the colors (ADR-0052)', () => {
 		'adds a select field of the palette to projects, tickets and rules without changing a row; the way back loses only the colors',
 		async () => {
 			const fromColor = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(COLOR_MIGRATION));
-			expect(fromColor).toEqual([COLOR_MIGRATION, SECURITY_MIGRATION, LOGIN_FAILURES_MIGRATION, ACCOUNTS_MIGRATION]);
+			expect(fromColor).toEqual([COLOR_MIGRATION, SECURITY_MIGRATION, LOGIN_FAILURES_MIGRATION, ACCOUNTS_MIGRATION, ...HOUSEHOLD_MIGRATIONS]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -2413,7 +2464,7 @@ describe('migration of the security hardening (ADR-0055)', () => {
 		'switches the rate limiter on with "Normal" and the superusers to this machine, there and back, and keeps settings of the admin UI',
 		async () => {
 			const fromSecurity = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(SECURITY_MIGRATION));
-			expect(fromSecurity).toEqual([SECURITY_MIGRATION, LOGIN_FAILURES_MIGRATION, ACCOUNTS_MIGRATION]);
+			expect(fromSecurity).toEqual([SECURITY_MIGRATION, LOGIN_FAILURES_MIGRATION, ACCOUNTS_MIGRATION, ...HOUSEHOLD_MIGRATIONS]);
 			const settingsOf = (dataDir) => readDataDir(dataDir).settings;
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -2459,7 +2510,7 @@ describe('migration rollback of the protocol of failed sign-ins (ADR-0055 §8)',
 		'adds login_failures without API rules and removes it with its rows on the way back',
 		async () => {
 			const fromLogins = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(LOGIN_FAILURES_MIGRATION));
-			expect(fromLogins).toEqual([LOGIN_FAILURES_MIGRATION, ACCOUNTS_MIGRATION]);
+			expect(fromLogins).toEqual([LOGIN_FAILURES_MIGRATION, ACCOUNTS_MIGRATION, ...HOUSEHOLD_MIGRATIONS]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -2498,7 +2549,7 @@ describe('migration rollback of the accounts and the administrator (ADR-0056)', 
 		'gives the right to the account created first (smallest ID on a tie) without other changes, and back',
 		async () => {
 			const fromAccounts = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(ACCOUNTS_MIGRATION));
-			expect(fromAccounts).toEqual([ACCOUNTS_MIGRATION]);
+			expect(fromAccounts).toEqual([ACCOUNTS_MIGRATION, ...HOUSEHOLD_MIGRATIONS]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -2531,7 +2582,10 @@ describe('migration rollback of the accounts and the administrator (ADR-0056)', 
 				]);
 				// Set by SQL: no hook ran, `updated` and every other column stay.
 				expect(withoutFields(migrated, ACCOUNT_FIELDS)).toEqual(before);
-				expect(withoutTimestamps(readDataDir(dataDir).collections).map(withoutAccounts)).toEqual(schemaBefore);
+				// Managing a household (1790203800 to 1790203900) runs along.
+				expect(withoutHouseholdCollections(withoutTimestamps(readDataDir(dataDir).collections)).map(withoutAccounts)).toEqual(
+					schemaBefore
+				);
 
 				// A second administrator and a disabled account, then back: only the two columns go.
 				withDatabase(dataDir, (db) => {
@@ -2539,7 +2593,7 @@ describe('migration rollback of the accounts and the administrator (ADR-0056)', 
 					db.prepare('UPDATE users SET disabled = 1 WHERE id = ?').run('user00000000003');
 				});
 				const down = await migrate(args, 'down', String(fromAccounts.length));
-				expect(appliedFiles(down, 'Reverted')).toEqual(fromAccounts);
+				expect(appliedFiles(down, 'Reverted')).toEqual([...fromAccounts].reverse());
 				expect(accountRows(dataDir)).toEqual(before);
 				expect(withoutTimestamps(readDataDir(dataDir).collections)).toEqual(schemaBefore);
 				for (const rule of ['listRule', 'viewRule']) {
@@ -2550,6 +2604,97 @@ describe('migration rollback of the accounts and the administrator (ADR-0056)', 
 				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromAccounts);
 				assertSchema(readDataDir(dataDir).collections);
 				expect(accountRows(dataDir).map((row) => row.instance_admin)).toEqual([1, 0, 0]);
+			});
+		}
+	);
+});
+
+describe('migration rollback of managing a household (ADR-0058)', () => {
+	const collectionOf = (dataDir, name) =>
+		readDataDir(dataDir).collections.find((collection) => collection.name === name);
+	const rowsOf = (dataDir, table) =>
+		withDatabase(dataDir, (db) => db.prepare(`SELECT * FROM ${table} ORDER BY id`).all());
+	/** Every rule of the collections with an owner branch, by collection. */
+	const ruleSet = (dataDir) =>
+		Object.fromEntries(
+			['projects', 'tags', 'recurrence_rules', 'tickets', 'inbox_items', 'connections', 'dependencies', 'comments', 'ticket_history', 'ticket_reads'].map(
+				(name) => {
+					const collection = collectionOf(dataDir, name);
+					return [name, Object.fromEntries(RULE_NAMES.map((rule) => [rule, collection[rule]]))];
+				}
+			)
+		);
+
+	it(
+		'adds the codes, the rights and the rule of joining, keeps the owner branch for private records only, and back, without touching a row',
+		async () => {
+			const fromHousehold = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(HOUSEHOLD_INVITES_MIGRATION));
+			expect(fromHousehold).toEqual(HOUSEHOLD_MIGRATIONS);
+
+			await withTempDataDir(async ({ dataDir, args }) => {
+				await migrate(args, 'up');
+				await migrate(args, 'down', String(fromHousehold.length));
+				expect(collectionOf(dataDir, HOUSEHOLD_INVITES_COLLECTION)).toBeUndefined();
+				expect(collectionOf(dataDir, 'household_members').fields.some((field) => field.name === 'rights')).toBe(false);
+				expect(readDataDir(dataDir).settings.rateLimits.rules).toEqual(
+					security.rateLimitRules('normal').filter((rule) => rule.label !== security.JOIN_RULE.label)
+				);
+				const rulesBefore = ruleSet(dataDir);
+				expect(rulesBefore.tickets.listRule).toContain('(owner = @request.auth.id || (household != ""');
+				expect(rulesBefore.comments.listRule).toContain('(ticket.owner = @request.auth.id || (ticket.household != ""');
+				const schemaBefore = withoutTimestamps(readDataDir(dataDir).collections);
+
+				// A household with its owner and a member, a private and a household ticket.
+				withDatabase(dataDir, (db) => {
+					const user = db.prepare('INSERT INTO users (id, email, tokenKey, password, created, updated) VALUES (?, ?, ?, ?, ?, ?)');
+					user.run('user00000000001', 'eins@example.invalid', 'tk1', 'hash', STAMP, STAMP);
+					user.run('user00000000002', 'zwei@example.invalid', 'tk2', 'hash', STAMP, STAMP);
+					db.prepare('INSERT INTO households (id, name, created, updated) VALUES (?, ?, ?, ?)').run('household000001', 'Haus', STAMP, STAMP);
+					const member = db.prepare('INSERT INTO household_members (id, user, household, role, created, updated) VALUES (?, ?, ?, ?, ?, ?)');
+					member.run('member000000001', 'user00000000001', 'household000001', 'owner', STAMP, STAMP);
+					member.run('member000000002', 'user00000000002', 'household000001', 'member', STAMP, STAMP);
+					const ticket = db.prepare(
+						'INSERT INTO tickets (id, number, key, title, status, priority, scope, owner, household, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+					);
+					ticket.run('ticket000000001', 1, 'TASK-1', 'Privat', 'open', 'medium', 'u:user00000000001', 'user00000000001', '', STAMP, STAMP);
+					ticket.run('ticket000000002', 1, 'TASK-1', 'Haushalt', 'open', 'medium', 'h:household000001', 'user00000000002', 'household000001', STAMP, STAMP);
+				});
+				const members = rowsOf(dataDir, 'household_members');
+				const rows = withDatabase(dataDir, snapshot);
+
+				const up = await migrate(args, 'up');
+				expect(appliedFiles(up, 'Applied')).toEqual(fromHousehold);
+				assertSchema(readDataDir(dataDir).collections);
+				expect(readDataDir(dataDir).settings.rateLimits.rules).toEqual(security.rateLimitRules('normal'));
+				// Only rules change: every owner branch now with household = "", nothing else.
+				for (const [name, rules] of Object.entries(ruleSet(dataDir))) {
+					const { name: collectionName, ...plain } = withoutHousehold({ name, ...rules });
+					expect(plain, collectionName).toEqual(rulesBefore[name]);
+				}
+				expect(ruleSet(dataDir).tickets.listRule).toContain('((owner = @request.auth.id && household = "") || (household != ""');
+				expect(withoutHouseholdCollections(withoutTimestamps(readDataDir(dataDir).collections))).toEqual(schemaBefore);
+				// No row changes; the members get the empty list of rights.
+				expect(withDatabase(dataDir, snapshot)).toEqual(rows);
+				const migratedMembers = rowsOf(dataDir, 'household_members');
+				expect(withoutFields(migratedMembers, ['rights'])).toEqual(members);
+				expect(migratedMembers.map((row) => JSON.parse(row.rights || '[]'))).toEqual([[], []]);
+
+				// Rights and a code, then back: the codes and the rights go, every other row stays.
+				withDatabase(dataDir, (db) => {
+					db.prepare('UPDATE household_members SET rights = ? WHERE id = ?').run('["invite","rename"]', 'member000000002');
+					db.prepare(
+						'INSERT INTO household_invites (id, household, code_hash, created_by, expires_at, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?)'
+					).run('invite000000001', 'household000001', 'a'.repeat(64), 'user00000000001', '2026-09-08 10:00:00.000Z', STAMP, STAMP);
+				});
+				const down = await migrate(args, 'down', String(fromHousehold.length));
+				expect(appliedFiles(down, 'Reverted')).toEqual([...fromHousehold].reverse());
+				expect(withoutTimestamps(readDataDir(dataDir).collections)).toEqual(schemaBefore);
+				expect(ruleSet(dataDir)).toEqual(rulesBefore);
+				expect(rowsOf(dataDir, 'household_members')).toEqual(members);
+				expect(withDatabase(dataDir, snapshot)).toEqual(rows);
+
+				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromHousehold);
+				assertSchema(readDataDir(dataDir).collections);
 			});
 		}
 	);

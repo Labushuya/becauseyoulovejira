@@ -88,10 +88,34 @@ export const EXPECTED_COLLECTIONS = {
 			user: relation('users', { required: true, cascadeDelete: true }),
 			household: relation('households', { required: true, cascadeDelete: true }),
 			role: select(['owner', 'member'], true),
-			...timestamps()
+			...timestamps(),
+			// Rights of a member (ADR-0058, migration 1790203800); the owner has every one by the role.
+			rights: {
+				type: 'select',
+				required: false,
+				values: ['invite', 'remove', 'delegate', 'rename', 'purge', 'move_out'],
+				maxSelect: 6
+			}
 		},
 		indexes: [
 			'CREATE UNIQUE INDEX idx_household_members_household_user ON household_members (household, user)'
+		]
+	},
+	// Invitation codes of a household (ADR-0058, migration 1790203800); only the hash, hidden.
+	household_invites: {
+		fields: {
+			household: relation('households', { required: true, cascadeDelete: true }),
+			code_hash: text({ required: true, max: 64, pattern: '^[0-9a-f]{64}$', hidden: true }),
+			created_by: relation('users'),
+			expires_at: { type: 'date', required: true },
+			used_at: date(),
+			used_by: relation('users'),
+			revoked_at: date(),
+			...timestamps()
+		},
+		indexes: [
+			'CREATE UNIQUE INDEX idx_household_invites_code_hash ON household_invites (code_hash)',
+			'CREATE INDEX idx_household_invites_household ON household_invites (household)'
 		]
 	},
 	projects: {
@@ -351,14 +375,15 @@ export const EXPECTED_COLLECTIONS = {
 export const RULE_NAMES = ['listRule', 'viewRule', 'createRule', 'updateRule', 'deleteRule'];
 
 // API rules of package 4 (CLAUDE.md section 5, OF-2, OF-3, OF-5), written out literally so the
-// test does not reuse the construction logic of the migration.
+// test does not reuse the construction logic of the migration. Since 1790203900 (ADR-0058 §5) the
+// owner branch holds for private records only; household records go through the membership.
 const AUTH = '@request.auth.id != ""';
 const OWNED =
-	`${AUTH} && (owner = @request.auth.id || (household != "" && ` +
+	`${AUTH} && ((owner = @request.auth.id && household = "") || (household != "" && ` +
 	'@collection.household_members.household ?= household && ' +
 	'@collection.household_members.user ?= @request.auth.id))';
 const VIA_TICKET =
-	`${AUTH} && (ticket.owner = @request.auth.id || (ticket.household != "" && ` +
+	`${AUTH} && ((ticket.owner = @request.auth.id && ticket.household = "") || (ticket.household != "" && ` +
 	'@collection.household_members.household ?= ticket.household && ' +
 	'@collection.household_members.user ?= @request.auth.id))';
 const BODY_HOUSEHOLD_ALLOWED =
@@ -427,12 +452,14 @@ export const EXPECTED_RULES = {
 		viewRule: `${AUTH} && user = @request.auth.id${LIVE_TICKET}`,
 		createRule:
 			`${AUTH} && @request.body.user = @request.auth.id && ` +
-			'(ticket.owner = @request.auth.id || (ticket.household != "" && ' +
+			'((ticket.owner = @request.auth.id && ticket.household = "") || (ticket.household != "" && ' +
 			'@collection.household_members.household ?= ticket.household && ' +
 			`@collection.household_members.user ?= @request.auth.id))${LIVE_TICKET}`,
 		updateRule: null,
 		deleteRule: `${AUTH} && user = @request.auth.id`
 	},
+	// Only the routes of the household read and write the codes (ADR-0058).
+	household_invites: { listRule: null, viewRule: null, ...READ_ONLY },
 	// Only the owner lists and revokes; keys are created by the route, never changed.
 	inbox_keys: {
 		listRule: `${AUTH} && owner = @request.auth.id`,

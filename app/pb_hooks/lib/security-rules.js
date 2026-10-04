@@ -30,6 +30,10 @@ var AUTH_LABELS = ['*:auth', '*:requestOTP', '*:requestPasswordReset', '*:confir
 // mail of a full search; their own, high limit keeps them clear of the guest limit at both levels.
 // The rule stands before /api/: PocketBase takes the first prefix rule of the list.
 var INGEST_RULE = { label: '/api/byl/ingest/', audience: '@guest', duration: 10, maxRequests: 1000 };
+// Joining a household with an invitation code (ADR-0058, E7-2; migration 1790203810): always the
+// strict values of the sign-in, at both levels and for signed-in accounts as well, since a code is
+// guessed like a password. An exact label, which PocketBase compares before every prefix rule.
+var JOIN_RULE = { label: 'POST /api/byl/household/join', audience: '', duration: 300, maxRequests: 5 };
 var GUEST_LABEL = '/api/';
 var GUEST_AUDIENCE = '@guest';
 
@@ -53,6 +57,7 @@ function rateLimitRules(level) {
     rules.push({ label: AUTH_LABELS[i], audience: '', duration: preset.auth.duration, maxRequests: preset.auth.maxRequests });
   }
   rules.push({ label: INGEST_RULE.label, audience: INGEST_RULE.audience, duration: INGEST_RULE.duration, maxRequests: INGEST_RULE.maxRequests });
+  rules.push({ label: JOIN_RULE.label, audience: JOIN_RULE.audience, duration: JOIN_RULE.duration, maxRequests: JOIN_RULE.maxRequests });
   rules.push({ label: GUEST_LABEL, audience: GUEST_AUDIENCE, duration: preset.guest.duration, maxRequests: preset.guest.maxRequests });
   return rules;
 }
@@ -433,6 +438,7 @@ module.exports = {
   PRESETS: PRESETS,
   AUTH_LABELS: AUTH_LABELS,
   INGEST_RULE: INGEST_RULE,
+  JOIN_RULE: JOIN_RULE,
   POCKETBASE_DEFAULT_RULES: POCKETBASE_DEFAULT_RULES,
   SUPERUSER_IPS: SUPERUSER_IPS,
   HOST_REFUSAL: HOST_REFUSAL,

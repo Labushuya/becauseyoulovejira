@@ -31,6 +31,16 @@
 		setConnectionNames
 	} from '$lib/stores/connection-names.svelte';
 	import { FirstStepsStore, localStore, setFirstStepsStore } from '$lib/stores/first-steps.svelte';
+	import {
+		HouseholdStore,
+		householdData,
+		householdLive,
+		noticeStorage,
+		rememberHouseholdNotice,
+		setHouseholdStore,
+		takeHouseholdNotice
+	} from '$lib/stores/household.svelte';
+	import { reloadPage } from '$lib/page-reload';
 	import { PeopleStore, peopleData, setPeople } from '$lib/stores/people.svelte';
 	import { FolderViewer, folderViewData, setFolderViewer } from '$lib/stores/folder-view.svelte';
 	import { fetchContext } from '$lib/data/context';
@@ -210,6 +220,24 @@
 	// per session, new names arrive through realtime; without one a person stays "Anderes Konto".
 	const people = setPeople(new PeopleStore(peopleData(pb), auth));
 	$effect(() => untrack(() => people.start()));
+	// The household of the account (ADR-0058): loaded once per session, read again on byl/household.
+	// When the membership begins or ends, the API rules show or hide the household records at once;
+	// the stores above would keep what they loaded, so the page loads anew and says why afterwards.
+	const household = setHouseholdStore(
+		new HouseholdStore(householdData(pb), auth, flags, (notice) => {
+			rememberHouseholdNotice(noticeStorage(), notice);
+			reloadPage();
+		})
+	);
+	$effect(() => untrack(() => household.start()));
+	$effect(() => untrack(() => household.connect(householdLive(pb))));
+	$effect(() =>
+		untrack(() => {
+			const notice = takeHouseholdNotice(noticeStorage());
+			if (notice !== null)
+				flags.show({ tone: 'info', title: notice.title, description: notice.text });
+		})
+	);
 	$effect(() => untrack(() => rules.start()));
 	$effect(() => untrack(() => rules.connect(recurrenceLive(pb))));
 	// Rules that wait for the choice about a large backlog (ADR-0022 addendum 5) say so once the
