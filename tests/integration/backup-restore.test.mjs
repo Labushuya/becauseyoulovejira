@@ -5,8 +5,7 @@
 // -> Expand-Archive into the new data folder of instance B -> ticket, key, the original file
 // (ADR-0046 §6: the backup holds the storage) and the user's old password work on B.
 
-import { copyFile, mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { copyFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import PocketBase from 'pocketbase';
@@ -14,6 +13,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { spawnSyncClean } from '../support/clean-env.mjs';
 import { startPocketBase } from '../support/pocketbase-harness.mjs';
 import { POWERSHELL_EXE } from '../support/powershell.mjs';
+import { createTempFolder } from '../support/temp-folders.mjs';
 import { scaled } from '../support/timing.mjs';
 
 const BACKUP_NAME = 'restore-test.zip';
@@ -65,8 +65,9 @@ function expandArchive(zipPath, destination) {
 
 describe('backup and manual restore', () => {
 	it('restores tickets, keys, original files and logins from a backup ZIP', { timeout: scaled(120_000) }, async () => {
-		// Folder for the ZIP between the two instances (byl-test- prefix like the harness).
-		const scratchDir = await mkdtemp(join(tmpdir(), 'byl-test-'));
+		// Folder for the ZIP between the two instances, a temp folder of the harness: a hard end of this
+		// process leaves it to the next run (temp-folders.mjs).
+		const scratchDir = await createTempFolder();
 		cleanup.push(() => rm(scratchDir, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 }));
 		const zipPath = join(scratchDir, BACKUP_NAME);
 
