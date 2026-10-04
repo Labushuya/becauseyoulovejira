@@ -6,6 +6,7 @@
 	import { auth } from '$lib/auth.svelte';
 	import AppHeader from '$lib/components/AppHeader.svelte';
 	import AppUpdateNotice from '$lib/components/AppUpdateNotice.svelte';
+	import AreaMoveDialog from '$lib/components/AreaMoveDialog.svelte';
 	import LiveUpdateNotice from '$lib/components/LiveUpdateNotice.svelte';
 	import ShortcutsModal from '$lib/components/help/ShortcutsModal.svelte';
 	import FlagGroup from '$lib/components/overlay/FlagGroup.svelte';
@@ -48,6 +49,8 @@
 		type AreaChangeCause,
 		type AreaHousehold
 	} from '$lib/stores/area.svelte';
+	import { AreaMoveStore, areaMoveData, setAreaMoveStore } from '$lib/stores/area-move.svelte';
+	import type { MovePreview } from '$lib/domain/area-move';
 	import { PeopleStore, peopleData, setPeople } from '$lib/stores/people.svelte';
 	import { FolderViewer, folderViewData, setFolderViewer } from '$lib/stores/folder-view.svelte';
 	import { fetchContext } from '$lib/data/context';
@@ -247,6 +250,40 @@
 	);
 	$effect(() => untrack(() => household.start()));
 	$effect(() => untrack(() => household.connect(householdLive(pb))));
+
+	// Moving between the areas (E7-4, ADR-0060): one dialog for every menu and the bulk action. The
+	// moved tickets leave the list at once (their realtime "delete" follows); a tab that shows a moved
+	// record follows it into its area, like a link into the other area.
+	const areaMove = setAreaMoveStore(
+		new AreaMoveStore(areaMoveData(pb), auth, flags, (result) => followMove(result))
+	);
+
+	function followMove(result: MovePreview) {
+		const moved = result.moved;
+		if (moved === null) return;
+		for (const ticket of moved.tickets) tickets.remove(ticket.id);
+		const record = recordOfRoute(page.route.id, page.params.id);
+		if (record === null) return;
+		const ids: Readonly<Record<string, readonly string[]>> = {
+			ticket: moved.tickets.map((ticket) => ticket.id),
+			project: moved.projects.map((project) => project.id),
+			rule: moved.rules,
+			item: moved.items
+		};
+		if ((ids[record.kind] ?? []).includes(record.id)) area.showScope(result.scope);
+	}
+
+	// A ticket shown in a panel or full view that another tab moved into an area this account sees
+	// (E7-4): the tab follows it there; one it no longer sees closes with its notice (TicketPanel).
+	$effect(() => {
+		const shown = detail.state === 'ready' ? detail.ticket : null;
+		const scope = shown?.scope;
+		if (shown === null || scope === undefined || scope === area.key) return;
+		untrack(() => {
+			const record = recordOfRoute(page.route.id, page.params.id);
+			if (record?.kind === 'ticket' && record.id === shown.id) area.showScope(scope);
+		});
+	});
 
 	/** The household of the account as the area needs it, null without one. */
 	function areaHouseholdOf(state: HouseholdState | null): AreaHousehold | null {
@@ -581,6 +618,10 @@
 
 {#if shortcutsOpen}
 	<ShortcutsModal onclose={() => (shortcutsOpen = false)} />
+{/if}
+
+{#if areaMove.request !== null && areaMove.request.inline !== true}
+	<AreaMoveDialog store={areaMove} />
 {/if}
 
 <style>

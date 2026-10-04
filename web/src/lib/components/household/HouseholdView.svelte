@@ -20,10 +20,12 @@
 		type HouseholdMember,
 		type HouseholdState
 	} from '$lib/domain/household';
+	import { DISSOLVE_TEXTS } from '$lib/domain/area-move';
 	import { retentionText } from '$lib/domain/trash';
 	import { helpHref } from '$lib/settings-sections';
 	import type { HouseholdStore } from '$lib/stores/household.svelte';
 	import RetentionChoice from '../RetentionChoice.svelte';
+	import HouseholdDissolveDialog from './HouseholdDissolveDialog.svelte';
 	import HouseholdInvites from './HouseholdInvites.svelte';
 	import HouseholdStart from './HouseholdStart.svelte';
 	import MemberRightsDialog from './MemberRightsDialog.svelte';
@@ -32,9 +34,10 @@
 	// household: found one or join with a code. With one: its name (rename with "rename"), the
 	// members with role and rights (rights with "delegate", remove with "remove", hand on as owner,
 	// each in the menu "•••" of the member), the codes with "invite", since E7-3 the retention of the
-	// trash of the household ("purge", ADR-0059 §6) and "Austreten". What the server would refuse is
-	// left out, not only disabled; removing, leaving and handing on ask first (no red, ADR-0009).
-	// Refusals stand on the page; results go out as flags.
+	// trash of the household ("purge", ADR-0059 §6) and "Austreten", since E7-4 for the owner "Haushalt
+	// auflösen …" (ADR-0060 §5). What the server would refuse is left out, not only disabled;
+	// removing, leaving and handing on ask first (no red, ADR-0009). Refusals stand on the page;
+	// results go out as flags.
 	let { store }: { store: HouseholdStore } = $props();
 
 	type Question = { kind: 'remove' | 'transfer'; member: HouseholdMember } | { kind: 'leave' };
@@ -44,12 +47,15 @@
 		title: `${uid}-title`,
 		members: `${uid}-members`,
 		leave: `${uid}-leave`,
+		dissolve: `${uid}-dissolve`,
 		name: `${uid}-name`,
 		nameError: `${uid}-name-error`
 	};
 
 	const current = $derived(store.household);
 	let asking = $state<Question | null>(null);
+	/** "Haushalt auflösen …" is open (E7-4). */
+	let dissolving = $state(false);
 	let rightsFor = $state<HouseholdMember | null>(null);
 	let renaming = $state(false);
 	let draft = $state('');
@@ -356,6 +362,33 @@
 			<SectionMessage tone="info" compact>{HOUSEHOLD_TEXTS.ownerLeave}</SectionMessage>
 		{/if}
 	</section>
+
+	<!-- Dissolving (E7-4, ADR-0060 §5): only the owner, with a preview and two ways. -->
+	{#if me.role === 'owner'}
+		<section class="part" aria-labelledby={ids.dissolve}>
+			<h3 id={ids.dissolve}>{DISSOLVE_TEXTS.section}</h3>
+			<p class="note">{DISSOLVE_TEXTS.sectionText}</p>
+			<div>
+				<button
+					class="button-secondary"
+					type="button"
+					aria-haspopup="dialog"
+					onclick={() => (dissolving = true)}
+					aria-disabled={store.busy !== null ? 'true' : undefined}
+				>
+					{DISSOLVE_TEXTS.button}
+				</button>
+			</div>
+		</section>
+	{/if}
+
+	{#if dissolving}
+		<HouseholdDissolveDialog
+			{store}
+			name={state.household.name}
+			onclose={() => (dissolving = false)}
+		/>
+	{/if}
 
 	{#if rightsFor !== null}
 		<MemberRightsDialog

@@ -28,9 +28,12 @@ import {
 	type TicketRecord
 } from './tickets';
 
-/** A created or updated record, or the ID of a deleted one. */
+/**
+ * A created or updated record, or the ID of a deleted one; `moved` when it went into another area
+ * the tab does not see (E7-4, ADR-0060 §3: the server marks that "delete").
+ */
 export type RecordChange<T> =
-	{ action: 'create' | 'update'; record: T } | { action: 'delete'; id: string };
+	{ action: 'create' | 'update'; record: T } | { action: 'delete'; id: string; moved?: true };
 
 /** Ends one subscription; the connection closes with the last one. */
 export type Unsubscribe = () => Promise<void>;
@@ -51,7 +54,8 @@ function changes<R extends { id: string }, T>(
 ): (event: RealtimeEvent<R>) => void {
 	return (event) => {
 		if (event.action === 'delete') {
-			onChange({ action: 'delete', id: event.record.id });
+			const moved = (event.record as { moved?: unknown }).moved === true;
+			onChange({ action: 'delete', id: event.record.id, ...(moved && { moved: true as const }) });
 			return;
 		}
 		if (event.action !== 'create' && event.action !== 'update') return;

@@ -2,6 +2,7 @@
 	import { tick, untrack, type Snippet } from 'svelte';
 	import { beforeNavigate, goto } from '$app/navigation';
 	import type { ResolvedPathname } from '$app/types';
+	import { areaMover } from '$lib/area-move-entry';
 	import { inheritLabel, type ProjectColor } from '$lib/domain/colors';
 	import {
 		PROJECT_CODE_MAX_LENGTH,
@@ -224,6 +225,13 @@
 	const canDelete = $derived(
 		!creating && canDeleteProject(total, subProjects) && ondelete !== undefined
 	);
+	/** "In den Haushalt verschieben …" or "Ins Private verschieben …" (E7-4, ADR-0060). */
+	const mover = areaMover();
+	const move = $derived(
+		project === null
+			? null
+			: mover.entry({ kind: 'project', records: [project], label: `Projekt „${project.name}“` })
+	);
 	const dirty = $derived(
 		(typedName !== null && typedName.trim() !== (project?.name ?? '')) ||
 			(typedCode !== null && typedCode !== (project?.code ?? '')) ||
@@ -411,6 +419,11 @@
 		{/if}
 	{/snippet}
 	{#snippet actions()}
+		{#if move !== null}
+			<button class="button-subtle" type="button" aria-haspopup="dialog" onclick={move.run}>
+				{move.label}
+			</button>
+		{/if}
 		{#if canDelete}
 			<button class="button-subtle" type="button" aria-haspopup="dialog" onclick={askDelete}>
 				Löschen …

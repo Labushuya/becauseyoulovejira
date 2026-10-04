@@ -5,6 +5,7 @@
 // session, the network and an aborted signal are DataErrors. Answers are read strictly.
 
 import type PocketBase from 'pocketbase';
+import { parseDissolvePreview, type DissolveMode, type DissolvePreview } from '../domain/area-move';
 import {
 	parseHouseholdAnswer,
 	parseInviteGrant,
@@ -184,7 +185,34 @@ export function leaveHousehold(
 	return ask(options.signal, send(pb, `${ROUTE}/leave`, {}, options.signal), state);
 }
 
+/**
+ * Dissolving the household (E7-4, ADR-0060 §5; only its owner): with `preview` what it holds and the
+ * codes that would get a suffix, else `adopt` (everything into the private area of the owner) or
+ * `delete` (with the typed name). The answer of both is the preview.
+ */
+export function dissolveHousehold(
+	pb: PocketBase,
+	body: { mode: DissolveMode; preview?: boolean; name?: string },
+	options: RequestOptions = {}
+): Promise<HouseholdAnswer<DissolvePreview>> {
+	return ask(
+		options.signal,
+		send(pb, `${ROUTE}/dissolve`, body, options.signal),
+		(answer) => parseDissolvePreview(answer) ?? undefined
+	);
+}
+
+/** What the server says with a change; `dissolved` when the household was dissolved (E7-4). */
+export interface HouseholdChange {
+	dissolved: boolean;
+}
+
 /** Calls `onChange` whenever the server reports a change of the household or a membership. */
-export function subscribeHousehold(pb: PocketBase, onChange: () => void): Promise<Unsubscribe> {
-	return pb.realtime.subscribe(HOUSEHOLD_TOPIC, () => onChange());
+export function subscribeHousehold(
+	pb: PocketBase,
+	onChange: (change: HouseholdChange) => void
+): Promise<Unsubscribe> {
+	return pb.realtime.subscribe(HOUSEHOLD_TOPIC, (data: unknown) =>
+		onChange({ dissolved: isRecord(data) && data.dissolved === true })
+	);
 }

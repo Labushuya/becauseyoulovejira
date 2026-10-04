@@ -3,6 +3,7 @@
 // appear as "(gelöscht)". Descriptions are returned as plain text for a collapsible detail and
 // never rendered as Markdown.
 
+import { areaMoveHistoryText } from './area-move';
 import { COLOR_LABELS, isProjectColor } from './colors';
 import { duplicateHistoryText } from './duplicate';
 import { formatCalendarDate, formatBerlinDateTime } from './format';
@@ -285,6 +286,9 @@ function describe(entry: HistoryEntry, lookups: HistoryLookups, selfId: string |
 		case 'duplicate':
 			// ADR-0045 §6: the duplicate names its original, the original its duplicate.
 			return duplicateHistoryText(newValue);
+		case 'area_move':
+			// ADR-0060 §3: moved into another area, with the key before ("vorher PRIV-12").
+			return areaMoveHistoryText(oldValue, newValue);
 		case SKIPPED_FIELD: {
 			// ADR-0022 addendum 4: a catch-up ticket names the missed dates it stands for.
 			const skipped = parseSkipped(newValue);

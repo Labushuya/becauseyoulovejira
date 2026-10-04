@@ -2,6 +2,7 @@
 	import { tick, untrack } from 'svelte';
 	import { beforeNavigate, goto } from '$app/navigation';
 	import type { ResolvedPathname } from '$app/types';
+	import { areaMover } from '$lib/area-move-entry';
 	import type { RuleDraft } from '$lib/data/recurrence';
 	import type { CalendarDate } from '$lib/domain/berlin-date';
 	import {
@@ -150,6 +151,14 @@
 		'template_subtasks',
 		'color'
 	];
+
+	/** "In den Haushalt verschieben …" or "Ins Private verschieben …" (E7-4, ADR-0060). */
+	const mover = areaMover();
+	const move = $derived(
+		rule === null
+			? null
+			: mover.entry({ kind: 'rule', records: [rule], label: `Wiederholung „${rule.title}“` })
+	);
 
 	const uid = $props.id();
 	const ids = {
@@ -424,6 +433,11 @@
 		{rule === null ? 'Wiederholungen' : 'Wiederholung'}
 	{/snippet}
 	{#snippet actions()}
+		{#if move !== null}
+			<button class="button-subtle" type="button" aria-haspopup="dialog" onclick={move.run}>
+				{move.label}
+			</button>
+		{/if}
 		{#if rule !== null && ondelete}
 			<button class="button-subtle" type="button" aria-haspopup="dialog" onclick={askDelete}>
 				Löschen …

@@ -23,13 +23,15 @@ export interface ProjectRecord {
 	/** Color (ADR-0052), '' for none; absent while the server lacks the field (before the restart). */
 	color?: string;
 	updated?: string;
+	owner?: string;
 }
 
 /**
  * Fields of the catalog (T-16), with `updated` for the order of events, `parent` (ADR-0034) and
  * `color` (ADR-0052). A server without `parent` or `color` simply leaves them out of the answer.
+ * `owner`: moving the project into the private area is offered to its creator (ADR-0060 §4).
  */
-export const PROJECT_FIELDS = 'id,name,code,archived,parent,color,updated';
+export const PROJECT_FIELDS = 'id,name,code,archived,parent,color,updated,owner';
 
 /** Project as referenced by a ticket (expanded relation), with its color when the server knows it. */
 export function toProjectRef(record: ProjectRecord): ProjectRef {
@@ -57,6 +59,7 @@ export function toProject(record: ProjectRecord): Project {
 	};
 	if (record.parent === undefined) project.withoutParentField = true;
 	if (record.color === undefined) project.withoutColorField = true;
+	if (record.owner) project.owner = record.owner;
 	return project;
 }
 

@@ -12,12 +12,14 @@
 	import { getTicketActivityStore } from '$lib/stores/ticket-activity.svelte';
 	import { getTicketDetailStore } from '$lib/stores/ticket-detail.svelte';
 	import { findTicketDuplicateStore } from '$lib/stores/ticket-duplicate.svelte';
+	import { findAreaMoveStore } from '$lib/stores/area-move.svelte';
 	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
 	import { getTicketSourcesStore } from '$lib/stores/ticket-sources.svelte';
 	import { findTicketOpenMode, ticketLinks } from '$lib/stores/open-mode.svelte';
 	import { findTicketHost } from '$lib/ticket-host';
 	import { FULL_VIEW_LINK, ticketPathSteps } from '$lib/ticket-links';
 	import { getTicketRoute } from '$lib/ticket-route';
+	import AreaMoveDialog from './AreaMoveDialog.svelte';
 	import Breadcrumbs from './Breadcrumbs.svelte';
 	import ColorMark from './ColorMark.svelte';
 	import DuplicateDialog from './DuplicateDialog.svelte';
@@ -65,6 +67,7 @@
 	const openMode = findTicketOpenMode();
 	const links = ticketLinks();
 	const duplicates = findTicketDuplicateStore();
+	const moves = findAreaMoveStore();
 	const flags = findFlagStore() ?? SILENT_FLAGS;
 
 	const uid = $props.id();
@@ -109,6 +112,17 @@
 
 	// While the full view is shown, it asks about unsaved text instead of the layout.
 	$effect(() => untrack(() => route.askInline()));
+
+	/**
+	 * "In den Haushalt verschieben …" of the menu (E7-4, ADR-0060) unfolds here like the other
+	 * questions; leaving the full view drops it.
+	 */
+	const moving = $derived(
+		moves !== null && moves.request?.inline === true && moves.request.ids[0] === id
+	);
+	$effect(() => () => {
+		if (moves?.request?.inline === true) untrack(() => moves.close());
+	});
 
 	async function cancelDelete() {
 		askingFor = null;
@@ -195,6 +209,9 @@
 					{sourceCount}
 					{subtaskCount}
 				/>
+			{/if}
+			{#if moving && moves !== null}
+				<AreaMoveDialog store={moves} returnFocus={() => menuButton} />
 			{/if}
 			{#if duplicating && duplicates !== null}
 				<DuplicateDialog

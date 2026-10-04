@@ -296,13 +296,14 @@ describe('web data layer: realtime', () => {
 
 		expect(created.record).toEqual(project);
 		// Since ADR-0034 with the stored parent (null for a top-level project), since ADR-0052 with
-		// the color (null for none).
+		// the color (null for none), since ADR-0060 with the owner.
 		expect(Object.keys(created.record).sort()).toEqual([
 			'archived',
 			'code',
 			'color',
 			'id',
 			'name',
+			'owner',
 			'parentId',
 			'updated'
 		]);

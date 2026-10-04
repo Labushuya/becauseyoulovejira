@@ -75,6 +75,8 @@ export interface RecurrenceRule {
 	 * hand stay valid.
 	 */
 	color?: ProjectColor | null;
+	/** The account that created the rule (`owner`); the data layer sets it (ADR-0060 §4). */
+	owner?: string;
 	created: string;
 	updated: string;
 }

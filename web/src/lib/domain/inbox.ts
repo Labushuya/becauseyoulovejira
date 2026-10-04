@@ -200,6 +200,8 @@ export interface InboxItemSummary {
 	 * (ADR-0031, ADR-0042). The data layer always sets it; objects built by hand may leave it out.
 	 */
 	scope?: string;
+	/** The account that brought the entry in (`owner`); the data layer sets it (ADR-0060 §4). */
+	owner?: string;
 	/**
 	 * The connection that brought the entry (calendar, Telegram, mailbox, Notion); missing for
 	 * entries without one and after the connection was deleted. Panel and sources name it with the

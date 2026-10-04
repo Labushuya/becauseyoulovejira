@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import type { ResolvedPathname } from '$app/types';
+	import { MOVE_TEXTS } from '$lib/domain/area-move';
 	import { ticketColorOf } from '$lib/domain/colors';
 	import type { ParentRef, Ticket } from '$lib/domain/ticket';
 	import type { CatalogStore } from '$lib/stores/catalog.svelte';
@@ -176,6 +177,13 @@
 			<h2 id={headingId} tabindex="-1" bind:this={messageHeading}>Ticket nicht gefunden</h2>
 			<p>Das Ticket gibt es nicht, oder es ist für dich nicht sichtbar.</p>
 			<TrashNotice id={store.id} />
+			<a href={listHref}>{listLabel}</a>
+		</div>
+	{:else if store.state === 'deleted' && store.movedAway}
+		<!-- Moved into an area this account does not see (E7-4, ADR-0060 §3). -->
+		<div class="message">
+			<h2 id={headingId} tabindex="-1" bind:this={messageHeading}>{MOVE_TEXTS.movedAway}</h2>
+			<p>{MOVE_TEXTS.movedAwayText}</p>
 			<a href={listHref}>{listLabel}</a>
 		</div>
 	{:else if store.state === 'deleted'}

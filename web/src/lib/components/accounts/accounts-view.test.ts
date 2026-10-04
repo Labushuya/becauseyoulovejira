@@ -263,6 +263,71 @@ describe('page "Konten": changes of an account', () => {
 	});
 });
 
+describe('page "Konten": households without an active owner (E7-4, ADR-0060 §6)', () => {
+	const OWNER: Account = { ...BERT, owns: { id: 'house000000001', name: 'Wohnung' } };
+	const HOUSEHOLD = {
+		id: 'house000000001',
+		name: 'Wohnung',
+		owner: { id: BERT.id, name: '' },
+		members: [
+			{ id: 'member00000002', user: ANNA.id, name: 'Anna Beispiel', disabled: false },
+			{ id: 'member00000003', user: 'user0000000009', name: 'Sina Beispiel', disabled: true }
+		]
+	};
+
+	it('names the household an account owns and warns before disabling its owner', async () => {
+		const owner: Account = { ...ANNA, owns: { id: 'house000000002', name: 'Haus' } };
+		await show({
+			list: vi.fn(async () => ({
+				kind: 'ok' as const,
+				value: { accounts: [SELF, owner, BERT], passwordMin: 8, households: [] }
+			}))
+		});
+		expect(within(rowOf('Anna Beispiel')).getByText('Inhaber von „Haus“')).toBeTruthy();
+		await choose('Anna Beispiel', 'Deaktivieren …');
+		const dialog = screen.getByRole('dialog', { name: 'Anna Beispiel deaktivieren?' });
+		expect(within(dialog).getByText(/Inhaber des Haushalts „Haus“/)).toBeTruthy();
+		expect(screen.queryByRole('region', { name: 'Haushalte ohne aktiven Inhaber' })).toBeNull();
+	});
+
+	it('lets the administrator make an active member the owner after a question', async () => {
+		const setHouseholdOwner = vi.fn(async () => ({
+			kind: 'ok' as const,
+			value: { accounts: [SELF, ANNA, BERT], passwordMin: 8, households: [] }
+		}));
+		const { flags } = await show({
+			list: vi.fn(async () => ({
+				kind: 'ok' as const,
+				value: { accounts: [SELF, ANNA, OWNER], passwordMin: 8, households: [HOUSEHOLD] }
+			})),
+			setHouseholdOwner
+		});
+		const region = screen.getByRole('region', { name: 'Haushalte ohne aktiven Inhaber' });
+		expect(within(region).getByText('Wohnung')).toBeTruthy();
+		const select = within(region).getByLabelText('Neuer Inhaber') as HTMLSelectElement;
+		// Only active members can become the owner.
+		expect([...select.options].map((option) => option.textContent)).toEqual(['Anna Beispiel']);
+		await fireEvent.click(within(region).getByRole('button', { name: 'Zum Inhaber machen …' }));
+		const dialog = screen.getByRole('dialog', {
+			name: 'Anna Beispiel zum Inhaber von „Wohnung“ machen?'
+		});
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Zum Inhaber machen' }));
+		await vi.waitFor(() =>
+			expect(setHouseholdOwner).toHaveBeenCalledWith(
+				'house000000001',
+				'member00000002',
+				expect.anything()
+			)
+		);
+		await vi.waitFor(() =>
+			expect(screen.queryByRole('region', { name: 'Haushalte ohne aktiven Inhaber' })).toBeNull()
+		);
+		expect(flags.map((flag) => flag.title)).toContain(
+			'Anna Beispiel ist jetzt Inhaber von „Wohnung“.'
+		);
+	});
+});
+
 describe('page "Konten": refusals', () => {
 	it('says why there is no list for an account without the right', async () => {
 		await show({

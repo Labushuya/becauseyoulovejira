@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { areaMover } from '$lib/area-move-entry';
 	import { toDataError } from '$lib/data/errors';
 	import { withConnectionName } from '$lib/domain/connections';
 	import { formatBerlinDateTime } from '$lib/domain/format';
@@ -104,6 +105,9 @@
 		 */
 		initialFocus?: (() => HTMLElement | null) | null;
 	} = $props();
+
+	/** "In den Haushalt verschieben …" of the entry (E7-4, ADR-0060). */
+	const mover = areaMover();
 
 	// Ticket links open the panel or the full view, as the user last chose (plan BI-1).
 	const links = ticketLinks();
@@ -381,6 +385,21 @@
 
 <Drawer labelledby={headingId} closeFromFields {onclose}>
 	{#snippet context()}Eintrag im Eingang{/snippet}
+	{#snippet actions()}
+		<!-- Moving between the areas (E7-4, ADR-0060): an entry with a ticket moves with it. -->
+		{#if item !== null && item.ticketId === null}
+			{@const move = mover.entry({
+				kind: 'item',
+				records: [item],
+				label: `Eintrag „${item.title}“`
+			})}
+			{#if move !== null}
+				<button class="button-subtle" type="button" aria-haspopup="dialog" onclick={move.run}>
+					{move.label}
+				</button>
+			{/if}
+		{/if}
+	{/snippet}
 	{#snippet footer()}
 		{#if item !== null}
 			{@render entryActions(item)}

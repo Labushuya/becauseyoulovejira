@@ -66,6 +66,8 @@ export const TICKET_LIST_FIELDS = [
 	'source',
 	// Area of the ticket, for the rules of the ticket picker (ADR-0042).
 	'scope',
+	// Who created it: moving it into the private area is offered to the creator (ADR-0060 §4).
+	'owner',
 	// Own color (ADR-0052); unknown to the server before the migration 1790203400.
 	'color',
 	'completed_at',
@@ -110,6 +112,7 @@ export interface TicketRecord {
 	/** Pinned comment, '' without one; missing before the migration 1790202600 (ADR-0044). */
 	pinned_comment?: string;
 	scope?: string;
+	owner?: string;
 	/** Own color, '' for "wie Projekt"; missing before the migration 1790203400 (ADR-0052). */
 	color?: string;
 	completed_at: string;
@@ -147,6 +150,7 @@ export function toTicketSummary(record: TicketRecord): TicketSummary {
 			: null,
 		source: isInboxChannel(record.source) ? record.source : null,
 		...(record.scope ? { scope: record.scope } : {}),
+		...(record.owner ? { owner: record.owner } : {}),
 		// Left out while the server does not know the field yet (before the restart, ADR-0052).
 		...(record.color !== undefined ? { color: colorOf(record.color) } : {}),
 		completedAt: record.completed_at || null,

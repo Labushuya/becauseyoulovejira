@@ -122,6 +122,28 @@ export function setAccountAdmin(
 	);
 }
 
+/**
+ * A new owner for a household whose owner is disabled or gone (E7-4, ADR-0060 §6): an active member,
+ * by its membership. Answers the list like `fetchAccounts`.
+ */
+export function setHouseholdOwner(
+	pb: PocketBase,
+	householdId: string,
+	memberId: string,
+	options: RequestOptions = {}
+): Promise<AccountsAnswer<AccountList>> {
+	return ask(
+		options.signal,
+		post(
+			pb,
+			`${ROUTE}/households/${encodeURIComponent(householdId)}/owner`,
+			{ member: memberId },
+			options.signal
+		),
+		parseAccountList
+	);
+}
+
 /** The own display name; the SDK updates the signed-in record with the answer. */
 export async function saveOwnName(
 	pb: PocketBase,

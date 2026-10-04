@@ -28,7 +28,8 @@ export const RIGHT_HINTS: Readonly<Record<HouseholdRight, string>> = {
 	delegate: 'Eigene Rechte an andere Mitglieder geben und wieder nehmen.',
 	rename: 'Den Haushalt umbenennen.',
 	purge: 'Tickets im Papierkorb des Haushalts endgültig löschen und seine Aufbewahrung ändern.',
-	move_out: 'Einträge des Haushalts ins Private verschieben. Wirkt mit einer späteren Version.'
+	move_out:
+		'Einträge anderer Mitglieder aus dem Haushalt ins Private verschieben (eigene Einträge darf jedes Mitglied).'
 };
 
 /** Maximum of the name of a household (lib/household-rules.js NAME_MAX). */
@@ -61,8 +62,8 @@ export const HOUSEHOLD_PROBLEMS: Readonly<Record<string, string>> = {
 	'invite-closed': 'Dieser Code ist nicht mehr offen.',
 	'invites-full': `Höchstens ${OPEN_INVITES_MAX} offene Codes. Widerrufe zuerst einen.`,
 	'owner-leave':
-		'Als Inhaber kannst du nicht austreten. Übertrage zuerst die Inhaberschaft an ein anderes Mitglied. ' +
-		'Einen Haushalt auflösen geht erst mit einer späteren Version.',
+		'Als Inhaber kannst du nicht austreten. Übertrage zuerst die Inhaberschaft an ein anderes Mitglied, ' +
+		'oder löse den Haushalt auf.',
 	retention: 'Bitte 7, 30 oder 90 Tage oder „Nie automatisch“ wählen.'
 };
 

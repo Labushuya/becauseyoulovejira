@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { ResolvedPathname } from '$app/types';
+	import { areaMover } from '$lib/area-move-entry';
 	import type { CalendarDate } from '$lib/domain/berlin-date';
 	import { MORE_COLUMNS_HINT } from '$lib/domain/labels';
 	import { projectChoiceLabel, projectPath } from '$lib/domain/project-tree';
@@ -76,6 +77,7 @@
 	} = $props();
 
 	const CAPTION = 'Wiederholungen · aktive zuerst, dann nach nächstem Ticket';
+	const mover = areaMover();
 	/** Titles from this length get a tooltip with the whole text (only they can be cut off). */
 	const LONG_TITLE = 60;
 
@@ -112,6 +114,13 @@
 			busy,
 			onselect: () => ontoggle(rule)
 		});
+		// Moving between the areas (E7-4, ADR-0060): the rule alone, its tickets stay.
+		const move = mover.entry({
+			kind: 'rule',
+			records: [rule],
+			label: `Wiederholung „${rule.title}“`
+		});
+		if (move !== null) entries.push({ label: move.label, dialog: true, onselect: move.run });
 		if (ondelete) {
 			const remove = ondelete;
 			entries.push({

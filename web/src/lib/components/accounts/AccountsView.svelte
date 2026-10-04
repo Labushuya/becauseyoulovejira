@@ -5,7 +5,13 @@
 	import Lozenge from '$lib/components/guidance/Lozenge.svelte';
 	import SectionMessage from '$lib/components/guidance/SectionMessage.svelte';
 	import ConfirmDialog from '$lib/components/overlay/ConfirmDialog.svelte';
-	import { ACCOUNTS_TEXTS, accountLabel, type Account } from '$lib/domain/accounts';
+	import {
+		ACCOUNTS_TEXTS,
+		accountLabel,
+		type Account,
+		type OrphanHousehold,
+		type OrphanMember
+	} from '$lib/domain/accounts';
 	import { formatBerlinDateTime } from '$lib/domain/format';
 	import { helpHref } from '$lib/settings-sections';
 	import type { AccountsStore } from '$lib/stores/accounts.svelte';
@@ -19,19 +25,41 @@
 	// A password stands only once on the page, in a code block with
 	// "Kopieren", until "Weitergegeben" removes it. The own account has no menu: it changes its
 	// password and name on "Konto". No deleting of accounts (plan e7-haushalt, follow-up).
+	// Since E7-4 (ADR-0060 §6) an account that owns a household says so, disabling it says what that
+	// means for the household, and "Haushalte ohne aktiven Inhaber" lets the administrator make an
+	// active member the owner of a household whose owner is disabled or gone.
 	let { store }: { store: AccountsStore } = $props();
 
-	type Question = { kind: 'password' | 'disable' | 'grant' | 'revoke'; account: Account };
+	type Question =
+		| { kind: 'password' | 'disable' | 'grant' | 'revoke'; account: Account }
+		| { kind: 'owner'; household: OrphanHousehold; member: OrphanMember };
 
 	const uid = $props.id();
 	const listId = `${uid}-list`;
+	const orphansId = `${uid}-orphans`;
 	let asking = $state<Question | null>(null);
 	let listHeading = $state<HTMLElement>();
 	let passwordHeading = $state<HTMLElement>();
+	/** The chosen new owner per household (ID of the membership). */
+	let chosen = $state<Record<string, string>>({});
 
 	const busyId = $derived(
-		store.busy !== null && store.busy.kind !== 'create' ? store.busy.accountId : null
+		store.busy !== null && 'accountId' in store.busy ? store.busy.accountId : null
 	);
+	const busyHousehold = $derived(store.busy?.kind === 'owner' ? store.busy.householdId : null);
+
+	/** The active members of a household that can become its owner. */
+	function candidates(household: OrphanHousehold): OrphanMember[] {
+		return household.members.filter((member) => !member.disabled);
+	}
+
+	function choiceOf(household: OrphanHousehold): OrphanMember | null {
+		const options = candidates(household);
+		return options.find((member) => member.id === chosen[household.id]) ?? options[0] ?? null;
+	}
+
+	const memberName = (member: OrphanMember) =>
+		member.name.trim() === '' ? 'Konto ohne Namen' : member.name;
 
 	function itemsOf(account: Account): MenuAction[] {
 		const locked = store.busy !== null;
@@ -71,6 +99,13 @@
 
 	const question = $derived.by(() => {
 		if (asking === null) return null;
+		if (asking.kind === 'owner') {
+			return {
+				title: ACCOUNTS_TEXTS.newOwnerQuestion(memberName(asking.member), asking.household.name),
+				text: ACCOUNTS_TEXTS.newOwnerText,
+				confirm: 'Zum Inhaber machen'
+			};
+		}
 		const label = accountLabel(asking.account);
 		switch (asking.kind) {
 			case 'password':
@@ -82,7 +117,10 @@
 			case 'disable':
 				return {
 					title: ACCOUNTS_TEXTS.disableQuestion(label),
-					text: ACCOUNTS_TEXTS.disableText,
+					text:
+						asking.account.owns === undefined
+							? ACCOUNTS_TEXTS.disableText
+							: `${ACCOUNTS_TEXTS.disableText} ${ACCOUNTS_TEXTS.disableOwnerText(asking.account.owns.name)}`,
 					confirm: 'Deaktivieren'
 				};
 			case 'grant':
@@ -104,7 +142,9 @@
 		const current = asking;
 		asking = null;
 		if (current === null) return;
-		if (current.kind === 'password') {
+		if (current.kind === 'owner') {
+			await store.setHouseholdOwner(current.household, current.member);
+		} else if (current.kind === 'password') {
 			if (await store.resetPassword(current.account)) await showPassword();
 		} else if (current.kind === 'disable') {
 			await store.setDisabled(current.account, true);
@@ -181,6 +221,9 @@
 						{#if account.disabled}
 							<Lozenge label="Deaktiviert" icon="pause" tone="muted" />
 						{/if}
+						{#if account.owns}
+							<span class="created">{ACCOUNTS_TEXTS.ownerOf(account.owns.name)}</span>
+						{/if}
 						{#if account.created !== ''}
 							<span class="created">angelegt am {formatBerlinDateTime(account.created)}</span>
 						{/if}
@@ -200,6 +243,56 @@
 			{/each}
 		</ul>
 	</section>
+
+	{#if store.households.length > 0}
+		<section class="part" aria-labelledby={orphansId}>
+			<h3 id={orphansId}>{ACCOUNTS_TEXTS.orphansTitle}</h3>
+			<p class="note">{ACCOUNTS_TEXTS.orphansText}</p>
+			<ul class="accounts">
+				{#each store.households as household (household.id)}
+					{@const options = candidates(household)}
+					{@const choice = choiceOf(household)}
+					{@const selectId = `${uid}-owner-${household.id}`}
+					<li class="account" aria-busy={busyHousehold === household.id ? 'true' : undefined}>
+						<div class="who">
+							<span class="name">{household.name}</span>
+							<span class="email">{ACCOUNTS_TEXTS.orphanOwner(household.owner?.name ?? null)}</span>
+						</div>
+						{#if options.length === 0}
+							<p class="note">{ACCOUNTS_TEXTS.noMembers}</p>
+						{:else}
+							<div class="owner-choice">
+								<label for={selectId}>{ACCOUNTS_TEXTS.newOwnerLabel}</label>
+								<select
+									id={selectId}
+									value={choice?.id ?? ''}
+									onchange={(event) =>
+										(chosen = { ...chosen, [household.id]: event.currentTarget.value })}
+								>
+									{#each options as member (member.id)}
+										<option value={member.id}>{memberName(member)}</option>
+									{/each}
+								</select>
+								<button
+									class="button-secondary"
+									type="button"
+									aria-haspopup="dialog"
+									aria-disabled={store.busy !== null}
+									aria-busy={busyHousehold === household.id ? 'true' : undefined}
+									onclick={() => {
+										if (store.busy !== null || choice === null) return;
+										asking = { kind: 'owner', household, member: choice };
+									}}
+								>
+									{ACCOUNTS_TEXTS.newOwnerButton}
+								</button>
+							</div>
+						{/if}
+					</li>
+				{/each}
+			</ul>
+		</section>
+	{/if}
 
 	<section class="part" aria-labelledby={`${uid}-create`}>
 		<h3 id={`${uid}-create`}>Konto anlegen</h3>
@@ -306,5 +399,17 @@
 		display: flex;
 		flex: 0 0 auto;
 		align-items: center;
+	}
+
+	.owner-choice {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.375rem 0.5rem;
+		align-items: center;
+	}
+
+	.owner-choice label {
+		font-size: var(--font-size-control);
+		font-weight: 600;
 	}
 </style>

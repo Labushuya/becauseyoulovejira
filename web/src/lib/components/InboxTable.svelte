@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
+	import { areaMover } from '$lib/area-move-entry';
 	import { INBOX_TABLE } from '$lib/domain/columns';
 	import { berlinDateOf, formatBerlinDateTime, formatCalendarDate } from '$lib/domain/format';
 	import {
@@ -127,6 +128,9 @@
 		/** First actions of the section bar ("Alle Kanäle jetzt abrufen", package A item 4). */
 		actions?: Snippet;
 	} = $props();
+
+	/** "In den Haushalt verschieben …" of an entry (E7-4, ADR-0060). */
+	const mover = areaMover();
 
 	// Ticket links open the panel or the full view, as the user last chose (plan BI-1).
 	const links = ticketLinks();
@@ -392,6 +396,13 @@
 				);
 			}
 		}
+		// Moving between the areas (E7-4, ADR-0060): only an entry without a ticket; one with a ticket
+		// moves with its ticket.
+		const move =
+			item.ticketId === null
+				? mover.entry({ kind: 'item', records: [item], label: `Eintrag „${item.title}“` })
+				: null;
+		if (move !== null) entries.push({ label: move.label, dialog: true, onselect: move.run });
 		// A web link without its page has no original file yet: at most one of the two.
 		if (canSavePage(item)) {
 			entries.push({
