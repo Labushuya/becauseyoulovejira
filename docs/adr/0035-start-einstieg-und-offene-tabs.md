@@ -1,6 +1,6 @@
 # ADR-0035: Start, Einstieg per Datei und Wiederverwenden offener Tabs, mit installierbarer Web-App
 
-- **Status:** Angenommen und umgesetzt in den Paketen SF-1 bis SF-6 nach [docs/plan/start-fenster.md](../plan/start-fenster.md) (#137 bis #142); manuelle Browser-Prüfungen stehen im Test-Manifest
+- **Status:** Angenommen und umgesetzt in den Paketen SF-1 bis SF-6 nach [docs/plan/start-fenster.md](../plan/start-fenster.md) (#137 bis #142); manuelle Browser-Prüfungen stehen im Test-Manifest; Nachtrag HN-1 (nur Tabs dieses Rechners zählen)
 - **Datum:** 2026-09-28
 - **Entscheidung durch:** Nutzer (Datei-Aufruf mit Serverprüfung und Countdown, kein zweiter Tab durch `start.bat`, Selbstschließen doppelter Tabs mit „Hier weiterarbeiten“, Windows-Benachrichtigung als Opt-in, installierbare Web-App mit `focus-existing`, Fail-open, kein Win32-Fensterfokus; 2026-09-28), Advisor (Konzept „Start, Landing per `file://` und Wiederverwenden des Browser-Tabs“), Executor (Routen, Sicherheitsregeln, Einzelheiten)
 - **Ergänzt:** [ADR-0002](0002-erststart-und-superuser.md) §6 (neue Routen, aber keine Setup-Route), [ADR-0007](0007-realtime-und-sitzungspflege.md) (eigenes Realtime-Thema `byl/attention`)
@@ -133,3 +133,10 @@
 - **§6:** Die Antworten tragen `Referrer-Policy: same-origin`, nicht `no-referrer`: Der Referrer gleicher Origin, an dem ein Tab aus einem Link der App erkennt, dass er kein neuer Start ist, bleibt erhalten.
 - Belegt in `tests/integration/security.test.mjs` (Landing-Seite mit `Origin: null` auf den Hinweis-Routen mit Freigabe, auf der Präsenz ohne).
 - **Seit SH-2, Hinweise beim Start und beim erneuten Öffnen** (Nachtrag WK-2): `AttentionDeps.opened` und das Laden des `(app)`-Layouts fragen zusätzlich `GET /api/byl/security/notice`. Ab 10 fehlgeschlagenen Anmeldungen in 24 Stunden erscheint das Info-Flag „N fehlgeschlagene Anmeldeversuche in den letzten 24 Stunden.“ mit „Ansehen“ (Protokoll auf „Einstellungen → Sicherheit“), je Gerät nur einmal für denselben neuesten Fehlversuch (`localStorage` `byl-security-seen`); jeder Fehler der Frage und jedes Konto außer dem Besitzer heißt: kein Flag (`stores/security-attention.ts`).
+
+## Nachtrag (2026-10-04, [Plan Zugriff im Heimnetz](../plan/heimnetz.md), HN-1): Nur Tabs dieses Rechners
+
+- **Befund:** Mit eingeschaltetem Zugriff im Heimnetz verbinden sich auch Tabs anderer Geräte (etwa ein Handy im WLAN) per Realtime und abonnieren `byl/attention`. §4 zählte jeden angemeldeten Tab mit Abo: `start.bat` hätte einen Tab auf dem Handy für offen gehalten, ihm den Hinweis „erneut geöffnet“ geschickt und die App auf dem Rechner nicht geöffnet.
+- **Entscheidung:** `onRealtimeConnectRequest` (`presence.pb.js`, `markClient`) merkt sich an jeder Realtime-Verbindung, ob ihre Adresse Loopback ist (`byl.local`, `e.remoteIP()`, nie eine Kopfzeile). `GET /api/byl/presence` zählt und `POST /api/byl/attention` benachrichtigt nur diese Tabs. Präsenz und Hinweis selbst bleiben nur von diesem Rechner (§4, `e.remoteIP()`), auch für die Landing-Seite.
+- Tabs anderer Geräte bekommen damit auch „wurde beendet“ (`stop`) nicht; dass der Server weg ist, zeigen sie über `LiveUpdateNotice`.
+- Belegt in `lan-access.test.mjs` (ein Tab eines simulierten Geräts zählt nicht und bekommt keinen Hinweis, ein Tab dieses Rechners schon; in der CI über eine echte Verbindung an `0.0.0.0`).

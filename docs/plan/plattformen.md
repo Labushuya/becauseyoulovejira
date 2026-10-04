@@ -1,6 +1,8 @@
 # Plan: Plattformen (Windows, Raspberry Pi, Android, Browser, später iOS und macOS)
 
 > **Zurückgestellt auf Nutzerentscheidung (2026-09-28) – nicht ohne ausdrückliche Freigabe beginnen.** Das betrifft den gesamten weiteren Plattform-Ausbau (S3 Raspberry Pi mit Docker und Traefik, S2 Mehrgeräte mit Tailscale, S2b Android-APK mit Capacitor, S4 Tray und Installer, S5 iOS und macOS, S6 Push und Erinnerungen) und SemVer mit der Release-Automatisierung (release-please und sein Token). Der Nutzer entscheidet selbst, wann die aktuelle Version dafür bereit ist. Bis dahin wird nichts davon umgesetzt, auch keine Spikes aus §4; die Stufen unten bleiben als Planung stehen.
+>
+> **Ausnahme (Nutzerentscheidung 2026-10-04):** Der Zugang im Heimnetz über HTTP auf der LAN-Adresse des PCs ist freigegeben und umgesetzt ([Plan „Zugriff im Heimnetz“](heimnetz.md), HN-1). Er ist kein Teil von S2 (kein HTTPS, kein Proxy, kein Tailscale) und hebt die Zurückstellung sonst nicht auf.
 
 - **Stand:** S1 erledigt (mit SF-5), S0 umgesetzt (2026-09-28, Pakete S0-1 bis S0-3, siehe §3 „S0“; SemVer und Releases zurückgestellt, manuelle Prüfungen offen); alle übrigen Stufen zurückgestellt (siehe oben). Nach der Freigabe wird Stufe für Stufe umgesetzt, jede als eigener PR bzw. eigene PR-Folge.
 - **Grundlage:**
@@ -159,6 +161,7 @@ Die Bewertung vom 2026-09-27 hatte S0 bis S5 mit S2b und S4 als Optionen. Nach d
 | 2026-09-29 | S2b | **Nutzerentscheidung:** Die APK bekommt „Teilen mit“ (`ACTION_SEND`/`ACTION_SEND_MULTIPLE`, mindestens `text/plain` und Links; Bilder und Dateien später prüfen). Geteilte Inhalte gehen über den eigenen Eingang ([ADR-0038](../adr/0038-eigener-eingang-und-whatsapp-web.md) §1, `mode: manual`, Deduplizierung) in den Eingang. Das `share_target` der Web-App bleibt Vorstufe bzw. Alternative. Der Plattform-Ausbau bleibt zurückgestellt; umgesetzt wird nichts. Nachtrag in [ADR-0028](../adr/0028-plattform-strategie.md). |
 | 2026-09-29 | – | **Verworfen (Nutzerentscheidung):** WhatsApp Desktop unter Windows anbinden (Benachrichtigungen mitlesen, UI-Automation, lokale Datenbank auslesen). Begründung und Alternativen im Nachtrag vom 2026-09-29 zu [ADR-0038](../adr/0038-eigener-eingang-und-whatsapp-web.md); Wege für WhatsApp sind die Erweiterung für WhatsApp Web und künftig „Teilen mit“ aus der APK. |
 | 2026-10-03 | S2b | **Vorerst verworfen (Nutzerentscheidung):** eigenständige Android-APK mit eigener Datenbank und eigenen Kanälen. Ergebnis der Evaluierung in §6; ADR-0028 §1 („kein Server je Gerät“) bestätigt (Nachtrag in [ADR-0028](../adr/0028-plattform-strategie.md)). Der Plattform-Ausbau bleibt zurückgestellt. |
+| 2026-10-04 | – | **Nutzerentscheidung: Zugang im Heimnetz über die LAN-Adresse des PCs, unabhängig von S2 und Tailscale.** Andere Geräte öffnen die App über HTTP unter der Adresse des PCs (Einstellung, standardmäßig aus; Anlass Haushalt E7). Umgesetzt als HN-1 nach dem [Plan „Zugriff im Heimnetz“](heimnetz.md); Nachträge in [ADR-0028](../adr/0028-plattform-strategie.md), [ADR-0055](../adr/0055-sicherheits-haertung.md) und [ADR-0001](../adr/0001-betriebsmodell-lokal-mehrgeraete-spaeter.md). Die Zurückstellung von S2 bis S6 und SemVer bleibt sonst bestehen; HTTPS folgt mit S3 (Pi, Traefik). |
 
 ## 6. Evaluierung eigenständige Android-APK (2026-10-03) – vorerst verworfen
 
