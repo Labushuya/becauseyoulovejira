@@ -1,6 +1,6 @@
 # ADR-0022: Erzeugung der Tickets aus Regeln: Zeitpunkt, Cron, Nachholen beim Start, keine Duplikate
 
-- **Status:** Angenommen (2026-09-26: Der Nutzer hat die Empfehlungen zu OF-E5-1 bis OF-E5-5 bestätigt; umgesetzt in E5, siehe Nachtrag am Ende); Nachtrag 11 (2026-10-02): Farbe in der Vorlage ([ADR-0052](0052-farben-fuer-projekte-und-tickets.md))
+- **Status:** Angenommen (2026-09-26: Der Nutzer hat die Empfehlungen zu OF-E5-1 bis OF-E5-5 bestätigt; umgesetzt in E5, siehe Nachtrag am Ende); Nachtrag 11 (2026-10-02): Farbe in der Vorlage ([ADR-0052](0052-farben-fuer-projekte-und-tickets.md)); Nachtrag 12 (2026-10-04): Charm in der Vorlage ([ADR-0062](0062-charms.md))
 - **Datum:** 2026-09-25
 - **Entscheidung durch:** Advisor
 - **Ergänzt:** CLAUDE.md §6, [ADR-0005](0005-zeitzone-europe-berlin.md) (Zeitzone, Cron in UTC), [ADR-0021](0021-regelmodell-wiederkehrende-aufgaben.md) (Regelmodell)
@@ -231,3 +231,13 @@ Mit den Farben für Projekte und Tickets (Nutzerentscheidung vom 2026-10-02) hat
 - **Vorlage aus einem Ticket:** „Wiederholen…“ und „Neues Ticket“ mit „Wiederholen“ übernehmen die eigene Farbe des Tickets (`ticketTemplate`); ändert der Nutzer die Farbe eines offenen Serientickets, bietet das Info-Flag „Auch für künftige Tickets übernehmen“ sie wie die übrigen Felder an (`TEMPLATE_FIELDS`). Die Zeile „Künftige Tickets“ nennt „· Farbe Blau“, Regel-Panel und Bearbeiten am Ticket haben die Wahl „Farbe“ mit „Wie Projekt (Blau)“.
 - **Vor der Migration:** Die Hooks lesen eine leere Farbe und setzen nichts; die SPA bietet die Wahl erst an, wenn der Katalog die Farben kennt (`CatalogStore.colorsReady`).
 - Belegt in `recurrence-generate.test.mjs` (Farbe der Vorlage am neuen Ticket), `series-template.test.ts`, `recurrence-panel.test.ts` und `colors.test.mjs`.
+
+## Nachtrag 12 (2026-10-04, [ADR-0062](0062-charms.md), CH-1): Charm in der Vorlage
+
+Mit den Charms (Nutzerwunsch vom 2026-10-04) hat jede Regel einen optionalen Charm. Der Rest dieses ADR bleibt.
+
+- **Feld:** `recurrence_rules.charm`, Textfeld mit einem Schlüssel des Katalogs, leer heißt „kein Charm“ (Migration `1790204400_charms.js`); der Modell-Hook lehnt einen unbekannten Schlüssel mit `validation_charm_unknown` ab.
+- **Erzeugen:** `newInstance` gibt jedem neuen Ticket den Charm, den die Regel in diesem Moment hat, auch beim Nachholen und mit „Jeden Termin einzeln anlegen“. Ändert man den Charm der Regel, gilt das nur für die künftigen Tickets; schon erzeugte behalten ihren. Der Charm ist keine Änderung des Tickets (nur „created“ im Verlauf), „unberührt“ gilt unverändert. Unteraufgaben der Vorlage bekommen keinen. Ein Schlüssel, den der Katalog nicht mehr kennt, wird ausgelassen.
+- **Vorlage aus einem Ticket:** „Wiederholen…“ übernimmt den Charm des Tickets (`ticketTemplate`), das Flag „Auch für künftige Tickets übernehmen“ bietet einen geänderten Charm eines offenen Serientickets an, die Zeile „Künftige Tickets“ nennt „· Charm Müll“.
+- **Vor der Migration:** Die Hooks lesen leer und setzen nichts; die Formulare bieten den Charm erst an, wenn `RecurrenceStore.charmsReady` gilt.
+- Belegt in `charms.test.mjs` (Vererbung auch nach Änderung der Regel, Unteraufgaben ohne Charm), `series-template.test.ts`, `recurrence-store.test.ts` und `recurrence-panel.test.ts`.
