@@ -264,7 +264,8 @@ describe('routes of the page "Konten": refusals', () => {
 		['POST', '/api/byl/accounts'],
 		['POST', '/api/byl/accounts/x/password'],
 		['POST', '/api/byl/accounts/x/disabled'],
-		['POST', '/api/byl/accounts/x/admin']
+		['POST', '/api/byl/accounts/x/admin'],
+		['POST', '/api/byl/accounts/households/x/owner']
 	];
 
 	it('answer 401 without a session and 403 for an admin account', async () => {
@@ -462,6 +463,76 @@ describe('data layer of the SPA (web/src/lib/data/accounts.ts, people.ts)', () =
 			next: 'erik-neu-67890'
 		}).catch((error) => error);
 		expect([wrong.kind, Object.keys(wrong.fields)]).toEqual(['validation', ['oldPassword']]);
+	});
+});
+
+describe('a household without an active owner (E7-4, ADR-0061 §6)', () => {
+	it('names the household an account owns and lists only households without an active owner', async () => {
+		const list = await app(admin, 'GET', '/api/byl/accounts');
+		expect(list.body.accounts.find((entry) => entry.id === anna.id).owns).toEqual({ id: household.id, name: 'Zuhause' });
+		expect(list.body.accounts.find((entry) => entry.id === bert.id).owns).toBeNull();
+		expect(list.body.households.some((entry) => entry.id === household.id)).toBe(false);
+	});
+
+	it('lets the administrator make an active member the owner once the owner is disabled', async () => {
+		// An administrator of its own: every account has 10 changes per minute (ADR-0043 §4).
+		const petra = await promoted('Petra Beispiel');
+		const olga = await account('Olga Beispiel');
+		const max = await account('Max Beispiel');
+		const sina = await account('Sina Beispiel');
+		const home = await superuser.collection('households').create({ name: 'Wohnung' });
+		const rows = {};
+		for (const [who, role] of [
+			[olga, 'owner'],
+			[max, 'member'],
+			[sina, 'member']
+		]) {
+			rows[who.id] = await superuser.collection('household_members').create({ household: home.id, user: who.id, role });
+		}
+		const path = `/api/byl/accounts/households/${home.id}/owner`;
+		const active = await app(petra, 'POST', path, { member: rows[max.id].id });
+		expect([active.status, active.body.problem]).toEqual([409, 'owner-active']);
+
+		await superuser.collection('users').update(olga.id, { disabled: true });
+		await superuser.collection('users').update(sina.id, { disabled: true });
+		const list = await app(petra, 'GET', '/api/byl/accounts');
+		expect(list.body.accounts.find((entry) => entry.id === olga.id).owns).toEqual({ id: home.id, name: 'Wohnung' });
+		expect(list.body.households.find((entry) => entry.id === home.id)).toEqual({
+			id: home.id,
+			name: 'Wohnung',
+			owner: { id: olga.id, name: 'Olga Beispiel' },
+			members: [
+				{ id: rows[max.id].id, user: max.id, name: 'Max Beispiel', disabled: false },
+				{ id: rows[sina.id].id, user: sina.id, name: 'Sina Beispiel', disabled: true }
+			]
+		});
+
+		for (const [target, body, status, problem] of [
+			[path, {}, 400, 'format'],
+			[path, { member: 'abcdefghijklmno' }, 404, 'member'],
+			[path, { member: rows[sina.id].id }, 400, 'member-disabled'],
+			['/api/byl/accounts/households/abcdefghijklmno/owner', { member: rows[max.id].id }, 404, 'household-missing']
+		]) {
+			const refused = await app(petra, 'POST', target, body);
+			expect([refused.status, refused.body.problem], JSON.stringify(body)).toEqual([status, problem]);
+		}
+
+		const changed = await app(petra, 'POST', path, { member: rows[max.id].id });
+		expect(changed.status).toBe(200);
+		expect(changed.body.households.some((entry) => entry.id === home.id)).toBe(false);
+		expect(changed.body.accounts.find((entry) => entry.id === max.id).owns).toEqual({ id: home.id, name: 'Wohnung' });
+		const after = await superuser.collection('household_members').getFullList({
+			filter: superuser.filter('household = {:h}', { h: home.id }),
+			sort: 'created,id'
+		});
+		expect(after.map((row) => [row.user, row.role, row.rights])).toEqual([
+			[olga.id, 'member', ['invite', 'remove', 'delegate', 'rename', 'purge', 'move_out']],
+			[max.id, 'owner', []],
+			[sina.id, 'member', []]
+		]);
+		// The new owner manages the household on his page now.
+		const state = await max.client.send('/api/byl/household', { method: 'GET', requestKey: null });
+		expect(state.me.role).toBe('owner');
 	});
 });
 

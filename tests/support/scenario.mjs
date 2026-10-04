@@ -105,6 +105,7 @@ export const FAIL_SOURCE_SETTLE = '__byl_fail_source_settle__';
 export const FAIL_CHILD_DONE = '__byl_fail_child_done__';
 export const FAIL_PROJECT_ARCHIVE = '__byl_fail_project_archive__';
 export const FAIL_DUPLICATE = '__byl_fail_duplicate__';
+export const FAIL_AREA_MOVE = '__byl_fail_area_move__';
 
 /**
  * Fresh app user with an own private scope, so every counter of that scope starts empty. With

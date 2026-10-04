@@ -52,6 +52,8 @@ export const RULE_FIELDS = [
 	'initial_status',
 	'template_subtasks',
 	'color',
+	// Who created it: moving it into the private area is offered to the creator (ADR-0061 §4).
+	'owner',
 	'created',
 	'updated'
 ].join(',');
@@ -82,6 +84,7 @@ export interface RuleRecord {
 	template_subtasks?: unknown;
 	/** Color of the template (ADR-0052), '' for "wie Projekt"; absent before its migration. */
 	color?: string;
+	owner?: string;
 	created: string;
 	updated: string;
 }
@@ -114,6 +117,7 @@ export function toRecurrenceRule(record: RuleRecord): RecurrenceRule {
 		templateSubtasks: templateSubtasksOf(record.template_subtasks),
 		// Left out while the server does not know the field yet (before the restart, ADR-0052).
 		...(record.color !== undefined ? { color: colorOf(record.color) } : {}),
+		...(record.owner ? { owner: record.owner } : {}),
 		created: record.created,
 		updated: record.updated
 	};

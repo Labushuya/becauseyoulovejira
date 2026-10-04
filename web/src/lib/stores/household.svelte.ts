@@ -15,6 +15,7 @@ import { createContext } from 'svelte';
 import { toDataError } from '$lib/data/errors';
 import {
 	createHouseholdInvite,
+	dissolveHousehold,
 	fetchHousehold,
 	foundHousehold,
 	joinHousehold,
@@ -26,8 +27,15 @@ import {
 	setHouseholdRights,
 	subscribeHousehold,
 	transferHousehold,
-	type HouseholdAnswer
+	type HouseholdAnswer,
+	type HouseholdChange
 } from '$lib/data/household';
+import {
+	DISSOLVE_TEXTS,
+	moveProblemText,
+	type DissolveMode,
+	type DissolvePreview
+} from '$lib/domain/area-move';
 import type { RequestOptions } from '$lib/data/options';
 import { onReconnect, type Unsubscribe } from '$lib/data/realtime';
 import {
@@ -66,6 +74,11 @@ export interface HouseholdData {
 	leave(options: RequestOptions): Promise<HouseholdAnswer<State>>;
 	/** The retention of the trash of the household (E7-3; owner or right "purge"). */
 	retention?(retention: TrashRetention, options: RequestOptions): Promise<HouseholdAnswer<State>>;
+	/** Dissolving the household (E7-4; only the owner), also its preview. */
+	dissolve?(
+		body: { mode: DissolveMode; preview?: boolean; name?: string },
+		options: RequestOptions
+	): Promise<HouseholdAnswer<DissolvePreview>>;
 }
 
 export function householdData(pb: PocketBase): HouseholdData {
@@ -80,13 +93,15 @@ export function householdData(pb: PocketBase): HouseholdData {
 		remove: (memberId, options) => removeHouseholdMember(pb, memberId, options),
 		transfer: (memberId, options) => transferHousehold(pb, memberId, options),
 		leave: (options) => leaveHousehold(pb, options),
-		retention: (retention, options) => setHouseholdRetention(pb, retention, options)
+		retention: (retention, options) => setHouseholdRetention(pb, retention, options),
+		dissolve: (body, options) => dissolveHousehold(pb, body, options)
 	};
 }
 
 /** Changes of the household from the server and reconnections (ADR-0007 section 3). */
 export interface HouseholdLive {
-	changes(onChange: () => void): Promise<Unsubscribe>;
+	/** `change` says whether the household was dissolved (E7-4); absent in older fakes. */
+	changes(onChange: (change?: HouseholdChange) => void): Promise<Unsubscribe>;
 	reconnected(callback: () => void): Promise<Unsubscribe>;
 }
 
@@ -107,7 +122,7 @@ export type HouseholdLoad = 'idle' | 'loading' | 'ready' | 'missing' | 'error';
 
 /** What runs; one action at a time. */
 export type HouseholdBusy =
-	| { kind: 'found' | 'join' | 'rename' | 'invite' | 'leave' | 'retention' }
+	| { kind: 'found' | 'join' | 'rename' | 'invite' | 'leave' | 'retention' | 'dissolve' }
 	| { kind: 'revoke'; inviteId: string }
 	| { kind: 'rights' | 'remove' | 'transfer'; memberId: string }
 	| null;
@@ -145,6 +160,8 @@ export class HouseholdStore {
 	#shown = $state.raw<ShownCode | null>(null);
 	/** The household this tab knows since its first answer; undefined before it. */
 	#known: string | null | undefined = undefined;
+	/** The server said the household was dissolved (E7-4): the notice says so when it is gone. */
+	#dissolved = false;
 
 	constructor(
 		data: HouseholdData,
@@ -201,8 +218,14 @@ export class HouseholdStore {
 	/** Reads the household again after every change the server reports and after a reconnection. */
 	connect(live: HouseholdLive): () => void {
 		const reload = () => void this.load();
+		const changed = (change?: HouseholdChange) => {
+			// The own "Haushalt auflösen" says what happened itself, once its answer is there.
+			if (this.#busy?.kind === 'dissolve') return;
+			if (change?.dissolved === true) this.#dissolved = true;
+			reload();
+		};
 		const stops = [
-			hold((guard) => live.changes(guard(reload)), { ...this.#hold, recovered: reload }),
+			hold((guard) => live.changes(guard(changed)), { ...this.#hold, recovered: reload }),
 			hold((guard) => live.reconnected(guard(reload)), { ...this.#hold, recovered: reload })
 		];
 		return () => {
@@ -387,12 +410,63 @@ export class HouseholdStore {
 	}
 
 	/**
+	 * The preview of "Haushalt auflösen" (E7-4, ADR-0061 §5): what the household holds, its members
+	 * and, for `adopt`, the codes that get a suffix. Changes nothing.
+	 */
+	async dissolvePreview(
+		mode: DissolveMode,
+		signal?: AbortSignal
+	): Promise<{ ok: true; preview: DissolvePreview } | { ok: false; message: string }> {
+		const dissolve = this.#data.dissolve;
+		if (dissolve === undefined || !this.#session.ensureValid()) return { ok: false, message: '' };
+		try {
+			const answer = await dissolve({ mode, preview: true }, { signal });
+			if (answer.kind === 'ok') return { ok: true, preview: answer.value };
+			return { ok: false, message: this.#dissolveText(answer) };
+		} catch (error) {
+			const failure = toDataError(error, signal);
+			if (failure.kind === 'session') this.#session.logout();
+			return {
+				ok: false,
+				message: failure.kind === 'aborted' || failure.kind === 'session' ? '' : failure.message
+			};
+		}
+	}
+
+	/**
+	 * "Haushalt auflösen" (only the owner): everything into the private area (`adopt`) or deleted for
+	 * good (`delete`, with the typed name). Afterwards the household is gone; the area becomes
+	 * "Privat" and the notice says what happened.
+	 */
+	async dissolve(mode: DissolveMode, name: string): Promise<FieldOutcome> {
+		const dissolve = this.#data.dissolve;
+		if (dissolve === undefined) return { ok: false, message: '' };
+		const answer = await this.#run({ kind: 'dissolve' }, () =>
+			dissolve({ mode, ...(mode === 'delete' && { name }) }, this.#options())
+		);
+		if (answer.kind !== 'ok') return { ok: false, message: this.#dissolveText(answer) };
+		this.#apply(null, {
+			title: DISSOLVE_TEXTS.done(answer.value.household.name),
+			text: mode === 'adopt' ? DISSOLVE_TEXTS.doneAdopt : DISSOLVE_TEXTS.doneDelete
+		});
+		return { ok: true };
+	}
+
+	#dissolveText(
+		answer: Exclude<HouseholdAnswer<unknown>, { kind: 'ok' }> | { kind: 'failed'; message: string }
+	): string {
+		return answer.kind === 'invalid' ? moveProblemText(answer.problem) : this.#textOf(answer);
+	}
+
+	/**
 	 * Takes a new state. When the household of this tab changes against the one it knew, the layout
 	 * loads anew with `notice`, or with the text for a change elsewhere.
 	 */
 	#apply(next: State, notice: HouseholdNotice | null): void {
 		const before = this.#current;
 		const known = this.#known;
+		const dissolved = this.#dissolved;
+		this.#dissolved = false;
 		this.#current = next;
 		// A message of loading goes; the refusal of an action stays until the next action.
 		if (this.#state !== 'ready') this.#message = null;
@@ -401,12 +475,17 @@ export class HouseholdStore {
 		this.#known = id;
 		if (known === undefined || known === id) return;
 		this.#shown = null;
-		this.#membershipChanged(
-			notice ??
-				(id === null && before !== null
-					? { title: HOUSEHOLD_TEXTS.lost(before.household.name) }
-					: { title: HOUSEHOLD_TEXTS.changed })
-		);
+		this.#membershipChanged(notice ?? this.#lostNotice(id, before, dissolved));
+	}
+
+	/** What a tab says when the household changed elsewhere: lost, dissolved (E7-4) or changed. */
+	#lostNotice(id: string | null, before: State, dissolved: boolean): HouseholdNotice {
+		if (id !== null || before === null) return { title: HOUSEHOLD_TEXTS.changed };
+		return {
+			title: dissolved
+				? DISSOLVE_TEXTS.dissolved(before.household.name)
+				: HOUSEHOLD_TEXTS.lost(before.household.name)
+		};
 	}
 
 	#options(): RequestOptions {

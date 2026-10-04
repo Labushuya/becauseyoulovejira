@@ -1242,5 +1242,9 @@ module.exports = {
   purgeDue: purgeDue,
   list: list,
   preview: preview,
-  blockedCount: blockedCount
+  blockedCount: blockedCount,
+  // Moving between the areas (E7-4, lib/area-move-service.js) tells the tabs the same way.
+  signedInClients: signedInClients,
+  matchesSubscription: matchesSubscription,
+  notifyTrash: notifyTrash
 };

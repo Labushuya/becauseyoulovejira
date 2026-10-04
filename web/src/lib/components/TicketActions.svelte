@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { ResolvedPathname } from '$app/types';
+	import { areaMover } from '$lib/area-move-entry';
 	import { copyTicketLink } from '$lib/copy-link';
 	import type { FlagSink } from '$lib/stores/flags.svelte';
 	import { ticketShareUrl } from '$lib/ticket-links';
@@ -16,6 +17,9 @@
 	// whatever way is remembered, and remember nothing (ADR-0036 §1: only the buttons in the ticket
 	// do); the button names its ticket, because every row has one. In the grid of the calendar an open
 	// ticket adds "Fälligkeit verschieben …" (`onmovedue`, ADR-0053 §12), which then asks for the day.
+	// Since E7-4 (ADR-0061) "In den Haushalt verschieben …" or "Ins Private verschieben …" follows
+	// "Duplizieren …", only for an account in a household with the right (lib/area-move-entry.ts); in
+	// the full view its dialog unfolds inline like the others.
 	let {
 		ticket,
 		flags,
@@ -29,7 +33,8 @@
 		buttonTabindex,
 		trigger = $bindable()
 	}: {
-		ticket: { id: string; key: string };
+		/** `owner`: who created it; moving it into the private area is offered to the creator. */
+		ticket: { id: string; key: string; owner?: string };
 		/** "Link kopiert" and its failure. */
 		flags: FlagSink;
 		/** Full view: the entries unfold a question in the content instead of a dialog. */
@@ -52,6 +57,11 @@
 		trigger?: HTMLButtonElement;
 	} = $props();
 
+	const mover = areaMover();
+	const move = $derived(
+		mover.entry({ kind: 'ticket', records: [ticket], label: ticket.key }, { inline })
+	);
+
 	const items = $derived.by((): MenuAction[] => [
 		...(open === null
 			? []
@@ -71,6 +81,7 @@
 		...(onduplicate === null
 			? []
 			: [{ label: 'Duplizieren …', dialog: !inline, onselect: onduplicate }]),
+		...(move === null ? [] : [{ label: move.label, dialog: !inline, onselect: move.run }]),
 		{ label: 'In den Papierkorb …', dialog: !inline, separated: true, onselect: ondelete }
 	]);
 </script>

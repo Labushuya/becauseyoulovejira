@@ -86,6 +86,8 @@ export interface TicketSummary {
 	 * the same area where the hook demands it (ADR-0042). The data layer always sets it.
 	 */
 	scope?: string;
+	/** The account that created the ticket (`owner`); the data layer sets it (ADR-0061 §4). */
+	owner?: string;
 	/**
 	 * Way the ticket came in (ADR-0014 section 2); null for tickets before E4 and before the
 	 * migration, which count as "manual" (ADR-0019).
