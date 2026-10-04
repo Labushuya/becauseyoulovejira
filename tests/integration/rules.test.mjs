@@ -110,18 +110,22 @@ describe.each(OWNED_COLLECTIONS)('%s', (collection) => {
 		expect(record.owner).toBe(s.ids.a);
 	});
 
-	it('allows moving into own households only', async () => {
+	// Since the fix after E7-2 (ADR-0058, addendum "Bereich eines Eintrags") no client moves a record
+	// through the Record API: a household without membership fails the update rule (404), any other
+	// change of the household the hook scope-guard.pb.js (400). Moving comes as an own route (E7-4).
+	it('moves no record into or out of a household', async () => {
 		const own = s.a.collection(collection);
 		expect(await statusOf(own.update(rec.aPrivate.id, { household: s.h2.id }))).toBe(404);
-		const moved = await own.update(rec.aPrivate.id, { household: s.h1.id });
-		expect(moved.household).toBe(s.h1.id);
-		const back = await own.update(rec.aPrivate.id, { household: '' });
-		expect(back.household).toBe('');
+		expect(await statusOf(own.update(rec.aPrivate.id, { household: s.h1.id }))).toBe(400);
+		expect(await statusOf(own.update(rec.aH1.id, { household: '' }))).toBe(400);
+		expect(await statusOf(s.b.collection(collection).update(rec.aH1.id, { household: '' }))).toBe(400);
+		expect((await s.superuser.collection(collection).getOne(rec.aPrivate.id)).household).toBe('');
+		expect((await s.superuser.collection(collection).getOne(rec.aH1.id)).household).toBe(s.h1.id);
 	});
 
-	it('lets a member move a household record between own households', async () => {
-		// Needs a separate join alias for the submitted household (see the migration). A fresh
-		// user D (member of H1 and H3) keeps the membership lists of A, B and C unchanged.
+	it('moves no household record between own households either', async () => {
+		// The update rule checks a submitted household with its own join alias (see the migration). A
+		// fresh user D (member of H1 and H3) keeps the membership lists of A, B and C unchanged.
 		const userD = await createAppUser(s.superuser);
 		const h3 = await s.superuser.collection('households').create({ name: `H3 ${uniqueSuffix()}` });
 		const memberships = s.superuser.collection('household_members');
@@ -130,11 +134,9 @@ describe.each(OWNED_COLLECTIONS)('%s', (collection) => {
 		const d = (await userClient(userD)).collection(collection);
 
 		const record = await create(s.a, s.ids.a, s.h1.id);
-		const moved = await d.update(record.id, { household: h3.id });
-		expect(moved.household).toBe(h3.id);
-		expect(moved.owner).toBe(s.ids.a);
+		expect(await statusOf(d.update(record.id, { household: h3.id }))).toBe(400);
 		expect(await statusOf(d.update(record.id, { household: s.h2.id }))).toBe(404);
-		expect(await statusOf(s.b.collection(collection).getOne(record.id))).toBe(404);
+		expect((await s.superuser.collection(collection).getOne(record.id)).household).toBe(s.h1.id);
 	});
 
 	it('lets the owner update and delete own records', async () => {
