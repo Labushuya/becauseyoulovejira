@@ -283,7 +283,7 @@ beforeAll(async () => {
 	const started = control('start');
 	if (started.code !== 0) throw new Error(`start failed: ${started.output}`);
 	superuserToken = await authToken('_superusers', email, password);
-	// The account created first owns the instance (ADR-0043 §3).
+	// The account created first becomes the administrator of the app (ADR-0056 §2).
 	owner = await createUser();
 	other = await createUser();
 	// A ticket, so the manifest has something to count.

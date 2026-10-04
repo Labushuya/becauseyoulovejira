@@ -128,6 +128,7 @@ afterAll(async () => {
 describe('presence and attention (ADR-0035, SF-1)', () => {
 	let first;
 	let second;
+	let other;
 	let firstMessages;
 	let secondMessages;
 	let anonymousMessages;
@@ -154,7 +155,7 @@ describe('presence and attention (ADR-0035, SF-1)', () => {
 	it('counts only signed-in app tabs subscribed to byl/attention', async () => {
 		first = await user();
 		second = await user();
-		const other = await user();
+		other = await user();
 		const anonymous = client();
 		firstMessages = await tab(first);
 		secondMessages = await tab(second);
@@ -253,6 +254,19 @@ describe('presence and attention (ADR-0035, SF-1)', () => {
 
 		await second.send(ack, { method: 'POST' });
 		expect((await call(`/api/byl/attention/${nonce}`)).body).toEqual({ acked: true });
+	});
+
+	it('accepts a confirmation only from an account whose tabs got the message (E7-1, ADR-0056 §6)', async () => {
+		const response = await sendAttention('start');
+		expect(response.body.notified).toBe(2);
+		const ack = `/api/byl/attention/${response.body.nonce}/ack`;
+		// Signed in, but without a tab on byl/attention: for this account the nonce does not exist.
+		await expect(other.send(ack, { method: 'POST' })).rejects.toMatchObject({ status: 404 });
+		expect((await call(`/api/byl/attention/${response.body.nonce}`)).body).toEqual({ acked: false });
+		await first.send(ack, { method: 'POST' });
+		expect((await call(`/api/byl/attention/${response.body.nonce}`)).body).toEqual({ acked: true });
+		// The presence of the start script still counts every tab on this machine.
+		expect((await call('/api/byl/presence')).body.tabs).toBe(2);
 	});
 
 	it('forgets a tab that unsubscribed', async () => {

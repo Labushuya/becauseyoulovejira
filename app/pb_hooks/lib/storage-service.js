@@ -3,7 +3,7 @@
 // the background, no table), and three actions: compact the databases, clear what was left behind,
 // empty discarded entries early. CommonJS module, ES5 only, Goja runtime only; the pure rules are
 // in lib/storage-rules.js. The routes use the checks of the page System (lib/system-service.js:
-// this machine, the address of the app, the owner of the instance, rate limit) on every platform;
+// this machine, the address of the app, the administrator of the app, rate limit) on every platform;
 // what needs the own instance of a folder app under Windows (program files, leftovers, safety
 // copies, logs, free space from byl-control.ps1 doctor) is left out elsewhere, with a reason.
 'use strict';

@@ -1,8 +1,9 @@
 // Routes of the page "Einstellungen → System" (ADR-0043): status, checks and logs of the app and the
 // actions restart, mail helper and autostart, each by a fixed command of byl-control.ps1 next to
 // pb_hooks (whitelist in lib/system-rules.js). Every route checks, in this order: server on Windows,
-// request from this machine, Host and Origin of the app itself, owner of the instance, rate limit,
-// and that this server is the own instance of the app folder; only then does it run a command.
+// request from this machine, Host and Origin of the app itself, the administrator of the app (since
+// E7-1, ADR-0056; before the owner of the instance), rate limit, and that this server is the own
+// instance of the app folder; only then does it run a command.
 // Windows PowerShell gets its arguments one by one (Go's os/exec, no shell), none of them from the
 // request. Refusals and actions go into the log of PocketBase with action, user and reason, never
 // with values.
@@ -33,15 +34,6 @@ function header(e, name) {
 
 function userOf(e) {
   return e.auth ? String(e.auth.id) : '';
-}
-
-/**
- * The owner of the instance: the app account created first (ADR-0043 §3). The superuser creates it
- * right after the installer (ADR-0002), members of a household come later (E7).
- */
-function ownerId(app) {
-  var found = app.findRecordsByFilter('users', 'id != ""', 'created,id', 1, 0);
-  return found.length > 0 ? String(found[0].id) : '';
 }
 
 function fileExists(path) {
@@ -125,8 +117,10 @@ function check(e, name, method, options) {
   if (!rules.isOwnHost(host, rules.listenPort(args)) || !rules.isSameOrigin(method, host, header(e, 'Origin'), header(e, 'Sec-Fetch-Site'))) {
     return { refused: 'origin' };
   }
+  // The administrator of the app (ADR-0056; before E7 the account created first, ADR-0043 §3). The
+  // reason keeps its name "owner".
   var user = userOf(e);
-  if (user === '' || user !== ownerId(e.app)) {
+  if (user === '' || !require(__hooks + '/lib/account-service.js').isInstanceAdmin(e.app, user)) {
     return { refused: 'owner' };
   }
   var kind = opts.kind || (rules.action(name).changes ? 'change' : 'read');

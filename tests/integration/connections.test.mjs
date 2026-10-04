@@ -41,10 +41,16 @@ function client() {
 	return pb;
 }
 
-async function user() {
+/**
+ * An app account, signed in. Channels with access data are set up only by an administrator of the
+ * app (ADR-0056 §5), so the accounts of this file are administrators unless a test says otherwise.
+ */
+async function user(admin = true) {
 	const email = `user-${randomBytes(12).toString('hex')}@example.com`;
 	const password = randomBytes(24).toString('base64url');
-	const record = await superuser.collection('users').create({ email, password, passwordConfirm: password });
+	const record = await superuser
+		.collection('users')
+		.create({ email, password, passwordConfirm: password, instance_admin: admin });
 	const pb = client();
 	await pb.collection('users').authWithPassword(email, password);
 	return { id: record.id, pb };
@@ -270,14 +276,20 @@ describe('connections: renaming (ADR-0026, addendum KK-3)', () => {
 	});
 
 	it('allows renaming to whoever may edit the connection, also in a household', async () => {
-		const [member, outsider] = [await user(), await user()];
+		const [member, outsider, partner] = [await user(), await user(), await user(false)];
 		const household = await superuser.collection('households').create({ name: `H ${randomBytes(4).toString('hex')}` });
-		for (const who of [owner, member]) {
+		for (const who of [owner, member, partner]) {
 			await superuser.collection('household_members').create({ household: household.id, user: who.id, role: 'member' });
 		}
 		const shared = await calendar(owner, { household: household.id });
 		expect(await member.pb.collection('connections').update(shared.id, { label: 'Familie' })).toMatchObject({ label: 'Familie' });
 		expect((await codesOf(outsider.pb.collection('connections').update(shared.id, { label: 'Fremd' }))).status).toBe(404);
+		// A member without the right of the administrator changes no connection with access data
+		// (ADR-0056 §5), not even its name.
+		expect(await codesOf(partner.pb.collection('connections').update(shared.id, { label: 'Partner' }))).toMatchObject({
+			status: 400,
+			codes: { type: 'validation_connection_admin_only' }
+		});
 		expect((await superuser.collection('connections').getOne(shared.id)).label).toBe('Familie');
 	});
 

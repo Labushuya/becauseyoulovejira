@@ -53,6 +53,7 @@
 		projects = [],
 		extension = null,
 		setup = null,
+		admin = true,
 		onsetupchange
 	}: {
 		/** Absolute address of the capture form, e.g. http://127.0.0.1:8090/eingang/neu. */
@@ -82,9 +83,22 @@
 		extension?: ExtensionInfo | null;
 		/** Assistant in the address, null without one. */
 		setup?: SetupTarget | null;
+		/**
+		 * The signed-in account is the administrator of the app (ADR-0056 §5): only it sets up
+		 * channels with access data and folders; another account gets the guide of Proton and
+		 * WhatsApp Web only, and an assistant of another kind in the address stays closed.
+		 */
+		admin?: boolean;
 		/** Opens, moves or closes the assistant (the owner changes the address). */
 		onsetupchange: (next: SetupTarget | null) => void;
 	} = $props();
+
+	/** The assistant of the address, if this account may use it. */
+	const shownSetup = $derived(
+		setup !== null && (admin || setup.kind === 'proton' || setup.kind === 'whatsapp-web')
+			? setup
+			: null
+	);
 
 	const uid = $props.id();
 	const ownId = `${uid}-own`;
@@ -150,13 +164,14 @@
 		connections={connections.connections}
 		bind:heading={catalogHeading}
 		hrefOf={(entry) => channelSetupHref({ kind: entry, connectionId: null })}
+		{admin}
 	/>
 </div>
 
-{#if setup !== null}
-	{#if setup.kind === 'proton'}
+{#if shownSetup !== null}
+	{#if shownSetup.kind === 'proton'}
 		<ProtonGuide onclose={() => onsetupchange(null)} />
-	{:else if setup.kind === 'whatsapp-web'}
+	{:else if shownSetup.kind === 'whatsapp-web'}
 		{#if inboxKeys !== null}
 			<WhatsAppWebSetup
 				{inboxKeys}
@@ -169,10 +184,10 @@
 			/>
 		{/if}
 	{:else}
-		{#key setup.kind}
+		{#key shownSetup.kind}
 			<ChannelSetup
-				kind={setup.kind}
-				connectionId={setup.connectionId}
+				kind={shownSetup.kind}
+				connectionId={shownSetup.connectionId}
 				store={connections}
 				{notion}
 				{github}

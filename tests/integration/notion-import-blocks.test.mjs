@@ -34,10 +34,13 @@ async function serve(env = {}) {
 	const superuser = new PocketBase(instance.url);
 	superuser.autoCancellation(false);
 	await superuser.collection('_superusers').authWithPassword(instance.email, instance.password);
+	// An administrator of the app: only it sets up channels with access data (ADR-0056 §5).
 	async function user() {
 		const email = `user-${randomBytes(12).toString('hex')}@example.com`;
 		const password = randomBytes(24).toString('base64url');
-		await superuser.collection('users').create({ email, password, passwordConfirm: password });
+		await superuser
+			.collection('users')
+			.create({ email, password, passwordConfirm: password, instance_admin: true });
 		const pb = new PocketBase(instance.url);
 		pb.autoCancellation(false);
 		await pb.collection('users').authWithPassword(email, password);

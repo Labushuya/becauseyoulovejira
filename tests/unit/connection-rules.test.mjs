@@ -354,3 +354,27 @@ describe('mail connections (E4 plan, package 22)', () => {
 		);
 	});
 });
+
+describe('channels with access data and folders only for the administrator (ADR-0056 §5)', () => {
+	it('knows what reaches into the server machine', () => {
+		expect(rules.usesServerAccess({ type: 'calendar', secret_env: 'BYL_CAL' })).toBe(true);
+		expect(rules.usesServerAccess({ type: 'github', secret_env: 'BYL_GITHUB' })).toBe(true);
+		expect(rules.usesServerAccess({ type: 'folder', secret_env: '' })).toBe(true);
+		expect(rules.usesServerAccess({ type: 'telegram', secret_env: '', settings: { allowed_env: 'BYL_IDS' } })).toBe(true);
+		expect(rules.usesServerAccess({ type: 'notion', secret_env: '' })).toBe(false);
+	});
+
+	it('refuses an account without the right, also for a connection that had access before', () => {
+		const calendar = { type: 'calendar', secret_env: 'BYL_CAL' };
+		expect(rules.adminViolation(true, null, calendar)).toBe('');
+		expect(rules.adminViolation(false, null, calendar)).toEqual({
+			field: 'type',
+			code: 'validation_connection_admin_only',
+			message: 'Kanäle mit Zugangsdaten und Ordner richtet nur der Verwalter der App ein.'
+		});
+		expect(rules.adminViolation(false, calendar, { type: 'calendar', secret_env: '' })).toMatchObject({
+			code: 'validation_connection_admin_only'
+		});
+		expect(rules.adminViolation(false, null, { type: 'notion', secret_env: '' })).toBe('');
+	});
+});

@@ -59,12 +59,20 @@ function folderRules() {
   return require(__hooks + '/lib/folder-service.js').settingsRules();
 }
 
-// onRecordCreateRequest; a superuser may set every field (tests, repairs in the admin UI).
+// Whether the account of the request is the administrator of the app (ADR-0056 §5).
+function requestIsAdmin(e) {
+  var id = e.auth ? String(e.auth.id) : '';
+  return require(__hooks + '/lib/account-service.js').isInstanceAdmin(e.app, id);
+}
+
+// onRecordCreateRequest; a superuser may set every field (tests, repairs in the admin UI). Only the
+// administrator of the app sets up a connection with access data or folders (ADR-0056 §5).
 function guardCreate(e) {
   if (e.hasSuperuserAuth()) {
     return;
   }
   var values = valuesOf(e.record);
+  throwIf(rules.adminViolation(requestIsAdmin(e), null, values));
   throwIf(rules.createViolation(values, secrets, keywords, github, folderRules()) || rules.labelViolation(values.label));
   targets.guardConnection(e, true);
   guardRepoTargets(e, null, values);
@@ -74,13 +82,15 @@ function guardCreate(e) {
 // onRecordUpdateRequest; a superuser may set every field. A new name comes alone (ADR-0026,
 // addendum KK-3): the request may change nothing else with it. A new target project must be an
 // active project of the area of the connection (ADR-0049), also the one of a repository of GitHub
-// or of a folder.
+// or of a folder. Only the administrator of the app changes a connection with access data or
+// folders (ADR-0056 §5).
 function guardUpdate(e) {
   if (e.hasSuperuserAuth()) {
     return;
   }
   var before = valuesOf(e.record.original());
   var after = valuesOf(e.record);
+  throwIf(rules.adminViolation(requestIsAdmin(e), before, after));
   throwIf(
     rules.updateViolation(before, after, secrets, keywords, github, folderRules()) ||
       rules.labelViolation(after.label) ||

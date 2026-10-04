@@ -198,7 +198,7 @@ describe('overview of the page', () => {
 		expect(customSessionLabel(3600)).toBe('Eigene Einstellung: 1 Stunde');
 		expect(customSessionLabel(6 * 3600)).toBe('Eigene Einstellung: 6 Stunden');
 		expect(customSessionLabel(7 * 86400)).toBe('Eigene Einstellung: 7 Tage');
-		expect(denialText('owner').title).toBe('Nur für das erste Konto');
+		expect(denialText('owner').title).toBe('Nur für den Verwalter der App');
 		expect(denialText('unavailable').text).toMatch(/nur die App unter Windows/);
 		expect(invalidText('too-many')).toBe('Höchstens 10 zusätzliche Adressen.');
 		expect(invalidText('constructor')).toBe('Der Server hat die Eingabe abgelehnt.');

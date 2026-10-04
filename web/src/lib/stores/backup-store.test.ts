@@ -121,7 +121,7 @@ describe('BackupStore: state', () => {
 		});
 		await owner.store.load();
 		expect(owner.store.state).toBe('denied');
-		expect(owner.store.message?.title).toBe('Nur für den Besitzer dieser Installation');
+		expect(owner.store.message?.title).toBe('Nur für den Verwalter der App');
 
 		const missing = setup({
 			overview: vi.fn(async () => ({ kind: 'denied', reason: 'missing' }) as const)

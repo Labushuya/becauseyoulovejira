@@ -20,10 +20,13 @@ const mocks = vi.hoisted(() => ({
 	stored: {} as Record<string, string>,
 	lastView: null as unknown,
 	// Operating system of the server (host store of the (app) layout); null: no store.
-	platform: null as string | null
+	platform: null as string | null,
+	// The signed-in account (ADR-0056 §7: the pages of the administrator only for it).
+	auth: { isAdmin: true }
 }));
 
 vi.mock('$app/state', () => ({ page: mocks.page }));
+vi.mock('$lib/auth.svelte', () => ({ auth: mocks.auth }));
 vi.mock('$app/navigation', () => ({
 	afterNavigate: (callback: (navigation: Navigation) => void) => {
 		mocks.afterNavigate.push(callback);
@@ -70,6 +73,7 @@ async function renderSettings(path: string, remembered: string | null = null) {
 beforeEach(() => {
 	mocks.afterNavigate.length = 0;
 	mocks.platform = null;
+	mocks.auth.isAdmin = true;
 	document.body.innerHTML = '';
 });
 
@@ -100,6 +104,7 @@ describe('settings layout', () => {
 			['Tickets', '/einstellungen/tickets'],
 			['Darstellung', '/einstellungen/darstellung'],
 			['Konto', '/einstellungen/konto'],
+			['Konten', '/einstellungen/konten'],
 			['Sicherheit', '/einstellungen/sicherheit'],
 			['Sicherung', '/einstellungen/sicherung'],
 			['Speicher', '/einstellungen/speicher'],
@@ -110,6 +115,26 @@ describe('settings layout', () => {
 		expect(pages[1]?.getAttribute('aria-current')).toBe('page');
 		expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Datei-Importe');
 		expect(screen.getByText(CONTENT)).toBeTruthy();
+	});
+
+	it('leaves out the pages of the administrator for every other account (ADR-0056 §7)', async () => {
+		mocks.auth.isAdmin = false;
+		mocks.platform = 'windows';
+		await renderSettings('/einstellungen/konto');
+
+		const nav = within(screen.getByRole('navigation', { name: 'Einstellungen' }));
+		const pages = nav.getAllByRole('listitem').map((item) => within(item).getByRole('link'));
+		expect(pages.map((link) => link.textContent?.trim())).toEqual([
+			'Kanäle',
+			'Datei-Importe',
+			'Tags',
+			'Tickets',
+			'Darstellung',
+			'Konto',
+			'Hilfe'
+		]);
+		expect(nav.queryByRole('link', { name: 'Konten' })).toBeNull();
+		expect(nav.queryByRole('link', { name: 'Sicherheit' })).toBeNull();
 	});
 
 	it.each([

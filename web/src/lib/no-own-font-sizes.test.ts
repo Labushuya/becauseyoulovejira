@@ -13,7 +13,7 @@ const SRC_DIR = resolve(import.meta.dirname, '..');
 const TOKENS_CSS = join('lib', 'styles', 'tokens.css');
 
 /** Numbers left from before G-6 in all listed files together; lower it when one goes. */
-const LEGACY_COUNT = 140;
+const LEGACY_COUNT = 139;
 
 /** Files that still carry font sizes as numbers (as of G-6). */
 const LEGACY_FILES = [
@@ -70,7 +70,6 @@ const LEGACY_FILES = [
 	'routes/(app)/(tickets)/tickets/neu/+page.svelte',
 	'routes/(app)/einstellungen/darstellung/+page.svelte',
 	'routes/(app)/einstellungen/hilfe/+page.svelte',
-	'routes/(app)/einstellungen/konto/+page.svelte',
 	'routes/(app)/einstellungen/tags/+page.svelte',
 	'routes/(app)/projekte/[id]/+page.svelte',
 	'routes/login/+page.svelte'

@@ -7,6 +7,8 @@ import PocketBase from 'pocketbase';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { writtenLogs } from '../support/logs.mjs';
 import { startPocketBase } from '../support/pocketbase-harness.mjs';
+import { fetchAccounts } from '../../web/src/lib/data/accounts.ts';
+import { adminOf } from '../../web/src/lib/domain/accounts.ts';
 import { createInboxKey, listInboxKeys } from '../../web/src/lib/data/inbox-keys.ts';
 import { createProject, listProjects, updateProject } from '../../web/src/lib/data/projects.ts';
 import { createComment, deleteComment } from '../../web/src/lib/data/comments.ts';
@@ -972,5 +974,77 @@ describe('KO-1 hooks before the migration of the pinned comment (ADR-0044)', () 
 		await deleteComment(who, comment.id);
 		expect((await getTicket(who, ticket.id)).title).toBe('Geändert');
 		await deleteTicket(who, ticket.id);
+	});
+});
+
+// The instance of the user after the merge of E7-1, before its next start: users without the right
+// and the switch, the old read rules. The new hooks keep the rule of ADR-0043 §3 (the account
+// created first is the administrator), the page "Konten" waits for the restart, and the SPA keeps
+// listing the pages of the administrator (the server decides).
+describe('E7-1 hooks before the migration of the accounts (ADR-0056)', () => {
+	const ACCOUNTS_MIGRATION = '1790203700_accounts_admin.js';
+	let before;
+	const accounts = [];
+
+	beforeAll(async () => {
+		before = await startPocketBase({ migrationFilter: (name) => name < ACCOUNTS_MIGRATION });
+		const superuser = new PocketBase(before.url);
+		superuser.autoCancellation(false);
+		await superuser.collection('_superusers').authWithPassword(before.email, before.password);
+		for (let i = 0; i < 2; i++) {
+			const email = `user-${randomBytes(12).toString('hex')}@example.com`;
+			const password = randomBytes(24).toString('base64url');
+			const id = (await superuser.collection('users').create({ email, password, passwordConfirm: password })).id;
+			const pb = new PocketBase(before.url);
+			pb.autoCancellation(false);
+			await pb.collection('users').authWithPassword(email, password);
+			accounts.push({ id, pb });
+		}
+	});
+
+	afterAll(async () => {
+		await before?.stop();
+	});
+
+	/** A request of the app with the Origin of its address. */
+	async function asApp(who, method, path, body) {
+		const response = await fetch(`${before.url}${path}`, {
+			method,
+			headers: {
+				Authorization: who.pb.authStore.token,
+				Origin: new URL(before.url).origin,
+				...(body ? { 'Content-Type': 'application/json' } : {})
+			},
+			body: body ? JSON.stringify(body) : undefined
+		});
+		return { status: response.status, body: await response.json() };
+	}
+
+	it('keeps the account created first as the administrator of the routes', async () => {
+		const [first, second] = accounts;
+		expect((await asApp(first, 'GET', '/api/byl/storage')).body.reason).not.toBe('owner');
+		expect(await asApp(second, 'GET', '/api/byl/storage')).toMatchObject({ status: 403, body: { reason: 'owner' } });
+		expect(first.pb.authStore.record).not.toHaveProperty('instance_admin');
+		expect(adminOf(first.pb.authStore.record)).toBe(true);
+	});
+
+	it('answers the page "Konten" with the restart hint and leaves the record as it was', async () => {
+		const [first, second] = accounts;
+		expect(await fetchAccounts(first.pb)).toEqual({ kind: 'denied', reason: 'missing' });
+		const disable = await asApp(first, 'POST', `/api/byl/accounts/${second.id}/disabled`, { disabled: true });
+		expect(disable.body.reason).toBe('missing');
+		expect((await second.pb.collection('users').update(second.id, { name: 'Zweites Konto' })).name).toBe('Zweites Konto');
+		expect(await second.pb.collection('users').getFullList()).toHaveLength(1);
+	});
+
+	it('lets only the account created first set up a channel with access data', async () => {
+		const [first, second] = accounts;
+		const calendar = { type: 'calendar', label: 'Kalender', enabled: true, secret_env: 'BYL_TEST_CALENDAR' };
+		const refused = await second.pb
+			.collection('connections')
+			.create({ ...calendar, owner: second.id })
+			.catch((error) => error);
+		expect(refused.response?.data?.type?.code).toBe('validation_connection_admin_only');
+		expect((await first.pb.collection('connections').create({ ...calendar, owner: first.id })).type).toBe('calendar');
 	});
 });

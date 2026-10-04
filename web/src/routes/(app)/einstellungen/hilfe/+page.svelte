@@ -17,7 +17,7 @@
 	import ShortcutList from '$lib/components/help/ShortcutList.svelte';
 	import { PRIORITY_NUMBERS, PRIORITY_WORDS } from '$lib/domain/quick-syntax';
 	import { RESTART_NEEDED } from '$lib/guidance/texts';
-	import { HELP_SECTIONS } from '$lib/settings-sections';
+	import { HELP_SECTIONS, helpHref } from '$lib/settings-sections';
 	import { calendarHref, channelSetupHref, trashHref } from '$lib/ticket-links';
 
 	// Settings "Hilfe" (ADR-0026 section 7, plan EH-9 §3.10): jump links, the keyboard shortcuts from
@@ -1171,8 +1171,9 @@
 					Unter <a href={resolve('/einstellungen/system')}>Einstellungen → System</a> siehst du
 					dasselbe und kannst die App neu starten, den Mail-Hilfsprozess neu starten, den Autostart
 					ein- und ausschalten, die Umgebung prüfen und die Logs ansehen. Das geht nur im Browser
-					auf dem Rechner der App und nur mit dem App-Konto, das bei der Einrichtung zuerst angelegt
-					wurde. Beenden geht weiter nur mit
+					auf dem Rechner der App und nur mit einem Konto, das Verwalter der App ist (zu Beginn das
+					zuerst angelegte, siehe <a href={helpHref('konten')}>Konten und Verwalter</a>). Beenden
+					geht weiter nur mit
 					<code>stop.bat</code>; die Dateien im Ordner <code>app</code> bleiben wie sie sind.
 				</dd>
 			</div>
@@ -1359,9 +1360,82 @@
 		</ul>
 		<p>
 			Ein vergessenes Admin-Passwort setzt <code>admin-zuruecksetzen.bat</code> im Ordner
-			<code>app</code> neu, ohne Daten zu löschen; das Passwort des App-Kontos änderst du in der
-			Verwaltung (siehe <a href={resolve('/einstellungen/konto')}>Konto</a>).
+			<code>app</code> neu, ohne Daten zu löschen; das Passwort deines App-Kontos änderst du unter
+			<a href={resolve('/einstellungen/konto')}>Konto</a>, ein vergessenes setzt der Verwalter der
+			App unter <a href={resolve('/einstellungen/konten')}>Konten</a> zurück.
 		</p>
+	</section>
+
+	<section id="konten" aria-labelledby="konten-title">
+		<h3 id="konten-title">Konten und Verwalter</h3>
+		<p>
+			Jede Person meldet sich mit ihrem eigenen Konto an. Tickets, Projekte, Tags und Verbindungen
+			gehören dem Konto, das sie angelegt hat; die anderen Konten sehen sie nicht. Gemeinsame
+			Haushalte kommen mit einer späteren Etappe.
+		</p>
+		<dl class="tokens">
+			<div class="row">
+				<dt>Verwalter der App</dt>
+				<dd>
+					Ein Recht für Konten: Wer es hat, legt Konten an, setzt Passwörter zurück, deaktiviert und
+					aktiviert Konten und gibt oder entzieht das Recht. Nur er sieht die Seiten Konten,
+					Sicherheit, Sicherung, Speicher und System und richtet Kanäle mit Zugangsdaten oder
+					Ordnern dieses Rechners ein. Zu Beginn hat es das zuerst angelegte Konto. Mindestens ein
+					aktives Konto bleibt immer Verwalter; dein eigenes Recht kann dir nur ein anderer
+					Verwalter entziehen.
+				</dd>
+			</div>
+			<div class="row">
+				<dt>Konto anlegen</dt>
+				<dd>
+					Unter <a href={resolve('/einstellungen/konten')}>Einstellungen → Konten</a> Name und
+					E-Mail-Adresse eingeben, „Konto anlegen“. Die App erzeugt ein Startpasswort und zeigt es
+					einmal an, mit „Kopieren“. Gib es auf einem sicheren Weg weiter; die Person ändert es
+					danach unter <a href={resolve('/einstellungen/konto')}>Einstellungen → Konto</a>. Eine
+					Mail verschickt die App nicht.
+				</dd>
+			</div>
+			<div class="row">
+				<dt>Passwort vergessen</dt>
+				<dd>
+					Der Verwalter wählt am Konto „Passwort zurücksetzen …“ und gibt das neue Passwort weiter;
+					alle Anmeldungen des Kontos enden sofort. Hat der einzige Verwalter sein Passwort
+					vergessen, hilft die Verwaltung von PocketBase mit dem Admin-Konto (Collections → users).
+				</dd>
+			</div>
+			<div class="row">
+				<dt>Deaktivieren</dt>
+				<dd>
+					Das Konto kann sich nicht mehr anmelden, offene Anmeldungen enden. Tickets, Kommentare und
+					Verlauf bleiben; „Aktivieren“ macht es rückgängig. Löschen lassen sich Konten hier nicht.
+				</dd>
+			</div>
+			<div class="row">
+				<dt>Was andere sehen</dt>
+				<dd>
+					Den Namen eines Kontos sehen die Mitglieder desselben Haushalts und der Verwalter, etwa in
+					Kommentaren, im Verlauf und im Papierkorb; sonst steht dort „Anderes Konto“. Die
+					E-Mail-Adresse sieht nur der Verwalter.
+				</dd>
+			</div>
+			<div class="row">
+				<dt>Kanäle für jedes Konto</dt>
+				<dd>
+					Schnellerfassung, Zwischenablage, Bookmarklet, Datei-Importe (Mail- und Kalenderdateien,
+					WhatsApp-Exporte, Proton per Datei) und der eigene Eingang mit eigenem Zugangsschlüssel,
+					auch für WhatsApp Web. Google Calendar, Telegram, Postfächer, Notion, GitHub und Ordner
+					richtet nur der Verwalter ein, weil sie Zugangsdaten oder Ordner dieses Rechners lesen.
+				</dd>
+			</div>
+			<div class="row">
+				<dt>Zweite Person am selben Rechner</dt>
+				<dd>
+					Die Anmeldung gilt je Browserprofil. Die zweite Person nutzt ein eigenes Profil (Chrome
+					und Edge: Profil hinzufügen; Firefox: <code>about:profiles</code>) und meldet sich dort
+					mit ihrem Konto an. Die Seiten des Verwalters gehen nur im Browser auf diesem Rechner.
+				</dd>
+			</div>
+		</dl>
 	</section>
 </div>
 

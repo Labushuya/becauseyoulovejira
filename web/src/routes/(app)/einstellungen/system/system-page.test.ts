@@ -41,9 +41,7 @@ describe('settings "System"', () => {
 	it('loads the status for a server on Windows', async () => {
 		mocks.platform = 'windows';
 		render(Page);
-		await vi.waitFor(() =>
-			expect(screen.getByText('Nur für den Besitzer dieser Installation')).toBeTruthy()
-		);
+		await vi.waitFor(() => expect(screen.getByText('Nur für den Verwalter der App')).toBeTruthy());
 		expect(mocks.signals).toHaveLength(1);
 	});
 

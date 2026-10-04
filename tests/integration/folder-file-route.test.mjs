@@ -123,7 +123,7 @@ beforeAll(async () => {
 	instance = await startPocketBase();
 	superuser = client();
 	await superuser.collection('_superusers').authWithPassword(instance.email, instance.password);
-	// The account created first owns the instance (ADR-0043 §3).
+	// The account created first becomes the administrator of the app (ADR-0056 §2).
 	owner = await user();
 	other = await user();
 	conn = await superuser.collection('connections').create({

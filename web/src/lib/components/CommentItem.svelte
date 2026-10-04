@@ -5,6 +5,7 @@
 	import { personLabel } from '$lib/domain/people';
 	import { COMMENT_MAX_LENGTH, type Comment } from '$lib/domain/ticket';
 	import type { CommentViewStore } from '$lib/stores/comment-view.svelte';
+	import { findPeople } from '$lib/stores/people.svelte';
 	import type { TicketActivityStore } from '$lib/stores/ticket-activity.svelte';
 	import CommentBody from './CommentBody.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
@@ -49,7 +50,9 @@
 	let editButton = $state<HTMLButtonElement>();
 	let editText = $state<ReturnType<typeof RichTextEditor>>();
 
-	const author = $derived(personLabel(comment.author, store.userId));
+	// The author by name where it is visible (ADR-0056 §4), otherwise "Anderes Konto".
+	const people = findPeople();
+	const author = $derived(personLabel(comment.author, store.userId, people));
 	const time = $derived(formatBerlinDateTime(comment.created));
 	const edited = $derived(comment.updated > comment.created);
 	const own = $derived(store.isOwn(comment));

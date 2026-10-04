@@ -1,8 +1,9 @@
 // Presence and attention routes (ADR-0035 section 4; plan start-fenster, SF-1): start.bat asks how
 // many app tabs listen on the realtime topic byl/attention, sends them a message with a nonce and
 // waits for a tab to confirm it; the landing page (file://) does the same. The state lives only in
-// $app.store() (gone after a restart) and holds nonces, times and flags, never data of accounts.
-// The rules are pure in lib/presence-rules.js.
+// $app.store() (gone after a restart) and holds nonces, times, flags and, since E7-1 (ADR-0056 §6),
+// the IDs of the accounts whose tabs got a message: only a tab of such an account confirms it. The
+// presence still counts every tab on this machine. The rules are pure in lib/presence-rules.js.
 'use strict';
 
 var rules = require(__hooks + '/lib/presence-rules.js');
@@ -96,13 +97,18 @@ function attention(e) {
   }
 
   var nonce = $security.randomString(rules.NONCE_LENGTH);
-  store.set(rules.ENTRY_PREFIX + nonce, rules.serializeEntry(now, false));
   var message = new SubscriptionMessage({ name: rules.TOPIC, data: rules.messageData(nonce, reason) });
   var targets = listeners(e.app);
-  var notified = 0;
+  var users = [];
   for (var i = 0; i < targets.length; i++) {
+    users.push(String(targets[i].get('auth').id));
+  }
+  // Stored before the message goes out, so a quick confirmation finds it.
+  store.set(rules.ENTRY_PREFIX + nonce, rules.serializeEntry(now, false, users));
+  var notified = 0;
+  for (var j = 0; j < targets.length; j++) {
     try {
-      targets[i].send(message);
+      targets[j].send(message);
       notified += 1;
     } catch (err) {
       // A client that went away in the meantime simply counts as not notified.
@@ -130,15 +136,18 @@ function attentionState(e, nonce) {
   return e.json(200, { acked: entry.acked });
 }
 
-/** POST /api/byl/attention/{nonce}/ack (signed-in app user): the tab is awake and shows the hint. */
+/**
+ * POST /api/byl/attention/{nonce}/ack (signed-in app user): the tab is awake and shows the hint. Only
+ * an account whose tabs got the message confirms it; for any other the nonce is unknown (404).
+ */
 function ack(e, nonce) {
   var store = e.app.store();
   prune(store, Date.now());
   var entry = entryOf(store, nonce);
-  if (entry === null) {
+  if (!rules.mayAck(entry, e.auth ? String(e.auth.id) : '')) {
     throw new NotFoundError();
   }
-  store.set(rules.ENTRY_PREFIX + nonce, rules.serializeEntry(entry.createdAt, true));
+  store.set(rules.ENTRY_PREFIX + nonce, rules.serializeEntry(entry.createdAt, true, entry.users));
   return e.noContent(204);
 }
 

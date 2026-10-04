@@ -472,8 +472,8 @@ export function denialText(reason: SystemDenial): { title: string; text: string 
 		case 'owner':
 		case 'forbidden':
 			return {
-				title: 'Nur für das erste Konto',
-				text: 'Die Sicherheit der App sieht und ändert nur das Konto, das zuerst angelegt wurde.'
+				title: 'Nur für den Verwalter der App',
+				text: 'Die Sicherheit der App sieht und ändert nur ein Konto mit dem Recht „Verwalter der App“.'
 			};
 		case 'rate':
 			return {

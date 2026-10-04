@@ -107,11 +107,15 @@ export const FAIL_PROJECT_ARCHIVE = '__byl_fail_project_archive__';
 export const FAIL_DUPLICATE = '__byl_fail_duplicate__';
 
 /**
- * Fresh app user with an own private scope, so every counter of that scope starts empty.
+ * Fresh app user with an own private scope, so every counter of that scope starts empty. With
+ * `admin` the superuser gives it the right "Verwalter der App" (ADR-0056), e.g. to set up channels
+ * with access data.
  * @param {PocketBase} superuser authenticated superuser client
+ * @param {{ admin?: boolean }} [options]
  */
-export async function createOwner(superuser) {
+export async function createOwner(superuser, { admin = false } = {}) {
 	const user = await createAppUser(superuser);
+	if (admin) await superuser.collection('users').update(user.record.id, { instance_admin: true });
 	const client = await userClient(user);
 	const id = user.record.id;
 	return {

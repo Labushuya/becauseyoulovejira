@@ -1,6 +1,6 @@
 # ADR-0002: Erststart und Superuser-Anlage über den PocketBase-Installer
 
-- **Status:** Angenommen
+- **Status:** Angenommen (Nachträge: Notfallskript, Präsenz-Routen; 2026-10-04: weitere Konten in der App, [ADR-0056](0056-konten-und-verwalter.md))
 - **Datum:** 2026-09-24
 - **Entscheidung durch:** Advisor
 
@@ -81,3 +81,11 @@ Umsetzung abweichend von Punkt 5 und den Konsequenzen oben: Beim Erststart öffn
 ## Nachtrag (2026-09-28): Routen für Präsenz und Hinweis
 
 [ADR-0035](0035-start-einstieg-und-offene-tabs.md) §4 fügt Routen ohne Anmeldung hinzu (`/api/byl/presence`, `/api/byl/attention`), damit `start.bat` und die Landing-Seite keinen zweiten Tab öffnen. Punkt 6 gilt weiter: Die Routen verraten nichts über Konten, schreiben keine Collection und sind nur für Skripte bzw. `file://` auf diesem Rechner offen. Sie sind keine Setup-Route.
+
+## Nachtrag (2026-10-04, [ADR-0056](0056-konten-und-verwalter.md), E7-1): Weitere Konten in der App
+
+- **Punkt 1 und 2 gelten unverändert für den Erststart:** Superuser über den Installer, danach das eigene App-Konto in der Verwaltung. Gibt es noch keinen Verwalter der App, bekommt das erste App-Konto das Recht „Verwalter der App“ (`users.instance_admin`) automatisch.
+- **Weitere Konten** legt der Verwalter auf „Einstellungen → Konten“ an: Name und E-Mail, die App erzeugt ein Startpasswort und zeigt es einmal an. Dort setzt er auch Passwörter zurück, deaktiviert Konten und gibt oder entzieht das Recht. Die Verwaltung `/_/` bleibt Notweg (etwa wenn der einzige Verwalter sein Passwort vergessen hat).
+- **Punkt 4 gilt weiter:** Selbstregistrierung bleibt gesperrt (`createRule = null`); die Seite „Konten“ legt Konten über eine geprüfte Route an, nur für den Verwalter, nur auf diesem Rechner. Keine Route verrät ohne Anmeldung, ob es Konten gibt (Punkt 6).
+- **Passwort ändern** geht jetzt in der App („Einstellungen → Konto“, mit dem bisherigen Passwort); Mail-Abläufe bleiben gesperrt.
+- **Die Anmeldeseite** sagt bei einem deaktivierten Konto (erst nach dem richtigen Passwort) „Dieses Konto ist deaktiviert. Bitte wende dich an den Verwalter der App.“; der Hinweis „Kein Zugang oder Passwort vergessen?“ gilt weiter.

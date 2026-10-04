@@ -320,10 +320,23 @@ describe('households and household_members', () => {
 		expect(await statusOf(households.delete(s.h1.id))).toBe(403);
 	});
 
-	it('shows only the own memberships and keeps them read-only', async () => {
-		expect(await listIds(s.a, 'household_members')).toEqual([s.members.aH1.id]);
-		expect(await listIds(s.b, 'household_members')).toEqual([s.members.bH1.id]);
-		expect(await statusOf(s.a.collection('household_members').getOne(s.members.bH1.id))).toBe(404);
+	it('shows the memberships of the own households (E7-1) and keeps them read-only', async () => {
+		// Every row of H1 (the tests above add further members D to H1, and D to H3 as well).
+		const ofH1 = (
+			await s.superuser
+				.collection('household_members')
+				.getFullList({ filter: s.superuser.filter('household = {:id}', { id: s.h1.id }) })
+		)
+			.map((row) => row.id)
+			.sort();
+		expect(ofH1).toEqual(expect.arrayContaining([s.members.aH1.id, s.members.bH1.id]));
+		expect((await listIds(s.a, 'household_members')).sort()).toEqual(ofH1);
+		expect((await listIds(s.b, 'household_members')).sort()).toEqual(ofH1);
+		expect(await listIds(s.c, 'household_members')).toEqual([s.members.cH2.id]);
+		expect(await listIds(s.anonymous, 'household_members')).toEqual([]);
+		expect(await statusOf(s.a.collection('household_members').getOne(s.members.bH1.id))).toBe(200);
+		expect(await statusOf(s.a.collection('household_members').getOne(s.members.cH2.id))).toBe(404);
+		expect(await statusOf(s.c.collection('household_members').getOne(s.members.aH1.id))).toBe(404);
 
 		const members = s.a.collection('household_members');
 		expect(
@@ -335,10 +348,24 @@ describe('households and household_members', () => {
 });
 
 describe('users', () => {
-	it('exposes only the own record', async () => {
-		expect(await listIds(s.a, 'users')).toEqual([s.ids.a]);
+	it('exposes the own record and those of the own households (E7-1), without e-mail addresses', async () => {
+		// The members of H1: A, B and the users D the tests of the owned collections add.
+		const membersOfH1 = (
+			await s.superuser
+				.collection('household_members')
+				.getFullList({ filter: s.superuser.filter('household = {:id}', { id: s.h1.id }) })
+		)
+			.map((row) => row.user)
+			.sort();
+		expect(membersOfH1).toEqual(expect.arrayContaining([s.ids.a, s.ids.b]));
+		expect((await listIds(s.a, 'users')).sort()).toEqual(membersOfH1);
+		expect(await listIds(s.c, 'users')).toEqual([s.ids.c]);
 		expect(await listIds(s.anonymous, 'users')).toEqual([]);
-		expect(await statusOf(s.a.collection('users').getOne(s.ids.b))).toBe(404);
+		const member = await s.a.collection('users').getOne(s.ids.b);
+		expect(member.id).toBe(s.ids.b);
+		expect(member.email).toBeUndefined();
+		expect(await statusOf(s.a.collection('users').getOne(s.ids.c))).toBe(404);
+		expect(await statusOf(s.c.collection('users').getOne(s.ids.a))).toBe(404);
 		expect(await statusOf(s.a.collection('users').update(s.ids.b, { name: 'fremd' }))).toBe(404);
 		expect((await s.a.collection('users').update(s.ids.a, { name: 'A' })).name).toBe('A');
 	});

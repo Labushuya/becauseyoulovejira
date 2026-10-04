@@ -205,9 +205,10 @@ export const DENIAL_TEXTS: Readonly<Record<Exclude<SystemDenial, 'missing'>, Sys
 		title: 'Nur unter der Adresse der App',
 		text: 'Öffne die App unter ihrer eigenen Adresse auf diesem Rechner, etwa http://127.0.0.1:8090/, und versuche es dort erneut.'
 	},
+	// The reason keeps its name from ADR-0043; since E7-1 it is the right "Verwalter der App" (ADR-0056).
 	owner: {
-		title: 'Nur für den Besitzer dieser Installation',
-		text: 'Die App bedienen darf nur das App-Konto, das bei der Einrichtung zuerst angelegt wurde. Melde dich mit diesem Konto an.'
+		title: 'Nur für den Verwalter der App',
+		text: 'Die App bedienen darf nur ein Konto mit dem Recht „Verwalter der App“. Melde dich mit einem solchen Konto an oder frag die Person, die becauseyoulovejira eingerichtet hat.'
 	},
 	rate: {
 		title: 'Zu viele Anfragen',
