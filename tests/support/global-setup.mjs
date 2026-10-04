@@ -1,9 +1,11 @@
 // Vitest globalSetup for the "integration" project: one disposable PocketBase
 // instance per test run. Connection data reaches the tests only in memory via
-// provide/inject (key "pocketbase").
+// provide/inject (key "pocketbase"). First it removes the temp folders that test processes
+// ended hard left behind (temp-folders.mjs, ST-1).
 
 import { randomBytes } from 'node:crypto';
 import { startPocketBase } from './pocketbase-harness.mjs';
+import { removeStaleTempFolders } from './temp-folders.mjs';
 import { SERVER_READY_MS } from './timing.mjs';
 
 /**
@@ -37,6 +39,7 @@ async function createFirstAccount(url, email, password) {
 
 /** @param {import('vitest/node').TestProject} project */
 export default async function setup(project) {
+	await removeStaleTempFolders();
 	const instance = await startPocketBase();
 	await createFirstAccount(instance.url, instance.email, instance.password);
 	project.provide('pocketbase', {

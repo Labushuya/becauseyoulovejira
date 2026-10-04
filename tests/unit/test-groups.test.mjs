@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import config from '../../vitest.config.mjs';
 import { integrationGroups, startsProcesses } from '../support/test-groups.mjs';
-import { PROCESS_HOOK_MS, PROCESS_TEST_MS, processWorkers } from '../support/timing.mjs';
+import { PROCESS_HOOK_MS, PROCESS_TEST_MS, SHARED_HOOK_MS, SHARED_TEST_MS, processWorkers } from '../support/timing.mjs';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const groups = integrationGroups(ROOT, 'tests/integration');
@@ -27,8 +27,8 @@ describe('groups of the integration tests (T-4)', () => {
 		const all = [...groups.shared, ...groups.processes];
 		expect(new Set(all).size).toBe(all.length);
 		expect(groups.shared).toContain('tests/integration/inbox-link.test.mjs');
-		expect(groups.shared).toContain('tests/integration/web-filter-parity.test.mjs');
-		for (const name of ['control-script', 'system-control', 'migrations-rollback', 'mail-helper-process', 'installer-check', 'host-route']) {
+		// Since ST-1 on an own instance: the heaviest file of the shared one ran past its limits under load.
+		for (const name of ['control-script', 'system-control', 'migrations-rollback', 'mail-helper-process', 'installer-check', 'host-route', 'web-filter-parity']) {
 			expect(groups.processes).toContain(`tests/integration/${name}.test.mjs`);
 		}
 	});
@@ -47,8 +47,9 @@ describe('groups of the integration tests (T-4)', () => {
 		for (const name of ['integration', 'integration-processes']) {
 			expect(projects[name].globalSetup).toEqual(['tests/support/global-setup.mjs']);
 		}
-		// The shared instance keeps its 15 s (T-4); the files with processes get the central limits.
-		expect(projects.integration).toMatchObject({ testTimeout: 15_000, hookTimeout: 30_000 });
+		// The shared instance keeps its 15 s (T-4), scalable since ST-1; the files with processes get the
+		// central limits.
+		expect(projects.integration).toMatchObject({ testTimeout: SHARED_TEST_MS, hookTimeout: SHARED_HOOK_MS });
 		expect(projects['integration-processes']).toMatchObject({ testTimeout: PROCESS_TEST_MS, hookTimeout: PROCESS_HOOK_MS });
 	});
 });

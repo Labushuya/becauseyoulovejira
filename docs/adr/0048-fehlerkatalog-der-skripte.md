@@ -84,3 +84,8 @@ CLAUDE.md: Skripte melden Fehler nur über den Katalog, mit Ursache, Schritten u
 - `byl-problems.ps1` und `byl-pruefen.bat` gehören zu den Laufzeitdateien des Ordners `app` (Kopien, Testkopien).
 - `-Json` hat mehr Felder; die App liest `backgroundProblem` und die Einträge von `doctor`, sonst ignoriert sie sie.
 - Der Hook (`system-rules.js`) wirkt erst nach einem Neustart der App; bis dahin zeigt die Seite „System“ weder den gemerkten Fehler noch „Was tun?“. Die Skripte selbst wirken sofort.
+
+## Nachtrag (2026-10-04, [Plan Test-Härtung](../plan/test-haertung.md), ST-1): harter Stopp mit seinem Grund
+
+- `hard-stop` nannte für jeden harten Stopp „nicht innerhalb von 15 Sekunden reagiert“, auch wenn das Signal gar nicht hinausging. Seit ST-1 ([ADR-0039](0039-betriebsskripte.md), Nachtrag ST-1) gibt es drei Hinweise (Stufe `warning`, Exit 0, ohne Frage für die Hilfe): `hard-stop` (keine Reaktion in der Frist), **`hard-stop-busy`** (eine Aufgabe der App in einem Hilfsprozess lief nach `{seconds}` Sekunden noch; sie läuft zu Ende) und **`hard-stop-shared`** (ein anderes Programm hängt an derselben Konsole, etwa ein von Hand im Terminal gestarteter Server; das Signal wurde deshalb nicht gesendet). Alle drei sagen, dass gespeicherte Änderungen erhalten bleiben, und nennen `logs skript`.
+- Gewählt wird nur in `Write-HardStop` über `$HardStopProblemCode` (Grund aus `Resolve-HardStopReason`); `script-problems.test.mjs` findet jeden Code dort.

@@ -14,7 +14,9 @@
 // program path and a free port, nothing stopped), a copy with byl-mail.exe that starts no helper,
 // restart, a stale state file, and the safety rule: stop in one folder never ends the server of
 // another folder. BS-2: status with its exit codes, reload only when needed (a new web build only
-// asks for F5, changed hooks restart), open, logs and doctor.
+// asks for F5, changed hooks restart), open, logs and doctor. ST-1: a stop while the server runs a
+// child process in its console waits for the child and stops in order; another program on that
+// console never gets the signal.
 
 import { randomBytes } from 'node:crypto';
 import {
@@ -37,7 +39,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import PocketBase from 'pocketbase';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { credentialNames, spawnSyncClean, visibleNames } from '../support/clean-env.mjs';
+import { credentialNames, spawnClean, spawnSyncClean, visibleNames } from '../support/clean-env.mjs';
 import { POCKETBASE_EXE } from '../support/pocketbase-harness.mjs';
 import { POWERSHELL_EXE, runPowerShellJson } from '../support/powershell.mjs';
 import { scaled } from '../support/timing.mjs';
@@ -46,6 +48,7 @@ const ROOT_DIR = resolve(fileURLToPath(new URL('../..', import.meta.url)));
 const APP_DIR = join(ROOT_DIR, 'app');
 const TEMP_ROOT = join(ROOT_DIR, '.tmp');
 const PROBE_HOOK = join(ROOT_DIR, 'tests', 'fixtures', 'pb_hooks', 'environment-probe.pb.js');
+const CHILD_HOOK = join(ROOT_DIR, 'tests', 'fixtures', 'control', 'console-child.pb.js');
 const RESERVED_PORTS = new Set([8090, 8099]);
 const COMMAND_TIMEOUT_MS = scaled(60_000);
 
@@ -73,8 +76,8 @@ async function freePort() {
 
 /**
  * A copy of the runtime parts of app/ with its own data folder, superuser and port, without
- * byl-mail.exe, plus the test route that names the variables its server sees. The superuser stays
- * in memory.
+ * byl-mail.exe, plus the test routes that name the variables its server sees and that start a child
+ * process in the console of the server (tests/fixtures/control). The superuser stays in memory.
  */
 function makeCopy(name, port) {
 	const dir = join(base, name, 'app');
@@ -83,6 +86,7 @@ function makeCopy(name, port) {
 	copyFileSync(POCKETBASE_EXE, join(dir, 'pocketbase.exe'));
 	cpSync(join(APP_DIR, 'pb_hooks'), join(dir, 'pb_hooks'), { recursive: true });
 	copyFileSync(PROBE_HOOK, join(dir, 'pb_hooks', 'environment-probe.pb.js'));
+	copyFileSync(CHILD_HOOK, join(dir, 'pb_hooks', 'console-child.pb.js'));
 	cpSync(join(APP_DIR, 'pb_migrations'), join(dir, 'pb_migrations'), { recursive: true });
 	writeFileSync(join(dir, 'pb_public', 'index.html'), '<!doctype html><title>test</title>');
 	writeFileSync(join(dir, 'byl-config.json'), JSON.stringify({ port }));
@@ -185,14 +189,20 @@ ConvertTo-Json -InputObject @($names | Sort-Object -Unique) -Compress`,
 	);
 }
 
+/** A signed-in superuser client of the server of a copy. */
+async function superuserOf(copy) {
+	const pb = new PocketBase(`http://127.0.0.1:${copy.port}`);
+	pb.autoCancellation(false);
+	await pb.collection('_superusers').authWithPassword(copy.email, copy.password);
+	return pb;
+}
+
 /**
  * The BYL_* names the running server of a copy sees, among those of the account, of this test
  * process (with CANARY) and of CONTROL_ENV.
  */
 async function serverSees(copy) {
-	const pb = new PocketBase(`http://127.0.0.1:${copy.port}`);
-	pb.autoCancellation(false);
-	await pb.collection('_superusers').authWithPassword(copy.email, copy.password);
+	const pb = await superuserOf(copy);
 	const names = [...accountVariableNames(), ...credentialNames(), ...Object.keys(CONTROL_ENV)];
 	expect(names).toContain(CANARY);
 	return visibleNames(pb, names);
@@ -593,6 +603,115 @@ describe('byl-control.ps1: problems with cause, steps and the command to copy (R
 		expect(result.output).toContain(`             Ordner: ${broken}\\`);
 		expect(result.output).toContain(`powershell -NoProfile -Command "Get-ChildItem -LiteralPath '${broken.replaceAll("'", "''")}\\' | Unblock-File"`);
 		expect(result.output).not.toMatch(/ist entweder falsch geschrieben|is not recognized/);
+	});
+});
+
+/**
+ * Starts Windows PowerShell as a child of the server of a copy, in its console, like the hooks of
+ * the app start byl-control.ps1 (route of tests/fixtures/control/console-child.pb.js). It sleeps
+ * `seconds` and then writes `<name>.done` into the folder of the copy. Returns that file and the PID.
+ */
+async function startConsoleChild(copy, seconds) {
+	const name = `child-${randomBytes(4).toString('hex')}`;
+	const pb = await superuserOf(copy);
+	const { pid } = await pb.send('/api/byl-test/console-child', { method: 'POST', query: { seconds, name } });
+	return { pid, done: join(copy.dir, `${name}.done`) };
+}
+
+const isRunning = (pid) => {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch {
+		return false;
+	}
+};
+
+// Another program on the console of a server: it attaches to the console, notes every console signal
+// it gets and stays until the test ends it.
+const FOREIGN_PROGRAM = String.raw`
+$in = $env:BYL_TEST_INPUT | ConvertFrom-Json
+Add-Type -TypeDefinition @'
+using System;
+using System.IO;
+using System.Runtime.InteropServices;
+public static class BylForeignProgram {
+    public delegate bool Handler(uint controlType);
+    [DllImport("kernel32.dll", SetLastError = true)] static extern bool AttachConsole(uint processId);
+    [DllImport("kernel32.dll", SetLastError = true)] static extern bool FreeConsole();
+    [DllImport("kernel32.dll", SetLastError = true)] static extern bool SetConsoleCtrlHandler(Handler handler, bool add);
+    static Handler note;
+    public static bool Join(uint processId, string attached, string signals) {
+        FreeConsole();
+        if (!AttachConsole(processId)) return false;
+        note = delegate (uint controlType) { File.AppendAllText(signals, controlType + "\n"); return true; };
+        SetConsoleCtrlHandler(note, true);
+        File.WriteAllText(attached, "attached");
+        return true;
+    }
+}
+'@
+if (-not [BylForeignProgram]::Join([uint32]$in.pid, [string]$in.attached, [string]$in.signals)) { exit 2 }
+Start-Sleep -Seconds 120
+`;
+
+/**
+ * Starts Windows PowerShell from this test (no child of the server) that attaches to the console
+ * of process `pid`, like a terminal in which a server was started by hand. `attached` appears once
+ * it is attached; `signals` would note the console signals it gets.
+ */
+function attachForeignProgram(pid) {
+	const name = join(base, `fremd-${randomBytes(4).toString('hex')}`);
+	const input = { pid, attached: `${name}.attached`, signals: `${name}.signals` };
+	const encoded = Buffer.from(`$ErrorActionPreference = 'Stop'\n${FOREIGN_PROGRAM}`, 'utf16le').toString('base64');
+	const child = spawnClean(POWERSHELL_EXE, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded], {
+		windowsHide: true,
+		stdio: 'ignore',
+		env: { BYL_TEST_INPUT: JSON.stringify(input) }
+	});
+	return { child, attached: input.attached, signals: input.signals };
+}
+
+// ST-1: The hooks of the app start child processes in the hidden console of PocketBase (the cron job
+// byl-backup runs backup-verify, the folders run their hashing, the page System its commands). A stop
+// at that moment found the console shared, sent no break and ended PocketBase hard (CI run 37183409369:
+// "break=3" one second after backup-verify of the cron job of copy A).
+describe('byl-control.ps1: orderly stop while the server runs a child process (ST-1)', CASE_TIMEOUT, () => {
+	it('waits for a child process of the server, then stops in order without touching the child', async () => {
+		expect(control(copies.a, 'start').code).toBe(0);
+		// 25 s: longer than the start of the command and of its sender (a few seconds, up to about 15 s
+		// under load), so the child still runs when the sender looks at the console; shorter than the
+		// 30 s the sender waits ($StopBusySeconds).
+		const child = await startConsoleChild(copies.a, 25);
+		expect(isRunning(child.pid)).toBe(true);
+		const result = control(copies.a, 'stop');
+		expect(result.code, result.output).toBe(0);
+		expect(result.output, controlLog(copies.a)).not.toContain('hart beendet');
+		expect(controlLog(copies.a)).toMatch(/ stop exit=0 stopped break=0\r$/m);
+		// The child ran to its end before the stop was over: the break went out only after it ended.
+		expect(existsSync(child.done)).toBe(true);
+		expect(serversOf(copies.a)).toEqual([]);
+		expect(existsSync(join(copies.a.dir, 'pb_data', 'data.db-wal'))).toBe(false);
+	});
+
+	it('never sends the break to another program on the console of the server, and says why it stopped hard', async () => {
+		expect(control(copies.a, 'start').code).toBe(0);
+		const [server] = serversOf(copies.a);
+		const foreign = attachForeignProgram(server.pid);
+		try {
+			await expect.poll(() => existsSync(foreign.attached), { timeout: scaled(30_000), interval: 100 }).toBe(true);
+			const result = control(copies.a, 'stop');
+			expect(result.code, result.output).toBe(0);
+			expect(result.output).toContain(`hart beendet: PocketBase (PID ${server.pid}).`);
+			expect(result.output).toMatch(/Ursache: {3}Ein anderes Programm h.+ngt an derselben Konsole/);
+			expect(controlLog(copies.a)).toMatch(/ stop exit=0 stopped problem=hard-stop-shared break=3\r$/m);
+			// The other program got no signal and runs on.
+			expect(existsSync(foreign.signals)).toBe(false);
+			expect(isRunning(foreign.child.pid)).toBe(true);
+			expect(serversOf(copies.a)).toEqual([]);
+		} finally {
+			foreign.child.kill();
+		}
 	});
 });
 

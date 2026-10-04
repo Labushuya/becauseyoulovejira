@@ -6,7 +6,18 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { integrationGroups } from '../support/test-groups.mjs';
-import { LOG_WRITE_MS, PROCESS_HOOK_MS, PROCESS_TEST_MS, SERVER_READY_MS, TIME_SCALE, parseTimeScale, processWorkers, scaled } from '../support/timing.mjs';
+import {
+	LOG_WRITE_MS,
+	PROCESS_HOOK_MS,
+	PROCESS_TEST_MS,
+	SERVER_READY_MS,
+	SHARED_HOOK_MS,
+	SHARED_TEST_MS,
+	TIME_SCALE,
+	parseTimeScale,
+	processWorkers,
+	scaled
+} from '../support/timing.mjs';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const read = (path) => readFileSync(new URL(path, new URL('../../', import.meta.url)), 'utf8');
@@ -25,6 +36,12 @@ describe('time limits of the tests with processes (RS-3)', () => {
 		expect(PROCESS_HOOK_MS).toBe(scaled(180_000));
 		expect(LOG_WRITE_MS).toBe(scaled(30_000));
 		expect(PROCESS_HOOK_MS).toBeGreaterThan(SERVER_READY_MS);
+	});
+
+	// ST-1: the shared instance keeps 15 s and 30 s (T-4) and scales like the rest on a busy machine.
+	it('keeps the limits of the shared instance and scales them as well', () => {
+		expect(SHARED_TEST_MS).toBe(scaled(15_000));
+		expect(SHARED_HOOK_MS).toBe(scaled(30_000));
 	});
 
 	it('runs at most four files with processes at a time, one fewer than the processors', () => {

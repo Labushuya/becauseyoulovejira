@@ -129,16 +129,27 @@ $result.stop = @{
     unknownTwice = Invoke-StopCase @(-1, 9) 0 $true $false
     notSent = Invoke-StopCase @(2, 4) 0 $true $false
     refused = Invoke-StopCase @(3, 0) 0 $true $false
+    busy = Invoke-StopCase @(5, 0) 0 $true $false
     throws = Invoke-StopCase @('throw', 'throw') 0 $true $false
     stuck = Invoke-StopCase @(0) 0 $false $true
 }
 $kinds = @{}
-foreach ($code in -2, -1, 0, 1, 2, 3, 4, 5, -1073741510) { $kinds["$code"] = Resolve-BreakCode -Code $code }
+foreach ($code in -2, -1, 0, 1, 2, 3, 4, 5, 6, -1073741510) { $kinds["$code"] = Resolve-BreakCode -Code $code }
 $result.breakKinds = $kinds
+$result.hardStopReasons = @{
+    none = Resolve-HardStopReason -Codes @()
+    sentLate = Resolve-HardStopReason -Codes @(0)
+    notSentTwice = Resolve-HardStopReason -Codes @(2, 4)
+    busy = Resolve-HardStopReason -Codes @(5)
+    refused = Resolve-HardStopReason -Codes @(3)
+    retriedThenRefused = Resolve-HardStopReason -Codes @(1, 3)
+}
 
 $encoded = Get-ConsoleBreakCommand -ProcessId 4711
 $result.breakCommand = [System.Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($encoded))
+$result.breakCommandWaiting = [System.Text.Encoding]::Unicode.GetString([Convert]::FromBase64String((Get-ConsoleBreakCommand -ProcessId 4711 -WaitMilliseconds 30000)))
 try { [void](Get-ConsoleBreakCommand -ProcessId 0); $result.breakZero = 'accepted' } catch { $result.breakZero = 'rejected' }
+try { [void](Get-ConsoleBreakCommand -ProcessId 4711 -WaitMilliseconds -1); $result.breakNegativeWait = 'accepted' } catch { $result.breakNegativeWait = 'rejected' }
 
 $shortcuts = @(
     [pscustomobject]@{ Path = 'C:\s\a.lnk'; Name = 'becauseyoulovejira'; TargetPath = 'C:\x\chrome_proxy.exe'; Arguments = '--app-id=abcdefghijklmnopabcdefghijklmnop "--app-url=http://127.0.0.1:8091/"' }
@@ -406,7 +417,8 @@ describe('orderly stop (ADR-0039 section 4)', () => {
 			2: 'NotSent',
 			3: 'Refused',
 			4: 'NotSent',
-			5: 'Unknown',
+			5: 'Busy',
+			6: 'Unknown',
 			'-1073741510': 'Sent'
 		});
 	});
@@ -443,10 +455,29 @@ describe('orderly stop (ADR-0039 section 4)', () => {
 		expect(result.stop.refused).toEqual({ outcome: 'Forced', log: ['break 42', 'kill 42', 'wait 42 10000'], codes: [3] });
 	});
 
-	it('builds the console break for exactly one process id', () => {
-		expect(result.breakCommand).toContain('exit ([BylConsoleBreak]::Send([uint32]4711))');
+	// ST-1: the sender waited for processes the server started, and they still ran: a second break
+	// would wait as long again.
+	it('never repeats a break the sender held back for processes of the server', () => {
+		expect(result.stop.busy).toEqual({ outcome: 'Forced', log: ['break 42', 'kill 42', 'wait 42 10000'], codes: [5] });
+	});
+
+	it('names the reason of a hard stop from the codes of its senders', () => {
+		expect(result.hardStopReasons).toEqual({
+			none: 'Timeout',
+			sentLate: 'Timeout',
+			notSentTwice: 'Timeout',
+			busy: 'Busy',
+			refused: 'Refused',
+			retriedThenRefused: 'Refused'
+		});
+	});
+
+	it('builds the console break for exactly one process id, with the wait for its own processes', () => {
+		expect(result.breakCommand).toContain('exit ([BylConsoleBreak]::Send([uint32]4711, 0))');
+		expect(result.breakCommandWaiting).toContain('exit ([BylConsoleBreak]::Send([uint32]4711, 30000))');
 		expect(result.breakCommand).toContain('GenerateConsoleCtrlEvent(1, 0)');
 		expect(result.breakZero).toBe('rejected');
+		expect(result.breakNegativeWait).toBe('rejected');
 	});
 });
 

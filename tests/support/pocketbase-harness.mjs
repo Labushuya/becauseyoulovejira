@@ -1,19 +1,22 @@
 // Disposable PocketBase instance for integration tests (ADR-0004, CLAUDE.md §11).
 //
 // Hard order: fresh temp folder -> `superuser upsert` (random credentials) -> `serve`.
-// A data folder with a superuser never opens the browser installer. Credentials are
-// only returned in memory; they are never written to disk or printed.
+// A data folder with a superuser never opens the browser installer: PocketBase opens it only while
+// no superuser exists (apis/installer.go of v0.40.4). Credentials are only returned in memory; they
+// are never written to disk or printed. The temp folders and their removal: temp-folders.mjs.
 
 import { randomBytes } from 'node:crypto';
 import { existsSync, rmSync } from 'node:fs';
-import { cp, mkdir, mkdtemp, readdir, rm } from 'node:fs/promises';
+import { cp, mkdir, readdir, rm } from 'node:fs/promises';
 import { createServer } from 'node:net';
-import { constants, tmpdir } from 'node:os';
+import { constants } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { executableName } from '../../scripts/platform.mjs';
-import { spawnClean, spawnSyncClean } from './clean-env.mjs';
+import { cleanEnv, spawnClean, spawnSyncClean } from './clean-env.mjs';
+import { devModeFolder, devModeMessage } from './pocketbase-dev-mode.mjs';
+import { createTempFolder } from './temp-folders.mjs';
 import { SERVER_READY_MS, scaled } from './timing.mjs';
 
 const ROOT_DIR = resolve(fileURLToPath(new URL('../..', import.meta.url)));
@@ -25,7 +28,6 @@ export const APP_MIGRATIONS_DIR = join(ROOT_DIR, 'app', 'pb_migrations');
 const FIXTURE_HOOKS_DIR = join(ROOT_DIR, 'tests', 'fixtures', 'pb_hooks');
 const TASKKILL_EXE = join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'taskkill.exe');
 
-const TEMP_PREFIX = 'byl-test-';
 const RESERVED_PORTS = new Set([8090, 8099]);
 // The server is polled until /api/health answers; the limit is only a bound for a server that
 // never comes up (tests/support/timing.mjs: about 1 s alone, up to 45 s with a full load beside).
@@ -34,7 +36,10 @@ const HEALTH_REQUEST_TIMEOUT_MS = 1_000;
 const KILL_ATTEMPTS = 3;
 const KILL_WAIT_MS = scaled(3_000);
 const OUTPUT_LIMIT = 64 * 1024;
-const INSTALLER_MARKER = 'pbinstal';
+// The link of the installer of a data folder without superuser (apis/installer.go of v0.40.4).
+const INSTALLER_LINK = '/_/#/pbinstall/';
+// The account PocketBase looks for at every start; only the SQL log of its dev mode names it.
+const INSTALLER_ACCOUNT = '__pbinstaller@example.com';
 const EXIT_SIGNALS = ['SIGINT', 'SIGTERM', 'SIGBREAK', 'SIGHUP'];
 // Explicit values of every server: the Telegram Bot API points to a closed local port unless a test
 // sets its fake server, so no test instance can ever reach api.telegram.org (E4 plan, package 17).
@@ -110,7 +115,7 @@ export async function startPocketBase(options = {}) {
 	assertExecutable();
 
 	const state = {
-		baseDir: await mkdtemp(join(tmpdir(), TEMP_PREFIX)),
+		baseDir: await createTempFolder(),
 		child: null,
 		done: false
 	};
@@ -221,8 +226,8 @@ async function migrationsFor(baseDir, name, filter) {
 
 /**
  * Runs `fn` with a fresh, empty data folder for one-shot commands such as `migrate`
- * (never `serve`). The folder uses the byl-test- prefix and is removed afterwards, also on
- * Ctrl+C or process exit.
+ * (never `serve`). The folder is a temp folder of the harness (temp-folders.mjs) and is removed
+ * afterwards, also on Ctrl+C or process exit.
  * @template T
  * @param {(dirs: { dataDir: string, hooksDir: string, args: string[] }) => Promise<T>} fn
  *   `args` holds --dir, --hooksDir (empty folder) and --migrationsDir (app/pb_migrations).
@@ -231,7 +236,7 @@ async function migrationsFor(baseDir, name, filter) {
 export async function withTempDataDir(fn) {
 	assertExecutable();
 	const state = {
-		baseDir: await mkdtemp(join(tmpdir(), TEMP_PREFIX)),
+		baseDir: await createTempFolder(),
 		child: null,
 		done: false
 	};
@@ -271,10 +276,16 @@ export function runPocketBase(args, options = {}) {
 	return runToCompletion(args, options.input);
 }
 
+/**
+ * The program must exist and must not lie where PocketBase switches to its dev mode
+ * (pocketbase-dev-mode.mjs), judged with the environment its processes get.
+ */
 function assertExecutable() {
 	if (!existsSync(POCKETBASE_EXE)) {
 		throw new Error(`${POCKETBASE_EXE} is missing. Run "node scripts/fetch-pocketbase.mjs" first.`);
 	}
+	const devMode = devModeFolder(POCKETBASE_EXE, cleanEnv({ ...SERVER_ENV }));
+	if (devMode !== null) throw new Error(devModeMessage(POCKETBASE_EXE, devMode));
 }
 
 /**
@@ -367,8 +378,15 @@ async function waitForHealth(url, server, secrets) {
 }
 
 function assertServerUsable(server, secrets) {
-	if (server.output.includes(INSTALLER_MARKER)) {
-		throw new Error('PocketBase printed an installer link (no superuser?). Aborting.');
+	if (server.output.includes(INSTALLER_LINK)) {
+		throw new Error('PocketBase printed the link of its installer: the data folder has no superuser. Aborting.');
+	}
+	// The dev mode under an unforeseen condition (assertExecutable() checks the known ones).
+	if (server.output.includes(INSTALLER_ACCOUNT)) {
+		throw new Error(
+			'PocketBase runs in its dev mode (its SQL log names the installer account); it takes ' +
+				`${POCKETBASE_EXE} for a program started with "go run". Aborting.`
+		);
 	}
 	if (server.spawnError) {
 		throw new Error(`Failed to start PocketBase: ${server.spawnError.message}`);
