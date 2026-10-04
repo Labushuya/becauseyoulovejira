@@ -114,7 +114,7 @@ describe('Notfallkarte', () => {
 		mocks.platform = 'windows';
 		mocks.answer = { kind: 'denied', reason: 'owner' };
 		render(Page);
-		await screen.findByText('Nur für den Besitzer dieser Installation');
+		await screen.findByText('Nur für den Verwalter der App');
 		expect(screen.queryByRole('article')).toBeNull();
 		expect(screen.queryByRole('button', { name: 'Drucken' })).toBeNull();
 	});

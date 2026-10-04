@@ -15,7 +15,9 @@
 <script lang="ts">
 	import type { ResolvedPathname } from '$app/types';
 	import type { Connection } from '$lib/domain/connections';
+	import { helpHref } from '$lib/settings-sections';
 	import Lozenge from '../guidance/Lozenge.svelte';
+	import SectionMessage from '../guidance/SectionMessage.svelte';
 	import ChannelIcon, { type ChannelIconKind } from './ChannelIcon.svelte';
 
 	// Catalog "Kanal hinzufügen" (ADR-0026 section 3, plan EH-3 and §3.4): one tile per service with
@@ -26,17 +28,23 @@
 	// its assistant or guide (?einrichten=<art>, EH-5 to EH-7), so a middle click works too; the link
 	// replaces the history entry, like closing the assistant does. Notion (ADR-0041) fetches nothing
 	// by itself; its tile says "Import". GitHub (ADR-0050) watches repositories like the services
-	// above, read only, and so do the folders of this machine (ADR-0051).
+	// above, read only, and so do the folders of this machine (ADR-0051). Channels with access data
+	// of this machine and folders are set up only by the administrator of the app (ADR-0056 §5): for
+	// another account the catalog says so and keeps the two tiles it can use (Proton per file,
+	// WhatsApp Web with its own key).
 	let {
 		connections,
 		heading = $bindable(),
-		hrefOf
+		hrefOf,
+		admin = true
 	}: {
 		connections: readonly Connection[];
 		/** The heading "Kanal hinzufügen"; the empty state moves the focus to it. */
 		heading?: HTMLElement;
 		/** Address of the assistant or guide of a service. */
 		hrefOf: (entry: CatalogEntry) => ResolvedPathname;
+		/** The signed-in account is the administrator of the app. */
+		admin?: boolean;
 	} = $props();
 
 	const uid = $props.id();
@@ -95,8 +103,22 @@
 
 <section class="catalog" aria-labelledby={`${uid}-heading`} data-tour="channel-catalog">
 	<h3 id={`${uid}-heading`} tabindex="-1" bind:this={heading}>Kanal hinzufügen</h3>
+	{#if !admin}
+		<SectionMessage tone="info" title="Kanäle mit Zugangsdaten richtet der Verwalter ein">
+			<p>
+				Google Calendar, Telegram, Postfächer, Notion, GitHub und Ordner lesen Zugangsdaten oder
+				Ordner dieses Rechners. Einrichten darf sie deshalb nur der Verwalter der App.
+			</p>
+			<p>
+				Du kannst selbst nutzen: Schnellerfassung und Zwischenablage, das Bookmarklet, Datei-Importe
+				(Mail- und Kalenderdateien, WhatsApp-Exporte, auch Proton per Datei), den eigenen Eingang
+				mit deinem eigenen Zugangsschlüssel und damit WhatsApp Web.
+				<a href={helpHref('konten')}>Was darf welches Konto?</a>
+			</p>
+		</SectionMessage>
+	{/if}
 	<ul class="tiles">
-		{#each ENTRIES as entry (entry.id)}
+		{#each admin ? ENTRIES : [] as entry (entry.id)}
 			{@const exists = connections.some(entry.exists)}
 			<li class="tile">
 				<div class="head">
@@ -141,27 +163,29 @@
 				</a>
 			</div>
 		</li>
-		<li class="tile">
-			<div class="head">
-				<ChannelIcon kind="notion" />
-				<h4>Notion (Listen übernehmen)</h4>
-			</div>
-			<p>Bestehende Listen und Datenbanken als Kopien übernehmen, nur lesend, nur auf Anstoß.</p>
-			<div class="foot">
-				<Lozenge label="Import" icon="inbox" tone="muted" />
-				<a
-					class="button-secondary setup"
-					href={hrefOf('notion')}
-					data-sveltekit-keepfocus
-					data-sveltekit-noscroll
-					data-sveltekit-replacestate
-				>
-					{connections.some((connection) => connection.type === 'notion')
-						? 'Weitere einrichten'
-						: 'Einrichten'}<span class="visually-hidden">: Notion</span>
-				</a>
-			</div>
-		</li>
+		{#if admin}
+			<li class="tile">
+				<div class="head">
+					<ChannelIcon kind="notion" />
+					<h4>Notion (Listen übernehmen)</h4>
+				</div>
+				<p>Bestehende Listen und Datenbanken als Kopien übernehmen, nur lesend, nur auf Anstoß.</p>
+				<div class="foot">
+					<Lozenge label="Import" icon="inbox" tone="muted" />
+					<a
+						class="button-secondary setup"
+						href={hrefOf('notion')}
+						data-sveltekit-keepfocus
+						data-sveltekit-noscroll
+						data-sveltekit-replacestate
+					>
+						{connections.some((connection) => connection.type === 'notion')
+							? 'Weitere einrichten'
+							: 'Einrichten'}<span class="visually-hidden">: Notion</span>
+					</a>
+				</div>
+			</li>
+		{/if}
 		<li class="tile">
 			<div class="head">
 				<ChannelIcon kind="whatsapp-web" />

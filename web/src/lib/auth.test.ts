@@ -178,11 +178,19 @@ describe('Auth.login', () => {
 		expect(auth.userId).toBe(USER.id);
 	});
 
-	it.each([400, 401, 403, 404])('reports every refusal (%i) as "rejected"', async (status) => {
+	it.each([400, 401, 404])('reports every refusal (%i) as "rejected"', async (status) => {
 		stubFetch(error(status));
 		const auth = new Auth(new PocketBase(ORIGIN, new BaseAuthStore()));
 
 		expect(await auth.login(USER.email, 'wrong')).toEqual({ ok: false, failure: 'rejected' });
+		expect(auth.isLoggedIn).toBe(false);
+	});
+
+	it('reports a disabled account (403 after the right password, ADR-0056 §3) as "disabled"', async () => {
+		stubFetch(error(403));
+		const auth = new Auth(new PocketBase(ORIGIN, new BaseAuthStore()));
+
+		expect(await auth.login(USER.email, 'right')).toEqual({ ok: false, failure: 'disabled' });
 		expect(auth.isLoggedIn).toBe(false);
 	});
 
@@ -492,5 +500,43 @@ describe('Auth.keepAlive', () => {
 
 		expect(fetchMock).not.toHaveBeenCalled();
 		expect(vi.getTimerCount()).toBe(0);
+	});
+});
+
+describe('accounts and the administrator (ADR-0056)', () => {
+	it('takes name and right from the record; a record from before the restart keeps the pages', () => {
+		const client = clientWithSession();
+		const auth = new Auth(client);
+		expect([auth.name, auth.isAdmin]).toEqual(['', true]);
+
+		client.authStore.save('stored-token', {
+			...USER,
+			name: 'Anna Beispiel',
+			instance_admin: false
+		});
+		expect([auth.name, auth.isAdmin]).toEqual(['Anna Beispiel', false]);
+		client.authStore.save('stored-token', { ...USER, instance_admin: true });
+		expect(auth.isAdmin).toBe(true);
+
+		auth.logout();
+		expect(auth.isAdmin).toBe(false);
+	});
+
+	it('binds the realtime connection again to a new token of the same account', async () => {
+		const client = clientWithSession('old-token');
+		const unsubscribe = vi.fn(async () => undefined);
+		const subscribe = vi.spyOn(client.realtime, 'subscribe').mockResolvedValue(unsubscribe);
+		vi.spyOn(client.realtime, 'isConnected', 'get').mockReturnValue(true);
+		new Auth(client);
+
+		client.authStore.save('new-token', USER);
+		await vi.waitFor(() => expect(unsubscribe).toHaveBeenCalledOnce());
+		expect(subscribe).toHaveBeenCalledWith('byl/session', expect.any(Function));
+
+		// Another account (a new sign-in) or the same token sends nothing again.
+		client.authStore.save('new-token', USER);
+		client.authStore.save('third-token', { ...USER, id: 'user0000000009' });
+		await pause();
+		expect(subscribe).toHaveBeenCalledOnce();
 	});
 });

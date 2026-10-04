@@ -21,6 +21,8 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
 	{ id: 'tickets', label: 'Tickets', href: resolve('/einstellungen/tickets') },
 	{ id: 'darstellung', label: 'Darstellung', href: resolve('/einstellungen/darstellung') },
 	{ id: 'konto', label: 'Konto', href: resolve('/einstellungen/konto') },
+	// The accounts of the app for its administrator (ADR-0056 §3), on every server.
+	{ id: 'konten', label: 'Konten', href: resolve('/einstellungen/konten') },
 	// How the app protects itself and what can be set (ADR-0055 §8), on every server; the further
 	// hosts only for the folder app under Windows.
 	{ id: 'sicherheit', label: 'Sicherheit', href: resolve('/einstellungen/sicherheit') },
@@ -37,14 +39,30 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
 /** Pages that drive the scripts of the folder app under Windows (ADR-0043, ADR-0046). */
 const WINDOWS_ONLY = ['sicherung', 'system'];
 
+/** Pages of the administrator of the app (ADR-0056 §7); the routes refuse every other account. */
+export const ADMIN_ONLY: readonly string[] = [
+	'konten',
+	'sicherheit',
+	'sicherung',
+	'speicher',
+	'system'
+];
+
 /**
  * The pages the navigation lists for a server on `platform`: "Sicherung" and "System" drive the
- * scripts of the folder app under Windows, so they are left out for Linux and containers.
+ * scripts of the folder app under Windows, so they are left out for Linux and containers. An
+ * account that is not the administrator of the app (`admin` false) does not see the pages of the
+ * administrator at all (ADR-0056 §7, instead of a page that only says "nicht für dich").
  */
-export function visibleSettingsSections(platform: HostPlatform): readonly SettingsSection[] {
-	return platform === 'windows'
-		? SETTINGS_SECTIONS
-		: SETTINGS_SECTIONS.filter((section) => !WINDOWS_ONLY.includes(section.id));
+export function visibleSettingsSections(
+	platform: HostPlatform,
+	admin: boolean = true
+): readonly SettingsSection[] {
+	return SETTINGS_SECTIONS.filter(
+		(section) =>
+			(platform === 'windows' || !WINDOWS_ONLY.includes(section.id)) &&
+			(admin || !ADMIN_ONLY.includes(section.id))
+	);
 }
 
 /** Start of the settings area; it forwards to the first page. */
@@ -87,7 +105,9 @@ export const HELP_SECTIONS = [
 	// What the app takes and what can be cleared (ADR-0047 §6): linked from the page "Speicher".
 	{ id: 'speicher', label: 'Speicher' },
 	// The protection of the app (ADR-0055): linked from the page "Sicherheit".
-	{ id: 'sicherheit', label: 'Sicherheit' }
+	{ id: 'sicherheit', label: 'Sicherheit' },
+	// Accounts and the administrator (ADR-0056): linked from the pages "Konto" and "Konten".
+	{ id: 'konten', label: 'Konten und Verwalter' }
 ] as const;
 
 export type HelpSection = (typeof HELP_SECTIONS)[number]['id'];

@@ -15,6 +15,7 @@
 	import { TRASH_TABLE } from '$lib/domain/columns';
 	import { rowMenus } from '$lib/overlay/context-menu';
 	import { getColumnPrefs } from '$lib/stores/column-prefs.svelte';
+	import { findPeople } from '$lib/stores/people.svelte';
 	import ActionsMenu, { type MenuAction } from './ActionsMenu.svelte';
 	import Lozenge from './guidance/Lozenge.svelte';
 	import StatusPill from './StatusPill.svelte';
@@ -72,6 +73,8 @@
 
 	const CAPTION = 'Papierkorb · zuletzt gelöschte zuerst';
 	const LONG_TITLE = 60;
+	// "Von" names another account where its name is visible (ADR-0056 §4).
+	const people = findPeople();
 
 	const shown = $derived(columnFit.shown);
 	const order = $derived(items.map((item) => item.id));
@@ -238,7 +241,7 @@
 						<td class="date" data-col="deleted">{formatBerlinDateTime(item.deletedAt)}</td>
 					{/if}
 					{#if shown.has('by')}
-						<td class="text" data-col="by">{personLabel(item.deletedBy, selfId)}</td>
+						<td class="text" data-col="by">{personLabel(item.deletedBy, selfId, people)}</td>
 					{/if}
 					{#if shown.has('left')}
 						<td class="date" data-col="left">{purgeText(item.daysLeft, item.dependencies)}</td>

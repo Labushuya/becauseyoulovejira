@@ -31,6 +31,7 @@
 		setConnectionNames
 	} from '$lib/stores/connection-names.svelte';
 	import { FirstStepsStore, localStore, setFirstStepsStore } from '$lib/stores/first-steps.svelte';
+	import { PeopleStore, peopleData, setPeople } from '$lib/stores/people.svelte';
 	import { FolderViewer, folderViewData, setFolderViewer } from '$lib/stores/folder-view.svelte';
 	import { fetchHostPlatform } from '$lib/data/host';
 	import { HostStore, setHostStore } from '$lib/stores/host.svelte';
@@ -203,6 +204,10 @@
 		new ConnectionNamesStore(connectionNamesData(pb), auth)
 	);
 	$effect(() => untrack(() => connectionNames.start()));
+	// Names of the visible accounts for comments, history and the trash (ADR-0056 §4): loaded once
+	// per session, new names arrive through realtime; without one a person stays "Anderes Konto".
+	const people = setPeople(new PeopleStore(peopleData(pb), auth));
+	$effect(() => untrack(() => people.start()));
 	$effect(() => untrack(() => rules.start()));
 	$effect(() => untrack(() => rules.connect(recurrenceLive(pb))));
 	// Rules that wait for the choice about a large backlog (ADR-0022 addendum 5) say so once the
@@ -260,12 +265,18 @@
 		flags,
 		open: () => void goto(securityLoginsHref())
 	});
+	// Backups and failed sign-ins are matters of the administrator of the app (ADR-0056 §7): another
+	// account does not ask the routes that would refuse it.
+	const adminNotices = () => {
+		if (!auth.isAdmin) return;
+		void backupAttention.announce();
+		void securityAttention.announce();
+	};
 	$effect(() => {
 		if (auth.userId === null) return;
 		untrack(() => {
-			void backupAttention.announce();
+			adminNotices();
 			void trashAttention.announce();
-			void securityAttention.announce();
 		});
 	});
 
@@ -282,9 +293,8 @@
 		notify: () => void notifyStore.notify(),
 		opened: () => {
 			rules.announceWaiting(openWaiting);
-			void backupAttention.announce();
+			adminNotices();
 			void trashAttention.announce();
-			void securityAttention.announce();
 		}
 	});
 	$effect(() => untrack(() => notifyStore.connect()));

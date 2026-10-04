@@ -36,7 +36,7 @@ describe('help page (EH-9)', () => {
 		}
 	});
 
-	it('jumps to the sections that exist on the page, fifteen since the security', () => {
+	it('jumps to the sections that exist on the page, sixteen since the accounts', () => {
 		const { container } = render(Page);
 
 		const jump = within(screen.getByRole('navigation', { name: 'Auf dieser Seite' }));
@@ -56,7 +56,8 @@ describe('help page (EH-9)', () => {
 			'Betrieb',
 			'Sicherung & Notfall',
 			'Speicher',
-			'Sicherheit'
+			'Sicherheit',
+			'Konten und Verwalter'
 		]);
 		for (const link of links) {
 			const id = link.getAttribute('href')?.slice(1) ?? '';
@@ -292,12 +293,16 @@ describe('help page (EH-9)', () => {
 			/stop\.bat beendet geordnet erst den Mail-Hilfsprozess, dann den Server/
 		);
 		expect(content).toMatch(/status\.bat zeigt, ob die App läuft/);
-		// ADR-0043: the same from the dashboard, only on this machine and for the owner, no "Beenden".
+		// ADR-0043: the same from the dashboard, only on this machine and for the administrator of the
+		// app (ADR-0056), no "Beenden".
 		const system = within(section).getByRole('link', { name: 'Einstellungen → System' });
 		expect(system.getAttribute('href')).toBe('/einstellungen/system');
 		expect(content).toMatch(
-			/nur im Browser auf dem Rechner der App und nur mit dem App-Konto, das bei der Einrichtung zuerst angelegt wurde/
+			/nur im Browser auf dem Rechner der App und nur mit einem Konto, das Verwalter der App ist \(zu Beginn das zuerst angelegte/
 		);
+		expect(
+			within(section).getByRole('link', { name: 'Konten und Verwalter' }).getAttribute('href')
+		).toBe('/einstellungen/hilfe#konten');
 		expect(content).toMatch(/Beenden geht weiter nur mit stop\.bat/);
 		expect(content).toContain(`Diese App läuft unter ${page.url.origin}.`);
 		expect(content).toMatch(/byl-control\.ps1 port 8091/);
@@ -731,5 +736,31 @@ describe('help page (EH-9)', () => {
 		expect(
 			within(section).getByRole('link', { name: 'Einstellungen → Sicherheit' }).getAttribute('href')
 		).toBe('/einstellungen/sicherheit');
+	});
+
+	it('explains accounts, the administrator, the channels per account and a second person (ADR-0056)', () => {
+		render(Page);
+		const section = screen.getByRole('region', { name: 'Konten und Verwalter' });
+		const terms = [...section.querySelectorAll('dt')].map((term) => term.textContent?.trim());
+		expect(terms).toEqual([
+			'Verwalter der App',
+			'Konto anlegen',
+			'Passwort vergessen',
+			'Deaktivieren',
+			'Was andere sehen',
+			'Kanäle für jedes Konto',
+			'Zweite Person am selben Rechner'
+		]);
+		const content = text(section);
+		expect(content).toMatch(/Mindestens ein aktives Konto bleibt immer Verwalter/);
+		expect(content).toMatch(/zeigt es einmal an, mit „Kopieren“/);
+		expect(content).toMatch(/Die E-Mail-Adresse sieht nur der Verwalter/);
+		expect(content).toMatch(
+			/Google Calendar, Telegram, Postfächer, Notion, GitHub und Ordner richtet nur der Verwalter ein/
+		);
+		expect(content).toMatch(/Die Anmeldung gilt je Browserprofil/);
+		expect(
+			within(section).getByRole('link', { name: 'Einstellungen → Konten' }).getAttribute('href')
+		).toBe('/einstellungen/konten');
 	});
 });

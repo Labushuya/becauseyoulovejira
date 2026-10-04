@@ -121,7 +121,7 @@ describe('words of the page', () => {
 			previewText([{ count: 1, bytes: 95 * 1024 ** 2 }, null, { count: 2, bytes: 1024 }])
 		).toBe('Betrifft 3 Einträge, 95 MB.');
 		expect(previewText([null, { count: 0, bytes: 0 }])).toBe('Betrifft nichts.');
-		expect(denialText('owner').title).toBe('Nur für das erste Konto');
+		expect(denialText('owner').title).toBe('Nur für den Verwalter der App');
 		expect(denialText('loopback').title).toBe('Nur auf dem Rechner der App');
 		expect(denialText('script').title).toBe('Der Speicher ließ sich nicht messen');
 	});

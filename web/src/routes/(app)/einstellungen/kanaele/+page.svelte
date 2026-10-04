@@ -99,5 +99,6 @@
 	projects={catalog.projects}
 	{extension}
 	{setup}
+	admin={auth.isAdmin}
 	onsetupchange={changeSetup}
 />

@@ -53,7 +53,9 @@ const mocks = vi.hoisted(() => {
 			// Changes of the trash (ADR-0037).
 			trash: vi.fn(subscribe('byl/trash')),
 			// Names of the connections for inbox and sources (ADR-0026, addendum KK-3).
-			connections: vi.fn(subscribe('connections'))
+			connections: vi.fn(subscribe('connections')),
+			// Names of the visible accounts for comments, history and trash (ADR-0056 §4).
+			people: vi.fn(subscribe('users'))
 		},
 		goto: vi.fn(async () => {
 			calls.push('goto');
@@ -63,6 +65,8 @@ const mocks = vi.hoisted(() => {
 		page: { url: new URL('http://localhost:3000/') },
 		auth: {
 			email: 'anna@example.com',
+			// The administrator of the app (ADR-0056): it asks for the notices of backups and sign-ins.
+			isAdmin: true,
 			keepAlive: vi.fn(() => stopKeepAlive),
 			// Without a valid session in the fake the stores load nothing (no server in these tests);
 			// the counter tests switch it on together with fake data layers.
@@ -209,6 +213,15 @@ vi.mock('$lib/stores/connection-names.svelte', async (importOriginal) => ({
 		reconnected: mocks.live.reconnected
 	})
 }));
+// Names of the visible accounts (ADR-0056 §4): none in these tests.
+vi.mock('$lib/stores/people.svelte', async (importOriginal) => ({
+	...(await importOriginal<object>()),
+	peopleData: () => ({
+		list: async () => [],
+		subscribe: mocks.live.people,
+		reconnected: mocks.live.reconnected
+	})
+}));
 
 function ticket(id: string, status: TicketSummary['status'] = 'open'): TicketSummary {
 	return {
@@ -283,7 +296,7 @@ describe('app layout', () => {
 
 	it('subscribes to tickets, the catalog, the inbox, the rules, the attention messages and reconnections while shown and ends them when it goes away', async () => {
 		const { unmount } = await renderLayout();
-		await vi.waitFor(() => expect(mocks.subscribed).toHaveLength(19));
+		await vi.waitFor(() => expect(mocks.subscribed).toHaveLength(21));
 
 		// The list follows all tickets, the catalog all projects and tags (E3 plan, T-16), the
 		// inbox all entries (E4 plan, T-4) and so do the sources of the open ticket (ADR-0031), the
@@ -291,8 +304,10 @@ describe('app layout', () => {
 		// each reconcile after a reconnect. The hint of start.bat listens on byl/attention and drops
 		// the flag "beendet" after a reconnect (ADR-0035 section 5). The trash reads its list again
 		// on byl/trash and after a reconnect (ADR-0037). The names of the connections follow their
-		// renames and load again after a reconnect (ADR-0026, addendum KK-3).
+		// renames and load again after a reconnect (ADR-0026, addendum KK-3), and so do the names of
+		// the visible accounts (ADR-0056 §4).
 		expect([...mocks.subscribed].sort()).toEqual([
+			'PB_CONNECT',
 			'PB_CONNECT',
 			'PB_CONNECT',
 			'PB_CONNECT',
@@ -311,7 +326,8 @@ describe('app layout', () => {
 			'projects',
 			'rules',
 			'tags',
-			'tickets'
+			'tickets',
+			'users'
 		]);
 		expect(mocks.live.tickets).toHaveBeenCalledOnce();
 		expect(mocks.live.projects).toHaveBeenCalledOnce();
@@ -320,6 +336,7 @@ describe('app layout', () => {
 		expect(mocks.live.rules).toHaveBeenCalledOnce();
 		expect(mocks.live.trash).toHaveBeenCalledOnce();
 		expect(mocks.live.connections).toHaveBeenCalledOnce();
+		expect(mocks.live.people).toHaveBeenCalledOnce();
 		// The catalog tries to load once when the layout is shown.
 		expect(mocks.auth.ensureValid).toHaveBeenCalled();
 

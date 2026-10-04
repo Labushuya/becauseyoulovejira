@@ -14,7 +14,9 @@
 			'Zu viele Anmeldeversuche. Zum Schutz vor Rateversuchen ist die Anmeldung kurz gesperrt. Bitte ein paar Minuten warten und dann erneut versuchen.',
 		server: 'Der Server hat mit einem Fehler geantwortet. Bitte später erneut versuchen.',
 		network:
-			'Server nicht erreichbar. Bitte prüfen, ob becauseyoulovejira gestartet ist (start.bat), und erneut versuchen.'
+			'Server nicht erreichbar. Bitte prüfen, ob becauseyoulovejira gestartet ist (start.bat), und erneut versuchen.',
+		// Only after the right password of a disabled account (ADR-0056 §3), so it reveals nothing.
+		disabled: 'Dieses Konto ist deaktiviert. Bitte wende dich an den Verwalter der App.'
 	};
 
 	let email = $state('');

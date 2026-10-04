@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { afterNavigate } from '$app/navigation';
 	import { page } from '$app/state';
+	import { auth } from '$lib/auth.svelte';
 	import Breadcrumbs from '$lib/components/Breadcrumbs.svelte';
 	import SettingsNav from '$lib/components/SettingsNav.svelte';
 	import ViewSwitch from '$lib/components/ViewSwitch.svelte';
@@ -27,9 +28,12 @@
 	const inbox = getInboxStore();
 	const lastView = getLastViewStore();
 	// "System" only for a server on Windows (ADR-0043); until the answer and outside the app layout
-	// the server counts as Windows, like the guides.
+	// the server counts as Windows, like the guides. The pages of the administrator only for the
+	// administrator of the app (ADR-0056 §7).
 	const host = findHostStore();
-	const sections = $derived(visibleSettingsSections(host?.platform ?? DEFAULT_HOST_PLATFORM));
+	const sections = $derived(
+		visibleSettingsSections(host?.platform ?? DEFAULT_HOST_PLATFORM, auth.isAdmin)
+	);
 
 	const uid = $props.id();
 	const headingId = `${uid}-heading`;

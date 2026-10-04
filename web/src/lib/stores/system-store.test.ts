@@ -83,7 +83,7 @@ describe('SystemStore: status', () => {
 		});
 		await store.load();
 		expect(store.state).toBe('denied');
-		expect(store.message?.title).toBe('Nur für den Besitzer dieser Installation');
+		expect(store.message?.title).toBe('Nur für den Verwalter der App');
 	});
 
 	it('names the restart before the route exists (404 after an update)', async () => {
