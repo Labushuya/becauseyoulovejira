@@ -22,8 +22,19 @@ export const FIREWALL_STATES = ['present', 'missing', 'mismatch', 'unknown'] as 
 export type FirewallState = (typeof FIREWALL_STATES)[number];
 export const FIREWALL_ACTIONS = ['add', 'remove'] as const;
 export type FirewallAction = (typeof FIREWALL_ACTIONS)[number];
-const OUTCOMES = ['done', 'test', 'cancelled', 'failed', 'timeout'] as const;
-export type FirewallOutcome = (typeof OUTCOMES)[number];
+/**
+ * Outcomes of a change of the rule (FIREWALL_OUTCOMES of lan-rules.js): "done" only when the script
+ * read the rule again afterwards and it really is so.
+ */
+export const FIREWALL_OUTCOMES = [
+	'done',
+	'cancelled',
+	'timeout',
+	'unavailable',
+	'failed',
+	'unconfirmed'
+] as const;
+export type FirewallOutcome = (typeof FIREWALL_OUTCOMES)[number];
 
 /** Whether `value` is an IPv4 address in 10.0.0.0/8, 172.16.0.0/12 or 192.168.0.0/16. */
 export function isPrivateIPv4(value: unknown): boolean {
@@ -200,7 +211,7 @@ export function parseFirewallAnswer(
 		result: {
 			ok: result.ok,
 			action: result.action,
-			outcome: oneOf(OUTCOMES, result.outcome) ? result.outcome : '',
+			outcome: oneOf(FIREWALL_OUTCOMES, result.outcome) ? result.outcome : '',
 			report: result.ok ? null : parseProblemReport(result.report)
 		},
 		lan: parseLanInfo(value)
@@ -275,7 +286,10 @@ export const LAN_TEXTS = {
 	firewallConfirmRemove: 'Firewall-Regel entfernen?',
 	firewallRule: (port: number) =>
 		`Die Regel „${LAN_RULE_NAME}“ lässt nur pocketbase.exe dieses Ordners, nur TCP-Port ${port} und nur in privaten Netzwerken durch.`,
-	uac: 'Windows fragt gleich auf diesem Rechner nach Administratorrechten (Benutzerkontensteuerung). Bitte dort bestätigen; die Seite wartet so lange.',
+	uac: 'Windows fragt gleich auf diesem Rechner nach Administratorrechten (Benutzerkontensteuerung). Bitte dort „Ja“ wählen; erscheint kein Fenster, blinkt die Abfrage als Schild-Symbol in der Taskleiste. Ist Windows so eingestellt, dass es ohne Rückfrage erhöht, erscheint keine Abfrage. Die Seite wartet höchstens 2 Minuten und prüft die Regel danach.',
+	recheck: 'Zustand neu prüfen',
+	manual:
+		'Von Hand: eine Eingabeaufforderung als Administrator öffnen (Start, „cmd“ eingeben, Rechtsklick auf „Eingabeaufforderung“ → „Als Administrator ausführen“), den Befehl einfügen und mit Enter bestätigen.',
 	profileTitle: (address: string, label: string) => `Netzwerk von ${address} ist „${label}“`,
 	profile:
 		'Die Firewall-Regel gilt nur in privaten Netzwerken. Stufe nur dein eigenes Heimnetz als „Privat“ ein: Einstellungen → Netzwerk und Internet → Status → „Eigenschaften“ bei der Verbindung (WLAN: Netzwerk und Internet → WLAN → das Netzwerk) → Netzwerkprofil „Privat“.',
@@ -308,6 +322,24 @@ export function savedTitle(enabled: boolean): string {
 /** The flag after a change of the rule. */
 export function firewallDoneTitle(action: FirewallAction): string {
 	return action === 'add' ? 'Firewall-Regel angelegt' : 'Firewall-Regel entfernt';
+}
+
+const FAILURE_TITLES: Readonly<Record<FirewallOutcome | '', string>> = {
+	done: 'Firewall-Regel nicht bestätigt',
+	cancelled: 'Abgelehnt: Windows hat keine Administratorrechte bekommen',
+	timeout: 'Windows hat nicht rechtzeitig geantwortet',
+	unavailable: 'Windows kann hier nicht nach Administratorrechten fragen',
+	failed: 'netsh hat einen Fehler gemeldet',
+	unconfirmed: 'Firewall-Regel nicht bestätigt',
+	'': 'Firewall-Regel nicht geändert'
+};
+
+/**
+ * The title of a change of the rule that did not happen: the problem of its entry of the catalog,
+ * or, without one, a title for the outcome (the page then shows the command by hand).
+ */
+export function firewallFailureTitle(result: FirewallResult): string {
+	return result.report?.problem ?? FAILURE_TITLES[result.outcome];
 }
 
 /** Text of a 400 of the routes in the words of the page. */

@@ -24,6 +24,22 @@ const ADD =
 const REMOVE =
 	'netsh advfirewall firewall delete rule name="becauseyoulovejira (Heimnetz)" program="C:\\Apps\\app\\pocketbase.exe"';
 
+/** The entry of the catalog of a change that did not happen (lan-firewall-<outcome>). */
+function reportOf(outcome: string, problem: string) {
+	return {
+		code: `lan-firewall-${outcome}`,
+		level: 'error' as const,
+		exitCode: 1,
+		problem,
+		facts: [],
+		cause: 'Windows ändert die Firewall nur mit Administratorrechten.',
+		remedy: { steps: ['Erneut versuchen.', 'Oder von Hand (Befehl unten).'], command: ADD },
+		log: ''
+	};
+}
+
+const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 function infoOf(overrides: Record<string, unknown> = {}): LanInfo {
 	const parsed = parseLanInfo({
 		lan: {
@@ -209,20 +225,10 @@ describe('access in the home network', () => {
 							ok: false,
 							action: 'add' as const,
 							outcome: 'cancelled' as const,
-							report: {
-								code: 'lan-firewall-add-failed',
-								level: 'error' as const,
-								exitCode: 1,
-								problem:
-									'Die Firewall-Regel „becauseyoulovejira (Heimnetz)“ wurde nicht angelegt: die Anfrage nach Administratorrechten wurde abgelehnt.',
-								facts: [],
-								cause: 'Zum Ändern der Firewall braucht Windows Administratorrechte.',
-								remedy: {
-									steps: ['Erneut versuchen.', 'Oder von Hand (Befehl unten).'],
-									command: ADD
-								},
-								log: ''
-							}
+							report: reportOf(
+								'cancelled',
+								'Die Firewall-Regel „becauseyoulovejira (Heimnetz)“ wurde nicht angelegt: Die Anfrage nach Administratorrechten wurde abgelehnt oder abgebrochen.'
+							)
 						},
 						lan: null
 					}
@@ -234,11 +240,114 @@ describe('access in the home network', () => {
 		await fireEvent.click(within(dialog).getByRole('button', { name: 'Regel anlegen' }));
 		expect(
 			await screen.findByRole('heading', {
-				name: /wurde nicht angelegt: die Anfrage nach Administratorrechten wurde abgelehnt/
+				name: /wurde nicht angelegt: Die Anfrage nach Administratorrechten wurde abgelehnt/
 			})
 		).toBeTruthy();
 		expect(screen.getByRole('region', { name: 'Befehl zum Kopieren' }).textContent).toBe(ADD);
 		expect(screen.getByRole('region', { name: 'Regel entfernen' }).textContent).toBe(REMOVE);
+	});
+
+	it('names each way a change did not happen apart, without a success flag, with the state the server read again', async () => {
+		const problems = {
+			timeout: 'wurde nicht angelegt: Windows hat binnen 120 s nicht geantwortet.',
+			unavailable:
+				'wurde nicht angelegt: Windows kann hier nicht nach Administratorrechten fragen (die App läuft ohne angemeldete Sitzung).',
+			failed: 'wurde nicht angelegt: netsh hat einen Fehler gemeldet (Code 1).',
+			unconfirmed:
+				'ist nicht angelegt, obwohl Windows die Änderung gemeldet hat: die Firewall nennt keine passende Regel.'
+		} as const;
+		for (const [outcome, problem] of Object.entries(problems)) {
+			const missing = infoOf({ enabled: true, addresses: ['192.168.178.20'] });
+			const { flags } = await show({
+				info: missing,
+				data: {
+					firewall: vi.fn(async () => ({
+						kind: 'ok' as const,
+						value: {
+							result: {
+								ok: false,
+								action: 'add' as const,
+								outcome: outcome as keyof typeof problems,
+								report: reportOf(
+									outcome,
+									`Die Firewall-Regel „becauseyoulovejira (Heimnetz)“ ${problem}`
+								)
+							},
+							lan: missing
+						}
+					}))
+				}
+			});
+			await fireEvent.click(screen.getByRole('button', { name: 'Firewall-Regel anlegen …' }));
+			const dialog = await screen.findByRole('dialog', { name: 'Firewall-Regel anlegen?' });
+			await fireEvent.click(within(dialog).getByRole('button', { name: 'Regel anlegen' }));
+			const heading = await screen.findByRole('heading', { name: new RegExp(escape(problem)) });
+			expect(heading, outcome).toBeTruthy();
+			expect(screen.getByRole('region', { name: 'Befehl zum Kopieren' }).textContent).toBe(ADD);
+			expect(flags.show, outcome).not.toHaveBeenCalled();
+			// The state stays what the server read afterwards, and the page offers the rule again.
+			expect(
+				screen.getByText(/Fehlt: Die Firewall lässt Geräte im Heimnetz noch nicht durch/)
+			).toBeTruthy();
+			expect(screen.getByRole('button', { name: 'Zustand neu prüfen' })).toBeTruthy();
+			document.body.innerHTML = '';
+		}
+	});
+
+	it('shows the command by hand when the script named no entry, and checks the state again on request', async () => {
+		let present = false;
+		const missing = infoOf({ enabled: true, addresses: ['192.168.178.20'] });
+		const { data } = await show({
+			info: missing,
+			data: {
+				info: vi.fn(async () => ({
+					kind: 'ok' as const,
+					value: present
+						? infoOf({
+								enabled: true,
+								addresses: ['192.168.178.20'],
+								firewall: { state: 'present', blocked: false, add: ADD, remove: REMOVE }
+							})
+						: missing
+				})),
+				firewall: vi.fn(async () => ({
+					kind: 'ok' as const,
+					value: {
+						result: {
+							ok: false,
+							action: 'add' as const,
+							outcome: 'unavailable' as const,
+							report: null
+						},
+						lan: missing
+					}
+				}))
+			}
+		});
+		await fireEvent.click(screen.getByRole('button', { name: 'Firewall-Regel anlegen …' }));
+		const dialog = await screen.findByRole('dialog', { name: 'Firewall-Regel anlegen?' });
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Regel anlegen' }));
+		expect(
+			await screen.findByRole('heading', {
+				name: /Windows kann hier nicht nach Administratorrechten fragen$/
+			})
+		).toBeTruthy();
+		expect(screen.getByText(/Eingabeaufforderung als Administrator öffnen/)).toBeTruthy();
+		expect(screen.getByRole('region', { name: 'Befehl zum Kopieren' }).textContent).toBe(ADD);
+		// The rule was created by hand meanwhile: checking again shows it and the message goes.
+		present = true;
+		await fireEvent.click(screen.getByRole('button', { name: 'Zustand neu prüfen' }));
+		await vi.waitFor(() =>
+			expect(
+				screen.getByText(/Vorhanden: Die Firewall lässt Geräte im Heimnetz zur App durch/)
+			).toBeTruthy()
+		);
+		expect(data.info).toHaveBeenCalledTimes(2);
+		expect(
+			screen.queryByRole('heading', {
+				name: /Windows kann hier nicht nach Administratorrechten fragen$/
+			})
+		).toBeNull();
 	});
 
 	it('offers to remove a rule that is left over after switching off', async () => {
