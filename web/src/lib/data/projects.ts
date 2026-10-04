@@ -7,6 +7,7 @@ import { colorOf, type ProjectColor } from '../domain/colors';
 import type { Project, ProjectDraft, ProjectPatch } from '../domain/project';
 import type { Status } from '../domain/status';
 import type { ProjectRef } from '../domain/ticket';
+import { areaOptions, clientHousehold } from './area';
 import { DataError, withDataErrors } from './errors';
 import { currentUserId, type RequestOptions } from './options';
 
@@ -69,20 +70,27 @@ function colorBody(color: ProjectColor | null | undefined): { color?: string } {
 	return color === undefined ? {} : { color: color ?? '' };
 }
 
-/** Projects visible to the signed-in user, archived ones included, sorted by code. */
+/**
+ * Projects visible to the signed-in user in the area of the client (E7-3), archived ones included,
+ * sorted by code.
+ */
 export function listProjects(pb: PocketBase, { signal }: RequestOptions = {}): Promise<Project[]> {
 	return withDataErrors(signal, async () => {
-		const records = await pb
-			.collection(PROJECTS)
-			.getFullList<ProjectRecord>({ batch: 500, sort: 'code,id', fields: PROJECT_FIELDS, signal });
+		const records = await pb.collection(PROJECTS).getFullList<ProjectRecord>({
+			batch: 500,
+			sort: 'code,id',
+			fields: PROJECT_FIELDS,
+			...areaOptions(pb),
+			signal
+		});
 		return records.map(toProject);
 	});
 }
 
 /**
- * Creates a private project of the signed-in user; `household` stays empty (E7). With `parentId`
- * it becomes a sub project (ADR-0034); the hook checks the parent. With `color` it gets a color of
- * the palette (ADR-0052); PocketBase checks the value.
+ * Creates a project of the signed-in user in the area of the client (E7-3). With `parentId` it
+ * becomes a sub project (ADR-0034); the hook checks the parent and its area. With `color` it gets a
+ * color of the palette (ADR-0052); PocketBase checks the value.
  */
 export function createProject(
 	pb: PocketBase,
@@ -92,9 +100,11 @@ export function createProject(
 	return withDataErrors(signal, async () => {
 		const owner = currentUserId(pb.authStore.record);
 		if (owner === null) throw new DataError('session');
+		const household = clientHousehold(pb);
 		const record = await pb.collection(PROJECTS).create<ProjectRecord>(
 			{
 				owner,
+				...(household !== '' ? { household } : {}),
 				name: draft.name,
 				code: draft.code,
 				...parentBody(draft.parentId),

@@ -72,7 +72,15 @@ function projectNeed(): DataError {
 	});
 }
 
-async function showView(overrides: Partial<TrashData> = {}, items = [item(A), item(B)]) {
+async function showView(
+	overrides: Partial<TrashData> = {},
+	items = [item(A), item(B)],
+	props: {
+		canPurge?: boolean;
+		retentionHref?: null;
+		retentionNote?: string | null;
+	} = {}
+) {
 	const data: TrashData = {
 		list: vi.fn(async () => ({ items, retention: '30' as const })),
 		preview: vi.fn(),
@@ -95,10 +103,54 @@ async function showView(overrides: Partial<TrashData> = {}, items = [item(A), it
 	};
 	const store = new TrashStore(data, { ensureValid: () => true, logout: vi.fn() }, SILENT_FLAGS);
 	await store.reload();
-	render(TrashView, { props: { store, projects: PROJECTS, selfId: SELF } });
+	render(TrashView, { props: { store, projects: PROJECTS, selfId: SELF, ...props } });
 	await tick();
 	return { store, data };
 }
+
+describe('trash of a household without the right "purge" (E7-3, ADR-0059 §6)', () => {
+	it('offers restoring but neither "Endgültig löschen …" nor "Papierkorb leeren …"', async () => {
+		await showView({}, [item(A), item(B)], {
+			canPurge: false,
+			retentionHref: null,
+			retentionNote: 'Ändern dürfen der Inhaber und Mitglieder mit dem Recht „Endgültig löschen“.'
+		});
+		expect(screen.queryByRole('button', { name: 'Papierkorb leeren …' })).toBeNull();
+		expect(screen.queryByRole('link', { name: 'Aufbewahrung ändern' })).toBeNull();
+		expect(screen.getByText(/Ändern dürfen der Inhaber und Mitglieder/)).toBeTruthy();
+
+		await fireEvent.click(screen.getByRole('checkbox', { name: 'HAUS-1 auswählen' }));
+		expect(screen.getByRole('button', { name: 'Wiederherstellen' })).toBeTruthy();
+		expect(screen.queryByRole('button', { name: 'Endgültig löschen …' })).toBeNull();
+	});
+
+	it('shows the preview without "Endgültig löschen …", with "Wiederherstellen"', () => {
+		render(TrashPanel, {
+			props: {
+				preview: {
+					...item(A),
+					description: '',
+					tags: [],
+					subtasks: [],
+					group: '',
+					sources: { handling: 'inbox', count: 0 },
+					dependencyList: []
+				},
+				selfId: SELF,
+				projects: PROJECTS,
+				need: null,
+				onrestore: vi.fn(),
+				onresolve: vi.fn(),
+				ondetach: vi.fn(),
+				onpurge: null,
+				ondismissneed: vi.fn(),
+				onclose: vi.fn()
+			}
+		});
+		expect(screen.queryByRole('button', { name: 'Endgültig löschen …' })).toBeNull();
+		expect(screen.getByRole('button', { name: 'Wiederherstellen' })).toBeTruthy();
+	});
+});
 
 describe('view "Papierkorb"', () => {
 	it('lists the tickets with key, title, project, date, person and days left', async () => {

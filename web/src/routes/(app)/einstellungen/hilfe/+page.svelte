@@ -1563,8 +1563,9 @@
 			bearbeiten alle Mitglieder; Privates sieht weiter nur sein Konto. Ein Konto kann vorerst in
 			einem Haushalt sein. Mitglieder, Codes und Rechte verwaltest du unter
 			<a href={resolve('/einstellungen/haushalt')}>Einstellungen → Haushalt</a>, auf jedem Gerät,
-			auch am Handy im Heimnetz. Der Umschalter „Privat | Haushalt“ zum Anlegen und Ansehen der
-			gemeinsamen Einträge kommt mit einer späteren Version.
+			auch am Handy im Heimnetz. Zwischen deinen privaten Einträgen und denen des Haushalts
+			wechselst du oben mit dem Umschalter (siehe
+			<a href="#bereiche">Bereiche Privat und Haushalt</a>).
 		</p>
 		<dl class="tokens">
 			<div class="row">
@@ -1590,10 +1591,10 @@
 				<dt>Rechte</dt>
 				<dd>
 					Neue Mitglieder nutzen den Haushalt ganz normal, haben aber keine Sonderrechte: Einladen,
-					Mitglieder entfernen, Rechte weitergeben, Umbenennen, Endgültig löschen und Ins Private
-					verschieben (die beiden letzten wirken mit einer späteren Version). Wer „Rechte
-					weitergeben“ hat, kann anderen Mitgliedern nur Rechte geben oder nehmen, die er selbst
-					hat; nie sich selbst und nie dem Inhaber.
+					Mitglieder entfernen, Rechte weitergeben, Umbenennen, Endgültig löschen (im Papierkorb des
+					Haushalts, dazu seine Aufbewahrung) und Ins Private verschieben (wirkt mit einer späteren
+					Version). Wer „Rechte weitergeben“ hat, kann anderen Mitgliedern nur Rechte geben oder
+					nehmen, die er selbst hat; nie sich selbst und nie dem Inhaber.
 				</dd>
 			</div>
 			<div class="row">
@@ -1609,8 +1610,77 @@
 					Wer „Mitglieder entfernen“ hat, entfernt andere Mitglieder, nie den Inhaber. Jedes
 					Mitglied außer dem Inhaber kann selbst austreten. In beiden Fällen bleiben die Einträge im
 					Haushalt, auch die selbst angelegten, und der Zugriff darauf endet sofort, auch in offenen
-					Tabs. Der Inhaber überträgt zuerst die Inhaberschaft; einen Haushalt auflösen geht erst
+					Tabs: Sie wechseln ohne Neuladen in den Bereich Privat, und was du gerade tippst, bleibt
+					stehen. Der Inhaber überträgt zuerst die Inhaberschaft; einen Haushalt auflösen geht erst
 					mit einer späteren Version.
+				</dd>
+			</div>
+		</dl>
+	</section>
+
+	<section id="bereiche" aria-labelledby="bereiche-title">
+		<h3 id="bereiche-title">Bereiche Privat und Haushalt</h3>
+		<p>
+			Bist du Mitglied eines Haushalts, steht oben der Umschalter „Privat | Name des Haushalts“. Er
+			wechselt wie zwischen zwei Schreibtischen: Jede Liste, jede Zahl, die Suche, der Kalender, der
+			Eingang, der Papierkorb und jede Auswahl zeigen nur den gewählten Bereich. Im Haushalt
+			markiert zusätzlich eine Linie am oberen Rand den Bereich. Ohne Haushalt gibt es keinen
+			Umschalter, und alles bleibt, wie es war.
+		</p>
+		<dl class="tokens">
+			<div class="row">
+				<dt>Wechseln</dt>
+				<dd>
+					Ein Klick genügt, ohne Neuladen. Die Wahl merkt sich dieses Gerät für dein Konto; am Handy
+					kann ein anderer Bereich gewählt sein als am PC. Offene Tickets, Projekte oder Filter des
+					alten Bereichs schließen sich dabei; ungespeicherter Text fragt vorher nach.
+				</dd>
+			</div>
+			<div class="row">
+				<dt>Anlegen</dt>
+				<dd>
+					Was du anlegst, landet im gewählten Bereich: Tickets, Schnellerfassung, Projekte, Tags,
+					Wiederholungen und Einträge im Eingang. Kommentare und Verlauf gehören zu ihrem Ticket,
+					Unteraufgaben zum übergeordneten Ticket, Tickets einer Wiederholung zu deren Bereich, und
+					ein Duplikat bleibt im Bereich des Originals.
+				</dd>
+			</div>
+			<div class="row">
+				<dt>Keine Verweise über Bereichsgrenzen</dt>
+				<dd>
+					Projekt, Tags, übergeordnetes Ticket, Abhängigkeiten, die Wiederholung eines Tickets und
+					das Zielprojekt einer Verbindung liegen immer im selben Bereich wie das Ticket bzw. die
+					Verbindung. Der Server lehnt alles andere ab und sagt, was in einem anderen Bereich liegt.
+					Ein Projektkürzel wie <code>@HAUS</code> gilt je Bereich: Privat und Haushalt dürfen dasselbe
+					Kürzel haben, und die Schnellerfassung nimmt das Projekt des gewählten Bereichs.
+				</dd>
+			</div>
+			<div class="row">
+				<dt>Links in den anderen Bereich</dt>
+				<dd>
+					Öffnest du über einen Link, einen Hinweis oder den Kalender etwas aus dem anderen Bereich,
+					wechselt der Bereich von selbst, und ein Hinweis sagt „Zum Bereich … gewechselt“. Was du
+					nicht sehen darfst, bleibt „nicht gefunden“.
+				</dd>
+			</div>
+			<div class="row">
+				<dt>Kanäle</dt>
+				<dd>
+					Verbindungen (Google Calendar, Telegram, Postfächer, Notion, GitHub, Ordner) laufen im
+					Server mit seinen Zugangsdaten und Ordnern und bleiben deshalb privat; im Haushalt stehen
+					sie mit „Nur im privaten Bereich“. Der eigene Eingang und WhatsApp Web legen immer privat
+					an. Schnellerfassung, Zwischenablage, Bookmarklet und Datei-Importe gehen auch im
+					Haushalt.
+				</dd>
+			</div>
+			<div class="row">
+				<dt>Papierkorb im Haushalt</dt>
+				<dd>
+					Alle Mitglieder sehen ihn und stellen wieder her. Endgültig löschen und „Papierkorb
+					leeren“ dürfen nur der Inhaber und Mitglieder mit dem Recht „Endgültig löschen“; sonst
+					fehlen die Knöpfe. Wie lange Tickets dort liegen, stellen sie unter Einstellungen →
+					Haushalt ein; dein privater Papierkorb behält seine Einstellung unter Einstellungen →
+					Tickets.
 				</dd>
 			</div>
 		</dl>

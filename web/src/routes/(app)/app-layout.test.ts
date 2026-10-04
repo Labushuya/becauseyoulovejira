@@ -66,9 +66,15 @@ const mocks = vi.hoisted(() => {
 		}),
 		// Callbacks of afterNavigate (the way back of the settings, EH-1), called by the tests.
 		afterNavigate: [] as ((navigation: { to: { url: URL } | null }) => void)[],
-		page: { url: new URL('http://localhost:3000/') },
+		page: {
+			url: new URL('http://localhost:3000/'),
+			route: { id: '/(app)/(tickets)' as string | null },
+			params: {} as Record<string, string>
+		},
 		auth: {
 			email: 'anna@example.com',
+			// Without an account ID the area store has no area (ADR-0059): every request as before.
+			userId: undefined as string | undefined,
 			// The administrator of the app (ADR-0056): it asks for the notices of backups and sign-ins.
 			isAdmin: true,
 			keepAlive: vi.fn(() => stopKeepAlive),
@@ -282,6 +288,16 @@ vi.mock('$lib/stores/household.svelte', async (importOriginal) => ({
 	}),
 	householdLive: () => ({ changes: mocks.live.household, reconnected: mocks.live.reconnected })
 }));
+// The area of a record a link opens (E7-3, ADR-0059 §7): what the server would answer.
+const areaMocks = vi.hoisted(() => ({
+	recordScope: vi.fn<(pb: unknown, kind: string, id: string) => Promise<string | null>>(
+		async () => null
+	)
+}));
+vi.mock('$lib/data/area', async (importOriginal) => ({
+	...(await importOriginal<object>()),
+	recordScope: areaMocks.recordScope
+}));
 
 function ticket(id: string, status: TicketSummary['status'] = 'open'): TicketSummary {
 	return {
@@ -326,17 +342,23 @@ beforeEach(() => {
 	for (const subscribe of Object.values(mocks.live)) subscribe.mockClear();
 	householdMocks.answers = [];
 	householdMocks.fetch.mockClear();
+	householdMocks.reload.mockClear();
+	areaMocks.recordScope.mockClear();
+	mocks.auth.userId = undefined;
+	mocks.page.route.id = '/(app)/(tickets)';
+	mocks.page.params = {};
 });
 
 describe('app layout', () => {
-	it('shows the header with app name, area switch and the signed-in user above the page', async () => {
+	it('shows the header with app name and the signed-in user above the page, without an area switch while there is no household', async () => {
 		await renderLayout();
 
 		const header = screen.getByRole('banner');
 		expect(within(header).getByRole('heading', { level: 1 }).textContent).toBe(
 			'becauseyoulovejira'
 		);
-		expect(within(header).getByRole('group', { name: 'Bereich' })).toBeTruthy();
+		// No household, no choice (E7-3, ADR-0059 §1): the switch is not shown at all.
+		expect(within(header).queryByRole('group', { name: 'Bereich' })).toBeNull();
 		expect(within(header).getByText(/^Angemeldet als/).textContent).toBe(
 			'Angemeldet als anna@example.com'
 		);
@@ -410,39 +432,102 @@ describe('app layout', () => {
 		await vi.waitFor(() => expect(mocks.subscribed).toEqual([]));
 	});
 
-	it('loads the page anew when the membership in the household ends, and says why afterwards (ADR-0058)', async () => {
+	it('keeps the page when the membership ends, lands in "Privat" and says why (ADR-0059 §8)', async () => {
 		mocks.session.valid = true;
+		mocks.auth.userId = 'user00000000001';
+		// This device remembered the household as the area of the account.
+		localStorage.setItem('byl-area:user00000000001', 'household:house0000000001');
 		const state = {
-			household: { id: 'house000000001', name: 'Haus Beispiel', created: '' },
+			household: {
+				id: 'house0000000001',
+				name: 'Haus Beispiel',
+				created: '',
+				trashRetention: '30'
+			},
 			me: { member: 'member00000001', role: 'member', rights: [] },
 			members: [],
 			invites: null
 		};
 		householdMocks.answers = [state, null];
-		householdMocks.reload.mockClear();
-		sessionStorage.removeItem('byl-household-notice');
-		const { unmount } = await renderLayout();
-		await vi.waitFor(() => expect(householdMocks.fetch).toHaveBeenCalled());
+		await renderLayout('/einstellungen/haushalt');
+		const header = screen.getByRole('banner');
+		await vi.waitFor(() =>
+			expect(within(header).getByRole('button', { name: 'Haus Beispiel' })).toBeTruthy()
+		);
+		expect(
+			within(header).getByRole('button', { name: 'Haus Beispiel' }).getAttribute('aria-pressed')
+		).toBe('true');
 		await vi.waitFor(() => expect(mocks.subscribed).toContain('byl/household'));
-		expect(householdMocks.reload).not.toHaveBeenCalled();
 
 		// Another member removes this account: the server reports it on byl/household.
 		mocks.handlers['byl/household']?.({});
-		await vi.waitFor(() => expect(householdMocks.reload).toHaveBeenCalledOnce());
-		expect(JSON.parse(sessionStorage.getItem('byl-household-notice') ?? '{}')).toEqual({
-			title: 'Du bist nicht mehr Mitglied im Haushalt „Haus Beispiel“.'
-		});
-		unmount();
-
-		// After loading anew the layout shows the notice once.
-		householdMocks.answers = [null];
-		await renderLayout();
 		await vi.waitFor(() =>
 			expect(
 				screen.getAllByText('Du bist nicht mehr Mitglied im Haushalt „Haus Beispiel“.').length
 			).toBeGreaterThan(0)
 		);
-		expect(sessionStorage.getItem('byl-household-notice')).toBeNull();
+		expect(screen.getAllByText('Du bist jetzt im Bereich Privat.').length).toBeGreaterThan(0);
+		// No page reload: what was typed stays; the switch goes with the household.
+		expect(householdMocks.reload).not.toHaveBeenCalled();
+		expect(within(header).queryByRole('group', { name: 'Bereich' })).toBeNull();
+		expect(localStorage.getItem('byl-area:user00000000001')).toBe('private');
+		localStorage.removeItem('byl-area:user00000000001');
+	});
+
+	it('switches to the area of a record a link opens and says so; a record it cannot see changes nothing (ADR-0059 §7)', async () => {
+		mocks.session.valid = true;
+		mocks.auth.userId = 'user00000000001';
+		const state = {
+			household: {
+				id: 'house0000000001',
+				name: 'Haus Beispiel',
+				created: '',
+				trashRetention: '30'
+			},
+			me: { member: 'member00000001', role: 'member', rights: [] },
+			members: [],
+			invites: null
+		};
+		householdMocks.answers = [state];
+		await renderLayout('/tickets/ticket000000001');
+		const header = screen.getByRole('banner');
+		await vi.waitFor(() =>
+			expect(within(header).getByRole('button', { name: 'Haus Beispiel' })).toBeTruthy()
+		);
+		expect(
+			within(header).getByRole('button', { name: 'Privat' }).getAttribute('aria-pressed')
+		).toBe('true');
+
+		// Not visible for the account: "nicht gefunden" stays, the area too.
+		mocks.page.route.id = '/(app)/(tickets)/tickets/[id]';
+		mocks.page.params = { id: 'ticket000000009' };
+		areaMocks.recordScope.mockResolvedValueOnce(null);
+		for (const callback of mocks.afterNavigate) callback({ to: { url: mocks.page.url } });
+		await vi.waitFor(() =>
+			expect(areaMocks.recordScope).toHaveBeenLastCalledWith(
+				expect.anything(),
+				'ticket',
+				'ticket000000009'
+			)
+		);
+		expect(
+			within(header).getByRole('button', { name: 'Privat' }).getAttribute('aria-pressed')
+		).toBe('true');
+
+		// A ticket of the household: the area follows without a navigation.
+		mocks.page.params = { id: 'ticket000000001' };
+		areaMocks.recordScope.mockResolvedValueOnce('h:house0000000001');
+		mocks.goto.mockClear();
+		for (const callback of mocks.afterNavigate) callback({ to: { url: mocks.page.url } });
+		await vi.waitFor(() =>
+			expect(
+				within(header).getByRole('button', { name: 'Haus Beispiel' }).getAttribute('aria-pressed')
+			).toBe('true')
+		);
+		expect(screen.getAllByText('Zum Bereich Haus Beispiel gewechselt.').length).toBeGreaterThan(0);
+		expect(mocks.goto).not.toHaveBeenCalled();
+		expect(localStorage.getItem('byl-area:user00000000001')).toBe('household:house0000000001');
+		localStorage.removeItem('byl-area:user00000000001');
 	});
 
 	it('logs out and goes to the login page with the current page as redirect', async () => {

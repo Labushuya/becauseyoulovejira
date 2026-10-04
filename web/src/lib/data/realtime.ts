@@ -1,9 +1,12 @@
 // Realtime subscriptions (ADR-0007 section 2). Thin functions around the SDK: they set the same
 // fields and expands as the loading functions, filter with pb.filter() and map the records to
 // domain types, so events and answers go through the same idempotent store methods. The server
-// filters every event by the list and view rules of the collection.
+// filters every event by the list and view rules of the collection; a subscription of a whole
+// collection with a scope also by the area of the client (E7-3, data/area.ts), so no event of
+// another area reaches the tab.
 
 import type PocketBase from 'pocketbase';
+import { areaOptions, followArea, onAreaChange } from './area';
 import type { InboxItemSummary } from '../domain/inbox';
 import type { Project } from '../domain/project';
 import type { RecurrenceRule } from '../domain/recurrence-rule';
@@ -62,15 +65,18 @@ function changes<R extends { id: string }, T>(
 	};
 }
 
-/** All visible tickets with the fields of the list (without description). */
+/** All visible tickets of the area of the client with the fields of the list (without description). */
 export function subscribeTickets(
 	pb: PocketBase,
 	onChange: (change: RecordChange<TicketSummary>) => void
 ): Promise<Unsubscribe> {
-	return pb.collection('tickets').subscribe<TicketRecord>('*', changes(toTicketSummary, onChange), {
-		fields: TICKET_LIST_FIELDS,
-		expand: TICKET_EXPAND
-	});
+	return followArea(pb, () =>
+		pb.collection('tickets').subscribe<TicketRecord>('*', changes(toTicketSummary, onChange), {
+			fields: TICKET_LIST_FIELDS,
+			expand: TICKET_EXPAND,
+			...areaOptions(pb)
+		})
+	);
 }
 
 /** One ticket with every field of the panel, including the description. */
@@ -111,61 +117,85 @@ export function subscribeHistory(
 		});
 }
 
-/** All visible projects, archived ones included, with the fields of the catalog (E3 plan, T-16). */
+/**
+ * All visible projects of the area of the client, archived ones included, with the fields of the
+ * catalog (E3 plan, T-16).
+ */
 export function subscribeProjects(
 	pb: PocketBase,
 	onChange: (change: RecordChange<Project>) => void
 ): Promise<Unsubscribe> {
-	return pb
-		.collection('projects')
-		.subscribe<ProjectRecord>('*', changes(toProject, onChange), { fields: PROJECT_FIELDS });
+	return followArea(pb, () =>
+		pb.collection('projects').subscribe<ProjectRecord>('*', changes(toProject, onChange), {
+			fields: PROJECT_FIELDS,
+			...areaOptions(pb)
+		})
+	);
 }
 
-/** All visible tags with the fields of the catalog (E3 plan, T-16). */
+/** All visible tags of the area of the client with the fields of the catalog (E3 plan, T-16). */
 export function subscribeTags(
 	pb: PocketBase,
 	onChange: (change: RecordChange<Tag>) => void
 ): Promise<Unsubscribe> {
-	return pb
-		.collection('tags')
-		.subscribe<TagRecord>('*', changes(toTag, onChange), { fields: TAG_FIELDS });
+	return followArea(pb, () =>
+		pb.collection('tags').subscribe<TagRecord>('*', changes(toTag, onChange), {
+			fields: TAG_FIELDS,
+			...areaOptions(pb)
+		})
+	);
 }
 
-/** All visible recurrence rules with every field of the store (E5 plan, T-7). */
+/** All visible recurrence rules of the area of the client with every field of the store (E5 plan, T-7). */
 export function subscribeRules(
 	pb: PocketBase,
 	onChange: (change: RecordChange<RecurrenceRule>) => void
 ): Promise<Unsubscribe> {
-	return pb
-		.collection('recurrence_rules')
-		.subscribe<RuleRecord>('*', changes(toRecurrenceRule, onChange), { fields: RULE_FIELDS });
+	return followArea(pb, () =>
+		pb
+			.collection('recurrence_rules')
+			.subscribe<RuleRecord>('*', changes(toRecurrenceRule, onChange), {
+				fields: RULE_FIELDS,
+				...areaOptions(pb)
+			})
+	);
 }
 
-/** All visible inbox entries with the fields of the lists (E4 plan, T-4). */
+/** All visible inbox entries of the area of the client with the fields of the lists (E4 plan, T-4). */
 export function subscribeInboxItems(
 	pb: PocketBase,
 	onChange: (change: RecordChange<InboxItemSummary>) => void
 ): Promise<Unsubscribe> {
-	return pb
-		.collection('inbox_items')
-		.subscribe<InboxRecord>('*', changes(toInboxItemSummary, onChange), {
-			fields: INBOX_LIST_FIELDS,
-			expand: INBOX_EXPAND
-		});
+	return followArea(pb, () =>
+		pb
+			.collection('inbox_items')
+			.subscribe<InboxRecord>('*', changes(toInboxItemSummary, onChange), {
+				fields: INBOX_LIST_FIELDS,
+				expand: INBOX_EXPAND,
+				...areaOptions(pb)
+			})
+	);
 }
 
 /**
  * Calls `callback` after every new connection that follows an earlier one (ADR-0007 section 3):
  * events of the gap are lost and the stores reconcile once. The first connection is no
- * reconnection, whether it happens before or after this listener is added.
+ * reconnection, whether it happens before or after this listener is added. Since E7-3 also after
+ * every change of the area of the client (data/area.ts): the subscriptions then deliver another
+ * area, and what the stores hold belongs to the old one.
  */
-export function onReconnect(pb: PocketBase, callback: () => void): Promise<Unsubscribe> {
+export async function onReconnect(pb: PocketBase, callback: () => void): Promise<Unsubscribe> {
 	let known = pb.realtime.clientId;
-	return pb.realtime.subscribe('PB_CONNECT', (data: { clientId?: unknown }) => {
+	const stop = await pb.realtime.subscribe('PB_CONNECT', (data: { clientId?: unknown }) => {
 		const clientId = typeof data.clientId === 'string' ? data.clientId : '';
 		if (known !== '' && clientId !== known) callback();
 		known = clientId;
 	});
+	const stopArea = onAreaChange(pb, callback);
+	return async () => {
+		stopArea();
+		await stop();
+	};
 }
 
 /** Change of the "new" mark: an own read row, or a new base line of the user (ADR-0015). */

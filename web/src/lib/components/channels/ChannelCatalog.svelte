@@ -14,6 +14,7 @@
 
 <script lang="ts">
 	import type { ResolvedPathname } from '$app/types';
+	import { AREA_TEXTS } from '$lib/domain/area';
 	import type { Connection } from '$lib/domain/connections';
 	import { helpHref } from '$lib/settings-sections';
 	import Lozenge from '../guidance/Lozenge.svelte';
@@ -31,12 +32,15 @@
 	// above, read only, and so do the folders of this machine (ADR-0051). Channels with access data
 	// of this machine and folders are set up only by the administrator of the app (ADR-0056 §5): for
 	// another account the catalog says so and keeps the two tiles it can use (Proton per file,
-	// WhatsApp Web with its own key).
+	// WhatsApp Web with its own key). In the household area (E7-3, ADR-0059 §5) no connection is set
+	// up: every service and WhatsApp Web (its key belongs to the account, its entries are private)
+	// says "Nur im privaten Bereich" instead of "Einrichten"; Proton per file stays.
 	let {
 		connections,
 		heading = $bindable(),
 		hrefOf,
-		admin = true
+		admin = true,
+		household = false
 	}: {
 		connections: readonly Connection[];
 		/** The heading "Kanal hinzufügen"; the empty state moves the focus to it. */
@@ -45,6 +49,8 @@
 		hrefOf: (entry: CatalogEntry) => ResolvedPathname;
 		/** The signed-in account is the administrator of the app. */
 		admin?: boolean;
+		/** The tab shows the household area: no connection is offered. */
+		household?: boolean;
 	} = $props();
 
 	const uid = $props.id();
@@ -103,7 +109,17 @@
 
 <section class="catalog" aria-labelledby={`${uid}-heading`} data-tour="channel-catalog">
 	<h3 id={`${uid}-heading`} tabindex="-1" bind:this={heading}>Kanal hinzufügen</h3>
-	{#if !admin}
+	{#if household}
+		<SectionMessage tone="info" title="Verbindungen gibt es nur im privaten Bereich">
+			<p>{AREA_TEXTS.privateOnlyText}</p>
+			<p>
+				Im Haushalt gehen Schnellerfassung und Zwischenablage, das Bookmarklet und Datei-Importe
+				(Mail- und Kalenderdateien, WhatsApp-Exporte, auch Proton per Datei); ihre Einträge landen
+				im Eingang des Haushalts.
+				<a href={helpHref('bereiche')}>Mehr zu den Bereichen</a>
+			</p>
+		</SectionMessage>
+	{:else if !admin}
 		<SectionMessage tone="info" title="Kanäle mit Zugangsdaten richtet der Verwalter ein">
 			<p>
 				Google Calendar, Telegram, Postfächer, Notion, GitHub und Ordner lesen Zugangsdaten oder
@@ -127,20 +143,24 @@
 				</div>
 				<p>{entry.text}</p>
 				<div class="foot">
-					{#if !exists}
-						<Lozenge label="Nicht eingerichtet" icon="pending" />
-					{/if}
-					<a
-						class="button-secondary setup"
-						href={hrefOf(entry.id)}
-						data-sveltekit-keepfocus
-						data-sveltekit-noscroll
-						data-sveltekit-replacestate
-					>
-						{exists ? 'Weitere einrichten' : 'Einrichten'}<span class="visually-hidden"
-							>: {entry.name}</span
+					{#if household}
+						<Lozenge label={AREA_TEXTS.privateOnly} icon="info" tone="muted" />
+					{:else}
+						{#if !exists}
+							<Lozenge label="Nicht eingerichtet" icon="pending" />
+						{/if}
+						<a
+							class="button-secondary setup"
+							href={hrefOf(entry.id)}
+							data-sveltekit-keepfocus
+							data-sveltekit-noscroll
+							data-sveltekit-replacestate
 						>
-					</a>
+							{exists ? 'Weitere einrichten' : 'Einrichten'}<span class="visually-hidden"
+								>: {entry.name}</span
+							>
+						</a>
+					{/if}
 				</div>
 			</li>
 		{/each}
@@ -171,18 +191,22 @@
 				</div>
 				<p>Bestehende Listen und Datenbanken als Kopien übernehmen, nur lesend, nur auf Anstoß.</p>
 				<div class="foot">
-					<Lozenge label="Import" icon="inbox" tone="muted" />
-					<a
-						class="button-secondary setup"
-						href={hrefOf('notion')}
-						data-sveltekit-keepfocus
-						data-sveltekit-noscroll
-						data-sveltekit-replacestate
-					>
-						{connections.some((connection) => connection.type === 'notion')
-							? 'Weitere einrichten'
-							: 'Einrichten'}<span class="visually-hidden">: Notion</span>
-					</a>
+					{#if household}
+						<Lozenge label={AREA_TEXTS.privateOnly} icon="info" tone="muted" />
+					{:else}
+						<Lozenge label="Import" icon="inbox" tone="muted" />
+						<a
+							class="button-secondary setup"
+							href={hrefOf('notion')}
+							data-sveltekit-keepfocus
+							data-sveltekit-noscroll
+							data-sveltekit-replacestate
+						>
+							{connections.some((connection) => connection.type === 'notion')
+								? 'Weitere einrichten'
+								: 'Einrichten'}<span class="visually-hidden">: Notion</span>
+						</a>
+					{/if}
 				</div>
 			</li>
 		{/if}
@@ -193,16 +217,20 @@
 			</div>
 			<p>Browser-Erweiterung: Nachrichten aus dem offenen Tab, liest nur.</p>
 			<div class="foot">
-				<Lozenge label="Erweiterung" icon="info" tone="muted" />
-				<a
-					class="button-secondary setup"
-					href={hrefOf('whatsapp-web')}
-					data-sveltekit-keepfocus
-					data-sveltekit-noscroll
-					data-sveltekit-replacestate
-				>
-					Einrichten<span class="visually-hidden">: WhatsApp Web</span>
-				</a>
+				{#if household}
+					<Lozenge label={AREA_TEXTS.privateOnly} icon="info" tone="muted" />
+				{:else}
+					<Lozenge label="Erweiterung" icon="info" tone="muted" />
+					<a
+						class="button-secondary setup"
+						href={hrefOf('whatsapp-web')}
+						data-sveltekit-keepfocus
+						data-sveltekit-noscroll
+						data-sveltekit-replacestate
+					>
+						Einrichten<span class="visually-hidden">: WhatsApp Web</span>
+					</a>
+				{/if}
 			</div>
 		</li>
 	</ul>

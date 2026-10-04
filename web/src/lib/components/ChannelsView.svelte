@@ -40,7 +40,9 @@
 	// Web and the files per user (`inboxTargets`). GitHub (ADR-0050) has its assistant (ChannelSetup)
 	// and its card with the repositories, their details and "Verbindung prüfen" (`github`). Folders
 	// (ADR-0051) have their assistant too and a card with the folders, their details and the files of
-	// before (`folders`).
+	// before (`folders`). In the household area (E7-3, ADR-0059 §5) connections, the own inbox and
+	// WhatsApp Web stay private: their cards and assistants are not offered, the catalog says
+	// "Nur im privaten Bereich"; the bookmarklet, the clipboard and the files work there.
 	let {
 		captureUrl,
 		connections,
@@ -54,6 +56,7 @@
 		extension = null,
 		setup = null,
 		admin = true,
+		household = false,
 		onsetupchange
 	}: {
 		/** Absolute address of the capture form, e.g. http://127.0.0.1:8090/eingang/neu. */
@@ -89,16 +92,18 @@
 		 * WhatsApp Web only, and an assistant of another kind in the address stays closed.
 		 */
 		admin?: boolean;
+		/** The tab shows the household area (E7-3): only the ways without a connection are offered. */
+		household?: boolean;
 		/** Opens, moves or closes the assistant (the owner changes the address). */
 		onsetupchange: (next: SetupTarget | null) => void;
 	} = $props();
 
-	/** The assistant of the address, if this account may use it. */
-	const shownSetup = $derived(
-		setup !== null && (admin || setup.kind === 'proton' || setup.kind === 'whatsapp-web')
-			? setup
-			: null
-	);
+	/** The assistant of the address, if this account may use it in this area. */
+	const shownSetup = $derived.by(() => {
+		if (setup === null) return null;
+		if (household) return setup.kind === 'proton' ? setup : null;
+		return admin || setup.kind === 'proton' || setup.kind === 'whatsapp-web' ? setup : null;
+	});
 
 	const uid = $props.id();
 	const ownId = `${uid}-own`;
@@ -130,23 +135,26 @@
 <div class="channels">
 	<ChannelsIntro />
 
-	<ConnectionsSection
-		store={connections}
-		{notion}
-		{github}
-		{folders}
-		{projects}
-		onadd={focusCatalog}
-		onsetup={showSetup}
-		onimport={(connection) => (importing = connection)}
-	/>
+	{#if !household}
+		<ConnectionsSection
+			store={connections}
+			{notion}
+			{github}
+			{folders}
+			{projects}
+			onadd={focusCatalog}
+			onsetup={showSetup}
+			onimport={(connection) => (importing = connection)}
+		/>
+	{/if}
 
 	<section class="own" aria-labelledby={ownId}>
 		<h3 id={ownId}>Selbst hereinbringen</h3>
 		<div class="own-cards">
 			<BookmarkletCard {captureUrl} />
-			<FilesCard {importKeywords} {inboxTargets} {projects} />
-			{#if inboxKeys !== null}
+			<!-- The target project of the files is a private project (ADR-0049 §7): not in a household. -->
+			<FilesCard {importKeywords} inboxTargets={household ? null : inboxTargets} {projects} />
+			{#if inboxKeys !== null && !household}
 				<OwnInboxCard store={inboxKeys} {importKeywords} {inboxTargets} {projects} />
 				<WhatsAppWebCard
 					{importKeywords}
@@ -165,6 +173,7 @@
 		bind:heading={catalogHeading}
 		hrefOf={(entry) => channelSetupHref({ kind: entry, connectionId: null })}
 		{admin}
+		{household}
 	/>
 </div>
 

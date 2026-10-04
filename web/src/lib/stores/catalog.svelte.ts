@@ -325,6 +325,15 @@ export class CatalogStore {
 		this.#error = null;
 	}
 
+	/**
+	 * The area of the tab changed (E7-3, ADR-0059 §2): projects and tags of the old area go at once,
+	 * those of the new area load. The subscriptions follow through `connect` of the layout.
+	 */
+	rescope(): void {
+		this.reset();
+		void this.load();
+	}
+
 	async #createTag(name: string): Promise<EnsureTagResult> {
 		if (!this.#session.ensureValid()) return { ok: false, message: null };
 		try {

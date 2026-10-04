@@ -63,6 +63,8 @@ export interface TrashItem {
 	updated: string;
 	/** Whole days until it is deleted for good (0 = today), null: never. */
 	daysLeft: number | null;
+	/** Area of the ticket (E7-3, ADR-0059); missing before the restart that brings it. */
+	scope?: string;
 }
 
 /** Read-only preview of a ticket in the trash. */

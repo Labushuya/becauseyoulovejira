@@ -10,6 +10,7 @@
 		RIGHT_LABELS,
 		leaveProblem,
 		may,
+		mayPurge,
 		meOf,
 		memberActions,
 		memberLabel,
@@ -19,8 +20,10 @@
 		type HouseholdMember,
 		type HouseholdState
 	} from '$lib/domain/household';
+	import { retentionText } from '$lib/domain/trash';
 	import { helpHref } from '$lib/settings-sections';
 	import type { HouseholdStore } from '$lib/stores/household.svelte';
+	import RetentionChoice from '../RetentionChoice.svelte';
 	import HouseholdInvites from './HouseholdInvites.svelte';
 	import HouseholdStart from './HouseholdStart.svelte';
 	import MemberRightsDialog from './MemberRightsDialog.svelte';
@@ -28,9 +31,10 @@
 	// Page "Einstellungen → Haushalt" (ADR-0058, E7-2) for every account on every device. Without a
 	// household: found one or join with a code. With one: its name (rename with "rename"), the
 	// members with role and rights (rights with "delegate", remove with "remove", hand on as owner,
-	// each in the menu "•••" of the member), the codes with "invite" and "Austreten". What the server
-	// would refuse is left out, not only disabled; removing, leaving and handing on ask first (no
-	// red, ADR-0009). Refusals stand on the page; results go out as flags.
+	// each in the menu "•••" of the member), the codes with "invite", since E7-3 the retention of the
+	// trash of the household ("purge", ADR-0059 §6) and "Austreten". What the server would refuse is
+	// left out, not only disabled; removing, leaving and handing on ask first (no red, ADR-0009).
+	// Refusals stand on the page; results go out as flags.
 	let { store }: { store: HouseholdStore } = $props();
 
 	type Question = { kind: 'remove' | 'transfer'; member: HouseholdMember } | { kind: 'leave' };
@@ -304,6 +308,31 @@
 	{#if state.invites !== null}
 		<HouseholdInvites {store} invites={state.invites} />
 	{/if}
+
+	<!-- Retention of the trash of the household (E7-3, ADR-0059 §6): the owner and the right
+	     "purge" change it here, everybody else reads it. -->
+	<section class="part">
+		{#if mayPurge(me)}
+			<RetentionChoice
+				legend={HOUSEHOLD_TEXTS.retentionTitle}
+				value={state.household.trashRetention}
+				disabled={store.busy !== null}
+				busy={store.busy?.kind === 'retention'}
+				onchoose={(value) => void store.setRetention(value)}
+			>
+				{#snippet note()}
+					{HOUSEHOLD_TEXTS.retentionText}
+					{retentionText(state.household.trashRetention)}
+				{/snippet}
+			</RetentionChoice>
+		{:else}
+			<h3>{HOUSEHOLD_TEXTS.retentionTitle}</h3>
+			<p class="note">
+				{retentionText(state.household.trashRetention)}
+				{HOUSEHOLD_TEXTS.retentionReadOnly}
+			</p>
+		{/if}
+	</section>
 
 	<section class="part" aria-labelledby={ids.leave}>
 		<h3 id={ids.leave}>Haushalt verlassen</h3>

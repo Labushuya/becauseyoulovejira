@@ -119,6 +119,37 @@ afterEach(() => {
 	vi.useRealTimers();
 });
 
+describe('area of the tab (E7-3, ADR-0059 §2)', () => {
+	it('drops the tickets of the old area at once and loads the new one for the same query', async () => {
+		const privateTicket = ticket({ title: 'Privat' });
+		const householdTicket = ticket({ title: 'Haushalt' });
+		const data = fakeData([privateTicket]);
+		const store = new TicketListStore(data, session());
+		store.activate(withDone(true));
+		await settle();
+		expect(store.open.map((entry) => entry.id)).toEqual([privateTicket.id]);
+
+		data.listOpen.mockImplementation((options: RequestOptions) =>
+			abortable(options, Promise.resolve([householdTicket]))
+		);
+		store.rescope();
+		expect(store.open).toEqual([]);
+		expect(store.openState).toBe('loading');
+		expect(store.query.showDone).toBe(true);
+		await settle();
+		expect(store.open.map((entry) => entry.id)).toEqual([householdTicket.id]);
+		expect(data.listDone).toHaveBeenCalledTimes(2);
+	});
+
+	it('loads nothing for a list that was never shown', () => {
+		const data = fakeData([ticket()]);
+		const store = new TicketListStore(data, session());
+		store.rescope();
+		expect(store.openState).toBe('idle');
+		expect(data.listOpen).not.toHaveBeenCalled();
+	});
+});
+
 describe('loading and order', () => {
 	it('loads only the open tickets and sorts them in the default order', async () => {
 		const later = ticket({ priority: 'urgent' });
@@ -1383,6 +1414,21 @@ describe('sub-tasks (ADR-0033)', () => {
 		const created = result.ok ? result.ticket : null;
 		expect(store.subtasksOf(PARENT_ID).map((entry) => entry.title)).toContain('Kartons packen');
 		expect(idsOf(store.open)).toContain(created?.id);
+	});
+
+	it('creates a sub-task in the area of its parent, whatever area the tab shows (E7-3)', async () => {
+		const { store, data, parent } = await loaded();
+
+		await store.addSubtask({ ...parent, scope: 'h:house0000000001' }, 'Im Haushalt');
+		expect(data.create).toHaveBeenLastCalledWith(
+			expect.objectContaining({ title: 'Im Haushalt', parent: PARENT_ID }),
+			'house0000000001'
+		);
+		await store.addSubtask({ ...parent, scope: 'u:user00000000001' }, 'Privat');
+		expect(data.create).toHaveBeenLastCalledWith(
+			expect.objectContaining({ title: 'Privat', parent: PARENT_ID }),
+			''
+		);
 	});
 
 	it('keeps the sub project of the parent for a sub-task, not its parent project (ADR-0034)', async () => {

@@ -4,6 +4,7 @@
 // dropped (a list entry) or counts as a server error.
 
 import type PocketBase from 'pocketbase';
+import { clientArea } from './area';
 import { DataError, withDataErrors } from './errors';
 import type { RequestOptions } from './options';
 import type { Unsubscribe } from './realtime';
@@ -99,7 +100,9 @@ export function toTrashItem(value: unknown): TrashItem | null {
 		deletedAt: deletedAt as string,
 		deletedBy: deletedBy as string,
 		updated: updated as string,
-		daysLeft: days
+		daysLeft: days,
+		// The area of the ticket (E7-3); a server before the restart does not name it.
+		...(typeof value.scope === 'string' && value.scope !== '' && { scope: value.scope })
 	};
 }
 
@@ -215,16 +218,31 @@ function toRestoreResult(value: unknown): RestoreResult {
 	};
 }
 
-/** The trash of the signed-in account: its tickets (first of each group) and the retention. */
+/**
+ * The trash of the signed-in account: its tickets (first of each group) and the retention; with the
+ * area of the client (E7-3) only that area with its retention (of the household, else the own).
+ * `ownRetention` is the setting of the account for its private trash in every area.
+ */
 export function listTrash(
 	pb: PocketBase,
 	{ signal }: RequestOptions = {}
-): Promise<{ items: TrashItem[]; retention: TrashRetention }> {
+): Promise<{ items: TrashItem[]; retention: TrashRetention; ownRetention: TrashRetention }> {
 	return withDataErrors(signal, async () => {
-		const answer: unknown = await pb.send(TRASH_ROUTE, { method: 'GET', signal });
+		const scope = clientArea(pb);
+		const answer: unknown = await pb.send(TRASH_ROUTE, {
+			method: 'GET',
+			...(scope !== null && { query: { scope } }),
+			signal
+		});
 		if (!isRecord(answer) || !Array.isArray(answer.items)) throw invalid();
 		const items = answer.items.map(toTrashItem).filter((item): item is TrashItem => item !== null);
-		return { items, retention: parseRetention(answer.retention) };
+		const retention = parseRetention(answer.retention);
+		return {
+			items,
+			retention,
+			// A server before E7-3 names only the own retention.
+			ownRetention: 'own_retention' in answer ? parseRetention(answer.own_retention) : retention
+		};
 	});
 }
 
@@ -303,11 +321,17 @@ export function resolveTrash(
 
 /**
  * "Papierkorb leeren": the number of tickets deleted for good and the blocked tickets that stay
- * (ADR-0047; a server before the restart names none).
+ * (ADR-0047; a server before the restart names none). With the area of the client (E7-3) only the
+ * trash of that area; in a household without the right "purge" the server answers 403.
  */
 export function emptyTrash(pb: PocketBase, { signal }: RequestOptions = {}): Promise<EmptyResult> {
 	return withDataErrors(signal, async () => {
-		const answer: unknown = await pb.send(`${TRASH_ROUTE}/empty`, { method: 'POST', signal });
+		const scope = clientArea(pb);
+		const answer: unknown = await pb.send(`${TRASH_ROUTE}/empty`, {
+			method: 'POST',
+			...(scope !== null && { body: { scope } }),
+			signal
+		});
 		if (!isRecord(answer) || typeof answer.purged !== 'number') throw invalid();
 		const blocked = Array.isArray(answer.blocked) ? answer.blocked.filter(isRecord) : [];
 		return {

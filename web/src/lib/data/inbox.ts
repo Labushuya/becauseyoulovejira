@@ -18,6 +18,7 @@ import {
 	type ListedView
 } from '../domain/inbox';
 import { watchOf } from '../domain/watch';
+import { areaFilter, clientHousehold } from './area';
 import { DATA_ERROR_MESSAGES, DataError, isDataError, toDataError, withDataErrors } from './errors';
 import { currentUserId, type RequestOptions } from './options';
 
@@ -171,7 +172,10 @@ function duplicateOf(error: unknown): InboxDuplicate | null {
 	};
 }
 
-/** Every new entry, newest first (T-4: loaded in full like the open tickets). */
+/**
+ * Every new entry of the area of the client (E7-3), newest first (T-4: loaded in full like the open
+ * tickets).
+ */
 export function listNewItems(
 	pb: PocketBase,
 	{ signal }: RequestOptions = {}
@@ -179,7 +183,7 @@ export function listNewItems(
 	return withDataErrors(signal, async () => {
 		const records = await pb.collection(INBOX).getFullList<InboxRecord>({
 			batch: 500,
-			filter: pb.filter('state = {:state}', { state: 'new' satisfies InboxState }),
+			filter: areaFilter(pb, 'state = {:state}', { state: 'new' satisfies InboxState }),
 			sort: '-created,-id',
 			fields: INBOX_LIST_FIELDS,
 			signal
@@ -255,7 +259,7 @@ export function listHandledItems(
 		}
 		const handled = { target };
 		const result = await pb.collection(INBOX).getList<InboxRecord>(page, perPage, {
-			filter: pb.filter(handledExpression(handled), {
+			filter: areaFilter(pb, handledExpression(handled), {
 				every: state === 'all' ? '1' : '',
 				state: state === 'all' ? '' : state,
 				all: channels === null ? '1' : '',
@@ -305,8 +309,9 @@ function draftBody(owner: string, draft: InboxDraft): Record<string, unknown> {
 }
 
 /**
- * Creates a private entry of the signed-in user. A duplicate is no failure but an outcome with
- * the state of the existing entry (ADR-0014 section 3); every other failure throws a DataError.
+ * Creates an entry of the signed-in user in the area of the client (E7-3). A duplicate is no failure
+ * but an outcome with the state of the existing entry (ADR-0014 section 3); every other failure
+ * throws a DataError.
  */
 export async function createItem(
 	pb: PocketBase,
@@ -317,9 +322,12 @@ export async function createItem(
 		return await withDataErrors(signal, async (): Promise<CreateItemOutcome> => {
 			const owner = currentUserId(pb.authStore.record);
 			if (owner === null) throw new DataError('session');
+			const body = draftBody(owner, draft);
+			const household = clientHousehold(pb);
+			if (household !== '') body.household = household;
 			const record = await pb
 				.collection(INBOX)
-				.create<InboxRecord>(draftBody(owner, draft), { fields: INBOX_DETAIL_FIELDS, signal });
+				.create<InboxRecord>(body, { fields: INBOX_DETAIL_FIELDS, signal });
 			return { kind: 'created', item: toInboxItem(record) };
 		});
 	} catch (error) {
@@ -531,6 +539,9 @@ export function previewCalendarFile(
 	return withDataErrors(signal, async () => {
 		const body = new FormData();
 		body.append('file', file);
+		// The state in the inbox of the area of the client (E7-3).
+		const household = clientHousehold(pb);
+		if (household !== '') body.append('household', household);
 		const result = await pb.send<Record<string, unknown>>(CALENDAR_PREVIEW_ROUTE, {
 			method: 'POST',
 			body,
@@ -556,8 +567,8 @@ export function previewCalendarFile(
 }
 
 /**
- * Whether drafts (mail files) are in the private inbox already, in batches of LOOKUP_BATCH; one
- * state per draft in the same order. Nothing is saved.
+ * Whether drafts (mail files) are in the inbox of the area of the client already (E7-3), in batches
+ * of LOOKUP_BATCH; one state per draft in the same order. Nothing is saved.
  */
 export function lookupDrafts(
 	pb: PocketBase,
@@ -566,6 +577,7 @@ export function lookupDrafts(
 ): Promise<LookupState[]> {
 	return withDataErrors(signal, async () => {
 		const states: LookupState[] = [];
+		const household = clientHousehold(pb);
 		for (let start = 0; start < drafts.length; start += LOOKUP_BATCH) {
 			const items = drafts.slice(start, start + LOOKUP_BATCH).map((draft) => ({
 				channel: draft.channel,
@@ -578,7 +590,7 @@ export function lookupDrafts(
 			}));
 			const result = await pb.send<Record<string, unknown>>(LOOKUP_ROUTE, {
 				method: 'POST',
-				body: { items },
+				body: household !== '' ? { items, household } : { items },
 				signal
 			});
 			const answered = Array.isArray(result.items) ? result.items : [];
@@ -607,8 +619,8 @@ function countOf(value: unknown): number {
 
 /**
  * Uploads an .ics file with the chosen components (indices of the preview); the hook creates one
- * private entry per chosen event or task of the signed-in user and answers with counts. Before
- * the migrations of E4 the route answers 503.
+ * entry per chosen event or task of the signed-in user in the area of the client (E7-3) and answers
+ * with counts. Before the migrations of E4 the route answers 503.
  */
 export function importCalendarFile(
 	pb: PocketBase,
@@ -620,6 +632,8 @@ export function importCalendarFile(
 		const body = new FormData();
 		body.append('file', file);
 		body.append('select', JSON.stringify(select));
+		const household = clientHousehold(pb);
+		if (household !== '') body.append('household', household);
 		const result = await pb.send<Record<string, unknown>>(CALENDAR_IMPORT_ROUTE, {
 			method: 'POST',
 			body,

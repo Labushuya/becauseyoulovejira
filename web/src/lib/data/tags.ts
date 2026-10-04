@@ -5,6 +5,7 @@
 import type PocketBase from 'pocketbase';
 import type { Tag } from '../domain/tag';
 import type { TagRef } from '../domain/ticket';
+import { areaOptions, clientHousehold } from './area';
 import { DataError, withDataErrors } from './errors';
 import { currentUserId, type RequestOptions } from './options';
 
@@ -30,17 +31,21 @@ export function toTag(record: TagRecord): Tag {
 	return { ...toTagRef(record), updated: record.updated };
 }
 
-/** Tags visible to the signed-in user, sorted by name. */
+/** Tags visible to the signed-in user in the area of the client (E7-3), sorted by name. */
 export function listTags(pb: PocketBase, { signal }: RequestOptions = {}): Promise<Tag[]> {
 	return withDataErrors(signal, async () => {
-		const records = await pb
-			.collection(TAGS)
-			.getFullList<TagRecord>({ batch: 500, sort: 'name,id', fields: TAG_FIELDS, signal });
+		const records = await pb.collection(TAGS).getFullList<TagRecord>({
+			batch: 500,
+			sort: 'name,id',
+			fields: TAG_FIELDS,
+			...areaOptions(pb),
+			signal
+		});
 		return records.map(toTag);
 	});
 }
 
-/** Creates a private tag of the signed-in user; the name is sent as given. */
+/** Creates a tag of the signed-in user in the area of the client (E7-3); the name is sent as given. */
 export function createTag(
 	pb: PocketBase,
 	name: string,
@@ -49,9 +54,13 @@ export function createTag(
 	return withDataErrors(signal, async () => {
 		const owner = currentUserId(pb.authStore.record);
 		if (owner === null) throw new DataError('session');
+		const household = clientHousehold(pb);
 		const record = await pb
 			.collection(TAGS)
-			.create<TagRecord>({ owner, name }, { fields: TAG_FIELDS, signal });
+			.create<TagRecord>(
+				{ owner, ...(household !== '' ? { household } : {}), name },
+				{ fields: TAG_FIELDS, signal }
+			);
 		return toTag(record);
 	});
 }

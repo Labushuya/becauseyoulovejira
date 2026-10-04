@@ -402,12 +402,31 @@ describe('TrashStore: retention and "Rückgängig"', () => {
 			.mockRejectedValueOnce(new DataError('network'));
 		const { store, shown } = setup({ saveRetention });
 		await store.reload();
+		// The setting of the account for its private trash (since E7-3 apart from the area's).
 		expect(await store.setRetention('7')).toBe(true);
-		expect(store.retention).toBe('7');
+		expect(store.ownRetention).toBe('7');
 		expect(shown.at(-1)?.title).toBe('Papierkorb: 7 Tage gespeichert.');
 		expect(await store.setRetention('never')).toBe(false);
-		expect(store.retention).toBe('7');
+		expect(store.ownRetention).toBe('7');
 		expect(shown.at(-1)).toMatchObject({ tone: 'error' });
+	});
+
+	it('keeps the retention of the area apart from the own one, and drops the old area at once (E7-3)', async () => {
+		const list = vi
+			.fn<TrashData['list']>()
+			.mockResolvedValueOnce({ items: [item(A)], retention: '90', ownRetention: '7' })
+			.mockResolvedValueOnce({ items: [item(B)], retention: '7', ownRetention: '7' });
+		const { store } = setup({ list });
+		await store.reload();
+		expect(store.retention).toBe('90');
+		expect(store.ownRetention).toBe('7');
+
+		store.rescope();
+		expect(store.items).toEqual([]);
+		expect(store.state).toBe('loading');
+		await vi.waitFor(() => expect(store.state).toBe('ready'));
+		expect(store.items.map((entry) => entry.id)).toEqual([B]);
+		expect(store.retention).toBe('7');
 	});
 
 	it('offers "Rückgängig" and restores with expected_updated', async () => {

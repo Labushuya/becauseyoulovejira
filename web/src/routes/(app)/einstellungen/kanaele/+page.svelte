@@ -8,6 +8,7 @@
 	import { fetchExtensionInfo, type ExtensionInfo } from '$lib/data/extension';
 	import { setupTargetOf, type SetupTarget } from '$lib/domain/channel-setup';
 	import { pb } from '$lib/pocketbase';
+	import { findAreaStore } from '$lib/stores/area.svelte';
 	import { getCatalogStore } from '$lib/stores/catalog.svelte';
 	import { ConnectionsStore, connectionsData } from '$lib/stores/connections.svelte';
 	import { findFirstStepsStore } from '$lib/stores/first-steps.svelte';
@@ -44,6 +45,10 @@
 	// the targets of every card.
 	const inboxTargets = new InboxTargetsStore(inboxTargetsData(pb), auth, flags);
 	const catalog = getCatalogStore();
+	// The area of the tab (E7-3, ADR-0059 §5): connections only in "Privat"; a change of the area
+	// loads the cards of the new one.
+	const area = findAreaStore();
+	const household = $derived(area?.active === 'household');
 	// Folder of the built extension for WhatsApp Web, for its assistant (ADR-0038 §4).
 	let extension = $state<ExtensionInfo | null>(null);
 	const setup = $derived(setupTargetOf(page.url.searchParams));
@@ -53,6 +58,8 @@
 	}
 
 	$effect(() => {
+		// Loads again for another area.
+		void area?.key;
 		untrack(() => {
 			void connections.load();
 			void importKeywords.load();
@@ -100,5 +107,6 @@
 	{extension}
 	{setup}
 	admin={auth.isAdmin}
+	{household}
 	onsetupchange={changeSetup}
 />

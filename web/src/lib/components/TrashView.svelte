@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import type { ResolvedPathname } from '$app/types';
 	import { EMPTY_SELECTION, keepShown, type Selection } from '$lib/domain/selection';
 	import type { ProjectRef } from '$lib/domain/ticket';
 	import {
@@ -33,7 +34,10 @@
 	// restores, failures) stands above the table until the next one. Blocked tickets (ADR-0047)
 	// can be filtered with "Nur blockierte"; deleting for good and emptying say beforehand that
 	// they stay until their dependencies are decided in the preview. "Wiederherstellen" of a row
-	// keeps the user here; with `onopen` its flag offers "Öffnen" (ADR-0054 §7).
+	// keeps the user here; with `onopen` its flag offers "Öffnen" (ADR-0054 §7). In a household
+	// (E7-3, ADR-0059 §6) deleting for good needs the owner or the right "purge": without it
+	// `canPurge` is false and the actions are not offered (the server refuses them with 403), and
+	// the retention belongs to the household (`retentionHref` to its page, null without the right).
 	let {
 		store,
 		projects,
@@ -41,6 +45,9 @@
 		activeId = null,
 		inboxCount = null,
 		projectsNewCount = 0,
+		canPurge = true,
+		retentionHref = resolve('/einstellungen/tickets'),
+		retentionNote = null,
 		onopen
 	}: {
 		store: TrashStore;
@@ -51,6 +58,12 @@
 		activeId?: string | null;
 		inboxCount?: number | null;
 		projectsNewCount?: number;
+		/** Whether "Endgültig löschen …" and "Papierkorb leeren …" are offered (E7-3). */
+		canPurge?: boolean;
+		/** Where the retention is changed; null when the user may not change it. */
+		retentionHref?: ResolvedPathname | null;
+		/** Who may change the retention, shown without the link. */
+		retentionNote?: string | null;
 		/** "Öffnen" in the flag of a restored ticket. */
 		onopen?: (ticketId: string) => void;
 	} = $props();
@@ -129,16 +142,18 @@
 				</label>
 			{/if}
 			{#if store.state === 'ready' && store.items.length > 0}
-				<button
-					class="button-secondary"
-					type="button"
-					aria-haspopup="dialog"
-					disabled={store.progress !== null}
-					aria-busy={store.progress !== null ? 'true' : undefined}
-					onclick={() => (asking = { kind: 'empty' })}
-				>
-					Papierkorb leeren …
-				</button>
+				{#if canPurge}
+					<button
+						class="button-secondary"
+						type="button"
+						aria-haspopup="dialog"
+						disabled={store.progress !== null}
+						aria-busy={store.progress !== null ? 'true' : undefined}
+						onclick={() => (asking = { kind: 'empty' })}
+					>
+						Papierkorb leeren …
+					</button>
+				{/if}
 				<ColumnsPopover
 					fit={columnFit}
 					always="Auswahl, Key, Titel und Aktionen sind immer sichtbar."
@@ -164,7 +179,11 @@
 		<p class="retention">
 			{retentionText(store.retention)}
 			{#if blockedCount > 0}{BLOCKED_RETENTION}{/if}
-			<a href={resolve('/einstellungen/tickets')}>Aufbewahrung ändern</a>
+			{#if retentionHref !== null}
+				<a href={retentionHref}>Aufbewahrung ändern</a>
+			{:else if retentionNote !== null}
+				{retentionNote}
+			{/if}
 		</p>
 		{#if store.items.length === 0}
 			<EmptyState
@@ -213,14 +232,16 @@
 						>
 							Wiederherstellen
 						</button>
-						<button
-							class="button-secondary"
-							type="button"
-							aria-haspopup="dialog"
-							onclick={() => (asking = { kind: 'many' })}
-						>
-							Endgültig löschen …
-						</button>
+						{#if canPurge}
+							<button
+								class="button-secondary"
+								type="button"
+								aria-haspopup="dialog"
+								onclick={() => (asking = { kind: 'many' })}
+							>
+								Endgültig löschen …
+							</button>
+						{/if}
 					{/snippet}
 				</SelectionBar>
 			{/if}
@@ -236,7 +257,7 @@
 				needOf={(id) => store.needOf(id)}
 				isBusy={(id) => store.isBusy(id)}
 				onrestore={(id, options) => void store.restore(id, options, onopen)}
-				onpurge={(item) => (asking = { kind: 'one', item })}
+				onpurge={canPurge ? (item) => (asking = { kind: 'one', item }) : null}
 				ondismissneed={(id) => store.dismissNeed(id)}
 			/>
 		{/if}
