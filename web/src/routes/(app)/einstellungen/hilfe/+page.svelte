@@ -33,7 +33,7 @@
 	// engine computes; the form, the overview and the rule panel link to it. The section "Sicherung &
 	// Notfall" (ADR-0046 §8) takes the steps for a new machine from the one source of the Notfallkarte.
 	// "Betrieb" ends with the frequent problems of the scripts in the words of their catalog
-	// (ADR-0048, ScriptProblemsHelp). Since KX-1 (ADR-0057) commands, .bat files, setx, the Explorer
+	// (ADR-0048, ScriptProblemsHelp). Since KOB-1 (ADR-0057) commands, .bat files, setx, the Explorer
 	// and the steps at the machine of the app show only for the administrator there (PcOnly); the
 	// administrator on another device reads "nur am PC" instead, every other account "Bitte den
 	// Verwalter fragen.", and "Betrieb" and "Sicherung & Notfall" become one sentence for them.

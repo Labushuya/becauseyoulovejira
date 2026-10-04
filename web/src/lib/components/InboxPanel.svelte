@@ -229,7 +229,7 @@
 	}
 
 	// "Ansehen" of a file of a folder (ADR-0051 §6); outside the (app) layout there is none. Only the
-	// administrator on the machine of the app gets the file (KX-1, ADR-0057); elsewhere the buttons
+	// administrator on the machine of the app gets the file (KOB-1, ADR-0057); elsewhere the buttons
 	// are left out instead of a refusal.
 	const viewer = findFolderViewer();
 	const filesHere = $derived(appContext.capabilities.pc);

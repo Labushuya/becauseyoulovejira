@@ -196,7 +196,7 @@ vi.mock('$lib/data/attention', async (importOriginal) => ({
 	...(await importOriginal<object>()),
 	ackAttention: attentionMocks.ack
 }));
-// Context of the tab (KX-1, ADR-0057) and the notices of the administrator when the app opens.
+// Context of the tab (KOB-1, ADR-0057) and the notices of the administrator when the app opens.
 const contextMocks = vi.hoisted(() => ({
 	who: 'pc' as 'pc' | 'remote' | 'member',
 	fetchContext: vi.fn(),
@@ -746,7 +746,7 @@ describe('app layout: opened again (ADR-0035 section 5)', () => {
 	});
 });
 
-describe('app layout: context of the tab (KX-1, ADR-0057)', () => {
+describe('app layout: context of the tab (KOB-1, ADR-0057)', () => {
 	afterEach(() => {
 		pb.authStore.clear();
 		contextMocks.who = 'pc';

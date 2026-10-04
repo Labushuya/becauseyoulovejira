@@ -106,7 +106,7 @@ afterEach(() => {
 	vi.restoreAllMocks();
 });
 
-// The administrator on the machine of the app (KX-1, ADR-0057): everything as before.
+// The administrator on the machine of the app (KOB-1, ADR-0057): everything as before.
 beforeEach(async () => {
 	await useContext(PC_CONTEXT);
 });
@@ -255,7 +255,7 @@ describe('TicketSources', () => {
 	it.each([
 		['the administrator on another device', REMOTE_CONTEXT],
 		['another account', MEMBER_CONTEXT]
-	])('offers no opening of a file of this machine to %s (KX-1)', async (_who, context) => {
+	])('offers no opening of a file of this machine to %s (KOB-1)', async (_who, context) => {
 		await useContext(context);
 		const file = item('file00000000002', { channel: 'folder', kind: 'file' });
 		const store = new TicketSourcesStore(

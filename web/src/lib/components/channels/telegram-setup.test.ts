@@ -117,7 +117,7 @@ afterEach(() => {
 	sessionStorage.clear();
 });
 
-// The administrator on the machine of the app (KX-1, ADR-0057): everything as before.
+// The administrator on the machine of the app (KOB-1, ADR-0057): everything as before.
 beforeEach(async () => {
 	await useContext(PC_CONTEXT);
 });
@@ -245,7 +245,7 @@ describe('Telegram assistant (EH-6)', () => {
 	});
 });
 
-describe('Telegram assistant on another device (KX-1, ADR-0057)', () => {
+describe('Telegram assistant on another device (KOB-1, ADR-0057)', () => {
 	const PC_ONLY =
 		'Nur direkt am PC verfügbar, auf dem becauseyoulovejira läuft (dort über http://127.0.0.1:8090 öffnen).';
 

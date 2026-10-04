@@ -80,7 +80,7 @@
 	};
 
 	// "Ansehen" of a file of a folder; outside the (app) layout there is none, and only for the
-	// administrator on the machine of the app (KX-1, ADR-0057).
+	// administrator on the machine of the app (KOB-1, ADR-0057).
 	const viewer = findFolderViewer();
 	const filesHere = $derived(appContext.capabilities.pc);
 	let viewNote = $state<FileViewNote | null>(null);

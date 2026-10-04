@@ -2,7 +2,7 @@
 // current view, the navigation with the way back, breadcrumbs, the heading as focus target after a
 // change of the page, the forward from /einstellungen and the full width. Page state, navigation
 // and the stores of the (app) layout are fakes; the way back is the real store. The pages of the
-// administrator follow the context of the tab (KX-1, ADR-0057), set like an answer of the server.
+// administrator follow the context of the tab (KOB-1, ADR-0057), set like an answer of the server.
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -119,7 +119,7 @@ describe('settings layout', () => {
 
 	it.each([
 		['every other account (ADR-0056 §7)', MEMBER_CONTEXT],
-		['a tab whose context is not known yet (KX-1)', 'pending' as const]
+		['a tab whose context is not known yet (KOB-1)', 'pending' as const]
 	])('leaves out the pages of the administrator for %s', async (_who, context) => {
 		await useContext(context);
 		mocks.platform = 'windows';
@@ -140,7 +140,7 @@ describe('settings layout', () => {
 		expect(nav.queryByRole('link', { name: 'Sicherheit' })).toBeNull();
 	});
 
-	it('marks the pages of the administrator "nur am PC" on another device (KX-1)', async () => {
+	it('marks the pages of the administrator "nur am PC" on another device (KOB-1)', async () => {
 		await useContext(REMOTE_CONTEXT);
 		mocks.platform = 'windows';
 		await renderSettings('/einstellungen/konto');
@@ -163,7 +163,7 @@ describe('settings layout', () => {
 		]);
 	});
 
-	it('shows the way to the machine of the app instead of a page of the administrator on another device (KX-1)', async () => {
+	it('shows the way to the machine of the app instead of a page of the administrator on another device (KOB-1)', async () => {
 		await useContext(REMOTE_CONTEXT);
 		await renderSettings('/einstellungen/system');
 
@@ -179,7 +179,7 @@ describe('settings layout', () => {
 		expect(document.body.textContent).not.toMatch(/\.bat|\.ps1/);
 	});
 
-	it('says "Nur für den Verwalter" for a page of the administrator opened by another account (KX-1)', async () => {
+	it('says "Nur für den Verwalter" for a page of the administrator opened by another account (KOB-1)', async () => {
 		await useContext(MEMBER_CONTEXT);
 		await renderSettings('/einstellungen/konten');
 
@@ -191,7 +191,7 @@ describe('settings layout', () => {
 		expect(document.querySelector('.section-message.error')).toBeNull();
 	});
 
-	it('shows nothing of a page of the administrator while the context loads, then the page (KX-1)', async () => {
+	it('shows nothing of a page of the administrator while the context loads, then the page (KOB-1)', async () => {
 		await useContext('pending');
 		await renderSettings('/einstellungen/speicher');
 
@@ -203,7 +203,7 @@ describe('settings layout', () => {
 		expect(screen.getByText(CONTENT)).toBeTruthy();
 	});
 
-	it('names the restart for a page of the administrator before the server knows the context (KX-1)', async () => {
+	it('names the restart for a page of the administrator before the server knows the context (KOB-1)', async () => {
 		await useContext('outdated');
 		await renderSettings('/einstellungen/sicherheit');
 

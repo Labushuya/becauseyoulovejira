@@ -4,7 +4,7 @@
 	import CenteredCard from './CenteredCard.svelte';
 
 	// Shown when the stored session could not be checked; the session is kept (E1 plan, package 7).
-	// Before the check the context of the tab is unknown, so the hint names no script (KX-1).
+	// Before the check the context of the tab is unknown, so the hint names no script (KOB-1).
 	let {
 		failure,
 		busy,

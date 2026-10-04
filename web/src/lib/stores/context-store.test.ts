@@ -1,4 +1,4 @@
-// Context store of the tab (KX-1, ADR-0057): loads after the sign-in and every refresh of the
+// Context store of the tab (KOB-1, ADR-0057): loads after the sign-in and every refresh of the
 // session, starts over for another account, goes back to the most restrictive view on sign-out and
 // at the end, keeps what it had when a request fails, asks again after a refusal of the context, and
 // gives its capabilities to the texts outside components.

@@ -1,4 +1,4 @@
-// What works only at the machine of the app (KX-1, ADR-0057): PcOnly shows its content for the
+// What works only at the machine of the app (KOB-1, ADR-0057): PcOnly shows its content for the
 // administrator there and the same hint everywhere else, nothing while the context loads; the
 // replacement of a page of the administrator says why without asking the server.
 

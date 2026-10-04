@@ -1,10 +1,10 @@
-// Tests: sets the context of the tab (KX-1, ADR-0057) like an answer of the server, for components
+// Tests: sets the context of the tab (KOB-1, ADR-0057) like an answer of the server, for components
 // that show commands, scripts or pages of the administrator only where they work.
 
 import type { AppContext } from '$lib/domain/context';
 import { appContext } from '$lib/stores/context.svelte';
 
-/** The administrator on the machine of the app under Windows: everything as before KX-1. */
+/** The administrator on the machine of the app under Windows: everything as before KOB-1. */
 export const PC_CONTEXT: AppContext = Object.freeze({
 	admin: true,
 	local: true,

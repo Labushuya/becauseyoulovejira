@@ -267,14 +267,14 @@
 		flags,
 		open: () => void goto(securityLoginsHref())
 	});
-	// Context of the tab (KX-1, ADR-0057): who uses it from where. Loaded after the sign-in and
+	// Context of the tab (KOB-1, ADR-0057): who uses it from where. Loaded after the sign-in and
 	// every refresh of the session, back to the most restrictive view when the layout goes.
 	$effect(() =>
 		untrack(() => appContext.start((signal) => fetchContext(pb, { signal }), pb.authStore))
 	);
 	const adminHere = $derived(appContext.capabilities.adminPages === 'full');
 	// Backups and failed sign-ins are matters of the administrator of the app on its machine
-	// (ADR-0056 §7, KX-1): another account and another device do not ask the routes that would
+	// (ADR-0056 §7, KOB-1): another account and another device do not ask the routes that would
 	// refuse them. Asked once the context says so.
 	const adminNotices = () => {
 		if (!adminHere) return;

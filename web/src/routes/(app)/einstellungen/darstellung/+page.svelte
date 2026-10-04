@@ -30,7 +30,7 @@
 	// Group "Hinweise" (ADR-0035 section 5, SF-6): the Windows notification is an opt-in; the
 	// browser asks for the permission only when the switch is turned on.
 	const notifyStore = getNotifyStore();
-	// start.bat is named only to the administrator on the machine of the app (KX-1, ADR-0057).
+	// start.bat is named only to the administrator on the machine of the app (KOB-1, ADR-0057).
 	const scripts = $derived(appContext.capabilities.scripts);
 	const uid = $props.id();
 

@@ -35,7 +35,7 @@ export interface FieldError {
 
 /**
  * German default texts per kind; the UI may use more specific ones. "network" names start.bat only
- * for the administrator on the machine of the app (KX-1, ADR-0057).
+ * for the administrator on the machine of the app (KOB-1, ADR-0057).
  */
 export const DATA_ERROR_MESSAGES: Readonly<Record<DataErrorKind, string>> = Object.freeze({
 	aborted: 'Die Anfrage wurde abgebrochen.',

@@ -3,7 +3,7 @@
 	import { CONTEXT_TEXTS, RESTART_NEEDED, pcOnlyText } from '$lib/guidance/texts';
 	import SectionMessage from './guidance/SectionMessage.svelte';
 
-	// Instead of a page of the administrator (KX-1, ADR-0057) when the tab may not show it: no data,
+	// Instead of a page of the administrator (KOB-1, ADR-0057) when the tab may not show it: no data,
 	// no actions, no request. The administrator on another device gets the way to the machine of the
 	// app, every other account the friendly "Nur für den Verwalter", a server before the restart the
 	// hint after an update; while the context loads only a quiet status, so nothing flashes.

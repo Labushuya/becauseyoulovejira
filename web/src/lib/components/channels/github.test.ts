@@ -223,7 +223,7 @@ afterEach(() => {
 	sessionStorage.clear();
 });
 
-// The administrator on the machine of the app (KX-1, ADR-0057): everything as before.
+// The administrator on the machine of the app (KOB-1, ADR-0057): everything as before.
 beforeEach(async () => {
 	await useContext(PC_CONTEXT);
 });

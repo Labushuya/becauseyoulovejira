@@ -25,7 +25,7 @@ function sources(dir: string): string[] {
 }
 
 describe('restart hint', () => {
-	it('names neu-starten.bat in the folder app for the administrator at the PC only (KX-1)', async () => {
+	it('names neu-starten.bat in the folder app for the administrator at the PC only (KOB-1)', async () => {
 		await useContext(PC_CONTEXT);
 		expect(RESTART_NEEDED.title).toBe('Nach dem nächsten Neustart verfügbar');
 		expect(RESTART_NEEDED.text).toMatch(/neu-starten\.bat im Ordner app/);
@@ -53,7 +53,7 @@ describe('restart hint', () => {
 		['inbox', INBOX_UNAVAILABLE_MESSAGE, 'Der Eingang ist'],
 		['recurrence', RECURRENCE_UNAVAILABLE, 'Wiederholungen sind']
 	])('the store of the %s uses the one text', async (_name, message, subject) => {
-		// Worded when the module loads, before the context of the tab is known (KX-1).
+		// Worded when the module loads, before the context of the tab is known (KOB-1).
 		await useContext('pending');
 		expect(message).toBe(restartNeeded(subject));
 	});

@@ -15,7 +15,7 @@
 	// Notfallkarte (ADR-0046 §8): a page of its own, outside the header and the navigation of the app,
 	// so it prints as it stands ("Drucken" and the way back stay off the paper). Signed in only (the
 	// route guard of the root layout); it loads the state of the backups like the page "Sicherung",
-	// on a server under Windows only, and never shows a secret. Since KX-1 (ADR-0057) it follows the
+	// on a server under Windows only, and never shows a secret. Since KOB-1 (ADR-0057) it follows the
 	// context of the tab like the pages of the administrator: only the administrator on the machine of
 	// the app asks the server; elsewhere the page says why, without a request.
 	const store = new BackupStore(backupData(pb), auth);

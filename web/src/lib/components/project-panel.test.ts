@@ -117,7 +117,7 @@ function navigate(path: string, overrides: Record<string, unknown> = {}) {
 	return nav;
 }
 
-// The administrator on the machine of the app (KX-1, ADR-0057): everything as before.
+// The administrator on the machine of the app (KOB-1, ADR-0057): everything as before.
 beforeEach(async () => {
 	await useContext(PC_CONTEXT);
 });

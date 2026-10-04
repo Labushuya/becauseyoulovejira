@@ -27,7 +27,7 @@ function setup(loaded: ImportKeywords | null = EMPTY_IMPORT_KEYWORDS) {
 /** Title of the newest flag (ADR-0025 section 8), `undefined` without one. */
 const latestFlag = (flags: FlagStore) => flags.flags[0]?.title;
 
-// The administrator on the machine of the app (KX-1, ADR-0057): everything as before.
+// The administrator on the machine of the app (KOB-1, ADR-0057): everything as before.
 beforeEach(async () => {
 	await useContext(PC_CONTEXT);
 });
@@ -128,7 +128,7 @@ describe('ImportKeywordsSection', () => {
 		const status = screen.getByRole('status');
 		expect(status.textContent).toMatch(/Nach dem nächsten Neustart verfügbar/);
 		// The section message follows the context of the tab (the administrator at the PC here); the
-		// sentence of the store is worded when the module loads and names no script (KX-1).
+		// sentence of the store is worded when the module loads and names no script (KOB-1).
 		expect(status.textContent).toMatch(/neu-starten\.bat im Ordner app/);
 		expect(IMPORT_KEYWORDS_UNAVAILABLE_MESSAGE).toMatch(/erst nach einem Neustart wirkt\.$/);
 		expect(screen.queryByRole('group', { name: 'Stichwörter' })).toBeNull();

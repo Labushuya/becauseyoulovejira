@@ -1,7 +1,7 @@
 // Shared texts of the guidance (ADR-0026 section 2, plan EH-2). One wording for the hint after an
 // update whose migration runs only after a restart: while the app runs, start.bat only opens the
 // browser, so the hint names neu-starten.bat, which restarts exactly when an update needs it
-// (ADR-0039 section 5). Since KX-1 (ADR-0057) a text names a script only where the tab may see one:
+// (ADR-0039 section 5). Since KOB-1 (ADR-0057) a text names a script only where the tab may see one:
 // the administrator on the machine of the app under Windows; elsewhere the same hint without it, the
 // note "nur am PC" or "Bitte den Verwalter fragen." (currentCapabilities of lib/data/context.ts).
 // Module without runes.
@@ -15,7 +15,7 @@ import {
 	type ContextNote
 } from '../domain/context';
 
-/** Texts of the context of the tab (KX-1, ADR-0057). */
+/** Texts of the context of the tab (KOB-1, ADR-0057). */
 export const CONTEXT_TEXTS = {
 	pcOnlyTitle: 'Nur direkt am PC',
 	askAdmin: 'Bitte den Verwalter fragen.',
@@ -129,7 +129,7 @@ export const APP_OPENED_AGAIN = {
  */
 export const APP_STOPPED = {
 	title: 'becauseyoulovejira wurde beendet.',
-	/** Names start.bat only for the administrator on the machine of the app (KX-1). */
+	/** Names start.bat only for the administrator on the machine of the app (KOB-1). */
 	get description(): string {
 		const reconnect = 'Nach einem Neustart verbindet sich dieser Tab von selbst.';
 		return currentCapabilities().scripts

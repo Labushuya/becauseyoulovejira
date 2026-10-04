@@ -318,7 +318,7 @@ function act(e, name) {
 }
 
 /**
- * GET /api/byl/context (KX-1, ADR-0057): who asks from where, for the SPA to leave out what the
+ * GET /api/byl/context (KOB-1, ADR-0057): who asks from where, for the SPA to leave out what the
  * routes would refuse. `local` is the rule of check (the address of the connection, never a
  * header); only the administrator gets the address of the app on this machine. Changes nothing
  * and logs nothing.

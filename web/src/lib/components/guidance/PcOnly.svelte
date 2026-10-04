@@ -5,7 +5,7 @@
 	import { appContext } from '$lib/stores/context.svelte';
 	import SectionMessage from './SectionMessage.svelte';
 
-	// What works only at the machine of the app (KX-1, ADR-0057): commands, .bat files, setx, the
+	// What works only at the machine of the app (KOB-1, ADR-0057): commands, .bat files, setx, the
 	// Explorer, folders of that machine. The content shows for the administrator there ("script":
 	// on a server under Windows); everywhere else the same hint stands instead: "nur am PC" for the
 	// administrator on another device, "Bitte den Verwalter fragen." (or `member`) for every other

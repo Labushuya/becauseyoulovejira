@@ -15,7 +15,7 @@
 	// is required (PocketBase checks it), the new one twice with the minimum of PocketBase. Who
 	// manages accounts: the administrator on "Konten"; the administrator also learns about the
 	// separate admin account of PocketBase and admin-zuruecksetzen.bat, on the machine of the app
-	// only, where the admin UI and the script work (KX-1, ADR-0057).
+	// only, where the admin UI and the script work (KOB-1, ADR-0057).
 	let {
 		store,
 		email,

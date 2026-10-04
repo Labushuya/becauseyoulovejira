@@ -24,7 +24,7 @@ function text(element: Element): string {
 	return (element.textContent ?? '').replace(/\s+/g, ' ');
 }
 
-// The administrator on the machine of the app under Windows sees the help as before KX-1; the
+// The administrator on the machine of the app under Windows sees the help as before KOB-1; the
 // other contexts are below.
 beforeEach(async () => {
 	await useContext(PC_CONTEXT);
@@ -818,12 +818,12 @@ describe('help page (EH-9)', () => {
 	});
 });
 
-// A command, a script or a file of the folder app (KX-1): what nobody but the administrator at the
+// A command, a script or a file of the folder app (KOB-1): what nobody but the administrator at the
 // machine of the app may read on this page.
 const COMMANDS =
 	/\.bat\b|\.ps1\b|\.vbs\b|\bsetx\b|netsh|reg delete|Invoke-RestMethod|curl -X|powershell -|byl-control/i;
 
-describe('help page in the context of the tab (KX-1, ADR-0057)', () => {
+describe('help page in the context of the tab (KOB-1, ADR-0057)', () => {
 	it('names no command for another account and says who runs the app', async () => {
 		await useContext(MEMBER_CONTEXT);
 		const { container } = render(Page);

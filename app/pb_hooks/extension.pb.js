@@ -2,7 +2,7 @@
 // Folder and version of the built browser extension for WhatsApp Web (ADR-0038 §4, plan
 // eigener-eingang-whatsapp-web EI-3), for the step "Erweiterung laden" of the assistant. Signed-in
 // app users only; the answer holds whether a build is there and, only for the administrator of the
-// app in a browser on this machine (KX-1, ADR-0057), the path of the folder on this machine; every
+// app in a browser on this machine (KOB-1, ADR-0057), the path of the folder on this machine; every
 // other account and device gets '' (no path of the server). Handlers run in isolated scopes, so the
 // modules are required inside.
 

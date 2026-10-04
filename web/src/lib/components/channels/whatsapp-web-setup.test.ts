@@ -102,7 +102,7 @@ function next(dialog: HTMLElement) {
 	return fireEvent.click(within(dialog).getByRole('button', { name: 'Weiter' }));
 }
 
-// The administrator on the machine of the app (KX-1, ADR-0057): everything as before.
+// The administrator on the machine of the app (KOB-1, ADR-0057): everything as before.
 beforeEach(async () => {
 	await useContext(PC_CONTEXT);
 });
@@ -316,7 +316,7 @@ describe('WhatsAppWebSetup', () => {
 		).toBeTruthy();
 	});
 
-	it('leaves loading the extension from the folder of the app to the administrator (KX-1)', async () => {
+	it('leaves loading the extension from the folder of the app to the administrator (KOB-1)', async () => {
 		await useContext(MEMBER_CONTEXT);
 		// The server names no folder to another account (ADR-0057).
 		const { dialog } = await openSetup(

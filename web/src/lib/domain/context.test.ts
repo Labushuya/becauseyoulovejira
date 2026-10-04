@@ -1,4 +1,4 @@
-// Context of the app in this tab (KX-1, ADR-0057): the answer of the route, the capabilities for
+// Context of the app in this tab (KOB-1, ADR-0057): the answer of the route, the capabilities for
 // every combination of administrator, this machine, system and state, the note instead of commands
 // and scripts, and the hints of the server without commands.
 

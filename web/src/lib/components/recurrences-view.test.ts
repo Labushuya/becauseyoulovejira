@@ -140,7 +140,7 @@ beforeEach(() => {
 	document.body.innerHTML = '';
 });
 
-// The administrator on the machine of the app (KX-1, ADR-0057): everything as before.
+// The administrator on the machine of the app (KOB-1, ADR-0057): everything as before.
 beforeEach(async () => {
 	await useContext(PC_CONTEXT);
 });
@@ -186,7 +186,7 @@ describe('RecurrencesView', () => {
 		await show(null);
 		const hint = screen.getByText(/Wiederholungen sind nach dem nächsten Neustart verfügbar/);
 		expect(hint.closest('[role="status"]')).toBeTruthy();
-		// Worded when the store module loads, before the context is known: no script (KX-1).
+		// Worded when the store module loads, before the context is known: no script (KOB-1).
 		expect(hint.textContent).toMatch(/erst nach einem Neustart wirkt\./);
 		expect(screen.queryByRole('link', { name: 'Neue Regel' })).toBeNull();
 		expect(document.querySelector('.alert-error')).toBeNull();

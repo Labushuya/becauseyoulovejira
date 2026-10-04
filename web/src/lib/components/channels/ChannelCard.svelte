@@ -259,7 +259,7 @@
 		<progress value={progress.value} max={progress.max} aria-hidden="true"></progress>
 	{/if}
 	{#if hint !== null}
-		<!-- A command or script in the hint only for the administrator at the PC (KX-1). -->
+		<!-- A command or script in the hint only for the administrator at the PC (KOB-1). -->
 		<SectionMessage tone={hint.tone} compact>{textForContext(hint.text)}</SectionMessage>
 	{/if}
 	{#if message !== null}

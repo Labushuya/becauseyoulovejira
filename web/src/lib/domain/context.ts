@@ -1,4 +1,4 @@
-// Context of the app in this tab (KX-1, ADR-0057): GET /api/byl/context says whether the signed-in
+// Context of the app in this tab (KOB-1, ADR-0057): GET /api/byl/context says whether the signed-in
 // account is the administrator of the app, whether this browser runs on the machine of the app and
 // the system of the server. From it follows what the tab shows: the pages of the administrator with
 // their data, only marked "nur am PC" or not at all; commands, .bat files and scripts or a hint

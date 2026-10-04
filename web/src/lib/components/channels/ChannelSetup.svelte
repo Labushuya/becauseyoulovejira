@@ -149,7 +149,7 @@
 	const folders = $derived(kind === 'ordner');
 
 	/**
-	 * The note instead of a step that works only at the machine of the app (KX-1, ADR-0057): the
+	 * The note instead of a step that works only at the machine of the app (KOB-1, ADR-0057): the
 	 * variable with setx or the control panel there, the restart with neu-starten.bat; null where the
 	 * step shows. Read in the template, it follows the context of the tab.
 	 */
@@ -613,7 +613,7 @@
 	{:else if entry.id === 'chat'}
 		{@render runBlock()}
 		{#if chatId !== null}
-			<!-- The ID goes into a variable with setx and needs a restart: at the PC only (KX-1). -->
+			<!-- The ID goes into a variable with setx and needs a restart: at the PC only (KOB-1). -->
 			<PcOnly need="pc">
 				<SectionMessage tone="info" title={`Erkannte Chat-ID: ${chatId}`} live headingLevel={4}>
 					Gib diese ID frei: den Befehl ausführen, dann die App neu starten (neu-starten.bat) und

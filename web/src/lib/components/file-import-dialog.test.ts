@@ -80,7 +80,7 @@ function renderDialog(overrides: Partial<FileSelection> = {}) {
 
 const submit = () => screen.getByRole('button', { name: /in den Eingang$/ });
 
-// The administrator on the machine of the app (KX-1, ADR-0057): everything as before.
+// The administrator on the machine of the app (KOB-1, ADR-0057): everything as before.
 beforeEach(async () => {
 	await useContext(PC_CONTEXT);
 });
@@ -150,7 +150,7 @@ describe('FileImportDialog', () => {
 			)
 		).toBeTruthy();
 		// The sentence of a store is worded when the module loads, before the context of the tab is
-		// known, so it names no script (KX-1, ADR-0057).
+		// known, so it names no script (KOB-1, ADR-0057).
 		expect(screen.getByText(/erst nach einem Neustart wirkt\./)).toBeTruthy();
 		expect(screen.queryByText(/\.bat/)).toBeNull();
 	});

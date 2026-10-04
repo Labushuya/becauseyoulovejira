@@ -156,7 +156,7 @@ afterEach(() => {
 	vi.restoreAllMocks();
 });
 
-// The administrator on the machine of the app (KX-1, ADR-0057): everything as before.
+// The administrator on the machine of the app (KOB-1, ADR-0057): everything as before.
 beforeEach(async () => {
 	await useContext(PC_CONTEXT);
 });
@@ -269,7 +269,7 @@ describe('inbox panel', () => {
 		['the administrator on another device', REMOTE_CONTEXT],
 		['another account', MEMBER_CONTEXT],
 		['a tab whose context loads', 'pending' as const]
-	])('offers no "Ansehen" of a file of this machine to %s (KX-1)', async (_who, context) => {
+	])('offers no "Ansehen" of a file of this machine to %s (KOB-1)', async (_who, context) => {
 		await useContext(context);
 		const { data, viewer } = folderViewer(async () => ({
 			kind: 'refused',

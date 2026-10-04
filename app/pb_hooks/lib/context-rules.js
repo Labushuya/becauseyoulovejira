@@ -1,4 +1,4 @@
-// The context of a signed-in request for the SPA (KX-1, ADR-0057): whether the account is the
+// The context of a signed-in request for the SPA (KOB-1, ADR-0057): whether the account is the
 // administrator of the app, whether the request comes from this machine, the system of the server
 // and, from these, whether the scripts of the folder app are in reach. The server stays the one that
 // decides on every route; the SPA only leaves out what a route would refuse. CommonJS module, ES5

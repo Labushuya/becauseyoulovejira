@@ -31,7 +31,7 @@
 	const lastView = getLastViewStore();
 	// "System" only for a server on Windows (ADR-0043); until the answer and outside the app layout
 	// the server counts as Windows, like the guides. The pages of the administrator follow the
-	// context of the tab (KX-1, ADR-0057): with data only for the administrator on the machine of the
+	// context of the tab (KOB-1, ADR-0057): with data only for the administrator on the machine of the
 	// app; on another device listed as "nur am PC", for every other account not listed (ADR-0056 §7).
 	// Opened by address, such a page shows the hint instead and never mounts, so nothing asks the
 	// server what it would refuse.

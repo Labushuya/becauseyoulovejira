@@ -167,7 +167,7 @@ function setup(items: Connection[] = [CAL, BOT], statuses: Record<string, Secret
 /** Title of the newest flag (ADR-0025 section 8), `undefined` without one. */
 const latestFlag = (flags: FlagStore) => flags.flags[0]?.title;
 
-// The administrator on the machine of the app (KX-1, ADR-0057): everything as before.
+// The administrator on the machine of the app (KOB-1, ADR-0057): everything as before.
 beforeEach(async () => {
 	await useContext(PC_CONTEXT);
 });

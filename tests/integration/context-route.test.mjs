@@ -1,4 +1,4 @@
-// Context of the SPA (KX-1, ADR-0057) and the audit of the routes that work on this machine, against
+// Context of the SPA (KOB-1, ADR-0057) and the audit of the routes that work on this machine, against
 // own disposable instances. GET /api/byl/context says who asks from where: the administrator of the
 // app or another account, on this machine or on another device of the home network (simulated with
 // tests/fixtures/pb_hooks/remote-address.pb.js, like lan-access.test.mjs), and the system of the

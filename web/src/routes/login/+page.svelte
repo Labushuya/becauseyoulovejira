@@ -14,7 +14,7 @@
 		rate_limited:
 			'Zu viele Anmeldeversuche. Zum Schutz vor Rateversuchen ist die Anmeldung kurz gesperrt. Bitte ein paar Minuten warten und dann erneut versuchen.',
 		server: 'Der Server hat mit einem Fehler geantwortet. Bitte später erneut versuchen.',
-		// Before the sign-in nobody is known, so the hint names no script (KX-1, ADR-0057).
+		// Before the sign-in nobody is known, so the hint names no script (KOB-1, ADR-0057).
 		get network() {
 			return serverUnreachable();
 		},

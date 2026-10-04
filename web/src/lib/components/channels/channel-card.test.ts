@@ -134,7 +134,7 @@ async function openDetails(article: HTMLElement, name: string) {
 	return within(document.getElementById(toggle.getAttribute('aria-controls') ?? '')!);
 }
 
-// The administrator on the machine of the app (KX-1, ADR-0057): everything as before.
+// The administrator on the machine of the app (KOB-1, ADR-0057): everything as before.
 beforeEach(async () => {
 	await useContext(PC_CONTEXT);
 });
@@ -461,7 +461,7 @@ describe('channel card', () => {
 		expect(details.queryByText('Hilfsprozess')).toBeNull();
 	});
 
-	it('names no script in the hints of a card on another device (KX-1)', async () => {
+	it('names no script in the hints of a card on another device (KOB-1)', async () => {
 		await useContext(REMOTE_CONTEXT);
 		const mail = connection({
 			type: 'mail',

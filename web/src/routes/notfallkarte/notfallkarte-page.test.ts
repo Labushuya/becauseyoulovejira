@@ -10,7 +10,7 @@ import Page from './+page.svelte';
 
 const mocks = vi.hoisted(() => ({
 	platform: 'windows' as string,
-	// Who uses the tab (KX-1, ADR-0057): the administrator here or elsewhere, or another account.
+	// Who uses the tab (KOB-1, ADR-0057): the administrator here or elsewhere, or another account.
 	who: 'pc' as 'pc' | 'remote' | 'member',
 	contextRequests: 0,
 	requests: 0,
@@ -150,7 +150,7 @@ describe('Notfallkarte', () => {
 		expect(mocks.requests).toBe(0);
 	});
 
-	it('shows the way to the machine of the app on another device, without asking for the backups (KX-1)', async () => {
+	it('shows the way to the machine of the app on another device, without asking for the backups (KOB-1)', async () => {
 		mocks.platform = 'windows';
 		mocks.who = 'remote';
 		render(Page);
@@ -165,7 +165,7 @@ describe('Notfallkarte', () => {
 		expect(screen.queryByRole('button', { name: 'Drucken' })).toBeNull();
 	});
 
-	it('says "Nur für den Verwalter" to another account, without asking for the backups (KX-1)', async () => {
+	it('says "Nur für den Verwalter" to another account, without asking for the backups (KOB-1)', async () => {
 		mocks.platform = 'windows';
 		mocks.who = 'member';
 		render(Page);

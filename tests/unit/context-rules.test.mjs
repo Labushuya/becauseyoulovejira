@@ -1,4 +1,4 @@
-// Context of the SPA (KX-1, ADR-0057): the answer of GET /api/byl/context from what the route found
+// Context of the SPA (KOB-1, ADR-0057): the answer of GET /api/byl/context from what the route found
 // out. The scripts only for the administrator on this machine of a server under Windows, the address
 // of the app only for the administrator; the systems are those of the host route.
 

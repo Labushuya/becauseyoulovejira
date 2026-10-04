@@ -69,7 +69,7 @@ describe('account page (EH-8, E7-1)', () => {
 		expect(admin.getAttribute('rel')).toBe('external');
 	});
 
-	it('gives the administrator on another device no script and no admin UI (KX-1)', async () => {
+	it('gives the administrator on another device no script and no admin UI (KOB-1)', async () => {
 		await useContext(REMOTE_CONTEXT);
 		render(Page);
 

@@ -1,4 +1,4 @@
-// Context of the app in this tab (KX-1, ADR-0057): one store for the whole tab, like the session.
+// Context of the app in this tab (KOB-1, ADR-0057): one store for the whole tab, like the session.
 // The (app) layout and the Notfallkarte start it with the data layer and the auth store of the SDK:
 // it loads the context after the sign-in and after every refresh of the session, starts over for
 // another account and goes back to the most restrictive view on sign-out and when the page goes.

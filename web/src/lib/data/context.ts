@@ -1,4 +1,4 @@
-// Context of the app in this tab (KX-1, ADR-0057): GET /api/byl/context for signed-in app accounts.
+// Context of the app in this tab (KOB-1, ADR-0057): GET /api/byl/context for signed-in app accounts.
 // The answer only picks what the tab shows, so it never fails: 404 (the server does not know the
 // route yet, before the restart after an update) is "outdated", every other failure "failed" (the
 // tab keeps what it had, or the most restrictive view). A refusal of a route with "loopback",

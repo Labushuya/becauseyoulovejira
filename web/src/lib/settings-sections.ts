@@ -62,7 +62,7 @@ export function isAdminSection(id: string): boolean {
 /**
  * The pages the navigation lists for a server on `platform`: "Sicherung" and "System" drive the
  * scripts of the folder app under Windows, so they are left out for Linux and containers. The pages
- * of the administrator follow the context of the tab (KX-1, ADR-0057): with data on the machine of
+ * of the administrator follow the context of the tab (KOB-1, ADR-0057): with data on the machine of
  * the app ("full"), marked "nur am PC" for the administrator on another device ("pc-only"), not at
  * all for every other account and while the context loads ("hidden", ADR-0056 §7).
  */

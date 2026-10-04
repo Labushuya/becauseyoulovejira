@@ -37,7 +37,7 @@ describe('toDataError', () => {
 		expect(error.status).toBe(0);
 	});
 
-	it('names start.bat for an unreachable server only to the administrator at the PC (KX-1)', () => {
+	it('names start.bat for an unreachable server only to the administrator at the PC (KOB-1)', () => {
 		const fetchFailed = () => toDataError(new ClientResponseError(new TypeError('fetch failed')));
 		// Without the context of the tab (the root tests load the data layer alone): no script.
 		expect(fetchFailed().message).toBe(

@@ -43,7 +43,7 @@
 	// until the modal closes, so the step "Schlüssel eintragen" can offer it again; it is never stored.
 	// The extension is loaded from a folder of the machine of the app and talks to the app there:
 	// "Erweiterung laden" and "Schlüssel eintragen" show only for the administrator at that machine;
-	// elsewhere the note "nur am PC" resp. "Bitte den Verwalter fragen." (KX-1, ADR-0057).
+	// elsewhere the note "nur am PC" resp. "Bitte den Verwalter fragen." (KOB-1, ADR-0057).
 	let {
 		inboxKeys,
 		importKeywords = null,

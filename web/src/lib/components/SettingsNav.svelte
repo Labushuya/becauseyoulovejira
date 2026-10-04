@@ -7,7 +7,7 @@
 	// the current one carries aria-current="page" and is marked by weight and surface besides its
 	// colour. From 64rem it is a floating glass card (ADR-0029, G-6). The small title "Einstellungen" is hidden from screen readers, because
 	// the navigation has that name already. A page of the administrator on another device carries the
-	// quiet mark "nur am PC" (KX-1, ADR-0057), part of the name of its link.
+	// quiet mark "nur am PC" (KOB-1, ADR-0057), part of the name of its link.
 	let {
 		sections,
 		current,
