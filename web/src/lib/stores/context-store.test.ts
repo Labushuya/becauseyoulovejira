@@ -57,6 +57,25 @@ function source() {
 	};
 }
 
+/** Reconnections of the realtime connection; `back` reports one (the server runs again). */
+function connection() {
+	const callbacks = new Set<() => void>();
+	const stopped = vi.fn();
+	return {
+		reconnected: vi.fn(async (callback: () => void) => {
+			callbacks.add(callback);
+			return async () => {
+				callbacks.delete(callback);
+				stopped();
+			};
+		}),
+		stopped,
+		back: () => {
+			for (const callback of [...callbacks]) callback();
+		}
+	};
+}
+
 let stops: (() => void)[] = [];
 
 afterEach(() => {
@@ -120,6 +139,48 @@ describe('ContextStore', () => {
 		void store.refresh();
 		await fake.answer({ kind: 'failed' });
 		expect(store.capabilities.mode).toBe('pc');
+	});
+
+	it.each([
+		['the server before the restart (404)', { kind: 'outdated' } as const, 'outdated'],
+		['a failed request', { kind: 'failed' } as const, 'pending']
+	])(
+		'asks again once the server is back after a restart, with the session from the storage: %s',
+		async (_case, first, before) => {
+			// The tab opened with the stored session (no sign-in, no refresh of the session) while the
+			// server still ran the build before the update; neu-starten.bat brings it back.
+			const store = new ContextStore();
+			const fake = source();
+			const live = connection();
+			stops.push(store.start(fake.load, session('t1', 'u1'), live));
+			await fake.answer(first);
+			expect(store.capabilities.mode).toBe(before);
+			expect(store.capabilities.adminPages).toBe('hidden');
+
+			live.back();
+			expect(fake.load).toHaveBeenCalledTimes(2);
+			await fake.answer({ kind: 'ready', context: ADMIN });
+			expect(store.capabilities.mode).toBe('pc');
+			expect(store.capabilities.adminPages).toBe('full');
+		}
+	);
+
+	it('asks nothing after a reconnection without a session and stops listening at the end', async () => {
+		const store = new ContextStore();
+		const fake = source();
+		const live = connection();
+		const auth = session();
+		const stop = store.start(fake.load, auth, live);
+		live.back();
+		expect(fake.load).not.toHaveBeenCalled();
+
+		auth.change('t1', 'u1');
+		await fake.answer({ kind: 'ready', context: ADMIN });
+		stop();
+		await vi.waitFor(() => expect(live.stopped).toHaveBeenCalledOnce());
+		live.back();
+		expect(fake.load).toHaveBeenCalledTimes(1);
+		expect(store.state).toEqual({ kind: 'pending' });
 	});
 
 	it('asks again after a refusal of the context, not after others', async () => {

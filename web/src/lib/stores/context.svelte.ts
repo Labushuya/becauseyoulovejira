@@ -2,9 +2,11 @@
 // The (app) layout and the Notfallkarte start it with the data layer and the auth store of the SDK:
 // it loads the context after the sign-in and after every refresh of the session, starts over for
 // another account and goes back to the most restrictive view on sign-out and when the page goes.
-// A refusal with "loopback", "owner" or "platform" asks again. While nothing is known, the tab shows
-// nothing of the administrator and no command; a failed request keeps what the tab had. Texts
-// outside components read the same capabilities through currentCapabilities of lib/data/context.ts.
+// A refusal with "loopback", "owner" or "platform" asks again, and so does every reconnection of the
+// realtime connection in the app layout (the restart after an update). While nothing is known, the
+// tab shows nothing of the administrator and no command; a failed request keeps what the tab had.
+// Texts outside components read the same capabilities through currentCapabilities of
+// lib/data/context.ts.
 
 import { onContextRefusal, provideCapabilities, type ContextAnswer } from '$lib/data/context';
 import {
@@ -14,9 +16,13 @@ import {
 	type Capabilities,
 	type ContextState
 } from '$lib/domain/context';
+import { hold, type LiveSource } from './realtime';
 
 /** Loads the context; never fails (lib/data/context.ts). */
 export type ContextSource = (signal: AbortSignal) => Promise<ContextAnswer>;
+
+/** What the store needs of the realtime connection: the live source of the app layout fits. */
+export type ContextConnection = Pick<LiveSource, 'reconnected'>;
 
 /** What the store needs of the session: the auth store of the SDK fits. */
 export interface ContextSession {
@@ -50,10 +56,15 @@ export class ContextStore {
 
 	/**
 	 * Follows the session with `source`: loads now with a session, again after every sign-in and
-	 * refresh, and starts over for another account. Returns the end, which goes back to the most
+	 * refresh, and starts over for another account. With `connection` it loads again after every
+	 * reconnection while there is a session. Returns the end, which goes back to the most
 	 * restrictive view.
 	 */
-	start(source: ContextSource, session: ContextSession): () => void {
+	start(
+		source: ContextSource,
+		session: ContextSession,
+		connection?: ContextConnection
+	): () => void {
 		// A later start (another page outside the app layout) takes over; the end of an earlier one
 		// then only stops its own listening.
 		const generation = ++this.#generation;
@@ -81,9 +92,18 @@ export class ContextStore {
 		const stopRefusals = onContextRefusal(() => {
 			if (generation === this.#generation) void this.refresh();
 		});
+		// The server is back after an interruption, above all the restart after an update: a tab
+		// that got 404 or no answer before would otherwise keep the most restrictive view.
+		const again = () => {
+			if (generation === this.#generation && this.#token !== '') void this.refresh();
+		};
+		const stopReconnect = connection
+			? hold((guard) => connection.reconnected(guard(again)), { recovered: again })
+			: () => undefined;
 		return () => {
 			stopSession();
 			stopRefusals();
+			stopReconnect();
 			if (generation !== this.#generation) return;
 			this.#source = null;
 			this.#token = '';

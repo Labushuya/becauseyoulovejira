@@ -341,7 +341,7 @@
   "meta": {
     "projekt": "becauseyoulovejira",
     "stand": "2026-10-04",
-    "commit": "b105bd7"
+    "commit": "22b01ff"
   },
   "bereiche": [
     { "id": "betrieb", "titel": "Betrieb: Start, Stopp, Skripte und Daten" },
@@ -565,8 +565,8 @@
       "vermerk": "Migration 1790203700, Hooks und Routen wirken erst nach einem Neustart der App (neu-starten.bat); bis dahin bleibt das erste Konto Verwalter. Zwei manuelle Fälle (BYL-E7-023, BYL-E7-024)." },
     { "id": "HN-1", "vorhaben": "Zugriff im Heimnetz", "titel": "Zugriff im Heimnetz: Schalter und Adressen (Seite „Sicherheit“, lan-configure), Start auf 0.0.0.0 mit den http-Origins der Adressen, Firewall-Regel per UAC oder Befehl, Netzwerkprofil in status und doctor, nur-lokale Routen und Tabs anderer Geräte getrennt", "bereich": "betrieb", "quelle": "Nutzerentscheidung", "datum": "2026-10-04", "adr": ["0055-sicherheits-haertung.md, Nachtrag 2026-10-04", "0001-betriebsmodell-lokal-mehrgeraete-spaeter.md, Nachtrag 2026-10-04", "0028-plattform-strategie.md, Nachtrag 2026-10-04", "0039-betriebsskripte.md, Nachtrag 2026-10-04", "0043-system-seite.md, Nachtrag 2026-10-04", "0035-start-einstieg-und-offene-tabs.md, Nachtrag 2026-10-04"], "plan": "heimnetz.md", "faelle": ["BYL-E6-1400..BYL-E6-1416", "BYL-E6-1420..BYL-E6-1426"],
       "vermerk": "Hooks und Steuerskript wirken erst nach einem Neustart der App (neu-starten.bat); keine Migration. Sieben manuelle Fälle (BYL-E6-1420 bis BYL-E6-1426)." },
-    { "id": "KOB-1", "vorhaben": "Kontextabhängige Oberfläche", "titel": "Route GET /api/byl/context; Seiten des Verwalters, Befehle, Skripte und „Ansehen“ nur dort, wo sie funktionieren (am Handy „nur am PC“, für andere Konten „Bitte den Verwalter fragen.“); Audit der Routen am PC, Pfad der Erweiterung nur für den Verwalter", "bereich": "konten", "quelle": "Nutzerwunsch", "datum": "2026-10-04", "adr": ["0057-kontextabhaengige-oberflaeche.md", "0055-sicherheits-haertung.md, Nachtrag KOB-1", "0056-konten-und-verwalter.md, Nachtrag KOB-1"], "plan": "e7-haushalt.md", "faelle": ["BYL-E6-1430..BYL-E6-1437", "BYL-E6-1440..BYL-E6-1445"],
-      "vermerk": "Hooks wirken erst nach einem Neustart der App (neu-starten.bat); keine Migration. Paket-ID KOB-1, weil KX-1 zu „Tickets im Kontext“ gehört. Sechs manuelle Fälle (BYL-E6-1440 bis BYL-E6-1445)." },
+    { "id": "KOB-1", "vorhaben": "Kontextabhängige Oberfläche", "titel": "Route GET /api/byl/context; Seiten des Verwalters, Befehle, Skripte und „Ansehen“ nur dort, wo sie funktionieren (am Handy „nur am PC“, für andere Konten „Bitte den Verwalter fragen.“); Audit der Routen am PC, Pfad der Erweiterung nur für den Verwalter", "bereich": "konten", "quelle": "Nutzerwunsch", "datum": "2026-10-04", "adr": ["0057-kontextabhaengige-oberflaeche.md", "0055-sicherheits-haertung.md, Nachtrag KOB-1", "0056-konten-und-verwalter.md, Nachtrag KOB-1"], "plan": "e7-haushalt.md", "faelle": ["BYL-E6-1430..BYL-E6-1437", "BYL-E6-1440..BYL-E6-1446"],
+      "vermerk": "Hooks wirken erst nach einem Neustart der App (neu-starten.bat); keine Migration. Paket-ID KOB-1, weil KX-1 zu „Tickets im Kontext“ gehört. Sechs manuelle Fälle (BYL-E6-1440 bis BYL-E6-1445). Fix fix/kontext-verwalter-sicht: erneute Abfrage nach dem Neustart (BYL-E6-1446)." },
     { "id": "E7-2", "vorhaben": "E7 Haushalt", "titel": "Haushalt verwalten: gründen, Einladungscode (einmal gezeigt, nur Hash), Beitritt mit neutraler Antwort und strengem Rate-Limit, Rechte mit Delegation nur eigener Rechte, übertragen, entfernen, austreten; Zugriff nur über die aktuelle Mitgliedschaft; Seite „Haushalt“ auf jedem Gerät", "bereich": "konten", "quelle": "Nutzerentscheidung", "datum": "2026-10-04", "adr": ["0058-haushalt-mitgliedschaft-einladungen-rechte.md", "0011-roadmap-e3-bis-e7.md, Nachtrag E7-2", "0037-papierkorb.md, Nachtrag E7-2", "0055-sicherheits-haertung.md, Nachtrag E7-2", "0056-konten-und-verwalter.md, Nachtrag E7-2", "0057-kontextabhaengige-oberflaeche.md, Nachtrag E7-2"], "plan": "e7-haushalt.md", "faelle": ["BYL-E7-100..BYL-E7-115", "BYL-E7-120..BYL-E7-128"],
       "vermerk": "Migrationen 1790203800, 1790203810 und 1790203900, Hooks und Routen wirken erst nach einem Neustart der App (neu-starten.bat). Fünf manuelle Fälle (BYL-E7-120 bis BYL-E7-124). Sicherheits-Fix danach: scope-guard.pb.js (BYL-E7-125 bis BYL-E7-128), ebenfalls nach einem Neustart." },
     { "id": "querschnitt", "vorhaben": "Querschnitt", "titel": "Testumgebung, Regeln der Datenschicht, Hook-Module und dieses Manifest", "bereich": "entwicklung", "faelle": ["BYL-X-001..BYL-X-004"] }
@@ -5169,7 +5169,11 @@
           "pre": "Zweites Konto angemeldet (PC oder Handy).",
           "steps": ["In die Adresszeile …/einstellungen/system, …/einstellungen/konten und …/notfallkarte eingeben.", "Die Entwicklertools (Netzwerk) dabei offen lassen."],
           "expect": "Die Seiten sagen freundlich „Nur für den Verwalter“ (ohne Rot, ohne Daten); im Netzwerk keine Anfrage an /api/byl/system, /api/byl/accounts oder /api/byl/backup, nur /api/byl/context.",
-          "tests": [] }
+          "tests": [] },
+        { "id": "BYL-E6-1446", "title": "Kontext nach dem Neustart erneut abfragen: Seiten des Verwalters ohne Neuladen zurück (KOB-1, Fix)", "art": ["unit", "komponente"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web"],
+          "expect": "Ein Tab mit der Sitzung aus dem Speicher, der vor dem Neustart nach einem Update 404 („outdated“) oder keine Antwort bekam, fragt nach der neuen Realtime-Verbindung (neu-starten.bat) den Kontext erneut und zeigt dem Verwalter am PC die Seiten des Verwalters ohne Neuladen; ohne Sitzung keine Anfrage, nach dem Ende kein Zuhören mehr. Das (app)-Layout gibt dem Store seine Live-Quelle.",
+          "tests": ["web/src/lib/stores/context-store.test.ts::asks again once the server is back after a restart", "web/src/lib/stores/context-store.test.ts::asks nothing after a reconnection without a session", "web/src/routes/(app)/app-layout.test.ts::asks for the context again once the server is back after the restart after an update"] }
       ]
     },
     {
