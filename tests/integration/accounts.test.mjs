@@ -4,8 +4,10 @@
 // Origin, own account, last administrator), start passwords and resets that end sessions, disabled
 // accounts that cannot sign in, the fields no client changes, names that household members and the
 // administrator see without e-mail addresses, the right on every route of an administrator and the
-// channels with access data. Requests of the app go through node:http with the Origin of its
-// address, like system-route.test.mjs; the data layer of the SPA is checked where it adds something.
+// channels with access data. Since E7-4 a new owner of a household without an active owner, since
+// E7-4c deleting an orphaned household (no member with an account) with preview and typed name.
+// Requests of the app go through node:http with the Origin of its address, like
+// system-route.test.mjs; the data layer of the SPA is checked where it adds something.
 
 import { randomBytes } from 'node:crypto';
 import { request } from 'node:http';
@@ -13,13 +15,16 @@ import PocketBase from 'pocketbase';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { writtenLogs } from '../support/logs.mjs';
 import { startPocketBase } from '../support/pocketbase-harness.mjs';
+import { uniqueCode, uniqueSuffix } from '../support/scenario.mjs';
 import { scaled } from '../support/timing.mjs';
 import {
 	changeOwnPassword,
 	createAccount,
+	deleteOrphanedHousehold,
 	fetchAccounts,
 	saveOwnName
 } from '../../web/src/lib/data/accounts.ts';
+import { parseHouseholdDeletion } from '../../web/src/lib/domain/accounts.ts';
 import { listPersonNames } from '../../web/src/lib/data/people.ts';
 
 let instance;
@@ -265,7 +270,8 @@ describe('routes of the page "Konten": refusals', () => {
 		['POST', '/api/byl/accounts/x/password'],
 		['POST', '/api/byl/accounts/x/disabled'],
 		['POST', '/api/byl/accounts/x/admin'],
-		['POST', '/api/byl/accounts/households/x/owner']
+		['POST', '/api/byl/accounts/households/x/owner'],
+		['POST', '/api/byl/accounts/households/x/delete']
 	];
 
 	it('answer 401 without a session and 403 for an admin account', async () => {
@@ -504,7 +510,8 @@ describe('a household without an active owner (E7-4, ADR-0061 §6)', () => {
 			members: [
 				{ id: rows[max.id].id, user: max.id, name: 'Max Beispiel', disabled: false },
 				{ id: rows[sina.id].id, user: sina.id, name: 'Sina Beispiel', disabled: true }
-			]
+			],
+			orphaned: false
 		});
 
 		for (const [target, body, status, problem] of [
@@ -533,6 +540,149 @@ describe('a household without an active owner (E7-4, ADR-0061 §6)', () => {
 		// The new owner manages the household on his page now.
 		const state = await max.client.send('/api/byl/household', { method: 'GET', requestKey: null });
 		expect(state.me.role).toBe('owner');
+	});
+});
+
+describe('an orphaned household (E7-4c, ADR-0061 addendum E7-4c)', () => {
+	const HOUSEHOLD = '/api/byl/household';
+	const post = (who, path, body) => who.client.send(path, { method: 'POST', body, requestKey: null });
+	const statusOf = (promise) =>
+		promise.then(
+			() => 200,
+			(error) => error.status
+		);
+
+	/**
+	 * A household founded by `founder` and filled by `writer`, who leaves it again; then the superuser
+	 * deletes the founder (admin UI). No membership is left: the household is orphaned and still holds
+	 * the records of the writer, an open code, a counter and the mark of an entry that left it.
+	 */
+	async function orphanedHousehold(founder, writer) {
+		const name = `Altbau ${uniqueSuffix()}`;
+		const id = (await post(founder, HOUSEHOLD, { name })).household.id;
+		const { code } = await post(founder, `${HOUSEHOLD}/invites`, {});
+		await post(writer, `${HOUSEHOLD}/join`, { code });
+		await post(founder, `${HOUSEHOLD}/invites`, {});
+		const records = writer.client;
+		const project = await records.collection('projects').create({ owner: writer.id, household: id, name: `Projekt ${uniqueSuffix()}`, code: uniqueCode() });
+		const tag = await records.collection('tags').create({ owner: writer.id, household: id, name: `tag-${uniqueSuffix()}` });
+		const ticket = await records.collection('tickets').create({ owner: writer.id, household: id, title: 'Keller räumen', project: project.id, tags: [tag.id] });
+		const sub = await records.collection('tickets').create({ owner: writer.id, household: id, title: 'Regal', parent: ticket.id });
+		const trashed = await records.collection('tickets').create({ owner: writer.id, household: id, title: 'Alt', status: 'done' });
+		await records.collection('tickets').delete(trashed.id);
+		const comment = await records.collection('comments').create({ ticket: ticket.id, author: writer.id, body: 'Mache ich.' });
+		const item = await records
+			.collection('inbox_items')
+			.create({ owner: writer.id, household: id, channel: 'manual', kind: 'todo', title: `Zettel ${uniqueSuffix()}` });
+		const rule = await records.collection('recurrence_rules').create({
+			owner: writer.id,
+			household: id,
+			title: 'Fenster putzen',
+			mode: 'calendar',
+			freq: 'monthly',
+			month_day: 1,
+			initial_status: 'open'
+		});
+		const marks = superuser.collection('inbox_moved_fingerprints');
+		await marks.create({ scope: `h:${id}`, fingerprint: randomBytes(16).toString('hex') });
+		const kept = await marks.create({ scope: `u:${writer.id}`, fingerprint: randomBytes(16).toString('hex') });
+		await post(writer, `${HOUSEHOLD}/leave`, {});
+		await superuser.collection('users').delete(founder.id);
+		return { id, name, project, tag, ticket, sub, trashed, comment, item, rule, kept };
+	}
+
+	it('is listed as orphaned, and only an orphaned household can be deleted, after a preview and with its name', async () => {
+		// An administrator of its own: every account has 10 changes per minute (ADR-0043 §4).
+		const vera = await promoted('Vera Beispiel');
+		const writer = await account('Wanda Beispiel');
+		const home = await orphanedHousehold(await account('Fritz Beispiel'), writer);
+		// Not orphaned: the owner is gone, but a disabled member still has an account.
+		const kept = await superuser.collection('households').create({ name: 'Gartenhaus' });
+		const keeper = await account('Kai Beispiel');
+		const sleeper = await account('Lea Beispiel');
+		await superuser.collection('household_members').create({ household: kept.id, user: keeper.id, role: 'owner' });
+		await superuser.collection('household_members').create({ household: kept.id, user: sleeper.id, role: 'member' });
+		await superuser.collection('users').update(sleeper.id, { disabled: true });
+		await superuser.collection('users').delete(keeper.id);
+
+		const list = await app(vera, 'GET', '/api/byl/accounts');
+		expect(list.body.households.find((entry) => entry.id === home.id)).toEqual({
+			id: home.id,
+			name: home.name,
+			owner: null,
+			members: [],
+			orphaned: true
+		});
+		expect(list.body.households.find((entry) => entry.id === kept.id)).toMatchObject({ owner: null, orphaned: false });
+
+		const path = `/api/byl/accounts/households/${home.id}/delete`;
+		// Only the administrator: another account on this machine changes nothing.
+		const other = await app(writer, 'POST', path, { name: home.name });
+		expect([other.status, other.body.reason]).toEqual([403, 'owner']);
+		// The data layer of the SPA sends no Origin from Node, so it is refused like every change.
+		expect(await deleteOrphanedHousehold(vera.client, home.id, { preview: true })).toEqual({ kind: 'denied', reason: 'origin' });
+		for (const [target, body, status, problem] of [
+			[path, { preview: 'ja' }, 400, 'format'],
+			['/api/byl/accounts/households/abcdefghijklmno/delete', { preview: true }, 404, 'household-missing'],
+			[`/api/byl/accounts/households/${kept.id}/delete`, { preview: true }, 409, 'household-not-orphaned'],
+			[`/api/byl/accounts/households/${household.id}/delete`, { name: 'Zuhause' }, 409, 'household-not-orphaned']
+		]) {
+			const refused = await app(vera, 'POST', target, body);
+			expect([refused.status, refused.body.problem], `${target} ${JSON.stringify(body)}`).toEqual([status, problem]);
+		}
+
+		const preview = await app(vera, 'POST', path, { preview: true });
+		expect(preview.status).toBe(200);
+		expect(preview.headers['cache-control']).toBe('no-store');
+		expect(preview.body).toEqual({
+			preview: true,
+			household: { id: home.id, name: home.name },
+			counts: { tickets: 2, trash: 1, projects: 1, rules: 1, items: 1, tags: 1, connections: 0, comments: 1 }
+		});
+		expect(parseHouseholdDeletion(preview.body)).toMatchObject({ preview: true, list: null });
+		expect(await statusOf(superuser.collection('tickets').getOne(home.ticket.id))).toBe(200);
+
+		const wrong = await app(vera, 'POST', path, { name: `${home.name}x` });
+		expect([wrong.status, wrong.body.problem]).toEqual([400, 'household-name']);
+		expect(await statusOf(superuser.collection('households').getOne(home.id))).toBe(200);
+
+		const done = await app(vera, 'POST', path, { name: `  ${home.name} ` });
+		expect(done.status).toBe(200);
+		expect(done.body).toMatchObject({ preview: false, household: { id: home.id, name: home.name }, counts: preview.body.counts });
+		expect(done.body.list.households.some((entry) => entry.id === home.id)).toBe(false);
+		expect(done.body.list.households.some((entry) => entry.id === kept.id)).toBe(true);
+		expect(parseHouseholdDeletion(done.body)?.list?.accounts.some((entry) => entry.id === vera.id)).toBe(true);
+		for (const [collection, id] of [
+			['tickets', home.ticket.id],
+			['tickets', home.sub.id],
+			['tickets', home.trashed.id],
+			['comments', home.comment.id],
+			['projects', home.project.id],
+			['tags', home.tag.id],
+			['inbox_items', home.item.id],
+			['recurrence_rules', home.rule.id],
+			['households', home.id]
+		]) {
+			expect(await statusOf(superuser.collection(collection).getOne(id)), `${collection} ${id}`).toBe(404);
+		}
+		const left = async (collection, filter) => (await superuser.collection(collection).getFullList({ filter })).length;
+		expect(await left('ticket_counters', superuser.filter('key ~ {:k}', { k: `h:${home.id}:` }))).toBe(0);
+		expect(await left('household_invites', superuser.filter('household = {:h}', { h: home.id }))).toBe(0);
+		expect(await left('inbox_moved_fingerprints', superuser.filter('scope = {:s}', { s: `h:${home.id}` }))).toBe(0);
+		// The mark of another area stays, the private records of the writer too.
+		expect(await statusOf(superuser.collection('inbox_moved_fingerprints').getOne(home.kept.id))).toBe(200);
+		expect(await statusOf(superuser.collection('households').getOne(kept.id))).toBe(200);
+		expect(await statusOf(superuser.collection('users').getOne(writer.id))).toBe(200);
+		const logs = await writtenLogs(superuser);
+		expect(
+			logs.some(
+				(entry) =>
+					entry.message === 'byl-accounts: Aktion ausgeführt' &&
+					entry.data?.action === 'household-delete' &&
+					entry.data?.account === home.id &&
+					entry.data?.user === vera.id
+			)
+		).toBe(true);
 	});
 });
 

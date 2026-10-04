@@ -14,6 +14,7 @@ import {
 	emailProblem,
 	nameProblem,
 	parseAccountList,
+	parseHouseholdDeletion,
 	parsePasswordGrant,
 	passwordChangeProblems
 } from '../../web/src/lib/domain/accounts.ts';
@@ -98,6 +99,18 @@ describe('input of the page "Konten"', () => {
 		expect(rules.problemBody('last-admin').status).toBe(409);
 		expect(rules.problemBody('anders').body.problem).toBe('format');
 	});
+
+	it('reads the body of deleting an orphaned household and refuses it as 409 or 400 (E7-4c)', () => {
+		expect(rules.householdDeleteInput({})).toEqual({ preview: false, name: '' });
+		expect(rules.householdDeleteInput({ preview: true })).toEqual({ preview: true, name: '' });
+		expect(rules.householdDeleteInput({ preview: false, name: ' Altbau ' })).toEqual({ preview: false, name: ' Altbau ' });
+		for (const body of [null, 'Altbau', [], { preview: 'ja' }, { preview: 1 }, { name: 7 }, { name: null }]) {
+			expect(rules.householdDeleteInput(body), JSON.stringify(body)).toEqual({ problem: 'format' });
+		}
+		expect(rules.problemBody('household-not-orphaned').status).toBe(409);
+		expect(rules.problemBody('household-name').status).toBe(400);
+		expect(rules.problemBody('household-missing').status).toBe(404);
+	});
 });
 
 describe('start passwords', () => {
@@ -168,17 +181,41 @@ describe('the web app (web/src/lib/domain/accounts.ts)', () => {
 		expect(parseAccountList({ accounts: [account] })?.passwordMin).toBe(8);
 		// Since E7-4 (ADR-0061 §6): the household an account owns and the households without an active owner.
 		const owner = { ...account, owns: { id: 'h1', name: 'Wohnung' } };
-		const orphan = { id: 'h1', name: 'Wohnung', owner: null, members: [{ id: 'm1', user: 'u2', name: 'Max', disabled: false }] };
+		const orphan = { id: 'h1', name: 'Wohnung', owner: null, members: [{ id: 'm1', user: 'u2', name: 'Max', disabled: false }], orphaned: false };
 		expect(parseAccountList({ accounts: [owner], households: [orphan] })).toEqual({
 			accounts: [owner],
 			passwordMin: 8,
 			households: [orphan]
 		});
+		// Since E7-4c: a household without any member with an account is orphaned; absent means no.
+		const empty = { id: 'h2', name: 'Altbau', owner: null, members: [], orphaned: true };
+		expect(parseAccountList({ accounts: [account], households: [empty] })?.households).toEqual([empty]);
+		const { orphaned, ...older } = orphan;
+		expect(orphaned).toBe(false);
+		expect(parseAccountList({ accounts: [account], households: [older] })?.households).toEqual([orphan]);
 		expect(parseAccountList({ accounts: [account], households: [{ id: 'h1', members: 'x' }] })).toBeNull();
 		expect(parseAccountList({ accounts: [{ ...account, admin: 'nein' }] })).toBeNull();
 		expect(parseAccountList({})).toBeNull();
 		expect(parsePasswordGrant({ account, password: 'abcd-efgh-ijkm-npqr' })).toEqual({ account, password: 'abcd-efgh-ijkm-npqr' });
 		expect(parsePasswordGrant({ account, password: '' })).toBeNull();
+	});
+
+	it('reads the answer of deleting an orphaned household strictly (E7-4c)', () => {
+		const account = { id: 'u1', name: 'Anna', email: 'a@example.com', admin: true, disabled: false, created: 'x', self: true };
+		const counts = { tickets: 2, trash: 1, projects: 1, rules: 1, items: 1, tags: 1, connections: 0, comments: 3 };
+		const household = { id: 'h2', name: 'Altbau' };
+		expect(parseHouseholdDeletion({ preview: true, household, counts })).toEqual({ preview: true, household, counts, list: null });
+		expect(parseHouseholdDeletion({ preview: false, household, counts, list: { accounts: [account], households: [] } })).toEqual({
+			preview: false,
+			household,
+			counts,
+			list: { accounts: [account], passwordMin: 8, households: [] }
+		});
+		// After deleting the list is required; a household and counts always.
+		expect(parseHouseholdDeletion({ preview: false, household, counts })).toBeNull();
+		expect(parseHouseholdDeletion({ preview: true, counts })).toBeNull();
+		expect(parseHouseholdDeletion({ preview: true, household })).toBeNull();
+		expect(parseHouseholdDeletion(null)).toBeNull();
 	});
 
 	it('takes the right from the record, and the pages stay listed before the restart', () => {

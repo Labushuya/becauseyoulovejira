@@ -195,6 +195,7 @@ const LOCAL_ROUTES = [
 	{ path: '/api/byl/accounts', method: 'POST', body: { name: 'Gast', email: 'gast@example.com' } },
 	{ path: '/api/byl/accounts/abcdefghijklmno/admin', method: 'POST', body: { admin: true } },
 	{ path: '/api/byl/accounts/households/abcdefghijklmno/owner', method: 'POST', body: { member: 'abcdefghijklmno' } },
+	{ path: '/api/byl/accounts/households/abcdefghijklmno/delete', method: 'POST', body: { preview: true } },
 	{ path: '/api/byl/folders/items/abcdefghijklmno', method: 'GET' }
 ];
 

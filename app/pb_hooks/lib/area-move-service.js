@@ -23,7 +23,8 @@
 // - POST /api/byl/household/dissolve: only the owner; `adopt` moves everything of the household with
 //   the same rules into his private area (codes taken there get a suffix), `delete` deletes it for
 //   good after the name of the household is typed. Then the memberships, the codes and the household
-//   go, and the topic byl/household tells the tabs of every former member.
+//   go, and the topic byl/household tells the tabs of every former member. The same deleting
+//   (deleteHousehold) serves the administrator of the app for an orphaned household (E7-4c).
 'use strict';
 
 var rules = require(__hooks + '/lib/area-move-rules.js');
@@ -1436,6 +1437,17 @@ function removeHousehold(txApp, householdId) {
 }
 
 /**
+ * Deletes a household for good: everything it holds, then the household itself. One logic for
+ * dissolving (after `adopt` moved everything out, or with `delete`) and for the administrator of the
+ * app deleting an orphaned household (E7-4c, lib/account-service.js). Runs inside the transaction
+ * of the caller.
+ */
+function deleteHousehold(txApp, householdId) {
+  deleteHouseholdRecords(txApp, householdId);
+  removeHousehold(txApp, householdId);
+}
+
+/**
  * POST /api/byl/household/dissolve { mode, preview?, name? } (ADR-0061 §5): only the owner. The
  * preview names the household, its members, what it holds and, for `adopt`, the codes that get a
  * suffix; `adopt` moves everything into the private area of the owner, `delete` deletes it for good
@@ -1481,21 +1493,19 @@ function dissolve(e) {
         outcome.problem = 'dissolve-name';
         return;
       }
-      deleteHouseholdRecords(txApp, household.id);
     } else {
       var codes = decideCodes(txApp, plan, {});
       if (codes !== null) {
         throw new Error('Kein freier Code für ein Projekt des Haushalts gefunden.');
       }
       execute(txApp, plan, Date.now());
-      deleteHouseholdRecords(txApp, household.id);
     }
     for (var i = 0; i < members.length; i++) {
       if (outcome.notify.indexOf(members[i].getString('user')) === -1) {
         outcome.notify.push(members[i].getString('user'));
       }
     }
-    removeHousehold(txApp, household.id);
+    deleteHousehold(txApp, household.id);
   });
   if (outcome.problem !== '') {
     return refuse(e, 'dissolve', outcome.problem);
@@ -1513,5 +1523,7 @@ function dissolve(e) {
 module.exports = {
   move: move,
   dissolve: dissolve,
-  householdOf: householdOf
+  householdOf: householdOf,
+  householdCounts: householdCounts,
+  deleteHousehold: deleteHousehold
 };

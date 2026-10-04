@@ -39,13 +39,18 @@ var PROBLEMS = {
   'household-missing': 'Diesen Haushalt gibt es nicht mehr.',
   'owner-active': 'Der Haushalt hat einen aktiven Inhaber. Den Inhaber wechselt nur er selbst auf der Seite „Haushalt“.',
   member: 'Dieses Mitglied gibt es im Haushalt nicht mehr.',
-  'member-disabled': 'Ein deaktiviertes Konto kann nicht Inhaber werden.'
+  'member-disabled': 'Ein deaktiviertes Konto kann nicht Inhaber werden.',
+  // Deleting an orphaned household (E7-4c, ADR-0061 addendum E7-4c).
+  'household-not-orphaned':
+    'Im Haushalt gibt es noch ein Konto. Löschen lässt sich nur ein Haushalt, in dem kein Mitglied mehr ein Konto hat.',
+  'household-name': 'Bitte den Namen des Haushalts genau so eintippen, wie er hier steht.'
 };
 
 // Status of the refusals other than 400.
 var STATUS_OF_PROBLEM = {
   'last-admin': 409,
   'owner-active': 409,
+  'household-not-orphaned': 409,
   missing: 404,
   'household-missing': 404,
   member: 404
@@ -114,6 +119,23 @@ function switchInput(body, key) {
   return typeof value === 'boolean' ? { value: value } : { problem: 'format' };
 }
 
+/**
+ * Body of deleting an orphaned household (E7-4c): { preview, name } or { problem: 'format' }. Both
+ * fields are optional, but when given, `preview` is a boolean and `name` a string.
+ */
+function householdDeleteInput(body) {
+  if (body === null || typeof body !== 'object' || Array.isArray(body)) {
+    return { problem: 'format' };
+  }
+  if (body.preview !== undefined && typeof body.preview !== 'boolean') {
+    return { problem: 'format' };
+  }
+  if (body.name !== undefined && typeof body.name !== 'string') {
+    return { problem: 'format' };
+  }
+  return { preview: body.preview === true, name: text(body.name) };
+}
+
 /** A start password from PASSWORD_RAW_LENGTH random signs of the alphabet: "abcd-EFGH-2345-wxyz". */
 function formatPassword(raw) {
   var signs = text(raw);
@@ -179,7 +201,7 @@ function accountView(values, selfId) {
 
 /**
  * Answer of a refused input of the routes: 404 for an unknown account, household or member, 409 for
- * the last administrator and a household with an active owner, else 400.
+ * the last administrator, a household with an active owner and one that is not orphaned, else 400.
  */
 function problemBody(problem) {
   var known = Object.prototype.hasOwnProperty.call(PROBLEMS, problem) ? problem : 'format';
@@ -206,6 +228,7 @@ module.exports = {
   emailProblem: emailProblem,
   createInput: createInput,
   switchInput: switchInput,
+  householdDeleteInput: householdDeleteInput,
   formatPassword: formatPassword,
   takesLastAdmin: takesLastAdmin,
   selfProblem: selfProblem,

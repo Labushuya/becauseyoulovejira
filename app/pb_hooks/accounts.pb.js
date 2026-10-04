@@ -55,6 +55,17 @@ routerAdd(
   $apis.requireAuth('users')
 );
 
+// { preview?, name? }: delete an orphaned household for good, no membership of it belongs to an
+// existing account (E7-4c, ADR-0061 addendum E7-4c).
+routerAdd(
+  'POST',
+  '/api/byl/accounts/households/{id}/delete',
+  function (e) {
+    require(`${__hooks}/lib/account-service.js`).deleteOrphanedHousehold(e);
+  },
+  $apis.requireAuth('users')
+);
+
 // { admin }: give or take the right "Verwalter der App"; one active administrator stays.
 routerAdd(
   'POST',
