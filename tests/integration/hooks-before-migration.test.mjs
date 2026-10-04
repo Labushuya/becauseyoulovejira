@@ -1089,3 +1089,43 @@ describe('E7-2 hooks before the migrations of managing a household (ADR-0058)', 
 		expect((await pb.collection('tickets').getOne(ticket.id)).id).toBe(ticket.id);
 	});
 });
+
+describe('E7-3 hooks before the migration of the retention of a household (ADR-0059 §6)', () => {
+	const RETENTION_MIGRATION = '1790204100_household_trash_retention.js';
+	let before;
+	let pb;
+
+	beforeAll(async () => {
+		before = await startPocketBase({ migrationFilter: (name) => name < RETENTION_MIGRATION });
+		const superuser = new PocketBase(before.url);
+		superuser.autoCancellation(false);
+		await superuser.collection('_superusers').authWithPassword(before.email, before.password);
+		const email = `user-${randomBytes(12).toString('hex')}@example.com`;
+		const password = randomBytes(24).toString('base64url');
+		await superuser.collection('users').create({ email, password, passwordConfirm: password });
+		pb = new PocketBase(before.url);
+		pb.autoCancellation(false);
+		await pb.collection('users').authWithPassword(email, password);
+	});
+
+	afterAll(async () => {
+		await before?.stop();
+	});
+
+	it('shows the default retention, keeps it unchangeable and lists the trash of an area', async () => {
+		const founded = await pb.send('/api/byl/household', { method: 'POST', body: { name: 'Haus' } });
+		expect(founded.household.trash_retention).toBe('');
+		const response = await fetch(`${before.url}/api/byl/household/retention`, {
+			method: 'POST',
+			headers: { Authorization: pb.authStore.token, 'Content-Type': 'application/json' },
+			body: JSON.stringify({ retention: '7' })
+		});
+		expect(response.status).toBe(503);
+		expect((await response.json()).reason).toBe('missing');
+		const trash = await pb.send('/api/byl/trash', {
+			method: 'GET',
+			query: { scope: `h:${founded.household.id}` }
+		});
+		expect(trash).toMatchObject({ items: [], retention: '', can_purge: true });
+	});
+});

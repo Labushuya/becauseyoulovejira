@@ -65,7 +65,8 @@ var MESSAGES = {
   validation_connection_label_max: 'Höchstens 100 Zeichen.',
   validation_connection_rename_only: 'Beim Umbenennen ändert sich nur der Name; andere Einstellungen bitte getrennt speichern.',
   validation_connection_secret_none: 'Diese Verbindungsart braucht keine Zugangsdaten.',
-  validation_connection_admin_only: 'Kanäle mit Zugangsdaten und Ordner richtet nur der Verwalter der App ein.'
+  validation_connection_admin_only: 'Kanäle mit Zugangsdaten und Ordner richtet nur der Verwalter der App ein.',
+  validation_connection_private_only: 'Verbindungen gibt es nur im privaten Bereich.'
 };
 
 function text(value) {
@@ -241,6 +242,16 @@ function adminViolation(isAdmin, before, after) {
   return '';
 }
 
+/**
+ * Client create by an app account (E7-3, ADR-0059 §5): a connection is never set up in a household.
+ * Every kind runs in the server, with its variables (BYL_*), its folders or its own requests on a
+ * schedule (GitHub without token); the E7 plan §4 keeps connections with access to the server
+ * private. Their entries and tickets may still be handled in the private area.
+ */
+function areaViolation(values) {
+  return text(values.household) !== '' ? failure('household', 'validation_connection_private_only') : '';
+}
+
 /** Whether a connection of `type` runs only with its secret (GitHub reads public repositories without, folders need none). */
 function requiresSecret(type) {
   return SECRET_OPTIONAL_TYPES.indexOf(type) === -1;
@@ -350,6 +361,7 @@ module.exports = {
   updateViolation: updateViolation,
   usesServerAccess: usesServerAccess,
   adminViolation: adminViolation,
+  areaViolation: areaViolation,
   requiresSecret: requiresSecret,
   normalizeLabel: normalizeLabel,
   labelViolation: labelViolation,

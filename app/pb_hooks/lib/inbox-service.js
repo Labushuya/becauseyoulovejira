@@ -229,10 +229,12 @@ function findByFingerprint(txApp, scope, fingerprint) {
 }
 
 /**
- * Creates a private inbox item of `owner` from a draft of a channel that runs in the server (the
- * .ics route, the calendar feed, the Telegram bot, the mail helper, GitHub). The draft has the
- * fields of inbox_items: { channel, kind, title, body, source_url, source_ref, source_date, meta,
- * original, originalName, originalFile, connection, target, watch }; `original` is the text of the
+ * Creates an inbox item of `owner` from a draft of a channel that runs in the server (the .ics
+ * route, the calendar feed, the Telegram bot, the mail helper, GitHub). The draft has the fields of
+ * inbox_items: { channel, kind, title, body, source_url, source_ref, source_date, meta, original,
+ * originalName, originalFile, connection, household, target, watch }; the item lands in the area of
+ * its connection, or in `household` the route checked (the .ics import, E7-3), else it is private
+ * (ADR-0059 §5). `original` is the text of the
  * original file, `originalFile` an uploaded file (the mail helper) or a file the channel built,
  * taken as it is. `target` is a target project the channel resolved itself (the target of a
  * repository, ADR-0049 §3; absent: the target of the connection), `watch` the first status of a
@@ -262,11 +264,42 @@ function ingest(app, owner, draft) {
   return outcome;
 }
 
-// An unsaved private record of `owner` with the fields of a draft (see ingest).
+/**
+ * The household of a draft (E7-3, ADR-0059 §5): the one a route checked (`household`), else the
+ * one of its connection (entries inherit the area of their connection), else '' (private).
+ */
+function draftHousehold(app, draft) {
+  if (draft.household) {
+    return String(draft.household);
+  }
+  if (!draft.connection) {
+    return '';
+  }
+  var found = app.findRecordsByFilter('connections', 'id = {:id}', '', 1, 0, { id: String(draft.connection) });
+  return found.length > 0 ? found[0].getString('household') : '';
+}
+
+/**
+ * The household a request of the .ics routes and of the lookup names (E7-3): '' for the private
+ * area, else a household of the signed-in account; anything else is refused with 400.
+ */
+function requestHousehold(e, value) {
+  var household = typeof value === 'string' ? value : '';
+  if (household === '') {
+    return '';
+  }
+  var userId = e.auth ? String(e.auth.id) : '';
+  if (require(__hooks + '/lib/household-service.js').membershipIn(e.app, userId, household) === null) {
+    throw new BadRequestError('Diesen Bereich gibt es nicht oder er ist nicht sichtbar.');
+  }
+  return household;
+}
+
+// An unsaved record of `owner` with the fields of a draft, in its area (see ingest).
 function draftRecord(app, owner, draft) {
   var record = new Record(app.findCollectionByNameOrId(INBOX));
   record.set('owner', owner);
-  record.set('household', '');
+  record.set('household', draftHousehold(app, draft));
   record.set('channel', draft.channel);
   record.set('kind', draft.kind);
   record.set('title', draft.title);
@@ -609,6 +642,7 @@ module.exports = {
   prepareCreate: prepareCreate,
   ingest: ingest,
   lookup: lookup,
+  requestHousehold: requestHousehold,
   rememberActor: rememberActor,
   guardClientUpdate: guardClientUpdate,
   prepareUpdate: prepareUpdate,

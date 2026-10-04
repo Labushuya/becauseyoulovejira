@@ -16,8 +16,8 @@ var MAX_FILE_BYTES = 20 * 1024 * 1024;
 var TOO_LARGE = 'Größer als 20 MB, deshalb nicht übernommen.';
 var UNAVAILABLE = 'Der Eingang steht nach dem nächsten Neustart der App bereit (neu-starten.bat).';
 
-// Parser draft -> draft of inbox-service.ingest.
-function toInboxDraft(draft, channel, connection) {
+// Parser draft -> draft of inbox-service.ingest; `household` is the area a route checked (E7-3).
+function toInboxDraft(draft, channel, connection, household) {
   return {
     channel: channel,
     kind: draft.kind,
@@ -29,21 +29,23 @@ function toInboxDraft(draft, channel, connection) {
     meta: draft.meta,
     original: draft.original,
     originalName: ORIGINAL_NAMES[draft.kind] || 'termin.ics',
-    connection: connection || ''
+    connection: connection || '',
+    household: household || ''
   };
 }
 
 /**
  * Creates one inbox item per draft for `owner`, one after the other; a failing draft is counted
  * and the others go on. Returns { created, duplicates, failed, createdItems, duplicateItems }
- * with the records of the new and the existing items.
+ * with the records of the new and the existing items. The items land in the area of the
+ * connection, or in `household` (E7-3).
  */
-function ingestDrafts(app, owner, drafts, channel, connection) {
+function ingestDrafts(app, owner, drafts, channel, connection, household) {
   var summary = { created: 0, duplicates: 0, failed: 0, createdItems: [], duplicateItems: [] };
   for (var i = 0; i < drafts.length; i++) {
     var outcome;
     try {
-      outcome = service.ingest(app, owner, toInboxDraft(drafts[i], channel, connection));
+      outcome = service.ingest(app, owner, toInboxDraft(drafts[i], channel, connection, household));
     } catch (err) {
       summary.failed++;
       continue;
@@ -90,10 +92,10 @@ function withKeyword(draft, list) {
 /**
  * The selection view of an .ics file: per component its index, kind, title, date, whether it is
  * all-day or a series, the place, the keyword of `list` that matches, and whether it is in the
- * inbox of `owner` already (state and text of the existing entry). Saves nothing.
- * Returns { tooLarge } or { items, skipped }.
+ * inbox of `owner` already (state and text of the existing entry; in `household`, E7-3). Saves
+ * nothing. Returns { tooLarge } or { items, skipped }.
  */
-function previewFile(app, owner, text, list) {
+function previewFile(app, owner, text, list, household) {
   var parsed = ical.parse(text, berlin);
   if (parsed.tooLarge) {
     return { tooLarge: true };
@@ -102,7 +104,7 @@ function previewFile(app, owner, text, list) {
   for (var i = 0; i < parsed.drafts.length; i++) {
     var draft = parsed.drafts[i];
     var meta = draft.meta || {};
-    var existing = service.lookup(app, owner, toInboxDraft(draft, 'ics', ''));
+    var existing = service.lookup(app, owner, toInboxDraft(draft, 'ics', '', household));
     items.push({
       index: i,
       kind: draft.kind,
@@ -150,9 +152,10 @@ function selectionOf(value, count) {
  * The .ics file of the route: the chosen components (`selection`, see selectionOf) become items
  * (channel "ics") with the matching keyword of `list` in meta.keyword. Returns { tooLarge },
  * { invalidSelection } or { created, skipped, duplicates, failed, item } where `item` is the ID
- * of the only new item (for a link in the result), else ''.
+ * of the only new item (for a link in the result), else ''. The items land in `household` ('' for
+ * the private area; the route checked the membership, E7-3).
  */
-function importFile(app, owner, text, selection, list) {
+function importFile(app, owner, text, selection, list, household) {
   var parsed = ical.parse(text, berlin);
   if (parsed.tooLarge) {
     return { tooLarge: true };
@@ -165,7 +168,7 @@ function importFile(app, owner, text, selection, list) {
   for (var i = 0; i < chosen.length; i++) {
     drafts.push(withKeyword(parsed.drafts[chosen[i]], list));
   }
-  var summary = ingestDrafts(app, owner, drafts, 'ics', '');
+  var summary = ingestDrafts(app, owner, drafts, 'ics', '', household);
   return {
     tooLarge: false,
     invalidSelection: false,

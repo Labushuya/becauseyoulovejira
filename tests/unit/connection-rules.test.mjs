@@ -377,4 +377,16 @@ describe('channels with access data and folders only for the administrator (ADR-
 		});
 		expect(rules.adminViolation(false, null, { type: 'notion', secret_env: '' })).toBe('');
 	});
+
+	it('keeps every connection private: none is created in a household (E7-3, ADR-0059 §5)', () => {
+		for (const type of rules.CREATABLE_TYPES) {
+			expect(rules.areaViolation({ type, household: 'h00000000000001' }), type).toEqual({
+				field: 'household',
+				code: 'validation_connection_private_only',
+				message: 'Verbindungen gibt es nur im privaten Bereich.'
+			});
+			expect(rules.areaViolation({ type, household: '' }), type).toBe('');
+		}
+		expect(rules.areaViolation({ type: 'calendar' })).toBe('');
+	});
 });

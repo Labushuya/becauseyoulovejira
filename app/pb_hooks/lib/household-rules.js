@@ -11,11 +11,15 @@
 //   remove   - remove members (never the owner)
 //   delegate - give and take rights, only those one holds oneself
 //   rename   - rename the household
-//   purge    - delete for good in the household (in effect with E7-3)
+//   purge    - delete for good in the household and set the retention of its trash (since E7-3)
 //   move_out - move household records into the private area (in effect with E7-4)
 var RIGHTS = ['invite', 'remove', 'delegate', 'rename', 'purge', 'move_out'];
 var OWNER = 'owner';
 var MEMBER = 'member';
+
+// Retention of the trash of a household (E7-3, migration 1790204100), the values of
+// users.trash_retention (lib/trash-rules.js RETENTION_VALUES); empty means 30 days.
+var RETENTIONS = ['7', '30', '90', 'never'];
 
 // The same limit as the field households.name and the display name of an account.
 var NAME_MAX = 100;
@@ -57,7 +61,8 @@ var PROBLEMS = {
   'invites-full': 'Höchstens ' + OPEN_INVITES_MAX + ' offene Codes. Widerrufe zuerst einen.',
   'owner-leave':
     'Als Inhaber kannst du nicht austreten. Übertrage zuerst die Inhaberschaft an ein anderes Mitglied. ' +
-    'Einen Haushalt auflösen geht erst mit einer späteren Version.'
+    'Einen Haushalt auflösen geht erst mit einer späteren Version.',
+  retention: 'Bitte 7, 30 oder 90 Tage oder „Nie automatisch“ wählen.'
 };
 
 var STATUS_OF_PROBLEM = {
@@ -210,6 +215,25 @@ function leaveProblem(actor) {
   return actor.role === OWNER ? 'owner-leave' : '';
 }
 
+/**
+ * Whether a membership { role, rights } may delete for good in the trash of its household and set
+ * its retention (E7-3): the owner and every member with "purge".
+ */
+function mayPurge(actor) {
+  return may(actor, 'purge');
+}
+
+/** Body { retention }: { retention } of RETENTIONS or { problem: 'retention' }. */
+function retentionInput(body) {
+  var value = isObject(body) ? body.retention : undefined;
+  return typeof value === 'string' && RETENTIONS.indexOf(value) !== -1 ? { retention: value } : { problem: 'retention' };
+}
+
+/** The stored retention of a household as the page shows it: one of RETENTIONS, '' for the default. */
+function retentionOf(value) {
+  return typeof value === 'string' && RETENTIONS.indexOf(value) !== -1 ? value : '';
+}
+
 /** A typed code as it is compared: capitals, without white space and hyphens. */
 function normalizeCode(value) {
   return text(value)
@@ -334,6 +358,7 @@ function problemBody(problem) {
 
 module.exports = {
   RIGHTS: RIGHTS,
+  RETENTIONS: RETENTIONS,
   OWNER: OWNER,
   MEMBER: MEMBER,
   NAME_MAX: NAME_MAX,
@@ -355,6 +380,9 @@ module.exports = {
   removeProblem: removeProblem,
   transferProblem: transferProblem,
   leaveProblem: leaveProblem,
+  mayPurge: mayPurge,
+  retentionInput: retentionInput,
+  retentionOf: retentionOf,
   normalizeCode: normalizeCode,
   isCode: isCode,
   formatCode: formatCode,

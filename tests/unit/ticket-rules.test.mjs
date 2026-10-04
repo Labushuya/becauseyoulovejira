@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { loadHookLib } from '../support/hook-lib.mjs';
+import { SCOPE_FIELD_MESSAGES, SCOPE_MESSAGE } from '../../web/src/lib/domain/area.ts';
 
 const rules = loadHookLib('ticket-rules.js');
 
@@ -75,6 +76,15 @@ describe('scopeViolations', () => {
 				{ field: 'recurrence', scope: 'h:h1' }
 			])
 		).toEqual(['project', 'tags']);
+	});
+
+	it('names the area in the text of every field, the same in the web app (E7-3, ADR-0059 §4)', () => {
+		for (const field of ['project', 'tags', 'parent', 'recurrence', 'blocker', 'blocked']) {
+			expect(rules.scopeMessage(field), field).toMatch(/Bereich/);
+			expect(SCOPE_FIELD_MESSAGES[field], field).toBe(rules.scopeMessage(field));
+		}
+		expect(rules.scopeMessage('unbekannt')).toBe(rules.SCOPE_MESSAGE);
+		expect(SCOPE_MESSAGE).toBe(rules.SCOPE_MESSAGE);
 	});
 });
 

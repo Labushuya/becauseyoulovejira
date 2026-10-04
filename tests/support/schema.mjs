@@ -80,7 +80,12 @@ const ownership = () => ({
 /** Collections created by app/pb_migrations; API rules are listed in EXPECTED_RULES. */
 export const EXPECTED_COLLECTIONS = {
 	households: {
-		fields: { name: text({ required: true, max: 100 }), ...timestamps() },
+		fields: {
+			name: text({ required: true, max: 100 }),
+			...timestamps(),
+			// Retention of the trash of the household (E7-3, ADR-0059 §6, migration 1790204100).
+			trash_retention: select(['7', '30', '90', 'never'], false)
+		},
 		indexes: []
 	},
 	household_members: {
