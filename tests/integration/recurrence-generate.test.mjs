@@ -18,6 +18,8 @@ let owner;
 
 const unique = () => randomBytes(6).toString('hex');
 const dateOf = (value) => (value ? value.slice(0, 10) : '');
+/** Milliseconds of a stored date of the server ("2030-01-07 12:00:00.123Z"). */
+const serverTime = (value) => Date.parse(value.replace(' ', 'T'));
 const today = () => berlinToday(Date.now());
 
 function client() {
@@ -497,14 +499,19 @@ describe('completing, reopening and releasing instances (ADR-0023 sections 2, 3 
 	it('writes one timestamp into created and updated of every generated ticket', async () => {
 		const rule = await createRule({ mode: 'after_completion', freq: 'daily', interval: 1, lead_days: 3, anchor: today() });
 		const differing = [];
-		const start = Date.now();
+		// The timestamp is the real clock of the server at the creation: after the save of the rule
+		// (its first ticket comes after the commit of the rule) or of the completion before (the
+		// follow-up comes after its commit), and before its own completion. Only times of the server
+		// bound it: the clock of Node is another one (ST-1, on Windows it lagged by up to 9 ms).
+		let earliest = serverTime(rule.created);
 		for (let round = 0; round < 60; round += 1) {
 			const [open] = await openOf(rule.id);
-			const created = Date.parse(open.created.replace(' ', 'T'));
-			expect(created).toBeGreaterThanOrEqual(start - 1_000);
-			expect(created).toBeLessThanOrEqual(Date.now());
+			const created = serverTime(open.created);
+			expect(created).toBeGreaterThanOrEqual(earliest);
 			if (open.updated !== open.created) differing.push([open.created, open.updated]);
-			await tickets().update(open.id, { status: 'done' });
+			const completed = await tickets().update(open.id, { status: 'done' });
+			earliest = serverTime(completed.updated);
+			expect(created).toBeLessThanOrEqual(earliest);
 		}
 		expect(differing).toEqual([]);
 		expect(await instancesOf(rule.id)).toHaveLength(61);
