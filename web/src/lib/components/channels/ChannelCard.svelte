@@ -398,13 +398,6 @@
 
 	.rename input {
 		flex: 1 1 10rem;
-		min-height: var(--control-height-m);
-		padding: 0.25rem 0.5rem;
-		font-size: var(--font-size-body);
-		font-weight: 600;
-		background: var(--color-surface);
-		border: 1px solid var(--color-text-muted);
-		border-radius: var(--radius-control);
 	}
 
 	.rename-actions {

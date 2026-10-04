@@ -140,11 +140,6 @@
 
 	textarea {
 		width: 100%;
-		padding: 0.5rem 0.625rem;
-		font: inherit;
-		background: var(--color-surface);
-		border: 1px solid var(--color-text-muted);
-		border-radius: var(--radius-control);
 	}
 
 	.hint {

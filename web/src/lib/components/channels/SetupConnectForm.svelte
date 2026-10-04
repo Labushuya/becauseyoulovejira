@@ -33,6 +33,7 @@
 	import { GITHUB_AUTO_UNAVAILABLE_MESSAGE } from '$lib/stores/github.svelte';
 	import { findHostStore } from '$lib/stores/host.svelte';
 	import ErrorIcon from '../ErrorIcon.svelte';
+	import Field from '../form/Field.svelte';
 	import FolderFields from './FolderFields.svelte';
 	import GitHubRepoFields from './GitHubRepoFields.svelte';
 
@@ -157,76 +158,64 @@
 	}
 </script>
 
-{#snippet fieldError(id: string, text: string | undefined)}
-	{#if text}
-		<p id={`${id}-error`} class="field-error"><ErrorIcon /><span>{text}</span></p>
-	{/if}
-{/snippet}
-
 <form class="form" novalidate onsubmit={create} aria-busy={saving}>
-	<div class="field">
-		<label for={ids.label}>Bezeichnung (Pflichtfeld)</label>
-		<input
-			id={ids.label}
-			type="text"
-			maxlength="100"
-			aria-required="true"
-			aria-invalid={errors.label ? 'true' : undefined}
-			aria-describedby={errors.label ? `${ids.label}-error` : undefined}
-			bind:value={draft.label}
-		/>
-		{@render fieldError(ids.label, errors.label)}
-	</div>
+	<Field id={ids.label} label="Bezeichnung (Pflichtfeld)" error={errors.label ?? ''}>
+		{#snippet control(field)}
+			<input {...field} type="text" maxlength="100" aria-required="true" bind:value={draft.label} />
+		{/snippet}
+	</Field>
 	{#if draft.type === 'mail'}
-		<div class="field">
-			<label for={ids.user}>E-Mail-Adresse des Postfachs (Pflichtfeld)</label>
-			<input
-				id={ids.user}
-				type="text"
-				maxlength="254"
-				spellcheck="false"
-				autocomplete="off"
-				aria-required="true"
-				aria-invalid={errors.mailUser ? 'true' : undefined}
-				aria-describedby={errors.mailUser ? `${ids.user}-error` : undefined}
-				bind:value={draft.mailUser}
-			/>
-			{@render fieldError(ids.user, errors.mailUser)}
-		</div>
+		<Field
+			id={ids.user}
+			label="E-Mail-Adresse des Postfachs (Pflichtfeld)"
+			error={errors.mailUser ?? ''}
+		>
+			{#snippet control(field)}
+				<input
+					{...field}
+					type="text"
+					maxlength="254"
+					spellcheck="false"
+					autocomplete="off"
+					aria-required="true"
+					bind:value={draft.mailUser}
+				/>
+			{/snippet}
+		</Field>
 	{/if}
 	{#if !folders}
-		<div class="field">
-			<label for={ids.secret}>{secretLabel} (Pflichtfeld)</label>
-			<input
-				id={ids.secret}
-				type="text"
-				maxlength="64"
-				spellcheck="false"
-				autocomplete="off"
-				aria-required="true"
-				aria-invalid={errors.secretEnv ? 'true' : undefined}
-				aria-describedby={errors.secretEnv ? `${ids.secret}-error` : undefined}
-				bind:value={draft.secretEnv}
-			/>
-			{@render fieldError(ids.secret, errors.secretEnv)}
-		</div>
+		<Field id={ids.secret} label={`${secretLabel} (Pflichtfeld)`} error={errors.secretEnv ?? ''}>
+			{#snippet control(field)}
+				<input
+					{...field}
+					type="text"
+					maxlength="64"
+					spellcheck="false"
+					autocomplete="off"
+					aria-required="true"
+					bind:value={draft.secretEnv}
+				/>
+			{/snippet}
+		</Field>
 	{/if}
 	{#if draft.type === 'telegram'}
-		<div class="field">
-			<label for={ids.allowlist}>Name der Variablen für die erlaubten IDs (Pflichtfeld)</label>
-			<input
-				id={ids.allowlist}
-				type="text"
-				maxlength="64"
-				spellcheck="false"
-				autocomplete="off"
-				aria-required="true"
-				aria-invalid={errors.allowlistEnv ? 'true' : undefined}
-				aria-describedby={errors.allowlistEnv ? `${ids.allowlist}-error` : undefined}
-				bind:value={draft.allowlistEnv}
-			/>
-			{@render fieldError(ids.allowlist, errors.allowlistEnv)}
-		</div>
+		<Field
+			id={ids.allowlist}
+			label="Name der Variablen für die erlaubten IDs (Pflichtfeld)"
+			error={errors.allowlistEnv ?? ''}
+		>
+			{#snippet control(field)}
+				<input
+					{...field}
+					type="text"
+					maxlength="64"
+					spellcheck="false"
+					autocomplete="off"
+					aria-required="true"
+					bind:value={draft.allowlistEnv}
+				/>
+			{/snippet}
+		</Field>
 	{/if}
 	{#if github}
 		<p class="note">
@@ -266,21 +255,6 @@
 		display: grid;
 		gap: 0.25rem;
 		min-width: 0;
-	}
-
-	label {
-		font-size: 0.8125rem;
-		font-weight: 500;
-		color: var(--color-text-muted);
-	}
-
-	input:not([type='checkbox'], [type='radio']) {
-		width: 100%;
-		max-width: 100%;
-		padding: 0.375rem 0.5rem;
-		background: var(--color-surface);
-		border: 1px solid var(--color-text-muted);
-		border-radius: var(--radius-control);
 	}
 
 	.check {

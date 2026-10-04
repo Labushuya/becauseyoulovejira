@@ -43,7 +43,9 @@
 	<div class="alert-error">
 		<ErrorIcon />
 		<span class="grow">{error}</span>
-		<button class="retry" type="button" onclick={retry}>Erneut versuchen</button>
+		<button class="button-secondary button-small" type="button" onclick={retry}>
+			Erneut versuchen
+		</button>
 	</div>
 {:else if loading}
 	<p class="muted loading" role="status">Verlauf wird geladen …</p>
@@ -152,15 +154,6 @@
 		to {
 			visibility: visible;
 		}
-	}
-
-	.retry {
-		padding: 0.125rem 0.5rem;
-		font-size: 0.8125rem;
-		background: none;
-		border: 1px solid currentColor;
-		border-radius: var(--radius-control);
-		cursor: pointer;
 	}
 
 	.grow {

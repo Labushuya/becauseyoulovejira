@@ -185,11 +185,11 @@
 								aria-describedby={renameError ? ids.error : undefined}
 								onkeydown={(event) => onRenameKeydown(event, tag)}
 							/>
-							<button class="small primary" type="submit" aria-disabled={renameBusy}>
+							<button class="button-primary button-small" type="submit" aria-disabled={renameBusy}>
 								{renameBusy ? 'Wird gespeichert …' : 'Speichern'}
 							</button>
 							<button
-								class="small"
+								class="button-secondary button-small"
 								type="button"
 								aria-disabled={renameBusy}
 								onclick={() => {
@@ -205,7 +205,7 @@
 					{:else}
 						<span class="name">{tag.name}</span>
 						<button
-							class="small"
+							class="button-secondary button-small"
 							type="button"
 							data-action="rename"
 							aria-label={`Tag „${tag.name}“ umbenennen`}
@@ -214,7 +214,7 @@
 							Umbenennen
 						</button>
 						<button
-							class="small"
+							class="button-secondary button-small"
 							type="button"
 							data-action="delete"
 							aria-label={`Tag „${tag.name}“ löschen …`}
@@ -311,35 +311,5 @@
 	.rename input {
 		flex: 1;
 		min-width: min(10rem, 100%);
-		padding: 0.25rem 0.5rem;
-		font-size: 0.875rem;
-		background: var(--color-surface);
-		border: 1px solid var(--color-line);
-		border-radius: var(--radius-control);
-	}
-
-	.small {
-		padding: 0.125rem 0.625rem;
-		font-size: 0.8125rem;
-		background: none;
-		border: 1px solid var(--color-line);
-		border-radius: var(--radius-control);
-		cursor: pointer;
-	}
-
-	.small.primary {
-		color: var(--color-on-brand);
-		background: var(--color-brand);
-		border-color: var(--color-brand);
-	}
-
-	[aria-disabled='true'] {
-		cursor: not-allowed;
-		opacity: 0.75;
-	}
-
-	/* Locked because the new name is being saved (ADR-0026, addendum of 2026-09-30). */
-	.rename[aria-busy='true'] [aria-disabled='true'] {
-		cursor: progress;
 	}
 </style>

@@ -50,7 +50,9 @@ const SHADOW_PARTS = [
 	// The light edge on glass, inside at the top.
 	/^inset 0 1px 0 var\(--glass-edge\)$/,
 	// The marker of a chosen row (five tables and lists), no shadow.
-	/^inset 3px 0 0 var\(--color-brand\)$/
+	/^inset 3px 0 0 var\(--color-brand\)$/,
+	// The surface over the autofill colour of the browser inside a field (base.css, UI-1), no shadow.
+	/^inset 0 0 0 100vmax var\(--color-surface\)$/
 ];
 
 /** Every .svelte and .css file below src, except tests, with its style text. */

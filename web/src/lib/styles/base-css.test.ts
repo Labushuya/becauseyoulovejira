@@ -69,7 +69,11 @@ describe('base.css', () => {
 
 	it('uses shadows only as tokens and no glass (ADR-0029 sections 1 and 4)', () => {
 		for (const [, value = ''] of SOURCE.matchAll(/box-shadow:\s*([^;]+);/g)) {
-			expect(value.trim()).toMatch(/^var\(--shadow-(control|popover|modal)\)$/);
+			// The one exception is no shadow: the surface that covers the autofill colour of the
+			// browser inside a field (UI-1, ADR-0060).
+			expect(value.trim()).toMatch(
+				/^(?:var\(--shadow-(control|popover|modal)\)|inset 0 0 0 100vmax var\(--color-surface\))$/
+			);
 		}
 		expect(SOURCE).not.toMatch(/backdrop-filter/);
 	});

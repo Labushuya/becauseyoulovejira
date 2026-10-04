@@ -120,3 +120,8 @@ Der Nutzer startet E7 jetzt, ohne den Mehrgeräte-Ausbau abzuwarten: Eine zweite
 - **§4 `household_members`:** Lesen bleibt, wie es ist; das Schreiben bleibt über die Record-API `null`, und Mitgliedschaften entstehen, ändern sich und enden nur über die Routen `/api/byl/household/*` (gründen, mit Code beitreten, Rechte, übertragen, entfernen, austreten). Wer einen Haushalt verlässt, sieht die Namen der übrigen Mitglieder nicht mehr (die Leseregel von `users` folgt der Mitgliedschaft).
 - **§2.4 des Plans:** Zum Testen der Namen braucht es keinen Haushalt aus der Verwaltung mehr; die Seite „Einstellungen → Haushalt“ legt ihn an.
 - Haushalte verwaltet nicht der Verwalter der App, sondern ihr Inhaber und die Mitglieder mit Rechten; die Seite steht jedem Konto auf jedem Gerät offen.
+
+## Nachtrag (2026-10-04, [ADR-0060](0060-einheitliche-eingabeelemente.md), UI-1): „Mein Konto“ und „Konten verwalten“
+
+- **§3 Namen:** Die Seite „Konto“ heißt in Navigation, Titel und Texten „Mein Konto“, die Seite „Konten“ „Konten verwalten“; die Adressen `/einstellungen/konto` und `/einstellungen/konten` bleiben. Sie stehen untereinander am Ende der Gruppe „Persönlich“ und am Anfang der Gruppe „Verwaltung“. Die zwei Fehlertexte `self-password` und `validation_account_locked` nennen weiter „Konto“ bzw. „Einstellungen → Konten“, weil sie wortgleich im Hook stehen (Folgepunkt).
+- **§7 Navigation:** unverändert; die Gruppe „Verwaltung“ sind genau die Seiten von `ADMIN_ONLY`.

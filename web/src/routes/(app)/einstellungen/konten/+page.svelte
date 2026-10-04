@@ -6,7 +6,8 @@
 	import { AccountsStore, accountsData } from '$lib/stores/accounts.svelte';
 	import { getFlagStore } from '$lib/stores/flags.svelte';
 
-	// Settings "Konten" (ADR-0056 §3): the accounts of the app for its administrator. The store lives
+	// Settings "Konten verwalten" (ADR-0056 §3; named so since UI-1, ADR-0060): the accounts of the
+	// app for its administrator. The store lives
 	// with the page; it loads once when the page opens and ends its requests when the page goes (the
 	// start passwords it showed go with it). Results of changes go out as flags.
 	const store = new AccountsStore(accountsData(pb), auth, getFlagStore());
@@ -16,7 +17,7 @@
 </script>
 
 <svelte:head>
-	<title>Konten · Einstellungen · becauseyoulovejira</title>
+	<title>Konten verwalten · Einstellungen · becauseyoulovejira</title>
 </svelte:head>
 
 <AccountsView {store} />

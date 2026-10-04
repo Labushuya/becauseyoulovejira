@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import ErrorIcon from '$lib/components/ErrorIcon.svelte';
+	import Field from '$lib/components/form/Field.svelte';
 	import SectionMessage from '$lib/components/guidance/SectionMessage.svelte';
 	import {
 		CREDENTIALS_TEXTS,
@@ -24,9 +25,6 @@
 
 	const uid = $props.id();
 	const ids = {
-		target: `${uid}-target`,
-		targetHint: `${uid}-target-hint`,
-		targetError: `${uid}-target-error`,
 		credentialsHint: `${uid}-credentials-hint`,
 		keepHint: `${uid}-keep-hint`,
 		keepError: `${uid}-keep-error`
@@ -77,28 +75,22 @@
 	<h3 id={`${uid}-target-title`}>Zielverzeichnis</h3>
 	<!-- The checks speak inline at the field (ADR-0009), not as bubbles of the browser. -->
 	<form class="form" novalidate aria-busy={store.busy === 'target'} onsubmit={saveTarget}>
-		<label class="label" for={ids.target}>Ordner für die verschlüsselten Sicherungen</label>
-		<input
-			id={ids.target}
-			type="text"
-			spellcheck="false"
-			autocomplete="off"
-			maxlength={TARGET_MAX_LENGTH}
-			bind:value={target}
-			aria-invalid={targetError === '' ? undefined : 'true'}
-			aria-describedby={targetError === ''
-				? ids.targetHint
-				: `${ids.targetError} ${ids.targetHint}`}
-		/>
-		{#if targetError !== ''}
-			<p class="field-error" id={ids.targetError}><ErrorIcon /><span>{targetError}</span></p>
-		{/if}
-		<p class="hint" id={ids.targetHint}>
-			Am besten ein anderes Laufwerk als das der App: eine USB-Platte, ein zweites Laufwerk, eine
-			Freigabe deines NAS (\\NAS\Freigabe\Ordner) oder ein Ordner, den ein Cloud-Dienst
-			synchronisiert. Pfad aus dem Explorer kopieren (Adresszeile) und hier einfügen; leer lassen,
-			wenn nur im Ordner app gesichert werden soll.
-		</p>
+		<Field
+			label="Ordner für die verschlüsselten Sicherungen"
+			hint="Am besten ein anderes Laufwerk als das der App: eine USB-Platte, ein zweites Laufwerk, eine Freigabe deines NAS (\\NAS\Freigabe\Ordner) oder ein Ordner, den ein Cloud-Dienst synchronisiert. Pfad aus dem Explorer kopieren (Adresszeile) und hier einfügen; leer lassen, wenn nur im Ordner app gesichert werden soll."
+			error={targetError}
+		>
+			{#snippet control(field)}
+				<input
+					{...field}
+					type="text"
+					spellcheck="false"
+					autocomplete="off"
+					maxlength={TARGET_MAX_LENGTH}
+					bind:value={target}
+				/>
+			{/snippet}
+		</Field>
 		<div>
 			<button
 				class="button-secondary"
@@ -205,16 +197,16 @@
 </section>
 
 <style>
-	.hint,
-	.label,
-	.keep-field span {
+	.hint {
 		font-size: var(--font-size-body);
 		color: var(--color-text-muted);
 	}
 
-	.label {
-		color: var(--color-text);
+	/* The names of the numbers like the label of a Field (UI-1). */
+	.keep-field span {
+		font-size: var(--font-size-control);
 		font-weight: 500;
+		color: var(--color-text-muted);
 	}
 
 	.part {
@@ -230,7 +222,7 @@
 
 	.form {
 		display: grid;
-		gap: 0.375rem;
+		gap: 0.75rem;
 		max-width: 40rem;
 	}
 

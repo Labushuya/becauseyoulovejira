@@ -146,7 +146,12 @@
 			{/if}
 		</form>
 	{:else}
-		<button class="small" type="button" bind:this={addButton} onclick={open}>
+		<button
+			class="button-secondary button-small"
+			type="button"
+			bind:this={addButton}
+			onclick={open}
+		>
 			Unteraufgabe hinzufügen
 		</button>
 	{/if}
@@ -253,14 +258,5 @@
 	.muted {
 		font-size: var(--font-size-small);
 		color: var(--color-text-muted);
-	}
-
-	.small {
-		padding: 0.125rem 0.625rem;
-		font-size: var(--font-size-control);
-		background: none;
-		border: 1px solid var(--color-line);
-		border-radius: var(--radius-control);
-		cursor: pointer;
 	}
 </style>

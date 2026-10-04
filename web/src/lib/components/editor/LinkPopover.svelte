@@ -192,13 +192,6 @@
 
 	input {
 		width: 100%;
-		padding: 0.25rem 0.5rem;
-		font: inherit;
-		font-size: var(--font-size-body);
-		color: inherit;
-		background: var(--color-surface);
-		border: 1px solid var(--color-text-muted);
-		border-radius: var(--radius-control);
 	}
 
 	.buttons {

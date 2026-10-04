@@ -75,7 +75,7 @@
 		{/if}
 		<div class="buttons">
 			<button
-				class="button-primary send"
+				class="button-primary button-small"
 				type="button"
 				aria-disabled={locked}
 				aria-busy={store.posting ? 'true' : undefined}
@@ -124,21 +124,6 @@
 		flex-wrap: wrap;
 		gap: 0.5rem 0.75rem;
 		align-items: center;
-	}
-
-	.send {
-		padding: 0.25rem 0.875rem;
-		font-size: var(--font-size-control);
-	}
-
-	.send[aria-disabled='true'] {
-		cursor: not-allowed;
-		opacity: 0.6;
-	}
-
-	/* The comment is being sent (ADR-0026, addendum of 2026-09-30). */
-	.send[aria-busy='true'] {
-		cursor: progress;
 	}
 
 	.hint {

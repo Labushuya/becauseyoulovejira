@@ -193,7 +193,9 @@
 			<div class="alert-error">
 				<ErrorIcon />
 				<span class="grow">{store.error}</span>
-				<button class="small" type="button" onclick={() => store.reload()}>Erneut versuchen</button>
+				<button class="button-secondary button-small" type="button" onclick={() => store.reload()}
+					>Erneut versuchen</button
+				>
 			</div>
 		</div>
 	{:else if store.state === 'ready' && ticket}
@@ -241,15 +243,6 @@
 
 	.message a {
 		color: var(--color-brand-text);
-	}
-
-	.small {
-		padding: 0.125rem 0.625rem;
-		font-size: var(--font-size-control);
-		background: none;
-		border: 1px solid var(--color-line);
-		border-radius: var(--radius-control);
-		cursor: pointer;
 	}
 
 	.loading {
