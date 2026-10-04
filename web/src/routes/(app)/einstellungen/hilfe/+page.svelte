@@ -1650,7 +1650,10 @@
 			wechselt wie zwischen zwei Schreibtischen: Jede Liste, jede Zahl, die Suche, der Kalender, der
 			Eingang, der Papierkorb und jede Auswahl zeigen nur den gewählten Bereich. Im Haushalt
 			markiert zusätzlich eine Linie am oberen Rand den Bereich. Ohne Haushalt gibt es keinen
-			Umschalter, und alles bleibt, wie es war.
+			Umschalter, und alles bleibt, wie es war: Oben steht nur „Privat“ und daneben ein kleines „+“.
+			Es führt zu <a href={resolve('/einstellungen/haushalt')}>Einstellungen → Haushalt</a>, wo du
+			einen Haushalt gründest oder mit einem Code beitrittst; danach steht dort der Umschalter, ohne
+			Neuladen.
 		</p>
 		<dl class="tokens">
 			<div class="row">
