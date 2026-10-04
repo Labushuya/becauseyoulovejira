@@ -1611,12 +1611,25 @@ function Get-ListenerSnapshot {
 # Console control in a child process: it leaves its own (hidden) console, attaches to the console
 # of the target and sends CTRL_BREAK_EVENT there. PocketBase (Go) turns it into os.Interrupt and
 # shuts down in order (OnTerminate, database closed, WAL checkpointed); byl-mail.exe ends its loop
-# on SIGBREAK. CTRL_C_EVENT is not used: a process can inherit the flag that ignores it. The child
-# sends nothing if other processes share the console (a server started by hand in a terminal), so
-# no other program ever gets the signal.
-# Exit codes: 0 sent, 2 no console to attach, 3 console shared, 4 sending failed.
+# on SIGBREAK. CTRL_C_EVENT is not used: a process can inherit the flag that ignores it. The break
+# reaches every process of the console, so the child sends only while the console belongs to the
+# target alone:
+# - Another program shares it (a server started by hand in a terminal): nothing is sent (3), so no
+#   other program ever gets the signal.
+# - Only processes the target started share it (ST-1): the hooks of the app run byl-control.ps1
+#   (backup-verify of the cron job byl-backup, the commands of the page System) and the hashing of
+#   the folders as children of PocketBase, which inherit its console. The child waits up to
+#   $WaitMilliseconds for them to end and sends then; they never get the signal. Still there after
+#   that: nothing is sent (5). A process counts as started by the target when the chain of its
+#   parents leads to the target and every process of the chain started after its parent (a parent
+#   ID that Windows gave to a newer process does not count). A verdict "another program" is looked
+#   at once more after 100 ms, in case a child of the target ended right in between.
+# Exit codes: 0 sent, 2 no console to attach, 3 console shared with another program, 4 sending
+# failed, 5 processes of the target still on its console.
 $BylConsoleBreakSource = @'
 using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 public static class BylConsoleBreak {
     public delegate bool Handler(uint controlType);
@@ -1625,8 +1638,74 @@ public static class BylConsoleBreak {
     [DllImport("kernel32.dll", SetLastError = true)] static extern bool SetConsoleCtrlHandler(Handler handler, bool add);
     [DllImport("kernel32.dll", SetLastError = true)] static extern bool GenerateConsoleCtrlEvent(uint controlEvent, uint processGroupId);
     [DllImport("kernel32.dll", SetLastError = true)] static extern uint GetConsoleProcessList(uint[] processIds, uint count);
+    [DllImport("kernel32.dll", SetLastError = true)] static extern IntPtr CreateToolhelp32Snapshot(uint flags, uint processId);
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)] static extern bool Process32FirstW(IntPtr snapshot, ref ProcessEntry entry);
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)] static extern bool Process32NextW(IntPtr snapshot, ref ProcessEntry entry);
+    [DllImport("kernel32.dll", SetLastError = true)] static extern bool CloseHandle(IntPtr handle);
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    struct ProcessEntry {
+        public uint Size; public uint Usage; public uint ProcessId; public IntPtr DefaultHeapId; public uint ModuleId;
+        public uint Threads; public uint ParentProcessId; public int PriorityBase; public uint Flags;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] public string ExeFile;
+    }
     static readonly Handler Ignore = delegate (uint controlType) { return true; };
-    public static int Send(uint processId) {
+    // Parent of every running process (TH32CS_SNAPPROCESS); empty if Windows gives no snapshot.
+    static Dictionary<uint, uint> Parents() {
+        Dictionary<uint, uint> parents = new Dictionary<uint, uint>();
+        IntPtr snapshot = CreateToolhelp32Snapshot(2, 0);
+        if (snapshot == new IntPtr(-1)) return parents;
+        try {
+            ProcessEntry entry = new ProcessEntry();
+            entry.Size = (uint)Marshal.SizeOf(typeof(ProcessEntry));
+            for (bool more = Process32FirstW(snapshot, ref entry); more; more = Process32NextW(snapshot, ref entry)) {
+                parents[entry.ProcessId] = entry.ParentProcessId;
+            }
+        }
+        finally {
+            CloseHandle(snapshot);
+        }
+        return parents;
+    }
+    static DateTime? Started(uint processId) {
+        try {
+            using (Process process = Process.GetProcessById((int)processId)) { return process.StartTime; }
+        }
+        catch {
+            return null;
+        }
+    }
+    static bool Descends(uint processId, uint target, Dictionary<uint, uint> parents) {
+        uint current = processId;
+        for (int depth = 0; depth < 16; depth++) {
+            uint parent;
+            if (!parents.TryGetValue(current, out parent) || parent == 0 || parent == current) return false;
+            DateTime? child = Started(current);
+            DateTime? started = Started(parent);
+            if (child == null || started == null || child.Value < started.Value) return false;
+            if (parent == target) return true;
+            current = parent;
+        }
+        return false;
+    }
+    // 0 the console belongs to the target (and this process), 5 also to processes the target
+    // started, 3 also to another program.
+    static int Sharing(uint processId, uint self) {
+        uint[] ids = new uint[64];
+        uint count = GetConsoleProcessList(ids, (uint)ids.Length);
+        if (count == 0 || count > ids.Length) return 3;
+        Dictionary<uint, uint> parents = null;
+        int sharing = 0;
+        for (int i = 0; i < count; i++) {
+            if (ids[i] == processId || ids[i] == self) continue;
+            if (parents == null) parents = Parents();
+            // Ended since the list was taken: gone at the next look.
+            if (!parents.ContainsKey(ids[i])) { sharing = 5; continue; }
+            if (!Descends(ids[i], processId, parents)) return 3;
+            sharing = 5;
+        }
+        return sharing;
+    }
+    public static int Send(uint processId, int waitMilliseconds) {
         FreeConsole();
         if (!AttachConsole(processId)) return 2;
         // Registered after attaching (a new console resets the handling of this process): the
@@ -1634,12 +1713,18 @@ public static class BylConsoleBreak {
         SetConsoleCtrlHandler(null, true);
         SetConsoleCtrlHandler(Ignore, true);
         try {
-            uint self = (uint)System.Diagnostics.Process.GetCurrentProcess().Id;
-            uint[] ids = new uint[16];
-            uint count = GetConsoleProcessList(ids, (uint)ids.Length);
-            if (count == 0 || count > ids.Length) return 3;
-            for (int i = 0; i < count; i++) {
-                if (ids[i] != processId && ids[i] != self) return 3;
+            uint self = (uint)Process.GetCurrentProcess().Id;
+            DateTime deadline = DateTime.UtcNow.AddMilliseconds(waitMilliseconds);
+            while (true) {
+                int sharing = Sharing(processId, self);
+                if (sharing == 3) {
+                    System.Threading.Thread.Sleep(100);
+                    sharing = Sharing(processId, self);
+                    if (sharing == 3) return 3;
+                }
+                if (sharing == 0) break;
+                if (DateTime.UtcNow >= deadline) return 5;
+                System.Threading.Thread.Sleep(100);
             }
             if (!GenerateConsoleCtrlEvent(1, 0)) return 4;
             System.Threading.Thread.Sleep(200);
@@ -1653,10 +1738,14 @@ public static class BylConsoleBreak {
 '@
 
 function Get-ConsoleBreakCommand {
-    # -EncodedCommand for powershell.exe that sends the console break to $ProcessId.
-    param([Parameter(Mandatory = $true)][ValidateRange(1, [int]::MaxValue)][int]$ProcessId)
+    # -EncodedCommand for powershell.exe that sends the console break to $ProcessId, waiting up to
+    # $WaitMilliseconds for processes the target started to leave its console.
+    param(
+        [Parameter(Mandatory = $true)][ValidateRange(1, [int]::MaxValue)][int]$ProcessId,
+        [ValidateRange(0, 600000)][int]$WaitMilliseconds = 0
+    )
 
-    $script = "Add-Type -TypeDefinition @'`r`n$BylConsoleBreakSource`r`n'@`r`nexit ([BylConsoleBreak]::Send([uint32]$ProcessId))"
+    $script = "Add-Type -TypeDefinition @'`r`n$BylConsoleBreakSource`r`n'@`r`nexit ([BylConsoleBreak]::Send([uint32]$ProcessId, $WaitMilliseconds))"
     return [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($script))
 }
 
@@ -1666,16 +1755,30 @@ $BylBreakEndedSender = -1073741510
 
 function Resolve-BreakCode {
     # What the exit code of the sending child says about the console break (plan test-haertung,
-    # T-3): 'Sent' (0, or the sender ended by the break itself), 'Refused' (3: the console is
-    # shared, no other program may get the signal), 'NotSent' (2 no console to attach, 4 sending
-    # failed, 1 the child failed before sending, e.g. compiling its code under load, -2 the child
-    # did not start) or 'Unknown' (-1 the child hung and was ended, anything else).
+    # T-3): 'Sent' (0, or the sender ended by the break itself), 'Refused' (3: another program
+    # shares the console, it may not get the signal), 'Busy' (5, since ST-1: processes the target
+    # started still shared its console after the wait of the sender), 'NotSent' (2 no console to
+    # attach, 4 sending failed, 1 the child failed before sending, e.g. compiling its code under
+    # load, -2 the child did not start) or 'Unknown' (-1 the child hung and was ended, anything else).
     param([Parameter(Mandatory = $true)][int]$Code)
 
     if ($Code -eq 0 -or $Code -eq $BylBreakEndedSender) { return 'Sent' }
     if ($Code -eq 3) { return 'Refused' }
+    if ($Code -eq 5) { return 'Busy' }
     if ($Code -in -2, 1, 2, 4) { return 'NotSent' }
     return 'Unknown'
+}
+
+function Resolve-HardStopReason {
+    # Why a process had to be ended hard, from the codes of its senders (Resolve-BreakCode):
+    # 'Refused' (another program shares its console), 'Busy' (processes it started were still
+    # running after the wait) or 'Timeout' (no break went out or the process did not end in time).
+    param([AllowEmptyCollection()][int[]]$Codes = @())
+
+    $kinds = @(foreach ($code in $Codes) { Resolve-BreakCode -Code $code })
+    if ($kinds -contains 'Refused') { return 'Refused' }
+    if ($kinds -contains 'Busy') { return 'Busy' }
+    return 'Timeout'
 }
 
 function Stop-Gracefully {
@@ -1688,8 +1791,10 @@ function Stop-Gracefully {
     # grace time. A break that did not go out, or of unknown fate while the process runs on, is sent
     # again, up to $Attempts in all; after one that did not go out the process gets up to
     # $RetryMilliseconds first (it may end meanwhile, and a passing failure does not come right
-    # back). A refused break (shared console) is never repeated. The codes of the attempts go to
-    # $Codes (for the log). Returns 'Graceful', 'Forced' or 'Running' (still there).
+    # back). A refused break (another program on the console) and one the sender held back because
+    # processes of the target still ran after its wait ('Busy', ST-1) are never repeated. The codes
+    # of the attempts go to $Codes (for the log and Resolve-HardStopReason). Returns 'Graceful',
+    # 'Forced' or 'Running' (still there).
     param(
         [Parameter(Mandatory = $true)][int]$ProcessId,
         [Parameter(Mandatory = $true)][scriptblock]$SendBreak,
@@ -1710,7 +1815,7 @@ function Stop-Gracefully {
         }
         if ($null -ne $Codes) { $Codes.Add($code) }
         $kind = Resolve-BreakCode -Code $code
-        if ($kind -eq 'Refused') { break }
+        if ($kind -eq 'Refused' -or $kind -eq 'Busy') { break }
         $wait = if ($kind -eq 'NotSent') { $RetryMilliseconds } else { $GraceMilliseconds }
         if (& $WaitExit $ProcessId $wait) { return 'Graceful' }
         if ($kind -eq 'Sent') { break }

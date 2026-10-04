@@ -1,5 +1,6 @@
-// Time limits of the tests that start processes of their own (plan robuste-skripte RS-3), in one
-// place. Every limit is a bound for polling a target state, never a fixed wait.
+// Time limits of the tests that start processes of their own (plan robuste-skripte RS-3) and, since
+// ST-1, of the files on the shared instance, in one place. Every limit is a bound for polling a
+// target state, never a fixed wait.
 //
 // Measured on the development machine (16 logical processors, 2026-10-01): one disposable
 // PocketBase of the harness (superuser upsert with all migrations, then serve until /api/health)
@@ -42,6 +43,17 @@ export const PROCESS_HOOK_MS = scaled(180_000);
 
 /** PocketBase writes its log in batches; one write after an action (3 s plus a cron run beside it). */
 export const LOG_WRITE_MS = scaled(30_000);
+
+/**
+ * One test of the files on the shared instance (plan test-haertung T-4: 15 s, alone in their group
+ * the slowest took 6 s). Unscaled the same as before; on a busy machine the factor gives them room
+ * as well (ST-1: three runs of the group at once and a fourth load beside them ran first cases of
+ * several files past 15 s).
+ */
+export const SHARED_TEST_MS = scaled(15_000);
+
+/** Default of beforeAll and afterAll on the shared instance (T-4: 30 s). */
+export const SHARED_HOOK_MS = scaled(30_000);
 
 /**
  * Files with processes at the same time: one fewer than the processors, at most four. Twelve at a

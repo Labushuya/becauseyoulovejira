@@ -110,14 +110,14 @@ export const FAIL_AREA_MOVE = '__byl_fail_area_move__';
 /**
  * Fresh app user with an own private scope, so every counter of that scope starts empty. With
  * `admin` the superuser gives it the right "Verwalter der App" (ADR-0056), e.g. to set up channels
- * with access data.
+ * with access data. The user lives on the instance of `superuser` (shared or own).
  * @param {PocketBase} superuser authenticated superuser client
  * @param {{ admin?: boolean }} [options]
  */
 export async function createOwner(superuser, { admin = false } = {}) {
 	const user = await createAppUser(superuser);
 	if (admin) await superuser.collection('users').update(user.record.id, { instance_admin: true });
-	const client = await userClient(user);
+	const client = await userClient(user, superuser.baseURL);
 	const id = user.record.id;
 	return {
 		id,

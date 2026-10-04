@@ -521,25 +521,35 @@ describe('stop', () => {
 	it('ends in order first (console break, waiting) and hard only after that, with a warning', () => {
 		const stop = functionBody(control(), 'Stop-OwnProcess');
 		expect(stop).toContain('Stop-Gracefully -ProcessId $processId -GraceMilliseconds ($StopGraceSeconds * 1000)');
-		// The exit code of the sender goes to Stop-Gracefully (Resolve-BreakCode, plan T-3) and to the log.
+		// The exit codes of the senders go to Stop-Gracefully (Resolve-BreakCode, plan T-3), to the log
+		// and, per process, to the reason of a hard stop (ST-1).
 		expect(stop).toContain('-SendBreak { param($id) Send-ConsoleBreak -ProcessId $id }');
-		expect(stop).toContain('-Codes $script:BreakCodes');
-		expect(stop).toContain("if ($result -eq 'Forced') { $Forced.Add(\"$Name (PID $processId)\") }");
+		expect(stop).toContain('-Codes $codes');
+		expect(stop).toContain('foreach ($code in $codes) { $script:BreakCodes.Add($code) }');
+		expect(stop).toContain('$Forced.Add([pscustomobject]@{ Name = "$Name (PID $processId)"; Reason = (Resolve-HardStopReason -Codes $codes.ToArray()) })');
 		expect(control()).toMatch(/\$StopGraceSeconds = 15\b/);
 		expect(control()).toMatch(/\$BreakSenderSeconds = 30\b/);
+		expect(control()).toMatch(/\$StopBusySeconds = 30\b/);
+		expect(control()).toContain("$HardStopProblemCode = @{ Timeout = 'hard-stop'; Busy = 'hard-stop-busy'; Refused = 'hard-stop-shared' }");
 		expect(functionBody(control(), 'Write-ControlLog')).toContain("break=\" + ($script:BreakCodes -join ',')");
-		expect(functionBody(control(), 'Invoke-StopCore')).toContain("[void](Write-BylProblem -Code 'hard-stop' -Values @{ name = $forced -join ', ' })");
+		expect(functionBody(control(), 'Invoke-StopCore')).toContain('Write-HardStop -Forced $forced');
+		expect(functionBody(control(), 'Invoke-MailRestart')).toContain('Write-HardStop -Forced $forced');
+		expect(functionBody(control(), 'Write-HardStop')).toContain('Write-BylProblem -Code $HardStopProblemCode[$reason]');
 		const send = functionBody(control(), 'Send-ConsoleBreak');
-		expect(send).toContain('Get-ConsoleBreakCommand -ProcessId $ProcessId');
+		expect(send).toContain('Get-ConsoleBreakCommand -ProcessId $ProcessId -WaitMilliseconds ($StopBusySeconds * 1000)');
 		expect(send).toContain('$startInfo.CreateNoWindow = $true');
 		expect(send).toContain('$startInfo.UseShellExecute = $false');
 		// While the sender runs, the target decides: once it has ended, the break reached it.
 		expect(send).toContain('$ended = $target.HasExited');
-		expect(send).toContain('[DateTime]::UtcNow.AddSeconds($BreakSenderSeconds)');
-		// The child sends CTRL_BREAK_EVENT only to a console of the target alone, and survives it.
+		expect(send).toContain('[DateTime]::UtcNow.AddSeconds($BreakSenderSeconds + $StopBusySeconds)');
+		// The child sends CTRL_BREAK_EVENT only to a console of the target alone, and survives it:
+		// another program on it refuses the break, processes the target started are waited for.
 		const source = functions().match(/\$BylConsoleBreakSource = @'\r\n([\s\S]*?)\r\n'@/)[1];
 		expect(source).toContain('GenerateConsoleCtrlEvent(1, 0)');
-		expect(source).toContain('if (ids[i] != processId && ids[i] != self) return 3;');
+		expect(source).toContain('if (!Descends(ids[i], processId, parents)) return 3;');
+		expect(source).toContain('if (child == null || started == null || child.Value < started.Value) return false;');
+		expect(source).toContain('if (DateTime.UtcNow >= deadline) return 5;');
+		expect(source.indexOf('if (sharing == 0) break;')).toBeLessThan(source.indexOf('GenerateConsoleCtrlEvent(1, 0)'));
 		expect(source.indexOf('AttachConsole(processId)')).toBeLessThan(source.indexOf('SetConsoleCtrlHandler(Ignore, true)'));
 	});
 

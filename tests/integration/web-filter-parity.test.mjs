@@ -6,9 +6,17 @@
 // text, ASCII letters regardless of case), because the list does not load the description.
 // Since E4 package 9 the matrix has done tickets of every source (converted from inbox entries of
 // every channel, and direct ones with manual, quick and without source) for the chip "Quelle".
+//
+// Own disposable instance (ST-1): with about 150 writes in its setup and many lists per case this
+// file is by far the heaviest of the shared instance. Under load its setup ran past the 30 s of a
+// hook there (locally 3 of 3 runs with three runs of that group at once) and once in the Linux CI
+// a case past its 15 s. On an own instance it no longer waits for the writes of other files, and
+// its limits are those of the files with processes (tests/support/timing.mjs, scalable).
 
-import { beforeAll, describe, expect, it } from 'vitest';
-import { superuserClient } from '../support/api.mjs';
+import PocketBase from 'pocketbase';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { createAppUser } from '../support/api.mjs';
+import { startPocketBase } from '../support/pocketbase-harness.mjs';
 import { createOwner, uniqueCode, uniqueSuffix } from '../support/scenario.mjs';
 import { createItem } from '../../web/src/lib/data/inbox.ts';
 import { createTicket, listDoneTickets, listOpenTickets } from '../../web/src/lib/data/tickets.ts';
@@ -85,6 +93,26 @@ function channelDraft(channel) {
 
 function stored(offset) {
 	return offset === null ? '' : `${addDays(TODAY, offset)} 00:00:00.000Z`;
+}
+
+let instance;
+
+beforeAll(async () => {
+	instance = await startPocketBase();
+	// The first app account becomes administrator (ADR-0056 §2); like on the shared instance
+	// (global-setup.mjs), an account of its own takes that place, so the owners stay normal accounts.
+	await createAppUser(await superuserClient());
+});
+
+afterAll(async () => {
+	await instance?.stop();
+});
+
+async function superuserClient() {
+	const client = new PocketBase(instance.url);
+	client.autoCancellation(false);
+	await client.collection('_superusers').authWithPassword(instance.email, instance.password);
+	return client;
 }
 
 describe('web filter parity: server expression and matchesFilter', () => {
