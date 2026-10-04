@@ -11,14 +11,14 @@
 	import type { AccountsStore } from '$lib/stores/accounts.svelte';
 	import AccountCreateForm from './AccountCreateForm.svelte';
 
-	// Page "Einstellungen → Konten" (ADR-0056 §3): every account of the app with name, e-mail, the
+	// Page "Einstellungen → Konten verwalten" (ADR-0056 §3): every account of the app with name, e-mail, the
 	// right "Verwalter der App", the switch "deaktiviert" and its creation; "Konto anlegen" with a
 	// start password and per account in the menu "•••" a new password, disabling or enabling and
 	// giving or taking the right. Every change that ends sessions or changes the right asks first (a
 	// confirmation, no red, ADR-0009); "Aktivieren" undoes a disabling and runs at once, with a flag.
 	// A password stands only once on the page, in a code block with
 	// "Kopieren", until "Weitergegeben" removes it. The own account has no menu: it changes its
-	// password and name on "Konto". No deleting of accounts (plan e7-haushalt, follow-up).
+	// password and name on "Mein Konto". No deleting of accounts (plan e7-haushalt, follow-up).
 	let { store }: { store: AccountsStore } = $props();
 
 	type Question = { kind: 'password' | 'disable' | 'grant' | 'revoke'; account: Account };
@@ -136,7 +136,7 @@
 {:else}
 	<p class="intro">
 		Jede Person meldet sich mit einem eigenen Konto an. Neue Konten legst du hier an; die Person
-		ändert ihr Startpasswort danach unter „Einstellungen → Konto“.
+		ändert ihr Startpasswort danach unter „Einstellungen → Mein Konto“.
 		<a href={helpHref('konten')}>Mehr zu Konten und Verwaltern</a>
 	</p>
 
@@ -187,7 +187,7 @@
 					</div>
 					<div class="actions">
 						{#if account.self}
-							<span class="note">Dein Konto änderst du unter „Konto“.</span>
+							<span class="note">Dein Konto änderst du unter „Mein Konto“.</span>
 						{:else}
 							<ActionsMenu
 								label={`Aktionen für ${label}`}

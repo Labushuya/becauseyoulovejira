@@ -146,6 +146,13 @@
 	--control-height-s: 1.5rem;
 	--control-height-m: 1.75rem;
 	--control-height-l: 2.25rem;
+	/*
+	 * Touch screens (UI-1, ADR-0060): fields, buttons with text and the labels of checkboxes and
+	 * radios at least 44 px high (Apple HIG), and 16 px in fields, the size below which iOS zooms
+	 * into the page when a field gets the focus. Only inside @media (pointer: coarse) of base.css.
+	 */
+	--control-height-touch: 2.75rem;
+	--font-size-field-touch: 1rem;
 
 	/*
 	 * Type scale in the macOS manner (ADR-0029, G-6): caption for group titles and counts, small

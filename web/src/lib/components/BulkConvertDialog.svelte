@@ -394,13 +394,6 @@
 		color: var(--color-text-muted);
 	}
 
-	.form :global(select) {
-		padding: 0.375rem 0.5rem;
-		background: var(--color-surface);
-		border: 1px solid var(--color-text-muted);
-		border-radius: var(--radius-control);
-	}
-
 	.hint {
 		font-size: var(--font-size-control);
 		color: var(--color-text-muted);

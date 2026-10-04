@@ -10,7 +10,9 @@
 		SETTINGS_HOME,
 		isAdminSection,
 		isSettingsPath,
+		settingsSectionById,
 		settingsSectionOf,
+		settingsSubpageOf,
 		visibleSettingsSections
 	} from '$lib/settings-sections';
 	import { appContext } from '$lib/stores/context.svelte';
@@ -44,11 +46,21 @@
 	const uid = $props.id();
 	const headingId = `${uid}-heading`;
 
-	const section = $derived(settingsSectionOf(page.url.pathname));
+	// A sub page (UI-1: "Eingabeelemente" below "Hilfe") marks its page in the navigation and stands
+	// in the breadcrumbs after it.
+	const subpage = $derived(settingsSubpageOf(page.url.pathname));
+	const section = $derived(
+		subpage === null ? settingsSectionOf(page.url.pathname) : settingsSectionById(subpage.parent)
+	);
 	const blocked = $derived(
 		section !== null && isAdminSection(section.id) && capabilities.adminPages !== 'full'
 	);
-	const title = $derived(section?.label ?? 'Einstellungen');
+	const title = $derived(subpage?.label ?? section?.label ?? 'Einstellungen');
+	const crumbs = $derived([
+		{ label: 'Einstellungen', href: SETTINGS_HOME },
+		...(subpage !== null && section !== null ? [{ label: section.label, href: section.href }] : []),
+		{ label: title }
+	]);
 	const backHref = $derived(lastView.href);
 	const backLabel = $derived(lastViewLabel(backHref, (id) => tickets.find(id)?.key ?? null));
 
@@ -75,7 +87,7 @@
 		<SettingsNav {sections} current={section?.id ?? null} {backHref} {backLabel} />
 	</div>
 	<div class="page">
-		<Breadcrumbs items={[{ label: 'Einstellungen', href: SETTINGS_HOME }, { label: title }]} />
+		<Breadcrumbs items={crumbs} />
 		<h2 id={headingId} tabindex="-1" data-view-heading bind:this={heading}>{title}</h2>
 		{#if blocked}
 			<AdminPageNotice {capabilities} />

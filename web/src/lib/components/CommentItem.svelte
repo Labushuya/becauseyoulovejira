@@ -121,7 +121,7 @@
 				<span class="actions">
 					{#if pinOffered}
 						<button
-							class="small"
+							class="button-secondary button-small"
 							type="button"
 							aria-disabled={pinLocked ? 'true' : undefined}
 							aria-busy={pinBusy ? 'true' : undefined}
@@ -132,10 +132,20 @@
 						</button>
 					{/if}
 					{#if own}
-						<button class="small" type="button" bind:this={editButton} onclick={startEdit}>
+						<button
+							class="button-secondary button-small"
+							type="button"
+							bind:this={editButton}
+							onclick={startEdit}
+						>
 							Bearbeiten<span class="visually-hidden">: {context}</span>
 						</button>
-						<button class="small" type="button" aria-disabled={busy} onclick={remove}>
+						<button
+							class="button-secondary button-small"
+							type="button"
+							aria-disabled={busy}
+							onclick={remove}
+						>
 							Löschen<span class="visually-hidden">: {context}</span>
 						</button>
 					{/if}
@@ -159,7 +169,7 @@
 			{/if}
 			<div class="buttons">
 				<button
-					class="button-primary small-primary"
+					class="button-primary button-small"
 					type="button"
 					disabled={busy}
 					aria-busy={busy ? 'true' : undefined}
@@ -167,7 +177,9 @@
 				>
 					{busy ? 'Wird gespeichert …' : 'Speichern'}
 				</button>
-				<button class="small" type="button" onclick={() => endEdit(false)}>Abbrechen</button>
+				<button class="button-secondary button-small" type="button" onclick={() => endEdit(false)}
+					>Abbrechen</button
+				>
 			</div>
 		{:else}
 			<CommentBody
@@ -258,29 +270,5 @@
 		display: flex;
 		flex-wrap: wrap;
 		gap: 0.5rem;
-	}
-
-	.small {
-		padding: 0.0625rem 0.5rem;
-		font-size: var(--font-size-small);
-		background: none;
-		border: 1px solid var(--color-line);
-		border-radius: var(--radius-control);
-		cursor: pointer;
-	}
-
-	/* Locked while the comment is saved or deleted, or while a pin is saved. */
-	.small[aria-disabled='true'] {
-		cursor: not-allowed;
-	}
-
-	/* The pin of this comment is being saved (ADR-0026, addendum of 2026-09-30). */
-	.small[aria-busy='true'] {
-		cursor: progress;
-	}
-
-	.small-primary {
-		padding: 0.25rem 0.75rem;
-		font-size: var(--font-size-control);
 	}
 </style>

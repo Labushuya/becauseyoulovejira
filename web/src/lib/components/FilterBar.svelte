@@ -294,7 +294,7 @@
 		/>
 
 		<button
-			class="reset"
+			class="button-secondary button-small reset"
 			type="button"
 			aria-disabled={filtered ? undefined : 'true'}
 			aria-describedby={filtered ? undefined : ids.resetHint}
@@ -316,7 +316,9 @@
 			<span class="search-error-text">
 				Die Suche ist fehlgeschlagen. {searchError} Die Tabelle zeigt die Tickets ohne Suche.
 			</span>
-			<button class="retry" type="button" onclick={onretrysearch}>Erneut versuchen</button>
+			<button class="button-secondary button-small" type="button" onclick={onretrysearch}>
+				Erneut versuchen
+			</button>
 		</div>
 	{/if}
 </section>
@@ -341,14 +343,10 @@
 		align-items: center;
 	}
 
-	/* The search field of base.css (ADR-0029 section 9); here only its width and the busy pointer. */
+	/* The search field of base.css (ADR-0029 section 9); here only its width (busy: base.css). */
 	.search-field input[type='search'] {
 		width: 16rem;
 		max-width: 100%;
-	}
-
-	.search-field input[aria-busy='true'] {
-		cursor: progress;
 	}
 
 	.search-error {
@@ -372,33 +370,6 @@
 		font-size: var(--font-size-small);
 		color: var(--color-text-muted);
 		overflow-wrap: anywhere;
-	}
-
-	.retry {
-		padding: 0.125rem 0.5rem;
-		font-size: var(--font-size-control);
-		background: none;
-		border: 1px solid currentColor;
-		border-radius: var(--radius-control);
-		cursor: pointer;
-	}
-
-	.reset {
-		display: inline-flex;
-		gap: 0.25rem;
-		align-items: center;
-		padding: 0.1875rem 0.625rem;
-		font-size: var(--font-size-control);
-		color: var(--color-text);
-		background: none;
-		border: 1px solid var(--color-line);
-		border-radius: var(--radius-control);
-		cursor: pointer;
-	}
-
-	.reset[aria-disabled='true'] {
-		color: var(--color-text-muted);
-		cursor: not-allowed;
 	}
 
 	.reset svg {

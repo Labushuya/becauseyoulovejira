@@ -213,9 +213,10 @@
 		<h3 id={`${uid}-account`}>Passwörter</h3>
 		<ul class="account">
 			<li>
-				Passwort des App-Kontos ändern: <a href={resolve('/einstellungen/konto')}
-					>Einstellungen → Konto</a
-				> nennt den Weg über die Verwaltung.
+				Passwort des eigenen App-Kontos ändern: unter <a href={resolve('/einstellungen/konto')}
+					>Einstellungen → Mein Konto</a
+				>, mit dem bisherigen Passwort; ein vergessenes setzt der Verwalter unter
+				<a href={resolve('/einstellungen/konten')}>Einstellungen → Konten verwalten</a> zurück.
 			</li>
 			<li>
 				Admin-Passwort vergessen: <code>admin-zuruecksetzen.bat</code> im Ordner app setzt es neu, ohne

@@ -1,42 +1,121 @@
 // Pages of the settings area (ADR-0026 section 1, plan EH-1). A page is listed only once its
 // package brings it, so the navigation never has a dead link: "Hilfe" came with EH-9, "Darstellung"
-// and "Konto" with EH-8. "Tags" moved here from the project view (user request after EH-4).
+// and "Konto" with EH-8. "Tags" moved here from the project view (user request after EH-4). Since
+// UI-1 (ADR-0060) the navigation shows the pages in groups with a heading; the addresses stayed.
 
 import { resolve } from '$app/paths';
 import type { ResolvedPathname } from '$app/types';
 import type { AdminPages } from '$lib/domain/context';
 import type { HostPlatform } from '$lib/domain/host-platform';
 
+/** Groups of the navigation, in their order (UI-1, ADR-0060). */
+export type SettingsGroupId = 'arbeit' | 'persoenlich' | 'verwaltung' | 'hilfe';
+
+export interface SettingsGroup {
+	readonly id: SettingsGroupId;
+	/** Heading of the group; null for the help at the end, which needs none. */
+	readonly label: string | null;
+}
+
+/**
+ * What the app brings in and how tickets are kept, then what belongs to the person (how the app
+ * looks on this device, the household and the own account), then the administration of the app.
+ * "Mein Konto" ends "Persönlich" and "Konten verwalten" starts "Verwaltung", so the own account and
+ * the accounts of everybody stand next to each other, with names that keep them apart.
+ */
+export const SETTINGS_GROUPS: readonly SettingsGroup[] = [
+	{ id: 'arbeit', label: 'Eingang und Tickets' },
+	{ id: 'persoenlich', label: 'Persönlich' },
+	{ id: 'verwaltung', label: 'Verwaltung' },
+	{ id: 'hilfe', label: null }
+];
+
 export interface SettingsSection {
 	/** Last part of the address, e.g. "kanaele". */
 	readonly id: string;
 	readonly label: string;
 	readonly href: ResolvedPathname;
+	readonly group: SettingsGroupId;
 }
 
 export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
-	{ id: 'kanaele', label: 'Kanäle', href: resolve('/einstellungen/kanaele') },
-	{ id: 'datei-importe', label: 'Datei-Importe', href: resolve('/einstellungen/datei-importe') },
-	{ id: 'tags', label: 'Tags', href: resolve('/einstellungen/tags') },
+	{ id: 'kanaele', label: 'Kanäle', href: resolve('/einstellungen/kanaele'), group: 'arbeit' },
+	{
+		id: 'datei-importe',
+		label: 'Datei-Importe',
+		href: resolve('/einstellungen/datei-importe'),
+		group: 'arbeit'
+	},
+	{ id: 'tags', label: 'Tags', href: resolve('/einstellungen/tags'), group: 'arbeit' },
 	// Settings of the tickets, since ADR-0037 the retention of the trash.
-	{ id: 'tickets', label: 'Tickets', href: resolve('/einstellungen/tickets') },
-	{ id: 'darstellung', label: 'Darstellung', href: resolve('/einstellungen/darstellung') },
-	{ id: 'konto', label: 'Konto', href: resolve('/einstellungen/konto') },
+	{ id: 'tickets', label: 'Tickets', href: resolve('/einstellungen/tickets'), group: 'arbeit' },
+	{
+		id: 'darstellung',
+		label: 'Darstellung',
+		href: resolve('/einstellungen/darstellung'),
+		group: 'persoenlich'
+	},
 	// The household of the account (ADR-0058, E7-2): for every account, on every device.
-	{ id: 'haushalt', label: 'Haushalt', href: resolve('/einstellungen/haushalt') },
+	{
+		id: 'haushalt',
+		label: 'Haushalt',
+		href: resolve('/einstellungen/haushalt'),
+		group: 'persoenlich'
+	},
+	// The own account (ADR-0056 §3); "Mein", so it is not taken for the accounts of everybody.
+	{ id: 'konto', label: 'Mein Konto', href: resolve('/einstellungen/konto'), group: 'persoenlich' },
 	// The accounts of the app for its administrator (ADR-0056 §3), on every server.
-	{ id: 'konten', label: 'Konten', href: resolve('/einstellungen/konten') },
+	{
+		id: 'konten',
+		label: 'Konten verwalten',
+		href: resolve('/einstellungen/konten'),
+		group: 'verwaltung'
+	},
 	// How the app protects itself and what can be set (ADR-0055 §8), on every server; the further
 	// hosts only for the folder app under Windows.
-	{ id: 'sicherheit', label: 'Sicherheit', href: resolve('/einstellungen/sicherheit') },
+	{
+		id: 'sicherheit',
+		label: 'Sicherheit',
+		href: resolve('/einstellungen/sicherheit'),
+		group: 'verwaltung'
+	},
 	// Backups, target folder and passphrase (ADR-0046), only for a server on Windows.
-	{ id: 'sicherung', label: 'Sicherung', href: resolve('/einstellungen/sicherung') },
+	{
+		id: 'sicherung',
+		label: 'Sicherung',
+		href: resolve('/einstellungen/sicherung'),
+		group: 'verwaltung'
+	},
 	// What the app takes and what can be cleared (ADR-0047 §6), on every server; the parts of the
 	// folder app under Windows only there.
-	{ id: 'speicher', label: 'Speicher', href: resolve('/einstellungen/speicher') },
+	{
+		id: 'speicher',
+		label: 'Speicher',
+		href: resolve('/einstellungen/speicher'),
+		group: 'verwaltung'
+	},
 	// Operation of the app from the dashboard (ADR-0043), only for a server on Windows.
-	{ id: 'system', label: 'System', href: resolve('/einstellungen/system') },
-	{ id: 'hilfe', label: 'Hilfe', href: resolve('/einstellungen/hilfe') }
+	{ id: 'system', label: 'System', href: resolve('/einstellungen/system'), group: 'verwaltung' },
+	{ id: 'hilfe', label: 'Hilfe', href: resolve('/einstellungen/hilfe'), group: 'hilfe' }
+];
+
+/** A page below a page of the navigation; the navigation marks its parent. */
+export interface SettingsSubpage {
+	readonly id: string;
+	readonly label: string;
+	readonly href: ResolvedPathname;
+	/** ID of the page it belongs to. */
+	readonly parent: string;
+}
+
+export const SETTINGS_SUBPAGES: readonly SettingsSubpage[] = [
+	// The form controls in all their states (UI-1, ADR-0060), linked quietly from the help.
+	{
+		id: 'elemente',
+		label: 'Eingabeelemente',
+		href: resolve('/einstellungen/hilfe/elemente'),
+		parent: 'hilfe'
+	}
 ];
 
 /** Pages that drive the scripts of the folder app under Windows (ADR-0043, ADR-0046). */
@@ -82,6 +161,27 @@ export function visibleSettingsSections(
 	}));
 }
 
+/** A group of the navigation with its visible pages; `pcOnly` when all of them are "nur am PC". */
+export interface SettingsNavGroup extends SettingsGroup {
+	readonly sections: readonly VisibleSettingsSection[];
+	readonly pcOnly: boolean;
+}
+
+/**
+ * The visible pages in their groups, in the order of SETTINGS_GROUPS. A group without a visible
+ * page is left out with its heading, so "Verwaltung" is not there at all for every other account
+ * and while the context loads; for the administrator on another device the group as a whole is
+ * "nur am PC" (KOB-1, ADR-0057).
+ */
+export function groupSettingsSections(
+	sections: readonly VisibleSettingsSection[]
+): readonly SettingsNavGroup[] {
+	return SETTINGS_GROUPS.map((group) => {
+		const own = sections.filter((section) => section.group === group.id);
+		return { ...group, sections: own, pcOnly: own.length > 0 && own.every((s) => s.pcOnly) };
+	}).filter((group) => group.sections.length > 0);
+}
+
 /** Start of the settings area; it forwards to the first page. */
 export const SETTINGS_HOME = resolve('/einstellungen');
 
@@ -89,6 +189,17 @@ export const SETTINGS_HOME = resolve('/einstellungen');
 export function settingsSectionOf(pathname: string): SettingsSection | null {
 	const normalized = pathname.replace(/\/+$/, '');
 	return SETTINGS_SECTIONS.find((section) => section.href === normalized) ?? null;
+}
+
+/** The sub page of `pathname` (e.g. "Eingabeelemente" below "Hilfe"), or null. */
+export function settingsSubpageOf(pathname: string): SettingsSubpage | null {
+	const normalized = pathname.replace(/\/+$/, '');
+	return SETTINGS_SUBPAGES.find((subpage) => subpage.href === normalized) ?? null;
+}
+
+/** The page with this ID, or null. */
+export function settingsSectionById(id: string): SettingsSection | null {
+	return SETTINGS_SECTIONS.find((section) => section.id === id) ?? null;
 }
 
 /** Whether `pathname` lies in the settings area (for aria-current of the gear in the header). */
@@ -123,7 +234,7 @@ export const HELP_SECTIONS = [
 	{ id: 'speicher', label: 'Speicher' },
 	// The protection of the app (ADR-0055): linked from the page "Sicherheit".
 	{ id: 'sicherheit', label: 'Sicherheit' },
-	// Accounts and the administrator (ADR-0056): linked from the pages "Konto" and "Konten".
+	// Accounts and the administrator (ADR-0056): linked from "Mein Konto" and "Konten verwalten".
 	{ id: 'konten', label: 'Konten und Verwalter' },
 	// The household (ADR-0058): linked from the page "Haushalt".
 	{ id: 'haushalt', label: 'Haushalt' },

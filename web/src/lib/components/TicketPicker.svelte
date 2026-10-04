@@ -552,10 +552,6 @@
 
 	input {
 		width: 100%;
-		padding: 0.25rem 0.5rem;
-		background: var(--color-surface);
-		border: 1px solid var(--color-text-muted);
-		border-radius: var(--radius-control);
 	}
 
 	.tools {
@@ -597,12 +593,25 @@
 		flex: none;
 	}
 
+	/*
+	 * The select is part of the chip: the chip draws the frame and the surface, the select stays
+	 * without its own line, height and padding in the type of the chip (allowlist of
+	 * no-own-form-styles.test.ts). On touch screens it keeps 16 px, so iOS does not zoom.
+	 */
 	.project select {
+		min-height: 0;
+		padding: 0;
 		font-size: var(--font-size-small);
 		color: var(--color-text);
 		background: transparent;
 		border: none;
 		cursor: pointer;
+	}
+
+	@media (pointer: coarse) {
+		.project select {
+			font-size: var(--font-size-field-touch);
+		}
 	}
 
 	.count {

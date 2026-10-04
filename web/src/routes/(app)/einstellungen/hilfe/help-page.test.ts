@@ -774,7 +774,9 @@ describe('help page (EH-9)', () => {
 				.getByRole('link', { name: 'Einstellungen → System' })
 				.getAttribute('href')
 		).toBe('/einstellungen/system');
-		expect(content).toContain('die Seiten Konten, Sicherheit, Sicherung, Speicher und System');
+		expect(content).toContain(
+			'die Seiten der Verwaltung (Konten verwalten, Sicherheit, Sicherung, Speicher und System)'
+		);
 		expect(content).toContain('nur auf diesem Rechner unter 127.0.0.1, auch für den Verwalter');
 		expect(content).toContain('„Firewall-Regel entfernen …“');
 	});
@@ -871,8 +873,23 @@ describe('help page (EH-9)', () => {
 		);
 		expect(content).toMatch(/Die Anmeldung gilt je Browserprofil/);
 		expect(
-			within(section).getByRole('link', { name: 'Einstellungen → Konten' }).getAttribute('href')
+			within(section)
+				.getByRole('link', { name: 'Einstellungen → Konten verwalten' })
+				.getAttribute('href')
 		).toBe('/einstellungen/konten');
+		expect(
+			within(section).getByRole('link', { name: 'Einstellungen → Mein Konto' }).getAttribute('href')
+		).toBe('/einstellungen/konto');
+	});
+
+	it('links quietly to the overview of the form controls at its end (UI-1)', () => {
+		const { container } = render(Page);
+		const link = screen.getByRole('link', { name: 'Übersicht der Eingabeelemente' });
+		expect(link.getAttribute('href')).toBe('/einstellungen/hilfe/elemente');
+		// Not a section with a jump link, only a note after the last section.
+		expect(link.closest('section')).toBeNull();
+		expect(link.closest('p')?.classList.contains('note')).toBe(true);
+		expect(container.querySelector('.help')?.lastElementChild).toBe(link.closest('p'));
 	});
 });
 

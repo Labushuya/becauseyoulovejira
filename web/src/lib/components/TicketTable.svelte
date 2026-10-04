@@ -569,7 +569,9 @@
 	<div class="alert-error failure">
 		<ErrorIcon />
 		<span class="failure-text">{message}</span>
-		<button class="text-button" type="button" onclick={onretry}>{retryLabel}</button>
+		<button class="button-secondary button-small" type="button" onclick={onretry}
+			>{retryLabel}</button
+		>
 	</div>
 {/snippet}
 
@@ -595,7 +597,11 @@
 		{/snippet}
 		{#snippet end()}
 			{#if store.newCount > 0}
-				<button class="text-button mark-read" type="button" onclick={() => store.markAllRead()}>
+				<button
+					class="button-secondary button-small mark-read"
+					type="button"
+					onclick={() => store.markAllRead()}
+				>
 					Alle als gelesen markieren<span class="visually-hidden"
 						>, {store.newCount === 1 ? '1 neues Ticket' : `${store.newCount} neue Tickets`}</span
 					>
@@ -788,7 +794,11 @@
 										<p class="muted">Noch keine erledigten Tickets.</p>
 									{:else if onlyDone}
 										<p class="muted">Keine Tickets für diese Filter.</p>
-										<button class="text-button reset" type="button" onclick={clearFilters}>
+										<button
+											class="button-secondary button-small reset"
+											type="button"
+											onclick={clearFilters}
+										>
 											Filter zurücksetzen
 										</button>
 									{:else}
@@ -799,7 +809,7 @@
 										{@render failure(store.doneError, 'Weitere laden', () => store.loadMoreDone())}
 									{:else if store.doneHasMore}
 										<button
-											class="more"
+											class="button-secondary"
 											type="button"
 											disabled={store.loadingMoreDone}
 											aria-busy={store.loadingMoreDone ? 'true' : undefined}
@@ -1071,31 +1081,5 @@
 
 	.failure-text {
 		flex: 1;
-	}
-
-	.text-button {
-		padding: 0.125rem 0.5rem;
-		font-size: var(--font-size-control);
-		background: none;
-		border: 1px solid currentColor;
-		border-radius: var(--radius-control);
-		cursor: pointer;
-	}
-
-	.more {
-		padding: 0.375rem 0.75rem;
-		font-size: var(--font-size-body);
-		background: var(--color-surface);
-		border: 1px solid var(--color-line);
-		border-radius: var(--radius-control);
-		cursor: pointer;
-	}
-
-	.more:disabled {
-		cursor: not-allowed;
-	}
-
-	.more[aria-busy='true'] {
-		cursor: progress;
 	}
 </style>

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import ErrorIcon from '$lib/components/ErrorIcon.svelte';
+	import Field from '$lib/components/form/Field.svelte';
 	import { groupCodeInput, nameProblem, problemText } from '$lib/domain/household';
 	import type { HouseholdStore } from '$lib/stores/household.svelte';
 
@@ -14,12 +14,7 @@
 	const uid = $props.id();
 	const ids = {
 		found: `${uid}-found`,
-		name: `${uid}-name`,
-		nameError: `${uid}-name-error`,
-		join: `${uid}-join`,
-		code: `${uid}-code`,
-		codeError: `${uid}-code-error`,
-		codeHint: `${uid}-code-hint`
+		join: `${uid}-join`
 	};
 
 	let name = $state('');
@@ -78,23 +73,19 @@
 		<h3 id={ids.found}>Haushalt gründen</h3>
 		<p class="note">Du wirst Inhaber und lädst andere mit einem Code ein.</p>
 		<form novalidate onsubmit={found} aria-busy={founding ? 'true' : undefined}>
-			<div class="field">
-				<label class="label" for={ids.name}>Name des Haushalts</label>
-				<input
-					id={ids.name}
-					type="text"
-					autocomplete="off"
-					maxlength="100"
-					bind:this={nameInput}
-					bind:value={name}
-					oninput={() => (nameError = '')}
-					aria-invalid={nameError === '' ? undefined : 'true'}
-					aria-describedby={nameError === '' ? undefined : ids.nameError}
-				/>
-				{#if nameError !== ''}
-					<p class="field-error" id={ids.nameError}><ErrorIcon /><span>{nameError}</span></p>
-				{/if}
-			</div>
+			<Field label="Name des Haushalts" error={nameError}>
+				{#snippet control(field)}
+					<input
+						{...field}
+						type="text"
+						autocomplete="off"
+						maxlength="100"
+						bind:this={nameInput}
+						bind:value={name}
+						oninput={() => (nameError = '')}
+					/>
+				{/snippet}
+			</Field>
 			<div>
 				<button
 					class="button-primary"
@@ -112,29 +103,26 @@
 		<h3 id={ids.join}>Mit Code beitreten</h3>
 		<p class="note">Den Code bekommst du von einem Mitglied des Haushalts.</p>
 		<form novalidate onsubmit={join} aria-busy={joining ? 'true' : undefined}>
-			<div class="field">
-				<label class="label" for={ids.code}>Einladungscode</label>
-				<input
-					id={ids.code}
-					class="code"
-					type="text"
-					autocomplete="off"
-					autocapitalize="characters"
-					spellcheck="false"
-					placeholder="ABCD-EFGH"
-					bind:this={codeInput}
-					value={code}
-					oninput={typed}
-					aria-invalid={codeError === '' ? undefined : 'true'}
-					aria-describedby={codeError === '' ? ids.codeHint : `${ids.codeError} ${ids.codeHint}`}
-				/>
-				{#if codeError !== ''}
-					<p class="field-error" id={ids.codeError}><ErrorIcon /><span>{codeError}</span></p>
-				{/if}
-				<p class="hint" id={ids.codeHint}>
-					8 Zeichen; Groß- und Kleinschreibung und Bindestrich sind egal.
-				</p>
-			</div>
+			<Field
+				label="Einladungscode"
+				hint="8 Zeichen; Groß- und Kleinschreibung und Bindestrich sind egal."
+				error={codeError}
+			>
+				{#snippet control(field)}
+					<input
+						{...field}
+						class="input-mono"
+						type="text"
+						autocomplete="off"
+						autocapitalize="characters"
+						spellcheck="false"
+						placeholder="ABCD-EFGH"
+						bind:this={codeInput}
+						value={code}
+						oninput={typed}
+					/>
+				{/snippet}
+			</Field>
 			<div>
 				<button
 					class="button-primary"
@@ -181,25 +169,5 @@
 	form {
 		display: grid;
 		gap: 0.75rem;
-	}
-
-	.field {
-		display: grid;
-		gap: 0.25rem;
-	}
-
-	.label {
-		font-size: var(--font-size-body);
-		font-weight: 500;
-	}
-
-	.code {
-		font-family: var(--font-mono);
-		letter-spacing: 0.05em;
-	}
-
-	.hint {
-		font-size: var(--font-size-small);
-		color: var(--color-text-muted);
 	}
 </style>

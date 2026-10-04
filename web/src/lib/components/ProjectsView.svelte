@@ -513,7 +513,9 @@
 	<div class="alert-error failure">
 		<ErrorIcon />
 		<span class="failure-text">{message}</span>
-		<button class="text-button" type="button" onclick={onretry}>Erneut versuchen</button>
+		<button class="button-secondary button-small" type="button" onclick={onretry}>
+			Erneut versuchen
+		</button>
 	</div>
 {/snippet}
 
@@ -813,14 +815,5 @@
 
 	.failure-text {
 		flex: 1;
-	}
-
-	.text-button {
-		padding: 0.125rem 0.5rem;
-		font-size: var(--font-size-control);
-		background: none;
-		border: 1px solid currentColor;
-		border-radius: var(--radius-control);
-		cursor: pointer;
 	}
 </style>

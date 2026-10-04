@@ -1418,8 +1418,8 @@
 		</ul>
 		<p>
 			Das Passwort deines App-Kontos änderst du unter
-			<a href={resolve('/einstellungen/konto')}>Konto</a>, ein vergessenes setzt der Verwalter der
-			App unter <a href={resolve('/einstellungen/konten')}>Konten</a> zurück.
+			<a href={resolve('/einstellungen/konto')}>Mein Konto</a>, ein vergessenes setzt der Verwalter
+			der App unter <a href={resolve('/einstellungen/konten')}>Konten verwalten</a> zurück.
 			<PcOnly need="script" inline quiet>
 				Ein vergessenes Admin-Passwort setzt <code>admin-zuruecksetzen.bat</code> im Ordner
 				<code>app</code> neu, ohne Daten zu löschen.
@@ -1477,13 +1477,13 @@
 			</li>
 		</ol>
 		<p>
-			Auch mit Zugriff im Heimnetz bleiben die Seiten Konten, Sicherheit, Sicherung, Speicher und
-			System, das Ansehen von Dateien aus beobachteten Ordnern und die Verwaltung (/_/) nur auf
-			diesem Rechner unter <code>127.0.0.1</code>, auch für den Verwalter. Jedes andere Konto meldet
-			sich auf seinem Gerät an und ändert sein Passwort dort unter „Konto“. Jedes Gerät hat seine
-			eigene Zählung beim Schutz vor Rateversuchen. Ausschalten: den Schalter aus, „Einstellung
-			speichern“, neu starten und die Firewall-Regel mit „Firewall-Regel entfernen …“ wieder
-			entfernen.
+			Auch mit Zugriff im Heimnetz bleiben die Seiten der Verwaltung (Konten verwalten, Sicherheit,
+			Sicherung, Speicher und System), das Ansehen von Dateien aus beobachteten Ordnern und die
+			Verwaltung (/_/) nur auf diesem Rechner unter <code>127.0.0.1</code>, auch für den Verwalter.
+			Jedes andere Konto meldet sich auf seinem Gerät an und ändert sein Passwort dort unter „Mein
+			Konto“. Jedes Gerät hat seine eigene Zählung beim Schutz vor Rateversuchen. Ausschalten: den
+			Schalter aus, „Einstellung speichern“, neu starten und die Firewall-Regel mit „Firewall-Regel
+			entfernen …“ wieder entfernen.
 		</p>
 	</section>
 
@@ -1499,21 +1499,21 @@
 				<dt>Verwalter der App</dt>
 				<dd>
 					Ein Recht für Konten: Wer es hat, legt Konten an, setzt Passwörter zurück, deaktiviert und
-					aktiviert Konten und gibt oder entzieht das Recht. Nur er sieht die Seiten Konten,
-					Sicherheit, Sicherung, Speicher und System und richtet Kanäle mit Zugangsdaten oder
-					Ordnern dieses Rechners ein. Zu Beginn hat es das zuerst angelegte Konto. Mindestens ein
-					aktives Konto bleibt immer Verwalter; dein eigenes Recht kann dir nur ein anderer
-					Verwalter entziehen.
+					aktiviert Konten und gibt oder entzieht das Recht. Nur er sieht die Gruppe „Verwaltung“
+					mit Konten verwalten, Sicherheit, Sicherung, Speicher und System und richtet Kanäle mit
+					Zugangsdaten oder Ordnern dieses Rechners ein. Zu Beginn hat es das zuerst angelegte
+					Konto. Mindestens ein aktives Konto bleibt immer Verwalter; dein eigenes Recht kann dir
+					nur ein anderer Verwalter entziehen.
 				</dd>
 			</div>
 			<div class="row">
 				<dt>Konto anlegen</dt>
 				<dd>
-					Unter <a href={resolve('/einstellungen/konten')}>Einstellungen → Konten</a> Name und
-					E-Mail-Adresse eingeben, „Konto anlegen“. Die App erzeugt ein Startpasswort und zeigt es
-					einmal an, mit „Kopieren“. Gib es auf einem sicheren Weg weiter; die Person ändert es
-					danach unter <a href={resolve('/einstellungen/konto')}>Einstellungen → Konto</a>. Eine
-					Mail verschickt die App nicht.
+					Unter <a href={resolve('/einstellungen/konten')}>Einstellungen → Konten verwalten</a> Name
+					und E-Mail-Adresse eingeben, „Konto anlegen“. Die App erzeugt ein Startpasswort und zeigt
+					es einmal an, mit „Kopieren“. Gib es auf einem sicheren Weg weiter; die Person ändert es
+					danach unter <a href={resolve('/einstellungen/konto')}>Einstellungen → Mein Konto</a>.
+					Eine Mail verschickt die App nicht.
 				</dd>
 			</div>
 			<div class="row">
@@ -1688,6 +1688,12 @@
 			</div>
 		</dl>
 	</section>
+
+	<p class="note elements">
+		Zum Prüfen der Darstellung: <a href={resolve('/einstellungen/hilfe/elemente')}
+			>Übersicht der Eingabeelemente</a
+		> mit allen Feldern, Auswahllisten, Kästchen, Schaltern und Knöpfen in ihren Zuständen.
+	</p>
 </div>
 
 <style>
@@ -1732,7 +1738,8 @@
 	}
 
 	.jump a,
-	section a {
+	section a,
+	.elements a {
 		color: var(--color-brand-text);
 	}
 
