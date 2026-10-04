@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { configDefaults, defineConfig } from 'vitest/config';
 import { integrationGroups } from './tests/support/test-groups.mjs';
-import { PROCESS_HOOK_MS, PROCESS_TEST_MS, processWorkers } from './tests/support/timing.mjs';
+import { PROCESS_HOOK_MS, PROCESS_TEST_MS, SHARED_HOOK_MS, SHARED_TEST_MS, processWorkers } from './tests/support/timing.mjs';
 
 // Tests of the Windows operation layer run only on Windows (ADR-0028, plan plattformen S0): they
 // call Windows PowerShell 5.1 with app/byl-functions.ps1 or the Expand-Archive restore of the
@@ -51,12 +51,15 @@ const GROUPS = integrationGroups(fileURLToPath(new URL('.', import.meta.url)), '
 // flag; the PocketBase SDK needs it for realtime subscriptions (OF-13: no polyfill dependency). The
 // experimental warning is muted. 15 s per test of the shared instance: alone in their group, the
 // slowest of them (web-filter-parity) took at most 6 s in 28 local runs (plan test-haertung T-4).
+// Under load that file still ran past the limits, so since ST-1 it has an own instance and the
+// limits of the files with processes. The limits come from tests/support/timing.mjs and scale with
+// BECAUSEYOULOVEJIRA_TEST_TIME_SCALE on a busy machine (unscaled 15 s and 30 s).
 const INTEGRATION = {
 	environment: 'node',
 	globalSetup: ['tests/support/global-setup.mjs'],
 	execArgv: ['--experimental-eventsource', '--disable-warning=UNDICI-ES'],
-	testTimeout: 15_000,
-	hookTimeout: 30_000
+	testTimeout: SHARED_TEST_MS,
+	hookTimeout: SHARED_HOOK_MS
 };
 
 export default defineConfig({

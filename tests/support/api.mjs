@@ -8,8 +8,9 @@ export function pocketBaseUrl() {
 	return inject('pocketbase').url;
 }
 
-export function createClient() {
-	const client = new PocketBase(pocketBaseUrl());
+/** A client of the shared instance, or of the instance at `url` (e.g. an own one of the harness). */
+export function createClient(url = pocketBaseUrl()) {
+	const client = new PocketBase(url);
 	client.autoCancellation(false);
 	return client;
 }
@@ -34,9 +35,12 @@ export async function createAppUser(superuser) {
 	return { record, email, password };
 }
 
-/** @param {{ email: string, password: string }} user */
-export async function userClient(user) {
-	const client = createClient();
+/**
+ * @param {{ email: string, password: string }} user
+ * @param {string} [url] the instance of the user, by default the shared one
+ */
+export async function userClient(user, url = pocketBaseUrl()) {
+	const client = createClient(url);
 	await client.collection('users').authWithPassword(user.email, user.password);
 	return client;
 }
