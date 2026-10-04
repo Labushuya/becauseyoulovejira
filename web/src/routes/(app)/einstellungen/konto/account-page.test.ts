@@ -5,6 +5,7 @@
 
 import { render, screen, within } from '@testing-library/svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { PC_CONTEXT, REMOTE_CONTEXT, useContext } from '$lib/test/context';
 import Page from './+page.svelte';
 
 const mocks = vi.hoisted(() => ({
@@ -25,8 +26,9 @@ vi.mock('$lib/stores/flags.svelte', async (importOriginal) => {
 	return { ...original, getFlagStore: () => original.SILENT_FLAGS };
 });
 
-beforeEach(() => {
+beforeEach(async () => {
 	mocks.auth.isAdmin = true;
+	await useContext(PC_CONTEXT);
 });
 
 describe('account page (EH-8, E7-1)', () => {
@@ -65,6 +67,21 @@ describe('account page (EH-8, E7-1)', () => {
 		const admin = scope.getByRole('link', { name: /Verwaltung öffnen/ });
 		expect(admin.getAttribute('href')).toBe('/_/');
 		expect(admin.getAttribute('rel')).toBe('external');
+	});
+
+	it('gives the administrator on another device no script and no admin UI (KX-1)', async () => {
+		await useContext(REMOTE_CONTEXT);
+		render(Page);
+
+		const message = screen
+			.getByRole('heading', { name: /Konten verwalten/ })
+			.closest('[data-tone]');
+		const text = (message?.textContent ?? '').replace(/\s+/g, ' ');
+		expect(text).not.toMatch(/\.bat/);
+		expect(text).toMatch(/Nur direkt am PC verfügbar, auf dem becauseyoulovejira läuft/);
+		const scope = within(message as HTMLElement);
+		expect(scope.getByRole('link', { name: 'Zu den Konten' })).toBeTruthy();
+		expect(scope.queryByRole('link', { name: /Verwaltung öffnen/ })).toBeNull();
 	});
 
 	it('tells every other account that the administrator manages accounts', () => {

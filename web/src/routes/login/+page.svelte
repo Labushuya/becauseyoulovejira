@@ -4,6 +4,7 @@
 	import { auth, type LoginFailure } from '$lib/auth.svelte';
 	import CenteredCard from '$lib/components/CenteredCard.svelte';
 	import { safeRedirect } from '$lib/guard';
+	import { serverUnreachable } from '$lib/guidance/texts';
 
 	// One message for every refusal, so the page never reveals whether an e-mail exists. Too many
 	// attempts and server errors do not depend on the account (E2 plan, T-18).
@@ -13,8 +14,10 @@
 		rate_limited:
 			'Zu viele Anmeldeversuche. Zum Schutz vor Rateversuchen ist die Anmeldung kurz gesperrt. Bitte ein paar Minuten warten und dann erneut versuchen.',
 		server: 'Der Server hat mit einem Fehler geantwortet. Bitte später erneut versuchen.',
-		network:
-			'Server nicht erreichbar. Bitte prüfen, ob becauseyoulovejira gestartet ist (start.bat), und erneut versuchen.',
+		// Before the sign-in nobody is known, so the hint names no script (KX-1, ADR-0057).
+		get network() {
+			return serverUnreachable();
+		},
 		// Only after the right password of a disabled account (ADR-0056 §3), so it reveals nothing.
 		disabled: 'Dieses Konto ist deaktiviert. Bitte wende dich an den Verwalter der App.'
 	};

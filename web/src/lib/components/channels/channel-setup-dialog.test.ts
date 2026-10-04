@@ -9,6 +9,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { PC_CONTEXT, useContext } from '$lib/test/context';
 import type { RecordChange } from '$lib/data/realtime';
 import { SETX_WAY_KEY, setupStepKey, type SetupTarget } from '$lib/domain/channel-setup';
 import type { Connection, SecretStatus } from '$lib/domain/connections';
@@ -139,6 +140,11 @@ beforeEach(() => {
 afterEach(() => {
 	vi.unstubAllGlobals();
 	document.body.innerHTML = '';
+});
+
+// The administrator on the machine of the app (KX-1, ADR-0057): everything as before.
+beforeEach(async () => {
+	await useContext(PC_CONTEXT);
 });
 
 describe('setup assistant: frame and address', () => {

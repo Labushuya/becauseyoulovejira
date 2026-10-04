@@ -7,6 +7,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { PC_CONTEXT, useContext } from '$lib/test/context';
 import { DataError } from '$lib/data/errors';
 import type { RecurrenceRule } from '$lib/domain/recurrence-rule';
 import type { TicketSummary } from '$lib/domain/ticket';
@@ -139,6 +140,11 @@ beforeEach(() => {
 	document.body.innerHTML = '';
 });
 
+// The administrator on the machine of the app (KX-1, ADR-0057): everything as before.
+beforeEach(async () => {
+	await useContext(PC_CONTEXT);
+});
+
 describe('RecurrencesView', () => {
 	it('shows the switch, "Neue Regel" and the rules active first, then by next ticket', async () => {
 		await show();
@@ -180,7 +186,8 @@ describe('RecurrencesView', () => {
 		await show(null);
 		const hint = screen.getByText(/Wiederholungen sind nach dem nächsten Neustart verfügbar/);
 		expect(hint.closest('[role="status"]')).toBeTruthy();
-		expect(screen.getByText(/neu-starten\.bat im Ordner app/)).toBeTruthy();
+		// Worded when the store module loads, before the context is known: no script (KX-1).
+		expect(hint.textContent).toMatch(/erst nach einem Neustart wirkt\./);
 		expect(screen.queryByRole('link', { name: 'Neue Regel' })).toBeNull();
 		expect(document.querySelector('.alert-error')).toBeNull();
 	});

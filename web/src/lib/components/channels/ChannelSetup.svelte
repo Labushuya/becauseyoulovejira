@@ -36,6 +36,7 @@
 	import { DEFAULT_HOST_PLATFORM } from '$lib/domain/host-platform';
 	import { checkText } from '$lib/domain/notion';
 	import type { ProjectRef } from '$lib/domain/ticket';
+	import { currentNote, textForContext } from '$lib/guidance/texts';
 	import type { ConnectionsStore } from '$lib/stores/connections.svelte';
 	import type { GitHubStore } from '$lib/stores/github.svelte';
 	import { findHostStore } from '$lib/stores/host.svelte';
@@ -45,6 +46,7 @@
 	import CodeBlock from '../guidance/CodeBlock.svelte';
 	import ExternalLink from '../guidance/ExternalLink.svelte';
 	import HostPlatformNote from '../guidance/HostPlatformNote.svelte';
+	import PcOnly from '../guidance/PcOnly.svelte';
 	import SectionMessage from '../guidance/SectionMessage.svelte';
 	import Stepper from '../guidance/Stepper.svelte';
 	import Tabs from '../guidance/Tabs.svelte';
@@ -145,6 +147,17 @@
 	const mailbox = $derived(kind === 'webde' || kind === 'gmail');
 	/** Folders: no variables; a run is a check of the folders. */
 	const folders = $derived(kind === 'ordner');
+
+	/**
+	 * The note instead of a step that works only at the machine of the app (KX-1, ADR-0057): the
+	 * variable with setx or the control panel there, the restart with neu-starten.bat; null where the
+	 * step shows. Read in the template, it follows the context of the tab.
+	 */
+	function stepNote(entry: SetupStep): string | null {
+		if (entry.id === 'restart') return currentNote('script');
+		if (entry.id === 'variable' || entry.id === 'token') return currentNote('pc');
+		return null;
+	}
 	const host = findHostStore();
 	const platform = $derived(folderPlatformOf(host?.platform ?? DEFAULT_HOST_PLATFORM));
 
@@ -198,6 +211,7 @@
 	const states = $derived(stepStates(kind, facts, current));
 	const warning = $derived(openCheckBefore(kind, facts, current));
 	const check = $derived(step === undefined ? null : stepCheck(kind, step.id, facts));
+	const currentStepNote = $derived(step === undefined ? null : stepNote(step));
 	const last = $derived(current >= total - 1);
 
 	let overview = $state(false);
@@ -393,7 +407,7 @@
 	{#if entry.actions.length > 0}
 		<ol class="actions">
 			{#each entry.actions as action (action)}
-				<li>{action}</li>
+				<li>{textForContext(action)}</li>
 			{/each}
 		</ol>
 	{/if}
@@ -459,7 +473,7 @@
 				live
 				headingLevel={4}
 			>
-				{runResultText(connection.label, lastRun)}
+				{textForContext(runResultText(connection.label, lastRun))}
 				{#snippet actions()}
 					{#if lastRun?.status === 'missing' && stepIndex('restart') >= 0}
 						<button
@@ -474,7 +488,7 @@
 			</SectionMessage>
 		{/if}
 		{#if runError !== null}
-			<SectionMessage tone="error" compact live>{runError}</SectionMessage>
+			<SectionMessage tone="error" compact live>{textForContext(runError)}</SectionMessage>
 		{/if}
 	{/if}
 {/snippet}
@@ -586,33 +600,39 @@
 				</SectionMessage>
 			{:else if helper === 'unavailable'}
 				<SectionMessage tone="info" live>
-					Der Mail-Hilfsprozess läuft nicht. neu-starten.bat startet ihn, sobald eine eingeschaltete
-					Postfach-Verbindung besteht und die App die Variable sieht.
+					{textForContext(
+						'Der Mail-Hilfsprozess läuft nicht. neu-starten.bat startet ihn, sobald eine eingeschaltete Postfach-Verbindung besteht und die App die Variable sieht.'
+					)}
 				</SectionMessage>
 			{:else if helper !== null}
-				<SectionMessage tone="error" live>{helper.message} {helper.hint}</SectionMessage>
+				<SectionMessage tone="error" live>
+					{textForContext(`${helper.message} ${helper.hint}`)}
+				</SectionMessage>
 			{/if}
 		{/if}
 	{:else if entry.id === 'chat'}
 		{@render runBlock()}
 		{#if chatId !== null}
-			<SectionMessage tone="info" title={`Erkannte Chat-ID: ${chatId}`} live headingLevel={4}>
-				Gib diese ID frei: den Befehl ausführen, dann die App neu starten (neu-starten.bat) und
-				erneut „Jetzt abrufen“.
-			</SectionMessage>
-			<CodeBlock
-				code={CHAT_COMMAND.template}
-				label={CHAT_COMMAND.label}
-				placeholders={CHAT_COMMAND.placeholders}
-				values={{ ...fixedValues, ids: chatId }}
-			/>
-			<SecretValueField
-				label="Befehl für mehrere IDs"
-				template={CHAT_COMMAND.template}
-				placeholders={CHAT_COMMAND.placeholders}
-				name="ids"
-				fixed={fixedValues}
-			/>
+			<!-- The ID goes into a variable with setx and needs a restart: at the PC only (KX-1). -->
+			<PcOnly need="pc">
+				<SectionMessage tone="info" title={`Erkannte Chat-ID: ${chatId}`} live headingLevel={4}>
+					Gib diese ID frei: den Befehl ausführen, dann die App neu starten (neu-starten.bat) und
+					erneut „Jetzt abrufen“.
+				</SectionMessage>
+				<CodeBlock
+					code={CHAT_COMMAND.template}
+					label={CHAT_COMMAND.label}
+					placeholders={CHAT_COMMAND.placeholders}
+					values={{ ...fixedValues, ids: chatId }}
+				/>
+				<SecretValueField
+					label="Befehl für mehrere IDs"
+					template={CHAT_COMMAND.template}
+					placeholders={CHAT_COMMAND.placeholders}
+					name="ids"
+					fixed={fixedValues}
+				/>
+			</PcOnly>
 		{/if}
 	{:else if entry.id === 'check'}
 		{#if connection !== null}
@@ -636,7 +656,7 @@
 						live
 						headingLevel={4}
 					>
-						{githubSummary.text}
+						{textForContext(githubSummary.text)}
 					</SectionMessage>
 				{/if}
 				{#if githubCheck?.kind === 'ok' && githubCheck.check.repos.length > 0}
@@ -682,7 +702,7 @@
 					</SectionMessage>
 				{:else}
 					<SectionMessage tone={notionCheck.kind === 'error' ? 'error' : 'info'} live>
-						{notionCheck.message}
+						{textForContext(notionCheck.message)}
 						{#snippet actions()}
 							{#if notionCheck?.kind === 'missing' && stepIndex('restart') >= 0}
 								<button
@@ -722,7 +742,7 @@
 			<summary>Mehr dazu</summary>
 			<ul>
 				{#each entry.more as text (text)}
-					<li>{text}</li>
+					<li>{textForContext(text)}</li>
 				{/each}
 			</ul>
 		</details>
@@ -774,24 +794,29 @@
 		{#if overview}
 			<div class="overview">
 				{#each steps as entry, index (entry.id)}
+					{@const note = stepNote(entry)}
 					<section class="overview-step" aria-labelledby={`${uid}-all-${entry.id}`}>
 						<h3 id={`${uid}-all-${entry.id}`}>
 							Schritt {index + 1} von {total}: {entry.title}
 						</h3>
-						<p>{entry.intro}</p>
-						{@render links(entry)}
-						{@render actionsList(entry)}
-						{@render commandBlocks(entry, false)}
-						{#if entry.id === 'variable' || entry.id === 'token'}
-							<p>Oder über die Systemsteuerung:</p>
-							{@render controlPanel()}
-						{/if}
-						{#if entry.more.length > 0}
-							<ul class="more-list">
-								{#each entry.more as text (text)}
-									<li>{text}</li>
-								{/each}
-							</ul>
+						{#if note === null}
+							<p>{textForContext(entry.intro)}</p>
+							{@render links(entry)}
+							{@render actionsList(entry)}
+							{@render commandBlocks(entry, false)}
+							{#if entry.id === 'variable' || entry.id === 'token'}
+								<p>Oder über die Systemsteuerung:</p>
+								{@render controlPanel()}
+							{/if}
+							{#if entry.more.length > 0}
+								<ul class="more-list">
+									{#each entry.more as text (text)}
+										<li>{textForContext(text)}</li>
+									{/each}
+								</ul>
+							{/if}
+						{:else if note !== ''}
+							<SectionMessage tone="info" compact>{note}</SectionMessage>
 						{/if}
 					</section>
 				{/each}
@@ -815,12 +840,16 @@
 				<h3 id={headingId} tabindex="-1" bind:this={heading}>
 					Schritt {current + 1} von {total}: {step.title}
 				</h3>
-				<p>{step.intro}</p>
-				{@render links(step)}
-				{@render actionsList(step)}
-				{@render body(step)}
+				{#if currentStepNote === null}
+					<p>{textForContext(step.intro)}</p>
+					{@render links(step)}
+					{@render actionsList(step)}
+					{@render body(step)}
+				{:else if currentStepNote !== ''}
+					<SectionMessage tone="info" compact>{currentStepNote}</SectionMessage>
+				{/if}
 				{#if check !== null}
-					<SetupCheck {check}>
+					<SetupCheck check={{ ...check, text: textForContext(check.text) }}>
 						{#snippet actions()}
 							{#if step?.id === 'restart' && connection !== null}
 								<button class="button-subtle" type="button" onclick={() => void recheck()}>
@@ -834,7 +863,9 @@
 						{/snippet}
 					</SetupCheck>
 				{/if}
-				{@render more(step)}
+				{#if currentStepNote === null}
+					{@render more(step)}
+				{/if}
 			</section>
 		{/if}
 	</div>

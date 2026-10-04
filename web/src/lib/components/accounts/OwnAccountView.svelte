@@ -3,16 +3,19 @@
 	import type { ResolvedPathname } from '$app/types';
 	import ErrorIcon from '$lib/components/ErrorIcon.svelte';
 	import Lozenge from '$lib/components/guidance/Lozenge.svelte';
+	import PcOnly from '$lib/components/guidance/PcOnly.svelte';
 	import SectionMessage from '$lib/components/guidance/SectionMessage.svelte';
 	import { NAME_MAX, PASSWORD_MIN } from '$lib/domain/accounts';
 	import { helpHref } from '$lib/settings-sections';
+	import { appContext } from '$lib/stores/context.svelte';
 	import type { OwnAccountStore, PasswordField } from '$lib/stores/own-account.svelte';
 
 	// The own app account (ADR-0056 §3): e-mail, display name and right; "Anzeigename" and "Passwort
 	// ändern" as two forms with errors at their fields (ADR-0009), results as flags. The old password
 	// is required (PocketBase checks it), the new one twice with the minimum of PocketBase. Who
 	// manages accounts: the administrator on "Konten"; the administrator also learns about the
-	// separate admin account of PocketBase and admin-zuruecksetzen.bat.
+	// separate admin account of PocketBase and admin-zuruecksetzen.bat, on the machine of the app
+	// only, where the admin UI and the script work (KX-1, ADR-0057).
 	let {
 		store,
 		email,
@@ -244,12 +247,17 @@
 		<p>
 			Neue Konten, vergessene Passwörter und das Recht „Verwalter der App“ verwaltest du unter
 			„Konten“. Die Verwaltung von PocketBase braucht ein eigenes <strong>Admin-Konto</strong> mit
-			eigenem Passwort, auch wenn es dieselbe E-Mail-Adresse hat; ein vergessenes Admin-Passwort
-			setzt <code>admin-zuruecksetzen.bat</code> im Ordner <code>app</code> neu.
+			eigenem Passwort, auch wenn es dieselbe E-Mail-Adresse hat.
+			<PcOnly need="script" inline>
+				Ein vergessenes Admin-Passwort setzt <code>admin-zuruecksetzen.bat</code> im Ordner
+				<code>app</code> neu.
+			</PcOnly>
 		</p>
 		{#snippet actions()}
 			<a href={accountsHref}>Zu den Konten</a>
-			<a href="/_/" rel="external">Verwaltung öffnen (nur mit dem Admin-Konto)</a>
+			{#if appContext.capabilities.pc}
+				<a href="/_/" rel="external">Verwaltung öffnen (nur mit dem Admin-Konto)</a>
+			{/if}
 		{/snippet}
 	</SectionMessage>
 {:else}

@@ -14,6 +14,7 @@
 	import type { Ticket } from '$lib/domain/ticket';
 	import { WATCH_LABELS, WATCH_LOZENGES, watchText } from '$lib/domain/watch';
 	import { findConnectionNames } from '$lib/stores/connection-names.svelte';
+	import { appContext } from '$lib/stores/context.svelte';
 	import { findFolderViewer, type FileViewNote } from '$lib/stores/folder-view.svelte';
 	import type { TicketPickerSource } from '$lib/stores/ticket-picker.svelte';
 	import type { TicketSourcesStore } from '$lib/stores/ticket-sources.svelte';
@@ -78,8 +79,10 @@
 		reference: { icon: 'info', tone: 'neutral' }
 	};
 
-	// "Ansehen" of a file of a folder; outside the (app) layout there is none.
+	// "Ansehen" of a file of a folder; outside the (app) layout there is none, and only for the
+	// administrator on the machine of the app (KX-1, ADR-0057).
 	const viewer = findFolderViewer();
+	const filesHere = $derived(appContext.capabilities.pc);
 	let viewNote = $state<FileViewNote | null>(null);
 
 	async function openFile(item: InboxItemSummary) {
@@ -206,7 +209,7 @@
 						<a class="view" href={inboxItemHref(item.id)} aria-label={`„${item.title}“ ansehen`}>
 							Ansehen
 						</a>
-						{#if item.channel === 'folder' && viewer !== null}
+						{#if item.channel === 'folder' && viewer !== null && filesHere}
 							<button
 								class="button-icon"
 								type="button"

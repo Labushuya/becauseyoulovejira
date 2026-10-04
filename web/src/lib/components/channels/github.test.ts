@@ -7,7 +7,8 @@
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
+import { PC_CONTEXT, useContext } from '$lib/test/context';
 import { DataError } from '$lib/data/errors';
 import type { Connection, SecretStatus } from '$lib/domain/connections';
 import {
@@ -220,6 +221,11 @@ function cardMenu(card: ReturnType<typeof within>, label = 'GitHub') {
 afterEach(() => {
 	document.body.innerHTML = '';
 	sessionStorage.clear();
+});
+
+// The administrator on the machine of the app (KX-1, ADR-0057): everything as before.
+beforeEach(async () => {
+	await useContext(PC_CONTEXT);
 });
 
 describe('GitHub card', () => {

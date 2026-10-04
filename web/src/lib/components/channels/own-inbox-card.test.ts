@@ -6,7 +6,8 @@
 // failure.
 
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { PC_CONTEXT, useContext } from '$lib/test/context';
 import { DataError } from '$lib/data/errors';
 import type { CreatedInboxKey, InboxKey } from '$lib/domain/inbox-keys';
 import { EMPTY_IMPORT_KEYWORDS } from '$lib/domain/keywords';
@@ -59,6 +60,11 @@ function setup(listed: InboxKey[] | null = [KEY]) {
 		flags
 	};
 }
+
+// The administrator on the machine of the app (KX-1, ADR-0057): everything as before.
+beforeEach(async () => {
+	await useContext(PC_CONTEXT);
+});
 
 describe('InboxKeysStore', () => {
 	it('loads the keys, knows the state before the migration and logs out on 401', async () => {

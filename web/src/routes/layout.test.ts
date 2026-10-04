@@ -110,9 +110,9 @@ describe('session notice', () => {
 		await renderLayout('/', { status: 'unreachable', failure: 'network', isLoggedIn: true });
 
 		expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Server nicht erreichbar');
-		expect(
-			screen.getByText(/Bitte prüfen, ob becauseyoulovejira gestartet ist \(start\.bat\)/)
-		).toBeTruthy();
+		// Before the check nobody is known, so the hint names no script (KX-1, ADR-0057).
+		expect(screen.getByText(/Bitte prüfen, ob becauseyoulovejira läuft/)).toBeTruthy();
+		expect(document.body.textContent).not.toMatch(/\.bat/);
 		expect(document.body.textContent).not.toMatch(/PocketBase/i);
 		expect(screen.queryByText(CONTENT)).toBeNull();
 		expect(mocks.goto).not.toHaveBeenCalled();

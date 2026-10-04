@@ -25,6 +25,7 @@
 <script lang="ts">
 	import { tick, type Snippet } from 'svelte';
 	import { labelError, sameLabelHint } from '$lib/domain/connections';
+	import { textForContext } from '$lib/guidance/texts';
 	import ActionsMenu from '../ActionsMenu.svelte';
 	import ErrorIcon from '../ErrorIcon.svelte';
 	import Lozenge from '../guidance/Lozenge.svelte';
@@ -258,7 +259,8 @@
 		<progress value={progress.value} max={progress.max} aria-hidden="true"></progress>
 	{/if}
 	{#if hint !== null}
-		<SectionMessage tone={hint.tone} compact>{hint.text}</SectionMessage>
+		<!-- A command or script in the hint only for the administrator at the PC (KX-1). -->
+		<SectionMessage tone={hint.tone} compact>{textForContext(hint.text)}</SectionMessage>
 	{/if}
 	{#if message !== null}
 		<SectionMessage tone="error" compact live>{message}</SectionMessage>

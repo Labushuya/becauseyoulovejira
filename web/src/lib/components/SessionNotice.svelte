@@ -1,8 +1,10 @@
 <script lang="ts">
 	import type { SessionFailure } from '$lib/auth.svelte';
+	import { serverUnreachableHint } from '$lib/guidance/texts';
 	import CenteredCard from './CenteredCard.svelte';
 
 	// Shown when the stored session could not be checked; the session is kept (E1 plan, package 7).
+	// Before the check the context of the tab is unknown, so the hint names no script (KX-1).
 	let {
 		failure,
 		busy,
@@ -12,7 +14,9 @@
 	const TEXTS: Record<SessionFailure, { title: string; body: string }> = {
 		network: {
 			title: 'Server nicht erreichbar',
-			body: 'Die Anmeldung bleibt erhalten. Bitte prüfen, ob becauseyoulovejira gestartet ist (start.bat), und erneut versuchen.'
+			get body() {
+				return `Die Anmeldung bleibt erhalten. ${serverUnreachableHint()}`;
+			}
 		},
 		server: {
 			title: 'Sitzung konnte nicht geprüft werden',

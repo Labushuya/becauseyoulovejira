@@ -6,8 +6,9 @@
 // emergency plan (ADR-0046 §8) and the storage (ADR-0047 §6). No table (description lists).
 
 import { render, screen, within } from '@testing-library/svelte';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { page } from '$app/state';
+import { MEMBER_CONTEXT, PC_CONTEXT, REMOTE_CONTEXT, useContext } from '$lib/test/context';
 import {
 	EMERGENCY_LOSSES,
 	EMERGENCY_MANUAL,
@@ -22,6 +23,12 @@ import Page from './+page.svelte';
 function text(element: Element): string {
 	return (element.textContent ?? '').replace(/\s+/g, ' ');
 }
+
+// The administrator on the machine of the app under Windows sees the help as before KX-1; the
+// other contexts are below.
+beforeEach(async () => {
+	await useContext(PC_CONTEXT);
+});
 
 describe('help page (EH-9)', () => {
 	it('is a page of the settings navigation with an address per section', () => {
@@ -808,5 +815,75 @@ describe('help page (EH-9)', () => {
 		expect(
 			within(section).getByRole('link', { name: 'Einstellungen → Konten' }).getAttribute('href')
 		).toBe('/einstellungen/konten');
+	});
+});
+
+// A command, a script or a file of the folder app (KX-1): what nobody but the administrator at the
+// machine of the app may read on this page.
+const COMMANDS =
+	/\.bat\b|\.ps1\b|\.vbs\b|\bsetx\b|netsh|reg delete|Invoke-RestMethod|curl -X|powershell -|byl-control/i;
+
+describe('help page in the context of the tab (KX-1, ADR-0057)', () => {
+	it('names no command for another account and says who runs the app', async () => {
+		await useContext(MEMBER_CONTEXT);
+		const { container } = render(Page);
+
+		expect(text(container)).not.toMatch(COMMANDS);
+		// Only the example of the short syntax is code, and nothing can be copied.
+		expect(screen.queryByRole('button', { name: /Kopieren/ })).toBeNull();
+		const operations = screen.getByRole('region', { name: 'Betrieb' });
+		expect(text(operations).trim()).toBe(
+			'Betrieb Hinweis: Betrieb und Sicherung übernimmt der Verwalter.'
+		);
+		const backups = screen.getByRole('region', { name: 'Sicherung & Notfall' });
+		expect(text(backups).trim()).toBe(
+			'Sicherung & Notfall Hinweis: Betrieb und Sicherung übernimmt der Verwalter.'
+		);
+		const access = screen.getByRole('region', { name: 'Kanäle und Zugangsdaten' });
+		expect(text(access)).toMatch(
+			/Zugangsdaten als Windows-Variable setzen Hinweis: Bitte den Verwalter fragen\./
+		);
+		const inbox = screen.getByRole('region', { name: 'Eigener Eingang (API)' });
+		expect(text(inbox)).toMatch(/Bitte den Verwalter fragen\./);
+		// Every section stays, with its jump link.
+		for (const section of HELP_SECTIONS) {
+			expect(container.querySelector(`section#${section.id}`), section.id).not.toBeNull();
+		}
+	});
+
+	it('shows the administrator on another device the way to the machine of the app instead of commands', async () => {
+		await useContext(REMOTE_CONTEXT);
+		const { container } = render(Page);
+
+		expect(text(container)).not.toMatch(COMMANDS);
+		const operations = screen.getByRole('region', { name: 'Betrieb' });
+		expect(text(operations)).toContain(
+			'Nur direkt am PC verfügbar, auf dem becauseyoulovejira läuft (dort über http://127.0.0.1:8090 öffnen).'
+		);
+		const backups = text(screen.getByRole('region', { name: 'Sicherung & Notfall' }));
+		// What a backup is and how to set it up stays; restoring and the emergency plan go to the PC.
+		expect(backups).toMatch(/Einrichten/);
+		expect(backups).toMatch(/Nur direkt am PC verfügbar/);
+		expect(backups).not.toMatch(/Neuer Rechner, Schritt für Schritt/);
+	});
+
+	it('says "Auf diesem Server nicht verfügbar." instead of the scripts on a server that is not Windows', async () => {
+		await useContext({ ...PC_CONTEXT, platform: 'linux', scripts: false });
+		render(Page);
+
+		const operations = text(screen.getByRole('region', { name: 'Betrieb' }));
+		expect(operations).toContain('Auf diesem Server nicht verfügbar.');
+		expect(operations).not.toMatch(/start\.bat/);
+		// setx stays for the administrator at the machine of the app (the note of the server's system
+		// names the way there).
+		expect(text(screen.getByRole('region', { name: 'Kanäle und Zugangsdaten' }))).toMatch(/setx/);
+	});
+
+	it('shows no command and no sentence for another account while the context loads', async () => {
+		await useContext('pending');
+		const { container } = render(Page);
+
+		expect(text(container)).not.toMatch(COMMANDS);
+		expect(text(screen.getByRole('region', { name: 'Betrieb' })).trim()).toBe('Betrieb');
 	});
 });

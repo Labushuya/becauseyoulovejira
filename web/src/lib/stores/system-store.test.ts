@@ -3,7 +3,8 @@
 // restart, which waits for the server to go and come back (or to answer with a new start) and gives
 // up after its time.
 
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { PC_CONTEXT, useContext } from '$lib/test/context';
 import { DataError } from '$lib/data/errors';
 import type { SystemAnswer } from '$lib/data/system';
 import { parseOverview, type SystemOverview, type SystemStatus } from '$lib/domain/system';
@@ -66,6 +67,11 @@ function setup(data: Partial<SystemData> = {}) {
 	const store = new SystemStore(full, session, flags, fakeClock());
 	return { store, data: full, flags, session };
 }
+
+// The administrator on the machine of the app (KX-1, ADR-0057): everything as before.
+beforeEach(async () => {
+	await useContext(PC_CONTEXT);
+});
 
 describe('SystemStore: status', () => {
 	it('loads the status', async () => {

@@ -21,6 +21,7 @@ import {
 	type SecurityOverview
 } from '../domain/security';
 import { denialOf, type SystemDenial } from '../domain/system';
+import { reportRefusal } from './context';
 import { toDataError } from './errors';
 import type { RequestOptions } from './options';
 
@@ -56,6 +57,7 @@ async function ask<T>(
 			return { kind: 'invalid', problem, invalid };
 		}
 		if (!signal?.aborted && DENIAL_STATUSES.includes(status)) {
+			reportRefusal(response.reason);
 			return { kind: 'denied', reason: denialOf(status, response.reason) };
 		}
 		throw toDataError(error, signal);

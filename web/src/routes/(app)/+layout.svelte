@@ -33,7 +33,9 @@
 	import { FirstStepsStore, localStore, setFirstStepsStore } from '$lib/stores/first-steps.svelte';
 	import { PeopleStore, peopleData, setPeople } from '$lib/stores/people.svelte';
 	import { FolderViewer, folderViewData, setFolderViewer } from '$lib/stores/folder-view.svelte';
+	import { fetchContext } from '$lib/data/context';
 	import { fetchHostPlatform } from '$lib/data/host';
+	import { appContext } from '$lib/stores/context.svelte';
 	import { HostStore, setHostStore } from '$lib/stores/host.svelte';
 	import { getNotifyStore } from '$lib/attention-notify.svelte';
 	import { ackAttention } from '$lib/data/attention';
@@ -265,19 +267,27 @@
 		flags,
 		open: () => void goto(securityLoginsHref())
 	});
-	// Backups and failed sign-ins are matters of the administrator of the app (ADR-0056 §7): another
-	// account does not ask the routes that would refuse it.
+	// Context of the tab (KX-1, ADR-0057): who uses it from where. Loaded after the sign-in and
+	// every refresh of the session, back to the most restrictive view when the layout goes.
+	$effect(() =>
+		untrack(() => appContext.start((signal) => fetchContext(pb, { signal }), pb.authStore))
+	);
+	const adminHere = $derived(appContext.capabilities.adminPages === 'full');
+	// Backups and failed sign-ins are matters of the administrator of the app on its machine
+	// (ADR-0056 §7, KX-1): another account and another device do not ask the routes that would
+	// refuse them. Asked once the context says so.
 	const adminNotices = () => {
-		if (!auth.isAdmin) return;
+		if (!adminHere) return;
 		void backupAttention.announce();
 		void securityAttention.announce();
 	};
 	$effect(() => {
 		if (auth.userId === null) return;
-		untrack(() => {
-			adminNotices();
-			void trashAttention.announce();
-		});
+		untrack(() => void trashAttention.announce());
+	});
+	$effect(() => {
+		if (auth.userId === null || !adminHere) return;
+		untrack(() => adminNotices());
 	});
 
 	// Opened again (ADR-0035 section 5): start.bat, the landing page or stop.bat send a message on

@@ -14,6 +14,7 @@
 		type ThemePreference
 	} from '$lib/theme.svelte';
 	import { getNotifyStore } from '$lib/attention-notify.svelte';
+	import { appContext } from '$lib/stores/context.svelte';
 	import { getTransparencyStore } from '$lib/transparency.svelte';
 
 	// Settings "Darstellung" (ADR-0026 section 1, plan EH-8; ADR-0027 section 6; ADR-0029 section 7):
@@ -29,6 +30,8 @@
 	// Group "Hinweise" (ADR-0035 section 5, SF-6): the Windows notification is an opt-in; the
 	// browser asks for the permission only when the switch is turned on.
 	const notifyStore = getNotifyStore();
+	// start.bat is named only to the administrator on the machine of the app (KX-1, ADR-0057).
+	const scripts = $derived(appContext.capabilities.scripts);
 	const uid = $props.id();
 
 	async function toggleNotify(event: Event & { currentTarget: HTMLInputElement }) {
@@ -155,10 +158,10 @@
 		/>
 	</label>
 	<p class="note" id={`${uid}-notify-note`}>
-		Öffnest du becauseyoulovejira erneut (start.bat oder die Datei), obwohl die App schon in einem
-		Tab im Hintergrund offen ist, meldet sich dieser Tab zusätzlich mit einer Benachrichtigung von
-		Windows. Ein Klick darauf holt den Tab nach vorn. Beim Einschalten fragt der Browser einmal nach
-		der Erlaubnis. Gilt nur in diesem Browser auf diesem Gerät.
+		Öffnest du becauseyoulovejira erneut{scripts ? ' (start.bat oder die Datei)' : ''}, obwohl die
+		App schon in einem Tab im Hintergrund offen ist, meldet sich dieser Tab zusätzlich mit einer
+		Benachrichtigung von Windows. Ein Klick darauf holt den Tab nach vorn. Beim Einschalten fragt
+		der Browser einmal nach der Erlaubnis. Gilt nur in diesem Browser auf diesem Gerät.
 	</p>
 	{#if !notifyStore.supported}
 		<SectionMessage tone="info" compact>

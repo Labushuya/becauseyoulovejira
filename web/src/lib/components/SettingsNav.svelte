@@ -1,18 +1,20 @@
 <script lang="ts">
-	import type { SettingsSection } from '$lib/settings-sections';
+	import { CONTEXT_TEXTS } from '$lib/guidance/texts';
+	import type { VisibleSettingsSection } from '$lib/settings-sections';
 
 	// Navigation of the settings area (ADR-0026 section 1, plan EH-1): first the way back to the last
 	// view, then one link per page. The pages have their own addresses, so these are links, not tabs;
 	// the current one carries aria-current="page" and is marked by weight and surface besides its
 	// colour. From 64rem it is a floating glass card (ADR-0029, G-6). The small title "Einstellungen" is hidden from screen readers, because
-	// the navigation has that name already.
+	// the navigation has that name already. A page of the administrator on another device carries the
+	// quiet mark "nur am PC" (KX-1, ADR-0057), part of the name of its link.
 	let {
 		sections,
 		current,
 		backHref,
 		backLabel
 	}: {
-		sections: readonly SettingsSection[];
+		sections: readonly VisibleSettingsSection[];
 		/** ID of the current page; null for none. */
 		current: string | null;
 		backHref: string;
@@ -34,6 +36,9 @@
 			<li>
 				<a href={section.href} aria-current={section.id === current ? 'page' : undefined}>
 					{section.label}
+					{#if section.pcOnly}
+						<span class="mark">{CONTEXT_TEXTS.pcOnlyMark}</span>
+					{/if}
 				</a>
 			</li>
 		{/each}
@@ -96,6 +101,13 @@
 
 	ul a:hover {
 		background: var(--fill-control-hover);
+	}
+
+	/* "nur am PC": quiet, after the name, never instead of it. */
+	.mark {
+		margin-left: 0.5rem;
+		font-size: var(--font-size-caption);
+		color: var(--color-text-muted);
 	}
 
 	/* The current page: accent surface and weight, never colour alone (ADR-0010 section 3). */
