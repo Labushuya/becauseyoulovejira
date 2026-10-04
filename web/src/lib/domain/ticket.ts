@@ -98,6 +98,11 @@ export interface TicketSummary {
 	 * field (before the restart after the migration): the color is not offered then.
 	 */
 	color?: ProjectColor | null;
+	/**
+	 * Charm (ADR-0062): a key of the catalog (domain/charms.ts), null for none. Left out while the
+	 * server does not know the field (before the restart after the migration): no charm is offered.
+	 */
+	charm?: string | null;
 	/** UTC timestamp of PocketBase (`YYYY-MM-DD HH:MM:SS.sssZ`), null unless done. */
 	completedAt: string | null;
 	/** UTC timestamps of PocketBase; they sort as text. */
@@ -133,6 +138,8 @@ export interface TicketDraft {
 	parent?: string | null;
 	/** Own color (ADR-0052); left out or null for "wie Projekt". */
 	color?: ProjectColor | null;
+	/** Charm (ADR-0062), a key of the catalog; left out or null for none. */
+	charm?: string | null;
 }
 
 /**

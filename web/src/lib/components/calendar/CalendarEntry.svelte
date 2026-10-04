@@ -24,6 +24,7 @@
 	import type { CalendarDate } from '$lib/domain/berlin-date';
 	import { CALENDAR_MOVE_KEY, type CalendarEntry } from '$lib/domain/calendar';
 	import { plannedAppearsText } from '$lib/domain/calendar-plan';
+	import { charmOf, charmText } from '$lib/domain/charms';
 	import { colorText, ticketColorOf, type ShownColor } from '$lib/domain/colors';
 	import { relativeDue } from '$lib/domain/due-label';
 	import { CHANNEL_LABELS } from '$lib/domain/inbox';
@@ -31,6 +32,7 @@
 	import { projectPath } from '$lib/domain/project-tree';
 	import type { ProjectRef } from '$lib/domain/ticket';
 	import type { TicketRowActionsStore } from '$lib/stores/ticket-row-actions.svelte';
+	import CharmIcon from '../CharmIcon.svelte';
 	import ColorMark from '../ColorMark.svelte';
 	import PriorityIcon from '../PriorityIcon.svelte';
 	import StatusPill from '../StatusPill.svelte';
@@ -39,7 +41,9 @@
 	// One entry of the calendar (ADR-0053 §4): a ticket, a planned date of a rule or a dated entry of
 	// the inbox, always for the whole day. The color of a ticket (ADR-0052: its own, else of its
 	// project or the parent of that) stands as a stripe at the start, never as a surface, and its
-	// name is part of the link for screen readers, like the project. Overdue tickets are bold with a
+	// name is part of the link for screen readers, like the project; so is the charm of a ticket or of
+	// the template of a planned date, whose symbol stands before the title (ADR-0062; not in the dots
+	// of a narrow month). Overdue tickets are bold with a
 	// clock and say "überfällig", never red (ADR-0009); done ones are muted with a check mark;
 	// planned dates are pale and dashed and say when their ticket appears; entries of the inbox are
 	// muted with their symbol. A ticket opens next to the calendar in the remembered way (`href`), a
@@ -115,6 +119,16 @@
 		if (entry.kind === 'planned') return ticketColorOf({ color: entry.planned.color }, project);
 		return null;
 	});
+	/** The charm of a ticket, of a planned date the one of its template (ADR-0062). */
+	const charm = $derived(
+		charmOf(
+			entry.kind === 'ticket'
+				? entry.ticket.charm
+				: entry.kind === 'planned'
+					? entry.planned.charm
+					: null
+		)
+	);
 	const title = $derived(
 		entry.kind === 'ticket'
 			? entry.ticket.title
@@ -128,11 +142,12 @@
 	const due = $derived(
 		entry.kind === 'ticket' && dueLabel ? relativeDue(entry.ticket.due, today).text : ''
 	);
-	/** Project and color for screen readers, after the visible text of the link. */
+	/** Project, color and charm for screen readers, after the visible text of the link. */
 	const details = $derived(
 		[
 			project === null ? '' : `Projekt ${projectPath(project)}`,
-			color === null ? '' : colorText(color)
+			color === null ? '' : colorText(color),
+			charm === null ? '' : charmText(charm)
 		]
 			.filter((part) => part !== '')
 			.join(', ')
@@ -144,6 +159,13 @@
 		<ColorMark shown={color} kind={look === 'dot' ? 'dot' : 'stripe'} named={false} />
 	{:else if look === 'dot'}
 		<span class="plain-dot" aria-hidden="true"></span>
+	{/if}
+{/snippet}
+
+<!-- The charm before the title (ADR-0062); a narrow month shows only dots, the link names it. -->
+{#snippet charmMark()}
+	{#if charm !== null && look !== 'dot'}
+		<CharmIcon charm={charm.key} named={false} />
 	{/if}
 {/snippet}
 
@@ -182,6 +204,7 @@
 					<path d="M8 4.75V8.5l2.25 1.5" />
 				</svg>
 			{/if}
+			{@render charmMark()}
 			<span class="text">
 				<span class="key" class:visually-hidden={look === 'line' || look === 'dot'}
 					>{ticket.key}</span
@@ -234,6 +257,7 @@
 				<path d="M13 6.5A5.25 5.25 0 0 0 3.6 4.4M3 9.5a5.25 5.25 0 0 0 9.4 2.1" />
 				<path d="M3.25 1.75v3h3M12.75 14.25v-3h-3" />
 			</svg>
+			{@render charmMark()}
 			<span class="text">
 				<span class="visually-hidden">Geplant: </span>
 				<span class="title" class:visually-hidden={look === 'dot'}>{title}</span>
@@ -306,6 +330,11 @@
 
 	.link:hover {
 		background: var(--fill-control-hover);
+	}
+
+	/* The charm keeps the gap it has everywhere (0.375rem, ADR-0062): the link adds 0.25rem. */
+	.link :global(.charm-mark) {
+		margin-right: 0.125rem;
 	}
 
 	.entry.active .link {

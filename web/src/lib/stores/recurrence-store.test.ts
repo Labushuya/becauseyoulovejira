@@ -773,7 +773,8 @@ describe('RecurrenceStore: the template of a series (plan WV)', () => {
 			priority: 'medium',
 			initialStatus: 'open',
 			subtasks: [],
-			color: null
+			color: null,
+			charm: null
 		});
 		if (template === undefined) return;
 		expect(store.templateDirty).toBe(false);
@@ -848,6 +849,38 @@ describe('RecurrenceStore: the sub-tasks of the template (plan WV-3)', () => {
 		}
 		after.reset();
 		expect(after.subtasksReady).toBe(false);
+	});
+
+	it('knows the charms only after their migration and sends a charm of the draft only then (ADR-0062)', async () => {
+		const ruleData = fakeData([rule()]);
+		const after = new RecurrenceStore(
+			{ ...ruleData, charmsReady: vi.fn(async () => true) },
+			session()
+		);
+		expect(after.charmsReady).toBe(false);
+		await after.load();
+		expect(after.charmsReady).toBe(true);
+		after.editTemplate('rule00000000001');
+		const template = after.templateDraft?.template;
+		if (template === undefined) throw new Error('no draft');
+		after.setTemplateDraft({ ...template, charm: 'muell' }, '');
+		await after.saveTemplate();
+		expect(ruleData.updateRule).toHaveBeenLastCalledWith('rule00000000001', { charm: 'muell' });
+
+		for (const probe of [async () => false, async () => Promise.reject(new Error('x'))]) {
+			const data = fakeData([rule()]);
+			const before = new RecurrenceStore({ ...data, charmsReady: vi.fn(probe) }, session());
+			await before.load();
+			expect(before.charmsReady).toBe(false);
+			before.editTemplate('rule00000000001');
+			const draft = before.templateDraft?.template;
+			if (draft === undefined) throw new Error('no draft');
+			before.setTemplateDraft({ ...draft, charm: 'muell' }, '');
+			await before.saveTemplate();
+			expect(data.updateRule).not.toHaveBeenCalled();
+		}
+		after.reset();
+		expect(after.charmsReady).toBe(false);
 	});
 
 	it('saves the list of the draft trimmed, and only once the server knows it', async () => {

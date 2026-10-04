@@ -36,6 +36,7 @@
 	import type { ParentRef, ProjectRef, TagRef, TicketSummary } from '$lib/domain/ticket';
 	import { PRIORITY_LABELS, STATUS_LABELS } from '$lib/domain/labels';
 	import { PRIORITIES, STATUSES } from '$lib/domain/status';
+	import CharmIcon from './CharmIcon.svelte';
 	import ColorMark from './ColorMark.svelte';
 	import DoneToggle from './DoneToggle.svelte';
 	import DueLabel from './DueLabel.svelte';
@@ -48,7 +49,7 @@
 	import type { RowEdit } from './table/row-edit';
 
 	// One row of the ticket table (E3 plan, T-4): key, priority, status, title with the symbol of
-	// its source (ADR-0019 section 4) and the recurring icon, project, tags, due date, creation
+	// its source (ADR-0019 section 4), its charm (ADR-0062) and the recurring icon, project, tags, due date, creation
 	// date and the actions (check mark and "Öffnen"; "Rückgängig" stands in the flag since UI-5).
 	// The title is the link to the detail panel and the keyboard target; a mouse click anywhere else
 	// in the row outside of controls follows the same link. Compact (ADR-0030 section 6, SP-4): the
@@ -367,6 +368,7 @@
 				{/if}
 			{/if}
 			<SourceIcon source={ticket.source} />
+			<CharmIcon charm={ticket.charm} />
 			<a
 				class="title-link"
 				{href}

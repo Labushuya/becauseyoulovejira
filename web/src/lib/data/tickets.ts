@@ -4,6 +4,7 @@
 
 import type PocketBase from 'pocketbase';
 import { addDays, type CalendarDate } from '../domain/berlin-date';
+import { charmKeyOf } from '../domain/charms';
 import { colorOf } from '../domain/colors';
 import {
 	duplicateRequestBody,
@@ -70,6 +71,8 @@ export const TICKET_LIST_FIELDS = [
 	'owner',
 	// Own color (ADR-0052); unknown to the server before the migration 1790203400.
 	'color',
+	// Charm (ADR-0062); unknown to the server before the migration 1790204400.
+	'charm',
 	'completed_at',
 	'created',
 	'updated',
@@ -115,6 +118,8 @@ export interface TicketRecord {
 	owner?: string;
 	/** Own color, '' for "wie Projekt"; missing before the migration 1790203400 (ADR-0052). */
 	color?: string;
+	/** Charm, '' for none; missing before the migration 1790204400 (ADR-0062). */
+	charm?: string;
 	completed_at: string;
 	created: string;
 	updated: string;
@@ -153,6 +158,8 @@ export function toTicketSummary(record: TicketRecord): TicketSummary {
 		...(record.owner ? { owner: record.owner } : {}),
 		// Left out while the server does not know the field yet (before the restart, ADR-0052).
 		...(record.color !== undefined ? { color: colorOf(record.color) } : {}),
+		// The same for the charm (ADR-0062); a key the catalog does not know reads as none.
+		...(record.charm !== undefined ? { charm: charmKeyOf(record.charm) } : {}),
 		completedAt: record.completed_at || null,
 		created: record.created,
 		updated: record.updated
@@ -195,6 +202,8 @@ function patchBody(patch: TicketPatch): PatchBody {
 	if (patch.pinnedComment !== undefined) body.pinned_comment = patch.pinnedComment ?? '';
 	// '' is "wie Projekt" (ADR-0052); PocketBase checks the key of the palette.
 	if (patch.color !== undefined) body.color = patch.color ?? '';
+	// '' removes the charm (ADR-0062); the hook checks the key against its catalog.
+	if (patch.charm !== undefined) body.charm = patch.charm ?? '';
 	// The only change a client may make to the series: leaving it (ADR-0023 section 1).
 	if (patch.detachSeries === true) body.recurrence = '';
 	return body;
@@ -631,7 +640,9 @@ export function createTicket(
 				// A sub-task (ADR-0033); the hook checks level and scope of the parent.
 				...(draft.parent ? { parent: draft.parent } : {}),
 				// An own color (ADR-0052); without one the ticket shows the color of its project.
-				...(draft.color ? { color: draft.color } : {})
+				...(draft.color ? { color: draft.color } : {}),
+				// A charm (ADR-0062); none sends no field, as before its migration.
+				...(draft.charm ? { charm: draft.charm } : {})
 			},
 			{ fields: TICKET_DETAIL_FIELDS, expand: TICKET_EXPAND, signal }
 		);

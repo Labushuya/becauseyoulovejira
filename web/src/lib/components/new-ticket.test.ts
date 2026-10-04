@@ -415,6 +415,42 @@ describe('new ticket: color (ADR-0052)', () => {
 	});
 });
 
+describe('new ticket: charm (ADR-0062)', () => {
+	const choose = async (key: string) => {
+		await fireEvent.click(screen.getByRole('button', { name: /^Charm( wählen|: )/ }));
+		await fireEvent.click(document.querySelector(`[data-charm-option="${key}"]`) as HTMLElement);
+	};
+
+	it('starts without a charm and creates with the chosen one', async () => {
+		const { oncreate } = renderForm(undefined, { charmsAvailable: true });
+		expect(screen.getByRole('button', { name: 'Charm wählen' })).toBeTruthy();
+		await choose('geschenk');
+		expect(screen.getByRole('button', { name: 'Charm: Geschenk' })).toBeTruthy();
+		await fireEvent.input(titleField(), { target: { value: 'Neu' } });
+		await fireEvent.click(createButton());
+		expect(oncreate.mock.calls[0]?.[0]).toMatchObject({ title: 'Neu', charm: 'geschenk' });
+	});
+
+	it('sends no charm after "Kein Charm" and asks before a chosen charm is lost', async () => {
+		const { oncreate, oncancel } = renderForm(undefined, { charmsAvailable: true });
+		await choose('sport');
+		await fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }));
+		expect(await discardQuestion()).not.toBeNull();
+		expect(oncancel).not.toHaveBeenCalled();
+		await answer('Weiter bearbeiten');
+
+		await choose('none');
+		await fireEvent.input(titleField(), { target: { value: 'Neu' } });
+		await fireEvent.click(createButton());
+		expect(oncreate.mock.calls[0]?.[0]).not.toHaveProperty('charm');
+	});
+
+	it('offers no charm while the server does not know it', () => {
+		renderForm();
+		expect(screen.queryByRole('button', { name: 'Charm wählen' })).toBeNull();
+	});
+});
+
 describe('new ticket: project (E3 plan, T-13)', () => {
 	function projectField() {
 		return screen.getByLabelText<HTMLSelectElement>('Projekt');

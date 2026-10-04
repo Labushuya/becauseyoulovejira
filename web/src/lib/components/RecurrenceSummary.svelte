@@ -193,7 +193,8 @@
 		| 'tags'
 		| 'initial_status'
 		| 'template_subtasks'
-		| 'color';
+		| 'color'
+		| 'charm';
 	const TEMPLATE_ERRORS: readonly string[] = [
 		'title',
 		'description',
@@ -202,7 +203,8 @@
 		'tags',
 		'initial_status',
 		'template_subtasks',
-		'color'
+		'color',
+		'charm'
 	];
 	let templateErrors = $state<Partial<Record<TemplateError, string>>>({});
 	/** Rows of the list of sub-tasks without a title (checked before sending). */
@@ -368,6 +370,7 @@
 							statusAvailable={store.statusReady}
 							subtasksAvailable={store.subtasksReady}
 							colorsAvailable={catalog.colorsReady ?? false}
+							charmsAvailable={store.charmsReady}
 							ticketSubtasks={subtasks}
 							{invalidSubtasks}
 							oncreatetag={(name) => catalog.ensureTag(name)}

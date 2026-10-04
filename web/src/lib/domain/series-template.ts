@@ -4,6 +4,7 @@
 // ticket, and which changes of an open ticket of a series the flag "Auch für künftige Tickets
 // übernehmen" takes over into the template.
 
+import { charmOf } from './charms';
 import { COLOR_LABELS, type ProjectColor } from './colors';
 import { PRIORITY_LABELS, STATUS_LABELS } from './labels';
 import type { RecurrenceRule } from './recurrence-rule';
@@ -69,12 +70,14 @@ export interface RuleTemplate {
 	subtasks: TemplateSubtask[];
 	/** Own color of every next ticket (ADR-0052); null for "wie Projekt" and before its migration. */
 	color: ProjectColor | null;
+	/** Charm of every next ticket (ADR-0062); null for none and before its migration. */
+	charm: string | null;
 }
 
 /** The template of a rule as the server applies it: no priority means "Mittel" (ADR-0022 §2). */
 export function templateOf(
 	rule: Pick<RecurrenceRule, 'title' | 'description' | 'projectId' | 'tagIds' | 'priority'> &
-		Partial<Pick<RecurrenceRule, 'initialStatus' | 'templateSubtasks' | 'color'>>
+		Partial<Pick<RecurrenceRule, 'initialStatus' | 'templateSubtasks' | 'color' | 'charm'>>
 ): RuleTemplate {
 	return {
 		title: rule.title,
@@ -84,7 +87,8 @@ export function templateOf(
 		priority: rule.priority ?? DEFAULT_PRIORITY,
 		initialStatus: templateStatusOf(rule.initialStatus),
 		subtasks: copySubtasks(rule.templateSubtasks ?? []),
-		color: rule.color ?? null
+		color: rule.color ?? null,
+		charm: rule.charm ?? null
 	};
 }
 
@@ -97,10 +101,11 @@ function copySubtasks(subtasks: readonly TemplateSubtask[]): TemplateSubtask[] {
  * series from a calendar): a snapshot of its values. The status the next tickets start with is
  * what the user chose (ADR-0022 addendum 9: asked, never taken silently from the ticket). Its
  * sub-tasks do not come along on their own; "Unteraufgaben dieses Tickets übernehmen" in the
- * template at the ticket takes them over (plan WV-3). Its own color does (ADR-0052).
+ * template at the ticket takes them over (plan WV-3). Its own color does (ADR-0052), and so does
+ * its charm (ADR-0062).
  */
 export function ticketTemplate(
-	ticket: Pick<TicketSummary, 'title' | 'projectId' | 'tagIds' | 'priority' | 'color'> & {
+	ticket: Pick<TicketSummary, 'title' | 'projectId' | 'tagIds' | 'priority' | 'color' | 'charm'> & {
 		description: string;
 	},
 	initialStatus: TemplateStatus
@@ -113,7 +118,8 @@ export function ticketTemplate(
 		priority: ticket.priority,
 		initialStatus,
 		subtasks: [],
-		color: ticket.color ?? null
+		color: ticket.color ?? null,
+		charm: ticket.charm ?? null
 	};
 }
 
@@ -166,17 +172,19 @@ export interface TemplateBody {
 	template_subtasks?: TemplateSubtask[];
 	/** Color of the template (ADR-0052), null for "wie Projekt". */
 	color?: ProjectColor | null;
+	/** Charm of the template (ADR-0062), null for none. */
+	charm?: string | null;
 }
 
 /**
- * The whole template as request body. The sub-tasks and the color only when there are some: a new
- * rule from a ticket has no sub-tasks, and a server before their migrations would not know the
- * fields.
+ * The whole template as request body. The sub-tasks, the color and the charm only when there are
+ * some: a new rule from a ticket has no sub-tasks, and a server before their migrations would not
+ * know the fields.
  */
 export function templateBody(
 	template: RuleTemplate
-): Required<Omit<TemplateBody, 'template_subtasks' | 'color'>> &
-	Pick<TemplateBody, 'template_subtasks' | 'color'> {
+): Required<Omit<TemplateBody, 'template_subtasks' | 'color' | 'charm'>> &
+	Pick<TemplateBody, 'template_subtasks' | 'color' | 'charm'> {
 	return {
 		title: template.title,
 		description: template.description,
@@ -185,7 +193,8 @@ export function templateBody(
 		priority: template.priority,
 		initial_status: template.initialStatus,
 		...(template.subtasks.length > 0 && { template_subtasks: copySubtasks(template.subtasks) }),
-		...(template.color !== null && { color: template.color })
+		...(template.color !== null && { color: template.color }),
+		...(template.charm !== null && { charm: template.charm })
 	};
 }
 
@@ -222,6 +231,7 @@ export function templateChanges(before: RuleTemplate, after: RuleTemplate): Temp
 		body.template_subtasks = copySubtasks(after.subtasks);
 	}
 	if (before.color !== after.color) body.color = after.color;
+	if (before.charm !== after.charm) body.charm = after.charm;
 	return body;
 }
 
@@ -333,7 +343,8 @@ export interface TemplateNames {
  * "Priorität Hoch · Projekt Haus · Tags Garten, Müll · Status beim Anlegen Offen · 3 Unteraufgaben",
  * the line "Künftige Tickets: …" at the ticket. Without the migration of the status (`withStatus`
  * false) the status is left out, because every ticket then starts "open"; sub-tasks only when the
- * template has some (plan WV-3), the color only when it has one (ADR-0052).
+ * template has some (plan WV-3), the color only when it has one (ADR-0052), the charm as well
+ * (ADR-0062).
  */
 export function templateSummary(
 	template: RuleTemplate,
@@ -348,6 +359,8 @@ export function templateSummary(
 	if (withStatus) parts.push(`Status beim Anlegen ${STATUS_LABELS[template.initialStatus]}`);
 	if (template.subtasks.length > 0) parts.push(subtaskCountText(template.subtasks.length));
 	if (template.color !== null) parts.push(`Farbe ${COLOR_LABELS[template.color]}`);
+	const charm = charmOf(template.charm);
+	if (charm !== null) parts.push(`Charm ${charm.name}`);
 	return parts.join(' · ');
 }
 
@@ -360,8 +373,8 @@ export function subtaskCountText(count: number): string {
 
 /**
  * Fields of a ticket the flag "Auch für künftige Tickets übernehmen" may take over, since ADR-0052
- * the own color as well. Not status and due date: they belong to the one ticket (a date of the
- * series, how far it got).
+ * the own color and since ADR-0062 the charm as well. Not status and due date: they belong to the
+ * one ticket (a date of the series, how far it got).
  */
 export const TEMPLATE_FIELDS = [
 	'title',
@@ -369,7 +382,8 @@ export const TEMPLATE_FIELDS = [
 	'priority',
 	'project',
 	'tags',
-	'color'
+	'color',
+	'charm'
 ] as const;
 export type TemplateField = (typeof TEMPLATE_FIELDS)[number];
 
@@ -379,16 +393,26 @@ export const TEMPLATE_FIELD_LABELS: Readonly<Record<TemplateField, string>> = Ob
 	priority: 'Priorität',
 	project: 'Projekt',
 	tags: 'Tags',
-	color: 'Farbe'
+	color: 'Farbe',
+	charm: 'Charm'
 });
 
 /**
  * A ticket as a change of it shows; the list knows no description (then it is left out), and the
- * color is left out while the server does not know it.
+ * color and the charm are left out while the server does not know them.
  */
 export type SeriesTicket = Pick<
 	TicketSummary,
-	'id' | 'key' | 'status' | 'title' | 'priority' | 'projectId' | 'tagIds' | 'recurrenceId' | 'color'
+	| 'id'
+	| 'key'
+	| 'status'
+	| 'title'
+	| 'priority'
+	| 'projectId'
+	| 'tagIds'
+	| 'recurrenceId'
+	| 'color'
+	| 'charm'
 > & { description?: string };
 
 /** One ticket before and after a change the user made (panel, full view, cell, bulk action). */
@@ -424,6 +448,9 @@ export function changedTemplateFields(change: SeriesChange): TemplateField[] {
 	if (!sameList(before.tagIds, after.tagIds)) fields.push('tags');
 	if (before.color !== undefined && after.color !== undefined && before.color !== after.color) {
 		fields.push('color');
+	}
+	if (before.charm !== undefined && after.charm !== undefined && before.charm !== after.charm) {
+		fields.push('charm');
 	}
 	return fields;
 }
@@ -482,6 +509,7 @@ function offerFor(rule: RecurrenceRule, changes: readonly SeriesChange[]): Templ
 		if (fields.includes('priority')) patch.priority = after.priority;
 		if (fields.includes('project')) patch.project = after.projectId;
 		if (fields.includes('color')) patch.color = after.color ?? null;
+		if (fields.includes('charm')) patch.charm = after.charm ?? null;
 		if (fields.includes('tags')) {
 			for (const id of after.tagIds) if (!before.tagIds.includes(id)) added.push(id);
 			for (const id of before.tagIds) if (!after.tagIds.includes(id)) removed.push(id);
@@ -492,6 +520,7 @@ function offerFor(rule: RecurrenceRule, changes: readonly SeriesChange[]): Templ
 	if (patch.priority === template.priority) delete patch.priority;
 	if (patch.project === template.projectId) delete patch.project;
 	if (patch.color === template.color) delete patch.color;
+	if (patch.charm === template.charm) delete patch.charm;
 	const tags = [
 		...template.tagIds.filter((id) => !removed.includes(id)),
 		...added.filter((id, index) => !template.tagIds.includes(id) && added.indexOf(id) === index)

@@ -97,6 +97,28 @@ describe('open tickets of a project: color (ADR-0052)', () => {
 	});
 });
 
+describe('open tickets of a project: charm (ADR-0062)', () => {
+	it('shows the charm before the title, named after it inside the link', () => {
+		show({
+			tickets: [
+				ticket({ key: 'HAUS-1', title: 'Rasen mähen', charm: 'garten' }),
+				ticket({ key: 'HAUS-2', title: 'Ohne' })
+			]
+		});
+		const [first, second] = links();
+		const mark = first?.querySelector<HTMLElement>('.title .charm-mark');
+		expect(mark?.getAttribute('title')).toBe('Charm: Garten');
+		expect(mark?.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+		expect(first?.querySelector('.title')?.textContent?.trim()).toBe('Rasen mähen');
+		expect(
+			[...(first?.querySelectorAll('.title ~ .visually-hidden') ?? [])].map(
+				(hidden) => hidden.textContent
+			)
+		).toEqual([', Charm: Garten']);
+		expect(second?.querySelector('.charm-mark')).toBeNull();
+	});
+});
+
 describe('open tickets of a project', () => {
 	it('lists key and title as one link, status, priority and due date of every ticket', () => {
 		const first = ticket({

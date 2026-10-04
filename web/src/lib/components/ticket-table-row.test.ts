@@ -122,6 +122,21 @@ describe('ticket table row', () => {
 		expect(created.getAttribute('title')).toBe('02.09.2026 00:30');
 	});
 
+	it('shows the charm before the title with its name and tooltip, the symbol decorative (ADR-0062)', () => {
+		const { row } = renderRow({ charm: 'arzt' });
+		const title = cell(row, 'title');
+		const mark = title.querySelector<HTMLElement>('.charm-mark');
+		expect(mark?.getAttribute('title')).toBe('Charm: Arzt');
+		expect(mark?.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+		expect(mark?.nextElementSibling?.classList.contains('title-link')).toBe(true);
+		expect(within(title).getByText('Charm: Arzt')).toBeTruthy();
+		// The link stays the title alone.
+		expect(within(title).getByRole('link').textContent).toBe('Steuererklärung abgeben');
+		// None, or a key the catalog does not know, shows nothing.
+		const { row: plain } = renderRow({ charm: null });
+		expect(cell(plain, 'title').querySelector('.charm-mark')).toBeNull();
+	});
+
 	it('names the rhythm at the recurring symbol (E5 plan, package 4)', () => {
 		const { row } = renderRow({ recurring: true }, { recurrenceText: 'jeden Montag' });
 		const title = cell(row, 'title');

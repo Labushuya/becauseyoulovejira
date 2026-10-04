@@ -42,6 +42,8 @@ export interface PlannedOccurrence {
 	priority: Priority;
 	status: TemplateStatus;
 	color: ProjectColor | null;
+	/** Charm of the template (ADR-0062), the one of the ticket it becomes; absent or null for none. */
+	charm?: string | null;
 }
 
 /** Tickets of the rule and the keys of its open ones, oldest first. */
@@ -95,7 +97,8 @@ function occurrencesOf(
 		tagIds: rule.tagIds,
 		priority: rule.priority ?? 'medium',
 		status: templateStatusOf(rule.initialStatus),
-		color: rule.color ?? null
+		color: rule.color ?? null,
+		charm: rule.charm ?? null
 	});
 	const taken = known?.dates ?? new Set<CalendarDate>();
 	if (valid.mode !== 'calendar') {

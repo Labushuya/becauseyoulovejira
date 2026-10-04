@@ -15,6 +15,7 @@
 		type TagRef
 	} from '$lib/domain/ticket';
 	import type { EnsureTagResult } from '$lib/stores/catalog.svelte';
+	import CharmPicker from './CharmPicker.svelte';
 	import ColorChoice from './ColorChoice.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import PrioritySelect from './PrioritySelect.svelte';
@@ -32,7 +33,8 @@
 	// (`statusAvailable`); every status but "Erledigt" (ADR-0022 addendum 8). The sub-tasks only
 	// after theirs (`subtasksAvailable`, ADR-0022 addendum 10); at a ticket with sub-tasks the list
 	// can take them over (`ticketSubtasks`). The color of the next tickets after the project, "Wie
-	// Projekt (Blau)" first, after its migration (`colorsAvailable`, ADR-0052).
+	// Projekt (Blau)" first, after its migration (`colorsAvailable`, ADR-0052); the charm of the next
+	// tickets after it, after its migration (`charmsAvailable`, ADR-0062).
 	let {
 		values = $bindable(),
 		tagText = $bindable(''),
@@ -45,6 +47,7 @@
 		statusAvailable = false,
 		subtasksAvailable = false,
 		colorsAvailable = false,
+		charmsAvailable = false,
 		ticketSubtasks = [],
 		invalidSubtasks = [],
 		oncreatetag,
@@ -64,7 +67,8 @@
 				| 'tags'
 				| 'initial_status'
 				| 'template_subtasks'
-				| 'color',
+				| 'color'
+				| 'charm',
 				string
 			>
 		>;
@@ -81,6 +85,8 @@
 		subtasksAvailable?: boolean;
 		/** The server knows the color of the template (after its migration, ADR-0052). */
 		colorsAvailable?: boolean;
+		/** The server knows the charm of the template (after its migration, ADR-0062). */
+		charmsAvailable?: boolean;
 		/** Sub-tasks of the ticket the template is edited at ("Unteraufgaben dieses Tickets übernehmen"). */
 		ticketSubtasks?: readonly TicketSubtask[];
 		/** Rows of the list the owner refused for a missing title. */
@@ -105,6 +111,7 @@
 		tagsError: `${uid}-tags-error`,
 		color: `${uid}-color`,
 		colorError: `${uid}-color-error`,
+		charmError: `${uid}-charm-error`,
 		description: `${uid}-description-error`
 	};
 
@@ -240,6 +247,19 @@
 			errorId={ids.colorError}
 			onchoose={(color) => (values = { ...values, color })}
 		/>
+	</div>
+{/if}
+
+{#if charmsAvailable}
+	<div class="field">
+		<span class="label">Charm</span>
+		<CharmPicker
+			value={values.charm}
+			error={errors.charm ?? null}
+			errorId={ids.charmError}
+			onchoose={(charm) => (values = { ...values, charm })}
+		/>
+		<p class="hint">Jedes neue Ticket der Serie bekommt ihn beim Anlegen.</p>
 	</div>
 {/if}
 

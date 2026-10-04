@@ -254,6 +254,27 @@ describe('RecurrencePanel: a rule', () => {
 		expect(props.onsave.mock.calls[0]?.[0]).not.toHaveProperty('color');
 	});
 
+	it('offers the charm of the next tickets after its migration and saves a change (ADR-0062)', async () => {
+		const props = show(rule({ charm: 'muell' }), { charmsAvailable: true });
+		const button = screen.getByRole('button', { name: 'Charm: Müll' });
+		expect(screen.getByText('Jedes neue Ticket der Serie bekommt ihn beim Anlegen.')).toBeTruthy();
+		await fireEvent.click(button);
+		await fireEvent.click(document.querySelector('[data-charm-option="putzen"]') as HTMLElement);
+		expect(screen.getByRole('button', { name: 'Charm: Putzen' })).toBeTruthy();
+		await fireEvent.click(screen.getByRole('button', { name: 'Speichern' }));
+		await vi.waitFor(() => expect(props.onsave).toHaveBeenCalledTimes(1));
+		expect(props.onsave.mock.calls[0]?.[0]).toMatchObject({ charm: 'putzen' });
+	});
+
+	it('leaves the charm out and sends none before its migration', async () => {
+		const props = show(rule({ charm: 'muell' }));
+		expect(screen.queryByRole('button', { name: 'Charm: Müll' })).toBeNull();
+		await fireEvent.input(screen.getByLabelText('Titel'), { target: { value: 'Müll (gelb)' } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Speichern' }));
+		await vi.waitFor(() => expect(props.onsave).toHaveBeenCalledTimes(1));
+		expect(props.onsave.mock.calls[0]?.[0]).not.toHaveProperty('charm');
+	});
+
 	// Plan WV (ADR-0022 addendum 8).
 	it('offers "Status beim Anlegen" after its migration, every status but "Erledigt"', async () => {
 		const props = show(rule({ initialStatus: 'waiting' }), { statusAvailable: true });

@@ -38,7 +38,8 @@ export const HISTORY_FIELD_LABELS: Readonly<Record<string, string>> = Object.fre
 	key: 'Key',
 	household: 'Haushalt',
 	pinned_comment: 'Angepinnter Kommentar',
-	color: 'Farbe'
+	color: 'Farbe',
+	charm: 'Charm'
 });
 
 /** Label of a history field; an unknown field shows its technical name instead of nothing. */

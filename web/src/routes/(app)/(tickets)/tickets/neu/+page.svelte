@@ -113,6 +113,7 @@
 		statusAvailable={rules.statusReady}
 		subtasksAvailable={rules.subtasksReady}
 		colorsAvailable={catalog.colorsReady}
+		charmsAvailable={rules.charmsReady}
 		today={tickets.today}
 		oncreatetag={(name) => catalog.ensureTag(name)}
 		oncreate={create}
@@ -133,6 +134,7 @@
 			statusAvailable={rules.statusReady}
 			subtasksAvailable={rules.subtasksReady}
 			colorsAvailable={catalog.colorsReady}
+			charmsAvailable={rules.charmsReady}
 			today={tickets.today}
 			oncreatetag={(name) => catalog.ensureTag(name)}
 			oncreate={create}

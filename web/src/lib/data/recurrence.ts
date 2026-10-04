@@ -4,6 +4,7 @@
 // the template and the rhythm.
 
 import type PocketBase from 'pocketbase';
+import { charmKeyOf } from '../domain/charms';
 import { colorOf, type ProjectColor } from '../domain/colors';
 import { toDueInput } from '../domain/ticket';
 import { isPriority, type Priority } from '../domain/status';
@@ -52,6 +53,8 @@ export const RULE_FIELDS = [
 	'initial_status',
 	'template_subtasks',
 	'color',
+	// Charm of the template (ADR-0062); unknown to the server before the migration 1790204400.
+	'charm',
 	// Who created it: moving it into the private area is offered to the creator (ADR-0061 §4).
 	'owner',
 	'created',
@@ -84,6 +87,8 @@ export interface RuleRecord {
 	template_subtasks?: unknown;
 	/** Color of the template (ADR-0052), '' for "wie Projekt"; absent before its migration. */
 	color?: string;
+	/** Charm of the template (ADR-0062), '' for none; absent before its migration. */
+	charm?: string;
 	owner?: string;
 	created: string;
 	updated: string;
@@ -117,6 +122,8 @@ export function toRecurrenceRule(record: RuleRecord): RecurrenceRule {
 		templateSubtasks: templateSubtasksOf(record.template_subtasks),
 		// Left out while the server does not know the field yet (before the restart, ADR-0052).
 		...(record.color !== undefined ? { color: colorOf(record.color) } : {}),
+		// The same for the charm (ADR-0062); a key the catalog does not know reads as none.
+		...(record.charm !== undefined ? { charm: charmKeyOf(record.charm) } : {}),
 		...(record.owner ? { owner: record.owner } : {}),
 		created: record.created,
 		updated: record.updated
@@ -156,6 +163,8 @@ export interface RuleDraft {
 	template_subtasks?: TemplateSubtask[];
 	/** Color of the template (ADR-0052), null for "wie Projekt"; a server before its migration ignores it. */
 	color?: ProjectColor | null;
+	/** Charm of the template (ADR-0062), null for none; a server before its migration ignores it. */
+	charm?: string | null;
 }
 
 function draftBody(draft: Partial<RuleDraft>): Record<string, unknown> {
@@ -163,6 +172,7 @@ function draftBody(draft: Partial<RuleDraft>): Record<string, unknown> {
 	if (draft.project !== undefined) body.project = draft.project ?? '';
 	if (draft.priority !== undefined) body.priority = draft.priority ?? '';
 	if (draft.color !== undefined) body.color = draft.color ?? '';
+	if (draft.charm !== undefined) body.charm = draft.charm ?? '';
 	return body;
 }
 
@@ -241,6 +251,22 @@ export function templateSubtasksReady(
 	return answeredWithout400(signal, () =>
 		pb.collection(RULES).getList(1, 1, {
 			filter: pb.filter('template_subtasks != {:none}', { none: '' }),
+			fields: 'id',
+			skipTotal: true,
+			signal
+		})
+	);
+}
+
+/**
+ * Whether the server knows the charms (ADR-0062): a filter on `charm` answers 400 before their
+ * migration 1790204400, which adds the field to rules and tickets at once. The SPA offers the
+ * choice of a charm only then.
+ */
+export function charmsReady(pb: PocketBase, { signal }: RequestOptions = {}): Promise<boolean> {
+	return answeredWithout400(signal, () =>
+		pb.collection(RULES).getList(1, 1, {
+			filter: pb.filter('charm != {:none}', { none: '' }),
 			fields: 'id',
 			skipTotal: true,
 			signal

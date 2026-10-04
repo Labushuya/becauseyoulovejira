@@ -84,6 +84,20 @@ function setup(overrides: Record<string, unknown> = {}) {
 }
 
 describe('RecurrenceTable', () => {
+	it('shows the charm of the template before the title, named and with a tooltip (ADR-0062)', () => {
+		const { table } = setup({
+			rules: [rule({ charm: 'muell' }), rule({ id: 'rule00000000002', title: 'Ohne' })]
+		});
+		const [withCharm, without] = within(table).getAllByRole('rowheader');
+		const mark = withCharm?.querySelector<HTMLElement>('.charm-mark');
+		expect(mark?.getAttribute('title')).toBe('Charm: Müll');
+		expect(mark?.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+		expect(mark?.nextElementSibling?.classList.contains('title-link')).toBe(true);
+		expect(withCharm?.textContent?.trim()).toBe('Charm: Müll Müll rausbringen');
+		expect(within(withCharm as HTMLElement).getByRole('link').textContent).toBe('Müll rausbringen');
+		expect(without?.querySelector('.charm-mark')).toBeNull();
+	});
+
 	it('names its order in the caption and its columns in the head', () => {
 		const { table } = setup();
 		// "Weitere Spalten im Panel" only while columns are hidden for lack of space (ADR-0030).

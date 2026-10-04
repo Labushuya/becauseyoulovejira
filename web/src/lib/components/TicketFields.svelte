@@ -4,6 +4,7 @@
 	import type { Ticket } from '$lib/domain/ticket';
 	import type { CatalogStore } from '$lib/stores/catalog.svelte';
 	import type { TicketDetailStore } from '$lib/stores/ticket-detail.svelte';
+	import CharmPicker from './CharmPicker.svelte';
 	import ColorChoice from './ColorChoice.svelte';
 	import DueInput from './DueInput.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
@@ -21,7 +22,8 @@
 	// catalog; a new tag is taken from the catalog, which reuses an existing name. The row
 	// "Übergeordnet" of sub-tasks (ADR-0033) comes in through `parentRow` as two cells of the grid.
 	// The own color (ADR-0052) after the project, "Wie Projekt (Blau)" first, saves at once like the
-	// project; only when the server knows the field.
+	// project; only when the server knows the field. The charm (ADR-0062) after it, chosen in its
+	// dialog and saved at once as well.
 	let {
 		store,
 		catalog,
@@ -55,6 +57,8 @@
 	const inherited = $derived(projectColorOf(catalog.projectOf(ticket))?.color ?? null);
 	/** Only when the server knows the field (it answers with it after the migration). */
 	const colorShown = $derived(catalog.colorsReady && ticket.color !== undefined);
+	/** The charm (ADR-0062) likewise: the ticket has the field only after its migration. */
+	const charmShown = $derived(ticket.charm !== undefined);
 
 	/** New tag from the picker: an existing one in another spelling or a new one, then assigned. */
 	async function createTag(name: string): Promise<boolean> {
@@ -183,6 +187,19 @@
 				error={store.fieldError('color')}
 				errorId={errorIdOf('color')}
 				onchoose={(value) => store.choose('color', value ?? '')}
+			/>
+		</div>
+	{/if}
+
+	{#if charmShown}
+		<span class="term">Charm</span>
+		<div class="control">
+			<CharmPicker
+				value={store.value('charm') || null}
+				busy={store.isSaving('charm')}
+				error={store.fieldError('charm')}
+				errorId={errorIdOf('charm')}
+				onchoose={(value) => store.choose('charm', value ?? '')}
 			/>
 		</div>
 	{/if}

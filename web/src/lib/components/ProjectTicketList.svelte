@@ -8,12 +8,14 @@
 		projectTicketsLabel,
 		sliceProjectTickets
 	} from '$lib/domain/project-tickets';
+	import { charmOf, charmText } from '$lib/domain/charms';
 	import { colorText, ticketColorOf } from '$lib/domain/colors';
 	import type { ProjectRef, TicketSummary } from '$lib/domain/ticket';
 	import { ticketLinks } from '$lib/stores/open-mode.svelte';
 	import type { TicketRowActionsStore } from '$lib/stores/ticket-row-actions.svelte';
 	import { findTicketHost } from '$lib/ticket-host';
 	import { projectTicketsHref } from '$lib/ticket-links';
+	import CharmIcon from './CharmIcon.svelte';
 	import ColorMark from './ColorMark.svelte';
 	import DueLabel from './DueLabel.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
@@ -37,7 +39,8 @@
 	// details wrap below key and title when the line gets narrow. If the entry with the focus leaves
 	// the list (done or moved to the trash elsewhere, realtime), the focus goes to the entry now at
 	// its place, else to `returnFocus`. A dot before the key shows the color of the ticket (ADR-0052:
-	// its own, else of the project or its parent), named after the title.
+	// its own, else of the project or its parent), named after the title; so is its charm, whose
+	// symbol stands before the title (ADR-0062).
 	let {
 		project,
 		tickets,
@@ -126,6 +129,7 @@
 	<ul class="tickets" aria-label={label} bind:this={list}>
 		{#each slice.shown as ticket (ticket.id)}
 			{@const color = ticketColorOf(ticket, project)}
+			{@const charm = charmOf(ticket.charm)}
 			<li class="ticket" data-menu-row={rowActions ? '' : undefined}>
 				<a
 					class="link"
@@ -136,8 +140,9 @@
 				>
 					{#if color}<ColorMark shown={color} named={false} />{/if}
 					<span class="key">{ticket.key}</span>
-					<span class="title">{ticket.title}</span>
+					<span class="title"><CharmIcon charm={charm?.key} named={false} />{ticket.title}</span>
 					{#if color}<span class="visually-hidden">, {colorText(color)}</span>{/if}
+					{#if charm}<span class="visually-hidden">, {charmText(charm)}</span>{/if}
 				</a>
 				<span class="details">
 					<span class="status-cell"

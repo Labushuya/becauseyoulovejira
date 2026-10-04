@@ -105,7 +105,8 @@ describe('templates of rules and tickets', () => {
 			priority: 'medium',
 			initialStatus: 'open',
 			subtasks: [],
-			color: null
+			color: null,
+			charm: null
 		});
 		expect(templateOf(rule({ initialStatus: 'backlog' })).initialStatus).toBe('backlog');
 		// Plan WV-3: the sub-tasks of the template, as copies.
@@ -115,6 +116,8 @@ describe('templates of rules and tickets', () => {
 		expect(template.subtasks[0]).not.toBe(subtasks[0]);
 		// ADR-0052: the color of the next tickets.
 		expect(templateOf(rule({ color: 'gruen' })).color).toBe('gruen');
+		// ADR-0062: the charm of the next tickets.
+		expect(templateOf(rule({ charm: 'muell' })).charm).toBe('muell');
 	});
 
 	it('takes every value of a ticket into a new template, the status as the user chose it', () => {
@@ -137,7 +140,8 @@ describe('templates of rules and tickets', () => {
 			initialStatus: 'waiting',
 			// Plan WV-3: the sub-tasks of the ticket never come along on their own.
 			subtasks: [],
-			color: null
+			color: null,
+			charm: null
 		});
 		// Without sub-tasks and color the body leaves the fields out (a server before the
 		// migrations ignores them).
@@ -158,6 +162,11 @@ describe('templates of rules and tickets', () => {
 		const colored = ticketTemplate({ ...ticket, color: 'senf' }, 'open');
 		expect(colored.color).toBe('senf');
 		expect(templateBody(colored).color).toBe('senf');
+		// ADR-0062: so does its charm ("Wiederholen…"); without one the body leaves it out.
+		const charmed = ticketTemplate({ ...ticket, charm: 'flugzeug' }, 'open');
+		expect(charmed.charm).toBe('flugzeug');
+		expect(templateBody(charmed).charm).toBe('flugzeug');
+		expect('charm' in templateBody(template)).toBe(false);
 	});
 
 	it('offers "Offen" and the status of the ticket first, the other statuses below, "Erledigt" never', () => {
@@ -223,6 +232,9 @@ describe('templates of rules and tickets', () => {
 		// ADR-0052: a new color, and back to "wie Projekt" as null.
 		expect(templateChanges(before, { ...before, color: 'tuerkis' })).toEqual({ color: 'tuerkis' });
 		expect(templateChanges({ ...before, color: 'tuerkis' }, before)).toEqual({ color: null });
+		// ADR-0062: a new charm, and none as null.
+		expect(templateChanges(before, { ...before, charm: 'zug' })).toEqual({ charm: 'zug' });
+		expect(templateChanges({ ...before, charm: 'zug' }, before)).toEqual({ charm: null });
 	});
 
 	it('says what the next tickets get in one line', () => {
@@ -259,6 +271,10 @@ describe('templates of rules and tickets', () => {
 		// ADR-0052: the color, only when the template has one.
 		expect(templateSummary(templateOf(rule({ color: 'braun' })), NAMES, false)).toBe(
 			'Priorität Mittel · ohne Projekt · Tags Garten · Farbe Braun'
+		);
+		// ADR-0062: the charm, only when the template has one.
+		expect(templateSummary(templateOf(rule({ charm: 'muell' })), NAMES, false)).toBe(
+			'Priorität Mittel · ohne Projekt · Tags Garten · Charm Müll'
 		);
 	});
 });
@@ -445,6 +461,20 @@ describe('changes of an open ticket of a series', () => {
 		expect(
 			templateOffers([change({ color: null }, { color: 'violett' })], () =>
 				rule({ color: 'violett' })
+			)
+		).toEqual([]);
+	});
+
+	it('offers a new charm for the template, never one the server does not know (ADR-0062)', () => {
+		expect(changedTemplateFields(change({ charm: null }, { charm: 'garten' }))).toEqual(['charm']);
+		const offers = templateOffers([change({ charm: null }, { charm: 'garten' })], () => rule());
+		expect(offers[0]).toMatchObject({ fields: ['charm'], patch: { charm: 'garten' } });
+		expect(offerDescription(offers)).toBe(
+			'Künftige Tickets von „Müll“ kommen weiter mit der bisherigen Vorlage (Charm).'
+		);
+		expect(
+			templateOffers([change({ charm: null }, { charm: 'garten' })], () =>
+				rule({ charm: 'garten' })
 			)
 		).toEqual([]);
 	});
