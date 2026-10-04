@@ -4,7 +4,9 @@
 // fingerprint follow, status and doctor name the firewall rule and the network, and the console says
 // the same. The network of the copy is a file of this test (BYL_TEST_NETWORK_FILE), and a copy never
 // changes the firewall: lan-firewall writes its request into BYL_TEST_FIREWALL_FILE of the test and
-// asks nobody for administrator rights, without the file it refuses. Everything happens ONLY in a
+// asks nobody for administrator rights, without the file it refuses; what Windows would answer is
+// the field elevation of the network file, the rule read again afterwards its firewall. Everything
+// happens ONLY in a
 // copy under .tmp\byl-lan-* of the repo, with a superuser created beforehand (CLAUDE.md §11.2), a
 // random port and a clean environment with BYL_TEST_ISOLATED=1. Only in the CI does the copy also
 // start on 0.0.0.0 (on a developer machine Windows would show its firewall alert); app\ and the
@@ -137,8 +139,12 @@ ConvertTo-Json -InputObject $found -Compress`,
 	);
 }
 
-/** The network of the copy (BYL_TEST_NETWORK_FILE): one adapter in a public network, a FRITZ!Box name. */
-function writeNetwork(rules = []) {
+/**
+ * The network of the copy (BYL_TEST_NETWORK_FILE): one adapter in a public network, a FRITZ!Box name,
+ * the rules of the firewall (`unreadable`: Windows does not tell them) and what Windows answers a
+ * change of the rule (`elevation`, 'done' without it).
+ */
+function writeNetwork(rules = [], { elevation, unreadable = false } = {}) {
 	writeFileSync(
 		networkFile,
 		JSON.stringify({
@@ -149,10 +155,22 @@ function writeNetwork(rules = []) {
 			profiles: [{ InterfaceIndex: 8, NetworkCategory: 'Public' }],
 			suffixes: [{ InterfaceIndex: 8, ConnectionSpecificSuffix: 'fritz.box' }],
 			hostName: 'Testrechner',
-			firewall: { rules, blocks: [] }
+			firewall: unreadable ? null : { rules, blocks: [] },
+			...(elevation === undefined ? {} : { elevation })
 		})
 	);
 }
+
+/** The rule of the button as the firewall of the copy names it. */
+const ownRule = () => ({
+	Enabled: 'True',
+	Direction: 'Inbound',
+	Action: 'Allow',
+	Profile: 'Private',
+	Program: copy.program,
+	Protocol: 'TCP',
+	LocalPort: [String(copy.port)]
+});
 
 async function authToken(collection, email, password) {
 	const answer = await call('POST', `/api/collections/${collection}/auth-with-password`, { body: { identity: email, password } });
@@ -308,16 +326,31 @@ describe('home network on a disposable copy (plan heimnetz)', CASE_TIMEOUT, () =
 		expect(firewall.remedy.command).toBe(saved.body.lan.firewall.add);
 	});
 
-	it('creates the rule only as a request to the test, never with a prompt for administrator rights', async () => {
-		const answer = await app('POST', '/api/byl/security/lan/firewall', { body: { action: 'add' } });
-		expect(answer.status, JSON.stringify(answer.body)).toBe(200);
-		expect(answer.body.result).toEqual({ ok: true, action: 'add', outcome: 'test', report: null });
+	it('creates the rule only as a request to the test and reports it only once the rule is read back (regression)', async () => {
+		// Windows reports success, but the firewall names no rule afterwards: no success on the page.
+		writeNetwork([]);
+		const unconfirmed = await app('POST', '/api/byl/security/lan/firewall', { body: { action: 'add' } });
+		expect(unconfirmed.status, JSON.stringify(unconfirmed.body)).toBe(200);
+		expect(unconfirmed.body.result).toMatchObject({ ok: false, action: 'add', outcome: 'unconfirmed' });
+		expect(unconfirmed.body.result.report).toMatchObject({ code: 'lan-firewall-unconfirmed', level: 'error' });
+		expect(unconfirmed.body.result.report.problem).toBe(
+			'Die Firewall-Regel „becauseyoulovejira (Heimnetz)“ ist nicht angelegt, obwohl Windows die Änderung gemeldet hat: die Firewall nennt keine passende Regel.'
+		);
+		const add = `netsh advfirewall firewall add rule name="becauseyoulovejira (Heimnetz)" dir=in action=allow protocol=TCP localport=${copy.port} program="${copy.program}" profile=private`;
+		expect(unconfirmed.body.result.report.remedy.command).toBe(add);
+		expect(unconfirmed.body.lan.firewall).toMatchObject({ state: 'missing', add });
 		const asked = JSON.parse(readFileSync(firewallFile, 'utf8'));
 		expect(asked).toMatchObject({ action: 'add', port: copy.port, program: copy.program });
 		const encoded = /-EncodedCommand ([A-Za-z0-9+/=]+)$/.exec(asked.arguments)[1];
 		const script = Buffer.from(encoded, 'base64').toString('utf16le');
 		expect(script).toContain(`$program = '${copy.program.replace(/'/g, "''")}'`);
-		expect(script).toContain(`-Protocol TCP -LocalPort ${copy.port} -Program $program -Profile Private`);
+		expect(script).toContain(`dir=in action=allow protocol=TCP localport=${copy.port} "program=$program" profile=private`);
+
+		// The rule is there afterwards: done, and the page shows it present.
+		writeNetwork([ownRule()]);
+		const done = await app('POST', '/api/byl/security/lan/firewall', { body: { action: 'add' } });
+		expect(done.body.result).toEqual({ ok: true, action: 'add', outcome: 'done', report: null });
+		expect(done.body.lan.firewall.state).toBe('present');
 		expect((await app('POST', '/api/byl/security/lan/firewall', { body: { action: 'öffnen' } })).body.problem).toBe('action');
 
 		// Without the file of the test the copy refuses, from the console as from the page.
@@ -326,6 +359,64 @@ describe('home network on a disposable copy (plan heimnetz)', CASE_TIMEOUT, () =
 		const refused = control(['lan-firewall', 'add'], env);
 		expect(refused.code).toBe(1);
 		expect(refused.output).toContain('Diese Testkopie');
+	});
+
+	it('tells declined, no answer, not possible and an error of netsh apart, each with the command by hand and the state read again', async () => {
+		const add = `netsh advfirewall firewall add rule name="becauseyoulovejira (Heimnetz)" dir=in action=allow protocol=TCP localport=${copy.port} program="${copy.program}" profile=private`;
+		const problems = {
+			cancelled: 'wurde nicht angelegt: Die Anfrage nach Administratorrechten wurde abgelehnt oder abgebrochen.',
+			timeout: 'wurde nicht angelegt: Windows hat binnen 120 s nicht geantwortet.',
+			unavailable: 'wurde nicht angelegt: Windows kann hier nicht nach Administratorrechten fragen (Testkopie).',
+			failed: 'wurde nicht angelegt: netsh hat einen Fehler gemeldet (Code 1).'
+		};
+		const answers = {};
+		for (const [elevation, problem] of Object.entries(problems)) {
+			writeNetwork([], { elevation });
+			const answer = await app('POST', '/api/byl/security/lan/firewall', { body: { action: 'add' } });
+			expect(answer.status, elevation).toBe(200);
+			expect(answer.body.result, elevation).toMatchObject({ ok: false, action: 'add', outcome: elevation });
+			expect(answer.body.result.report.code, elevation).toBe(`lan-firewall-${elevation}`);
+			expect(answer.body.result.report.problem, elevation).toContain(problem);
+			expect(answer.body.result.report.remedy.command, elevation).toBe(add);
+			expect(answer.body.lan.firewall.state, elevation).toBe('missing');
+			answers[elevation] = answer.body.result.report;
+		}
+		// Not possible: the steps name the prompt "as administrator", Enter and checking again.
+		expect(answers.unavailable.remedy.steps.join(' ')).toMatch(/Als Administrator ausführen.*mit Enter bestätigen.*Zustand neu prüfen/);
+
+		// Remove (in the console: the route allows ten changes a minute): done only when the rule is
+		// gone afterwards; a firewall that cannot be read is no success. Console text without umlauts:
+		// it comes in the code page of the console.
+		const remove = `netsh advfirewall firewall delete rule name="becauseyoulovejira (Heimnetz)" program="${copy.program}"`;
+		writeNetwork([ownRule()]);
+		const kept = control(['lan-firewall', 'remove']);
+		expect(kept.code).toBe(1);
+		expect(kept.output.replace(/\s+/g, ' ')).toContain('ist nicht entfernt, obwohl Windows die');
+		expect(kept.output.replace(/\s+/g, ' ')).toContain('die Regel besteht weiter.');
+		expect(kept.output).toContain(remove);
+		writeNetwork([], { unreadable: true });
+		const blind = control(['lan-firewall', 'remove']);
+		expect(blind.code).toBe(1);
+		expect(blind.output.replace(/\s+/g, ' ')).toContain('sich nicht lesen');
+		writeNetwork([]);
+		const removed = control(['lan-firewall', 'remove']);
+		expect(removed.code, removed.output).toBe(0);
+		expect(removed.output).toContain('entfernt.');
+
+		// Add in the console says the same: the entry with the command, exit code 1; done only when it is so.
+		writeNetwork([], { elevation: 'cancelled' });
+		const declined = control(['lan-firewall', 'add']);
+		expect(declined.code).toBe(1);
+		// The problem wraps in the console; the command never does.
+		expect(declined.output.replace(/\s+/g, ' ')).toContain(
+			'wurde nicht angelegt: Die Anfrage nach Administratorrechten wurde abgelehnt oder abgebrochen.'
+		);
+		expect(declined.output).toContain(add);
+		writeNetwork([ownRule()]);
+		const created = control(['lan-firewall', 'add']);
+		expect(created.code, created.output).toBe(0);
+		expect(created.output).toContain('angelegt: nur pocketbase.exe dieses Ordners');
+		writeNetwork([]);
 	});
 
 	it('reads a rule that is there, and says so in status and doctor', async () => {
@@ -360,7 +451,11 @@ describe('home network on a disposable copy (plan heimnetz)', CASE_TIMEOUT, () =
 		// Switched off while the rule is still there: the hint of the catalog that it is left over.
 		expect(log).toMatch(/ lan-configure exit=0 lan=off problem=lan-firewall-leftover\r$/m);
 		expect(off.output).toContain('besteht aber noch');
-		expect(log).toMatch(/ lan-firewall exit=0 firewall=add outcome=test\r$/m);
+		// Every change names what Windows said, the state read again and the outcome, never a value.
+		expect(log).toMatch(/ lan-firewall exit=0 firewall=add elevation=done state=present outcome=done\r$/m);
+		expect(log).toMatch(/ lan-firewall exit=1 firewall=add elevation=done state=missing outcome=unconfirmed problem=lan-firewall-unconfirmed\r$/m);
+		expect(log).toMatch(/ lan-firewall exit=1 firewall=add elevation=cancelled state=missing outcome=cancelled problem=lan-firewall-cancelled\r$/m);
+		expect(log).toMatch(/ lan-firewall exit=1 firewall=remove elevation=done state=unknown outcome=unconfirmed problem=lan-firewall-unconfirmed\r$/m);
 	});
 
 	it.skipIf(process.env.CI !== 'true')('starts on 0.0.0.0 with the home network, is its own instance there and stops (CI only)', async () => {

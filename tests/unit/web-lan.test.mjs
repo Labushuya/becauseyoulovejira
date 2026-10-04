@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { loadHookLib } from '../support/hook-lib.mjs';
 import {
 	FIREWALL_ACTIONS,
+	FIREWALL_OUTCOMES,
 	FIREWALL_STATES,
 	LAN_INVALID_TEXTS,
 	LAN_MAX,
@@ -59,10 +60,11 @@ describe('domain/lan.ts and lan-rules.js', () => {
 		expect(LAN_MAX).toBe(rules.LAN_MAX);
 	});
 
-	it('name the rule, its states, the actions and the networks alike', () => {
+	it('name the rule, its states, the actions, the outcomes of a change and the networks alike', () => {
 		expect(LAN_RULE_NAME).toBe(rules.RULE_NAME);
 		expect([...FIREWALL_STATES]).toEqual(rules.FIREWALL_STATES);
 		expect([...FIREWALL_ACTIONS]).toEqual(rules.FIREWALL_ACTIONS);
+		expect([...FIREWALL_OUTCOMES]).toEqual(rules.FIREWALL_OUTCOMES);
 		expect([...NETWORK_CATEGORIES]).toEqual(rules.CATEGORIES);
 	});
 

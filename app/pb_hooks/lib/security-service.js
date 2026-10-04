@@ -465,8 +465,10 @@ function lanSave(e) {
 /**
  * POST /api/byl/security/lan/firewall: { action } (add or remove) through the control script
  * (lan-firewall), which makes Windows ask for administrator rights on this machine; the request
- * waits for the answer. Answers { result: { ok, action, outcome, report }, lan }: a declined or
- * failed change is no error of the route, its entry of the catalog says what to do by hand.
+ * waits for the answer (at most the time of the script, the prompt included). The script reads the
+ * rule again afterwards: ok only when it really is so. Answers { result: { ok, action, outcome,
+ * report }, lan } with the state read afterwards: a declined, failed or unconfirmed change is no
+ * error of the route, its entry of the catalog says what to do by hand.
  */
 function lanFirewall(e) {
   var context = service().check(e, 'lan-firewall', 'POST');
@@ -484,7 +486,11 @@ function lanFirewall(e) {
   }
   var outcome = lan.outcomeOf(raw.outcome);
   audit(e, 'lan-firewall', input.action + ' outcome=' + (outcome === '' ? 'unknown' : outcome));
-  var view = raw.ok ? lan.lanInfoView(raw) : lan.lanInfoView(service().runJson(context.appDir, 'lan-info'));
+  // A failed change carries the state in `lan`; a script of before does not, then lan-info tells it.
+  var view = lan.lanInfoView(raw.ok ? raw : raw.lan);
+  if (view === null) {
+    view = lan.lanInfoView(service().runJson(context.appDir, 'lan-info'));
+  }
   return e.json(200, {
     result: {
       ok: raw.ok === true,

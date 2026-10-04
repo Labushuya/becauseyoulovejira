@@ -10,6 +10,7 @@
 		FIREWALL_TEXTS,
 		LAN_TEXTS,
 		candidateText,
+		firewallFailureTitle,
 		lanRestartNeeded,
 		lanUrl,
 		sameAddresses,
@@ -270,9 +271,31 @@
 			{message.message.text}
 		</SectionMessage>
 	{/if}
-	{#if store.failed !== null && store.failed.report !== null}
-		<SectionMessage tone="error" title={store.failed.report.problem} live headingLevel={4}>
-			<ScriptProblemDetails report={store.failed.report} />
+	{#if store.failed !== null}
+		{@const failed = store.failed}
+		{@const command = failed.action === 'add' ? info.firewall.add : info.firewall.remove}
+		<SectionMessage tone="error" title={firewallFailureTitle(failed)} live headingLevel={4}>
+			{#if failed.report !== null}
+				<ScriptProblemDetails report={failed.report} />
+			{:else}
+				<p>{LAN_TEXTS.manual}</p>
+				{#if command !== ''}
+					<CodeBlock code={command} label="Befehl zum Kopieren" wrap />
+				{/if}
+			{/if}
+			{#snippet actions()}
+				<button
+					class="button-subtle"
+					type="button"
+					aria-disabled={busy ? 'true' : undefined}
+					aria-busy={store?.busy === 'firewall' ? 'true' : undefined}
+					onclick={() => {
+						if (!busy) void store?.recheck();
+					}}
+				>
+					{LAN_TEXTS.recheck}
+				</button>
+			{/snippet}
 		</SectionMessage>
 	{/if}
 	{#if info.firewall.add !== ''}
