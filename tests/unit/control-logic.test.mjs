@@ -360,11 +360,11 @@ describe('decisions of start (ADR-0039 section 4)', () => {
 		});
 	});
 
-	it('reads ports of 127.0.0.1 only', () => {
+	it('reads ports of 127.0.0.1 and, with the access in the home network, 0.0.0.0 only', () => {
 		expect(result.http).toEqual({
 			standard: 8090,
 			other: 53211,
-			any: null,
+			any: 8090,
 			name: null,
 			ipv6: null,
 			noPort: null,
@@ -488,7 +488,7 @@ try {
     $result.fingerprintKeys = @($base.Keys)
     $result.fingerprintShape = @{
         server = $base.server -match '^\d+:\d+$'; migrations = $base.migrations -match '^[0-9a-f]{64}$'
-        hooks = $base.hooks -match '^[0-9a-f]{64}$'; port = $base.port; hosts = $base.hosts; environment = $base.environment -match '^[0-9a-f]{64}$'
+        hooks = $base.hooks -match '^[0-9a-f]{64}$'; port = $base.port; hosts = $base.hosts; lan = $base.lan; environment = $base.environment -match '^[0-9a-f]{64}$'
         mailHelper = $base.mailHelper; web = $base.web -match '^[0-9a-f]{64}$'
     }
     # A state file of before ADR-0055 has no part "hosts": without further hosts nothing changed.
@@ -627,13 +627,14 @@ describe('start fingerprint, reload, status and logs (ADR-0039 sections 5 and 6)
 	});
 
 	it('fingerprints what the server loads, without values', () => {
-		expect(fp.fingerprintKeys).toEqual(['server', 'migrations', 'hooks', 'port', 'hosts', 'environment', 'mailHelper', 'web']);
+		expect(fp.fingerprintKeys).toEqual(['server', 'migrations', 'hooks', 'port', 'hosts', 'lan', 'environment', 'mailHelper', 'web']);
 		expect(fp.fingerprintShape).toEqual({
 			server: true,
 			migrations: true,
 			hooks: true,
 			port: '8090',
 			hosts: '',
+			lan: '',
 			environment: true,
 			mailHelper: '',
 			web: true

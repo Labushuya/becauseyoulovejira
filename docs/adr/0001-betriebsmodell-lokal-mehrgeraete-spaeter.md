@@ -1,6 +1,6 @@
 # ADR-0001: Betriebsmodell – vorerst lokal und Einzelnutzer, später Mehrgeräte/Mehrnutzer über Tailscale
 
-- **Status:** Angenommen (mit Nachtrag vom 2026-09-27, ergänzt durch [ADR-0028](0028-plattform-strategie.md); Nachtrag vom 2026-10-04: E7 startet ohne Mehrgeräte, mehrere Konten, [ADR-0056](0056-konten-und-verwalter.md))
+- **Status:** Angenommen (mit Nachtrag vom 2026-09-27, ergänzt durch [ADR-0028](0028-plattform-strategie.md); Nachtrag vom 2026-10-04: E7 startet ohne Mehrgeräte, mehrere Konten, [ADR-0056](0056-konten-und-verwalter.md); Nachtrag 2026-10-04: Zugriff im Heimnetz über HTTP als Einstellung)
 - **Datum:** 2026-09-24
 - **Entscheidung durch:** Nutzer (Betriebsmodell), Advisor (technische Voraussetzungen)
 
@@ -75,3 +75,11 @@ Nutzerentscheidung vom 2026-10-04: Die Haushalte (§4, Etappe E7) beginnen jetzt
 - **Wer die App bedient** (System, Sicherung, Speicher, Sicherheit, Konten), entscheidet das ausdrückliche Recht „Verwalter der App“ (`users.instance_admin`), nicht mehr das zuerst angelegte Konto.
 - **§2 bewährt sich:** Datensätze bleiben privat (`owner`), ohne Codeänderung sieht das zweite Konto nichts vom ersten. Neu lesbar sind nur Namen von Konten, mit denen man einen Haushalt teilt (E-Mail-Adressen nie), und die Mitglieder der eigenen Haushalte. Die Schreibregeln der Haushalte bleiben bis E7-2 `null`.
 - §3 (Tailscale, Proxy-Kopfzeilen) gilt für den späteren Zugriff von anderen Geräten unverändert. Plan: [E7 „Haushalt“](../plan/e7-haushalt.md).
+
+## Nachtrag 2026-10-04: Zugriff im Heimnetz über HTTP (Nutzerentscheidung, HN-1)
+
+Die unter „Alternativen“ verworfene **Bindung an `0.0.0.0` im Heimnetz** gibt es jetzt als Einstellung, auf ausdrücklichen Wunsch des Nutzers für den Haushalt (E7) und unabhängig von §3 (Tailscale) und S2 ([ADR-0028](0028-plattform-strategie.md), Nachtrag 2026-10-04). Einzelheiten in [ADR-0055](0055-sicherheits-haertung.md) (Nachtrag 2026-10-04) und im [Plan „Zugriff im Heimnetz“](../plan/heimnetz.md).
+
+- **§1 gilt als Standard weiter:** ausgeschaltet bindet die App nur `127.0.0.1`. Eingeschaltet bindet sie `0.0.0.0:<Port>` und antwortet nur unter `127.0.0.1`, `localhost`, `[::1]` und den gewählten Adressen des Heimnetzes (Host-Allowlist), über **HTTP ohne Verschlüsselung**, nur für vertrauenswürdige Netze und deutlich so benannt.
+- **§3 bleibt der Weg für HTTPS und für unterwegs:** Proxy-Kopfzeilen (`trustedProxy`) werden für den Heimnetz-Zugang nicht gesetzt; die Prüfungen „nur dieser Rechner“, `superuserIPs` und der Rate-Limiter sehen dadurch die echte Adresse jedes Geräts.
+- Mehrere Personen bleiben getrennt über ihre Konten (§2, Nachtrag E7-1). Das ist der Zugang im Heimnetz, den der Nachtrag E7-1 als eigenes Paket ankündigt: Die Seiten der Bedienung bleiben dem Verwalter der App vorbehalten und gehen zusätzlich nur auf diesem Rechner, auch für ihn.

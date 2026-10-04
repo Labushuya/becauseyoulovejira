@@ -51,6 +51,35 @@ routerAdd(
   $apis.requireAuth('users')
 );
 
+// Access in the home network (plan heimnetz): its state, the switch with the addresses (after a
+// restart) and the firewall rule (Windows asks for administrator rights on this machine).
+routerAdd(
+  'GET',
+  '/api/byl/security/lan',
+  function (e) {
+    return require(`${__hooks}/lib/security-service.js`).lanRead(e);
+  },
+  $apis.requireAuth('users')
+);
+
+routerAdd(
+  'POST',
+  '/api/byl/security/lan',
+  function (e) {
+    return require(`${__hooks}/lib/security-service.js`).lanSave(e);
+  },
+  $apis.requireAuth('users')
+);
+
+routerAdd(
+  'POST',
+  '/api/byl/security/lan/firewall',
+  function (e) {
+    return require(`${__hooks}/lib/security-service.js`).lanFirewall(e);
+  },
+  $apis.requireAuth('users')
+);
+
 // Whether failed sign-ins of the last 24 hours ask for attention when the app opens (ADR-0035).
 routerAdd(
   'GET',

@@ -201,8 +201,9 @@ describe('failed sign-ins', () => {
 		}
 		const cron = await call('/api/crons/byl-login-failures', { method: 'POST', token: superuser.authStore.token, origin: false });
 		expect(cron.status).toBe(204);
-		const rows = await superuser.collection('login_failures').getFullList({ filter: 'identity ~ "alt-"' });
-		expect(rows).toHaveLength(1);
-		expect(rows[0].identity).toContain(at(29 * DAY_MS).slice(0, 10));
+		// The cron route of PocketBase answers before the job has run.
+		const rows = () => superuser.collection('login_failures').getFullList({ filter: 'identity ~ "alt-"' });
+		await expect.poll(async () => (await rows()).length, { timeout: scaled(10_000) }).toBe(1);
+		expect((await rows())[0].identity).toContain(at(29 * DAY_MS).slice(0, 10));
 	});
 });

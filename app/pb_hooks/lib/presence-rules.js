@@ -23,6 +23,10 @@ var MIN_GAP_MS = 2000;
 var ENTRY_PREFIX = 'byl.attention.';
 var LANDING_KEY = 'byl.landing-seen-at';
 var LAST_SENT_KEY = 'byl.attention-last-at';
+// Key on a realtime client: whether its connection came from this machine (plan heimnetz). Only
+// such tabs count as open and get a message; a tab on another device of the home network never
+// answers for start.bat or the landing page on this machine.
+var LOCAL_CLIENT_KEY = 'byl.local';
 
 function text(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -161,6 +165,7 @@ module.exports = {
   ENTRY_PREFIX: ENTRY_PREFIX,
   LANDING_KEY: LANDING_KEY,
   LAST_SENT_KEY: LAST_SENT_KEY,
+  LOCAL_CLIENT_KEY: LOCAL_CLIENT_KEY,
   requestKind: requestKind,
   isLoopback: isLoopback,
   allows: allows,

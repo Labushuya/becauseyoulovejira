@@ -262,8 +262,10 @@
 			in deinen Eingang legen, nichts lesen, ändern oder löschen, und du kannst ihn jederzeit widerrufen.
 		</p>
 		<p>
-			Die Adresse ist nur auf diesem Rechner erreichbar (<code>127.0.0.1</code>), nicht aus dem Netz
-			oder dem Internet. Anfragen aus Webseiten lehnt die App ab.
+			Die Adresse ist nur auf diesem Rechner erreichbar (<code>127.0.0.1</code>), mit
+			eingeschaltetem
+			<a href="#heimnetz">Zugriff im Heimnetz</a> auch von Geräten im Heimnetz, nie aus dem Internet.
+			Anfragen aus Webseiten lehnt die App ab.
 		</p>
 		<h4>Beispiel für PowerShell</h4>
 		<CodeBlock
@@ -1188,6 +1190,20 @@
 				</dd>
 			</div>
 			<div class="row">
+				<dt>Im Heimnetz</dt>
+				<dd>
+					Andere Geräte im Heimnetz erreichen die App nur, wenn du es unter
+					<a href={resolve('/einstellungen/sicherheit')}>Einstellungen → Sicherheit</a> einschaltest
+					(<a href="#heimnetz">Schritt für Schritt</a>). <code>status.bat</code> und
+					<code>byl-control.ps1 doctor</code> nennen dann die Adresse für andere Geräte, die
+					Firewall-Regel und das Netzwerkprofil; im Ordner <code>app</code> gibt es dafür auch
+					<code>byl-control.ps1 lan-info</code>, <code>lan-configure</code> und
+					<code>lan-firewall</code>.
+					<code>start.bat</code>, die Startseite und die Browser-Erweiterung bleiben auf
+					<code>127.0.0.1</code>.
+				</dd>
+			</div>
+			<div class="row">
 				<dt>Wenn es hakt</dt>
 				<dd>
 					Jedes Skript sagt bei einem Problem, was passiert ist, die wahrscheinliche Ursache und die
@@ -1330,10 +1346,10 @@
 	<section id="sicherheit" aria-labelledby="sicherheit-title">
 		<h3 id="sicherheit-title">Sicherheit</h3>
 		<p>
-			becauseyoulovejira ist nur auf diesem Rechner erreichbar. Jede Webseite, die du im Browser
-			öffnest, kann aber Anfragen an diesen Rechner schicken. Deshalb schützt sich die App selbst;
-			unter <a href={resolve('/einstellungen/sicherheit')}>Einstellungen → Sicherheit</a> siehst du, was
-			aktiv ist, und stellst ein, was sinnvoll ist.
+			becauseyoulovejira ist standardmäßig nur auf diesem Rechner erreichbar. Jede Webseite, die du
+			im Browser öffnest, kann aber Anfragen an diesen Rechner schicken. Deshalb schützt sich die
+			App selbst; unter <a href={resolve('/einstellungen/sicherheit')}>Einstellungen → Sicherheit</a
+			> siehst du, was aktiv ist, und stellst ein, was sinnvoll ist.
 		</p>
 		<ul>
 			<li>
@@ -1357,12 +1373,71 @@
 				<strong>Zusätzliche Adressen</strong> brauchst du nur, wenn die App später von anderen Geräten
 				erreichbar sein soll, etwa über Tailscale; sie gelten nur über HTTPS und erst nach einem Neustart.
 			</li>
+			<li>
+				<strong>Zugriff im Heimnetz</strong> (standardmäßig aus) öffnet die App für andere Geräte in deinem
+				Heimnetz, unverschlüsselt über HTTP; Einzelheiten unten.
+			</li>
 		</ul>
 		<p>
 			Ein vergessenes Admin-Passwort setzt <code>admin-zuruecksetzen.bat</code> im Ordner
 			<code>app</code> neu, ohne Daten zu löschen; das Passwort deines App-Kontos änderst du unter
 			<a href={resolve('/einstellungen/konto')}>Konto</a>, ein vergessenes setzt der Verwalter der
 			App unter <a href={resolve('/einstellungen/konten')}>Konten</a> zurück.
+		</p>
+		<h4 id="heimnetz">Zugriff im Heimnetz</h4>
+		<p>
+			So öffnet eine zweite Person die App auf ihrem eigenen Gerät, etwa dem Handy im WLAN, mit
+			ihrem eigenen Konto. Die App läuft weiter auf diesem Rechner; andere Geräte erreichen sie
+			unter seiner Adresse im Heimnetz, etwa <code>http://192.168.178.20:8090</code>.
+		</p>
+		<p>
+			<strong>Unverschlüsselt:</strong> Im Heimnetz geht alles über HTTP ohne Verschlüsselung, auch Passwörter.
+			Schalte den Zugriff nur in deinem eigenen, vertrauenswürdigen Heimnetz ein, nie in fremden Netzen.
+			Verschlüsselt (HTTPS) folgt mit dem Umzug auf den Raspberry Pi.
+		</p>
+		<ol>
+			<li>
+				Netzwerk als „Privat“ einstufen, nur im eigenen Heimnetz: Windows-Einstellungen → Netzwerk
+				und Internet → Status → „Eigenschaften“ bei der Verbindung (WLAN: Netzwerk und Internet →
+				WLAN → das Netzwerk) → Netzwerkprofil „Privat“. Die Firewall-Regel gilt nur in privaten
+				Netzwerken.
+			</li>
+			<li>
+				Unter <a href={resolve('/einstellungen/sicherheit')}>Einstellungen → Sicherheit</a> den Zugriff
+				im Heimnetz einschalten, die Adresse dieses Rechners wählen und „Einstellung speichern“.
+			</li>
+			<li>
+				„Firewall-Regel anlegen …“ wählen und die Frage von Windows nach Administratorrechten
+				bestätigen. Die Regel lässt nur diese App, nur ihren Port und nur in privaten Netzwerken
+				durch.
+			</li>
+			<li>
+				Die App neu starten: unter <a href={resolve('/einstellungen/system')}
+					>Einstellungen → System</a
+				>
+				„Jetzt neu starten“ oder <code>neu-starten.bat</code>. Erscheint danach die
+				Windows-Sicherheitswarnung für pocketbase.exe, nur „Private Netzwerke“ anhaken.
+			</li>
+			<li>
+				Auf dem anderen Gerät im selben WLAN die „Adresse für andere Geräte“ der Seite Sicherheit im
+				Browser öffnen und mit dem eigenen Konto anmelden. Als App installieren lässt sich die Seite
+				über HTTP nicht; ein Lesezeichen oder eine Verknüpfung auf dem Startbildschirm geht.
+			</li>
+			<li>
+				In der FRITZ!Box eine feste Adresse reservieren: Heimnetz → Netzwerk → Netzwerkverbindungen
+				→ beim Rechner „Bearbeiten“ → „Diesem Netzwerkgerät immer die gleiche IPv4-Adresse
+				zuweisen“. Sonst kann sich die Adresse ändern, und andere Geräte erreichen die App nicht
+				mehr.
+			</li>
+		</ol>
+		<p>
+			Auch mit Zugriff im Heimnetz bleiben die Seiten Konten, Sicherheit, Sicherung, Speicher und
+			System, das Ansehen von Dateien aus beobachteten Ordnern und die Verwaltung (/_/) nur auf
+			diesem Rechner unter <code>127.0.0.1</code>, auch für den Verwalter. Jedes andere Konto meldet
+			sich auf seinem Gerät an und ändert sein Passwort dort unter „Konto“. Jedes Gerät hat seine
+			eigene Zählung beim Schutz vor Rateversuchen. Ausschalten: den Schalter aus, „Einstellung
+			speichern“, neu starten und die Firewall-Regel mit „Firewall-Regel entfernen …“ wieder
+			entfernen.
 		</p>
 	</section>
 

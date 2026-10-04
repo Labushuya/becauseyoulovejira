@@ -1222,6 +1222,175 @@ $BylProblemCatalog = [ordered]@{
         Offer   = ''
     }
 
+    # --- Access in the home network (plan heimnetz) ----------------------------------------------------
+
+    'lan-addresses'            = @{
+        Exit    = 1
+        Level   = 'error'
+        Faq     = ''
+        Problem = 'Mindestens eine Adresse für den Zugriff im Heimnetz ist ungültig; nichts wurde geändert.'
+        Cause   = 'Erlaubt sind höchstens {max} Adressen dieses Rechners im Heimnetz: private IPv4-Adressen (192.168.x.x, 10.x.x.x, 172.16.x.x bis 172.31.x.x) oder sein Name im Heimnetz mit .fritz.box, .local, .lan, .home.arpa oder .internal; ohne http:// und ohne Port.'
+        Steps   = @(
+            'Die Adressen dieses Rechners zeigt lan-info (Befehl unten); eine davon unter Einstellungen → Sicherheit wählen.'
+            'Von Hand: die Adressen mit Komma getrennt an lan-configure geben, etwa lan-configure 192.168.178.20.'
+        )
+        Command = '{control} lan-info'
+        Offer   = ''
+    }
+    'lan-address-required'     = @{
+        Exit    = 1
+        Level   = 'error'
+        Faq     = ''
+        Problem = 'Für den Zugriff im Heimnetz fehlt eine Adresse; nichts wurde geändert.'
+        Cause   = 'Andere Geräte brauchen eine Adresse dieses Rechners im Heimnetz, unter der sie die App öffnen.'
+        Steps   = @(
+            'Die Adressen dieses Rechners zeigt lan-info (Befehl unten).'
+            'Eine davon unter Einstellungen → Sicherheit wählen oder an lan-configure geben, etwa lan-configure 192.168.178.20.'
+        )
+        Command = '{control} lan-info'
+        Offer   = ''
+    }
+    'lan-firewall-missing'     = @{
+        Exit    = 0
+        Level   = 'warning'
+        Faq     = ''
+        Problem = 'Die Windows-Firewall lässt Geräte im Heimnetz noch nicht zu becauseyoulovejira durch: Es fehlt die Regel „becauseyoulovejira (Heimnetz)“ für Port {port}.'
+        Cause   = 'Windows blockiert eingehende Verbindungen zu Programmen ohne passende Regel. Die Regel lässt nur pocketbase.exe dieses Ordners, nur diesen Port und nur in privaten Netzwerken durch.'
+        Steps   = @(
+            'Unter Einstellungen → Sicherheit „Firewall-Regel anlegen …“ wählen oder das Angebot hier annehmen; Windows fragt dafür nach Administratorrechten.'
+            'Oder von Hand: eine Eingabeaufforderung als Administrator öffnen (Rechtsklick auf „Eingabeaufforderung“, „Als Administrator ausführen“) und den Befehl unten einfügen.'
+        )
+        Command = 'netsh advfirewall firewall add rule name="becauseyoulovejira (Heimnetz)" dir=in action=allow protocol=TCP localport={port} program="{app}\pocketbase.exe" profile=private'
+        Offer   = 'Soll ich die Firewall-Regel jetzt anlegen (Windows fragt dafür nach Administratorrechten)? (J/N)'
+    }
+    'lan-firewall-mismatch'    = @{
+        Exit    = 0
+        Level   = 'warning'
+        Faq     = ''
+        Problem = 'Die Firewall-Regel „becauseyoulovejira (Heimnetz)“ passt nicht zu Port {port}: anderer Port, nicht für private Netzwerke oder ausgeschaltet.'
+        Cause   = 'Der Port wurde nach dem Anlegen der Regel umgestellt, oder die Regel wurde von Hand geändert.'
+        Steps   = @(
+            'Die Regel neu anlegen: unter Einstellungen → Sicherheit „Firewall-Regel anlegen …“ oder das Angebot hier; die alte Regel wird dabei ersetzt.'
+            'Oder von Hand in einer Eingabeaufforderung als Administrator: zuerst netsh advfirewall firewall delete rule name="becauseyoulovejira (Heimnetz)", dann den Befehl unten.'
+        )
+        Command = 'netsh advfirewall firewall add rule name="becauseyoulovejira (Heimnetz)" dir=in action=allow protocol=TCP localport={port} program="{app}\pocketbase.exe" profile=private'
+        Offer   = 'Soll ich die Firewall-Regel jetzt neu anlegen (Windows fragt dafür nach Administratorrechten)? (J/N)'
+    }
+    'lan-firewall-blocked'     = @{
+        Exit    = 0
+        Level   = 'warning'
+        Faq     = ''
+        Problem = 'Eine Sperrregel der Windows-Firewall blockiert pocketbase.exe; sie gilt vor jeder Erlaubnis, Geräte im Heimnetz erreichen die App so nicht.'
+        Cause   = 'Meist entstanden, als bei der Windows-Sicherheitswarnung für pocketbase.exe „Abbrechen“ gewählt wurde.'
+        Steps   = @(
+            'Die Sperrregeln für pocketbase.exe dieses Ordners entfernen: den Befehl unten in einer Eingabeaufforderung einfügen, die als Administrator läuft.'
+            'Oder über „Windows Defender Firewall mit erweiterter Sicherheit“ → Eingehende Regeln: die Regeln für pocketbase.exe mit der Aktion „Blockieren“ löschen.'
+        )
+        Command = 'powershell -NoProfile -Command "Get-NetFirewallApplicationFilter -Program ''{appq}\pocketbase.exe'' | Get-NetFirewallRule | Where-Object Action -eq Block | Remove-NetFirewallRule"'
+        Offer   = ''
+    }
+    'lan-firewall-leftover'    = @{
+        Exit    = 0
+        Level   = 'warning'
+        Faq     = ''
+        Problem = 'Der Zugriff im Heimnetz ist aus, die Firewall-Regel „becauseyoulovejira (Heimnetz)“ besteht aber noch.'
+        Cause   = 'Die Regel wurde beim Ausschalten nicht entfernt. Sie schadet nicht, solange die App nur auf diesem Rechner lauscht, wird aber nicht mehr gebraucht.'
+        Steps   = @(
+            'Die Regel entfernen: unter Einstellungen → Sicherheit „Firewall-Regel entfernen …“ oder das Angebot hier; Windows fragt dafür nach Administratorrechten.'
+            'Oder von Hand: den Befehl unten in einer Eingabeaufforderung einfügen, die als Administrator läuft.'
+        )
+        Command = 'netsh advfirewall firewall delete rule name="becauseyoulovejira (Heimnetz)" program="{app}\pocketbase.exe"'
+        Offer   = 'Soll ich die Firewall-Regel jetzt entfernen (Windows fragt dafür nach Administratorrechten)? (J/N)'
+    }
+    'lan-firewall-add-failed'  = @{
+        Exit    = 1
+        Level   = 'error'
+        Faq     = ''
+        Problem = 'Die Firewall-Regel „becauseyoulovejira (Heimnetz)“ wurde nicht angelegt: {detail}.'
+        Cause   = 'Zum Ändern der Firewall braucht Windows Administratorrechte; die Anfrage wurde abgelehnt, nicht beantwortet, oder Windows hat die Regel nicht angenommen.'
+        Steps   = @(
+            'Erneut versuchen und die Frage der Benutzerkontensteuerung bestätigen (am Rechner der App, gegebenenfalls mit dem Passwort eines Administrators).'
+            'Oder von Hand: eine Eingabeaufforderung als Administrator öffnen und den Befehl unten einfügen.'
+        )
+        Command = 'netsh advfirewall firewall add rule name="becauseyoulovejira (Heimnetz)" dir=in action=allow protocol=TCP localport={port} program="{app}\pocketbase.exe" profile=private'
+        Offer   = ''
+    }
+    'lan-firewall-remove-failed' = @{
+        Exit    = 1
+        Level   = 'error'
+        Faq     = ''
+        Problem = 'Die Firewall-Regel „becauseyoulovejira (Heimnetz)“ wurde nicht entfernt: {detail}.'
+        Cause   = 'Zum Ändern der Firewall braucht Windows Administratorrechte; die Anfrage wurde abgelehnt, nicht beantwortet, oder Windows hat die Änderung nicht angenommen.'
+        Steps   = @(
+            'Erneut versuchen und die Frage der Benutzerkontensteuerung bestätigen.'
+            'Oder von Hand: eine Eingabeaufforderung als Administrator öffnen und den Befehl unten einfügen.'
+        )
+        Command = 'netsh advfirewall firewall delete rule name="becauseyoulovejira (Heimnetz)" program="{app}\pocketbase.exe"'
+        Offer   = ''
+    }
+    'lan-firewall-action'      = @{
+        Exit    = 1
+        Level   = 'error'
+        Faq     = ''
+        Problem = 'lan-firewall kennt „{value}“ nicht; erlaubt sind add (Regel anlegen) und remove (Regel entfernen).'
+        Cause   = 'Der Befehl wurde ohne oder mit einem anderen Wort aufgerufen.'
+        Steps   = @(
+            'Den Befehl mit add oder remove aufrufen (Befehl unten); Windows fragt dann nach Administratorrechten.'
+        )
+        Command = '{control} lan-firewall add'
+        Offer   = ''
+    }
+    'lan-firewall-test'        = @{
+        Exit    = 1
+        Level   = 'error'
+        Faq     = ''
+        Problem = 'Diese Testkopie ändert die Firewall nicht.'
+        Cause   = 'Kopien der Tests (BYL_TEST_ISOLATED) fragen nie nach Administratorrechten; sie schreiben die Anfrage nur in die Datei BYL_TEST_FIREWALL_FILE ihres Tests.'
+        Steps   = @(
+            'Nur in Tests: BYL_TEST_FIREWALL_FILE auf eine Datei des Tests setzen.'
+        )
+        Command = ''
+        Offer   = ''
+    }
+    'lan-profile'              = @{
+        Exit    = 0
+        Level   = 'warning'
+        Faq     = ''
+        Problem = 'Das Netzwerk von {address} (Adapter {adapter}) ist in Windows als „{category}“ eingestuft; die Firewall-Regel gilt nur in privaten Netzwerken, Geräte im Heimnetz erreichen die App so nicht.'
+        Cause   = 'Windows stuft ein neues Netzwerk oft als „Öffentlich“ ein. Das ist richtig für fremde Netze (Café, Hotel); nur das eigene, vertrauenswürdige Heimnetz sollte „Privat“ sein.'
+        Steps   = @(
+            'Nur im eigenen Heimnetz: Einstellungen → Netzwerk und Internet → Status → „Eigenschaften“ bei der Verbindung (WLAN: Netzwerk und Internet → WLAN → das Netzwerk) → Netzwerkprofil „Privat“.'
+            'Oder in einer Eingabeaufforderung als Administrator den Befehl unten einfügen.'
+        )
+        Command = 'powershell -NoProfile -Command "Set-NetConnectionProfile -InterfaceIndex {index} -NetworkCategory Private"'
+        Offer   = ''
+    }
+    'lan-address-missing'      = @{
+        Exit    = 0
+        Level   = 'warning'
+        Faq     = ''
+        Problem = 'Die Adresse {address} gehört gerade zu keinem Netzwerkadapter dieses Rechners; Geräte im Heimnetz erreichen die App darunter nicht.'
+        Cause   = 'Der Router (etwa die FRITZ!Box) hat diesem Rechner inzwischen eine andere Adresse gegeben, oder er ist gerade in einem anderen Netz.'
+        Steps   = @(
+            'In der FRITZ!Box eine feste Adresse reservieren: Heimnetz → Netzwerk → Netzwerkverbindungen → beim Rechner auf „Bearbeiten“ → „Diesem Netzwerkgerät immer die gleiche IPv4-Adresse zuweisen“ → OK.'
+            'Danach unter Einstellungen → Sicherheit die aktuelle Adresse wählen (lan-info zeigt sie, Befehl unten) und die App neu starten.'
+        )
+        Command = '{control} lan-info'
+        Offer   = ''
+    }
+    'lan-unreadable'           = @{
+        Exit    = 0
+        Level   = 'warning'
+        Faq     = ''
+        Problem = 'Firewall und Netzwerk ließen sich nicht prüfen ({detail}); ob andere Geräte die App erreichen, ist unklar.'
+        Cause   = 'Windows hat die Angaben zu Netzwerk oder Firewall nicht geliefert.'
+        Steps   = @(
+            'Die Prüfung erneut ausführen (Befehl unten).'
+        )
+        Command = '{control} doctor'
+        Offer   = ''
+    }
+
     # --- All scripts ---------------------------------------------------------------------------------
 
     'unexpected'               = @{

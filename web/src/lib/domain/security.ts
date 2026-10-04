@@ -3,6 +3,7 @@
 // security-rules.js, parity test) and the words of the page. Pure; the server decides
 // (app/pb_hooks/lib/security-service.js), the SPA only words it.
 
+import { lanUrl, parseLanOverview, type LanOverview } from './lan';
 import { formatPointInTime, type SystemDenial } from './system';
 
 export type SecurityLevel = 'normal' | 'strict' | 'custom' | 'off';
@@ -42,6 +43,8 @@ export interface SecurityOverview {
 		editable: boolean;
 		max: number;
 	};
+	/** The access in the home network as the server runs now (plan heimnetz). */
+	lan: LanOverview;
 	admin: { ips: readonly string[]; loopbackOnly: boolean };
 	session: { days: number | null; seconds: number; choices: readonly number[]; standard: number };
 	backup: {
@@ -130,6 +133,7 @@ export function parseSecurity(value: unknown): SecurityOverview | null {
 		level: value.level,
 		cors: { restricted: cors.restricted === true },
 		hosts: { own, active, configured, editable: hosts.editable === true, max: hosts.max },
+		lan: parseLanOverview(value.lan),
 		admin: { ips, loopbackOnly: admin.loopbackOnly === true },
 		session: {
 			days: isCount(session.days) ? session.days : null,
@@ -310,7 +314,8 @@ export function statusLines(overview: SecurityOverview): StatusLine[] {
 		meaning:
 			'Jede Webseite in deinem Browser kann Anfragen an diesen Rechner schicken. Ihre Antworten lesen darf aber nur die App unter ihrer eigenen Adresse. Die Browser-Erweiterung, Skripte und der Mail-Helfer brauchen das nicht.'
 	});
-	const active = hosts.active.length === 0 ? '' : ` und ${hostList(hosts.active)}`;
+	const named = [...hosts.active, ...(overview.lan.active ? overview.lan.hosts : [])];
+	const active = named.length === 0 ? '' : ` und ${hostList(named)}`;
 	lines.push({
 		id: 'host',
 		title: 'Host-Schutz',
@@ -320,6 +325,7 @@ export function statusLines(overview: SecurityOverview): StatusLine[] {
 		meaning:
 			'Eine fremde Seite kann sich einen Namen besorgen, der kurz auf diesen Rechner zeigt (DNS-Rebinding). Die App antwortet deshalb nur unter ihren eigenen Adressen; jede andere Anfrage lehnt sie ab, bevor sie etwas liest.'
 	});
+	lines.push(lanLine(overview.lan));
 	lines.push({
 		id: 'admin',
 		title: 'Admin-Oberfläche',
@@ -376,6 +382,24 @@ export function statusLines(overview: SecurityOverview): StatusLine[] {
 			'Die Erweiterung liest nur im offenen Tab von WhatsApp Web, sendet nie etwas in WhatsApp und legt Nachrichten nur mit einem Zugangsschlüssel in deinen Eingang. Nur sie bekommt dafür eine Ausnahme von der Regel „nur eigene Oberfläche“.'
 	});
 	return lines;
+}
+
+function lanLine(lan: LanOverview): StatusLine {
+	const base = {
+		id: 'lan',
+		title: 'Zugriff im Heimnetz',
+		meaning:
+			'Ausgeschaltet ist die App nur auf diesem Rechner erreichbar. Eingeschaltet öffnen andere Geräte im Heimnetz (etwa ein Handy im WLAN) sie unter einer Adresse dieses Rechners, unverschlüsselt über HTTP und mit eigener Anmeldung. Die Seiten Konten, Sicherheit, Sicherung, Speicher und System und die Verwaltung bleiben auch dann nur auf diesem Rechner.'
+	};
+	if (lan.active && lan.hosts.length > 0) {
+		return {
+			...base,
+			...WARN,
+			state: 'An (unverschlüsselt)',
+			text: `Andere Geräte erreichen die App unter ${lan.hosts.map(lanUrl).join(', ')}.`
+		};
+	}
+	return { ...base, ...ON, state: 'Aus', text: 'Die App ist nur auf diesem Rechner erreichbar.' };
 }
 
 function backupLine(backup: SecurityOverview['backup']): StatusLine {
@@ -462,7 +486,7 @@ export function denialText(reason: SystemDenial): { title: string; text: string 
 		case 'loopback':
 			return {
 				title: 'Nur auf dem Rechner der App',
-				text: 'Die Sicherheit zeigt die App nur im Browser auf dem Rechner, auf dem sie läuft, nicht von einem anderen Gerät und nicht über einen Proxy.'
+				text: 'Die Sicherheit zeigt die App nur im Browser auf dem Rechner, auf dem sie läuft, unter ihrer eigenen Adresse (etwa http://127.0.0.1:8090/), nicht von einem anderen Gerät im Heimnetz und nicht über einen Proxy.'
 			};
 		case 'origin':
 			return {
@@ -484,7 +508,7 @@ export function denialText(reason: SystemDenial): { title: string; text: string 
 		case 'unavailable':
 			return {
 				title: 'Hier nicht einstellbar',
-				text: 'Zusätzliche Adressen stellt nur die App unter Windows aus ihrem Ordner app ein (Steuerskript).'
+				text: 'Zusätzliche Adressen und den Zugriff im Heimnetz stellt nur die App unter Windows aus ihrem Ordner app ein (Steuerskript).'
 			};
 		case 'busy':
 			return {

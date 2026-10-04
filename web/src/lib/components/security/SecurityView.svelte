@@ -14,16 +14,20 @@
 	} from '$lib/domain/security';
 	import { RESTART_NEEDED, restartNeeded } from '$lib/guidance/texts';
 	import { helpHref } from '$lib/settings-sections';
+	import type { SecurityLanStore } from '$lib/stores/security-lan.svelte';
 	import type { SecurityStore } from '$lib/stores/security.svelte';
 	import SecurityHosts from './SecurityHosts.svelte';
+	import SecurityLan from './SecurityLan.svelte';
 
 	// Page "Einstellungen → Sicherheit" (ADR-0055 §8): how the app protects itself against requests
 	// from the browser, in one overview with a lozenge per point (red only for a real problem, never
 	// here) and what each point means; the settings that make sense: the level of the protection
 	// against guessing (two levels, no number), how long a sign-in stays valid (a short choice), the
-	// further hosts (empty by default, after a restart); the failed sign-ins of the last 30 days and
-	// where the passwords are changed. Changes apply when chosen; a flag confirms them.
-	let { store }: { store: SecurityStore } = $props();
+	// further hosts (empty by default, after a restart); the access in the home network (plan
+	// heimnetz, its own store `lan`, only for the own instance under Windows); the failed sign-ins of
+	// the last 30 days and where the passwords are changed. Changes apply when chosen; a flag
+	// confirms them.
+	let { store, lan = null }: { store: SecurityStore; lan?: SecurityLanStore | null } = $props();
 
 	const uid = $props.id();
 	const overview = $derived(store.overview);
@@ -168,6 +172,11 @@
 
 		<h4>Zusätzliche Adressen</h4>
 		<SecurityHosts {store} {overview} />
+	</section>
+
+	<section class="part" id="heimnetz" aria-labelledby={`${uid}-lan`}>
+		<h3 id={`${uid}-lan`}>Zugriff im Heimnetz</h3>
+		<SecurityLan {overview} store={lan} />
 	</section>
 
 	<section class="part" id="anmeldungen" aria-labelledby={`${uid}-logins`}>

@@ -337,10 +337,19 @@ function ownHosts(port) {
   return ['127.0.0.1:' + port, 'localhost:' + port];
 }
 
-/** The further hosts of the start: the hosts of --origins without the own addresses. */
+/**
+ * The further hosts of the start: the hosts of the https origins of --origins without the own
+ * addresses. The http origins besides this machine are the home network (lib/lan-rules.js).
+ */
 function activeExtraHosts(originsFlag, port) {
   var own = ownHosts(port).concat(['[::1]:' + port]);
-  return originHosts(originsFlag).filter(function (host) {
+  var secure = text(originsFlag)
+    .split(',')
+    .filter(function (origin) {
+      return /^https:\/\//i.test(text(origin));
+    })
+    .join(',');
+  return originHosts(secure).filter(function (host) {
     return own.indexOf(host) === -1;
   });
 }

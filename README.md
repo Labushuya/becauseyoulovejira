@@ -242,7 +242,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File app\byl-control.ps1 port 809
 
 Der Port steht dann in `app\byl-config.json` (die einzige Stelle, wandert bei einer Ordnerkopie mit). Läuft die App gerade, gilt er nach `neu-starten.bat` (es erkennt den neuen Port). Die Landing-Seite `becauseyoulovejira.html`, der Mail-Hilfsprozess und die Anleitungen in der App folgen von selbst. Anpassen musst du: Lesezeichen, die installierte App (unter der neuen Adresse neu installieren), die App-Adresse in der Browser-Erweiterung für WhatsApp Web, und unter der neuen Adresse einmal neu anmelden (die Anmeldung gilt je Adresse). `port 8090` stellt zurück. Die App weicht nie selbst auf einen anderen Port aus.
 
-**Bindung:** nur `127.0.0.1` (nicht im Netz erreichbar – vorerst; Mehrgerätezugriff über Tailscale ist geplant, siehe [ADR-0001](docs/adr/0001-betriebsmodell-lokal-mehrgeraete-spaeter.md))
+**Bindung:** standardmäßig nur `127.0.0.1` (nicht im Netz erreichbar). Auf Wunsch öffnet der **Zugriff im Heimnetz** die App für andere Geräte im eigenen WLAN (unverschlüsselt über HTTP, siehe [Zugriff im Heimnetz](#zugriff-im-heimnetz)); verschlüsselter Mehrgerätezugriff folgt mit dem Raspberry Pi bzw. Tailscale ([ADR-0001](docs/adr/0001-betriebsmodell-lokal-mehrgeraete-spaeter.md))
 
 ### Als App installieren
 
@@ -294,7 +294,7 @@ Admin- und App-Konto dürfen dieselbe E-Mail-Adresse haben. Es bleiben trotzdem 
 
 ### Sicherheit
 
-becauseyoulovejira ist nur auf diesem Rechner erreichbar. Weil aber jede Webseite in deinem Browser Anfragen an `127.0.0.1` schicken kann, schützt sich die App zusätzlich ([ADR-0055](docs/adr/0055-sicherheits-haertung.md)):
+becauseyoulovejira ist standardmäßig nur auf diesem Rechner erreichbar. Weil aber jede Webseite in deinem Browser Anfragen an `127.0.0.1` schicken kann, schützt sich die App zusätzlich ([ADR-0055](docs/adr/0055-sicherheits-haertung.md)):
 
 - **Schutz vor Rateversuchen:** Höchstens 10 Anmeldeversuche je Minute, für App- und Admin-Konto getrennt. Danach meldet die Anmeldeseite „Zu viele Anmeldeversuche …“; nach spätestens einer Minute geht es wieder. Anfragen ohne Anmeldung sind auf 300 je 10 Sekunden begrenzt; was du angemeldet in der App tust, zählt nie.
 - **Nur die eigenen Adressen:** Die App antwortet nur unter `http://127.0.0.1:<Port>` und `http://localhost:<Port>` (fremde Namen, etwa bei DNS-Rebinding, bekommen 403), und nur sie darf Antworten per CORS lesen. Die Browser-Erweiterung für WhatsApp Web, der eigene Eingang per PowerShell oder curl, das Bookmarklet, der Mail-Hilfsprozess und `becauseyoulovejira.html` funktionieren wie vorher.
@@ -305,6 +305,23 @@ becauseyoulovejira ist nur auf diesem Rechner erreichbar. Weil aber jede Webseit
 **Einstellungen → Sicherheit** (nur auf diesem Rechner, nur für den Verwalter der App) zeigt, was davon aktiv ist, mit einer Erklärung je Punkt, dazu ob die Sicherungen verschlüsselt im Zielverzeichnis liegen, welche Zugangsdaten als `BYL_…`-Variablen gebraucht werden (nur die Namen), die Zugangsschlüssel des eigenen Eingangs und die Browser-Erweiterung. Einstellen lassen sich die Stufe des Schutzes vor Rateversuchen (**Normal** oder **Streng**: 5 Versuche je 5 Minuten), wie lange eine Anmeldung ohne Öffnen der App gilt (1, 5, 14 oder 30 Tage) und die zusätzlichen Adressen. Die Seite listet außerdem die **fehlgeschlagenen Anmeldungen** der letzten 30 Tage (Konto, Herkunft, Anzahl; nie ein Passwort); ab zehn in 24 Stunden zeigt die App beim Öffnen einen Hinweis.
 
 Nach dem Update auf diese Version braucht die App einmal `neu-starten.bat`.
+
+### Zugriff im Heimnetz
+
+So öffnet eine zweite Person die App auf ihrem eigenen Gerät (Handy im WLAN, zweiter Rechner) mit ihrem eigenen App-Konto ([Plan](docs/plan/heimnetz.md), Nachtrag zu [ADR-0055](docs/adr/0055-sicherheits-haertung.md)). Standardmäßig ist er **aus**.
+
+> **Unverschlüsselt:** Im Heimnetz läuft alles über HTTP ohne Verschlüsselung, auch Passwörter. Nur im eigenen, vertrauenswürdigen Heimnetz einschalten, nie in fremden Netzen. Verschlüsselt (HTTPS über Traefik) folgt mit dem Umzug auf den Raspberry Pi.
+
+1. **Netzwerk als „Privat“ einstufen** (nur im eigenen Heimnetz): Windows-Einstellungen → Netzwerk und Internet → Status → „Eigenschaften“ bei der Verbindung (WLAN: Netzwerk und Internet → WLAN → das Netzwerk) → Netzwerkprofil **Privat**. Die Firewall-Regel gilt nur in privaten Netzwerken; `status.bat` warnt bei „Öffentlich“.
+2. **Einstellungen → Sicherheit → Zugriff im Heimnetz:** einschalten, die Adresse dieses Rechners wählen (etwa `192.168.178.66`, bei einer FRITZ!Box auch `<rechner>.fritz.box`), **Einstellung speichern**.
+3. **Firewall-Regel anlegen …** wählen und die Frage von Windows nach Administratorrechten bestätigen. Die Regel „becauseyoulovejira (Heimnetz)“ lässt nur `pocketbase.exe` dieses Ordners, nur den Port der App und nur in privaten Netzwerken durch. Von Hand geht dasselbe in einer Eingabeaufforderung als Administrator mit dem `netsh`-Befehl, den die Seite und `doctor` anzeigen.
+4. **Neu starten:** Einstellungen → System → „Jetzt neu starten“ (oder `neu-starten.bat`). Erscheint danach die Windows-Sicherheitswarnung für `pocketbase.exe`, nur **Private Netzwerke** anhaken.
+5. **Auf dem anderen Gerät** die „Adresse für andere Geräte“ der Seite Sicherheit öffnen (etwa `http://192.168.178.66:8090`) und mit dem eigenen Konto anmelden. Als App installieren lässt sie sich über HTTP nicht; ein Lesezeichen geht.
+6. **Feste Adresse in der FRITZ!Box reservieren:** Heimnetz → Netzwerk → Netzwerkverbindungen → beim Rechner „Bearbeiten“ → „Diesem Netzwerkgerät immer die gleiche IPv4-Adresse zuweisen“. Sonst kann sich die Adresse ändern.
+
+- **Was gleich bleibt:** `start.bat`, die Startseite `becauseyoulovejira.html`, die Browser-Erweiterung und der Mail-Hilfsprozess nutzen weiter `127.0.0.1`. Die Seiten Konten, Sicherheit, Sicherung, Speicher und System, „Ansehen“ von Dateien beobachteter Ordner und die Verwaltung `/_/` gehen nur auf diesem Rechner, auch für den Verwalter der App; die Prüfung nimmt die echte Adresse der Verbindung, keine Kopfzeile. Offene Tabs anderer Geräte zählen für `start.bat` nicht. Der Schutz vor Rateversuchen zählt je Gerät.
+- **Von Hand** im Ordner `app`: `byl-control.ps1 lan-info` (Zustand, Adressen, Firewall, Netzwerk), `lan-configure 192.168.178.66` bzw. `lan-configure off`, `lan-firewall add` bzw. `lan-firewall remove`; gespeichert in `byl-config.json` als `"network": { "lan": { "enabled": true, "addresses": ["192.168.178.66"] } }`. `status.bat` nennt die Adresse für andere Geräte, die Firewall-Regel und das Netzwerkprofil.
+- **Ausschalten:** Schalter aus, speichern, neu starten und „Firewall-Regel entfernen …“.
 
 ### Backup und Wiederherstellung
 

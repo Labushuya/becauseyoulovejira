@@ -16,6 +16,7 @@
 var rules = require(__hooks + '/lib/security-rules.js');
 var system = require(__hooks + '/lib/system-rules.js');
 var inboxKeys = require(__hooks + '/lib/inbox-key-rules.js');
+var lan = require(__hooks + '/lib/lan-rules.js');
 
 var FAILURES = 'login_failures';
 var AREA = 'byl-security';
@@ -29,6 +30,14 @@ var MESSAGES = {
   format: 'Die Adressen fehlen.',
   invalid: 'Mindestens eine Adresse ist kein gültiger Name.',
   'too-many': 'Höchstens ' + rules.EXTRA_HOSTS_MAX + ' zusätzliche Adressen.'
+};
+// The same for the home network (plan heimnetz).
+var LAN_MESSAGES = {
+  format: 'Schalter oder Adressen fehlen.',
+  invalid: 'Mindestens eine Adresse gehört nicht ins Heimnetz.',
+  'too-many': 'Höchstens ' + lan.LAN_MAX + ' Adressen im Heimnetz.',
+  required: 'Zum Einschalten fehlt eine Adresse.',
+  action: 'Diese Aktion gibt es nicht.'
 };
 
 function argsOfServer() {
@@ -316,6 +325,12 @@ function overview(app, userId, appDir, now) {
       editable: appDir !== '',
       max: rules.EXTRA_HOSTS_MAX
     },
+    // The home network as the server runs now (plan heimnetz); its setting comes from lan-info.
+    lan: {
+      active: lan.lanBound(system.flagValue(args, 'http')),
+      hosts: lan.activeLanHosts(origins),
+      editable: appDir !== ''
+    },
     admin: { ips: ips, loopbackOnly: rules.loopbackOnly(ips) },
     session: { days: rules.sessionDaysOf(seconds), seconds: seconds, choices: rules.SESSION_DAYS, standard: rules.SESSION_DEFAULT_DAYS },
     backup: backupState(app),
@@ -405,6 +420,82 @@ function saveHosts(e) {
   return e.json(200, body);
 }
 
+// --- Access in the home network (plan heimnetz) ------------------------------------------------------
+
+function lanInvalid(e, problem, extra) {
+  var body = { status: 400, message: LAN_MESSAGES[problem], reason: 'invalid', problem: problem };
+  if (extra) {
+    body.invalid = extra;
+  }
+  return e.json(400, body);
+}
+
+/**
+ * GET /api/byl/security/lan: the setting, the addresses of this computer, the network category and
+ * the firewall rule (byl-control.ps1 lan-info); only for the own instance under Windows.
+ */
+function lanRead(e) {
+  var context = service().check(e, 'lan-info', 'GET');
+  if (context.refused) {
+    return refuse(e, 'lan-info', context);
+  }
+  var view = lan.lanInfoView(service().runJson(context.appDir, 'lan-info'));
+  return view === null ? service().refuse(e, 'lan-info', 'script', 0, AREA) : e.json(200, { lan: view });
+}
+
+/**
+ * POST /api/byl/security/lan: { enabled, addresses } into byl-config.json through the control script
+ * (lan-configure); it applies after a restart. Answers the state like GET.
+ */
+function lanSave(e) {
+  var context = service().check(e, 'lan-configure', 'POST');
+  if (context.refused) {
+    return refuse(e, 'lan-configure', context);
+  }
+  var input = lan.lanInput(e.requestInfo().body);
+  if (input.problem) {
+    return lanInvalid(e, input.problem, input.invalid);
+  }
+  var raw = service().runJson(context.appDir, 'lan-configure', { enabled: input.enabled, addresses: input.addresses });
+  var view = lan.lanInfoView(raw);
+  audit(e, 'lan-configure', view !== null ? (input.enabled ? 'lan=on addresses=' + input.addresses.length : 'lan=off') : 'refused');
+  return view === null ? service().refuse(e, 'lan-configure', 'script', 0, AREA) : e.json(200, { lan: view });
+}
+
+/**
+ * POST /api/byl/security/lan/firewall: { action } (add or remove) through the control script
+ * (lan-firewall), which makes Windows ask for administrator rights on this machine; the request
+ * waits for the answer. Answers { result: { ok, action, outcome, report }, lan }: a declined or
+ * failed change is no error of the route, its entry of the catalog says what to do by hand.
+ */
+function lanFirewall(e) {
+  var context = service().check(e, 'lan-firewall', 'POST');
+  if (context.refused) {
+    return refuse(e, 'lan-firewall', context);
+  }
+  var input = lan.firewallInput(e.requestInfo().body);
+  if (input.problem) {
+    return lanInvalid(e, input.problem);
+  }
+  var raw = service().runJson(context.appDir, 'lan-firewall', { action: input.action });
+  if (raw === null || typeof raw !== 'object' || typeof raw.ok !== 'boolean') {
+    audit(e, 'lan-firewall', 'refused');
+    return service().refuse(e, 'lan-firewall', 'script', 0, AREA);
+  }
+  var outcome = lan.outcomeOf(raw.outcome);
+  audit(e, 'lan-firewall', input.action + ' outcome=' + (outcome === '' ? 'unknown' : outcome));
+  var view = raw.ok ? lan.lanInfoView(raw) : lan.lanInfoView(service().runJson(context.appDir, 'lan-info'));
+  return e.json(200, {
+    result: {
+      ok: raw.ok === true,
+      action: input.action,
+      outcome: outcome,
+      report: raw.ok ? null : system.problemView(raw.report)
+    },
+    lan: view
+  });
+}
+
 /** GET /api/byl/security/notice: whether failed sign-ins of the last 24 hours ask for attention. */
 function notice(e) {
   var context = service().check(e, 'security-notice', 'GET', { local: true, anyPlatform: true, kind: 'read' });
@@ -427,5 +518,8 @@ module.exports = {
   read: read,
   saveSettings: saveSettings,
   saveHosts: saveHosts,
+  lanRead: lanRead,
+  lanSave: lanSave,
+  lanFirewall: lanFirewall,
   notice: notice
 };

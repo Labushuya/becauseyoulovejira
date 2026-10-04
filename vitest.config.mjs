@@ -11,6 +11,7 @@ const WINDOWS_ONLY = {
 		'tests/unit/admin-reset-logic.test.mjs',
 		'tests/unit/backup-control-logic.test.mjs',
 		'tests/unit/control-logic.test.mjs',
+		'tests/unit/lan-control-logic.test.mjs',
 		'tests/unit/security-control-logic.test.mjs',
 		'tests/unit/start-browser.test.mjs',
 		'tests/unit/start-logic.test.mjs',
@@ -23,6 +24,7 @@ const WINDOWS_ONLY = {
 		'tests/integration/backup-restore.test.mjs',
 		'tests/integration/control-script.test.mjs',
 		'tests/integration/installer-check.test.mjs',
+		'tests/integration/lan-control.test.mjs',
 		'tests/integration/storage-control.test.mjs',
 		'tests/integration/system-control.test.mjs'
 	]

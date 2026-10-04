@@ -1,6 +1,6 @@
 # ADR-0028: Plattform-Strategie – ein Server je Datenbestand (PC oder Raspberry Pi), Clients als Web-App, Android-APK mit Capacitor, Windows mit Tray-Option
 
-- **Status:** Angenommen (nur Planung; umgesetzt wird stufenweise nach [docs/plan/plattformen.md](../plan/plattformen.md)); weiterer Ausbau zurückgestellt auf Nutzerentscheidung (2026-09-28), siehe Nachtrag unten
+- **Status:** Angenommen (nur Planung; umgesetzt wird stufenweise nach [docs/plan/plattformen.md](../plan/plattformen.md)); weiterer Ausbau zurückgestellt auf Nutzerentscheidung (2026-09-28), siehe Nachtrag unten; Zugang im Heimnetz über HTTP unabhängig davon (Nachtrag 2026-10-04)
 - **Datum:** 2026-09-27
 - **Entscheidung durch:** Nutzer (Server-Orte, echte APK mit Updater als Sideload, Verbreitung, Push zurückgestellt, Windows mit Web-App und Tray-Option; 2026-09-27), Advisor (Architektur, Stufen, Abweichung vom Flutter-Grundsatz)
 - **Ergänzt:** [ADR-0001](0001-betriebsmodell-lokal-mehrgeraete-spaeter.md) (Mehrgeräte: zweiter Weg über Traefik neben Tailscale), [ADR-0018](0018-secrets.md) (Quelle der `BYL_*`-Variablen im Container; Nachtrag folgt mit Stufe S3)
@@ -161,3 +161,10 @@ Der Plattform-Ausbau bleibt **zurückgestellt auf Nutzerentscheidung** (Nachtrag
   - Telefon und PC hätten zwei Datenbestände ohne Replikation, mit doppelten Nummernkreisen und doppelten Kanal-Abrufen (siehe Kontext).
   - Google Play verbietet Selbst-Updates und schließt `MANAGE_EXTERNAL_STORAGE` aus; die Entwickler-Verifizierung gilt ab 2027 weltweit auch beim Sideloading.
 - **Bei einer Wiederaufnahme:** Client-APK nach §4 (S2b), wahlweise mit einer Warteschlange zum Offline-Erfassen über den eigenen Eingang; die bräuchte wegen §1 („kein Offline-Modus“) eine eigene Entscheidung. Unabhängig vom Weg nötig sind die mobile Tauglichkeit der Oberfläche, eine Sicherheits-Härtung sowie SemVer und Releases (§9).
+
+## Nachtrag (2026-10-04, Nutzerentscheidung): Zugang im Heimnetz über die LAN-Adresse, unabhängig von S2
+
+- **Entscheidung:** Andere Geräte im Heimnetz dürfen die App des PCs unter seiner LAN-Adresse über **HTTP** öffnen (Nutzerwunsch vom 2026-10-04, Anlass Haushalt E7). Das ist eine eigene Einstellung (standardmäßig aus), umgesetzt als HN-1 nach dem [Plan „Zugriff im Heimnetz“](../plan/heimnetz.md), mit Nachträgen in [ADR-0055](0055-sicherheits-haertung.md) und [ADR-0001](0001-betriebsmodell-lokal-mehrgeraete-spaeter.md).
+- **Unabhängig von S2 und Tailscale:** kein HTTPS, kein Proxy, keine Proxy-Kopfzeilen; §3 („Pflicht ist HTTPS“) gilt weiter für S2 und den Zugriff von unterwegs. Der Heimnetz-Zugang ist bewusst die unverschlüsselte Vorstufe im eigenen Netz.
+- **Die Zurückstellung von S2 bis S6 bleibt sonst bestehen** (Nachtrag vom 2026-09-28): kein Pi, kein Traefik, kein Tailscale, keine APK, kein Tray, kein SemVer. HTTPS über Traefik kommt mit S3; dann wird dieser Zugang ersetzt oder auf HTTPS umgestellt.
+- **§1 („ein Server je Datenbestand“)** bleibt: Die Geräte im Heimnetz sind Clients des einen Servers auf dem PC.

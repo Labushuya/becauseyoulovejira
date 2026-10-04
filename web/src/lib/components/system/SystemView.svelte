@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import SectionMessage from '$lib/components/guidance/SectionMessage.svelte';
 	import ConfirmDialog from '$lib/components/overlay/ConfirmDialog.svelte';
 	import type { HostPlatform } from '$lib/domain/host-platform';
@@ -148,6 +149,28 @@
 					{/if}
 				</dd>
 			</div>
+			{#if status.lan !== null}
+				<div class="row">
+					<dt>Im Heimnetz</dt>
+					<dd>
+						{#if status.lan.urls.length > 0}
+							{#each status.lan.urls as url (url)}<code>{url}</code>{/each}
+							<span class="hint"
+								>Adresse für andere Geräte, unverschlüsselt (HTTP). Kopieren und Einstellungen unter
+								<a href={resolve('/einstellungen/sicherheit')}>Sicherheit</a>.</span
+							>
+						{:else}
+							{status.lan.enabled
+								? 'Eingeschaltet; gilt nach dem Neustart.'
+								: 'Aus: nur dieser Rechner.'}
+							<span class="hint"
+								>Einstellen unter <a href={resolve('/einstellungen/sicherheit')}>Sicherheit</a
+								>.</span
+							>
+						{/if}
+					</dd>
+				</div>
+			{/if}
 			<div class="row">
 				<dt>Stand</dt>
 				<dd>{verdictText(status)}</dd>

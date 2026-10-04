@@ -733,9 +733,55 @@ describe('help page (EH-9)', () => {
 		expect(content).toContain('Höchstens 10 Anmeldeversuche je Minute');
 		expect(content).toContain('etwa über Tailscale');
 		expect(content).toContain('admin-zuruecksetzen.bat');
+		const pages = within(section).getAllByRole('link', { name: 'Einstellungen → Sicherheit' });
+		expect(pages.map((link) => link.getAttribute('href'))).toEqual([
+			'/einstellungen/sicherheit',
+			'/einstellungen/sicherheit'
+		]);
+	});
+
+	it('guides through the access in the home network, step by step (plan heimnetz)', () => {
+		render(Page);
+		const section = screen.getByRole('region', { name: 'Sicherheit' });
+		const heading = within(section).getByRole('heading', { level: 4, name: 'Zugriff im Heimnetz' });
+		expect(heading.id).toBe('heimnetz');
+		const content = text(section);
+		expect(within(section).getByText('Unverschlüsselt:').tagName).toBe('STRONG');
+		expect(content).toContain('auch Passwörter');
+		const guide = section.querySelector('ol');
+		expect(guide).not.toBeNull();
+		const steps = within(guide as HTMLElement)
+			.getAllByRole('listitem')
+			.map((step) => text(step));
+		expect(steps).toHaveLength(6);
+		expect(steps[0]).toContain('Netzwerkprofil „Privat“');
+		expect(steps[1]).toContain('„Einstellung speichern“');
+		expect(steps[2]).toContain('„Firewall-Regel anlegen …“');
+		expect(steps[3]).toContain('neu-starten.bat');
+		expect(steps[4]).toContain('„Adresse für andere Geräte“');
+		expect(steps[5]).toContain('Diesem Netzwerkgerät immer die gleiche IPv4-Adresse zuweisen');
 		expect(
-			within(section).getByRole('link', { name: 'Einstellungen → Sicherheit' }).getAttribute('href')
-		).toBe('/einstellungen/sicherheit');
+			within(guide as HTMLElement)
+				.getByRole('link', { name: 'Einstellungen → System' })
+				.getAttribute('href')
+		).toBe('/einstellungen/system');
+		expect(content).toContain('die Seiten Konten, Sicherheit, Sicherung, Speicher und System');
+		expect(content).toContain('nur auf diesem Rechner unter 127.0.0.1, auch für den Verwalter');
+		expect(content).toContain('„Firewall-Regel entfernen …“');
+	});
+
+	it('names the access in the home network under "Betrieb", off by default (plan heimnetz)', () => {
+		render(Page);
+		const section = screen.getByRole('region', { name: 'Betrieb' });
+		const content = text(section);
+		expect(content).toMatch(/Andere Geräte im Heimnetz erreichen die App nur, wenn du es unter/);
+		expect(
+			within(section).getByRole('link', { name: 'Schritt für Schritt' }).getAttribute('href')
+		).toBe('#heimnetz');
+		expect(content).toContain('byl-control.ps1 lan-info');
+		expect(content).toMatch(
+			/start\.bat, die Startseite und die Browser-Erweiterung bleiben auf 127\.0\.0\.1/
+		);
 	});
 
 	it('explains accounts, the administrator, the channels per account and a second person (ADR-0056)', () => {

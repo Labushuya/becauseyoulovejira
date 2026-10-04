@@ -1,6 +1,6 @@
 # E6-Plan, Teil „Sicherheit“
 
-- **Stand:** SH-1 (Server-Härtung, #237) und SH-2 (Seite „Einstellungen → Sicherheit“) umgesetzt. Offen sind die manuellen Prüfungen.
+- **Stand:** SH-1 (Server-Härtung, #237) und SH-2 (Seite „Einstellungen → Sicherheit“) umgesetzt. Offen sind die manuellen Prüfungen. Der Zugriff im Heimnetz (Abschnitt der Seite, Nutzerentscheidung 2026-10-04) hat einen eigenen [Plan](heimnetz.md) (HN-1).
 - **Grundlage:**
   - Nutzerwunsch und Freigabe (2026-10-03): „Ja, kannst Du starten. Und was auch immer nötig ist, kann man auch (sofern sinnvoll und auch ganzheitlich) in den Einstellungen verankern?“
   - Inventur des Advisors (Stand `main` vom 2026-10-03): kein Rate-Limiter, CORS `*`, DNS-Rebinding auf allen Routen von PocketBase, Präsenz-Routen ohne Geheimnis, Admin-Oberfläche ohne Adressbeschränkung.

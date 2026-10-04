@@ -38,7 +38,13 @@ var ACTIONS = {
   // run/wiederherstellung.json, not a JSON line.
   'backup-restore': { method: 'POST', args: ['restore', '-Detach', '-Quiet'], output: false, changes: true, input: true, backup: true },
   // The further hosts of byl-config.json (ADR-0055 §8), as { hosts } on standard input.
-  'security-configure': { method: 'POST', args: ['security-configure', '-Json'], output: true, changes: true, input: true, security: true }
+  'security-configure': { method: 'POST', args: ['security-configure', '-Json'], output: true, changes: true, input: true, security: true },
+  // The access in the home network (plan heimnetz): its state, the switch with the addresses as
+  // { enabled, addresses } and the firewall rule as { action } on standard input. lan-firewall makes
+  // Windows ask for administrator rights (UAC) on this machine; the route waits for the answer.
+  'lan-info': { method: 'GET', args: ['lan-info', '-Json'], output: true, changes: false, security: true },
+  'lan-configure': { method: 'POST', args: ['lan-configure', '-Json'], output: true, changes: true, input: true, security: true },
+  'lan-firewall': { method: 'POST', args: ['lan-firewall', '-Json'], output: true, changes: true, input: true, security: true }
 };
 
 // Windows PowerShell 5.1 below the system folder, never a name looked up in PATH; the script is the
@@ -87,7 +93,7 @@ var RESTART_KEY = 'byl.system.restart-at';
 
 var STATES = ['running', 'starting', 'unhealthy', 'stopped'];
 var VERDICTS = ['current', 'reload', 'restart'];
-var RESTART_REASONS = ['unknown', 'server', 'migrations', 'hooks', 'port', 'hosts', 'environment', 'mailHelper'];
+var RESTART_REASONS = ['unknown', 'server', 'migrations', 'hooks', 'port', 'hosts', 'lan', 'environment', 'mailHelper'];
 var AUTOSTART = ['on', 'off', 'other'];
 var DOCTOR_LEVELS = ['ok', 'warning', 'error', 'info'];
 var LOG_SETS = ['server', 'mail', 'skript'];
@@ -247,8 +253,9 @@ function appDirOf(hooksDir) {
 
 /**
  * Whether the running server is the own instance of `appDir`, by the rule of Select-AppProcess
- * (ADR-0039 §3): program <app>\pocketbase.exe, "serve", --http=127.0.0.1:<port> and
- * --dir=<app>\pb_data. Only then do the commands of the control script mean this server.
+ * (ADR-0039 §3): program <app>\pocketbase.exe, "serve", --http=127.0.0.1:<port> (or 0.0.0.0:<port>
+ * with the access in the home network, plan heimnetz) and --dir=<app>\pb_data. Only then do the
+ * commands of the control script mean this server.
  */
 function isOwnInstance(args, appDir) {
   var list = args || [];
@@ -265,7 +272,7 @@ function isOwnInstance(args, appDir) {
       serve = true;
     }
   }
-  if (!serve || !/^127\.0\.0\.1:\d{1,5}$/.test(flagValue(list, 'http'))) {
+  if (!serve || !/^(?:127\.0\.0\.1|0\.0\.0\.0):\d{1,5}$/.test(flagValue(list, 'http'))) {
     return false;
   }
   return normalizePath(flagValue(list, 'dir')) === folder + '\\pb_data';
@@ -384,9 +391,10 @@ function backgroundProblemView(raw) {
 
 /**
  * The status of the control script (status -Json, ADR-0039 §5) in the shape of the route, or null
- * if the answer is not one. Unknown fields are dropped.
+ * if the answer is not one. Unknown fields are dropped; the part of the home network (plan
+ * heimnetz) is read by `lanView` (lanStatusView of lib/lan-rules.js), null without it.
  */
-function statusView(raw) {
+function statusView(raw, lanView) {
   if (!isRecord(raw) || !oneOf(STATES, raw.state) || !oneOf(VERDICTS, raw.verdict) || !isCount(raw.port)) {
     return null;
   }
@@ -426,6 +434,7 @@ function statusView(raw) {
     portOwner: owner,
     otherServers: others,
     autostart: oneOf(AUTOSTART, raw.autostart) ? raw.autostart : 'off',
+    lan: typeof lanView === 'function' ? lanView(raw.lan) : null,
     backgroundProblem: backgroundProblemView(raw.backgroundProblem)
   };
 }
