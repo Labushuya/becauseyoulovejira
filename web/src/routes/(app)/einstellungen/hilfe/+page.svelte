@@ -1488,8 +1488,8 @@
 		<h3 id="konten-title">Konten und Verwalter</h3>
 		<p>
 			Jede Person meldet sich mit ihrem eigenen Konto an. Tickets, Projekte, Tags und Verbindungen
-			gehören dem Konto, das sie angelegt hat; die anderen Konten sehen sie nicht. Gemeinsame
-			Haushalte kommen mit einer späteren Etappe.
+			gehören dem Konto, das sie angelegt hat; die anderen Konten sehen sie nicht. Was ihr teilen
+			wollt, gehört in einen <a href={helpHref('haushalt')}>Haushalt</a>.
 		</p>
 		<dl class="tokens">
 			<div class="row">
@@ -1551,6 +1551,66 @@
 					Die Anmeldung gilt je Browserprofil. Die zweite Person nutzt ein eigenes Profil (Chrome
 					und Edge: Profil hinzufügen; Firefox: <code>about:profiles</code>) und meldet sich dort
 					mit ihrem Konto an. Die Seiten des Verwalters gehen nur im Browser auf diesem Rechner.
+				</dd>
+			</div>
+		</dl>
+	</section>
+
+	<section id="haushalt" aria-labelledby="haushalt-title">
+		<h3 id="haushalt-title">Haushalt</h3>
+		<p>
+			Ein Haushalt ist ein gemeinsamer Bereich für mehrere Konten: Was im Haushalt liegt, sehen und
+			bearbeiten alle Mitglieder; Privates sieht weiter nur sein Konto. Ein Konto kann vorerst in
+			einem Haushalt sein. Mitglieder, Codes und Rechte verwaltest du unter
+			<a href={resolve('/einstellungen/haushalt')}>Einstellungen → Haushalt</a>, auf jedem Gerät,
+			auch am Handy im Heimnetz. Der Umschalter „Privat | Haushalt“ zum Anlegen und Ansehen der
+			gemeinsamen Einträge kommt mit einer späteren Version.
+		</p>
+		<dl class="tokens">
+			<div class="row">
+				<dt>Gründen</dt>
+				<dd>
+					Namen eingeben und „Haushalt gründen“. Du wirst Inhaber und hast alle Rechte des
+					Haushalts.
+				</dd>
+			</div>
+			<div class="row">
+				<dt>Einladen und beitreten</dt>
+				<dd>
+					„Neuen Code erzeugen“ zeigt einen Code wie <code>ABCD-EFGH</code> einmal an, mit „Kopieren“.
+					Er gilt 7 Tage und für eine Person; gespeichert wird nur ein Prüfwert, nicht der Code. Gib ihn
+					auf einem sicheren Weg weiter. Die andere Person meldet sich mit ihrem eigenen Konto an und
+					gibt ihn unter „Mit Code beitreten“ ein; Groß- und Kleinschreibung und Bindestrich sind egal.
+					Ist ein Code falsch, abgelaufen, benutzt oder widerrufen, heißt es immer „Code ungültig oder
+					abgelaufen.“ Nach fünf Versuchen in fünf Minuten wartet die App kurz. Offene Codes lassen sich
+					jederzeit widerrufen.
+				</dd>
+			</div>
+			<div class="row">
+				<dt>Rechte</dt>
+				<dd>
+					Neue Mitglieder nutzen den Haushalt ganz normal, haben aber keine Sonderrechte: Einladen,
+					Mitglieder entfernen, Rechte weitergeben, Umbenennen, Endgültig löschen und Ins Private
+					verschieben (die beiden letzten wirken mit einer späteren Version). Wer „Rechte
+					weitergeben“ hat, kann anderen Mitgliedern nur Rechte geben oder nehmen, die er selbst
+					hat; nie sich selbst und nie dem Inhaber.
+				</dd>
+			</div>
+			<div class="row">
+				<dt>Inhaber übertragen</dt>
+				<dd>
+					Nur der Inhaber macht ein anderes Mitglied zum Inhaber. Er selbst bleibt Mitglied und
+					behält alle Rechte.
+				</dd>
+			</div>
+			<div class="row">
+				<dt>Entfernen und austreten</dt>
+				<dd>
+					Wer „Mitglieder entfernen“ hat, entfernt andere Mitglieder, nie den Inhaber. Jedes
+					Mitglied außer dem Inhaber kann selbst austreten. In beiden Fällen bleiben die Einträge im
+					Haushalt, auch die selbst angelegten, und der Zugriff darauf endet sofort, auch in offenen
+					Tabs. Der Inhaber überträgt zuerst die Inhaberschaft; einen Haushalt auflösen geht erst
+					mit einer späteren Version.
 				</dd>
 			</div>
 		</dl>

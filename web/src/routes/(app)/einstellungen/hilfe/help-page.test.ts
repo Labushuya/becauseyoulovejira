@@ -43,7 +43,7 @@ describe('help page (EH-9)', () => {
 		}
 	});
 
-	it('jumps to the sections that exist on the page, sixteen since the accounts', () => {
+	it('jumps to the sections that exist on the page, seventeen since the household', () => {
 		const { container } = render(Page);
 
 		const jump = within(screen.getByRole('navigation', { name: 'Auf dieser Seite' }));
@@ -64,7 +64,8 @@ describe('help page (EH-9)', () => {
 			'Sicherung & Notfall',
 			'Speicher',
 			'Sicherheit',
-			'Konten und Verwalter'
+			'Konten und Verwalter',
+			'Haushalt'
 		]);
 		for (const link of links) {
 			const id = link.getAttribute('href')?.slice(1) ?? '';
@@ -788,6 +789,33 @@ describe('help page (EH-9)', () => {
 		expect(content).toContain('byl-control.ps1 lan-info');
 		expect(content).toMatch(
 			/start\.bat, die Startseite und die Browser-Erweiterung bleiben auf 127\.0\.0\.1/
+		);
+	});
+
+	it('explains the household: founding, codes, rights, handing on, removing and leaving (ADR-0058)', () => {
+		render(Page);
+		const section = screen.getByRole('region', { name: 'Haushalt' });
+		const terms = [...section.querySelectorAll('dt')].map((term) => term.textContent?.trim());
+		expect(terms).toEqual([
+			'Gründen',
+			'Einladen und beitreten',
+			'Rechte',
+			'Inhaber übertragen',
+			'Entfernen und austreten'
+		]);
+		const content = text(section);
+		expect(content).toMatch(/Er gilt 7 Tage und für eine Person/);
+		expect(content).toMatch(/immer „Code ungültig oder abgelaufen\.“/);
+		expect(content).toMatch(/nur Rechte geben oder nehmen, die er selbst hat/);
+		expect(content).toMatch(/bleiben die Einträge im Haushalt/);
+		expect(content).toMatch(/der Zugriff darauf endet sofort/);
+		expect(
+			within(section).getByRole('link', { name: 'Einstellungen → Haushalt' }).getAttribute('href')
+		).toBe('/einstellungen/haushalt');
+		// The page "Konten und Verwalter" points here.
+		const accounts = screen.getByRole('region', { name: 'Konten und Verwalter' });
+		expect(within(accounts).getByRole('link', { name: 'Haushalt' }).getAttribute('href')).toBe(
+			'/einstellungen/hilfe#haushalt'
 		);
 	});
 

@@ -100,6 +100,20 @@ export function formatCode(value: string): string {
 	return groups.join('-');
 }
 
+/**
+ * A code grouped while it is typed ("abcde" → "ABCD-E"), with the caret after the same signs as
+ * before, so typing or pasting in the middle does not jump to the end.
+ */
+export function groupCodeInput(value: string, caret: number): { value: string; caret: number } {
+	const signsBefore = normalizeCode(value.slice(0, Math.max(0, caret))).length;
+	const grouped = formatCode(value);
+	let position = 0;
+	for (let signs = 0; position < grouped.length && signs < signsBefore; position += 1) {
+		if (grouped[position] !== '-') signs += 1;
+	}
+	return { value: grouped, caret: position };
+}
+
 /** The rights of a membership: every one for the owner, the known stored ones for a member. */
 export function effectiveRights(
 	role: HouseholdRole,

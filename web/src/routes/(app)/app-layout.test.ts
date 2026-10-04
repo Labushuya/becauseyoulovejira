@@ -57,7 +57,9 @@ const mocks = vi.hoisted(() => {
 			// Names of the connections for inbox and sources (ADR-0026, addendum KK-3).
 			connections: vi.fn(subscribe('connections')),
 			// Names of the visible accounts for comments, history and trash (ADR-0056 §4).
-			people: vi.fn(subscribe('users'))
+			people: vi.fn(subscribe('users')),
+			// Changes of the household and of the memberships (ADR-0058).
+			household: vi.fn(subscribe('byl/household'))
 		},
 		goto: vi.fn(async () => {
 			calls.push('goto');
@@ -257,6 +259,29 @@ vi.mock('$lib/stores/people.svelte', async (importOriginal) => ({
 		reconnected: mocks.live.reconnected
 	})
 }));
+// The household of the account (ADR-0058): none unless a test gives one; a reload is only counted.
+const householdMocks = vi.hoisted(() => ({
+	answers: [] as unknown[],
+	fetch: vi.fn(),
+	reload: vi.fn()
+}));
+vi.mock('$lib/page-reload', async (importOriginal) => ({
+	...(await importOriginal<object>()),
+	reloadPage: householdMocks.reload
+}));
+vi.mock('$lib/stores/household.svelte', async (importOriginal) => ({
+	...(await importOriginal<object>()),
+	householdData: () => ({
+		fetch: householdMocks.fetch.mockImplementation(async () => ({
+			kind: 'ok',
+			value:
+				householdMocks.answers.length > 1
+					? householdMocks.answers.shift()
+					: (householdMocks.answers[0] ?? null)
+		}))
+	}),
+	householdLive: () => ({ changes: mocks.live.household, reconnected: mocks.live.reconnected })
+}));
 
 function ticket(id: string, status: TicketSummary['status'] = 'open'): TicketSummary {
 	return {
@@ -299,6 +324,8 @@ beforeEach(() => {
 	mocks.session.valid = false;
 	mocks.list.store = null;
 	for (const subscribe of Object.values(mocks.live)) subscribe.mockClear();
+	householdMocks.answers = [];
+	householdMocks.fetch.mockClear();
 });
 
 describe('app layout', () => {
@@ -331,7 +358,7 @@ describe('app layout', () => {
 
 	it('subscribes to tickets, the catalog, the inbox, the rules, the attention messages and reconnections while shown and ends them when it goes away', async () => {
 		const { unmount } = await renderLayout();
-		await vi.waitFor(() => expect(mocks.subscribed).toHaveLength(21));
+		await vi.waitFor(() => expect(mocks.subscribed).toHaveLength(23));
 
 		// The list follows all tickets, the catalog all projects and tags (E3 plan, T-16), the
 		// inbox all entries (E4 plan, T-4) and so do the sources of the open ticket (ADR-0031), the
@@ -340,7 +367,7 @@ describe('app layout', () => {
 		// the flag "beendet" after a reconnect (ADR-0035 section 5). The trash reads its list again
 		// on byl/trash and after a reconnect (ADR-0037). The names of the connections follow their
 		// renames and load again after a reconnect (ADR-0026, addendum KK-3), and so do the names of
-		// the visible accounts (ADR-0056 §4).
+		// the visible accounts (ADR-0056 §4) and the household (byl/household, ADR-0058).
 		expect([...mocks.subscribed].sort()).toEqual([
 			'PB_CONNECT',
 			'PB_CONNECT',
@@ -353,7 +380,9 @@ describe('app layout', () => {
 			'PB_CONNECT',
 			'PB_CONNECT',
 			'PB_CONNECT',
+			'PB_CONNECT',
 			'byl/attention',
+			'byl/household',
 			'byl/trash',
 			'connections',
 			'inbox',
@@ -372,12 +401,48 @@ describe('app layout', () => {
 		expect(mocks.live.trash).toHaveBeenCalledOnce();
 		expect(mocks.live.connections).toHaveBeenCalledOnce();
 		expect(mocks.live.people).toHaveBeenCalledOnce();
+		expect(mocks.live.household).toHaveBeenCalledOnce();
 		// The catalog tries to load once when the layout is shown.
 		expect(mocks.auth.ensureValid).toHaveBeenCalled();
 
 		unmount();
 
 		await vi.waitFor(() => expect(mocks.subscribed).toEqual([]));
+	});
+
+	it('loads the page anew when the membership in the household ends, and says why afterwards (ADR-0058)', async () => {
+		mocks.session.valid = true;
+		const state = {
+			household: { id: 'house000000001', name: 'Haus Beispiel', created: '' },
+			me: { member: 'member00000001', role: 'member', rights: [] },
+			members: [],
+			invites: null
+		};
+		householdMocks.answers = [state, null];
+		householdMocks.reload.mockClear();
+		sessionStorage.removeItem('byl-household-notice');
+		const { unmount } = await renderLayout();
+		await vi.waitFor(() => expect(householdMocks.fetch).toHaveBeenCalled());
+		await vi.waitFor(() => expect(mocks.subscribed).toContain('byl/household'));
+		expect(householdMocks.reload).not.toHaveBeenCalled();
+
+		// Another member removes this account: the server reports it on byl/household.
+		mocks.handlers['byl/household']?.({});
+		await vi.waitFor(() => expect(householdMocks.reload).toHaveBeenCalledOnce());
+		expect(JSON.parse(sessionStorage.getItem('byl-household-notice') ?? '{}')).toEqual({
+			title: 'Du bist nicht mehr Mitglied im Haushalt „Haus Beispiel“.'
+		});
+		unmount();
+
+		// After loading anew the layout shows the notice once.
+		householdMocks.answers = [null];
+		await renderLayout();
+		await vi.waitFor(() =>
+			expect(
+				screen.getAllByText('Du bist nicht mehr Mitglied im Haushalt „Haus Beispiel“.').length
+			).toBeGreaterThan(0)
+		);
+		expect(sessionStorage.getItem('byl-household-notice')).toBeNull();
 	});
 
 	it('logs out and goes to the login page with the current page as redirect', async () => {

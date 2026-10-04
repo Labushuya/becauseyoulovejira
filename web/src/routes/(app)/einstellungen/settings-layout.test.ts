@@ -104,6 +104,7 @@ describe('settings layout', () => {
 			['Tickets', '/einstellungen/tickets'],
 			['Darstellung', '/einstellungen/darstellung'],
 			['Konto', '/einstellungen/konto'],
+			['Haushalt', '/einstellungen/haushalt'],
 			['Konten', '/einstellungen/konten'],
 			['Sicherheit', '/einstellungen/sicherheit'],
 			['Sicherung', '/einstellungen/sicherung'],
@@ -134,6 +135,8 @@ describe('settings layout', () => {
 			'Tickets',
 			'Darstellung',
 			'Konto',
+			// The household is a page of every account on every device (ADR-0058).
+			'Haushalt',
 			'Hilfe'
 		]);
 		expect(nav.queryByRole('link', { name: 'Konten' })).toBeNull();
@@ -154,6 +157,7 @@ describe('settings layout', () => {
 			'Tickets',
 			'Darstellung',
 			'Konto',
+			'Haushalt',
 			'Konten nur am PC',
 			'Sicherheit nur am PC',
 			'Sicherung nur am PC',
