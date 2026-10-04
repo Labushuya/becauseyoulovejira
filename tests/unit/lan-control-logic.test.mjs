@@ -1,15 +1,18 @@
 // Pure functions of byl-control.ps1 for the access in the home network (plan docs/plan/heimnetz.md,
 // ADR-0055 addendum): the addresses (the same rule as lib/lan-rules.js), byl-config.json, the start
 // arguments and origins, the fingerprint, the own instance on 0.0.0.0, the addresses of the
-// computer to choose from, the network category, the state of the firewall rule and the script and
-// command that change it. Only app/byl-functions.ps1 runs here, never a script, a server, the
-// firewall or a prompt for administrator rights; the network and the firewall are fakes.
+// computer to choose from, the network category, the state of the firewall rule (also read from
+// rules shaped like HNetCfg.FwPolicy2, and a read that is denied), the script and command that
+// change it and what a change came to (elevation, then the rule read again). Only
+// app/byl-functions.ps1 runs here, never a script, a server, the firewall or a prompt for
+// administrator rights; the network, the firewall and the elevation are fakes.
 
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { loadHookLib } from '../support/hook-lib.mjs';
 import { runPowerShellJson } from '../support/powershell.mjs';
+import { scaled } from '../support/timing.mjs';
 
 const ROOT_DIR = resolve(fileURLToPath(new URL('../..', import.meta.url)));
 const FUNCTIONS_FILE = join(ROOT_DIR, 'app', 'byl-functions.ps1');
@@ -125,6 +128,34 @@ const FIREWALL = {
 	mixed: [rule({ LocalPort: ['8091'] }), rule()]
 };
 
+// Rules as HNetCfg.FwPolicy2 tells them (INetFwRule), like on the computer of the bug report: the
+// rule of the button and a second one made by hand with netsh, the rules "pocketbase" of the alert of
+// Windows (public networks, all ports), block rules and rules of other programs.
+const LIVE = 'H:\\Apps\\becauseyoulovejira\\app\\pocketbase.exe';
+const com = (overrides = {}) => ({
+	Name: 'becauseyoulovejira (Heimnetz)',
+	ApplicationName: LIVE,
+	Protocol: 6,
+	LocalPorts: '8090',
+	Direction: 1,
+	Enabled: true,
+	Profiles: 2,
+	Action: 1,
+	...overrides
+});
+const COM_RULES = [
+	com(),
+	com(),
+	com({ Name: 'pocketbase', ApplicationName: LIVE.toLowerCase(), Protocol: 17, LocalPorts: '*', Profiles: 4 }),
+	com({ Name: 'pocketbase', ApplicationName: LIVE.toLowerCase(), LocalPorts: '*', Profiles: 4 }),
+	com({ Name: 'pocketbase.exe', Action: 0, LocalPorts: '*', Profiles: 4 }),
+	com({ Name: 'pocketbase.exe', Action: 0, Enabled: false }),
+	com({ Name: 'pocketbase.exe', Action: 0, Direction: 2 }),
+	com({ ApplicationName: 'D:\\backup\\app\\pocketbase.exe' }),
+	com({ Name: 'Alle', ApplicationName: '%SystemRoot%\\system32\\svchost.exe', Protocol: 256, LocalPorts: null, Profiles: 2147483647 }),
+	com({ Name: 'Mehrere', LocalPorts: '8090, 8091', Profiles: 3, Protocol: 41 })
+];
+
 const SCRIPT = String.raw`
 . $env:BYL_FUNCTIONS
 Set-StrictMode -Version 2.0
@@ -226,6 +257,53 @@ foreach ($case in $in.firewall.PSObject.Properties) {
 $result.firewall = $firewall
 $result.blocked = (Resolve-BylFirewallState -Rules @($in.firewall.present) -Blocks @([pscustomobject]@{ Name = 'pocketbase.exe'; Profile = 'Public' }) -Program $in.exe -Port 8090).Blocked
 $result.notBlocked = (Resolve-BylFirewallState -Rules @() -Blocks @() -Program $in.exe -Port 8090).Blocked
+$result.comRules = @(foreach ($comRule in @($in.com)) {
+        $converted = ConvertFrom-BylFirewallRule -Rule $comRule
+        [ordered]@{
+            name = $converted.Name; enabled = $converted.Enabled; direction = $converted.Direction; action = $converted.Action
+            profile = $converted.Profile; program = $converted.Program; protocol = $converted.Protocol; localPort = @($converted.LocalPort)
+        }
+    })
+$snapshot = Get-BylFirewallSnapshot -Program $in.live -Read { @($in.com) }
+$liveState = Resolve-BylFirewallState -Rules $snapshot.Rules -Blocks $snapshot.Blocks -Program $in.live -Port 8090
+$result.snapshot = [ordered]@{
+    available = $snapshot.Available; rules = @($snapshot.Rules).Count; blocks = @(@($snapshot.Blocks) | ForEach-Object { $_.Name })
+    state = $liveState.State; blocked = $liveState.Blocked
+}
+$empty = Get-BylFirewallSnapshot -Program $in.live -Read { @() }
+$result.unreadable = [ordered]@{
+    denied = (Get-BylFirewallSnapshot -Program $in.live -Read { throw (New-Object System.UnauthorizedAccessException('Zugriff verweigert')) }).Available
+    written = (Get-BylFirewallSnapshot -Program $in.live -Read { Write-Error 'Zugriff verweigert'; @() }).Available
+    broken = (Get-BylFirewallSnapshot -Program $in.live -Read { @([pscustomobject]@{ Name = 'kaputt' }) }).Available
+    empty = $empty.Available
+    emptyState = (Resolve-BylFirewallState -Rules $empty.Rules -Blocks $empty.Blocks -Program $in.live -Port 8090).State
+}
+$result.elevation = [ordered]@{
+    session0 = Resolve-BylElevationOutcome -Interactive $false -Finished $true -ExitCode 0
+    declined = Resolve-BylElevationOutcome -Interactive $true -StartError 1223
+    refused = Resolve-BylElevationOutcome -Interactive $true -StartError 5
+    noCode = Resolve-BylElevationOutcome -Interactive $true -StartError -1
+    waiting = Resolve-BylElevationOutcome -Interactive $true -Finished $false
+    done = Resolve-BylElevationOutcome -Interactive $true -Finished $true -ExitCode 0
+    netsh = Resolve-BylElevationOutcome -Interactive $true -Finished $true -ExitCode 1
+    noExit = Resolve-BylElevationOutcome -Interactive $true -Finished $true
+}
+$result.elevationOutcomes = $BylElevationOutcomes
+$result.win32 = [ordered]@{
+    wrapped = Get-BylWin32ErrorCode -Exception (New-Object System.Management.Automation.MethodInvocationException('x', (New-Object System.ComponentModel.Win32Exception(1223))))
+    deeper = Get-BylWin32ErrorCode -Exception (New-Object System.InvalidOperationException('a', (New-Object System.Exception('b', (New-Object System.ComponentModel.Win32Exception(5))))))
+    without = Get-BylWin32ErrorCode -Exception (New-Object System.InvalidOperationException('kein Code'))
+    nothing = Get-BylWin32ErrorCode -Exception $null
+}
+$final = [ordered]@{}
+foreach ($action in @('add', 'remove')) {
+    foreach ($elevation in @('done', 'failed', 'cancelled', 'timeout', 'unavailable')) {
+        $final["$action/$elevation"] = @(foreach ($state in @('present', 'missing', 'mismatch', 'unknown')) {
+                Resolve-BylFirewallOutcome -Action $action -Elevation $elevation -State $state
+            })
+    }
+}
+$result.final = $final
 $scripts = [ordered]@{
     add = Get-BylFirewallScript -Action 'add' -Program $in.quoted -Port 8090
     remove = Get-BylFirewallScript -Action 'remove' -Program $in.quoted -Port 8090
@@ -261,7 +339,7 @@ let result;
 beforeAll(() => {
 	result = runPowerShellJson(
 		SCRIPT,
-		{ addresses: ADDRESSES, configs: CONFIGS, app: APP, exe: EXE, quoted: QUOTED, network: NETWORK, firewall: FIREWALL },
+		{ addresses: ADDRESSES, configs: CONFIGS, app: APP, exe: EXE, quoted: QUOTED, network: NETWORK, firewall: FIREWALL, com: COM_RULES, live: LIVE },
 		{ BYL_FUNCTIONS: FUNCTIONS_FILE }
 	);
 }, 60_000);
@@ -421,25 +499,31 @@ describe('the firewall rule', () => {
 		expect(result.notBlocked).toBe(false);
 	});
 
-	it('is changed by a script that only names the rule, the quoted program and the port', () => {
+	it('is changed by netsh of the system folder in a script that only names the rule, the quoted program and the port', () => {
 		for (const name of ['add', 'remove']) {
 			expect(result.parse[name].errors, name).toBe(0);
 			expect(result.parse[name].program, name).toEqual([QUOTED]);
+			// No cmdlet changes the firewall; netsh runs as "& $netsh", only Out-Null is named.
+			expect(new Set(result.parse[name].commands), name).toEqual(new Set(['Out-Null']));
 		}
-		expect(result.parse.add.commands).toEqual([
-			'Get-NetFirewallRule',
-			'Get-NetFirewallApplicationFilter',
-			'Remove-NetFirewallRule',
-			'New-NetFirewallRule',
-			'Out-Null'
+		const head = [
+			"$netsh = [System.IO.Path]::Combine([Environment]::SystemDirectory, 'netsh.exe')",
+			"$name = 'becauseyoulovejira (Heimnetz)'",
+			"$program = 'C:\\Users\\O''Brien\\app\\pocketbase.exe'"
+		];
+		const show = '& $netsh advfirewall firewall show rule "name=$name" | Out-Null';
+		const remove = '& $netsh advfirewall firewall delete rule "name=$name" "program=$program" | Out-Null';
+		// add: first away with every rule of the name for this program (old port, a second one by hand).
+		expect(result.scripts.add.split('\r\n')).toEqual([
+			...head,
+			"$description = 'Access of devices in the home network to becauseyoulovejira (private networks only), created by byl-control.ps1'",
+			show,
+			`if ($LASTEXITCODE -eq 0) { ${remove} }`,
+			'& $netsh advfirewall firewall add rule "name=$name" "description=$description" dir=in action=allow protocol=TCP localport=8090 "program=$program" profile=private enable=yes | Out-Null',
+			'exit $LASTEXITCODE'
 		]);
-		expect(result.parse.remove.commands).toEqual(['Get-NetFirewallRule', 'Get-NetFirewallApplicationFilter', 'Remove-NetFirewallRule']);
-		expect(result.scripts.add).toContain(
-			'New-NetFirewallRule -DisplayName $name -Description \'Access of devices in the home network to becauseyoulovejira (private networks only), created by byl-control.ps1\' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8090 -Program $program -Profile Private -Enabled True | Out-Null'
-		);
-		expect(result.scripts.add).toContain("$name = 'becauseyoulovejira (Heimnetz)'");
-		expect(result.scripts.add).toContain("$program = 'C:\\Users\\O''Brien\\app\\pocketbase.exe'");
-		expect(result.scripts.remove).not.toContain('New-NetFirewallRule');
+		// remove: nothing named so is nothing to remove.
+		expect(result.scripts.remove.split('\r\n')).toEqual([...head, show, 'if ($LASTEXITCODE -ne 0) { exit 0 }', remove, 'exit $LASTEXITCODE']);
 		expect(result.arguments).toMatch(/^-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand [A-Za-z0-9+/=]+$/);
 		expect(result.decoded).toBe(result.scripts.add);
 	});
@@ -449,5 +533,105 @@ describe('the firewall rule', () => {
 			`netsh advfirewall firewall add rule name="becauseyoulovejira (Heimnetz)" dir=in action=allow protocol=TCP localport=8090 program="${EXE}" profile=private`
 		);
 		expect(result.commands.remove).toBe(`netsh advfirewall firewall delete rule name="becauseyoulovejira (Heimnetz)" program="${EXE}"`);
+		// The script of the button changes the same: every part of the command by hand is in it.
+		for (const part of ['advfirewall firewall add rule', 'dir=in', 'action=allow', 'protocol=TCP', 'localport=8090', 'profile=private']) {
+			expect(result.scripts.add, part).toContain(part);
+		}
+	});
+
+	it('is read like HNetCfg.FwPolicy2 tells it, without administrator rights: both rules of the bug report count as present', () => {
+		expect(result.comRules[0]).toEqual({
+			name: 'becauseyoulovejira (Heimnetz)',
+			enabled: 'True',
+			direction: 'Inbound',
+			action: 'Allow',
+			profile: 'Private',
+			program: LIVE,
+			protocol: 'TCP',
+			localPort: ['8090']
+		});
+		expect(result.comRules[2]).toMatchObject({ name: 'pocketbase', protocol: 'UDP', profile: 'Public', localPort: ['Any'] });
+		expect(result.comRules[5]).toMatchObject({ enabled: 'False', action: 'Block' });
+		expect(result.comRules[6]).toMatchObject({ direction: 'Outbound' });
+		expect(result.comRules[8]).toMatchObject({ protocol: 'Any', profile: 'Any', localPort: ['Any'] });
+		expect(result.comRules[8].program).toMatch(/^[A-Za-z]:\\windows\\system32\\svchost\.exe$/i);
+		expect(result.comRules[9]).toMatchObject({ profile: 'Domain, Private', protocol: '41', localPort: ['8090', '8091'] });
+		// Named rules of this and another folder; the one switched-on inbound block rule of the program.
+		expect(result.snapshot).toEqual({ available: true, rules: 3, blocks: ['pocketbase.exe'], state: 'present', blocked: true });
+	});
+
+	it('is "not readable" when Windows denies the read, never "missing" (regression of the bug report)', () => {
+		// Get-NetFirewallRule -ErrorAction SilentlyContinue gave nothing on "Zugriff verweigert", and
+		// the page showed "Fehlt" right after the button had created the rule.
+		expect(result.unreadable).toEqual({ denied: false, written: false, broken: false, empty: true, emptyState: 'missing' });
+	});
+});
+
+describe('a change of the firewall rule', () => {
+	it('tells declined, no answer, not possible and an error of netsh apart', () => {
+		expect(result.elevation).toEqual({
+			session0: 'unavailable',
+			declined: 'cancelled',
+			refused: 'unavailable',
+			noCode: 'unavailable',
+			waiting: 'timeout',
+			done: 'done',
+			netsh: 'failed',
+			noExit: 'failed'
+		});
+		expect(result.elevationOutcomes).toEqual(['done', 'cancelled', 'timeout', 'unavailable', 'failed']);
+		expect(result.win32).toEqual({ wrapped: 1223, deeper: 5, without: null, nothing: null });
+	});
+
+	it('counts as done only when the rule read again afterwards really is so (state present, missing, mismatch, unknown)', () => {
+		expect(result.final).toEqual({
+			'add/done': ['done', 'unconfirmed', 'unconfirmed', 'unconfirmed'],
+			'add/failed': ['done', 'failed', 'failed', 'failed'],
+			'add/cancelled': ['cancelled', 'cancelled', 'cancelled', 'cancelled'],
+			'add/timeout': ['timeout', 'timeout', 'timeout', 'timeout'],
+			'add/unavailable': ['unavailable', 'unavailable', 'unavailable', 'unavailable'],
+			'remove/done': ['unconfirmed', 'done', 'unconfirmed', 'unconfirmed'],
+			'remove/failed': ['failed', 'done', 'failed', 'failed'],
+			'remove/cancelled': ['cancelled', 'cancelled', 'cancelled', 'cancelled'],
+			'remove/timeout': ['timeout', 'timeout', 'timeout', 'timeout'],
+			'remove/unavailable': ['unavailable', 'unavailable', 'unavailable', 'unavailable']
+		});
+		// Every outcome the page reads, and no other.
+		const outcomes = new Set(Object.values(result.final).flat());
+		expect([...outcomes].sort()).toEqual([...lan.FIREWALL_OUTCOMES].sort());
+	});
+
+	it('starts the script in a runspace of its own: exit code, code of Windows of a failed start, and it gives up after the time (verb runas taken out, never elevated)', () => {
+		// The start of byl-control.ps1 itself, with the one line of the verb taken out: harmless
+		// programs instead of the elevated Windows PowerShell, so nothing asks and nothing changes.
+		const probe = runPowerShellJson(
+			String.raw`
+. $env:BYL_FUNCTIONS
+$in = $env:BYL_TEST_INPUT | ConvertFrom-Json
+$control = [System.IO.File]::ReadAllText($env:BYL_CONTROL)
+$start = $control.IndexOf('$runner.AddScript({') + '$runner.AddScript('.Length
+$text = $control.Substring($start + 1, $control.IndexOf('}.ToString())', $start) - $start - 1)
+$plain = $text.Replace('$info.Verb = ''runas''', '')
+function Invoke-Runner([string]$File, [string]$Arguments, [int]$Milliseconds) {
+    $runner = [powershell]::Create()
+    [void]$runner.AddScript($plain).AddArgument($File).AddArgument($Arguments)
+    $pending = $runner.BeginInvoke()
+    if (-not $pending.AsyncWaitHandle.WaitOne($Milliseconds)) { return 'timeout' }
+    $answer = @($runner.EndInvoke($pending))[0]
+    $runner.Dispose()
+    if ($null -ne $answer.Error) { return Get-BylWin32ErrorCode -Exception $answer.Error }
+    return $answer.ExitCode
+}
+$cmd = [System.IO.Path]::Combine([Environment]::SystemDirectory, 'cmd.exe')
+[ordered]@{
+    removed = $plain -ne $text -and $plain -notmatch 'runas'
+    exit = Invoke-Runner -File $cmd -Arguments '/c exit 3' -Milliseconds $in.wait
+    missing = Invoke-Runner -File ([System.IO.Path]::Combine($in.dir, 'gibt-es-nicht.exe')) -Arguments '' -Milliseconds $in.wait
+    slow = Invoke-Runner -File $cmd -Arguments '/c ping -n 3 127.0.0.1' -Milliseconds 100
+} | ConvertTo-Json -Compress`,
+			{ wait: scaled(30_000), dir: ROOT_DIR },
+			{ BYL_FUNCTIONS: FUNCTIONS_FILE, BYL_CONTROL: join(ROOT_DIR, 'app', 'byl-control.ps1') }
+		);
+		expect(probe).toEqual({ removed: true, exit: 3, missing: 2, slow: 'timeout' });
 	});
 });

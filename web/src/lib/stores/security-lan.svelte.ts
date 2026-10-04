@@ -137,6 +137,30 @@ export class SecurityLanStore {
 		}
 	}
 
+	/**
+	 * Reads the firewall and the network again (after a prompt confirmed late or a command by hand);
+	 * the message of the last change goes once the new state is there.
+	 */
+	async recheck(): Promise<void> {
+		if (!this.#begin('firewall')) return;
+		try {
+			const answer = await this.#data.info(this.#options());
+			if (answer.kind === 'ok') {
+				this.#info = answer.value;
+				this.#failed = null;
+			} else {
+				this.#partMessage = {
+					part: 'firewall',
+					message: answer.kind === 'denied' ? securityDenial(answer.reason) : denialText('script')
+				};
+			}
+		} catch (error) {
+			this.#fail('firewall', error, 'Nicht geprüft');
+		} finally {
+			this.#busy = null;
+		}
+	}
+
 	/** Saves the setting into byl-config.json; it applies after a restart. */
 	async save(enabled: boolean, addresses: readonly string[]): Promise<boolean> {
 		if (!this.#begin('save')) return false;

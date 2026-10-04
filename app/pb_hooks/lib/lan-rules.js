@@ -24,7 +24,10 @@ var CATEGORIES = ['private', 'public', 'domain', 'unknown'];
 var KINDS = ['ip', 'name'];
 var FIREWALL_STATES = ['present', 'missing', 'mismatch', 'unknown'];
 var FIREWALL_ACTIONS = ['add', 'remove'];
-var OUTCOMES = ['done', 'test', 'cancelled', 'failed', 'timeout'];
+// Outcomes of lan-firewall (Resolve-BylFirewallOutcome of byl-functions.ps1): done only when the rule
+// read again afterwards really is so; each other one has its entry lan-firewall-<outcome> of the
+// catalog with the command by hand.
+var FIREWALL_OUTCOMES = ['done', 'cancelled', 'timeout', 'unavailable', 'failed', 'unconfirmed'];
 
 function text(value) {
   return typeof value === 'string' ? value.replace(/^\s+|\s+$/g, '') : '';
@@ -238,7 +241,7 @@ function lanStatusView(raw) {
 
 /** The outcome of a change of the firewall rule (lan-firewall), '' for anything else. */
 function outcomeOf(value) {
-  return oneOf(OUTCOMES, value) ? value : '';
+  return oneOf(FIREWALL_OUTCOMES, value) ? value : '';
 }
 
 module.exports = {
@@ -248,6 +251,7 @@ module.exports = {
   CATEGORIES: CATEGORIES,
   FIREWALL_STATES: FIREWALL_STATES,
   FIREWALL_ACTIONS: FIREWALL_ACTIONS,
+  FIREWALL_OUTCOMES: FIREWALL_OUTCOMES,
   isPrivateIPv4: isPrivateIPv4,
   normalizeLanAddress: normalizeLanAddress,
   lanInput: lanInput,

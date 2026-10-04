@@ -428,6 +428,111 @@ function Resolve-BylFirewallState {
     return [pscustomobject]@{ State = $state; Blocked = @(@($Blocks) | Where-Object { $null -ne $_ }).Count -gt 0 }
 }
 
+# Bits of the profiles of a rule of HNetCfg.FwPolicy2 (INetFwRule.Profiles); all three (also the
+# value 0x7FFFFFFF of "all profiles") mean any.
+$BylFirewallProfileBits = [ordered]@{ Domain = 1; Private = 2; Public = 4 }
+
+function ConvertFrom-BylFirewallRule {
+    # One rule of the COM object HNetCfg.FwPolicy2 ($Rule with Name, ApplicationName, Protocol,
+    # LocalPorts, Direction, Enabled, Profiles and Action) in the shape Resolve-BylFirewallState
+    # reads: Enabled 'True' or 'False', Direction 'Inbound' (1) or 'Outbound' (2), Action 'Allow' (1)
+    # or 'Block' (0), Profile 'Any' or the profiles like 'Private, Public', Program with the
+    # environment variables expanded, Protocol 'TCP' (6), 'UDP' (17), 'Any' (256) or the number, and
+    # LocalPort as a list ('Any' for *).
+    param([Parameter(Mandatory = $true)][object]$Rule)
+
+    $bits = [int64]$Rule.Profiles
+    $profiles = @(foreach ($name in $BylFirewallProfileBits.Keys) { if (($bits -band $BylFirewallProfileBits[$name]) -ne 0) { $name } })
+    $ports = [string]$Rule.LocalPorts
+    return [pscustomobject]@{
+        Name      = [string]$Rule.Name
+        Enabled   = if ([bool]$Rule.Enabled) { 'True' } else { 'False' }
+        Direction = switch ([int]$Rule.Direction) { 1 { 'Inbound' } 2 { 'Outbound' } default { [string]$Rule.Direction } }
+        Action    = switch ([int]$Rule.Action) { 1 { 'Allow' } 0 { 'Block' } default { [string]$Rule.Action } }
+        Profile   = if ($profiles.Count -eq $BylFirewallProfileBits.Count) { 'Any' } else { $profiles -join ', ' }
+        Program   = [Environment]::ExpandEnvironmentVariables([string]$Rule.ApplicationName)
+        Protocol  = switch ([int]$Rule.Protocol) { 6 { 'TCP' } 17 { 'UDP' } 256 { 'Any' } default { [string]$Rule.Protocol } }
+        LocalPort = if ($ports -eq '' -or $ports -eq '*') { @('Any') } else { @($ports -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' }) }
+    }
+}
+
+function Get-BylFirewallSnapshot {
+    # The rules for Resolve-BylFirewallState: those named $BylLanRuleName (Rules) and the switched-on
+    # inbound block rules for $Program (Blocks), from all rules $Read returns (a script block, rules
+    # shaped like those of HNetCfg.FwPolicy2). Available is false when reading fails in any way, e.g.
+    # "Zugriff verweigert": the state is then 'unknown', never 'missing'. A denied read that was
+    # silenced once looked like a missing rule and hid the rule the page had just created.
+    param([Parameter(Mandatory = $true)][scriptblock]$Read, [Parameter(Mandatory = $true)][string]$Program)
+
+    $ErrorActionPreference = 'Stop'
+    try {
+        $all = @(@(& $Read) | Where-Object { $null -ne $_ } | ForEach-Object { ConvertFrom-BylFirewallRule -Rule $_ })
+    }
+    catch {
+        return [pscustomobject]@{ Available = $false; Rules = @(); Blocks = @() }
+    }
+    $rules = @($all | Where-Object { $_.Name -eq $BylLanRuleName })
+    $blocks = @($all | Where-Object {
+            $_.Direction -eq 'Inbound' -and $_.Action -eq 'Block' -and $_.Enabled -eq 'True' -and (Test-SamePath -Path $_.Program -Expected $Program)
+        })
+    return [pscustomobject]@{ Available = $true; Rules = $rules; Blocks = $blocks }
+}
+
+# What the elevated Windows PowerShell of lan-firewall can come to (Resolve-BylElevationOutcome).
+$BylElevationOutcomes = @('done', 'cancelled', 'timeout', 'unavailable', 'failed')
+
+function Get-BylWin32ErrorCode {
+    # The code of the first System.ComponentModel.Win32Exception in $Exception or its inner exceptions
+    # (PowerShell wraps the exception of a .NET method), $null without one.
+    param([AllowNull()][object]$Exception)
+
+    $inner = $Exception
+    while ($null -ne $inner) {
+        if ($inner -is [System.ComponentModel.Win32Exception]) { return [int]$inner.NativeErrorCode }
+        $inner = $inner.InnerException
+    }
+    return $null
+}
+
+function Resolve-BylElevationOutcome {
+    # What became of the elevated Windows PowerShell of lan-firewall:
+    #   unavailable - Windows cannot ask here: no session a person sees ($Interactive false: session 0,
+    #                 a service, a task without sign-in), or the start failed with another error than
+    #                 1223 ($StartError; -1 without a code of Windows),
+    #   cancelled   - the UAC prompt was declined or closed ($StartError 1223, ERROR_CANCELLED),
+    #   timeout     - no end within the time ($Finished false: the prompt or netsh still waits),
+    #   done        - exit code 0; failed - another exit code or none (netsh reported an error).
+    param([bool]$Interactive, [AllowNull()][object]$StartError, [bool]$Finished, [AllowNull()][object]$ExitCode)
+
+    if (-not $Interactive) { return 'unavailable' }
+    if ($null -ne $StartError) {
+        if ([int]$StartError -eq 1223) { return 'cancelled' }
+        return 'unavailable'
+    }
+    if (-not $Finished) { return 'timeout' }
+    if ($null -ne $ExitCode -and [int]$ExitCode -eq 0) { return 'done' }
+    return 'failed'
+}
+
+function Resolve-BylFirewallOutcome {
+    # The outcome of lan-firewall from the elevation ($Elevation of Resolve-BylElevationOutcome) and the
+    # state of the rule read again afterwards ($State of Resolve-BylFirewallState, 'unknown' when the
+    # firewall could not be read): 'done' only when the rule really is as wanted (present after add,
+    # missing after remove), then also after an error of netsh (e.g. nothing left to remove);
+    # 'unconfirmed' when Windows reported success but the rule is not so or cannot be read; otherwise
+    # the outcome of the elevation.
+    param(
+        [Parameter(Mandatory = $true)][ValidateSet('add', 'remove')][string]$Action,
+        [Parameter(Mandatory = $true)][string]$Elevation,
+        [Parameter(Mandatory = $true)][string]$State
+    )
+
+    $wanted = if ($Action -eq 'add') { 'present' } else { 'missing' }
+    if (@('done', 'failed') -contains $Elevation -and $State -eq $wanted) { return 'done' }
+    if ($Elevation -eq 'done') { return 'unconfirmed' }
+    return $Elevation
+}
+
 function ConvertTo-BylQuotedText {
     # $Text as a single-quoted PowerShell string (a quote doubled), for the elevated script.
     param([AllowEmptyString()][string]$Text)
@@ -436,10 +541,13 @@ function ConvertTo-BylQuotedText {
 }
 
 function Get-BylFirewallScript {
-    # The script the elevated Windows PowerShell runs for lan-firewall: it removes every rule named
-    # $BylLanRuleName for $Program (also one of an earlier port) and, for 'add', creates the one
-    # inbound rule: only $Program, only TCP on $Port, only private networks. Exit code 0 when done,
-    # 1 after an error. Fixed text and the quoted path only; nothing of a request reaches it.
+    # The script the elevated Windows PowerShell runs for lan-firewall, with netsh of the system folder
+    # like the command by hand (Get-BylFirewallCommand). 'add' removes the rules named $BylLanRuleName
+    # for $Program first (also one of an earlier port, also a second one made by hand), then creates
+    # the one inbound rule: only $Program, only TCP on $Port, only private networks. 'remove' removes
+    # them and ends with 0 when no rule has the name. The exit code is the one of the last netsh (0
+    # done, 1 netsh reported an error); the caller reads the firewall again either way. Fixed text and
+    # the quoted path only; nothing of a request reaches it.
     param(
         [Parameter(Mandatory = $true)][ValidateSet('add', 'remove')][string]$Action,
         [Parameter(Mandatory = $true)][string]$Program,
@@ -447,23 +555,21 @@ function Get-BylFirewallScript {
     )
 
     $lines = New-Object System.Collections.Generic.List[string]
-    $lines.Add('$ErrorActionPreference = ''Stop''')
+    $lines.Add('$netsh = [System.IO.Path]::Combine([Environment]::SystemDirectory, ''netsh.exe'')')
     $lines.Add('$name = ' + (ConvertTo-BylQuotedText -Text $BylLanRuleName))
     $lines.Add('$program = ' + (ConvertTo-BylQuotedText -Text $Program))
-    $lines.Add('try {')
-    $lines.Add('    foreach ($rule in @(Get-NetFirewallRule -DisplayName $name -ErrorAction SilentlyContinue)) {')
-    $lines.Add('        $filter = $rule | Get-NetFirewallApplicationFilter')
-    $lines.Add('        if ([string]::Equals([string]$filter.Program, $program, [System.StringComparison]::OrdinalIgnoreCase)) { $rule | Remove-NetFirewallRule }')
-    $lines.Add('    }')
+    if ($Action -eq 'add') { $lines.Add('$description = ' + (ConvertTo-BylQuotedText -Text $BylLanRuleDescription)) }
+    $lines.Add('& $netsh advfirewall firewall show rule "name=$name" | Out-Null')
     if ($Action -eq 'add') {
-        $lines.Add('    New-NetFirewallRule -DisplayName $name -Description ' + (ConvertTo-BylQuotedText -Text $BylLanRuleDescription) +
-            " -Direction Inbound -Action Allow -Protocol TCP -LocalPort $Port -Program `$program -Profile Private -Enabled True | Out-Null")
+        $lines.Add('if ($LASTEXITCODE -eq 0) { & $netsh advfirewall firewall delete rule "name=$name" "program=$program" | Out-Null }')
+        $lines.Add('& $netsh advfirewall firewall add rule "name=$name" "description=$description" dir=in action=allow protocol=TCP ' +
+            "localport=$Port " + '"program=$program" profile=private enable=yes | Out-Null')
     }
-    $lines.Add('    exit 0')
-    $lines.Add('}')
-    $lines.Add('catch {')
-    $lines.Add('    exit 1')
-    $lines.Add('}')
+    else {
+        $lines.Add('if ($LASTEXITCODE -ne 0) { exit 0 }')
+        $lines.Add('& $netsh advfirewall firewall delete rule "name=$name" "program=$program" | Out-Null')
+    }
+    $lines.Add('exit $LASTEXITCODE')
     return ($lines -join "`r`n")
 }
 

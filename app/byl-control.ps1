@@ -2475,11 +2475,13 @@ function Invoke-SecurityConfigure {
 # creates or removes the inbound rule of the Windows firewall, with the UAC prompt of Windows, only
 # after a click on the page or a yes in the console. The page "Sicherheit" runs the three with -Json
 # (parameters as JSON on standard input); status, doctor and start report the rule and the network
-# category. Reading the network and the firewall needs no rights. A disposable copy of the tests
-# (BYL_TEST_ISOLATED=1) never changes the firewall and may read a network of its test instead of
-# the real one.
+# category. Reading the network and the firewall needs no rights (the firewall through the COM
+# object HNetCfg.FwPolicy2: Get-NetFirewallRule is denied without them on some computers). After a
+# change lan-firewall reads the rule again and reports success only when it really is so. A
+# disposable copy of the tests (BYL_TEST_ISOLATED=1) never changes the firewall and may read a
+# network of its test instead of the real one.
 
-# How long lan-firewall waits for the elevated Windows PowerShell (the UAC prompt comes first).
+# How long lan-firewall waits in all for the UAC prompt and the elevated Windows PowerShell.
 $FirewallSeconds = 120
 # German words of the network categories of Windows and of the states of the rule.
 $NetworkCategoryText = @{ private = 'Privat'; public = 'Öffentlich'; domain = 'Domäne'; unknown = 'unbekannt' }
@@ -2493,7 +2495,8 @@ $FirewallStateText = @{
 function Read-TestNetwork {
     # The network of a disposable copy of the tests: the JSON file BYL_TEST_NETWORK_FILE (addresses,
     # profiles, suffixes, hostName and firewall with rules and blocks, shaped like the snapshots
-    # below), $null without it. Only in a copy with BYL_TEST_ISOLATED=1.
+    # below, and elevation: what Windows answers lan-firewall, see Invoke-FirewallElevated), $null
+    # without it. Only in a copy with BYL_TEST_ISOLATED=1.
     if (-not $IsolatedEnvironment) { return $null }
     $file = [Environment]::GetEnvironmentVariable('BYL_TEST_NETWORK_FILE', 'Process')
     if ([string]::IsNullOrWhiteSpace($file) -or -not [System.IO.File]::Exists($file)) { return $null }
@@ -2531,8 +2534,10 @@ function Get-NetworkSnapshot {
 }
 
 function Get-FirewallSnapshot {
-    # The rules named $BylLanRuleName with their filters and the switched-on inbound block rules for
-    # $Program, read only; Available is false when Windows does not tell.
+    # The rules named $BylLanRuleName and the switched-on inbound block rules for $Program, read only
+    # (Get-BylFirewallSnapshot); Available is false when Windows does not tell. HNetCfg.FwPolicy2
+    # reads without administrator rights; Get-NetFirewallRule answered "Zugriff verweigert" there on
+    # a computer of the user, and silenced that looked like a missing rule.
     param([Parameter(Mandatory = $true)][string]$Program)
 
     $test = Read-TestNetwork
@@ -2541,28 +2546,7 @@ function Get-FirewallSnapshot {
         if ($null -eq $firewall -or $null -eq $firewall.Value) { return [pscustomobject]@{ Available = $false; Rules = @(); Blocks = @() } }
         return [pscustomobject]@{ Available = $true; Rules = @($firewall.Value.rules); Blocks = @($firewall.Value.blocks) }
     }
-    try {
-        $rules = @(Get-NetFirewallRule -DisplayName $BylLanRuleName -ErrorAction SilentlyContinue | ForEach-Object {
-                $application = $_ | Get-NetFirewallApplicationFilter
-                $filter = $_ | Get-NetFirewallPortFilter
-                [pscustomobject]@{
-                    Enabled   = [string]$_.Enabled
-                    Direction = [string]$_.Direction
-                    Action    = [string]$_.Action
-                    Profile   = [string]$_.Profile
-                    Program   = [string]$application.Program
-                    Protocol  = [string]$filter.Protocol
-                    LocalPort = @(@($filter.LocalPort) | ForEach-Object { [string]$_ })
-                }
-            })
-        $blocks = @(Get-NetFirewallApplicationFilter -Program $Program -ErrorAction SilentlyContinue | Get-NetFirewallRule -ErrorAction SilentlyContinue |
-                Where-Object { [string]$_.Direction -eq 'Inbound' -and [string]$_.Action -eq 'Block' -and [string]$_.Enabled -eq 'True' } |
-                ForEach-Object { [pscustomobject]@{ Name = [string]$_.DisplayName; Profile = [string]$_.Profile } })
-        return [pscustomobject]@{ Available = $true; Rules = $rules; Blocks = $blocks }
-    }
-    catch {
-        return [pscustomobject]@{ Available = $false; Rules = @(); Blocks = @() }
-    }
+    return Get-BylFirewallSnapshot -Program $Program -Read { @((New-Object -ComObject HNetCfg.FwPolicy2).Rules) }
 }
 
 function Get-LanReport {
@@ -2693,11 +2677,16 @@ function Show-LanStart {
 
 function Invoke-FirewallElevated {
     # Creates ('add') or removes ('remove') the inbound rule of the home network for pocketbase.exe
-    # of this folder in an elevated Windows PowerShell: Windows asks with its UAC prompt first.
-    # Returns 'done', 'cancelled' (the prompt was declined), 'failed' (no start or an error of the
-    # script) or 'timeout'. A disposable copy of the tests never asks for rights: it writes the
-    # request into the file BYL_TEST_FIREWALL_FILE of its test ('test') and refuses without it
-    # (lan-firewall-test). The only place that elevates.
+    # of this folder in an elevated Windows PowerShell (Get-BylFirewallScript, netsh): Windows asks
+    # with its UAC prompt first, unless it is set to elevate administrators without asking. Returns
+    # Outcome (Resolve-BylElevationOutcome: done, cancelled, timeout, unavailable, failed) and Detail
+    # (the session, the code of Windows or the exit code). The start waits while the prompt is open,
+    # so it runs in a runspace of its own: $FirewallSeconds count from the click, the prompt
+    # included, and the answer never hangs. A run without a session a person sees (session 0) does
+    # not try. A disposable copy of the tests never asks for rights: it writes the request into the
+    # file BYL_TEST_FIREWALL_FILE of its test (refuses without it, lan-firewall-test) and answers as
+    # the field elevation of BYL_TEST_NETWORK_FILE says ('done' without it). The only place that
+    # elevates.
     param([Parameter(Mandatory = $true)][ValidateSet('add', 'remove')][string]$Action, [Parameter(Mandatory = $true)][int]$Port)
 
     $program = [System.IO.Path]::Combine($AppDir, 'pocketbase.exe')
@@ -2706,39 +2695,111 @@ function Invoke-FirewallElevated {
         $file = [Environment]::GetEnvironmentVariable('BYL_TEST_FIREWALL_FILE', 'Process')
         if ([string]::IsNullOrWhiteSpace($file)) { throw (New-BylProblemError -Code 'lan-firewall-test') }
         Write-TextFile -Path $file -Text (ConvertTo-Json -InputObject ([ordered]@{ action = $Action; port = $Port; program = $program; arguments = $arguments }) -Compress)
-        return 'test'
+        $test = Read-TestNetwork
+        $answer = if ($null -ne $test -and $null -ne $test.PSObject.Properties['elevation']) { [string]$test.elevation } else { 'done' }
+        if ($BylElevationOutcomes -notcontains $answer) { $answer = 'done' }
+        return [pscustomobject]@{ Outcome = $answer; Detail = $(if ($answer -eq 'failed') { 'Code 1' } else { 'Testkopie' }) }
+    }
+    if (-not [Environment]::UserInteractive -or [System.Diagnostics.Process]::GetCurrentProcess().SessionId -eq 0) {
+        return [pscustomobject]@{ Outcome = (Resolve-BylElevationOutcome -Interactive $false); Detail = 'die App läuft ohne angemeldete Sitzung' }
     }
     $shell = [System.IO.Path]::Combine([Environment]::SystemDirectory, 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+    $runner = [powershell]::Create()
+    [void]$runner.AddScript({
+            param([string]$Shell, [string]$Arguments)
+            $info = New-Object System.Diagnostics.ProcessStartInfo
+            $info.FileName = $Shell
+            $info.Arguments = $Arguments
+            $info.UseShellExecute = $true
+            $info.Verb = 'runas'
+            $info.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
+            try {
+                $process = [System.Diagnostics.Process]::Start($info)
+            }
+            catch {
+                return [pscustomobject]@{ Error = $_.Exception; ExitCode = $null }
+            }
+            if ($null -eq $process) { return [pscustomobject]@{ Error = (New-Object System.InvalidOperationException('no process')); ExitCode = $null } }
+            $process.WaitForExit()
+            return [pscustomobject]@{ Error = $null; ExitCode = $process.ExitCode }
+        }.ToString()).AddArgument($shell).AddArgument($arguments)
+    $pending = $runner.BeginInvoke()
+    if (-not $pending.AsyncWaitHandle.WaitOne($FirewallSeconds * 1000)) {
+        # The prompt or netsh still waits; the runspace ends with this process. A late yes still
+        # changes the rule: the page and lan-info read it again.
+        return [pscustomobject]@{ Outcome = (Resolve-BylElevationOutcome -Interactive $true -Finished $false); Detail = "$FirewallSeconds s" }
+    }
     try {
-        $process = Start-Process -FilePath $shell -ArgumentList $arguments -Verb RunAs -WindowStyle Hidden -PassThru
+        $result = @($runner.EndInvoke($pending))[0]
     }
     catch {
-        # ERROR_CANCELLED (1223): the person said no to the UAC prompt.
-        $inner = $_.Exception
-        while ($null -ne $inner) {
-            if ($inner -is [System.ComponentModel.Win32Exception] -and $inner.NativeErrorCode -eq 1223) { return 'cancelled' }
-            $inner = $inner.InnerException
-        }
-        return 'failed'
+        return [pscustomobject]@{ Outcome = (Resolve-BylElevationOutcome -Interactive $true -StartError -1); Detail = $_.Exception.GetType().Name }
     }
-    if (-not $process.WaitForExit($FirewallSeconds * 1000)) { return 'timeout' }
-    if ($process.ExitCode -eq 0) { return 'done' }
-    return 'failed'
+    finally {
+        $runner.Dispose()
+    }
+    if ($null -eq $result) {
+        return [pscustomobject]@{ Outcome = (Resolve-BylElevationOutcome -Interactive $true -StartError -1); Detail = 'keine Antwort des Starts' }
+    }
+    if ($null -ne $result.Error) {
+        $code = Get-BylWin32ErrorCode -Exception $result.Error
+        if ($null -eq $code) { $code = -1 }
+        $detail = if ($code -eq -1) { $result.Error.GetType().Name } else { "Windows-Fehler $code" }
+        return [pscustomobject]@{ Outcome = (Resolve-BylElevationOutcome -Interactive $true -StartError $code); Detail = $detail }
+    }
+    return [pscustomobject]@{ Outcome = (Resolve-BylElevationOutcome -Interactive $true -Finished $true -ExitCode $result.ExitCode); Detail = "Code $($result.ExitCode)" }
+}
+
+function Invoke-FirewallChange {
+    # Creates or removes the rule (Invoke-FirewallElevated) and reads the firewall again afterwards:
+    # Outcome of Resolve-BylFirewallOutcome ('done' only when the rule really is so), State read
+    # afterwards and Elevation. The line of byl-control.log names all three, never a value.
+    param([Parameter(Mandatory = $true)][ValidateSet('add', 'remove')][string]$Action, [Parameter(Mandatory = $true)][int]$Port)
+
+    $elevation = Invoke-FirewallElevated -Action $Action -Port $Port
+    $program = [System.IO.Path]::Combine($AppDir, 'pocketbase.exe')
+    $firewall = Get-FirewallSnapshot -Program $program
+    $state = if ($firewall.Available) { (Resolve-BylFirewallState -Rules $firewall.Rules -Blocks $firewall.Blocks -Program $program -Port $Port).State } else { 'unknown' }
+    $outcome = Resolve-BylFirewallOutcome -Action $Action -Elevation $elevation.Outcome -State $state
+    $script:LogDetail = ("$script:LogDetail firewall=$Action elevation=$($elevation.Outcome) state=$state outcome=$outcome").Trim()
+    return [pscustomobject]@{ Outcome = $outcome; State = $state; Elevation = $elevation }
+}
+
+# The entry of the catalog per outcome of a change of the rule that did not happen.
+$FirewallProblemCode = @{
+    cancelled   = 'lan-firewall-cancelled'
+    timeout     = 'lan-firewall-timeout'
+    unavailable = 'lan-firewall-unavailable'
+    failed      = 'lan-firewall-failed'
+    unconfirmed = 'lan-firewall-unconfirmed'
 }
 
 function Write-FirewallFailure {
-    # A change of the rule that did not happen ($Outcome of Invoke-FirewallElevated), with the command
-    # to run by hand; returns the exit code of the entry.
-    param([Parameter(Mandatory = $true)][string]$Action, [Parameter(Mandatory = $true)][string]$Outcome, [Parameter(Mandatory = $true)][int]$Port, [System.Collections.IDictionary]$Answer)
+    # A change of the rule that did not happen ($Change of Invoke-FirewallChange) with its entry of
+    # the catalog and the netsh command to run by hand; returns the exit code of the entry.
+    param(
+        [Parameter(Mandatory = $true)][ValidateSet('add', 'remove')][string]$Action,
+        [Parameter(Mandatory = $true)][object]$Change,
+        [Parameter(Mandatory = $true)][int]$Port,
+        [System.Collections.IDictionary]$Answer
+    )
 
-    $detail = switch ($Outcome) {
-        'cancelled' { 'die Anfrage nach Administratorrechten wurde abgelehnt' }
-        'timeout' { "keine Antwort binnen $FirewallSeconds s" }
-        default { 'Windows meldete einen Fehler' }
+    $detail = if ($Change.Outcome -ne 'unconfirmed') { [string]$Change.Elevation.Detail }
+    elseif ($Change.State -eq 'unknown') { 'die Regeln der Firewall ließen sich nicht lesen' }
+    elseif ($Action -eq 'remove') { 'die Regel besteht weiter' }
+    elseif ($Change.State -eq 'mismatch') { 'die Regel passt nicht (anderer Port, nicht nur private Netzwerke oder ausgeschaltet)' }
+    else { 'die Firewall nennt keine passende Regel' }
+    $values = @{
+        change   = if ($Action -eq 'add') { 'angelegt' } else { 'entfernt' }
+        detail   = $detail
+        seconds  = $FirewallSeconds
+        port     = $Port
+        firewall = Get-BylFirewallCommand -Action $Action -Program ([System.IO.Path]::Combine($AppDir, 'pocketbase.exe')) -Port $Port
     }
-    $code = if ($Action -eq 'add') { 'lan-firewall-add-failed' } else { 'lan-firewall-remove-failed' }
-    if ($null -ne $Answer) { return Write-BylProblem -Code $code -Values @{ detail = $detail; port = $Port } -Answer $Answer }
-    return Write-BylProblem -Code $code -Values @{ detail = $detail; port = $Port }
+    $code = $FirewallProblemCode[[string]$Change.Outcome]
+    if ($null -eq $code) { $code = 'lan-firewall-failed' }
+    if ($null -ne $Answer) { return Write-BylProblem -Code $code -Values $values -Answer $Answer }
+    return Write-BylProblem -Code $code -Values $values
 }
 
 function Get-FirewallDoneText {
@@ -2752,17 +2813,17 @@ function Get-FirewallDoneText {
 
 function Invoke-LanFirewallFix {
     # The offer of the catalog to create or remove the rule after a yes in the console: the UAC
-    # prompt of Windows, then the result. Returns the exit code (0 when done).
+    # prompt of Windows, then the rule read again (Invoke-FirewallChange). Returns the exit code (0
+    # only when the rule really is so).
     param([Parameter(Mandatory = $true)][ValidateSet('add', 'remove')][string]$Action, [Parameter(Mandatory = $true)][int]$Port)
 
-    Write-Status 'Windows fragt jetzt nach Administratorrechten (Benutzerkontensteuerung); bitte dort bestätigen.'
-    $outcome = Invoke-FirewallElevated -Action $Action -Port $Port
-    $script:LogDetail = ("$script:LogDetail firewall=$Action outcome=$outcome").Trim()
-    if (@('done', 'test') -contains $outcome) {
+    Write-Status "Windows fragt jetzt nach Administratorrechten (Benutzerkontensteuerung); bitte dort bestätigen (höchstens $FirewallSeconds s)."
+    $change = Invoke-FirewallChange -Action $Action -Port $Port
+    if ($change.Outcome -eq 'done') {
         Show-Message (Get-FirewallDoneText -Action $Action -Port $Port)
         return $BylExitOk
     }
-    return Write-FirewallFailure -Action $Action -Outcome $outcome -Port $Port
+    return Write-FirewallFailure -Action $Action -Change $change -Port $Port
 }
 
 function Get-LanAnswer {
@@ -2921,20 +2982,22 @@ function Invoke-LanFirewall {
     else {
         Write-Status ('Entferne die Firewall-Regel „{0}“. Windows fragt dafür nach Administratorrechten (Benutzerkontensteuerung); bitte dort bestätigen.' -f $BylLanRuleName)
     }
-    $outcome = Invoke-FirewallElevated -Action $action -Port $Config.Port
-    $script:LogDetail = "firewall=$action outcome=$outcome"
-    if (@('done', 'test') -contains $outcome) {
+    $change = Invoke-FirewallChange -Action $action -Port $Config.Port
+    if ($change.Outcome -eq 'done') {
         if ($Json) {
             $answer = Get-LanAnswer -Config $Config
             $answer['action'] = $action
-            $answer['outcome'] = $outcome
+            $answer['outcome'] = $change.Outcome
             Write-JsonLine (ConvertTo-Json -InputObject $answer -Depth 6 -Compress)
             return $BylExitOk
         }
         Show-Message (Get-FirewallDoneText -Action $action -Port $Config.Port)
         return $BylExitOk
     }
-    return Write-FirewallFailure -Action $action -Outcome $outcome -Port $Config.Port -Answer ([ordered]@{ ok = $false; action = $action; outcome = $outcome; problem = $outcome })
+    # The page shows the state read now next to the entry, without a second run of lan-info.
+    $answer = [ordered]@{ ok = $false; action = $action; outcome = $change.Outcome; problem = $change.Outcome }
+    if ($Json) { $answer['lan'] = Get-LanAnswer -Config $Config }
+    return Write-FirewallFailure -Action $action -Change $change -Port $Config.Port -Answer $answer
 }
 
 # Codes of the problems of a passphrase for the app; the entry of the catalog is passphrase-<code>.

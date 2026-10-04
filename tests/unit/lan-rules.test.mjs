@@ -175,7 +175,10 @@ describe('answers of byl-control.ps1', () => {
 		});
 		expect(lan.lanStatusView({ firewall: null }).firewall).toBeNull();
 		expect(lan.lanStatusView(undefined)).toBeNull();
-		expect(lan.outcomeOf('cancelled')).toBe('cancelled');
-		expect(lan.outcomeOf('kaputt')).toBe('');
+		for (const outcome of ['done', 'cancelled', 'timeout', 'unavailable', 'failed', 'unconfirmed']) {
+			expect(lan.outcomeOf(outcome)).toBe(outcome);
+		}
+		// "test" was the outcome of a copy of the tests before the rule was read again afterwards.
+		for (const other of ['kaputt', 'test', null]) expect(lan.outcomeOf(other)).toBe('');
 	});
 });

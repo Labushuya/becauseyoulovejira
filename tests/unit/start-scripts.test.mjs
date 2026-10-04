@@ -881,41 +881,61 @@ describe('admin reset', () => {
 
 describe('access in the home network (plan heimnetz)', () => {
 	it('asks Windows for administrator rights at one place only, never in a disposable copy of the tests', () => {
-		expect(control().match(/-Verb RunAs/g)).toHaveLength(1);
-		expect(functions()).not.toMatch(/-Verb RunAs|RunAs/);
+		expect(control().match(/runas/gi)).toHaveLength(1);
+		expect(functions()).not.toMatch(/runas/i);
 		const elevated = functionBody(control(), 'Invoke-FirewallElevated');
+		const ask = elevated.indexOf("$info.Verb = 'runas'");
 		const guard = elevated.indexOf('if ($IsolatedEnvironment) {');
 		expect(guard).toBeGreaterThan(-1);
-		expect(elevated.indexOf("return 'test'")).toBeGreaterThan(guard);
-		expect(elevated.indexOf("return 'test'")).toBeLessThan(elevated.indexOf('-Verb RunAs'));
+		const stub = elevated.indexOf('return [pscustomobject]@{ Outcome = $answer;');
+		expect(stub).toBeGreaterThan(guard);
+		expect(stub).toBeLessThan(ask);
 		expect(elevated).toContain("throw (New-BylProblemError -Code 'lan-firewall-test')");
-		expect(elevated).toContain(
-			'Start-Process -FilePath $shell -ArgumentList $arguments -Verb RunAs -WindowStyle Hidden -PassThru'
-		);
+		// Without a session a person sees (session 0) it does not even try.
+		expect(elevated.indexOf('[System.Diagnostics.Process]::GetCurrentProcess().SessionId -eq 0')).toBeLessThan(ask);
 		expect(elevated).toContain("$shell = [System.IO.Path]::Combine([Environment]::SystemDirectory, 'WindowsPowerShell', 'v1.0', 'powershell.exe')");
-		// Only the command lan-firewall (a click on the page or the command) and an offer after a yes
-		// (inside -Fix) change the firewall.
-		const callers = [...control().matchAll(/^function (\S+) \{[\s\S]*?^\}/gm)]
-			.filter(([body, name]) => name !== 'Invoke-FirewallElevated' && body.includes('= Invoke-FirewallElevated -Action'))
-			.map(([, name]) => name);
-		expect(callers.sort()).toEqual(['Invoke-LanFirewall', 'Invoke-LanFirewallFix']);
+		// The start waits while the prompt is open: in a runspace of its own, so the prompt counts into
+		// the time and the answer never hangs (regression: Start-Process blocked before the timeout).
+		expect(elevated).toContain('$runner = [powershell]::Create()');
+		expect(elevated).toContain('$info.UseShellExecute = $true');
+		expect(elevated).toContain('[System.Diagnostics.Process]::Start($info)');
+		expect(elevated).toContain('if (-not $pending.AsyncWaitHandle.WaitOne($FirewallSeconds * 1000)) {');
+		expect(elevated).not.toMatch(/Start-Process/);
+		// Only Invoke-FirewallChange elevates (and reads the rule again); only the command lan-firewall
+		// (a click on the page or the command) and an offer after a yes (inside -Fix) call it.
+		const callersOf = (callee) =>
+			[...control().matchAll(/^function (\S+) \{[\s\S]*?^\}/gm)]
+				.filter(([body, name]) => name !== callee && body.includes(`= ${callee} -Action`))
+				.map(([, name]) => name)
+				.sort();
+		expect(callersOf('Invoke-FirewallElevated')).toEqual(['Invoke-FirewallChange']);
+		expect(callersOf('Invoke-FirewallChange')).toEqual(['Invoke-LanFirewall', 'Invoke-LanFirewallFix']);
+		const change = functionBody(control(), 'Invoke-FirewallChange');
+		expect(change.indexOf('Invoke-FirewallElevated -Action')).toBeLessThan(change.indexOf('Get-FirewallSnapshot -Program'));
+		expect(change).toContain('Resolve-BylFirewallOutcome -Action $Action -Elevation $elevation.Outcome -State $state');
 		for (const line of control().split(/\r?\n/).filter((text) => text.includes('Invoke-LanFirewallFix -Action'))) {
 			expect(line, line).toMatch(/-Fix \{ Invoke-LanFirewallFix -Action '(add|remove)' -Port \$/);
 		}
 	});
 
-	it('changes the firewall only through the elevated script, never the network profile', () => {
+	it('changes the firewall only through netsh in the elevated script, reads it without rights, never the network profile', () => {
+		const code = (source) => source.split(/\r?\n/).filter((line) => !/^\s*#/.test(line)).join('\n');
 		for (const source of [control(), functions()]) {
-			expect(source).not.toMatch(/Set-NetConnectionProfile|Set-NetFirewallRule|Enable-NetFirewallRule|Set-NetFirewallProfile/);
+			expect(source).not.toMatch(/Set-NetConnectionProfile|Set-NetFirewallRule|Enable-NetFirewallRule|Set-NetFirewallProfile|New-NetFirewallRule|Remove-NetFirewallRule/);
+			// Get-NetFirewallRule is denied without administrator rights on some computers; silenced, the
+			// denied read looked like a missing rule (the bug report).
+			expect(code(source)).not.toMatch(/Get-NetFirewall/);
 		}
-		expect(control()).not.toMatch(/New-NetFirewallRule|Remove-NetFirewallRule|netsh /);
+		expect(control()).not.toMatch(/\$netsh|netsh\.exe|netsh advfirewall/);
 		const script = functionBody(functions(), 'Get-BylFirewallScript');
-		expect(script).toContain('New-NetFirewallRule');
-		expect(script).toContain('-Profile Private');
-		expect(functions().match(/New-NetFirewallRule/g)).toHaveLength(1);
-		// Reading the firewall and the network needs no rights.
-		const read = functionBody(control(), 'Get-FirewallSnapshot') + functionBody(control(), 'Get-NetworkSnapshot');
-		expect(read).not.toMatch(/New-|Remove-|Set-|Enable-|Disable-/);
+		expect(script).toContain('profile=private');
+		expect(script.match(/advfirewall firewall add rule/g)).toHaveLength(1);
+		expect(functions().match(/\$netsh/g)).toHaveLength(script.match(/\$netsh/g).length);
+		// Reading the firewall and the network needs no rights and changes nothing.
+		const read = ['Get-FirewallSnapshot', 'Get-NetworkSnapshot'].map((name) => functionBody(control(), name)).join('\n') +
+			['Get-BylFirewallSnapshot', 'ConvertFrom-BylFirewallRule'].map((name) => functionBody(functions(), name)).join('\n');
+		expect(read).not.toMatch(/New-Net|Remove-|Set-|Enable-|Disable-|\.Add\(|\.Remove\(/);
+		expect(read).toContain('New-Object -ComObject HNetCfg.FwPolicy2');
 	});
 
 	it('starts with the home network only from byl-config.json, and the app pages run only the whitelisted commands', () => {

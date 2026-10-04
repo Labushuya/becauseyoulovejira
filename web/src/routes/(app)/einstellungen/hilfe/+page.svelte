@@ -1449,8 +1449,11 @@
 			</li>
 			<li>
 				„Firewall-Regel anlegen …“ wählen und die Frage von Windows nach Administratorrechten
-				bestätigen. Die Regel lässt nur diese App, nur ihren Port und nur in privaten Netzwerken
-				durch.
+				bestätigen; erscheint kein Fenster, blinkt sie als Schild-Symbol in der Taskleiste. Die
+				Regel lässt nur diese App, nur ihren Port und nur in privaten Netzwerken durch. Danach prüft
+				die Seite die Regel und meldet Erfolg nur, wenn sie wirklich besteht. Kann Windows nicht
+				fragen oder lehnt die Firewall ab, nennt die Seite den Grund und den Befehl für eine
+				Eingabeaufforderung als Administrator.
 			</li>
 			<li>
 				Die App neu starten: unter <a href={resolve('/einstellungen/system')}
