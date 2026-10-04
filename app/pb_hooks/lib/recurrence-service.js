@@ -20,6 +20,7 @@ var ticketKey = require(__hooks + '/lib/ticket-key.js');
 var ticketService = require(__hooks + '/lib/ticket-service.js');
 var errors = require(__hooks + '/lib/errors.js');
 var trashRules = require(__hooks + '/lib/trash-rules.js');
+var charms = require(__hooks + '/lib/charms.js');
 
 var RULES = 'recurrence_rules';
 var TICKETS = 'tickets';
@@ -407,6 +408,7 @@ function prepareCreate(txApp, record, nowMs) {
   checkEach(record, values);
   checkInitialStatus(txApp, record);
   checkTemplateSubtasks(txApp, record);
+  ticketService.checkCharm(record, null);
   ticketService.checkRelations(txApp, record, scope, '');
 
   var dates = rules.createDates(
@@ -451,6 +453,8 @@ function prepareUpdate(txApp, record, nowMs) {
     if (record.getString('template_subtasks') !== original.getString('template_subtasks')) {
       checkTemplateSubtasks(txApp, record);
     }
+    // Nor a charm outside of the catalog (ADR-0062); an unchanged one is not checked again.
+    ticketService.checkCharm(record, original);
     return;
   }
   record.set('next_due', original.getString('next_due'));
@@ -467,6 +471,7 @@ function prepareUpdate(txApp, record, nowMs) {
   checkEach(record, values);
   checkInitialStatus(txApp, record);
   checkTemplateSubtasks(txApp, record);
+  ticketService.checkCharm(record, original);
   var project = ticketService.checkRelations(txApp, record, scope, original.getString('project'));
 
   var beforeRaw = paramsOf(original);
@@ -571,6 +576,13 @@ function newInstance(txApp, rule, due, occurrence) {
   var color = rule.getString('color');
   if (color !== '') {
     ticket.set('color', color);
+  }
+  // The charm of the rule (ADR-0062), taken when the ticket is made: a later change of the rule
+  // reaches only the next tickets. Empty means none, and before its migration it reads as ''. A
+  // key the catalog no longer knows is left out, so it never stops the series.
+  var charm = rule.getString('charm');
+  if (charms.isCharmKey(charm)) {
+    ticket.set('charm', charm);
   }
   ticket.set('due', rules.storedDateOf(due));
   ticket.set('blocks_parent', true);
