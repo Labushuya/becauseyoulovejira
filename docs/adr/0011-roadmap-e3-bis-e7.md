@@ -1,6 +1,6 @@
 # ADR-0011: Neue Etappen E3 bis E7 mit vorgezogenen Eingangskanälen
 
-- **Status:** Angenommen (mit Nachtrag 2026-09-28: Unteraufgaben aus Stufe 2 freigegeben, [ADR-0033](0033-unteraufgaben.md); Nachtrag 2026-10-04: E7 freigegeben, Haushalt vor Mehrgeräten, [ADR-0056](0056-konten-und-verwalter.md))
+- **Status:** Angenommen (mit Nachtrag 2026-09-28: Unteraufgaben aus Stufe 2 freigegeben, [ADR-0033](0033-unteraufgaben.md); Nachtrag 2026-10-04: E7 freigegeben, Haushalt vor Mehrgeräten, [ADR-0056](0056-konten-und-verwalter.md); Nachtrag E7-2: Pakete E7-1 bis E7-7, [ADR-0058](0058-haushalt-mitgliedschaft-einladungen-rechte.md))
 - **Datum:** 2026-09-25
 - **Entscheidung durch:** Nutzer (Etappen, Reihenfolge der Kanäle, Papierkorb, 2026-09-25), Advisor (Zuordnung der übrigen Themen)
 
@@ -79,3 +79,7 @@ Der Text oben bleibt unverändert. Der Nutzer hat E7 am 2026-10-04 freigegeben u
 - Pakete E7-1 bis E7-5 nach dem [Plan E7 „Haushalt“](../plan/e7-haushalt.md); E7-1 „Konten und Verwalter“ ist umgesetzt ([ADR-0056](0056-konten-und-verwalter.md)), die weiteren beginnen je mit eigener Freigabe.
 - Manifest-IDs ab `BYL-E7-001`.
 - Die Plattform-Stufen S2 bis S6 und SemVer bleiben zurückgestellt (ADR-0028, Nachtrag vom 2026-09-28).
+
+## Nachtrag (2026-10-04, [ADR-0058](0058-haushalt-mitgliedschaft-einladungen-rechte.md), E7-2): Pakete E7-1 bis E7-7
+
+Der Text oben bleibt unverändert. Mit dem Auftrag zu E7-2 gilt eine neue Nummerierung der Pakete von E7 „Haushalt“: E7-1 Konten und Verwalter (umgesetzt), E7-2 Haushalt verwalten (umgesetzt, ADR-0058), E7-3 Umschalter „Privat | Haushalt“, E7-4 Verschieben und Haushalt auflösen, E7-5 Zuständigkeit, E7-6 persönliche Einstellungen je Konto, E7-7 verschlüsselte Zugangsdaten je Konto. Die Zuordnung zur früheren Fassung (E7-1 bis E7-5) steht im [Plan E7 „Haushalt“](../plan/e7-haushalt.md) §1; jedes Paket beginnt weiter mit eigener Freigabe.

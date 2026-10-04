@@ -1,6 +1,6 @@
 # ADR-0057: Kontextabhängige Oberfläche – der Server sagt, wer von wo fragt; die Oberfläche zeigt Befehle, Skripte und die Seiten des Verwalters nur dort, wo sie funktionieren
 
-- **Status:** Angenommen und umgesetzt (KOB-1)
+- **Status:** Angenommen und umgesetzt (KOB-1); Nachtrag E7-2: Routen des Haushalts auf jedem Gerät ([ADR-0058](0058-haushalt-mitgliedschaft-einladungen-rechte.md))
 - **Datum:** 2026-10-04
 - **Entscheidung durch:** Nutzer (Ziel: Die zweite Person nutzt die App mit eigenem Konto am Handy über `http://192.168.178.66:8090` oder im zweiten Browserprofil am Server-PC und sieht nirgends Skript-Funktionen, `.bat`-Anleitungen oder kopierbare Befehle; auch der Verwalter sieht am Handy keine Aktionen, die dort nicht funktionieren), Advisor (Matrix, Sicherheitsanforderung, Umfang), Executor (Audit, Route, Store, Einzelheiten)
 - **Bezug:** [ADR-0026](0026-einstellungsbereich-und-hinweis-bausteine.md) (Hinweis-Bausteine), [ADR-0028](0028-plattform-strategie.md) (System des Servers), [ADR-0038](0038-eigener-eingang-und-whatsapp-web.md) §4 (Ordner der Erweiterung), [ADR-0043](0043-system-seite.md) §3 (Prüfungen `check`), [ADR-0048](0048-fehlerkatalog-der-skripte.md) (Befehle zum Kopieren), [ADR-0055](0055-sicherheits-haertung.md) (Nachtrag dort), [ADR-0056](0056-konten-und-verwalter.md) (Nachtrag dort)
@@ -94,3 +94,8 @@ Belegt mit `tests/integration/context-route.test.mjs`: jede Route der Tabelle bi
 - Neu: Hooks (`context.pb.js`, Änderungen in `system-service.js` und `extension.pb.js`) wirken nach einem Neustart; keine Migration.
 - **Tests:** `tests/unit/context-rules.test.mjs`, `tests/integration/context-route.test.mjs` (Kontext an diesem Rechner und im Heimnetz, mit und ohne Verwalter, gefälschte Proxy-Kopfzeilen, 401, Linux, Audit aller Routen, Pfad der Erweiterung); in `web/` `domain/context.test.ts`, `stores/context-store.test.ts`, `components/guidance/pc-only.test.ts` und die Tests von Layout der Einstellungen, `(app)`-Layout, Hilfe, Konto, Notfallkarte, Kanal-Karten, Telegram- und WhatsApp-Assistent, Eingang und Quellen, Fehlern und Texten.
 - **Nur im Browser prüfbar** (Test-Manifest, manuell): Verwalter am PC, Verwalter am Handy, zweites Konto im zweiten Browserprofil am PC und am Handy, Hilfe in diesen Kontexten, Aufruf einer Adresse des Verwalters als zweites Konto.
+
+## Nachtrag (2026-10-04, [ADR-0058](0058-haushalt-mitgliedschaft-einladungen-rechte.md), E7-2): Routen des Haushalts
+
+- **§5, Audit:** Die Routen `/api/byl/household/*` tun nichts am Rechner der App; sie prüfen deshalb bewusst weder „dieser Rechner“ noch den Verwalter, sondern die Mitgliedschaft und die Rechte im Haushalt. Die Seite „Einstellungen → Haushalt“ steht jedem Konto auf jedem Gerät offen (Beitritt am Handy im Heimnetz), ohne `PcOnly`.
+- **§5, letzte Zeile:** „Wer in einem Haushalt was darf, entscheidet E7-4“ meinte die Pakete der früheren Fassung des Plans; nach der Nummerierung E7-1 bis E7-7 ist das E7-7 (Verbindungen eines Haushalts), mit der Festlegung für E7-4: Verbindungen mit Server-Zugriff bleiben privat beim Verwalter ([Plan](../plan/e7-haushalt.md) §4).

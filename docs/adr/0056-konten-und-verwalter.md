@@ -1,6 +1,6 @@
 # ADR-0056: Konten und Verwalter (E7-1) – ausdrückliches Recht „Verwalter der App“, Konten in der App anlegen, Passwort und Name selbst ändern, Namen im Haushalt sichtbar, Kanäle mit Zugangsdaten nur für den Verwalter
 
-- **Status:** Angenommen und umgesetzt (E7-1, [Plan E7 „Haushalt“](../plan/e7-haushalt.md)); Nachtrag KOB-1: Navigation und Hinweise nach dem Kontext des Tabs ([ADR-0057](0057-kontextabhaengige-oberflaeche.md))
+- **Status:** Angenommen und umgesetzt (E7-1, [Plan E7 „Haushalt“](../plan/e7-haushalt.md)); Nachtrag KOB-1: Navigation und Hinweise nach dem Kontext des Tabs ([ADR-0057](0057-kontextabhaengige-oberflaeche.md)); Nachtrag E7-2: Haushalte in der App ([ADR-0058](0058-haushalt-mitgliedschaft-einladungen-rechte.md))
 - **Datum:** 2026-10-04
 - **Entscheidung durch:** Nutzer (Start von E7 ohne Mehrgeräte, Haushaltsrollen mit Gründer, ausdrückliches Recht „Verwalter der App“ statt „erstes Konto = Besitzer“, Kanäle mit Zugangsdaten und Ordner nur für den Verwalter, persönliche Einstellungen später; 2026-10-04), Advisor (Inventur, Umfang des Pakets), Executor (Datenmodell, Regeln, Routen, Oberfläche, Einzelheiten)
 - **Ersetzt:** die Regel „Besitzer der Instanz = das zuerst angelegte App-Konto“ aus [ADR-0043](0043-system-seite.md) §3 (Nachtrag dort)
@@ -114,3 +114,9 @@ Der Nutzer startet E7 jetzt, ohne den Mehrgeräte-Ausbau abzuwarten: Eine zweite
 - **§7 Hinweise beim Öffnen:** Sicherung und Fehlversuche fragt das `(app)`-Layout nur noch für den Verwalter an diesem Rechner; sonst wäre jedes Öffnen am Handy eine Ablehnung `loopback` im Log.
 - **§5 Kanäle:** Der Katalog für andere Konten bleibt; in WhatsApp Web steht „Erweiterung laden“ (Ordner des Servers) für sie als „Bitte den Verwalter fragen.“, die Route nennt ihnen den Ordner nicht mehr.
 - **Ablehnungscode:** bleibt `owner` (§1); die Oberfläche unterscheidet `loopback`, `owner` und `platform` und lädt nach jeder dieser Ablehnungen den Kontext neu.
+
+## Nachtrag (2026-10-04, [ADR-0058](0058-haushalt-mitgliedschaft-einladungen-rechte.md), E7-2): Haushalte in der App
+
+- **§4 `household_members`:** Lesen bleibt, wie es ist; das Schreiben bleibt über die Record-API `null`, und Mitgliedschaften entstehen, ändern sich und enden nur über die Routen `/api/byl/household/*` (gründen, mit Code beitreten, Rechte, übertragen, entfernen, austreten). Wer einen Haushalt verlässt, sieht die Namen der übrigen Mitglieder nicht mehr (die Leseregel von `users` folgt der Mitgliedschaft).
+- **§2.4 des Plans:** Zum Testen der Namen braucht es keinen Haushalt aus der Verwaltung mehr; die Seite „Einstellungen → Haushalt“ legt ihn an.
+- Haushalte verwaltet nicht der Verwalter der App, sondern ihr Inhaber und die Mitglieder mit Rechten; die Seite steht jedem Konto auf jedem Gerät offen.
