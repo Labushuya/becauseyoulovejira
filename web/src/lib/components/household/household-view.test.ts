@@ -253,7 +253,12 @@ describe('page "Haushalt" for the owner', () => {
 		expect(screen.getByText(/Der Code wird nur jetzt angezeigt/)).toBeTruthy();
 		await fireEvent.click(screen.getByRole('button', { name: 'Weitergegeben' }));
 		expect(screen.queryByText(CODE)).toBeNull();
-		await fireEvent.click(within(codes).getByRole('button', { name: 'Widerrufen' }));
+		// Each button names its code, so several open codes stay apart.
+		const revoke = within(codes).getByRole('button', {
+			name: 'Code, gültig bis 11.10.2026 10:00, widerrufen'
+		});
+		expect(revoke.textContent?.trim()).toBe('Widerrufen');
+		await fireEvent.click(revoke);
 		await vi.waitFor(() =>
 			expect(data.revoke).toHaveBeenCalledWith('invite00000001', expect.anything())
 		);

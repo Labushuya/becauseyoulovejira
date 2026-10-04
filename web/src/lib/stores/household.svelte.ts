@@ -372,8 +372,9 @@ export class HouseholdStore {
 		const before = this.#current;
 		const known = this.#known;
 		this.#current = next;
+		// A message of loading goes; the refusal of an action stays until the next action.
+		if (this.#state !== 'ready') this.#message = null;
 		this.#state = 'ready';
-		this.#message = null;
 		const id = next?.household.id ?? null;
 		this.#known = id;
 		if (known === undefined || known === id) return;

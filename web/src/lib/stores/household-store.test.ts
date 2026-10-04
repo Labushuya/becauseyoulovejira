@@ -133,6 +133,7 @@ describe('HouseholdStore', () => {
 		expect(store.shownCode?.code).toBe('ABCD-EFGH');
 		store.dismissCode();
 		expect(store.shownCode).toBeNull();
+		const afterCode = store.household;
 		const invite = {
 			id: 'invite00000001',
 			status: 'open' as const,
@@ -148,6 +149,11 @@ describe('HouseholdStore', () => {
 			text: 'Dafür fehlt dir das Recht im Haushalt.'
 		});
 		await vi.waitFor(() => expect(data.fetch).toHaveBeenCalledTimes(2));
+		// Reading again (a new state object) keeps the refusal on the page until the next action.
+		await vi.waitFor(() => expect(store.household).not.toBe(afterCode));
+		expect(store.message?.text).toBe('Dafür fehlt dir das Recht im Haushalt.');
+		expect(await store.createInvite()).toBe(true);
+		expect(store.message).toBeNull();
 	});
 
 	it('reads again on byl/household and after a reconnection, and stops with the cleanup', async () => {

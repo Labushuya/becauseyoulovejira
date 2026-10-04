@@ -126,6 +126,7 @@
 							class="button-subtle"
 							type="button"
 							onclick={() => void store.revoke(invite)}
+							aria-label={`Code, gültig bis ${time(invite.expires)}, widerrufen`}
 							aria-disabled={store.busy !== null ? 'true' : undefined}
 							aria-busy={revoking ? 'true' : undefined}
 						>
