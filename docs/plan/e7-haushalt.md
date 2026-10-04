@@ -85,6 +85,7 @@ Einzelheiten und Begründungen in [ADR-0061](../adr/0061-verschieben-zwischen-be
 - **Haushalt ohne aktiven Inhaber:** `POST /api/byl/accounts/households/{id}/owner` auf der Seite „Konten verwalten“ (nur am PC, Verwalter).
 - **Altbestand:** Migration `1790204200` setzt Verbindungen mit `household` ins Private ihres aktiven Besitzers.
 - **Oberfläche:** Menüeinträge „In den Haushalt verschieben …“ / „Ins Private verschieben …“ bei Ticket, Projekt, Regel und Eintrag (nur mit Haushalt und Recht), Sammel-Leiste der Aufgaben, `AreaMoveDialog`, „Haushalt auflösen …“ auf der Seite „Haushalt“, Abschnitt „Haushalte ohne aktiven Inhaber“ auf der Seite „Konten verwalten“, Hilfe in „Haushalt“, „Bereiche“ und „Konten“.
+- **Nacharbeiten E7-4b** ([ADR-0061](../adr/0061-verschieben-zwischen-bereichen-und-aufloesen.md), Nachtrag E7-4b, Migration `1790204300`): Der Bereich, den ein Eintrag verlässt, behält dessen Fingerabdruck (`inbox_moved_fingerprints`). Sein Kanal bringt ihn dort nicht wieder, auch nicht nach dem Zurückschieben oder dem Auflösen mit „löschen“. Das Verschieben eines Projekts leert die Ziele von Repositorys und Ordnern über die Grenze, die Vorschau nennt sie, und ein Abruf mit einem solchen Ziel von vorher schreibt einen Log-Eintrag. Die Sammelauswahl ist nach dem Verschieben leer (Test).
 
 ## 4. Festlegungen für die nächsten Pakete
 
@@ -105,8 +106,8 @@ Einzelheiten und Begründungen in [ADR-0061](../adr/0061-verschieben-zwischen-be
 - **Ungelesen-Punkt am Umschalter** (aus E7-3): Die Zählung „neu“ entsteht im Client aus den Tickets des aktiven Bereichs; ein Punkt für Ungelesenes im anderen Bereich bräuchte eine eigene Abfrage und Ereignisse des anderen Bereichs. Offen.
 - **Verschieben und Abhängigkeiten** (erledigt mit E7-4): mitnehmen oder lösen, nach Wahl in der Vorschau.
 - **Haushalt ohne Inhaber und ohne Mitglieder** (aus E7-4): Wurde der Inhaber in der Verwaltung gelöscht und ist niemand mehr Mitglied, bleibt der Haushalt ohne Inhaber stehen (die Seite „Konten verwalten“ nennt ihn, kann aber niemanden wählen). Ob der Verwalter ihn dann auflösen oder einem Konto geben darf, ist eine Produktentscheidung.
-- **Erneutes Eintreffen nach dem Verschieben** (aus E7-4): Fingerabdrücke gelten je Bereich. Ein Eintrag, der den Bereich seiner Verbindung verlässt, schützt ihn nicht mehr; eine Vollsuche des Postfachs kann denselben Eintrag dort neu anlegen.
-- **Ziele je Repository bzw. Ordner** (aus E7-4): Verschiebt man ein Projekt, das im JSON `settings` einer GitHub- oder Ordner-Verbindung als Ziel steht, bleibt der Eintrag stehen und wirkt als „kein Ziel“; die Karte zeigt ihn nicht mehr an. Aufräumen beim Speichern der Einstellungen wäre möglich.
+- **Erneutes Eintreffen nach dem Verschieben** (erledigt mit E7-4b): Der Bereich, den ein Eintrag verlässt, behält dessen Fingerabdruck.
+- **Ziele je Repository bzw. Ordner** (erledigt mit E7-4b): Das Verschieben eines Projekts leert sie, der Abruf protokolliert ein Ziel über die Grenze von vorher.
 
 ## 6. Neustart
 
@@ -114,3 +115,4 @@ Einzelheiten und Begründungen in [ADR-0061](../adr/0061-verschieben-zwischen-be
 - E7-2 ebenso: Bis zum Neustart sagt die Seite „Haushalt“ „Nach dem nächsten Neustart verfügbar“, und die Regeln gelten wie vorher (der Besitzer sieht auch seine Haushaltsdatensätze).
 - E7-3: Hooks und Routen (Recht `purge`, Bereich im Papierkorb, Verbindungen nur privat, Abhängigkeiten, Texte) wirken nach dem Neustart, die Oberfläche nach dem Build und F5. Bis die Migration `1790204100` gelaufen ist, zeigt die Seite „Haushalt“ die Aufbewahrung von 30 Tagen, Ändern antwortet 503, und die Bereinigung nimmt für Haushaltstickets die Aufbewahrung des Besitzers.
 - E7-4: Routen zum Verschieben und Auflösen, die Route des Verwalters und die Migration `1790204200` wirken nach dem Neustart, die Oberfläche nach dem Build und F5. Bis dahin antworten die Routen 404; der Dialog sagt „nach dem nächsten Neustart verfügbar“.
+- E7-4b: Merker verschobener Einträge, Leeren der Ziele von Repositorys und Ordnern und das Log beim Abruf wirken nach dem Neustart (Migration `1790204300`), der Hinweis der Vorschau nach dem Build und F5. Vor der Migration prüfen die Hooks ohne Merker wie bisher.

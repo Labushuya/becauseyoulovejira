@@ -112,3 +112,8 @@ Das Modell trennt **Einstellen** (am Weg) und **Merken** (am Eintrag). Für GitH
 - **Speicherort:** `connections.settings.folders[].target` (ID oder leer), neben Pfad, Unterordnern, Typen, Ausschlüssen und „Änderungen melden“ des Ordners; Begründung wie beim Repository (ADR-0051 §2).
 - **Prüfung beim Speichern** (`connection-service.guardFolders`, nur für App-Konten): Ein Ziel, das für seinen Ordner neu ist, muss ein aktives Projekt im Bereich der Verbindung sein (`validation_target_project_missing`, `validation_target_project_archived`); ein unverändertes, inzwischen archiviertes bleibt gültig.
 - **Auflösung: Ordner vor Verbindung** über `@target_project`, solange das Projekt im Bereich existiert; sonst gilt das Ziel der Verbindung. Auch Einträge aus „Vorhandene Dateien übernehmen“ bekommen das Ziel ihres Ordners.
+
+## Nachtrag (2026-10-04, [ADR-0061](0061-verschieben-zwischen-bereichen-und-aufloesen.md) Nachtrag E7-4b): Ziele je Repository und Ordner beim Verschieben
+
+- **Verschieben:** Wer ein Projekt in den anderen Bereich verschiebt, leert jedes Ziel eines Repositorys bzw. Ordners, das danach über die Grenze zeigen würde. Das gilt wie für das Ziel einer Verbindung und eines Eintrags. Die Vorschau nennt die Anzahl. Ein Ziel eines gelöschten Projekts bleibt als ID stehen.
+- **Abruf:** Ein Ziel in einem anderen Bereich aus der Zeit davor gilt weiter wie ein gelöschtes, der Lauf geht weiter. Neu steht dazu je Lauf und Ziel ein Eintrag im Log von PocketBase, mit Verbindung und Projekt, ohne Pfad.
