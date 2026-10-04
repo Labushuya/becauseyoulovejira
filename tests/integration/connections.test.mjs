@@ -281,7 +281,16 @@ describe('connections: renaming (ADR-0026, addendum KK-3)', () => {
 		for (const who of [owner, member, partner]) {
 			await superuser.collection('household_members').create({ household: household.id, user: who.id, role: 'member' });
 		}
-		const shared = await calendar(owner, { household: household.id });
+		// Since E7-3 an app account creates no connection in a household (ADR-0059 §5); one from before
+		// stays editable, so the superuser creates it here.
+		const shared = await superuser.collection('connections').create({
+			owner: owner.id,
+			household: household.id,
+			type: 'calendar',
+			label: 'Google Kalender',
+			enabled: true,
+			secret_env: 'BYL_TEST_CALENDAR'
+		});
 		expect(await member.pb.collection('connections').update(shared.id, { label: 'Familie' })).toMatchObject({ label: 'Familie' });
 		expect((await codesOf(outsider.pb.collection('connections').update(shared.id, { label: 'Fremd' }))).status).toBe(404);
 		// A member without the right of the administrator changes no connection with access data

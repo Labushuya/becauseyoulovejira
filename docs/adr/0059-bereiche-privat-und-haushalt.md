@@ -63,7 +63,7 @@ Verschieben zwischen Bereichen und Auflösen kommen mit E7-4; die Unveränderlic
   | Schnellerfassung, Zwischenablage, Bookmarklet (Erfassen) | ja | nur der Browser, Record-API |
   | Datei-Importe (`.eml`, `.ics`, WhatsApp-Export, Proton per Datei) | ja | der Browser liest die Datei; `.ics` über die Route mit geprüftem `household` |
 
-  Der Server lehnt jede neue Verbindung mit `household` für App-Konten ab (`validation_connection_private_only`, `connection-rules.areaViolation`). Im Haushalt zeigt „Kanäle“ keine Karten der Verbindungen, der Katalog nennt jede Verbindung und WhatsApp Web mit „Nur im privaten Bereich“, und Assistenten außer Proton öffnen sich nicht. Das Zielprojekt der Dateien bleibt ein privates Projekt (ADR-0049 §7) und steht im Haushalt nicht in der Karte.
+  Der Server lehnt jede neue Verbindung mit `household` für App-Konten ab (`validation_connection_private_only`, `connection-rules.areaViolation`). Im Haushalt zeigt „Kanäle“ keine Karten der Verbindungen, der Katalog nennt jede Verbindung und WhatsApp Web mit „Nur im privaten Bereich“, und Assistenten außer Proton öffnen sich nicht. Das Zielprojekt der Dateien bleibt ein privates Projekt (ADR-0049 §7) und steht im Haushalt nicht in der Karte. Eine Verbindung mit `household` von vorher (nur über `/_/` oder die Record-API möglich) läuft weiter und bleibt für Mitglieder änderbar (Tests mit dem Superuser), die Oberfläche zeigt sie aber in keinem Bereich; gemeinsame Verbindungen klärt E7-7.
 
 ### 6. Papierkorb und Aufbewahrung im Haushalt
 
