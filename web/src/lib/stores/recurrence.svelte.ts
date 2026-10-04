@@ -17,6 +17,7 @@ import { toDataError } from '$lib/data/errors';
 import type { RequestOptions } from '$lib/data/options';
 import { onReconnect, subscribeRules } from '$lib/data/realtime';
 import {
+	charmsReady,
 	createRule,
 	deleteRule,
 	detachTicket,
@@ -138,6 +139,11 @@ export interface RecurrenceData {
 	 * list is not offered.
 	 */
 	templateSubtasksReady?(options: RequestOptions): Promise<boolean>;
+	/**
+	 * Whether the server knows the charms of rules and tickets (ADR-0062); without it (tests) no
+	 * charm is offered in the forms.
+	 */
+	charmsReady?(options: RequestOptions): Promise<boolean>;
 }
 
 export function recurrenceData(pb: PocketBase): RecurrenceData {
@@ -146,6 +152,7 @@ export function recurrenceData(pb: PocketBase): RecurrenceData {
 		eachOccurrenceReady: (options) => eachOccurrenceReady(pb, options),
 		initialStatusReady: (options) => initialStatusReady(pb, options),
 		templateSubtasksReady: (options) => templateSubtasksReady(pb, options),
+		charmsReady: (options) => charmsReady(pb, options),
 		createRule: (draft, ticket, household) => createRule(pb, draft, ticket, { household }),
 		updateRule: (id, patch) => updateRule(pb, id, patch),
 		setActive: (id, active) => setRuleActive(pb, id, active),
@@ -193,6 +200,7 @@ const FORM_FIELDS = [
 	'each_occurrence',
 	'initial_status',
 	'template_subtasks',
+	'charm',
 	'ticket'
 ];
 
@@ -216,6 +224,8 @@ export class RecurrenceStore implements SeriesChangeSink {
 	#statusReady = $state(false);
 	/** The server knows the sub-tasks of the template (after its migration, plan WV-3). */
 	#subtasksReady = $state(false);
+	/** The server knows the charms of rules and tickets (after their migration, ADR-0062). */
+	#charmsReady = $state(false);
 	/** Draft of the template edited at a ticket, null while none is edited. */
 	#templateDraft = $state<TemplateDraft | null>(null);
 	/** The flag offering "Auch für künftige Tickets übernehmen", while it is shown. */
@@ -273,6 +283,14 @@ export class RecurrenceStore implements SeriesChangeSink {
 	 */
 	get subtasksReady(): boolean {
 		return this.#state === 'ready' && this.#subtasksReady;
+	}
+
+	/**
+	 * Whether a charm is offered in the forms of rules and of "Neues Ticket" (ADR-0062): only once
+	 * the server knows the field; before the next start of the app the forms leave it out.
+	 */
+	get charmsReady(): boolean {
+		return this.#state === 'ready' && this.#charmsReady;
 	}
 
 	ruleById(id: string | null | undefined): RecurrenceRule | null {
@@ -588,6 +606,7 @@ export class RecurrenceStore implements SeriesChangeSink {
 		});
 		if (!this.statusReady) delete patch.initial_status;
 		if (!this.subtasksReady) delete patch.template_subtasks;
+		if (!this.charmsReady) delete patch.charm;
 		if (Object.keys(patch).length === 0) {
 			this.#templateDraft = null;
 			return { ok: true, value: rule };
@@ -729,6 +748,7 @@ export class RecurrenceStore implements SeriesChangeSink {
 		this.#eachReady = false;
 		this.#statusReady = false;
 		this.#subtasksReady = false;
+		this.#charmsReady = false;
 	}
 
 	/** Success flag of an action; the flag group announces it (role status). */
@@ -775,6 +795,8 @@ export class RecurrenceStore implements SeriesChangeSink {
 			if (controller.signal.aborted) return;
 			this.#subtasksReady = await this.#probe('templateSubtasksReady', controller.signal);
 			if (controller.signal.aborted) return;
+			this.#charmsReady = await this.#probe('charmsReady', controller.signal);
+			if (controller.signal.aborted) return;
 			this.#state = 'ready';
 		} catch (error) {
 			if (controller.signal.aborted) return;
@@ -817,7 +839,7 @@ export class RecurrenceStore implements SeriesChangeSink {
 	 * it cannot tell (old schema, a failed probe, no probe in tests).
 	 */
 	async #probe(
-		name: 'eachOccurrenceReady' | 'initialStatusReady' | 'templateSubtasksReady',
+		name: 'eachOccurrenceReady' | 'initialStatusReady' | 'templateSubtasksReady' | 'charmsReady',
 		signal: AbortSignal
 	): Promise<boolean> {
 		const probe = this.#data[name]?.bind(this.#data);

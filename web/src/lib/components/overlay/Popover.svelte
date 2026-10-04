@@ -31,6 +31,7 @@
 		buttonTitle,
 		buttonKeyshortcuts,
 		buttonTabindex,
+		buttonDescribedby,
 		trigger = $bindable(),
 		children
 	}: {
@@ -63,6 +64,8 @@
 		 * arrow keys reach (ADR-0053 §8); default: the order of the document.
 		 */
 		buttonTabindex?: -1;
+		/** aria-describedby of the button, e.g. the error of the field it chooses for (ADR-0062). */
+		buttonDescribedby?: string;
 		/** The button, e.g. for the focus after an area the menu opened closes (plan AM). */
 		trigger?: HTMLButtonElement;
 		/** Content; `close` hides the popover and returns the focus to the button. */
@@ -238,6 +241,7 @@
 	aria-label={buttonLabel}
 	title={buttonTitle}
 	aria-keyshortcuts={buttonKeyshortcuts}
+	aria-describedby={buttonDescribedby}
 	tabindex={buttonTabindex}
 	bind:this={trigger}
 	onclick={onbuttonclick}

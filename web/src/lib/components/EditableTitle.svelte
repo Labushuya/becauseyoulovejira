@@ -2,10 +2,13 @@
 	import { tick } from 'svelte';
 	import { TITLE_MAX_LENGTH } from '$lib/domain/ticket';
 	import type { TicketDetailStore } from '$lib/stores/ticket-detail.svelte';
+	import CharmIcon from './CharmIcon.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 
 	// Title of the panel (E2 plan, T-7): a heading with "Titel bearbeiten". While editing, Enter
 	// or leaving the field saves and Escape cancels; the heading is the focus target of the panel.
+	// The charm of the ticket (ADR-0062) stands before the heading, not in it, so the name of the
+	// panel stays the title.
 	let {
 		store,
 		headingId,
@@ -60,6 +63,7 @@
 			onblur={() => store.save('title')}
 		/>
 	{:else}
+		<CharmIcon charm={store.ticket?.charm} />
 		<h2 id={headingId} tabindex="-1" bind:this={heading}>{store.ticket?.title}</h2>
 		<button
 			class="button-icon"
@@ -91,6 +95,15 @@
 		flex-wrap: wrap;
 		gap: 0.25rem 0.5rem;
 		align-items: flex-start;
+	}
+
+	/*
+	 * The charm (ADR-0062) in its size and gap of every place (the gap of the row adds 0.5rem),
+	 * centered on the first line of the heading (1.25rem at 1.35).
+	 */
+	.title :global(.charm-mark) {
+		margin-top: 0.4rem;
+		margin-right: -0.125rem;
 	}
 
 	h2 {

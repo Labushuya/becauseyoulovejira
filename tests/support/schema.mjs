@@ -180,7 +180,10 @@ export const EXPECTED_COLLECTIONS = {
 			// Sub-tasks of the template (plan WV-3, migration 1790202700), checked by the hook.
 			template_subtasks: { type: 'json', required: false, maxSize: 40000 },
 			// Color of the next tickets (ADR-0052, migration 1790203400), empty for "wie Projekt".
-			color: select(PROJECT_COLORS, false)
+			color: select(PROJECT_COLORS, false),
+			// Charm of the next tickets (ADR-0062, migration 1790204400), empty for none; the hook
+			// checks the key against its catalog.
+			charm: text({ max: 40 })
 		},
 		indexes: [
 			'CREATE INDEX idx_recurrence_rules_owner ON recurrence_rules (owner)',
@@ -217,7 +220,9 @@ export const EXPECTED_COLLECTIONS = {
 			// The pinned comment (ADR-0044, migration 1790202600): one per ticket.
 			pinned_comment: relation('comments'),
 			// Own color (ADR-0052, migration 1790203400), empty for "wie Projekt".
-			color: select(PROJECT_COLORS, false)
+			color: select(PROJECT_COLORS, false),
+			// Charm (ADR-0062, migration 1790204400), empty for none; the hook checks the key.
+			charm: text({ max: 40 })
 		},
 		indexes: [
 			'CREATE UNIQUE INDEX idx_tickets_scope_key ON tickets (scope, key)',

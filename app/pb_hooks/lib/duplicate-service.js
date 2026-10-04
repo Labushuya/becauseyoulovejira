@@ -17,6 +17,7 @@ var trashRules = require(__hooks + '/lib/trash-rules.js');
 var berlinTime = require(__hooks + '/lib/berlin-time.js');
 var ticketService = require(__hooks + '/lib/ticket-service.js');
 var inbox = require(__hooks + '/lib/inbox-service.js');
+var charms = require(__hooks + '/lib/charms.js');
 
 var TICKETS = 'tickets';
 var INBOX = 'inbox_items';
@@ -68,6 +69,17 @@ function takeableValues(ticket) {
 function withColor(fields, color) {
   if (color !== '') {
     fields.color = color;
+  }
+  return fields;
+}
+
+// A copy keeps the charm of its ticket (ADR-0062), always, without a switch; every sub-ticket of the
+// copy keeps its own. Before the migration the field reads as '', and a key the catalog no longer
+// knows is left out, so it never stops the copy.
+function withCharm(fields, ticket) {
+  var charm = ticket.getString('charm');
+  if (charms.isCharmKey(charm)) {
+    fields.charm = charm;
   }
   return fields;
 }
@@ -155,7 +167,7 @@ function saveDuplicate(txApp, original, options, context) {
   } else {
     fields.source = 'manual';
   }
-  return saveTicket(txApp, withColor(fields, taken.color), context.actor);
+  return saveTicket(txApp, withCharm(withColor(fields, taken.color), original), context.actor);
 }
 
 // New, open sub-tickets of the duplicate, one per sub-ticket of the original (also done ones), in
@@ -175,22 +187,25 @@ function saveSubtasks(txApp, original, duplicate, options, actor) {
     var taken = rules.takenValues(takeableValues(child), options);
     var saved = saveTicket(
       txApp,
-      withColor(
-        {
-          owner: duplicate.getString('owner'),
-          household: duplicate.getString('household'),
-          title: child.getString('title'),
-          description: taken.description,
-          status: 'open',
-          priority: taken.priority,
-          due: taken.due,
-          project: duplicate.getString('project'),
-          tags: taken.tags,
-          parent: duplicate.id,
-          blocks_parent: child.getBool('blocks_parent'),
-          source: 'manual'
-        },
-        taken.color
+      withCharm(
+        withColor(
+          {
+            owner: duplicate.getString('owner'),
+            household: duplicate.getString('household'),
+            title: child.getString('title'),
+            description: taken.description,
+            status: 'open',
+            priority: taken.priority,
+            due: taken.due,
+            project: duplicate.getString('project'),
+            tags: taken.tags,
+            parent: duplicate.id,
+            blocks_parent: child.getBool('blocks_parent'),
+            source: 'manual'
+          },
+          taken.color
+        ),
+        child
       ),
       actor
     );

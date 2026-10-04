@@ -4,6 +4,7 @@
 // never rendered as Markdown.
 
 import { areaMoveHistoryText } from './area-move';
+import { charmName } from './charms';
 import { COLOR_LABELS, isProjectColor } from './colors';
 import { duplicateHistoryText } from './duplicate';
 import { formatCalendarDate, formatBerlinDateTime } from './format';
@@ -283,6 +284,9 @@ function describe(entry: HistoryEntry, lookups: HistoryLookups, selfId: string |
 			return pinText(oldValue, newValue, lookups, selfId);
 		case 'color':
 			return change('Farbe', colorName(oldValue), colorName(newValue));
+		case 'charm':
+			// ADR-0062: the name of the charm, none as "kein".
+			return change('Charm', charmName(oldValue) || 'kein', charmName(newValue) || 'kein');
 		case 'duplicate':
 			// ADR-0045 §6: the duplicate names its original, the original its duplicate.
 			return duplicateHistoryText(newValue);

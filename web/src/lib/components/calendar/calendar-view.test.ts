@@ -321,6 +321,33 @@ describe('month as a grid', () => {
 	});
 });
 
+describe('charms (ADR-0062)', () => {
+	it('shows the charm of a ticket and of a planned date before the title and in its name, in month, week and agenda', async () => {
+		const party = ticket('2026-10-14', { title: 'Party', charm: 'geburtstag' });
+		const plain = ticket('2026-10-14', { title: 'Ohne' });
+		for (const view of ['monat', 'woche', 'agenda']) {
+			const { view: shown } = await show(`/kalender?ansicht=${view}&datum=2026-10-12`, {
+				open: [party, plain],
+				rules: [rule({ charm: 'muell' })]
+			});
+			const link = document.querySelector(`[data-calendar-ticket="${party.id}"]`) as HTMLElement;
+			const mark = link.querySelector<HTMLElement>('.charm-mark');
+			expect(mark?.getAttribute('title'), view).toBe('Charm: Geburtstag');
+			expect(mark?.querySelector('svg')?.getAttribute('aria-hidden'), view).toBe('true');
+			expect(mark?.nextElementSibling?.classList.contains('text'), view).toBe(true);
+			expect(link.textContent?.replace(/\s+/g, ' '), view).toContain(', Charm: Geburtstag');
+			const planned = document.querySelector(
+				'[data-calendar-rule="rule00000000001"]'
+			) as HTMLElement;
+			expect(planned.querySelector('.charm-mark')?.getAttribute('title'), view).toBe('Charm: Müll');
+			expect(planned.textContent, view).toContain('Charm: Müll');
+			const other = document.querySelector(`[data-calendar-ticket="${plain.id}"]`) as HTMLElement;
+			expect(other.querySelector('.charm-mark'), view).toBeNull();
+			shown.unmount();
+		}
+	});
+});
+
 describe('keyboard of the grid', () => {
 	it('moves the focus by days and weeks and to the ends of week and month', async () => {
 		await show();

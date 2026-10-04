@@ -17,11 +17,12 @@ const BASE = {
 	key: 'ABC-1',
 	household: '',
 	pinned_comment: '',
-	color: ''
+	color: '',
+	charm: ''
 };
 
 describe('TRACKED_FIELDS', () => {
-	it('matches the whitelist of the E1 plan (OF-12) plus the pinned comment (ADR-0044) and the color (ADR-0052)', () => {
+	it('matches the whitelist of the E1 plan (OF-12) plus the pinned comment (ADR-0044) and the color (ADR-0052), since ADR-0062 the charm', () => {
 		expect([...TRACKED_FIELDS]).toEqual([
 			'title',
 			'description',
@@ -36,9 +37,22 @@ describe('TRACKED_FIELDS', () => {
 			'key',
 			'household',
 			'pinned_comment',
-			'color'
+			'color',
+			'charm'
 		]);
 		expect(Object.isFrozen(TRACKED_FIELDS)).toBe(true);
+	});
+
+	it('records setting, changing and clearing the charm of a ticket (ADR-0062)', () => {
+		expect(diff(BASE, { ...BASE, charm: 'geburtstag' })).toEqual([
+			{ field: 'charm', old_value: '', new_value: 'geburtstag' }
+		]);
+		expect(diff({ ...BASE, charm: 'geburtstag' }, { ...BASE, charm: 'flugzeug' })).toEqual([
+			{ field: 'charm', old_value: 'geburtstag', new_value: 'flugzeug' }
+		]);
+		expect(diff({ ...BASE, charm: 'flugzeug' }, BASE)).toEqual([
+			{ field: 'charm', old_value: 'flugzeug', new_value: '' }
+		]);
 	});
 
 	it('records setting, changing and clearing the own color of a ticket (ADR-0052)', () => {

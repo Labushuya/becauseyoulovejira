@@ -1084,6 +1084,34 @@
 				</ul>
 			</details>
 			<details>
+				<summary>Wie setze ich einen Charm?</summary>
+				<ul>
+					<li>
+						Ein Charm ist ein kleines Symbol vor dem Titel, wie im Outlook-Kalender: eine Torte für
+						einen Geburtstag, ein Flugzeug für eine Reise, eine Hantel fürs Training. Jedes Ticket
+						und jede Wiederholung kann einen haben, keiner ist Pflicht.
+					</li>
+					<li>
+						Im Ticket, in „Neues Ticket“ und in der Vorlage einer Wiederholung öffnet „Charm wählen“
+						die Auswahl: oben die Suche (etwa „Müll“ oder „Reise“), darunter „Kein Charm“ und die
+						Charms in den Gruppen Alltag, Haushalt, Gesundheit, Familie, Arbeit, Reise, Finanzen und
+						Freizeit. Mit den Pfeiltasten wanderst du durch die Symbole, <kbd>Enter</kbd> wählt,
+						<kbd>Esc</kbd> schließt ohne Änderung. Im Ticket gilt die Wahl sofort.
+					</li>
+					<li>
+						Eine Wiederholung gibt ihren Charm jedem neuen Ticket beim Anlegen; änderst du ihn,
+						bekommen ihn erst die nächsten Tickets. „Duplizieren …“ nimmt den Charm mit, beim
+						Verschieben in einen anderen Bereich bleibt er. Unteraufgaben bekommen keinen.
+					</li>
+					<li>
+						Der Charm steht vor dem Titel in „Aufgaben“, im Kalender, unter den offenen Tickets
+						eines Projekts, im Ticket und in „Wiederholungen“, in der Farbe des Textes. Sein Name
+						steht beim Zeigen mit der Maus und für Screenreader dabei. „Kein Charm“ entfernt ihn
+						wieder.
+					</li>
+				</ul>
+			</details>
+			<details>
 				<summary>Wie formatiere ich Beschreibungen und Kommentare?</summary>
 				<ul>
 					<li>

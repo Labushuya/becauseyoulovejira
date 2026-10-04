@@ -165,6 +165,18 @@ describe('help page (EH-9)', () => {
 		expect(content).toMatch(/Im Eingang filterst und gruppierst du nach Zielprojekt/);
 	});
 
+	it('explains the charms: choosing, the rule and its next tickets, where they show (ADR-0062)', () => {
+		render(Page);
+		const content = text(screen.getByRole('region', { name: 'Häufige Fragen' }));
+		expect(content).toMatch(
+			/Ein Charm ist ein kleines Symbol vor dem Titel, wie im Outlook-Kalender/
+		);
+		expect(content).toMatch(/öffnet „Charm wählen“\s+die Auswahl: oben die Suche/);
+		expect(content).toMatch(/änderst du ihn,\s+bekommen ihn erst die nächsten Tickets/);
+		expect(content).toMatch(/Unteraufgaben bekommen keinen/);
+		expect(content).toMatch(/„Kein Charm“ entfernt ihn wieder/);
+	});
+
 	it('answers the frequent questions in folded details', () => {
 		const { container } = render(Page);
 		const section = screen.getByRole('region', { name: 'Häufige Fragen' });
@@ -188,6 +200,7 @@ describe('help page (EH-9)', () => {
 			'Wie gliedere ich ein Projekt in Unterprojekte?',
 			'Wie sehe ich die offenen Tickets eines Projekts?',
 			'Wie färbe ich Projekte und Tickets?',
+			'Wie setze ich einen Charm?',
 			'Wie formatiere ich Beschreibungen und Kommentare?',
 			'Wie ordne ich Kommentare und hebe einen hervor?'
 		]);

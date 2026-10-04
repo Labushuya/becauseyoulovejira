@@ -75,6 +75,11 @@ export interface RecurrenceRule {
 	 * hand stay valid.
 	 */
 	color?: ProjectColor | null;
+	/**
+	 * Charm of the template (ADR-0062): every next ticket gets it when it is made; null for none,
+	 * absent before the migration. Optional so that rules built by hand stay valid.
+	 */
+	charm?: string | null;
 	/** The account that created the rule (`owner`); the data layer sets it (ADR-0061 §4). */
 	owner?: string;
 	created: string;

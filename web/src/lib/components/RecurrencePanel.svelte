@@ -77,6 +77,7 @@
 		statusAvailable = false,
 		subtasksAvailable = false,
 		colorsAvailable = false,
+		charmsAvailable = false,
 		ticketHrefOf,
 		oncreatetag,
 		onsave,
@@ -107,6 +108,8 @@
 		subtasksAvailable?: boolean;
 		/** Offer the color of the template and send it (ADR-0052, CatalogStore.colorsReady). */
 		colorsAvailable?: boolean;
+		/** Offer the charm of the template and send it (ADR-0062, RecurrenceStore.charmsReady). */
+		charmsAvailable?: boolean;
 		ticketHrefOf: (ticketId: string) => ResolvedPathname;
 		/** Existing or new tag for a typed name (E3 plan, T-14). */
 		oncreatetag: (name: string) => Promise<EnsureTagResult>;
@@ -140,7 +143,8 @@
 		| 'priority'
 		| 'initial_status'
 		| 'template_subtasks'
-		| 'color';
+		| 'color'
+		| 'charm';
 	const TEMPLATE_ERROR_FIELDS: readonly string[] = [
 		'title',
 		'description',
@@ -149,7 +153,8 @@
 		'priority',
 		'initial_status',
 		'template_subtasks',
-		'color'
+		'color',
+		'charm'
 	];
 
 	/** "In den Haushalt verschieben …" or "Ins Private verschieben …" (E7-4, ADR-0061). */
@@ -180,7 +185,8 @@
 					priority: DEFAULT_PRIORITY,
 					initialStatus: DEFAULT_TEMPLATE_STATUS,
 					subtasks: [],
-					color: null
+					color: null,
+					charm: null
 				}
 			: templateOf(source);
 	}
@@ -321,7 +327,9 @@
 			// The whole list, only for a server after its migration (plan WV-3).
 			...(subtasksAvailable && { template_subtasks: trimmedSubtasks(template.subtasks) }),
 			// The color of the next tickets, only for a server after its migration (ADR-0052).
-			...(colorsAvailable && { color: template.color })
+			...(colorsAvailable && { color: template.color }),
+			// The charm of the next tickets, likewise (ADR-0062).
+			...(charmsAvailable && { charm: template.charm })
 		};
 		return withRhythm ? { ...draft, ...formParams(values) } : draft;
 	}
@@ -571,6 +579,7 @@
 				statusAvailable={statusAvailable && !askStatus}
 				{subtasksAvailable}
 				{colorsAvailable}
+				{charmsAvailable}
 				{invalidSubtasks}
 				{oncreatetag}
 				onprojectchosen={() => {

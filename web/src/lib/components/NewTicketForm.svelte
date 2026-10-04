@@ -27,6 +27,7 @@
 	} from '$lib/domain/ticket';
 	import type { EnsureTagResult } from '$lib/stores/catalog.svelte';
 	import type { CreateResult } from '$lib/stores/ticket-detail.svelte';
+	import CharmPicker from './CharmPicker.svelte';
 	import ColorChoice from './ColorChoice.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import InitialStatusChoice from './InitialStatusChoice.svelte';
@@ -63,7 +64,8 @@
 	// An entry from a way with a target project (ADR-0049 §4) brings that project, unless it is
 	// archived or deleted; the hint below "Projekt" says which and why. After the migration of the
 	// colors (`colorsAvailable`, ADR-0052) the field "Farbe" follows the project, "Wie Projekt" with
-	// the color of the chosen project first and chosen.
+	// the color of the chosen project first and chosen. After the migration of the charms
+	// (`charmsAvailable`, ADR-0062) the field "Charm" follows, none chosen.
 	let {
 		projects = [],
 		initialProject = null,
@@ -76,6 +78,7 @@
 		statusAvailable = false,
 		subtasksAvailable = false,
 		colorsAvailable = false,
+		charmsAvailable = false,
 		today = null,
 		tags = [],
 		oncreatetag = async () => ({ ok: false, message: null }),
@@ -105,6 +108,8 @@
 		subtasksAvailable?: boolean;
 		/** Offer the own color of the ticket (ADR-0052, CatalogStore.colorsReady). */
 		colorsAvailable?: boolean;
+		/** Offer the charm of the ticket (ADR-0062, RecurrenceStore.charmsReady). */
+		charmsAvailable?: boolean;
 		/** Berlin date of today, for the preview of the section "Wiederholung". */
 		today?: CalendarDate | null;
 		/** Tags that can be chosen (the catalog). */
@@ -140,6 +145,7 @@
 		projectError: `${uid}-project-error`,
 		color: `${uid}-color`,
 		colorError: `${uid}-color-error`,
+		charmError: `${uid}-charm-error`,
 		tags: `${uid}-tags`,
 		tagsError: `${uid}-tags-error`,
 		description: `${uid}-description-error`,
@@ -167,6 +173,8 @@
 	let chosenProject = $state<string | null>(null);
 	/** Own color (ADR-0052); null is "wie Projekt". */
 	let color = $state<ProjectColor | null>(null);
+	/** Charm (ADR-0062); null is none. */
+	let charm = $state<string | null>(null);
 	let tagIds = $state<string[]>([...initialTagIds]);
 	let tagText = $state('');
 	let tagError = $state<string | null>(null);
@@ -228,6 +236,7 @@
 			priority !== initialPriority ||
 			project !== defaultProject ||
 			color !== null ||
+			charm !== null ||
 			tagIds.join(',') !== initialTagIds.join(',') ||
 			tagText.trim() !== '' ||
 			repeatOpen
@@ -269,7 +278,9 @@
 				// Only tags the catalog knows: a preset may name a tag deleted since.
 				tags: chosenTags.map((tag) => tag.id),
 				// Only an own color goes along (ADR-0052); none is "wie Projekt".
-				...(colorsAvailable && color !== null && { color })
+				...(colorsAvailable && color !== null && { color }),
+				// Only a chosen charm goes along (ADR-0062).
+				...(charmsAvailable && charm !== null && { charm })
 			},
 			rhythm === null
 				? null
@@ -585,6 +596,18 @@
 					error={fieldErrors.color ?? null}
 					errorId={ids.colorError}
 					onchoose={(value) => (color = value)}
+				/>
+			</div>
+		{/if}
+
+		{#if charmsAvailable}
+			<div class="field">
+				<span class="label">Charm</span>
+				<CharmPicker
+					value={charm}
+					error={fieldErrors.charm ?? null}
+					errorId={ids.charmError}
+					onchoose={(value) => (charm = value)}
 				/>
 			</div>
 		{/if}

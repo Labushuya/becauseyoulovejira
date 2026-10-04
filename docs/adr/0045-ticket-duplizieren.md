@@ -1,6 +1,6 @@
 # ADR-0045: Ticket duplizieren: Abfrage im Dialog, eine Route in einer Transaktion, Kopie der Herkunft als eigener Eingangseintrag
 
-- **Status:** Angenommen und umgesetzt: Server und Datenschicht in DU-1 (#192), Oberfläche in DU-2 (#193) nach [docs/plan/duplizieren.md](../plan/duplizieren.md); die manuelle Browser-Prüfung steht im Test-Manifest. §1 (Einstieg) geändert durch den Nachtrag „Aktionsmenüs“ (2026-10-01); Nachtrag 2026-10-02: Farbe im Duplikat ([ADR-0052](0052-farben-fuer-projekte-und-tickets.md))
+- **Status:** Angenommen und umgesetzt: Server und Datenschicht in DU-1 (#192), Oberfläche in DU-2 (#193) nach [docs/plan/duplizieren.md](../plan/duplizieren.md); die manuelle Browser-Prüfung steht im Test-Manifest. §1 (Einstieg) geändert durch den Nachtrag „Aktionsmenüs“ (2026-10-01); Nachtrag 2026-10-02: Farbe im Duplikat ([ADR-0052](0052-farben-fuer-projekte-und-tickets.md)); Nachtrag 2026-10-04: Charm im Duplikat ([ADR-0062](0062-charms.md))
 - **Datum:** 2026-10-01
 - **Entscheidung durch:** Nutzer (Wunsch vom 2026-10-01, wörtlich: „Ich möchte die Möglichkeit haben, jedes Ticket zu duplizieren – nicht zwangsläufig mit Quelle (manuell abfragen wie Duplikat erstellt werden soll).“), Advisor (Einstieg, Felder der Abfrage und ihre Vorbelegung, Pflicht-Status, Quelle mit Fallback, Atomarität, Verlauf, Rechte, Papierkorb), Executor (Machbarkeit der Kopie, Serverweg, Kommentare, Einzelheiten)
 - **Ergänzt:** [ADR-0031](0031-herkunft-sichern.md) (Nachtrag F: Kopie der Herkunft), [ADR-0033](0033-unteraufgaben.md) (Nachtrag: Unteraufgaben beim Duplizieren)
@@ -103,3 +103,11 @@ Mit den Farben für Projekte und Tickets ist die eigene Farbe ein Feld des Ticke
 - **Route:** Schalter `color` (`parseRequest`, `takenValues`); das Duplikat und seine neuen Unteraufgaben bekommen jeweils ihre eigene Farbe. Ohne Schalter oder ohne eigene Farbe zeigt die Kopie die Farbe ihres Projekts. Ein Client ohne den Schalter (älterer Stand im offenen Tab) übernimmt keine Farbe.
 - **Vor der Migration** liest der Dienst eine leere Farbe und setzt nichts.
 - **Tests:** `duplicate-rules.test.mjs`, `colors.test.mjs` (Route mit Unteraufgaben), `ticket-duplicate.test.ts`, `duplicate.test.ts`.
+
+## Nachtrag (2026-10-04, [ADR-0062](0062-charms.md), CH-1): Charm im Duplikat
+
+Mit den Charms hat ein Ticket ein Symbol vor dem Titel. §2 bis §6 bleiben, ergänzt um:
+
+- **Immer übernommen:** Das Duplikat bekommt den Charm des Originals, jede neue Unteraufgabe den Charm ihrer eigenen Unteraufgabe (`withCharm` in `lib/duplicate-service.js`), ohne Schalter in der Abfrage (Wunsch des Nutzers: „Duplizieren übernimmt den Charm“) und ohne Eintrag im Verlauf. Ohne Charm bleibt das Feld leer.
+- Ein Schlüssel, den der Katalog nicht mehr kennt, wird ausgelassen; vor der Migration liest der Dienst leer und setzt nichts.
+- **Tests:** `charms.test.mjs` („"Duplizieren" takes the charm of the original and of each sub-task over“).

@@ -7,6 +7,7 @@
 	import { rowMenus } from '$lib/overlay/context-menu';
 	import { getColumnPrefs } from '$lib/stores/column-prefs.svelte';
 	import ActionsMenu, { type MenuAction } from './ActionsMenu.svelte';
+	import CharmIcon from './CharmIcon.svelte';
 	import { ColumnFit } from './table/column-fit.svelte';
 	import ResizableHeader from './table/ResizableHeader.svelte';
 	import {
@@ -177,6 +178,8 @@
 					<th class="title" scope="row" data-col="title">
 						<!-- At most two lines, cut off only visually (ADR-0030 section 6). -->
 						<div class="title-clamp">
+							<!-- The charm of the template (ADR-0062), as before the title of a ticket. -->
+							<CharmIcon charm={rule.charm} />
 							<a
 								class="title-link"
 								href={hrefOf(rule)}

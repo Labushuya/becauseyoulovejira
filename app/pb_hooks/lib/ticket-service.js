@@ -307,6 +307,19 @@ function releasePinOf(txApp, comment) {
   txApp.saveNoValidate(ticket);
 }
 
+// The charm of a ticket or a rule (ADR-0062): empty or a key of the catalog (lib/charms.js), for
+// every writer, the superuser and the saves of the hooks included. `original` is the stored record
+// (null on create); an unchanged value is not checked again. Before the migration the field is
+// unknown and reads as '', so nothing is checked.
+function checkCharm(record, original) {
+  var charms = require(__hooks + '/lib/charms.js');
+  var value = record.getString('charm');
+  var code = charms.charmViolation(value, original ? original.getString('charm') : '');
+  if (code !== '') {
+    throw errors.fieldFailure('charm', code, charms.MESSAGES[code]);
+  }
+}
+
 // Due dates are calendar dates only (CLAUDE.md section 5).
 function checkDue(record) {
   if (!rules.isCalendarDate(record.getString('due'))) {
@@ -393,6 +406,7 @@ function prepareCreate(txApp, record) {
   }
 
   checkDue(record);
+  checkCharm(record, null);
   var project = checkRelations(txApp, record, scope, '');
   checkPinnedComment(txApp, record, null);
   var item = inbox.prepareConversion(txApp, record, scope);
@@ -450,6 +464,7 @@ function prepareUpdate(txApp, record) {
     );
   }
   checkDue(record);
+  checkCharm(record, original);
   var project = checkRelations(txApp, record, scope, original.getString('project'));
   checkPinnedComment(txApp, record, original);
   applyCompletedAt(record, original);
@@ -522,6 +537,7 @@ module.exports = {
   checkRelations: checkRelations,
   checkDependencyArea: checkDependencyArea,
   checkPinnedComment: checkPinnedComment,
+  checkCharm: checkCharm,
   releasePinOf: releasePinOf,
   prepareCreate: prepareCreate,
   recordCreation: recordCreation,

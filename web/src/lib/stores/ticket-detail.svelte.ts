@@ -25,6 +25,7 @@ import { toggleTask } from '$lib/markdown';
 import { PIN_FLAGS, type CommentPinControl } from '$lib/domain/comments';
 import type { SourceHandling } from '$lib/domain/sources';
 import { isCalendarDate } from '$lib/domain/berlin-date';
+import { isCharmKey } from '$lib/domain/charms';
 import { isProjectColor } from '$lib/domain/colors';
 import { NO_SERIES, type SeriesChangeSink } from '$lib/domain/series-template';
 import { isPriority, isStatus, type Status } from '$lib/domain/status';
@@ -54,9 +55,12 @@ import {
 
 export type { DeleteResult, DeleteSources, TrashUndo };
 
-/** Fields editable in the panel (E2 plan, section 2; E3 plan, T-13), the color since ADR-0052. */
+/**
+ * Fields editable in the panel (E2 plan, section 2; E3 plan, T-13), the color since ADR-0052, the
+ * charm since ADR-0062.
+ */
 export type EditableField =
-	'title' | 'description' | 'status' | 'priority' | 'due' | 'project' | 'color';
+	'title' | 'description' | 'status' | 'priority' | 'due' | 'project' | 'color' | 'charm';
 
 /**
  * Fields with their own saving state and error: the editable ones plus the tags (T-14), the parent
@@ -64,8 +68,8 @@ export type EditableField =
  */
 export type FieldKey = EditableField | 'tags' | 'parent' | 'blocksParent';
 
-/** Fields that save at once when chosen (T-7, T-13; the color since ADR-0052). */
-export type ChoiceField = 'status' | 'priority' | 'project' | 'color';
+/** Fields that save at once when chosen (T-7, T-13; the color since ADR-0052, the charm since ADR-0062). */
+export type ChoiceField = 'status' | 'priority' | 'project' | 'color' | 'charm';
 
 /**
  * idle: no ticket; loading; ready; not_found: unknown or foreign ID; error: loading failed;
@@ -118,7 +122,8 @@ const DRAFT_FIELDS: readonly (keyof TicketDraft)[] = [
 	'due',
 	'project',
 	'tags',
-	'color'
+	'color',
+	'charm'
 ];
 
 /** The part of the list store the panel updates, so the list shows a change at once. */
@@ -164,6 +169,7 @@ function fieldText(ticket: Ticket, field: EditableField): string {
 	if (field === 'due') return ticket.due ?? '';
 	if (field === 'project') return ticket.projectId ?? '';
 	if (field === 'color') return ticket.color ?? '';
+	if (field === 'charm') return ticket.charm ?? '';
 	return ticket[field];
 }
 
@@ -194,6 +200,10 @@ function patchFor(field: EditableField, draft: string): PatchResult {
 			// '' is "wie Projekt" (ADR-0052).
 			if (draft === '') return { patch: { color: null } };
 			return isProjectColor(draft) ? { patch: { color: draft } } : { error: INVALID_VALUE_MESSAGE };
+		case 'charm':
+			// '' is "Kein Charm" (ADR-0062).
+			if (draft === '') return { patch: { charm: null } };
+			return isCharmKey(draft) ? { patch: { charm: draft } } : { error: INVALID_VALUE_MESSAGE };
 	}
 }
 

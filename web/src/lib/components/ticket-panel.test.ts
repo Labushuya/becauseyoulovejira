@@ -875,6 +875,71 @@ describe('ticket panel: color (ADR-0052)', () => {
 	});
 });
 
+describe('ticket panel: charm (ADR-0062)', () => {
+	const charmMark = () => document.querySelector<HTMLElement>('.title .charm-mark');
+
+	it('shows the charm before the title, outside of the heading, and its button in the fields', async () => {
+		await renderPanel(ticket({ charm: 'geburtstag' }));
+		expect(charmMark()?.getAttribute('title')).toBe('Charm: Geburtstag');
+		expect(charmMark()?.textContent?.trim()).toBe('Charm: Geburtstag');
+		expect(charmMark()?.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+		expect(heading().textContent).toBe('Steuererklärung');
+		expect(heading().contains(charmMark())).toBe(false);
+		expect(charmMark()?.nextElementSibling).toBe(heading());
+		expect(screen.getByRole('button', { name: 'Charm: Geburtstag' })).toBeTruthy();
+	});
+
+	it('saves a chosen charm at once and removes it with "Kein Charm"', async () => {
+		const { data } = await renderPanel(ticket({ charm: null }));
+		expect(charmMark()).toBeNull();
+		await fireEvent.click(screen.getByRole('button', { name: 'Charm wählen' }));
+		await tick();
+		await fireEvent.click(
+			document.querySelector('[data-charm-option="flugzeug"]') as HTMLButtonElement
+		);
+		await vi.waitFor(() => expect(data.update).toHaveBeenCalledWith(ID, { charm: 'flugzeug' }));
+		await vi.waitFor(() => expect(charmMark()?.getAttribute('title')).toBe('Charm: Flugzeug'));
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Charm: Flugzeug' }));
+		await tick();
+		await fireEvent.click(
+			document.querySelector('[data-charm-option="none"]') as HTMLButtonElement
+		);
+		await vi.waitFor(() => expect(data.update).toHaveBeenLastCalledWith(ID, { charm: null }));
+		await vi.waitFor(() => expect(charmMark()).toBeNull());
+	});
+
+	it('shows a refusal of the server at the button', async () => {
+		const { data } = await renderPanel(ticket({ charm: null }));
+		data.update.mockRejectedValueOnce(
+			new DataError('validation', {
+				status: 400,
+				fields: {
+					charm: {
+						code: 'validation_charm_unknown',
+						message: 'Diesen Charm gibt es nicht. Bitte einen aus der Liste wählen.'
+					}
+				}
+			})
+		);
+		await fireEvent.click(screen.getByRole('button', { name: 'Charm wählen' }));
+		await tick();
+		await fireEvent.click(document.querySelector('[data-charm-option="zug"]') as HTMLButtonElement);
+		const error = await screen.findByText(
+			'Diesen Charm gibt es nicht. Bitte einen aus der Liste wählen.'
+		);
+		expect(
+			screen.getByRole('button', { name: 'Charm wählen' }).getAttribute('aria-describedby')
+		).toBe(error.closest('p')?.id);
+	});
+
+	it('offers no charm while the server does not know the field', async () => {
+		await renderPanel(ticket());
+		expect(screen.queryByRole('button', { name: 'Charm wählen' })).toBeNull();
+		expect(charmMark()).toBeNull();
+	});
+});
+
 describe('ticket panel: tags (E3 plan, T-14)', () => {
 	const GARDEN: Tag = {
 		id: 'tag000000000001',
