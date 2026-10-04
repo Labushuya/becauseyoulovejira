@@ -43,7 +43,7 @@ describe('help page (EH-9)', () => {
 		}
 	});
 
-	it('jumps to the sections that exist on the page, seventeen since the household', () => {
+	it('jumps to the sections that exist on the page, eighteen since the areas', () => {
 		const { container } = render(Page);
 
 		const jump = within(screen.getByRole('navigation', { name: 'Auf dieser Seite' }));
@@ -65,7 +65,8 @@ describe('help page (EH-9)', () => {
 			'Speicher',
 			'Sicherheit',
 			'Konten und Verwalter',
-			'Haushalt'
+			'Haushalt',
+			'Bereiche Privat und Haushalt'
 		]);
 		for (const link of links) {
 			const id = link.getAttribute('href')?.slice(1) ?? '';
@@ -817,6 +818,35 @@ describe('help page (EH-9)', () => {
 		expect(within(accounts).getByRole('link', { name: 'Haushalt' }).getAttribute('href')).toBe(
 			'/einstellungen/hilfe#haushalt'
 		);
+	});
+
+	it('explains the areas: switch, creating, borders, links, channels and the trash (ADR-0059)', () => {
+		render(Page);
+		const section = screen.getByRole('region', { name: 'Bereiche Privat und Haushalt' });
+		const terms = [...section.querySelectorAll('dt')].map((term) => term.textContent?.trim());
+		expect(terms).toEqual([
+			'Wechseln',
+			'Anlegen',
+			'Keine Verweise über Bereichsgrenzen',
+			'Links in den anderen Bereich',
+			'Kanäle',
+			'Papierkorb im Haushalt'
+		]);
+		const content = text(section);
+		expect(content).toMatch(/Ohne Haushalt gibt es keinen Umschalter/);
+		expect(content).toMatch(/merkt sich dieses Gerät für dein Konto/);
+		expect(content).toMatch(/ein Duplikat bleibt im Bereich des Originals/);
+		expect(content).toMatch(/@HAUS/);
+		expect(content).toMatch(/„Zum Bereich … gewechselt“/);
+		expect(content).toMatch(/„Nur im privaten Bereich“/);
+		expect(content).toMatch(/Recht „Endgültig löschen“/);
+		// The section "Haushalt" points here.
+		const household = screen.getByRole('region', { name: 'Haushalt' });
+		expect(
+			within(household)
+				.getByRole('link', { name: 'Bereiche Privat und Haushalt' })
+				.getAttribute('href')
+		).toBe('#bereiche');
 	});
 
 	it('explains accounts, the administrator, the channels per account and a second person (ADR-0056)', () => {

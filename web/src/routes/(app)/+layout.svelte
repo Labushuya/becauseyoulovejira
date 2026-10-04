@@ -35,12 +35,19 @@
 		HouseholdStore,
 		householdData,
 		householdLive,
-		noticeStorage,
-		rememberHouseholdNotice,
 		setHouseholdStore,
-		takeHouseholdNotice
+		type HouseholdNotice
 	} from '$lib/stores/household.svelte';
-	import { reloadPage } from '$lib/page-reload';
+	import { recordScope, setClientArea } from '$lib/data/area';
+	import type { ResolvedPathname } from '$app/types';
+	import { AREA_TEXTS, areaSwitchTarget, recordOfRoute, type AreaView } from '$lib/domain/area';
+	import type { HouseholdState } from '$lib/domain/household';
+	import {
+		AreaStore,
+		setAreaStore,
+		type AreaChangeCause,
+		type AreaHousehold
+	} from '$lib/stores/area.svelte';
 	import { PeopleStore, peopleData, setPeople } from '$lib/stores/people.svelte';
 	import { FolderViewer, folderViewData, setFolderViewer } from '$lib/stores/folder-view.svelte';
 	import { fetchContext } from '$lib/data/context';
@@ -117,6 +124,17 @@
 	// session; the login page stays outside this group.
 	let { children } = $props();
 
+	// The area of the tab (E7-3, ADR-0059): "Privat" or the household, remembered on this device per
+	// account. It comes before every store, so the first loads already ask only for this area; a
+	// change loads the stores of the area again without reloading the page.
+	const area = setAreaStore(
+		new AreaStore(
+			localStore,
+			(scope) => setClientArea(pb, scope),
+			(cause) => areaChanged(cause)
+		)
+	);
+	area.begin(auth.userId);
 	// Stores live per layout instance (ADR-0006 section 1): a logout removes the layout and with
 	// it every loaded ticket, project and tag.
 	const catalog = setCatalogStore(new CatalogStore(catalogData(pb), auth));
@@ -221,23 +239,116 @@
 	const people = setPeople(new PeopleStore(peopleData(pb), auth));
 	$effect(() => untrack(() => people.start()));
 	// The household of the account (ADR-0058): loaded once per session, read again on byl/household.
-	// When the membership begins or ends, the API rules show or hide the household records at once;
-	// the stores above would keep what they loaded, so the page loads anew and says why afterwards.
+	// When the membership begins or ends (E7-3, ADR-0059 §8), no page reload: the stores show only
+	// the area of the tab, so only what depends on the household loads again (the names of the
+	// people, the area). Losing the household of the area leads to "Privat"; typed text stays.
 	const household = setHouseholdStore(
-		new HouseholdStore(householdData(pb), auth, flags, (notice) => {
-			rememberHouseholdNotice(noticeStorage(), notice);
-			reloadPage();
-		})
+		new HouseholdStore(householdData(pb), auth, flags, (notice) => membershipChanged(notice))
 	);
 	$effect(() => untrack(() => household.start()));
 	$effect(() => untrack(() => household.connect(householdLive(pb))));
-	$effect(() =>
+
+	/** The household of the account as the area needs it, null without one. */
+	function areaHouseholdOf(state: HouseholdState | null): AreaHousehold | null {
+		return state === null ? null : { id: state.household.id, name: state.household.name };
+	}
+
+	/** A link into an area that waits for the household of the account to be known. */
+	let pendingScope: string | null = null;
+
+	// The area follows the household as soon as it is known and whenever it changes (renamed, left,
+	// removed); before the migration of the household there is none.
+	$effect(() => {
+		const state = household.state;
+		const current = household.household;
+		if (state !== 'ready' && state !== 'missing') return;
 		untrack(() => {
-			const notice = takeHouseholdNotice(noticeStorage());
-			if (notice !== null)
-				flags.show({ tone: 'info', title: notice.title, description: notice.text });
-		})
-	);
+			area.followHousehold(state === 'ready' ? areaHouseholdOf(current) : null);
+			const waiting = pendingScope;
+			pendingScope = null;
+			if (waiting !== null) area.showScope(waiting);
+		});
+	});
+
+	function membershipChanged(notice: HouseholdNotice) {
+		const switched = area.followHousehold(areaHouseholdOf(household.household));
+		void people.load();
+		const text = [notice.text, switched ? AREA_TEXTS.lost : null].filter(Boolean).join(' ');
+		flags.show({ tone: 'info', title: notice.title, ...(text !== '' && { description: text }) });
+	}
+
+	/**
+	 * A change of the area (E7-3, ADR-0059 §2): the stores of the layout drop the old area at once and
+	 * load the new one; the subscriptions follow by themselves (data/area.ts). By the switch or with
+	 * the household gone, a record, form or filter of the old area closes; a link into the other area
+	 * stays where it is and says so.
+	 */
+	function areaChanged(cause: AreaChangeCause) {
+		catalog.rescope();
+		tickets.rescope();
+		rules.rescope();
+		inbox.rescope();
+		trash.rescope();
+		if (cause === 'link') {
+			flags.show({ tone: 'info', title: AREA_TEXTS.switched(area.name) });
+			return;
+		}
+		const switched = areaSwitchTarget(page.url, page.route.id);
+		if (switched === null) return;
+		// A resolved view with the rest of its query, as svelte/no-navigation-without-resolve requires.
+		const target = `${AREA_VIEW_HREFS[switched.view]}${switched.search}` as ResolvedPathname;
+		const record = recordOfRoute(page.route.id, page.params.id);
+		if (cause === 'switch' || record === null) {
+			void goto(target);
+			return;
+		}
+		// The household is gone: a record of it closes, one of the area that stays remains open.
+		const shownUrl = page.url.href;
+		void recordScope(pb, record.kind, record.id).then(
+			(scope) => {
+				if (scope !== area.key && page.url.href === shownUrl) void goto(target);
+			},
+			() => undefined
+		);
+	}
+
+	/** The views a change of the area leads to. */
+	const AREA_VIEW_HREFS: Readonly<Record<AreaView, ResolvedPathname>> = {
+		tasks: resolve('/'),
+		projects: resolve('/projekte'),
+		inbox: resolve('/eingang'),
+		recurrences: resolve('/wiederholungen'),
+		calendar: resolve('/kalender'),
+		trash: resolve('/papierkorb')
+	};
+
+	// Links into the other area (E7-3, ADR-0059 §7): a record opened by address, link, flag or the
+	// calendar that belongs to the other area switches the area of the tab; one the account does not
+	// see stays "nicht gefunden". The stores of the area are asked first, the server only otherwise.
+	let followed = 0;
+	async function followRecordArea(routeId: string | null, id: string | undefined) {
+		const record = recordOfRoute(routeId, id);
+		const mine = ++followed;
+		if (record === null) return;
+		const known =
+			(record.kind === 'ticket' && tickets.find(record.id) !== null) ||
+			(record.kind === 'project' && catalog.projectById(record.id) !== null) ||
+			(record.kind === 'item' && inbox.find(record.id) !== null) ||
+			(record.kind === 'rule' && rules.ruleById(record.id) !== null) ||
+			(record.kind === 'trash' && trash.find(record.id) !== null);
+		if (known) return;
+		let scope: string | null;
+		try {
+			scope = await recordScope(pb, record.kind, record.id);
+		} catch {
+			// Not reachable: the panel says so itself.
+			return;
+		}
+		if (scope === null || mine !== followed) return;
+		if (household.state === 'ready') area.showScope(scope);
+		else pendingScope = scope;
+	}
+	afterNavigate(() => void followRecordArea(page.route.id, page.params.id));
 	$effect(() => untrack(() => rules.start()));
 	$effect(() => untrack(() => rules.connect(recurrenceLive(pb))));
 	// Rules that wait for the choice about a large backlog (ADR-0022 addendum 5) say so once the
@@ -433,6 +544,11 @@
 
 <svelte:window {onkeydown} />
 
+<!-- In the household (E7-3, ADR-0059 §1) a line of the brand stays at the top of the window, also
+     when the header scrolled away on a narrow screen; the switch in the header names the area. -->
+{#if area.visible && area.active === 'household'}
+	<div class="area-mark" aria-hidden="true"></div>
+{/if}
 <AppHeader
 	covered={panelShell.covering}
 	openCount={tickets.openState === 'ready' ? tickets.openCount : null}
@@ -472,5 +588,15 @@
 	.content {
 		--content-padding: 1.5rem;
 		padding: var(--content-padding);
+	}
+
+	/* Marker of the household area: above the sticky header (5) and the panel (11), below flags. */
+	.area-mark {
+		position: fixed;
+		inset: 0 0 auto;
+		z-index: 12;
+		height: 0.1875rem;
+		pointer-events: none;
+		background: var(--color-brand);
 	}
 </style>

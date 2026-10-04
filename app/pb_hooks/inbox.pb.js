@@ -51,8 +51,10 @@ cronAdd('byl-inbox-cleanup', '30 11 * * *', function () {
 // .ics files (ADR-0017 section 1, E4 plan packages 14 and 21): the SPA uploads one file as
 // multipart field "file". The preview lists its components with the keyword of the user that
 // matches (ADR-0020) and whether each is in the inbox already, and saves nothing. The import
-// takes only the chosen components (field "select": JSON list of their indices) as private
-// items of the signed-in user and answers with the counts "neu, schon vorhanden, übersprungen".
+// takes only the chosen components (field "select": JSON list of their indices) as items of the
+// signed-in user and answers with the counts "neu, schon vorhanden, übersprungen". Both take the
+// optional field "household" (E7-3, ADR-0059 §5): the items land in that household of the account,
+// without it in the private area; another household answers 400.
 // Before the migrations of E4 (docs/plan/e4.md, section 7) both answer 503 with a hint.
 routerAdd(
   'POST',
@@ -63,7 +65,8 @@ routerAdd(
     if (upload.unavailable) {
       return e.json(503, { message: ics.UNAVAILABLE });
     }
-    var result = ics.previewFile(e.app, e.auth.id, upload.text, ics.userKeywords(e.auth));
+    var household = require(`${__hooks}/lib/inbox-service.js`).requestHousehold(e, (e.requestInfo().body || {}).household);
+    var result = ics.previewFile(e.app, e.auth.id, upload.text, ics.userKeywords(e.auth), household);
     if (result.tooLarge) {
       throw new BadRequestError(ics.TOO_LARGE);
     }
@@ -83,7 +86,8 @@ routerAdd(
       return e.json(503, { message: ics.UNAVAILABLE });
     }
     var body = e.requestInfo().body || {};
-    var result = ics.importFile(e.app, e.auth.id, upload.text, body.select, ics.userKeywords(e.auth));
+    var household = require(`${__hooks}/lib/inbox-service.js`).requestHousehold(e, body.household);
+    var result = ics.importFile(e.app, e.auth.id, upload.text, body.select, ics.userKeywords(e.auth), household);
     if (result.tooLarge) {
       throw new BadRequestError(ics.TOO_LARGE);
     }
@@ -102,10 +106,11 @@ routerAdd(
   $apis.bodyLimit(21 * 1024 * 1024)
 );
 
-// Whether drafts of the selection views (mail files, E4 plan package 21) are in the private inbox
-// of the signed-in user already: JSON { items: [draft] } with at most 200 drafts in the fields of
-// inbox_items (channel, kind, title, source_ref, source_date, source_meta); answers per draft
-// { state, message } with '' for not there. Saves nothing.
+// Whether drafts of the selection views (mail files, E4 plan package 21) are in the inbox of the
+// signed-in user already: JSON { items: [draft], household? } with at most 200 drafts in the fields
+// of inbox_items (channel, kind, title, source_ref, source_date, source_meta), in the private area or
+// in `household` of the account (E7-3); answers per draft { state, message } with '' for not there.
+// Saves nothing.
 routerAdd(
   'POST',
   '/api/byl/inbox/lookup',
@@ -121,10 +126,12 @@ routerAdd(
     if (Object.prototype.toString.call(drafts) !== '[object Array]' || drafts.length > 200) {
       throw new BadRequestError('Höchstens 200 Einträge je Anfrage.');
     }
+    var household = service.requestHousehold(e, body.household);
     var states = [];
     for (var i = 0; i < drafts.length; i++) {
       var draft = drafts[i] || {};
       var existing = service.lookup(e.app, e.auth.id, {
+        household: household,
         channel: String(draft.channel || ''),
         kind: String(draft.kind || ''),
         title: String(draft.title || ''),

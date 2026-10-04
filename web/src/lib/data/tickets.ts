@@ -30,6 +30,7 @@ import {
 	type TicketPatch,
 	type TicketSummary
 } from '../domain/ticket';
+import { areaFilter, clientHousehold } from './area';
 import { DataError, withDataErrors } from './errors';
 import { likeText } from './like';
 import { toProjectRef, type ProjectRecord } from './projects';
@@ -195,7 +196,10 @@ function patchBody(patch: TicketPatch): PatchBody {
 	return body;
 }
 
-/** All tickets that are not done, unsorted; the list sorts them (ADR-0006 section 2). */
+/**
+ * All tickets that are not done, unsorted; the list sorts them (ADR-0006 section 2). Like every list
+ * here only those of the area of the client (E7-3, data/area.ts).
+ */
 export function listOpenTickets(
 	pb: PocketBase,
 	{ signal }: RequestOptions = {}
@@ -203,7 +207,7 @@ export function listOpenTickets(
 	return withDataErrors(signal, async () => {
 		const records = await pb.collection(TICKETS).getFullList<TicketRecord>({
 			batch: 500,
-			filter: pb.filter('status != {:done}', { done: 'done' satisfies Status }),
+			filter: areaFilter(pb, 'status != {:done}', { done: 'done' satisfies Status }),
 			fields: TICKET_LIST_FIELDS,
 			expand: TICKET_EXPAND,
 			signal
@@ -223,7 +227,7 @@ export function listSubtaskTickets(
 	return withDataErrors(signal, async () => {
 		const records = await pb.collection(TICKETS).getFullList<TicketRecord>({
 			batch: 500,
-			filter: pb.filter('parent != {:none}', { none: '' }),
+			filter: areaFilter(pb, 'parent != {:none}', { none: '' }),
 			fields: TICKET_LIST_FIELDS,
 			expand: TICKET_EXPAND,
 			signal
@@ -269,7 +273,7 @@ export function searchOpenTicketIds(
 	return withDataErrors(signal, async () => {
 		const records = await pb.collection(TICKETS).getFullList<{ id: string }>({
 			batch: 500,
-			filter: pb.filter(OPEN_SEARCH_FILTER, {
+			filter: areaFilter(pb, OPEN_SEARCH_FILTER, {
 				done: 'done' satisfies Status,
 				q: likeText(search)
 			}),
@@ -358,7 +362,7 @@ export function listDoneTicketChoices(
 ): Promise<TicketChoicePage> {
 	return withDataErrors(signal, async () => {
 		const result = await pb.collection(TICKETS).getList<TicketRecord>(page, PICKER_DONE_PAGE_SIZE, {
-			filter: pb.filter(doneChoiceExpression(query), doneChoiceParams(query)),
+			filter: areaFilter(pb, doneChoiceExpression(query), doneChoiceParams(query)),
 			sort: '-updated,-id',
 			fields: TICKET_LIST_FIELDS,
 			expand: TICKET_EXPAND,
@@ -507,7 +511,7 @@ export function listDoneTickets(
 ): Promise<DoneTicketPage> {
 	return withDataErrors(signal, async () => {
 		const result = await pb.collection(TICKETS).getList<TicketRecord>(page, perPage, {
-			filter: pb.filter(doneFilterExpression(filter), doneFilterParams(filter)),
+			filter: areaFilter(pb, doneFilterExpression(filter), doneFilterParams(filter)),
 			sort: '-completed_at,-created,-id',
 			fields: TICKET_LIST_FIELDS,
 			expand: TICKET_EXPAND,
@@ -553,7 +557,7 @@ export function listDoneTicketsDue(
 		const result = await pb
 			.collection(TICKETS)
 			.getList<TicketRecord>(page, CALENDAR_DONE_PAGE_SIZE, {
-				filter: pb.filter(DONE_DUE_RANGE_FILTER, {
+				filter: areaFilter(pb, DONE_DUE_RANGE_FILTER, {
 					doneStatus: 'done' satisfies Status,
 					firstDayOfPeriod: fromDueInput(range.from),
 					lastDayOfPeriod: fromDueInput(range.to)
@@ -588,22 +592,31 @@ function originBody(origin: TicketOrigin): Record<string, string> {
 }
 
 /**
- * Creates a private ticket of the signed-in user (E2 plan, T-8). Key, scope and number come
- * from the hook; `household` stays empty. `origin` is the form by default (source "manual");
- * with an inbox entry the hook converts the entry in the same transaction (ADR-0014 section 2).
+ * Creates a ticket of the signed-in user (E2 plan, T-8) in the area of the client (E7-3), or in
+ * `household` ('' for "Privat") when it belongs to a record of a known area (a sub-task, an entry of
+ * the inbox). Key, scope and number come from the hook. `origin` is the form by default (source
+ * "manual"); with an inbox entry the hook converts the entry in the same transaction (ADR-0014
+ * section 2).
  */
 export function createTicket(
 	pb: PocketBase,
 	draft: TicketDraft,
-	{ signal, origin = MANUAL_ORIGIN }: RequestOptions & { origin?: TicketOrigin } = {}
+	{
+		signal,
+		origin = MANUAL_ORIGIN,
+		household
+	}: RequestOptions & { origin?: TicketOrigin; household?: string } = {}
 ) {
 	return withDataErrors(signal, async (): Promise<Ticket> => {
 		const owner = currentUserId(pb.authStore.record);
 		if (owner === null) throw new DataError('session');
+		const area = household ?? clientHousehold(pb);
 		const record = await pb.collection(TICKETS).create<TicketRecord>(
 			{
 				...originBody(origin),
 				owner,
+				// Only in a household; a private ticket sends no field, as before E7-3.
+				...(area !== '' ? { household: area } : {}),
 				title: draft.title,
 				description: draft.description,
 				status: draft.status,

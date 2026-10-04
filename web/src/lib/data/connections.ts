@@ -35,6 +35,7 @@ import {
 	type MailboxMail,
 	type MailboxOutcome
 } from '../domain/mailbox';
+import { areaOptions, followArea } from './area';
 import { DATA_ERROR_MESSAGES, DataError, toDataError, withDataErrors } from './errors';
 import { currentUserId, type RequestOptions } from './options';
 import type { RecordChange, Unsubscribe } from './realtime';
@@ -135,7 +136,10 @@ export function toConnection(record: ConnectionRecord): Connection {
 	};
 }
 
-/** Own connections of the kinds this version knows, oldest first. */
+/**
+ * Own connections of the kinds this version knows in the area of the client (E7-3; in a household
+ * there are none, ADR-0059 §5), oldest first.
+ */
 export function listConnections(
 	pb: PocketBase,
 	{ signal }: RequestOptions = {}
@@ -144,6 +148,7 @@ export function listConnections(
 		const records = await pb.collection(CONNECTIONS).getFullList<ConnectionRecord>({
 			sort: 'created,id',
 			fields: CONNECTION_FIELDS,
+			...areaOptions(pb),
 			signal
 		});
 		return records.filter((record) => isConnectionType(record.type)).map(toConnection);
@@ -377,35 +382,43 @@ function toConnectionName(record: ConnectionNameRecord): ConnectionName {
 	return { id: record.id, label: typeof record.label === 'string' ? record.label : '' };
 }
 
-/** The names of every visible connection, oldest first. */
+/** The names of every visible connection of the area of the client (E7-3), oldest first. */
 export function listConnectionNames(
 	pb: PocketBase,
 	{ signal }: RequestOptions = {}
 ): Promise<ConnectionName[]> {
 	return withDataErrors(signal, async () => {
-		const records = await pb
-			.collection(CONNECTIONS)
-			.getFullList<ConnectionNameRecord>({ fields: NAME_FIELDS, sort: 'created,id', signal });
+		const records = await pb.collection(CONNECTIONS).getFullList<ConnectionNameRecord>({
+			fields: NAME_FIELDS,
+			sort: 'created,id',
+			...areaOptions(pb),
+			signal
+		});
 		return records.map(toConnectionName);
 	});
 }
 
-/** Realtime: the names of every visible connection as they are created, renamed and deleted. */
+/**
+ * Realtime: the names of every visible connection of the area of the client as they are created,
+ * renamed and deleted.
+ */
 export function subscribeConnectionNames(
 	pb: PocketBase,
 	onChange: (change: RecordChange<ConnectionName>) => void
 ): Promise<Unsubscribe> {
-	return pb.collection(CONNECTIONS).subscribe<ConnectionNameRecord>(
-		'*',
-		(event) => {
-			if (event.action === 'delete') {
-				onChange({ action: 'delete', id: event.record.id });
-				return;
-			}
-			if (event.action !== 'create' && event.action !== 'update') return;
-			onChange({ action: event.action, record: toConnectionName(event.record) });
-		},
-		{ fields: NAME_FIELDS }
+	return followArea(pb, () =>
+		pb.collection(CONNECTIONS).subscribe<ConnectionNameRecord>(
+			'*',
+			(event) => {
+				if (event.action === 'delete') {
+					onChange({ action: 'delete', id: event.record.id });
+					return;
+				}
+				if (event.action !== 'create' && event.action !== 'update') return;
+				onChange({ action: event.action, record: toConnectionName(event.record) });
+			},
+			{ fields: NAME_FIELDS, ...areaOptions(pb) }
+		)
 	);
 }
 

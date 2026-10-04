@@ -26,6 +26,7 @@ import {
 	type DoneFilter,
 	type DoneTicketPage
 } from '$lib/data/tickets';
+import { householdOfScope } from '$lib/domain/area';
 import { berlinToday, msUntilNextBerlinMidnight, type CalendarDate } from '$lib/domain/berlin-date';
 import { SERIES_MOVE_HINT } from '$lib/domain/calendar';
 import { formatCalendarDate } from '$lib/domain/format';
@@ -83,8 +84,11 @@ export interface TicketListData {
 	 * reach it as answers or events.
 	 */
 	listSubtasks?(options: RequestOptions): Promise<TicketSummary[]>;
-	/** Creates a ticket ("Unteraufgabe hinzufügen", ADR-0033 section 4). */
-	create?(draft: TicketDraft): Promise<TicketSummary>;
+	/**
+	 * Creates a ticket ("Unteraufgabe hinzufügen", ADR-0033 section 4), in `household` ('' for
+	 * "Privat") when given, else in the area of the client (E7-3).
+	 */
+	create?(draft: TicketDraft, household?: string): Promise<TicketSummary>;
 	/** One page of done tickets narrowed by `filter` (the list filters at the Berlin date). */
 	listDone(page: number, options: RequestOptions & { filter: DoneFilter }): Promise<DoneTicketPage>;
 	/** IDs of the open tickets whose title, description or key contain the search text. */
@@ -106,7 +110,7 @@ export function ticketListData(pb: PocketBase): TicketListData {
 	return {
 		listOpen: (options) => listOpenTickets(pb, options),
 		listSubtasks: (options) => listSubtaskTickets(pb, options),
-		create: (draft) => createTicket(pb, draft),
+		create: (draft, household) => createTicket(pb, draft, { household }),
 		listDone: (page, options) => listDoneTickets(pb, page, options),
 		searchOpen: (search, options) => searchOpenTicketIds(pb, search, options),
 		setDone: (id, done, completion) => setTicketDone(pb, id, done, { completion }),
@@ -698,7 +702,7 @@ export class TicketListStore {
 			return { ok: false, message: null };
 		}
 		try {
-			const ticket = await this.#data.create({
+			const draft: TicketDraft = {
 				title: text,
 				description: '',
 				status: DEFAULT_STATUS,
@@ -707,7 +711,11 @@ export class TicketListStore {
 				project: parent.projectId,
 				tags: [...parent.tagIds],
 				parent: parent.id
-			});
+			};
+			// In the area of the parent (E7-3), whatever area the tab shows meanwhile.
+			const ticket = parent.scope
+				? await this.#data.create(draft, householdOfScope(parent.scope))
+				: await this.#data.create(draft);
 			this.upsert(ticket);
 			void this.markRead(ticket);
 			this.#series.offerSubtask(parent, { title: ticket.title, priority: ticket.priority });
@@ -1226,6 +1234,18 @@ export class TicketListStore {
 			if (this.#touched === touched) this.#touched = null;
 			if (this.#reconcileController === controller) this.#reconcileController = null;
 		}
+	}
+
+	/**
+	 * The area of the tab changed (E7-3, ADR-0059 §2): the tickets of the old area go at once (also
+	 * their "Rückgängig"), and a list that was shown loads those of the new area for the same query.
+	 * The view usually changes the address as well and so drops the filters of the old area.
+	 */
+	rescope(): void {
+		const shown = this.#openState !== 'idle';
+		const query = this.#query;
+		this.reset();
+		if (shown) this.activate(query);
 	}
 
 	/** Aborts all requests and timers and empties the store. */

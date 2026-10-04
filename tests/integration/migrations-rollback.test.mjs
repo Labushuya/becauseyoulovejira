@@ -864,11 +864,18 @@ const MEMBERS_RULE_BEFORE_ACCOUNTS = 'user = @request.auth.id';
 // Managing a household (ADR-0058, E7-2), which every earlier test runs along as well: the collection
 // household_invites and the rights of household_members (1790203800), the rule of joining in the
 // rate limiter (1790203810, only settings) and the owner branch of the API rules only for private
-// records (1790203900, only rules).
+// records (1790203900, only rules); since the areas (ADR-0059, E7-3) also the retention of the trash
+// of a household (1790204100, one field at households).
 const HOUSEHOLD_INVITES_MIGRATION = '1790203800_household_invites.js';
 const JOIN_LIMIT_MIGRATION = '1790203810_household_join_limit.js';
 const ACCESS_RULES_MIGRATION = '1790203900_household_access_rules.js';
-const HOUSEHOLD_MIGRATIONS = [HOUSEHOLD_INVITES_MIGRATION, JOIN_LIMIT_MIGRATION, ACCESS_RULES_MIGRATION];
+const AREA_RETENTION_MIGRATION = '1790204100_household_trash_retention.js';
+const HOUSEHOLD_MIGRATIONS = [
+	HOUSEHOLD_INVITES_MIGRATION,
+	JOIN_LIMIT_MIGRATION,
+	ACCESS_RULES_MIGRATION,
+	AREA_RETENTION_MIGRATION
+];
 const HOUSEHOLD_INVITES_COLLECTION = 'household_invites';
 // [after, before] of the owner branch of 1790203900, of a record and of a record through its ticket.
 const PRIVATE_BRANCHES = [
@@ -1013,7 +1020,8 @@ function withoutHouseholdCollections(collections) {
 
 /**
  * A collection, or a set of its rules, as before managing a household (ADR-0058): household_members
- * without the rights (1790203800), every rule with the owner branch of before (1790203900).
+ * without the rights (1790203800), every rule with the owner branch of before (1790203900), and
+ * households without the retention of their trash (ADR-0059, 1790204100).
  */
 function withoutHousehold(collection) {
 	const rules = {};
@@ -1025,8 +1033,14 @@ function withoutHousehold(collection) {
 		if (rule in collection) rules[rule] = value;
 	}
 	const plain = { ...collection, ...rules };
-	if (collection.name !== 'household_members' || !Array.isArray(collection.fields)) return plain;
-	return { ...plain, fields: collection.fields.filter((field) => field.name !== 'rights') };
+	if (!Array.isArray(collection.fields)) return plain;
+	if (collection.name === 'household_members') {
+		return { ...plain, fields: collection.fields.filter((field) => field.name !== 'rights') };
+	}
+	if (collection.name === 'households') {
+		return { ...plain, fields: collection.fields.filter((field) => field.name !== 'trash_retention') };
+	}
+	return plain;
 }
 
 /**
@@ -2695,6 +2709,59 @@ describe('migration rollback of managing a household (ADR-0058)', () => {
 
 				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromHousehold);
 				assertSchema(readDataDir(dataDir).collections);
+			});
+		}
+	);
+});
+
+describe('migration rollback of the retention of a household (ADR-0059 §6)', () => {
+	const fieldsOf = (dataDir) =>
+		readDataDir(dataDir)
+			.collections.find((collection) => collection.name === 'households')
+			.fields.map((field) => field.name);
+	const households = (dataDir) =>
+		withDatabase(dataDir, (db) => db.prepare('SELECT * FROM households ORDER BY id').all());
+
+	it(
+		'adds the retention of every household empty (30 days), and back, without touching another row',
+		async () => {
+			const fromRetention = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(AREA_RETENTION_MIGRATION));
+			expect(fromRetention).toEqual([AREA_RETENTION_MIGRATION]);
+
+			await withTempDataDir(async ({ dataDir, args }) => {
+				await migrate(args, 'up');
+				await migrate(args, 'down', String(fromRetention.length));
+				expect(fieldsOf(dataDir)).not.toContain('trash_retention');
+				withDatabase(dataDir, (db) => {
+					const insert = db.prepare('INSERT INTO households (id, name, created, updated) VALUES (?, ?, ?, ?)');
+					insert.run('household000001', 'Haus', STAMP, STAMP);
+					insert.run('household000002', 'Garten', STAMP, STAMP);
+				});
+				const before = households(dataDir);
+				const rows = withDatabase(dataDir, snapshot);
+				const schemaBefore = withoutTimestamps(readDataDir(dataDir).collections);
+
+				const up = await migrate(args, 'up');
+				expect(appliedFiles(up, 'Applied')).toEqual(fromRetention);
+				assertSchema(readDataDir(dataDir).collections);
+				const migrated = households(dataDir);
+				expect(withoutFields(migrated, ['trash_retention'])).toEqual(before);
+				expect(migrated.map((row) => row.trash_retention)).toEqual(['', '']);
+				expect(withDatabase(dataDir, snapshot)).toEqual(rows);
+
+				// A household with its own retention, then back: only the field goes.
+				withDatabase(dataDir, (db) => {
+					db.prepare('UPDATE households SET trash_retention = ? WHERE id = ?').run('7', 'household000002');
+				});
+				const down = await migrate(args, 'down', String(fromRetention.length));
+				expect(appliedFiles(down, 'Reverted')).toEqual(fromRetention);
+				expect(households(dataDir)).toEqual(before);
+				expect(withoutTimestamps(readDataDir(dataDir).collections)).toEqual(schemaBefore);
+				expect(withDatabase(dataDir, snapshot)).toEqual(rows);
+
+				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromRetention);
+				assertSchema(readDataDir(dataDir).collections);
+				expect(households(dataDir).map((row) => row.trash_retention)).toEqual(['', '']);
 			});
 		}
 	);

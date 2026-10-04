@@ -51,6 +51,7 @@ import {
 	type TemplateStatus,
 	type TemplateSubtask
 } from '$lib/domain/series-template';
+import { householdOfScope } from '$lib/domain/area';
 import { compareTitles } from '$lib/domain/ordering';
 import type { CalendarDate } from '$lib/domain/berlin-date';
 import {
@@ -116,7 +117,8 @@ export interface TemplateDraft {
 /** Data access of the store; tests pass a fake, the app binds the data layer to its client. */
 export interface RecurrenceData {
 	listRules(options: RequestOptions): Promise<RecurrenceRule[] | null>;
-	createRule(draft: RuleDraft, ticket: string | null): Promise<RecurrenceRule>;
+	/** In `household` ('' for "Privat") when given, else in the area of the client (E7-3). */
+	createRule(draft: RuleDraft, ticket: string | null, household?: string): Promise<RecurrenceRule>;
 	updateRule(id: string, patch: Partial<RuleDraft>): Promise<RecurrenceRule>;
 	setActive(id: string, active: boolean): Promise<RecurrenceRule>;
 	deleteRule(id: string): Promise<void>;
@@ -144,7 +146,7 @@ export function recurrenceData(pb: PocketBase): RecurrenceData {
 		eachOccurrenceReady: (options) => eachOccurrenceReady(pb, options),
 		initialStatusReady: (options) => initialStatusReady(pb, options),
 		templateSubtasksReady: (options) => templateSubtasksReady(pb, options),
-		createRule: (draft, ticket) => createRule(pb, draft, ticket),
+		createRule: (draft, ticket, household) => createRule(pb, draft, ticket, { household }),
 		updateRule: (id, patch) => updateRule(pb, id, patch),
 		setActive: (id, active) => setRuleActive(pb, id, active),
 		deleteRule: (id) => deleteRule(pb, id),
@@ -364,7 +366,9 @@ export class RecurrenceStore implements SeriesChangeSink {
 				...(initialStatus !== null && { initial_status: chosen }),
 				...formParams(values)
 			},
-			ticket.id
+			ticket.id,
+			// The rule lies in the area of its ticket (E7-3).
+			ticket.scope ? householdOfScope(ticket.scope) : undefined
 		);
 	}
 
@@ -421,10 +425,20 @@ export class RecurrenceStore implements SeriesChangeSink {
 		return this.update(id, formParams(values));
 	}
 
-	/** "Wiederholen…" (with `ticket`) or "Neue Regel" (without). */
-	create(draft: RuleDraft, ticket: string | null = null): Promise<EditResult<RecurrenceRule>> {
+	/**
+	 * "Wiederholen…" (with `ticket`) or "Neue Regel" (without), in `household` when given (the area
+	 * of the ticket), else in the area of the tab (E7-3).
+	 */
+	create(
+		draft: RuleDraft,
+		ticket: string | null = null,
+		household?: string
+	): Promise<EditResult<RecurrenceRule>> {
 		return this.#run(async () => {
-			const rule = await this.#data.createRule(draft, ticket);
+			const rule =
+				household === undefined
+					? await this.#data.createRule(draft, ticket)
+					: await this.#data.createRule(draft, ticket, household);
 			this.upsert(rule);
 			this.#notify(`Wiederholung angelegt: ${ruleText(rule)}.`);
 			return rule;
@@ -690,6 +704,15 @@ export class RecurrenceStore implements SeriesChangeSink {
 			}
 		}
 		if (applied.length > 0) this.#notify(appliedTitle(applied));
+	}
+
+	/**
+	 * The area of the tab changed (E7-3, ADR-0059 §2): the rules of the old area go at once, those of
+	 * the new area load. The subscription follows through `connect` of the layout.
+	 */
+	rescope(): void {
+		this.reset();
+		void this.load();
 	}
 
 	reset(): void {

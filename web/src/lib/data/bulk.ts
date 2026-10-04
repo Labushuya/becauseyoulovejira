@@ -5,6 +5,7 @@
 import type PocketBase from 'pocketbase';
 import type { CalendarDate } from '../domain/berlin-date';
 import { berlinDateOf } from '../domain/format';
+import { areaFilter } from './area';
 import { withDataErrors } from './errors';
 import type { RequestOptions } from './options';
 
@@ -41,7 +42,8 @@ export function listSourceEventDates(
 	return withDataErrors(signal, async () => {
 		const records = await pb.collection(INBOX).getFullList<EventSourceRecord>({
 			batch: 500,
-			filter: pb.filter(MAIN_EVENT_FILTER, { kind: 'event', channel: 'notion' }),
+			// Sources lie in the area of their ticket; only those of the area of the client (E7-3).
+			filter: areaFilter(pb, MAIN_EVENT_FILTER, { kind: 'event', channel: 'notion' }),
 			fields: 'ticket,source_date',
 			signal
 		});

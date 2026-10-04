@@ -66,12 +66,14 @@ function requestIsAdmin(e) {
 }
 
 // onRecordCreateRequest; a superuser may set every field (tests, repairs in the admin UI). Only the
-// administrator of the app sets up a connection with access data or folders (ADR-0056 §5).
+// administrator of the app sets up a connection with access data or folders (ADR-0056 §5), and
+// never in a household (E7-3, ADR-0059 §5).
 function guardCreate(e) {
   if (e.hasSuperuserAuth()) {
     return;
   }
   var values = valuesOf(e.record);
+  throwIf(rules.areaViolation(values));
   throwIf(rules.adminViolation(requestIsAdmin(e), null, values));
   throwIf(rules.createViolation(values, secrets, keywords, github, folderRules()) || rules.labelViolation(values.label));
   targets.guardConnection(e, true);

@@ -1,16 +1,13 @@
 // The household store of the (app) layout (ADR-0058, E7-2): it loads once and again on every report
-// of the server (byl/household) and after a reconnection; it asks the layout to load the page anew
-// only when the membership of the tab begins or ends (not for founding, renaming or new rights),
-// with what to say; it keeps a code only until it was handed on; and the notice survives the reload
-// in the session storage of the tab, once.
+// of the server (byl/household) and after a reconnection; it tells the layout when the membership of
+// the tab begins or ends (not for founding, renaming or new rights), with what to say (since E7-3
+// the layout reloads no page, ADR-0059 §8); it keeps a code only until it was handed on; and it
+// saves the retention of the trash of the household (E7-3).
 
 import { describe, expect, it, vi } from 'vitest';
 import type { HouseholdState } from '$lib/domain/household';
 import {
-	HOUSEHOLD_NOTICE_KEY,
 	HouseholdStore,
-	rememberHouseholdNotice,
-	takeHouseholdNotice,
 	type HouseholdData,
 	type HouseholdLive,
 	type HouseholdNotice
@@ -18,7 +15,7 @@ import {
 
 function state(id: string, name = 'Haus Beispiel'): HouseholdState {
 	return {
-		household: { id, name, created: '' },
+		household: { id, name, created: '', trashRetention: '30' },
 		me: { member: 'member00000001', role: 'owner', rights: ['invite'] },
 		members: [],
 		invites: []
@@ -52,7 +49,7 @@ function setup(answers: (HouseholdState | null)[], overrides: Partial<HouseholdD
 }
 
 describe('HouseholdStore', () => {
-	it('loads without a notice, and asks for a reload when the membership ends elsewhere', async () => {
+	it('loads without a notice, and tells the layout when the membership ends elsewhere', async () => {
 		const { store, notices } = setup([
 			state('house000000001'),
 			state('house000000001', 'Neu'),
@@ -61,7 +58,7 @@ describe('HouseholdStore', () => {
 		await store.load();
 		expect(store.state).toBe('ready');
 		expect(notices).toEqual([]);
-		// Renamed by another member: same household, no reload.
+		// Renamed by another member: same household, no notice.
 		await store.load();
 		expect(store.household?.household.name).toBe('Neu');
 		expect(notices).toEqual([]);
@@ -71,14 +68,14 @@ describe('HouseholdStore', () => {
 		expect(notices).toEqual([{ title: 'Du bist nicht mehr Mitglied im Haushalt „Neu“.' }]);
 	});
 
-	it('asks for a reload when another tab joins a household, with the general text', async () => {
+	it('tells the layout when another tab joins a household, with the general text', async () => {
 		const { store, notices } = setup([null, state('house000000001')]);
 		await store.load();
 		await store.load();
 		expect(notices).toEqual([{ title: 'Deine Mitgliedschaft im Haushalt hat sich geändert.' }]);
 	});
 
-	it('founds without a reload, but joins and leaves with one', async () => {
+	it('founds without a notice, but tells about joining and leaving', async () => {
 		const first = setup([null]);
 		await first.store.load();
 		expect(await first.store.found('  Haus  ')).toEqual({ ok: true });
@@ -181,23 +178,39 @@ describe('HouseholdStore', () => {
 	});
 });
 
-describe('notice after loading anew', () => {
-	it('survives once in the session storage and ignores anything else', () => {
-		const storage = new Map<string, string>();
-		const fake = {
-			getItem: (key: string) => storage.get(key) ?? null,
-			setItem: (key: string, value: string) => void storage.set(key, value),
-			removeItem: (key: string) => void storage.delete(key)
+describe('retention of the trash of the household (E7-3)', () => {
+	it('saves the choice, takes the new state and confirms it as a flag', async () => {
+		const saved = {
+			...state('house000000001'),
+			household: { ...state('house000000001').household, trashRetention: '7' as const }
 		};
-		rememberHouseholdNotice(fake, { title: 'Weg', text: 'Mehr' });
-		expect(takeHouseholdNotice(fake)).toEqual({ title: 'Weg', text: 'Mehr' });
-		expect(takeHouseholdNotice(fake)).toBeNull();
-		for (const raw of ['kaputt', '{"title":5}', '{"title":""}', 'null']) {
-			storage.set(HOUSEHOLD_NOTICE_KEY, raw);
-			expect(takeHouseholdNotice(fake), raw).toBeNull();
-			expect(storage.has(HOUSEHOLD_NOTICE_KEY)).toBe(false);
-		}
-		expect(takeHouseholdNotice(null)).toBeNull();
-		rememberHouseholdNotice(null, { title: 'x' });
+		const retention = vi.fn(async () => ({ kind: 'ok' as const, value: saved }));
+		const flags = { show: vi.fn(), dismiss: vi.fn() };
+		const data = {
+			...setup([state('house000000001')]).data,
+			retention
+		} satisfies HouseholdData;
+		const store = new HouseholdStore(data, { ensureValid: () => true, logout: vi.fn() }, flags);
+		await store.load();
+		expect(await store.setRetention('7')).toBe(true);
+		expect(retention).toHaveBeenCalledWith('7', expect.anything());
+		expect(store.household?.household.trashRetention).toBe('7');
+		expect(flags.show).toHaveBeenCalledWith({
+			tone: 'success',
+			title: 'Papierkorb im Haushalt: 7 Tage.'
+		});
+	});
+
+	it('names a refusal on the page and reads the household again', async () => {
+		const { store, data } = setup([state('house000000001')], {
+			retention: vi.fn(async () => ({ kind: 'invalid' as const, problem: 'right' }))
+		});
+		await store.load();
+		expect(await store.setRetention('90')).toBe(false);
+		expect(store.message).toEqual({
+			title: 'Nicht möglich',
+			text: 'Dafür fehlt dir das Recht im Haushalt.'
+		});
+		await vi.waitFor(() => expect(data.fetch).toHaveBeenCalledTimes(2));
 	});
 });

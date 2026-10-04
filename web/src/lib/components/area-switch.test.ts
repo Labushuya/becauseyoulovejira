@@ -1,81 +1,90 @@
-// Component tests for the area switch (CLAUDE.md section 7, E2 plan P-5 and package 2).
+// Component tests for the area switch "Privat | <Haushalt>" (E7-3, ADR-0059 §1): only for an account
+// in a household, the active area pressed and marked, a click changes the area at once and keeps the
+// focus, the choice is remembered per device and account.
 
 import { fireEvent, render, screen } from '@testing-library/svelte';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { AreaStore } from '$lib/stores/area.svelte';
+import AreaSwitchHarness from '$lib/test/AreaSwitchHarness.svelte';
 import AreaSwitch from './AreaSwitch.svelte';
 
-function household() {
-	return screen.getByRole('button', { name: 'Haushalt' });
+const USER = 'user00000000001';
+const HOUSE = { id: 'house0000000001', name: 'Haus Beispiel' };
+
+function storage() {
+	const values = new Map<string, string>();
+	return {
+		values,
+		source: () => ({
+			getItem: (key: string) => values.get(key) ?? null,
+			setItem: (key: string, value: string) => void values.set(key, value)
+		})
+	};
 }
 
-function personal() {
-	return screen.getByRole('button', { name: 'Privat' });
+function setup(household: typeof HOUSE | null) {
+	const memory = storage();
+	const apply = vi.fn<(scope: string | null) => void>();
+	const changed = vi.fn();
+	const store = new AreaStore(memory.source, apply, changed);
+	store.begin(USER);
+	store.followHousehold(household);
+	render(AreaSwitchHarness, { props: { store } });
+	return { store, apply, changed, memory };
 }
+
+const button = (name: string) => screen.getByRole('button', { name });
 
 describe('area switch', () => {
-	it('is a group named "Bereich" with "Privat" active', () => {
+	it('is not shown without a household, and not outside the layout', () => {
+		setup(null);
+		expect(screen.queryByRole('group', { name: 'Bereich' })).toBeNull();
 		render(AreaSwitch);
+		expect(screen.queryByRole('group', { name: 'Bereich' })).toBeNull();
+	});
 
+	it('is a group "Bereich" with "Privat" and the name of the household, "Privat" pressed first', () => {
+		setup(HOUSE);
 		const group = screen.getByRole('group', { name: 'Bereich' });
-		expect(group.contains(personal())).toBe(true);
-		expect(group.contains(household())).toBe(true);
-		expect(personal().getAttribute('aria-pressed')).toBe('true');
+		expect(group.contains(button('Privat'))).toBe(true);
+		expect(group.contains(button('Haus Beispiel'))).toBe(true);
+		expect(button('Privat').getAttribute('aria-pressed')).toBe('true');
+		expect(button('Haus Beispiel').getAttribute('aria-pressed')).toBe('false');
+		expect(group.getAttribute('data-area')).toBe('private');
 	});
 
-	it('shows "Haushalt" as unavailable, linked to the visible note "Demnächst"', () => {
-		render(AreaSwitch);
+	it('changes the area at once, keeps the focus and remembers it for this account', async () => {
+		const { store, apply, changed, memory } = setup(HOUSE);
+		apply.mockClear();
+		const target = button('Haus Beispiel');
+		target.focus();
+		await fireEvent.click(target);
 
-		expect(household().getAttribute('aria-disabled')).toBe('true');
-		expect(household().getAttribute('aria-pressed')).toBeNull();
-		const hintId = household().getAttribute('aria-describedby') ?? '';
-		expect(document.getElementById(hintId)?.textContent?.trim()).toBe('Demnächst');
-		expect(screen.getByText('Demnächst')).toBeTruthy();
+		expect(store.active).toBe('household');
+		expect(store.key).toBe(`h:${HOUSE.id}`);
+		expect(apply).toHaveBeenCalledWith(`h:${HOUSE.id}`);
+		expect(changed).toHaveBeenCalledWith('switch');
+		expect(memory.values.get(`byl-area:${USER}`)).toBe(`household:${HOUSE.id}`);
+		expect(button('Haus Beispiel').getAttribute('aria-pressed')).toBe('true');
+		expect(button('Privat').getAttribute('aria-pressed')).toBe('false');
+		expect(document.activeElement).toBe(button('Haus Beispiel'));
+
+		await fireEvent.click(button('Privat'));
+		expect(store.key).toBe(`u:${USER}`);
+		expect(memory.values.get(`byl-area:${USER}`)).toBe('private');
 	});
 
-	it('shows "Demnächst" as a lozenge inside "Haushalt", not as a third entry', () => {
-		render(AreaSwitch);
-
-		const group = screen.getByRole('group', { name: 'Bereich' });
-		const lozenge = screen.getByText('Demnächst');
-		expect(household().contains(lozenge)).toBe(true);
-		// Since EH-2 the building block Lozenge, muted and with an icon.
-		expect(lozenge.closest('.lozenge')?.getAttribute('data-tone')).toBe('muted');
-		expect(lozenge.closest('.lozenge')?.querySelector('svg[aria-hidden="true"]')).toBeTruthy();
-		expect(Array.from(group.children).map((child) => child.tagName)).toEqual(['BUTTON', 'BUTTON']);
+	it('does nothing when the active area is chosen again', async () => {
+		const { changed } = setup(HOUSE);
+		await fireEvent.click(button('Privat'));
+		expect(changed).not.toHaveBeenCalled();
 	});
 
-	it('keeps both buttons reachable by keyboard', () => {
-		render(AreaSwitch);
-
-		for (const button of [personal(), household()]) {
-			expect(button).toHaveProperty('disabled', false);
-			expect(button.tabIndex).toBe(0);
-			button.focus();
-			expect(document.activeElement).toBe(button);
-		}
-	});
-
-	it('does nothing when "Haushalt" is clicked or activated with the keyboard', async () => {
-		const { container } = render(AreaSwitch);
-		const before = container.innerHTML;
-
-		await fireEvent.click(household());
-		household().focus();
-		await fireEvent.keyDown(household(), { key: 'Enter' });
-		await fireEvent.keyDown(household(), { key: ' ' });
-
-		expect(container.innerHTML).toBe(before);
-		expect(personal().getAttribute('aria-pressed')).toBe('true');
-		expect(document.activeElement).toBe(household());
-	});
-
-	it('gives every instance its own hint id', () => {
-		render(AreaSwitch);
-		render(AreaSwitch);
-
-		const ids = screen
-			.getAllByRole('button', { name: 'Haushalt' })
-			.map((button) => button.getAttribute('aria-describedby'));
-		expect(new Set(ids).size).toBe(2);
+	it('shows a long name of the household in full as its title', () => {
+		setup({ id: HOUSE.id, name: 'Haushalt mit einem sehr langen Namen, der nicht ganz passt' });
+		const target = button('Haushalt mit einem sehr langen Namen, der nicht ganz passt');
+		expect(target.getAttribute('title')).toBe(
+			'Haushalt mit einem sehr langen Namen, der nicht ganz passt'
+		);
 	});
 });

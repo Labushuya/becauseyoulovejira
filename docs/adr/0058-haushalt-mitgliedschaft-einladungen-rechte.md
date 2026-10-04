@@ -126,3 +126,10 @@ Zwei Lücken zeigte die Prüfung der Regeln:
 - **Wege des Servers** laufen nicht über Request-Hooks und bleiben frei: Routen des Haushalts, Erzeugen von Wiederholungen und „Wiederholen…“, Eingang → Ticket, Duplizieren, Wiederherstellen aus dem Papierkorb, Sicherung und Wiederherstellung, die spätere Route zum Verschieben (E7-4).
 - **Oberfläche:** Die SPA sendet `owner`, `household` und `scope` bei keinem Update (nur `owner` beim Anlegen); nichts zu ändern.
 - **Tests:** `tests/integration/household-fields.test.mjs` (eigene Wegwerf-Instanz, A und B in H1, C in H2), `tests/unit/scope-rules.test.mjs`; angepasst: Verschieben in `rules.test.mjs` nur noch als Ablehnung, Modell-Hooks beim Bereichswechsel (`ticket-keys`, `ticket-guards`, `ticket-history`, `project-hierarchy`) über den Superuser.
+
+## Nachtrag E7-3 (2026-10-04, [ADR-0059](0059-bereiche-privat-und-haushalt.md))
+
+- **`purge` wirkt:** Endgültig löschen und „Papierkorb leeren“ im Haushalt nur mit der Rolle Inhaber oder dem Recht `purge` (sonst 403); dasselbe Recht ändert die Aufbewahrung des Papierkorbs im Haushalt (`households.trash_retention`, `POST /api/byl/household/retention`, Migration `1790204100`). `GET /api/byl/household` nennt sie als `household.trash_retention`.
+- **§5 „Offene Tabs“ geändert:** Beginnt oder endet die Mitgliedschaft eines Tabs, lädt er nicht mehr neu. Weil jeder Store seit E7-3 nur den Bereich des Tabs zeigt (Filter auf dem Server, auch Realtime), genügt es, Haushalt und Namen neu zu laden; geht der Haushalt des Tabs verloren, wechselt er in den Bereich Privat. Ungespeicherte Eingaben bleiben.
+- **§7:** Der Umschalter „Privat | Haushalt“ ist aktiv und erscheint nur für Mitglieder eines Haushalts.
+- **Bereich eines Eintrags:** E7-3 nutzt den Schutz aus dem Nachtrag oben (`scope-guard`) für Updates, auch der Verbindungen; neue Verbindungen mit `household` lehnt `connection-rules.areaViolation` ab.

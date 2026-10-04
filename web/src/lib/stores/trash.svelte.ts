@@ -45,7 +45,13 @@ export const TRASH_CONCURRENCY = 4;
 
 /** Data access of the store; tests pass a fake, the app binds the data layer. */
 export interface TrashData {
-	list(signal?: AbortSignal): Promise<{ items: TrashItem[]; retention: TrashRetention }>;
+	/**
+	 * The trash of the area of the tab (E7-3): its tickets and its retention, and the setting of the
+	 * account for its private trash (`ownRetention`, the same as `retention` when missing).
+	 */
+	list(
+		signal?: AbortSignal
+	): Promise<{ items: TrashItem[]; retention: TrashRetention; ownRetention?: TrashRetention }>;
 	preview(id: string, signal?: AbortSignal): Promise<TrashPreview>;
 	restore(id: string, options: RestoreOptions): Promise<RestoreResult>;
 	/** The decisions of the decision help (ADR-0047); the preview afterwards. */
@@ -168,6 +174,8 @@ export class TrashStore {
 	#error = $state<string | null>(null);
 	#items = $state.raw<readonly TrashItem[]>([]);
 	#retention = $state<TrashRetention>(DEFAULT_RETENTION);
+	/** The setting of the account for its private trash, also while a household is shown (E7-3). */
+	#ownRetention = $state<TrashRetention>(DEFAULT_RETENTION);
 	#progress = $state<TrashProgress | null>(null);
 	#result = $state<TrashResult | null>(null);
 	readonly #needs = new SvelteMap<string, RestoreNeed>();
@@ -202,8 +210,14 @@ export class TrashStore {
 		return this.#state === 'ready' ? this.#items.length : null;
 	}
 
+	/** Retention of the trash of the area of the tab (of the household, else of the account). */
 	get retention(): TrashRetention {
 		return this.#retention;
+	}
+
+	/** The setting of the account for its private trash ("Einstellungen → Tickets"). */
+	get ownRetention(): TrashRetention {
+		return this.#ownRetention;
 	}
 
 	get progress(): TrashProgress | null {
@@ -251,6 +265,22 @@ export class TrashStore {
 	}
 
 	/**
+	 * The area of the tab changed (E7-3): the trash of the old area goes at once, the one of the new
+	 * area loads.
+	 */
+	rescope(): void {
+		this.#controller?.abort();
+		this.#controller = null;
+		this.#reloadAgain = false;
+		this.#items = [];
+		this.#needs.clear();
+		this.#choices.clear();
+		this.#result = null;
+		this.#state = 'loading';
+		void this.reload();
+	}
+
+	/**
 	 * Reads the trash again after every change the server reports, after a reconnection and after
 	 * a subscription that came only after failed attempts.
 	 */
@@ -280,9 +310,10 @@ export class TrashStore {
 		this.#controller = controller;
 		if (this.#state !== 'ready') this.#state = 'loading';
 		try {
-			const { items, retention } = await this.#data.list(controller.signal);
+			const { items, retention, ownRetention } = await this.#data.list(controller.signal);
 			this.#items = items;
 			this.#retention = retention;
+			this.#ownRetention = ownRetention ?? retention;
 			for (const id of [...this.#needs.keys()]) {
 				if (!items.some((item) => item.id === id)) this.#needs.delete(id);
 			}
@@ -581,21 +612,24 @@ export class TrashStore {
 		}
 	}
 
-	/** Saves the retention of the account ("Einstellungen → Darstellung"). */
+	/**
+	 * Saves the retention of the account for its private trash ("Einstellungen → Tickets"); the trash
+	 * of a household keeps its own (E7-3). The list loads again for the retention of its area.
+	 */
 	async setRetention(retention: TrashRetention): Promise<boolean> {
 		if (!this.#session.ensureValid()) return false;
-		const previous = this.#retention;
-		this.#retention = retention;
+		const previous = this.#ownRetention;
+		this.#ownRetention = retention;
 		try {
-			this.#retention = await this.#data.saveRetention(retention);
+			this.#ownRetention = await this.#data.saveRetention(retention);
 			this.#flags.show({
 				tone: 'success',
-				title: `Papierkorb: ${RETENTION_LABELS[this.#retention]} gespeichert.`
+				title: `Papierkorb: ${RETENTION_LABELS[this.#ownRetention]} gespeichert.`
 			});
 			void this.reload();
 			return true;
 		} catch (error) {
-			this.#retention = previous;
+			this.#ownRetention = previous;
 			const failure = toDataError(error);
 			if (failure.kind === 'session') this.#session.logout();
 			const reason = reasonOf(failure);

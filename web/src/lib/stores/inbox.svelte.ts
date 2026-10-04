@@ -609,6 +609,16 @@ export class InboxStore {
 		}
 	}
 
+	/**
+	 * The area of the tab changed (E7-3, ADR-0059 §2): the entries of the old area go at once, the new
+	 * ones of the new area load, and a shown view of handled entries loads its first page again.
+	 */
+	rescope(): void {
+		const query = this.#query;
+		this.reset();
+		this.activate(query);
+	}
+
 	/** Aborts all requests and timers and empties the store. */
 	reset(): void {
 		this.#newController?.abort();

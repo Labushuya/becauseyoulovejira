@@ -167,6 +167,15 @@ export function transferHousehold(
 	);
 }
 
+/** The retention of the trash of the household (E7-3; owner or right "purge"). */
+export function setHouseholdRetention(
+	pb: PocketBase,
+	retention: string,
+	options: RequestOptions = {}
+): Promise<HouseholdAnswer<HouseholdState | null>> {
+	return ask(options.signal, send(pb, `${ROUTE}/retention`, { retention }, options.signal), state);
+}
+
 /** Leaves the household (every member but the owner). */
 export function leaveHousehold(
 	pb: PocketBase,

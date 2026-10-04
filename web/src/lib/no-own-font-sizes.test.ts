@@ -13,12 +13,11 @@ const SRC_DIR = resolve(import.meta.dirname, '..');
 const TOKENS_CSS = join('lib', 'styles', 'tokens.css');
 
 /** Numbers left from before G-6 in all listed files together; lower it when one goes. */
-const LEGACY_COUNT = 139;
+const LEGACY_COUNT = 138;
 
 /** Files that still carry font sizes as numbers (as of G-6). */
 const LEGACY_FILES = [
 	'lib/components/AppHeader.svelte',
-	'lib/components/AreaSwitch.svelte',
 	'lib/components/ChannelsView.svelte',
 	'lib/components/ChipGroup.svelte',
 	'lib/components/ClipboardImport.svelte',

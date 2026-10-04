@@ -105,3 +105,13 @@ routerAdd(
   },
   $apis.requireAuth('users')
 );
+
+// { retention }: the retention of the trash of the household (E7-3; owner or right "purge").
+routerAdd(
+  'POST',
+  '/api/byl/household/retention',
+  function (e) {
+    return require(`${__hooks}/lib/household-service.js`).setRetention(e);
+  },
+  $apis.requireAuth('users')
+);

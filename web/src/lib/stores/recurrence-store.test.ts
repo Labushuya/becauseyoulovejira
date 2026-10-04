@@ -970,3 +970,50 @@ describe('RecurrenceStore: the sub-tasks of the template (plan WV-3)', () => {
 		);
 	});
 });
+
+describe('RecurrenceStore: area of the tab (E7-3, ADR-0059 §2 and §3)', () => {
+	it('drops the rules of the old area at once and loads those of the new one', async () => {
+		const data = fakeData([rule()]);
+		const store = new RecurrenceStore(data, session());
+		await store.load();
+		const household = rule({ id: 'rule00000000002', title: 'Fenster putzen' });
+		vi.mocked(data.listRules).mockResolvedValueOnce([household]);
+
+		store.rescope();
+
+		expect(store.rules).toEqual([]);
+		expect(store.ruleById('rule00000000001')).toBeNull();
+		await vi.waitFor(() => expect(store.state).toBe('ready'));
+		expect(store.rules.map((item) => item.id)).toEqual(['rule00000000002']);
+		expect(data.listRules).toHaveBeenCalledTimes(2);
+	});
+
+	it('puts the rule of "Wiederholen…" in the area of its ticket, a new one in the area of the tab', async () => {
+		const data = fakeData([]);
+		const store = new RecurrenceStore(data, session());
+		await store.load();
+		const values = defaultFormValues('2026-09-28', '2026-09-25');
+
+		await store.repeat(ticket({ scope: 'h:house0000000001' }), { values, initialStatus: 'open' });
+		await store.repeat(ticket({ scope: 'u:user00000000001' }), { values, initialStatus: 'open' });
+		await store.create({
+			title: 'Neu',
+			description: '',
+			project: null,
+			tags: [],
+			priority: null,
+			mode: 'calendar',
+			freq: 'weekly',
+			interval: 1,
+			weekdays: ['MO'],
+			month_day: 0,
+			anchor: '2026-09-28',
+			lead_days: 3
+		});
+
+		const calls = vi.mocked(data.createRule).mock.calls;
+		expect(calls[0]?.slice(1)).toEqual(['ticket000000001', 'house0000000001']);
+		expect(calls[1]?.slice(1)).toEqual(['ticket000000001', '']);
+		expect(calls[2]?.slice(1)).toEqual([null]);
+	});
+});

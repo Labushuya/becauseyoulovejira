@@ -154,7 +154,13 @@ function stateFor(app, userId, now) {
     }
   }
   return {
-    household: { id: household.id, name: household.getString('name'), created: household.getString('created') },
+    household: {
+      id: household.id,
+      name: household.getString('name'),
+      created: household.getString('created'),
+      // Retention of its trash (E7-3); '' for the default of 30 days, also before the migration.
+      trash_retention: rules.retentionOf(household.getString('trash_retention'))
+    },
     me: { member: own.id, role: me.role === rules.OWNER ? rules.OWNER : rules.MEMBER, rights: rules.effectiveRights(me.role, me.rights) },
     members: memberViews,
     invites: invites
@@ -573,6 +579,67 @@ function transfer(e) {
   });
 }
 
+/** Whether the migration 1790204100 ran (households.trash_retention exists). */
+function retentionReady(app) {
+  try {
+    return !!app.findCachedCollectionByNameOrId(HOUSEHOLDS).fields.getByName('trash_retention');
+  } catch (err) {
+    return false;
+  }
+}
+
+/**
+ * The membership of `userId` in `householdId` as the rules see it ({ id, role, rights, user,
+ * household }), or null. For the trash of a household (E7-3): who may delete for good there.
+ */
+function membershipIn(app, userId, householdId) {
+  if (userId === '' || householdId === '') {
+    return null;
+  }
+  var found = app.findRecordsByFilter(MEMBERS, 'user = {:user} && household = {:household}', '', 1, 0, {
+    user: userId,
+    household: householdId
+  });
+  return found.length > 0 ? plain(found[0]) : null;
+}
+
+/** Whether `userId` may delete for good in the trash of `householdId`: the owner or "purge" (E7-3). */
+function mayPurgeIn(app, userId, householdId) {
+  var member = membershipIn(app, userId, householdId);
+  return member !== null && rules.mayPurge(member);
+}
+
+/**
+ * POST /api/byl/household/retention { retention }: the retention of the trash of the household
+ * (E7-3), for the owner and members with "purge". Before the migration 1790204100 503 "missing".
+ */
+function setRetention(e) {
+  if (unavailable(e)) {
+    return;
+  }
+  if (!retentionReady(e.app)) {
+    return e.json(503, { status: 503, message: UNAVAILABLE, reason: 'missing' });
+  }
+  var input = rules.retentionInput(bodyOf(e));
+  if (input.problem) {
+    return refuse(e, 'retention', input.problem);
+  }
+  return run(e, 'retention', 200, function (txApp, outcome) {
+    var own = actorIn(txApp, e, outcome);
+    if (own === null) {
+      return;
+    }
+    if (!rules.mayPurge(plain(own))) {
+      outcome.problem = 'right';
+      return;
+    }
+    var household = txApp.findRecordById(HOUSEHOLDS, outcome.household);
+    household.set('trash_retention', input.retention);
+    txApp.save(household);
+    outcome.notify = userIdsOf(membersOf(txApp, outcome.household));
+  });
+}
+
 /**
  * POST /api/byl/household/leave: every member but the owner leaves at once. The entries of the
  * account stay in the household; the API rules hide every household record from it right away.
@@ -611,5 +678,9 @@ module.exports = {
   setRights: setRights,
   removeMember: removeMember,
   transfer: transfer,
-  leave: leave
+  leave: leave,
+  setRetention: setRetention,
+  retentionReady: retentionReady,
+  membershipIn: membershipIn,
+  mayPurgeIn: mayPurgeIn
 };

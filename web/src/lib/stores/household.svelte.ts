@@ -5,10 +5,10 @@
 // the store and only until the page says it was handed on (never in a flag, the address or storage).
 //
 // When the membership of this tab begins or ends (joined, left, removed, also in another tab or by
-// another member), the API rules show or hide the household records at once; the stores of the
-// layout would keep what they loaded. The store then calls `membershipChanged` with what to say,
-// and the layout loads the page anew and shows it as a flag afterwards. Founding a household does
-// not reload: there is nothing in it yet.
+// another member), the API rules show or hide the household records at once. The store then calls
+// `membershipChanged` with what to say; since E7-3 (ADR-0059 §8) the layout reloads no page: the
+// stores show one area only, the area follows the household (lost: "Privat"), and the notice
+// stands as a flag. Founding a household changes nothing there: it is empty.
 
 import type PocketBase from 'pocketbase';
 import { createContext } from 'svelte';
@@ -22,6 +22,7 @@ import {
 	removeHouseholdMember,
 	renameHousehold,
 	revokeHouseholdInvite,
+	setHouseholdRetention,
 	setHouseholdRights,
 	subscribeHousehold,
 	transferHousehold,
@@ -40,6 +41,7 @@ import {
 	type HouseholdState,
 	type InviteGrant
 } from '$lib/domain/household';
+import { RETENTION_LABELS, type TrashRetention } from '$lib/domain/trash';
 import { RESTART_NEEDED, restartNeeded } from '$lib/guidance/texts';
 import { SILENT_FLAGS, type FlagSink } from './flags.svelte';
 import { hold, type HoldOptions } from './realtime';
@@ -62,6 +64,8 @@ export interface HouseholdData {
 	remove(memberId: string, options: RequestOptions): Promise<HouseholdAnswer<State>>;
 	transfer(memberId: string, options: RequestOptions): Promise<HouseholdAnswer<State>>;
 	leave(options: RequestOptions): Promise<HouseholdAnswer<State>>;
+	/** The retention of the trash of the household (E7-3; owner or right "purge"). */
+	retention?(retention: TrashRetention, options: RequestOptions): Promise<HouseholdAnswer<State>>;
 }
 
 export function householdData(pb: PocketBase): HouseholdData {
@@ -75,7 +79,8 @@ export function householdData(pb: PocketBase): HouseholdData {
 		setRights: (memberId, rights, options) => setHouseholdRights(pb, memberId, rights, options),
 		remove: (memberId, options) => removeHouseholdMember(pb, memberId, options),
 		transfer: (memberId, options) => transferHousehold(pb, memberId, options),
-		leave: (options) => leaveHousehold(pb, options)
+		leave: (options) => leaveHousehold(pb, options),
+		retention: (retention, options) => setHouseholdRetention(pb, retention, options)
 	};
 }
 
@@ -92,7 +97,7 @@ export function householdLive(pb: PocketBase): HouseholdLive {
 	};
 }
 
-/** What the layout says after loading the page anew. */
+/** What the layout says when the membership of the tab began or ended. */
 export interface HouseholdNotice {
 	title: string;
 	text?: string;
@@ -102,7 +107,7 @@ export type HouseholdLoad = 'idle' | 'loading' | 'ready' | 'missing' | 'error';
 
 /** What runs; one action at a time. */
 export type HouseholdBusy =
-	| { kind: 'found' | 'join' | 'rename' | 'invite' | 'leave' }
+	| { kind: 'found' | 'join' | 'rename' | 'invite' | 'leave' | 'retention' }
 	| { kind: 'revoke'; inviteId: string }
 	| { kind: 'rights' | 'remove' | 'transfer'; memberId: string }
 	| null;
@@ -352,7 +357,24 @@ export class HouseholdStore {
 		return true;
 	}
 
-	/** "Austreten": every member but the owner; the page loads anew. */
+	/**
+	 * "Papierkorb im Haushalt" (E7-3, ADR-0059 §6): the retention of the trash of the household, for
+	 * the owner and members with "purge"; the server decides.
+	 */
+	async setRetention(retention: TrashRetention): Promise<boolean> {
+		const save = this.#data.retention;
+		if (save === undefined) return false;
+		const answer = await this.#run({ kind: 'retention' }, () => save(retention, this.#options()));
+		if (answer.kind !== 'ok') return this.#refused(answer);
+		this.#apply(answer.value, null);
+		this.#flags.show({
+			tone: 'success',
+			title: HOUSEHOLD_TEXTS.retentionSaved(RETENTION_LABELS[retention])
+		});
+		return true;
+	}
+
+	/** "Austreten": every member but the owner; the area of the tab becomes "Privat". */
 	async leave(): Promise<boolean> {
 		const name = this.#current?.household.name ?? '';
 		const answer = await this.#run({ kind: 'leave' }, () => this.#data.leave(this.#options()));
@@ -442,45 +464,6 @@ export class HouseholdStore {
 		// A refusal says the page knew too much: read the household again.
 		if (answer.kind === 'invalid') void this.load();
 		return false;
-	}
-}
-
-/** sessionStorage key of the notice the layout shows after loading anew. */
-export const HOUSEHOLD_NOTICE_KEY = 'byl-household-notice';
-
-type NoticeStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> | null;
-
-/** sessionStorage of the tab, or null where it is not available. */
-export function noticeStorage(): NoticeStorage {
-	try {
-		return typeof sessionStorage === 'undefined' ? null : sessionStorage;
-	} catch {
-		return null;
-	}
-}
-
-/** Keeps `notice` for the next page load of this tab; a blocked storage only loses the flag. */
-export function rememberHouseholdNotice(storage: NoticeStorage, notice: HouseholdNotice): void {
-	try {
-		storage?.setItem(HOUSEHOLD_NOTICE_KEY, JSON.stringify(notice));
-	} catch {
-		// Without storage the page loads anew without the flag.
-	}
-}
-
-/** The kept notice, once; null without one or for anything that is not one. */
-export function takeHouseholdNotice(storage: NoticeStorage): HouseholdNotice | null {
-	try {
-		const raw = storage?.getItem(HOUSEHOLD_NOTICE_KEY) ?? null;
-		if (raw === null) return null;
-		storage?.removeItem(HOUSEHOLD_NOTICE_KEY);
-		const value: unknown = JSON.parse(raw);
-		if (typeof value !== 'object' || value === null) return null;
-		const { title, text } = value as { title?: unknown; text?: unknown };
-		if (typeof title !== 'string' || title === '' || title.length > 300) return null;
-		return typeof text === 'string' && text.length <= 300 ? { title, text } : { title };
-	} catch {
-		return null;
 	}
 }
 

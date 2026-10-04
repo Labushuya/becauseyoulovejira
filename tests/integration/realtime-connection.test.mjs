@@ -76,7 +76,9 @@ describe('realtime subscription on one connection (plan EH-5)', () => {
 	});
 
 	it('delivers a household connection to the members of the household only', async () => {
-		const connection = await s.a.collection('connections').create({
+		// Since E7-3 an app account creates no connection in a household (ADR-0059 §5); one from before
+		// still reaches the members, so the superuser creates it here.
+		const connection = await s.superuser.collection('connections').create({
 			owner: s.ids.a,
 			household: s.h1.id,
 			type: 'calendar',

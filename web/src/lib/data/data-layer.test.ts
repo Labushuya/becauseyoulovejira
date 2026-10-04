@@ -1,7 +1,13 @@
 // Static rules of the data layer (ADR-0006 section 1, E2 plan package 4): no SvelteKit or app
 // imports (the root integration tests load the modules directly), filters only through
-// pb.filter(), no `any`, and every exported access function takes the PocketBase instance first
-// and accepts a signal.
+// pb.filter() (since E7-3 also through areaFilter of area.ts, which narrows to the area of the
+// client and passes everything on to pb.filter(), ADR-0059 §2), no `any`, and every exported access
+// function takes the PocketBase instance first and accepts a signal.
+
+/** The start of a filter: pb.filter( or areaFilter(pb, with the same arguments after it. */
+const FILTER_CALL = String.raw`(?:pb\.filter\(|areaFilter\(pb, )`;
+/** The first argument: a plain text literal, a constant or a *Expression(query) of constants. */
+const FILTER_FIRST = "('[^'`$+]*'|[A-Z_]+|[a-z]\\w*Expression\\(\\w+\\)),";
 
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -48,7 +54,7 @@ describe('web/src/lib/data', () => {
 	it.each(modules)('%s builds every filter with pb.filter()', (name) => {
 		for (const [, value] of read(name).matchAll(/\bfilter:\s*([^\n]+)/g)) {
 			expect(value, `${name}: filter ${value}`).toMatch(
-				/^pb\.filter\(('[^'`$+]*'|[A-Z_]+|[a-z]\w*Expression\(\w+\)),/
+				new RegExp(`^${FILTER_CALL}${FILTER_FIRST}`)
 			);
 		}
 	});
@@ -59,7 +65,9 @@ describe('web/src/lib/data', () => {
 		// only pick and join constants, so every value still reaches the server as a parameter of
 		// pb.filter(). Two shapes: one ternary, or a list of constants that conditions extend.
 		const code = read(name);
-		for (const [, fn = ''] of code.matchAll(/\bfilter:\s*pb\.filter\(([a-z]\w*Expression)\(/g)) {
+		for (const [, fn = ''] of code.matchAll(
+			new RegExp(String.raw`\bfilter:\s*${FILTER_CALL}([a-z]\w*Expression)\(`, 'g')
+		)) {
 			const body = new RegExp(
 				`^function ${fn}\\([^)]*\\): string \\{\\n([\\s\\S]*?)\\n\\}$`,
 				'm'
@@ -84,7 +92,9 @@ describe('web/src/lib/data', () => {
 
 	it.each(modules)('%s builds filter constants only from plain text literals', (name) => {
 		const code = read(name);
-		for (const [, constant] of code.matchAll(/\bfilter:\s*pb\.filter\(([A-Z_]+),/g)) {
+		for (const [, constant] of code.matchAll(
+			new RegExp(String.raw`\bfilter:\s*${FILTER_CALL}([A-Z_]+),`, 'g')
+		)) {
 			const definition = new RegExp(
 				`^const ${constant} = \\[\\n([\\s\\S]*?)\\n\\]\\.join\\(' && '\\);$`,
 				'm'

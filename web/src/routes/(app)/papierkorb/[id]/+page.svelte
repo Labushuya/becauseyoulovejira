@@ -13,6 +13,7 @@
 	import { ticketLinks } from '$lib/stores/open-mode.svelte';
 	import { getTrashStore } from '$lib/stores/trash.svelte';
 	import { trashHref } from '$lib/ticket-links';
+	import { TrashArea } from '$lib/trash-area.svelte';
 
 	// Preview of one ticket in the trash (/papierkorb/<record id>, ADR-0037 §9), read-only. It loads
 	// through the trash route and again when the trash changes (another tab restored or deleted it).
@@ -21,10 +22,12 @@
 	// remembered way. "Endgültig löschen …" asks first and leads back to the table. The decision
 	// help of a blocked ticket (ADR-0047) answers with the preview afterwards; a sub-task restored on
 	// its own leaves the preview of its group in place, and a choice its restore needs (target
-	// project) asks in the same inline question.
+	// project) asks in the same inline question. In a household "Endgültig löschen …" needs the
+	// owner or the right "purge" (E7-3, ADR-0059 §6).
 	const store = getTrashStore();
 	const catalog = getCatalogStore();
 	const links = ticketLinks();
+	const trashArea = new TrashArea();
 	const id = $derived(page.params.id ?? '');
 
 	let preview = $state<TrashPreview | null>(null);
@@ -115,7 +118,7 @@
 		onrestore={(options) => void restore(options)}
 		onresolve={resolve}
 		ondetach={(ticketId) => void detach(ticketId)}
-		onpurge={() => (asking = true)}
+		onpurge={trashArea.canPurge ? () => (asking = true) : null}
 		ondismissneed={dismissNeed}
 		onclose={() => goto(trashHref())}
 	/>

@@ -65,8 +65,11 @@
 		needOf: (id: string) => RestoreNeed | null;
 		isBusy: (id: string) => boolean;
 		onrestore: (id: string, options: RestoreOptions) => void;
-		/** "Endgültig löschen …": the view asks before. */
-		onpurge: (item: TrashItem) => void;
+		/**
+		 * "Endgültig löschen …": the view asks before. Null without the right "purge" in a household
+		 * (E7-3): the menu offers neither it nor the way to the decision help.
+		 */
+		onpurge: ((item: TrashItem) => void) | null;
 		ondismissneed: (id: string) => void;
 		columnFit?: ColumnFit;
 	} = $props();
@@ -106,14 +109,18 @@
 	 * leads to its decision help instead of "Endgültig löschen …" (ADR-0047).
 	 */
 	function menuOf(item: TrashItem, busy: boolean): MenuAction[] {
-		return [
+		const actions: MenuAction[] = [
 			{ label: 'Vorschau öffnen', href: hrefOf(item.id) },
 			{
 				label: 'Wiederherstellen',
 				separated: true,
 				busy,
 				onselect: () => onrestore(item.id, {})
-			},
+			}
+		];
+		const purge = onpurge;
+		if (purge === null) return actions;
+		actions.push(
 			item.dependencies > 0
 				? { label: 'Abhängigkeiten auflösen', separated: true, href: hrefOf(item.id) }
 				: {
@@ -121,9 +128,10 @@
 						dialog: true,
 						separated: true,
 						locked: busy,
-						onselect: () => onpurge(item)
+						onselect: () => purge(item)
 					}
-		];
+		);
+		return actions;
 	}
 </script>
 

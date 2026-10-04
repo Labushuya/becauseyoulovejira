@@ -11,7 +11,7 @@ import { MEMBER_CONTEXT, useContext } from '$lib/test/context';
 import Page from './+page.svelte';
 
 const STATE: HouseholdState = {
-	household: { id: 'house000000001', name: 'Haus Beispiel', created: '' },
+	household: { id: 'house000000001', name: 'Haus Beispiel', created: '', trashRetention: '30' },
 	me: { member: 'member00000002', role: 'member', rights: [] },
 	members: [
 		{

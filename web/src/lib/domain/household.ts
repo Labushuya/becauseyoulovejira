@@ -4,6 +4,8 @@
 // (parity test); the server decides, the page only leaves out what it would refuse. Pure: no SDK,
 // no SvelteKit.
 
+import { parseRetention, type TrashRetention } from './trash';
+
 /** Rights besides the normal use of the household, in the order of the page. */
 export const RIGHTS = ['invite', 'remove', 'delegate', 'rename', 'purge', 'move_out'] as const;
 export type HouseholdRight = (typeof RIGHTS)[number];
@@ -25,7 +27,7 @@ export const RIGHT_HINTS: Readonly<Record<HouseholdRight, string>> = {
 	remove: 'Mitglieder aus dem Haushalt entfernen, nie den Inhaber.',
 	delegate: 'Eigene Rechte an andere Mitglieder geben und wieder nehmen.',
 	rename: 'Den Haushalt umbenennen.',
-	purge: 'Tickets des Haushalts endgültig löschen. Wirkt mit einer späteren Version.',
+	purge: 'Tickets im Papierkorb des Haushalts endgültig löschen und seine Aufbewahrung ändern.',
 	move_out: 'Einträge des Haushalts ins Private verschieben. Wirkt mit einer späteren Version.'
 };
 
@@ -60,7 +62,8 @@ export const HOUSEHOLD_PROBLEMS: Readonly<Record<string, string>> = {
 	'invites-full': `Höchstens ${OPEN_INVITES_MAX} offene Codes. Widerrufe zuerst einen.`,
 	'owner-leave':
 		'Als Inhaber kannst du nicht austreten. Übertrage zuerst die Inhaberschaft an ein anderes Mitglied. ' +
-		'Einen Haushalt auflösen geht erst mit einer späteren Version.'
+		'Einen Haushalt auflösen geht erst mit einer späteren Version.',
+	retention: 'Bitte 7, 30 oder 90 Tage oder „Nie automatisch“ wählen.'
 };
 
 /** Text of a refused request, or a general one for a problem the page does not know. */
@@ -174,6 +177,14 @@ export function leaveProblem(actor: Membership): string {
 	return actor.role === 'owner' ? 'owner-leave' : '';
 }
 
+/**
+ * Whether a membership may delete for good in the trash of its household and set its retention
+ * (E7-3, lib/household-rules.js mayPurge): the owner and every member with "purge".
+ */
+export function mayPurge(member: Membership): boolean {
+	return may(member, 'purge');
+}
+
 /** The rights `actor` may give or take at another member: his own, with "delegate". */
 export function delegableRights(actor: Membership): readonly HouseholdRight[] {
 	return may(actor, 'delegate') ? effectiveRights(actor.role, actor.rights) : [];
@@ -229,6 +240,11 @@ export interface Household {
 	id: string;
 	name: string;
 	created: string;
+	/**
+	 * Retention of the trash of the household (E7-3, migration 1790204100): 7, 30, 90 days or
+	 * "never"; the default of 30 days when the server sends nothing (also before the migration).
+	 */
+	trashRetention: TrashRetention;
 }
 
 /** The household of the signed-in account as GET /api/byl/household answers it. */
@@ -351,7 +367,12 @@ export function parseHouseholdAnswer(value: unknown): HouseholdState | null | un
 		return undefined;
 	}
 	return {
-		household: { id, name, created: textOf(household.created) ?? '' },
+		household: {
+			id,
+			name,
+			created: textOf(household.created) ?? '',
+			trashRetention: parseRetention(household.trash_retention)
+		},
 		me: { member: meMember, role: meRole, rights: meRights },
 		members,
 		invites
@@ -409,5 +430,10 @@ export const HOUSEHOLD_TEXTS = {
 	transferText:
 		'Du wirst Mitglied und behältst alle Rechte. Nur der neue Inhaber kann die Inhaberschaft danach weitergeben.',
 	ownerLeave: HOUSEHOLD_PROBLEMS['owner-leave'] ?? '',
-	rate: 'Zu viele Versuche. Bitte ein paar Minuten warten und dann erneut versuchen.'
+	rate: 'Zu viele Versuche. Bitte ein paar Minuten warten und dann erneut versuchen.',
+	retentionTitle: 'Papierkorb im Haushalt',
+	retentionText:
+		'Tickets im Papierkorb des Haushalts werden nach dieser Zeit endgültig gelöscht. Dein privater Papierkorb behält seine eigene Einstellung unter „Tickets“.',
+	retentionReadOnly: 'Ändern dürfen der Inhaber und Mitglieder mit dem Recht „Endgültig löschen“.',
+	retentionSaved: (label: string) => `Papierkorb im Haushalt: ${label}.`
 } as const;

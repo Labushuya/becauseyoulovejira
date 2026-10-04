@@ -53,4 +53,24 @@ describe('channel catalog', () => {
 				.getAttribute('href')
 		).toBe('/einstellungen/hilfe#konten');
 	});
+
+	it('offers no connection in the household area, only "Nur im privaten Bereich" (E7-3, ADR-0059 §5)', () => {
+		render(ChannelCatalog, { props: { connections: [], hrefOf, admin: true, household: true } });
+		const catalog = screen.getByRole('region', { name: 'Kanal hinzufügen' });
+		const hint = within(catalog)
+			.getByText('Verbindungen gibt es nur im privaten Bereich')
+			.closest('[data-tone]');
+		expect(hint?.getAttribute('data-tone')).toBe('info');
+		expect(
+			within(hint as HTMLElement)
+				.getByRole('link', { name: 'Mehr zu den Bereichen' })
+				.getAttribute('href')
+		).toBe('/einstellungen/hilfe#bereiche');
+		// Every service and WhatsApp Web stay private; Proton per file works in the household.
+		expect(within(catalog).getAllByText('Nur im privaten Bereich')).toHaveLength(8);
+		expect(within(catalog).queryAllByRole('link', { name: /^(Weitere )?[Ee]inrichten/ })).toEqual(
+			[]
+		);
+		expect(within(catalog).getByRole('link', { name: 'Anleitung: Proton Mail' })).toBeTruthy();
+	});
 });

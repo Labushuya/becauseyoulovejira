@@ -53,8 +53,11 @@
 		onresolve: (actions: readonly ResolveAction[]) => Promise<SourceActionResult<TrashPreview>>;
 		/** A sub-task of the group alone, as a ticket of its own. */
 		ondetach: (ticketId: string) => void;
-		/** "Endgültig löschen …": the owner asks before. */
-		onpurge: () => void;
+		/**
+		 * "Endgültig löschen …": the owner asks before. Null without the right "purge" in a household
+		 * (E7-3): the footer offers only "Wiederherstellen".
+		 */
+		onpurge: (() => void) | null;
 		ondismissneed: () => void;
 		onclose: () => void;
 	} = $props();
@@ -182,24 +185,28 @@
 
 	{#snippet footer()}
 		{#if preview.group === ''}
-			{#if blocked}
-				<span id={blockedId} class="visually-hidden">Erst über die Abhängigkeiten entscheiden.</span
+			{#if onpurge !== null}
+				{@const purge = onpurge}
+				{#if blocked}
+					<span id={blockedId} class="visually-hidden"
+						>Erst über die Abhängigkeiten entscheiden.</span
+					>
+				{/if}
+				<button
+					class="button-secondary"
+					type="button"
+					aria-haspopup="dialog"
+					aria-disabled={busy || blocked ? 'true' : undefined}
+					aria-busy={busy ? 'true' : undefined}
+					aria-describedby={blocked ? blockedId : undefined}
+					title={blocked ? 'Erst über die Abhängigkeiten entscheiden.' : undefined}
+					onclick={() => {
+						if (!busy && !blocked) purge();
+					}}
 				>
+					Endgültig löschen …
+				</button>
 			{/if}
-			<button
-				class="button-secondary"
-				type="button"
-				aria-haspopup="dialog"
-				aria-disabled={busy || blocked ? 'true' : undefined}
-				aria-busy={busy ? 'true' : undefined}
-				aria-describedby={blocked ? blockedId : undefined}
-				title={blocked ? 'Erst über die Abhängigkeiten entscheiden.' : undefined}
-				onclick={() => {
-					if (!busy && !blocked) onpurge();
-				}}
-			>
-				Endgültig löschen …
-			</button>
 			<button
 				class="button-primary"
 				type="button"

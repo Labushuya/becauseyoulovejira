@@ -37,8 +37,6 @@ var CREATED_BY_RULE_KEY = '@created_by_rule';
 // At most this many keys of blocking sub-tickets go to the client with the refusal.
 var OPEN_CHILDREN_KEYS_MAX = 5;
 
-var SCOPE_MISMATCH = 'Verknüpfter Datensatz nicht gefunden oder in einem anderen Bereich.';
-
 var PROJECT_ARCHIVED = 'Das Projekt ist archiviert.';
 
 // Texts of the parent guard and the completion guard (ADR-0033), shared with the SPA.
@@ -226,7 +224,7 @@ function checkRelations(txApp, record, scope, previousProject) {
 
   var violations = rules.scopeViolations(scope, related);
   for (var j = 0; j < violations.length; j++) {
-    fields[violations[j]] = { code: 'validation_scope_mismatch', message: SCOPE_MISMATCH };
+    fields[violations[j]] = { code: 'validation_scope_mismatch', message: rules.scopeMessage(violations[j]) };
   }
   if (project && !fields.project) {
     var archivedCode = rules.archivedProjectViolation({
@@ -243,6 +241,31 @@ function checkRelations(txApp, record, scope, previousProject) {
     throw errors.validationFailure(fields[failed[0]].message, fields);
   }
   return project;
+}
+
+/**
+ * dependencies.pb.js, onRecordCreate and onRecordUpdate before e.next() (E7-3, ADR-0059 §4): both
+ * tickets of a dependency lie in its area (owner and household), so a dependency never crosses the
+ * border between Privat and a household. Refused for every writer, the superuser included (app
+ * accounts cannot write dependencies before stage 2 anyway).
+ */
+function checkDependencyArea(app, record) {
+  var scope = scopeOfRecord(record);
+  var related = [];
+  var names = ['blocker', 'blocked'];
+  for (var i = 0; i < names.length; i++) {
+    var ticket = findById(app, 'tickets', record.getString(names[i]));
+    related.push({ field: names[i], scope: ticket ? ticket.getString('scope') : null });
+  }
+  var violations = rules.scopeViolations(scope, related);
+  if (violations.length === 0) {
+    return;
+  }
+  var fields = {};
+  for (var j = 0; j < violations.length; j++) {
+    fields[violations[j]] = { code: 'validation_scope_mismatch', message: rules.scopeMessage(violations[j]) };
+  }
+  throw errors.validationFailure(fields[violations[0]].message, fields);
 }
 
 // The pinned comment (ADR-0044 section 2): only a comment of this ticket, none on create.
@@ -497,6 +520,7 @@ module.exports = {
   prepareCompletion: prepareCompletion,
   completeChildren: completeChildren,
   checkRelations: checkRelations,
+  checkDependencyArea: checkDependencyArea,
   checkPinnedComment: checkPinnedComment,
   releasePinOf: releasePinOf,
   prepareCreate: prepareCreate,

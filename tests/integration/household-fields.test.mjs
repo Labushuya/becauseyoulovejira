@@ -66,6 +66,17 @@ function payload(collection, person, household = '') {
 	return ownedPayload(collection, person.id, household);
 }
 
+/**
+ * Creates a record of `person`, in `household` when given. Since E7-3 an app account creates no
+ * connection in a household (ADR-0059 §5); such connections exist only from before, so the superuser
+ * creates them here.
+ */
+function createOf(collection, person, household = '', extra = {}) {
+	const body = { ...payload(collection, person, household), ...extra };
+	if (collection === 'connections' && household !== '') return superuser.collection(collection).create(body);
+	return person.client.collection(collection).create(body);
+}
+
 /** A change of an ordinary field of `collection`. */
 function ordinary(collection) {
 	switch (collection) {
@@ -122,8 +133,8 @@ describe.each(SCOPED)('%s', (collection) => {
 	let own;
 
 	beforeAll(async () => {
-		shared = await a.client.collection(collection).create(payload(collection, a, h1));
-		own = await a.client.collection(collection).create(payload(collection, a));
+		shared = await createOf(collection, a, h1);
+		own = await createOf(collection, a);
 	});
 
 	it('refuses a member to take a household record out of the household, in every form of the body', async () => {
@@ -205,7 +216,13 @@ describe.each(SCOPED)('%s', (collection) => {
 			expect(await statusOf(person.client.collection(collection).create(body))).toBe(400);
 			expect(await countOf(collection, body)).toBe(0);
 		}
-		expect(await b.client.collection(collection).create(payload(collection, b, h1))).toMatchObject({
+		const member = b.client.collection(collection).create(payload(collection, b, h1));
+		if (collection === 'connections') {
+			// Connections stay private since E7-3 (ADR-0059 §5), also with the membership.
+			expect(await rejectionOf(member)).toEqual(refused('household', 'validation_connection_private_only'));
+			return;
+		}
+		expect(await member).toMatchObject({
 			owner: b.id,
 			household: h1,
 			scope: scopeOf(b.id, h1)
@@ -214,14 +231,14 @@ describe.each(SCOPED)('%s', (collection) => {
 
 	it('gives a new record the scope of its owner and household, whatever the body says', async () => {
 		const records = a.client.collection(collection);
-		const inHousehold = await records.create({ ...payload(collection, a, h1), scope: scopeOf(a.id) });
+		const inHousehold = await createOf(collection, a, h1, { scope: scopeOf(a.id) });
 		expect(inHousehold.scope).toBe(scopeOf(a.id, h1));
 		const ofOwner = await records.create({ ...payload(collection, a), scope: scopeOf(c.id, h2) });
 		expect(ofOwner.scope).toBe(scopeOf(a.id));
 	});
 
 	it('leaves the superuser free to change the area', async () => {
-		const record = await a.client.collection(collection).create(payload(collection, a, h1));
+		const record = await createOf(collection, a, h1);
 		const out = await superuser.collection(collection).update(record.id, { household: '' });
 		expect(out).toMatchObject({ owner: a.id, household: '', scope: scopeOf(a.id) });
 		const back = await superuser.collection(collection).update(record.id, { household: h1 });

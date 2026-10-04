@@ -48,6 +48,11 @@ var VISIBLE_RULE =
 // Rows per batch of the daily run.
 var BATCH_SIZE = 100;
 
+// Deleting for good in a household needs the owner or the right "purge" (E7-3, ADR-0059 §6).
+var PURGE_RIGHT =
+  'Endgültig löschen im Haushalt dürfen nur der Inhaber und Mitglieder mit dem Recht „Endgültig löschen“.';
+var UNKNOWN_AREA = 'Diesen Bereich gibt es nicht oder er ist nicht sichtbar.';
+
 function fail(field, code, params) {
   return errors.fieldFailure(field, code, rules.MESSAGES[code], params);
 }
@@ -146,6 +151,45 @@ function viewersOf(app, ticket) {
   return ids;
 }
 
+/**
+ * The filter a client gave its subscription (`<collection>/*?options=<JSON>`, the SDK puts
+ * `filter` into `query`), '' without one. A filtered subscription only gets events of records that
+ * match, like PocketBase checks its own events (E7-3: the area of the tab, ADR-0059 §2).
+ */
+function subscriptionFilter(name) {
+  var at = name.indexOf('?');
+  if (at === -1) {
+    return '';
+  }
+  var parts = name.slice(at + 1).split('&');
+  for (var i = 0; i < parts.length; i++) {
+    if (parts[i].indexOf('options=') !== 0) {
+      continue;
+    }
+    try {
+      var options = JSON.parse(decodeURIComponent(parts[i].slice('options='.length)));
+      var filter = options && options.query ? options.query.filter : '';
+      return typeof filter === 'string' ? filter : '';
+    } catch (err) {
+      return '';
+    }
+  }
+  return '';
+}
+
+/** Whether the record matches the filter of a subscription (no filter: every visible one). */
+function matchesSubscription(app, record, info, name) {
+  var filter = subscriptionFilter(name);
+  if (filter === '') {
+    return true;
+  }
+  try {
+    return app.canAccessRecord(record, info, filter);
+  } catch (err) {
+    return false;
+  }
+}
+
 function signedInClients(app) {
   var clients = app.subscriptionsBroker().clients();
   var found = [];
@@ -198,7 +242,8 @@ function broadcastRemoved(app, collectionName, records) {
         });
         for (var n = 0; n < names.length; n++) {
           var base = names[n].split('?')[0];
-          if (base === collectionName + '/*' || base === collectionName + '/' + record.id) {
+          var subscribed = base === collectionName + '/*' || base === collectionName + '/' + record.id;
+          if (subscribed && matchesSubscription(app, record, info, names[n])) {
             client.send(new SubscriptionMessage({ name: names[n], data: data }));
           }
         }
@@ -696,13 +741,33 @@ function purgeGroup(txApp, root) {
 }
 
 /**
+ * Whether the user may delete the ticket for good: always a private one; one of a household only as
+ * its owner or with the right "purge" (E7-3, ADR-0059 §6).
+ */
+function mayPurge(app, userId, ticket) {
+  return mayPurgeArea(app, userId, ticket.getString('household'));
+}
+
+/** Whether the user may delete for good in the area of `household` ('' for the private one). */
+function mayPurgeArea(app, userId, household) {
+  if (household === '') {
+    return true;
+  }
+  return require(__hooks + '/lib/household-service.js').mayPurgeIn(app, userId, household);
+}
+
+/**
  * "Endgültig löschen" of one ticket of the trash with its group (ADR-0037 §8); refused with the
- * list of dependencies while the group is blocked (ADR-0047).
+ * list of dependencies while the group is blocked (ADR-0047), and with 403 in a household without
+ * the right "purge" (E7-3).
  */
 function purge(e, id) {
   var viewers = [];
   e.app.runInTransaction(function (txApp) {
     var root = trashedRoot(e, txApp, id);
+    if (!mayPurge(txApp, actorOf(e), root)) {
+      throw new ForbiddenError(PURGE_RIGHT);
+    }
     viewers = viewersOf(txApp, root);
     var outcome = purgeGroup(txApp, root);
     if (outcome.dependencies.length > 0) {
@@ -712,9 +777,39 @@ function purge(e, id) {
   notifyTrash(e.app, viewers);
 }
 
+/**
+ * The area a request of the trash names (E7-3, ADR-0059 §2): the query or body field `scope`,
+ * `u:<own ID>` or `h:<household>` of a membership. Null without one (every visible area, as
+ * before); a foreign or unknown area is refused with 400. Returns { scope, household }.
+ */
+function areaOf(e, value) {
+  var scope = typeof value === 'string' ? value : '';
+  if (scope === '') {
+    return null;
+  }
+  var userId = actorOf(e);
+  if (scope === ticketKey.scopeOf(userId, '')) {
+    return { scope: scope, household: '' };
+  }
+  if (scope.indexOf('h:') === 0) {
+    var household = scope.slice(2);
+    if (require(__hooks + '/lib/household-service.js').membershipIn(e.app, userId, household) !== null) {
+      return { scope: scope, household: household };
+    }
+  }
+  throw new BadRequestError(UNKNOWN_AREA);
+}
+
 // Tickets of the trash (groups only by their first ticket) the user sees, newest first: own private
-// ones and those of the current households (VISIBLE_RULE).
-function visibleRoots(app, userId) {
+// ones and those of the current households (VISIBLE_RULE); with an area (E7-3) only those of it.
+function visibleRoots(app, userId, area) {
+  if (area) {
+    return listOf(
+      app.findRecordsByFilter(TICKETS, "deleted_at != '' && parent = '' && scope = {:scope}", '-deleted_at,-id', 0, 0, {
+        scope: area.scope
+      })
+    );
+  }
   var memberships = app.findRecordsByFilter('household_members', 'user = {:user}', '', 0, 0, { user: userId });
   var filter = "deleted_at != '' && parent = '' && ((owner = {:user} && household = '')";
   var params = { user: userId };
@@ -727,18 +822,25 @@ function visibleRoots(app, userId) {
 }
 
 /**
- * "Papierkorb leeren": every group of the trash the user sees, each in its own transaction. A
- * blocked group stays (ADR-0047). Returns { purged, blocked: [{ id, key, count }] }.
+ * "Papierkorb leeren": every group of the trash the user sees, each in its own transaction; with the
+ * body field `scope` (E7-3) only those of that area. A blocked group stays (ADR-0047). A household
+ * needs the owner or the right "purge": named as area without it 403, without an area its groups
+ * stay. Returns { purged, blocked: [{ id, key, count }] }.
  */
 function empty(e) {
-  var roots = visibleRoots(e.app, e.auth.id);
+  var body = e.requestInfo().body || {};
+  var area = areaOf(e, body.scope);
+  if (area && !mayPurgeArea(e.app, e.auth.id, area.household)) {
+    throw new ForbiddenError(PURGE_RIGHT);
+  }
+  var roots = visibleRoots(e.app, e.auth.id, area);
   var purged = 0;
   var blocked = [];
   var viewers = [e.auth.id];
   for (var i = 0; i < roots.length; i++) {
     e.app.runInTransaction(function (txApp) {
       var root = findById(txApp, TICKETS, roots[i].id);
-      if (root && isTrashed(root)) {
+      if (root && isTrashed(root) && mayPurge(txApp, e.auth.id, root)) {
         var ids = viewersOf(txApp, root);
         for (var v = 0; v < ids.length; v++) {
           if (viewers.indexOf(ids[v]) === -1) {
@@ -757,16 +859,33 @@ function empty(e) {
   return { purged: purged, blocked: blocked };
 }
 
-function retentionOf(app, cache, ownerId) {
-  if (!Object.prototype.hasOwnProperty.call(cache, ownerId)) {
-    var user = findById(app, 'users', ownerId);
-    cache[ownerId] = rules.retentionDays(user ? user.getString('trash_retention') : '');
+/**
+ * The stored retention of an area ('' for the default): of the household (E7-3, migration
+ * 1790204100) or of the owner. Before that migration a household ticket follows its owner as before.
+ */
+function retentionValue(app, household, ownerId) {
+  if (household !== '' && require(__hooks + '/lib/household-service.js').retentionReady(app)) {
+    var found = findById(app, 'households', household);
+    return found ? found.getString('trash_retention') : '';
   }
-  return cache[ownerId];
+  var user = findById(app, 'users', ownerId);
+  return user ? user.getString('trash_retention') : '';
+}
+
+/** Days of retention of a ticket of the trash (its area, ADR-0059 §6), cached per area. */
+function retentionOf(app, cache, ticket) {
+  var household = ticket.getString('household');
+  var owner = ticket.getString('owner');
+  var key = household !== '' ? 'h:' + household : 'u:' + owner;
+  if (!Object.prototype.hasOwnProperty.call(cache, key)) {
+    cache[key] = rules.retentionDays(retentionValue(app, household, owner));
+  }
+  return cache[key];
 }
 
 /**
- * Daily run (ADR-0037 §8): deletes for good every group whose retention (of its owner) ran out.
+ * Daily run (ADR-0037 §8): deletes for good every group whose retention (of its area: the household,
+ * else the owner; E7-3) ran out.
  * A blocked group stays and is counted (ADR-0047: "Blockiert – Entscheidung nötig"; the trash
  * shows it, the app reminds of it). Idempotent; each group in its own transaction, a failing one
  * is logged and the others go on. Never throws. Returns { checked, purged, blocked, failed,
@@ -794,7 +913,7 @@ function purgeDue(app, nowMs) {
       var candidate = batch[i];
       after = candidate.id;
       result.checked += 1;
-      var days = retentionOf(app, cache, candidate.getString('owner'));
+      var days = retentionOf(app, cache, candidate);
       if (!rules.isDue(candidate.getString('deleted_at'), days, nowMs, berlinTime)) {
         continue;
       }
@@ -995,10 +1114,12 @@ function shownDependencies(app, ticket) {
 // Fields of the list and the preview; `dependencies` counts what blocks deleting for good.
 function summaryOf(app, ticket, cache, nowMs) {
   var snapshot = rules.readSnapshot(ticket.getString('trash'));
-  var days = retentionOf(app, cache, ticket.getString('owner'));
+  var days = retentionOf(app, cache, ticket);
   var children = app.findRecordsByFilter(TICKETS, "parent = {:id} && deleted_at != ''", '', 0, 0, { id: ticket.id });
   return {
     id: ticket.id,
+    // The area of the ticket (E7-3): a link to it switches the area of the tab (ADR-0059 §7).
+    scope: ticket.getString('scope'),
     key: ticket.getString('key'),
     title: ticket.getString('title'),
     status: ticket.getString('status'),
@@ -1016,17 +1137,33 @@ function summaryOf(app, ticket, cache, nowMs) {
   };
 }
 
-/** GET /api/byl/trash: { items, retention } of the signed-in user. */
+/**
+ * GET /api/byl/trash: { items, retention } of the signed-in user. With the query `scope` (E7-3) only
+ * the tickets of that area, its retention (of the household, else of the account) and `can_purge`,
+ * whether the user may delete for good there (ADR-0059 §6).
+ */
 function list(e) {
+  var area = areaOf(e, e.requestInfo().query['scope']);
   var cache = {};
   var nowMs = Date.now();
-  var roots = visibleRoots(e.app, e.auth.id);
+  var roots = visibleRoots(e.app, e.auth.id, area);
   var items = [];
   for (var i = 0; i < roots.length; i++) {
     items.push(summaryOf(e.app, roots[i], cache, nowMs));
   }
-  var retention = e.auth.getString('trash_retention');
-  return { items: items, retention: rules.isRetention(retention) ? retention : '' };
+  var own = e.auth.getString('trash_retention');
+  var retention = area ? retentionValue(e.app, area.household, e.auth.id) : own;
+  var answer = {
+    items: items,
+    retention: rules.isRetention(retention) ? retention : '',
+    // The setting of the account for its private trash ("Einstellungen → Tickets"), in every area.
+    own_retention: rules.isRetention(own) ? own : ''
+  };
+  if (area) {
+    answer.scope = area.scope;
+    answer.can_purge = mayPurgeArea(e.app, e.auth.id, area.household);
+  }
+  return answer;
 }
 
 /**

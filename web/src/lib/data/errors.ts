@@ -3,6 +3,7 @@
 // root integration tests and the web app each load their own copy of the SDK.
 
 import { ACCOUNT_MESSAGES } from '../domain/accounts';
+import { SCOPE_FIELD_MESSAGES, SCOPE_MESSAGE } from '../domain/area';
 import { PIN_MESSAGES } from '../domain/comments';
 import { CONNECTION_LABEL_MESSAGES } from '../domain/connections';
 import { DUPLICATE_MESSAGES } from '../domain/duplicate';
@@ -57,7 +58,9 @@ const FIELD_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
 	validation_invalid_value: 'Ungültiger Wert.',
 	validation_calendar_date: 'Ungültiges Datum.',
 	validation_invalid_date: 'Ungültiges Datum.',
-	validation_scope_mismatch: 'Nicht verfügbar.',
+	// A reference across the border of an area (E7-3, ADR-0059 §4), the same text as the hook.
+	validation_scope_mismatch: SCOPE_MESSAGE,
+	validation_connection_private_only: 'Verbindungen gibt es nur im privaten Bereich.',
 	// Unique indexes, e.g. projects(scope, code) and tags(scope, name COLLATE NOCASE).
 	validation_not_unique: 'Schon vergeben.',
 	validation_invalid_format: 'Ungültiges Format.',
@@ -124,7 +127,14 @@ const FIELD_CODE_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
 	'id:validation_project_in_use':
 		'Ein Projekt mit Tickets lässt sich nicht löschen. Bitte archivieren.',
 	'ticket:validation_scope_mismatch': 'Das Ticket ist nicht verfügbar.',
-	'source_item:validation_scope_mismatch': 'Der Eintrag ist nicht verfügbar.'
+	'source_item:validation_scope_mismatch': 'Der Eintrag ist nicht verfügbar.',
+	// Per field (E7-3, ADR-0059 §4): what lies in another area.
+	...Object.fromEntries(
+		Object.entries(SCOPE_FIELD_MESSAGES).map(([field, text]) => [
+			`${field}:validation_scope_mismatch`,
+			text
+		])
+	)
 });
 const DEFAULT_FIELD_MESSAGE = 'Ungültige Eingabe.';
 

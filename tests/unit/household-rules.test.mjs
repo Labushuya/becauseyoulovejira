@@ -219,3 +219,44 @@ describe('names, answers and texts', () => {
 		});
 	});
 });
+
+describe('trash of a household (E7-3, ADR-0059 §6)', () => {
+	it('lets the owner and the right "purge" delete for good and set the retention, the same on both sides', () => {
+		for (const membership of [owner, strong]) {
+			expect(rules.mayPurge(membership)).toBe(true);
+			expect(domain.mayPurge(membership)).toBe(true);
+		}
+		for (const membership of [delegate, plain]) {
+			expect(rules.mayPurge(membership)).toBe(false);
+			expect(domain.mayPurge(membership)).toBe(false);
+		}
+	});
+
+	it('reads the retention strictly: 7, 30, 90 days or never, else the problem', () => {
+		expect(rules.RETENTIONS).toEqual(['7', '30', '90', 'never']);
+		for (const retention of rules.RETENTIONS) {
+			expect(rules.retentionInput({ retention })).toEqual({ retention });
+		}
+		for (const body of [{ retention: '14' }, { retention: 7 }, {}, null, { retention: '' }]) {
+			expect(rules.retentionInput(body), JSON.stringify(body)).toEqual({ problem: 'retention' });
+		}
+		expect(rules.retentionOf('never')).toBe('never');
+		expect(rules.retentionOf('')).toBe('');
+		expect(rules.retentionOf('neu')).toBe('');
+		expect(rules.problemBody('retention')).toMatchObject({ status: 400, body: { problem: 'retention' } });
+	});
+
+	it('reads the retention of a household in the web app, the default without one', () => {
+		const answer = (household) => ({
+			household,
+			me: { member: 'm1', role: 'owner', rights: [] },
+			members: [],
+			invites: null
+		});
+		expect(domain.parseHouseholdAnswer(answer({ id: 'h1', name: 'Haus', created: '', trash_retention: '7' }))?.household)
+			.toMatchObject({ trashRetention: '7' });
+		expect(domain.parseHouseholdAnswer(answer({ id: 'h1', name: 'Haus', created: '' }))?.household).toMatchObject({
+			trashRetention: '30'
+		});
+	});
+});

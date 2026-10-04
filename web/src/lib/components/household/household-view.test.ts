@@ -60,7 +60,12 @@ function stateFor(
 	members: HouseholdMember[] = [CHRIS, ANNA, BERT]
 ): HouseholdState {
 	return {
-		household: { id: 'house000000001', name: 'Haus Beispiel', created: '2026-10-04 08:00:00.000Z' },
+		household: {
+			id: 'house000000001',
+			name: 'Haus Beispiel',
+			created: '2026-10-04 08:00:00.000Z',
+			trashRetention: '30'
+		},
 		me: { member: who.id, role: who.role, rights: who.rights },
 		members: members.map((member) => ({ ...member, self: member.id === who.id })),
 		invites: who.rights.includes('invite')
@@ -93,7 +98,10 @@ async function show(initial: HouseholdState | null, overrides: Partial<Household
 	const data: HouseholdData = {
 		fetch: vi.fn(async () => ok(initial)),
 		found: vi.fn(async (name: string) =>
-			ok({ ...stateFor(CHRIS, [CHRIS]), household: { id: 'house000000002', name, created: '' } })
+			ok({
+				...stateFor(CHRIS, [CHRIS]),
+				household: { id: 'house000000002', name, created: '', trashRetention: '30' as const }
+			})
 		),
 		rename: vi.fn(async (name: string) =>
 			ok({
@@ -186,7 +194,7 @@ describe('page "Haushalt" without a household', () => {
 		expect(notices).toEqual([]);
 	});
 
-	it('groups the code while it is typed and joins, then loads anew with a notice', async () => {
+	it('groups the code while it is typed and joins with a notice', async () => {
 		const { data, notices } = await show(null);
 		const input = screen.getByLabelText('Einladungscode') as HTMLInputElement;
 		await fireEvent.input(input, { target: { value: 'abcdefgh' } });
@@ -355,5 +363,35 @@ describe('page "Haushalt" for a member', () => {
 		await vi.waitFor(() =>
 			expect(data.setRights).toHaveBeenCalledWith(BERT.id, ['invite', 'rename'], expect.anything())
 		);
+	});
+});
+
+describe('trash of the household (E7-3, ADR-0059 §6)', () => {
+	it('lets the owner choose the retention, which applies at once', async () => {
+		const initial = stateFor(CHRIS);
+		const retention = vi.fn(async (value: string) => ({
+			kind: 'ok' as const,
+			value: { ...initial, household: { ...initial.household, trashRetention: value as '7' } }
+		}));
+		const { flags } = await show(initial, { retention });
+		const group = screen.getByRole('group', { name: 'Papierkorb im Haushalt' });
+		expect(within(group).getByRole('radio', { name: '30 Tage' })).toHaveProperty('checked', true);
+		await fireEvent.click(within(group).getByRole('radio', { name: '7 Tage' }));
+		await vi.waitFor(() => expect(retention).toHaveBeenCalledWith('7', expect.anything()));
+		await vi.waitFor(() =>
+			expect(within(group).getByRole('radio', { name: '7 Tage' })).toHaveProperty('checked', true)
+		);
+		expect(flags.at(-1)).toMatchObject({
+			tone: 'success',
+			title: 'Papierkorb im Haushalt: 7 Tage.'
+		});
+	});
+
+	it('shows a member without "purge" the retention as text and who may change it', async () => {
+		await show(stateFor(ANNA));
+		expect(screen.queryByRole('group', { name: 'Papierkorb im Haushalt' })).toBeNull();
+		expect(screen.getByRole('heading', { name: 'Papierkorb im Haushalt' })).toBeTruthy();
+		expect(screen.getByText(/Ändern dürfen der Inhaber und Mitglieder/)).toBeTruthy();
+		expect(screen.queryByRole('radio')).toBeNull();
 	});
 });

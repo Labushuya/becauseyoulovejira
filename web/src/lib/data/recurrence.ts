@@ -22,6 +22,7 @@ import {
 	type TemplateSubtask
 } from '../domain/series-template';
 import type { Ticket } from '../domain/ticket';
+import { areaFilter, clientHousehold } from './area';
 import { DataError, withDataErrors } from './errors';
 import { currentUserId, type RequestOptions } from './options';
 import { TICKET_DETAIL_FIELDS, TICKET_EXPAND, toTicket, type TicketRecord } from './tickets';
@@ -175,7 +176,8 @@ export function listRules(
 		try {
 			const records = await pb.collection(RULES).getFullList<RuleRecord>({
 				batch: 500,
-				filter: pb.filter('scope != {:none}', { none: '' }),
+				// Only the rules of the area of the client (E7-3, data/area.ts).
+				filter: areaFilter(pb, 'scope != {:none}', { none: '' }),
 				fields: RULE_FIELDS,
 				signal
 			});
@@ -259,19 +261,27 @@ function answeredWithout400(
 }
 
 /**
- * Creates a private rule of the signed-in user. With `ticket` ("Wiederholen…", ADR-0023 section
- * 1) the ticket becomes its current instance in the same transaction of the hook.
+ * Creates a rule of the signed-in user in the area of the client (E7-3), or in `household` ('' for
+ * "Privat") when it belongs to a ticket of a known area. With `ticket` ("Wiederholen…", ADR-0023
+ * section 1) the ticket becomes its current instance in the same transaction of the hook; the hook
+ * refuses a ticket of another area.
  */
 export function createRule(
 	pb: PocketBase,
 	draft: RuleDraft,
 	ticket: string | null = null,
-	{ signal }: RequestOptions = {}
+	{ signal, household }: RequestOptions & { household?: string } = {}
 ): Promise<RecurrenceRule> {
 	return withDataErrors(signal, async () => {
 		const owner = currentUserId(pb.authStore.record);
 		if (owner === null) throw new DataError('session');
-		const body = { ...draftBody(draft), owner, ...(ticket !== null && { ticket }) };
+		const area = household ?? clientHousehold(pb);
+		const body = {
+			...draftBody(draft),
+			owner,
+			...(area !== '' && { household: area }),
+			...(ticket !== null && { ticket })
+		};
 		const record = await pb
 			.collection(RULES)
 			.create<RuleRecord>(body, { fields: RULE_FIELDS, signal });

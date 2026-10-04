@@ -45,6 +45,24 @@ function scopeViolations(scope, related) {
   return fields;
 }
 
+// Texts of `validation_scope_mismatch` per field (E7-3, ADR-0059 §4): a reference across the border
+// of an area (Privat or a household) reads like a missing record, and the text says both. The SPA
+// says the same (web/src/lib/data/errors.ts, parity test).
+var SCOPE_MESSAGES = {
+  project: 'Das Projekt gehört zu einem anderen Bereich (Privat oder Haushalt) oder wurde gelöscht.',
+  tags: 'Ein Tag gehört zu einem anderen Bereich (Privat oder Haushalt) oder wurde gelöscht.',
+  parent: 'Das übergeordnete Ticket gehört zu einem anderen Bereich (Privat oder Haushalt) oder wurde gelöscht.',
+  recurrence: 'Die Wiederholung gehört zu einem anderen Bereich (Privat oder Haushalt) oder wurde gelöscht.',
+  blocker: 'Abhängigkeiten gibt es nur zwischen Tickets desselben Bereichs (Privat oder Haushalt).',
+  blocked: 'Abhängigkeiten gibt es nur zwischen Tickets desselben Bereichs (Privat oder Haushalt).'
+};
+var SCOPE_MESSAGE = 'Liegt in einem anderen Bereich (Privat oder Haushalt) oder wurde gelöscht.';
+
+/** The text of `validation_scope_mismatch` for a field. */
+function scopeMessage(field) {
+  return Object.prototype.hasOwnProperty.call(SCOPE_MESSAGES, field) ? SCOPE_MESSAGES[field] : SCOPE_MESSAGE;
+}
+
 // completed_at (CLAUDE.md section 5): 'set' when the ticket becomes done, 'keep' while it stays
 // done, 'clear' otherwise. Client values are never taken over.
 function completedAtAction(isNew, oldStatus, newStatus) {
@@ -171,6 +189,9 @@ module.exports = {
   createDefaults: createDefaults,
   needsNewKey: needsNewKey,
   scopeViolations: scopeViolations,
+  SCOPE_MESSAGES: SCOPE_MESSAGES,
+  SCOPE_MESSAGE: SCOPE_MESSAGE,
+  scopeMessage: scopeMessage,
   completedAtAction: completedAtAction,
   isCalendarDate: isCalendarDate,
   parentViolation: parentViolation,
