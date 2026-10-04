@@ -1,7 +1,8 @@
 // Pure rules of the security hardening (ADR-0055, plan docs/plan/sicherheit.md, SH-1): the levels
 // of the rate limiter, the hosts of the origins of the start, the further hosts of byl-config.json,
 // the headers of every answer and the two CORS exceptions; plus the migration with a fake app, its
-// rules equal to those of the rules module.
+// rules equal to those of the rules module together with the rule of joining a household
+// (1790203810, ADR-0058 §3).
 
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -13,12 +14,17 @@ import { loadHookLib } from '../support/hook-lib.mjs';
 const rules = loadHookLib('security-rules.js');
 const ROOT_DIR = resolve(fileURLToPath(new URL('../..', import.meta.url)));
 const MIGRATION = join(ROOT_DIR, 'app', 'pb_migrations', '1790203500_security_hardening.js');
+// The rule of joining a household (ADR-0058 §3, E7-2), added to both levels by its own migration.
+const JOIN_MIGRATION = join(ROOT_DIR, 'app', 'pb_migrations', '1790203810_household_join_limit.js');
 const EXTENSION = 'chrome-extension://abcdefghijklmnopabcdefghijklmnop';
 
-/** The two functions of the migration, run against a fake app whose settings are plain data. */
-function loadMigration() {
+/** The rules of a level as they were before the rule of joining a household (1790203500). */
+const withoutJoin = (level) => rules.rateLimitRules(level).filter((rule) => rule.label !== rules.JOIN_RULE.label);
+
+/** The two functions of a migration, run against a fake app whose settings are plain data. */
+function loadMigration(file = MIGRATION) {
 	const steps = {};
-	runInNewContext(readFileSync(MIGRATION, 'utf8'), {
+	runInNewContext(readFileSync(file, 'utf8'), {
 		migrate: (up, down) => Object.assign(steps, { up, down }),
 		// JSON semantics of PocketBase's unmarshal: objects merge, arrays and values replace.
 		unmarshal: (data, target) => {
@@ -58,6 +64,7 @@ describe('levels of the rate limiter', () => {
 			['*:requestPasswordReset', ''],
 			['*:confirmPasswordReset', ''],
 			['/api/byl/ingest/', '@guest'],
+			['POST /api/byl/household/join', ''],
 			['/api/', '@guest']
 		]);
 		expect(normal[0]).toEqual({ label: '*:auth', audience: '', duration: 60, maxRequests: 10 });
@@ -70,6 +77,13 @@ describe('levels of the rate limiter', () => {
 			const list = rules.rateLimitRules(level);
 			expect(list.find((rule) => rule.label === '/api/byl/ingest/')).toEqual(rules.INGEST_RULE);
 			expect(list.findIndex((rule) => rule.label === '/api/byl/ingest/')).toBeLessThan(list.findIndex((rule) => rule.label === '/api/'));
+			// Joining a household: the strict values of a sign-in at both levels, for every account.
+			expect(list.find((rule) => rule.label === rules.JOIN_RULE.label)).toEqual({
+				label: 'POST /api/byl/household/join',
+				audience: '',
+				duration: rules.PRESETS.strict.auth.duration,
+				maxRequests: rules.PRESETS.strict.auth.maxRequests
+			});
 		}
 		// Unknown levels mean "normal".
 		expect(rules.rateLimitRules('egal')).toEqual(normal);
@@ -94,14 +108,40 @@ describe('levels of the rate limiter', () => {
 describe('the migration', () => {
 	it('switches the limiter on with "Normal" and the superusers to this machine, only from the defaults of PocketBase', () => {
 		const { run } = loadMigration();
+		const join = loadMigration(JOIN_MIGRATION);
 		const settings = pocketBaseSettings();
 		expect(run('up', settings)).toBe(1);
-		expect(settings.rateLimits).toEqual({ enabled: true, excludedIPs: [], rules: rules.rateLimitRules('normal') });
+		expect(settings.rateLimits).toEqual({ enabled: true, excludedIPs: [], rules: withoutJoin('normal') });
 		expect(settings.superuserIPs).toEqual(rules.SUPERUSER_IPS);
+		// With the rule of joining a household (1790203810) the settings are the level "Normal".
+		expect(join.run('up', settings)).toBe(1);
+		expect(settings.rateLimits).toEqual({ enabled: true, excludedIPs: [], rules: rules.rateLimitRules('normal') });
 		expect(rules.levelOf(settings.rateLimits.enabled, settings.rateLimits.rules)).toBe('normal');
 
+		expect(join.run('down', settings)).toBe(1);
+		expect(settings.rateLimits.rules).toEqual(withoutJoin('normal'));
 		expect(run('down', settings)).toBe(1);
 		expect(settings).toEqual({ ...pocketBaseSettings(), superuserIPs: [] });
+	});
+
+	it('adds the rule of joining a household to "Normal" and "Streng" only, and takes it back', () => {
+		const join = loadMigration(JOIN_MIGRATION);
+		for (const level of rules.LEVELS) {
+			const settings = pocketBaseSettings();
+			settings.rateLimits = { enabled: true, excludedIPs: [], rules: withoutJoin(level) };
+			expect(join.run('up', settings)).toBe(1);
+			expect(settings.rateLimits).toEqual({ enabled: true, excludedIPs: [], rules: rules.rateLimitRules(level) });
+			expect(join.run('up', settings)).toBe(0);
+			expect(join.run('down', settings)).toBe(1);
+			expect(settings.rateLimits.rules).toEqual(withoutJoin(level));
+		}
+		// Rules of the admin UI and the defaults of PocketBase stay as they are.
+		for (const own of [pocketBaseSettings(), { ...pocketBaseSettings(), rateLimits: { enabled: true, excludedIPs: [], rules: [{ label: '*:auth', audience: '', duration: 30, maxRequests: 3 }] } }]) {
+			const before = structuredClone(own);
+			expect(join.run('up', own)).toBe(0);
+			expect(join.run('down', own)).toBe(0);
+			expect(own).toEqual(before);
+		}
 	});
 
 	it('keeps rules and addresses of the admin UI, up and down, and takes "Streng" back as well', () => {
@@ -115,7 +155,7 @@ describe('the migration', () => {
 		expect(own).toEqual(before);
 
 		const strict = pocketBaseSettings();
-		strict.rateLimits = { enabled: true, excludedIPs: [], rules: rules.rateLimitRules('strict') };
+		strict.rateLimits = { enabled: true, excludedIPs: [], rules: withoutJoin('strict') };
 		strict.superuserIPs = [...rules.SUPERUSER_IPS];
 		expect(run('down', strict)).toBe(1);
 		expect(strict.rateLimits).toEqual(pocketBaseSettings().rateLimits);

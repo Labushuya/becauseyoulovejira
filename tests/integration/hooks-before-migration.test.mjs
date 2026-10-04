@@ -9,6 +9,7 @@ import { writtenLogs } from '../support/logs.mjs';
 import { startPocketBase } from '../support/pocketbase-harness.mjs';
 import { fetchAccounts } from '../../web/src/lib/data/accounts.ts';
 import { adminOf } from '../../web/src/lib/domain/accounts.ts';
+import { fetchHousehold, foundHousehold } from '../../web/src/lib/data/household.ts';
 import { createInboxKey, listInboxKeys } from '../../web/src/lib/data/inbox-keys.ts';
 import { createProject, listProjects, updateProject } from '../../web/src/lib/data/projects.ts';
 import { createComment, deleteComment } from '../../web/src/lib/data/comments.ts';
@@ -1046,5 +1047,45 @@ describe('E7-1 hooks before the migration of the accounts (ADR-0056)', () => {
 			.catch((error) => error);
 		expect(refused.response?.data?.type?.code).toBe('validation_connection_admin_only');
 		expect((await first.pb.collection('connections').create({ ...calendar, owner: first.id })).type).toBe('calendar');
+	});
+});
+
+describe('E7-2 hooks before the migrations of managing a household (ADR-0058)', () => {
+	const HOUSEHOLD_MIGRATION = '1790203800_household_invites.js';
+	let before;
+	let pb;
+	let userId;
+
+	beforeAll(async () => {
+		before = await startPocketBase({ migrationFilter: (name) => name < HOUSEHOLD_MIGRATION });
+		const superuser = new PocketBase(before.url);
+		superuser.autoCancellation(false);
+		await superuser.collection('_superusers').authWithPassword(before.email, before.password);
+		const email = `user-${randomBytes(12).toString('hex')}@example.com`;
+		const password = randomBytes(24).toString('base64url');
+		userId = (await superuser.collection('users').create({ email, password, passwordConfirm: password })).id;
+		pb = new PocketBase(before.url);
+		pb.autoCancellation(false);
+		await pb.collection('users').authWithPassword(email, password);
+	});
+
+	afterAll(async () => {
+		await before?.stop();
+	});
+
+	it('answers the page "Haushalt" with the restart hint and founds nothing', async () => {
+		expect(await fetchHousehold(pb)).toEqual({ kind: 'missing' });
+		expect(await foundHousehold(pb, 'Haus')).toEqual({ kind: 'missing' });
+		const response = await fetch(`${before.url}/api/byl/household/join`, {
+			method: 'POST',
+			headers: { Authorization: pb.authStore.token, 'Content-Type': 'application/json' },
+			body: JSON.stringify({ code: 'ABCD-EFGH' })
+		});
+		expect(response.status).toBe(503);
+		expect((await response.json()).reason).toBe('missing');
+		expect(await pb.collection('households').getFullList()).toEqual([]);
+		// The rules of before still hold: a private ticket of the account is its own.
+		const ticket = await pb.collection('tickets').create({ owner: userId, title: 'Vor dem Neustart' });
+		expect((await pb.collection('tickets').getOne(ticket.id)).id).toBe(ticket.id);
 	});
 });
