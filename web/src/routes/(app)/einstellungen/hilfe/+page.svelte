@@ -1566,7 +1566,9 @@
 					Ist der Inhaber eines Haushalts deaktiviert oder in der Verwaltung gelöscht, steht der
 					Haushalt unter „Haushalte ohne aktiven Inhaber“. Der Verwalter wählt dort ein aktives
 					Mitglied und „Zum Inhaber machen …“; der bisherige Inhaber bleibt Mitglied mit allen
-					Rechten.
+					Rechten. Hat kein Mitglied mehr ein Konto, bleibt nur „Haushalt löschen …“: Nach der
+					Vorschau und mit dem eingetippten Namen löscht der Verwalter alles des Haushalts
+					endgültig. Übernehmen kann er nichts davon.
 				</dd>
 			</div>
 			<div class="row">

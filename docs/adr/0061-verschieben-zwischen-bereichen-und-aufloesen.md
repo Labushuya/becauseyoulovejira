@@ -95,7 +95,7 @@ Migration `1790204200_connections_private.js` (SQL, ohne Hooks, `updated` bleibt
 - **Neustart nötig** (`neu-starten.bat`): neue Hooks und Routen, Migration `1790204200`; die Oberfläche nach dem Build und F5. Vor dem Neustart antworten die Routen 404 (die Oberfläche sagt „nach dem nächsten Neustart verfügbar“).
 - Neue Module: `app/pb_hooks/area.pb.js`, `lib/area-move-rules.js`, `lib/area-move-service.js`; `web/src/lib/domain/area-move.ts`, `data/area-move.ts`, `stores/area-move.svelte.ts`, `lib/area-move-entry.ts`, `components/AreaMoveDialog.svelte`, `components/household/HouseholdDissolveDialog.svelte`. Die Datenschicht liest dafür `owner` von Tickets, Projekten, Regeln und Einträgen.
 - **Tests:** `tests/integration/household-move.test.mjs` (eigene Instanz, A und B im Haushalt, C allein), `accounts.test.mjs` (Inhaber durch den Verwalter), `migrations-rollback.test.mjs` (Altbestand), `context-route.test.mjs` und `lan-access.test.mjs` (neue Route des Verwalters), `tests/unit/area-move-rules.test.mjs`; in `web/` Domain, Dialog, Menüeinträge je Recht, Sammelaktion, Auflösen, Seite „Konten verwalten“, Verlauf, Hilfe.
-- **Grenzen:** Ein Eintrag, der den Bereich seiner Verbindung verlässt, schützt diesen Bereich nicht mehr vor erneutem Eintreffen (Fingerabdrücke gelten je Bereich); eine Vollsuche des Postfachs kann ihn dort neu anlegen. *(Behoben mit dem Nachtrag E7-4b.)* Ein Haushalt, dessen Inhaber gelöscht wurde und der kein Mitglied mehr hat, bleibt ohne Inhaber (Folgepunkt im Plan).
+- **Grenzen:** Ein Eintrag, der den Bereich seiner Verbindung verlässt, schützt diesen Bereich nicht mehr vor erneutem Eintreffen (Fingerabdrücke gelten je Bereich); eine Vollsuche des Postfachs kann ihn dort neu anlegen. *(Behoben mit dem Nachtrag E7-4b.)* Ein Haushalt, dessen Inhaber gelöscht wurde und der kein Mitglied mehr hat, bleibt ohne Inhaber (Folgepunkt im Plan). *(Behoben mit dem Nachtrag E7-4c.)*
 - **Nur im Browser prüfbar** (Test-Manifest, manuell): Verschieben mit Live-Anzeige bei der Partnerin, `@CODE`-Kollision, Ablehnung ohne `move_out`, Auflösen auf beide Arten mit offenem Tab der Partnerin, Inhaber durch den Verwalter.
 
 ## Nachtrag E7-4b (2026-10-04): Keine Dubletten nach dem Verschieben, keine Ziele über die Grenze
@@ -136,3 +136,28 @@ Migration `1790204200_connections_private.js` (SQL, ohne Hooks, `updated` bleibt
 Geprüft, kein Fehler: Das Layout nimmt die verschobenen Tickets sofort aus der Liste (jetzt `dropMovedTickets` in `stores/area-move.svelte.ts`). Die Tabelle behält nur gezeigte Zeilen in der Auswahl (`keepShown`). Ein Komponententest belegt das: Danach gibt es keine Leiste und kein gewähltes Kästchen, und keine ID bleibt gewählt, auch wenn die Tickets wieder erscheinen.
 
 **Neustart nötig** (`neu-starten.bat`): Hooks und Migration `1790204300`; die Oberfläche nach dem Build und F5.
+
+## Nachtrag E7-4c (2026-10-04): Verwaiste Haushalte löschen
+
+- **Entscheidung durch:** Nutzer (Produktentscheidung: Definition „verwaist“, der Verwalter darf nur löschen, nie übernehmen), Advisor (Auftrag E7-4c: Route, Fehlerfälle, Oberfläche, Tests), Executor (Umsetzung).
+
+**Befund.** Wurde der Inhaber in der Verwaltung gelöscht und hatte der Haushalt kein Mitglied mit Konto mehr, blieb er ohne Inhaber stehen (§6, Folgepunkt im Plan). Die Seite „Konten verwalten“ nannte ihn, konnte aber niemanden wählen. Er kann trotzdem Daten enthalten: Einträge von Konten, die ausgetreten sind, bleiben im Haushalt (ADR-0058 §5).
+
+**Entscheidung.**
+
+- **Verwaist** ist ein Haushalt, wenn keine seiner Mitgliedschaften zu einem existierenden Konto gehört (`isOrphaned` in `lib/account-service.js`). Mitgliedschaften gelöschter Konten gehen mit dem Konto (Kaskade). Ein Haushalt mit nur deaktivierten Konten ist **nicht** verwaist: Der Verwalter kann ein Konto wieder aktivieren oder den Inhaber wechseln (§6).
+- **Nur löschen:** Der Verwalter darf einen verwaisten Haushalt löschen, nie in ein Konto übernehmen. Es sind nicht seine Daten.
+- **Route:** `POST /api/byl/accounts/households/{id}/delete { preview?, name? }` mit den Prüfungen aller Routen der Seite „Konten verwalten“ (`check`: dieser Rechner, Adresse der App, Verwalter, Rate-Limit; KOB-1). Die Vorschau zählt je Art wie beim Auflösen (`householdCounts`). Gelöscht wird nur mit dem eingetippten Namen (`nameConfirmed`, Leerraum am Rand egal). Antwort `{ preview, household, counts }`, nach dem Löschen mit der neuen Liste in `list`. Ablehnungen: unbekannt 404 `household-missing`, nicht verwaist 409 `household-not-orphaned`, falscher Name 400 `household-name`, ungültiger Body 400 `format`. Audit „byl-accounts: Aktion ausgeführt“ mit `household-delete`.
+- **Dieselbe Löschlogik:** `deleteHousehold` in `lib/area-move-service.js` löscht alles des Haushalts wie das Auflösen mit „löschen“ (§5 (b)): Daten samt Papierkorb und Quellen, Zähler, Merker des Haushalts aus `inbox_moved_fingerprints`, Einladungscodes, Mitgliedschaften und den Haushalt. Das Auflösen nutzt dieselbe Funktion. Eine Nachricht `byl/household` braucht es nicht, denn es gibt kein Konto, das sie empfangen könnte.
+- **Liste:** `GET /api/byl/accounts` nennt je Haushalt ohne aktiven Inhaber `orphaned`.
+- **Oberfläche:** Im Abschnitt „Haushalte ohne aktiven Inhaber“ sagt ein verwaister Haushalt „Kein Mitglied hat mehr ein Konto …“ und hat nur den Knopf „Haushalt löschen …“. Der Dialog `HouseholdDeleteDialog` (Modal M) zeigt die Vorschau und verlangt den Namen im Feld (`Field`, UI-1). Ein Fehler steht am Feld, eine Ablehnung des Servers im Dialog. Danach kommt das Flag „Haushalt „…“ gelöscht.“. Andere Haushalte behalten den Inhaberwechsel.
+
+**Alternativen.**
+
+| Alternative | Bewertung |
+|---|---|
+| Daten ins Private des Verwalters übernehmen | Produktentscheidung dagegen: Es sind nicht seine Daten. |
+| Auch Haushalte mit nur deaktivierten Konten löschbar | Das Konto lässt sich wieder aktivieren und ein Inhaber wählen. Löschen wäre endgültig und unnötig. |
+| Verwaiste Haushalte automatisch löschen | Endgültiges Löschen ohne Vorschau und Bestätigung; der Verwalter sähe nie, was verloren geht. |
+
+**Neustart nötig** (`neu-starten.bat`): neue Route und geänderte Hooks; die Oberfläche nach dem Build und F5. Keine Migration.

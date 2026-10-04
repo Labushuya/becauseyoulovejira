@@ -17,6 +17,7 @@
 	import { helpHref } from '$lib/settings-sections';
 	import type { AccountsStore } from '$lib/stores/accounts.svelte';
 	import AccountCreateForm from './AccountCreateForm.svelte';
+	import HouseholdDeleteDialog from './HouseholdDeleteDialog.svelte';
 
 	// Page "Einstellungen → Konten verwalten" (ADR-0056 §3): every account of the app with name, e-mail, the
 	// right "Verwalter der App", the switch "deaktiviert" and its creation; "Konto anlegen" with a
@@ -28,7 +29,9 @@
 	// password and name on "Mein Konto". No deleting of accounts (plan e7-haushalt, follow-up).
 	// Since E7-4 (ADR-0061 §6) an account that owns a household says so, disabling it says what that
 	// means for the household, and "Haushalte ohne aktiven Inhaber" lets the administrator make an
-	// active member the owner of a household whose owner is disabled or gone.
+	// active member the owner of a household whose owner is disabled or gone. Since E7-4c a household
+	// in which no member has an account any more (orphaned) offers only "Haushalt löschen …" with a
+	// preview and the typed name; it never goes into an account.
 	let { store }: { store: AccountsStore } = $props();
 
 	type Question =
@@ -43,11 +46,15 @@
 	let passwordHeading = $state<HTMLElement>();
 	/** The chosen new owner per household (ID of the membership). */
 	let chosen = $state<Record<string, string>>({});
+	/** The orphaned household whose dialog "Haushalt löschen" is open. */
+	let deleting = $state.raw<OrphanHousehold | null>(null);
 
 	const busyId = $derived(
 		store.busy !== null && 'accountId' in store.busy ? store.busy.accountId : null
 	);
-	const busyHousehold = $derived(store.busy?.kind === 'owner' ? store.busy.householdId : null);
+	const busyHousehold = $derived(
+		store.busy !== null && 'householdId' in store.busy ? store.busy.householdId : null
+	);
 
 	/** The active members of a household that can become its owner. */
 	function candidates(household: OrphanHousehold): OrphanMember[] {
@@ -258,7 +265,24 @@
 							<span class="name">{household.name}</span>
 							<span class="email">{ACCOUNTS_TEXTS.orphanOwner(household.owner?.name ?? null)}</span>
 						</div>
-						{#if options.length === 0}
+						{#if household.orphaned}
+							<p class="note">{ACCOUNTS_TEXTS.orphanedNote}</p>
+							<div class="actions">
+								<button
+									class="button-secondary"
+									type="button"
+									aria-haspopup="dialog"
+									aria-disabled={store.busy !== null}
+									aria-busy={busyHousehold === household.id ? 'true' : undefined}
+									onclick={() => {
+										if (store.busy !== null) return;
+										deleting = household;
+									}}
+								>
+									{ACCOUNTS_TEXTS.deleteButton}
+								</button>
+							</div>
+						{:else if options.length === 0}
 							<p class="note">{ACCOUNTS_TEXTS.noMembers}</p>
 						{:else}
 							<div class="owner-choice">
@@ -301,6 +325,10 @@
 		<h3 id={`${uid}-create`}>Konto anlegen</h3>
 		<AccountCreateForm {store} oncreated={showPassword} />
 	</section>
+{/if}
+
+{#if deleting !== null}
+	<HouseholdDeleteDialog {store} household={deleting} onclose={() => (deleting = null)} />
 {/if}
 
 <ConfirmDialog

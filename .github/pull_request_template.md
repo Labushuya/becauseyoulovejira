@@ -4,7 +4,7 @@
 
 ## Checkliste
 
-- [ ] `powershell -ExecutionPolicy Bypass -File scripts\build.ps1` lokal grün (check, lint, build, test)
+- [ ] Lokal grün nach CLAUDE.md §12: kleine Pakete die betroffenen Testdateien plus `check` und `lint` in `web`, größere `powershell -ExecutionPolicy Bypass -File scripts\build.ps1`; die volle Suite läuft in der CI
 - [ ] Tests für neue oder geänderte Logik ergänzt
 - [ ] `docs/test-manifest.html` aktualisiert (Eintrag in `pakete`, Testfälle, Status, Stand)
 - [ ] Doku aktualisiert (README, Plan, ADR, CLAUDE.md), soweit betroffen

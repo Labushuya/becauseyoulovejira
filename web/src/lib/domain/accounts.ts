@@ -3,6 +3,7 @@
 // app/pb_hooks/lib/account-rules.js, parity test) and the words of the pages "Konten" and "Konto".
 // Pure: no SDK, no SvelteKit.
 
+import { parseHouseholdCounts, type HouseholdCounts } from './area-move';
 import type { SystemDenial } from './system';
 
 /** One account of the list (only the administrator gets e-mail addresses of other accounts). */
@@ -40,6 +41,22 @@ export interface OrphanHousehold {
 	/** The disabled owner, null when the account is gone. */
 	owner: { id: string; name: string } | null;
 	members: OrphanMember[];
+	/**
+	 * No membership belongs to an existing account (E7-4c): nobody can become its owner, the
+	 * administrator can only delete it. Disabled accounts still count, so this is false with them.
+	 */
+	orphaned: boolean;
+}
+
+/**
+ * The answer of deleting an orphaned household (E7-4c): what it holds, and after deleting the new
+ * list (null in the preview).
+ */
+export interface HouseholdDeletion {
+	preview: boolean;
+	household: { id: string; name: string };
+	counts: HouseholdCounts;
+	list: AccountList | null;
 }
 
 export interface AccountList {
@@ -80,7 +97,10 @@ export const ACCOUNT_PROBLEMS: Readonly<Record<string, string>> = {
 	'owner-active':
 		'Der Haushalt hat einen aktiven Inhaber. Den Inhaber wechselt nur er selbst auf der Seite „Haushalt“.',
 	member: 'Dieses Mitglied gibt es im Haushalt nicht mehr.',
-	'member-disabled': 'Ein deaktiviertes Konto kann nicht Inhaber werden.'
+	'member-disabled': 'Ein deaktiviertes Konto kann nicht Inhaber werden.',
+	'household-not-orphaned':
+		'Im Haushalt gibt es noch ein Konto. Löschen lässt sich nur ein Haushalt, in dem kein Mitglied mehr ein Konto hat.',
+	'household-name': 'Bitte den Namen des Haushalts genau so eintippen, wie er hier steht.'
 };
 
 /** Validation codes of the Record API for users, the same as MESSAGES of lib/account-rules.js. */
@@ -177,7 +197,7 @@ function parseOrphan(value: unknown): OrphanHousehold | null {
 		if (member === null || !isRecord(entry) || typeof entry.user !== 'string') return null;
 		members.push({ ...member, user: entry.user, disabled: entry.disabled === true });
 	}
-	return { ...household, owner: namedRef(value.owner), members };
+	return { ...household, owner: namedRef(value.owner), members, orphaned: value.orphaned === true };
 }
 
 /** The answer of GET /api/byl/accounts (and of a new owner of a household), or null. */
@@ -201,6 +221,18 @@ export function parseAccountList(value: unknown): AccountList | null {
 		passwordMin: typeof min === 'number' && Number.isInteger(min) && min > 0 ? min : PASSWORD_MIN,
 		households
 	};
+}
+
+/** The answer of deleting an orphaned household (preview or done), or null. */
+export function parseHouseholdDeletion(value: unknown): HouseholdDeletion | null {
+	if (!isRecord(value)) return null;
+	const household = namedRef(value.household);
+	const counts = parseHouseholdCounts(value.counts);
+	if (household === null || counts === null) return null;
+	const preview = value.preview === true;
+	const list = preview ? null : parseAccountList(value.list);
+	if (!preview && list === null) return null;
+	return { preview, household, counts, list };
 }
 
 /** The answer of a new or reset password, or null. */
@@ -282,7 +314,16 @@ export const ACCOUNTS_TEXTS = {
 	ownerOf: (household: string) => `Inhaber von „${household}“`,
 	orphansTitle: 'Haushalte ohne aktiven Inhaber',
 	orphansText:
-		'Der Inhaber dieser Haushalte ist deaktiviert oder gelöscht. Bestimme ein aktives Mitglied als neuen Inhaber; der bisherige bleibt Mitglied mit allen Rechten.',
+		'Der Inhaber dieser Haushalte ist deaktiviert oder gelöscht. Bestimme ein aktives Mitglied als neuen Inhaber; der bisherige bleibt Mitglied mit allen Rechten. Hat kein Mitglied mehr ein Konto, kannst du den Haushalt nur löschen.',
+	orphanedNote:
+		'Kein Mitglied hat mehr ein Konto. Niemand kann die Einträge übernehmen; du kannst den Haushalt nur endgültig löschen.',
+	deleteButton: 'Haushalt löschen …',
+	deleteTitle: (household: string) => `Haushalt „${household}“ löschen`,
+	deleteText:
+		'Alle Einträge des Haushalts werden endgültig gelöscht, auch der Papierkorb, die Einladungscodes und die Zähler. Niemand übernimmt sie, auch du nicht. Das lässt sich nicht rückgängig machen.',
+	deleteConfirm: 'Endgültig löschen',
+	deleteRunning: 'Wird gelöscht …',
+	deleteDone: (household: string) => `Haushalt „${household}“ gelöscht.`,
 	orphanOwner: (owner: string | null) =>
 		owner === null ? 'Inhaber: gelöscht' : `Inhaber: ${owner} (deaktiviert)`,
 	noMembers: 'Keine aktiven Mitglieder. Ohne Mitglied lässt sich kein neuer Inhaber bestimmen.',

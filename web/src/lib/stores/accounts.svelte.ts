@@ -6,6 +6,7 @@
 import type PocketBase from 'pocketbase';
 import {
 	createAccount,
+	deleteOrphanedHousehold,
 	fetchAccounts,
 	resetAccountPassword,
 	setAccountAdmin,
@@ -22,10 +23,12 @@ import {
 	problemText,
 	type Account,
 	type AccountList,
+	type HouseholdDeletion,
 	type OrphanHousehold,
 	type OrphanMember,
 	type PasswordGrant
 } from '$lib/domain/accounts';
+import type { HouseholdCounts } from '$lib/domain/area-move';
 import type { SystemDenial } from '$lib/domain/system';
 import { RESTART_NEEDED, restartNeeded } from '$lib/guidance/texts';
 import { SILENT_FLAGS, type FlagSink } from './flags.svelte';
@@ -50,6 +53,12 @@ export interface AccountsData {
 		memberId: string,
 		options: RequestOptions
 	): Promise<AccountsAnswer<AccountList>>;
+	/** Deletes an orphaned household (E7-4c): its counts with `preview`, else the new list. */
+	deleteHousehold?(
+		householdId: string,
+		input: { preview: boolean; name?: string },
+		options: RequestOptions
+	): Promise<AccountsAnswer<HouseholdDeletion>>;
 }
 
 export function accountsData(pb: PocketBase): AccountsData {
@@ -60,18 +69,23 @@ export function accountsData(pb: PocketBase): AccountsData {
 		setDisabled: (id, disabled, options) => setAccountDisabled(pb, id, disabled, options),
 		setAdmin: (id, admin, options) => setAccountAdmin(pb, id, admin, options),
 		setHouseholdOwner: (householdId, memberId, options) =>
-			setHouseholdOwner(pb, householdId, memberId, options)
+			setHouseholdOwner(pb, householdId, memberId, options),
+		deleteHousehold: (householdId, input, options) =>
+			deleteOrphanedHousehold(pb, householdId, input, options)
 	};
 }
 
 export type AccountsState = 'idle' | 'loading' | 'ready' | 'denied' | 'error';
 
-/** What runs: "create", an action at one account, or a new owner of a household. */
+/** What runs: "create", an action at one account, a new owner or deleting of a household. */
 export type AccountsBusy =
 	| { kind: 'create' }
 	| { kind: 'password' | 'disable' | 'admin'; accountId: string }
-	| { kind: 'owner'; householdId: string }
+	| { kind: 'owner' | 'delete'; householdId: string }
 	| null;
+
+/** Outcome of the dialog "Haushalt löschen": done, or the text of the refusal ('' for none). */
+export type DeleteOutcome = { ok: true } | { ok: false; message: string };
 
 export interface AccountsMessage {
 	title: string;
@@ -295,6 +309,69 @@ export class AccountsStore {
 			title: ACCOUNTS_TEXTS.newOwnerDone(member.name || 'Konto ohne Namen', household.name)
 		});
 		return true;
+	}
+
+	/**
+	 * The preview of "Haushalt löschen" for an orphaned household (E7-4c): what it holds. Changes
+	 * nothing; a refusal comes back as its text for the dialog.
+	 */
+	async householdDeletePreview(
+		household: OrphanHousehold,
+		signal?: AbortSignal
+	): Promise<{ ok: true; counts: HouseholdCounts } | { ok: false; message: string }> {
+		const remove = this.#data.deleteHousehold;
+		if (remove === undefined || !this.#session.ensureValid()) return { ok: false, message: '' };
+		try {
+			const answer = await remove(household.id, { preview: true }, { signal });
+			if (answer.kind === 'ok') return { ok: true, counts: answer.value.counts };
+			return { ok: false, message: this.#refusalText(answer) };
+		} catch (error) {
+			const failure = toDataError(error, signal);
+			if (failure.kind === 'session') this.#session.logout();
+			return {
+				ok: false,
+				message: failure.kind === 'aborted' || failure.kind === 'session' ? '' : failure.message
+			};
+		}
+	}
+
+	/**
+	 * "Haushalt löschen" (E7-4c): deletes an orphaned household for good with its typed name. The
+	 * answer is the new list, a flag says it; a refusal stays in the dialog, and one that says the
+	 * page knew too much (gone, not orphaned) reads the list again.
+	 */
+	async deleteHousehold(household: OrphanHousehold, name: string): Promise<DeleteOutcome> {
+		const remove = this.#data.deleteHousehold;
+		if (remove === undefined || this.#busy !== null || !this.#session.ensureValid()) {
+			return { ok: false, message: '' };
+		}
+		this.#busy = { kind: 'delete', householdId: household.id };
+		this.#actionMessage = null;
+		try {
+			const answer = await remove(
+				household.id,
+				{ preview: false, name },
+				{ signal: this.#controller.signal }
+			);
+			if (answer.kind !== 'ok') {
+				if (answer.kind === 'invalid' && answer.problem !== 'household-name') void this.load();
+				return { ok: false, message: this.#refusalText(answer) };
+			}
+			if (answer.value.list !== null) this.#applyList(answer.value.list);
+			this.#flags.show({ tone: 'success', title: ACCOUNTS_TEXTS.deleteDone(household.name) });
+			return { ok: true };
+		} catch (error) {
+			if (this.#handled(error)) return { ok: false, message: '' };
+			return { ok: false, message: toDataError(error).message };
+		} finally {
+			this.#busy = null;
+		}
+	}
+
+	#refusalText(answer: Exclude<AccountsAnswer<unknown>, { kind: 'ok' }>): string {
+		if (answer.kind === 'invalid') return problemText(answer.problem);
+		const message = accountsDenial(answer.reason);
+		return `${message.title}. ${message.text}`;
 	}
 
 	#applyList(list: AccountList): void {
