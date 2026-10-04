@@ -103,9 +103,9 @@ describe('settings layout', () => {
 			['Tags', '/einstellungen/tags'],
 			['Tickets', '/einstellungen/tickets'],
 			['Darstellung', '/einstellungen/darstellung'],
-			['Konto', '/einstellungen/konto'],
 			['Haushalt', '/einstellungen/haushalt'],
-			['Konten', '/einstellungen/konten'],
+			['Mein Konto', '/einstellungen/konto'],
+			['Konten verwalten', '/einstellungen/konten'],
 			['Sicherheit', '/einstellungen/sicherheit'],
 			['Sicherung', '/einstellungen/sicherung'],
 			['Speicher', '/einstellungen/speicher'],
@@ -134,13 +134,16 @@ describe('settings layout', () => {
 			'Tags',
 			'Tickets',
 			'Darstellung',
-			'Konto',
 			// The household is a page of every account on every device (ADR-0058).
 			'Haushalt',
+			'Mein Konto',
 			'Hilfe'
 		]);
-		expect(nav.queryByRole('link', { name: 'Konten' })).toBeNull();
-		expect(nav.queryByRole('link', { name: 'Sicherheit' })).toBeNull();
+		expect(nav.queryByRole('link', { name: /Konten verwalten/ })).toBeNull();
+		expect(nav.queryByRole('link', { name: /Sicherheit/ })).toBeNull();
+		// The group "Verwaltung" is not there at all, not even its heading (UI-1).
+		expect(nav.queryByRole('list', { name: /Verwaltung/ })).toBeNull();
+		expect(nav.queryByText('Verwaltung')).toBeNull();
 	});
 
 	it('marks the pages of the administrator "nur am PC" on another device (KOB-1)', async () => {
@@ -156,15 +159,23 @@ describe('settings layout', () => {
 			'Tags',
 			'Tickets',
 			'Darstellung',
-			'Konto',
 			'Haushalt',
-			'Konten nur am PC',
+			'Mein Konto',
+			'Konten verwalten nur am PC',
 			'Sicherheit nur am PC',
 			'Sicherung nur am PC',
 			'Speicher nur am PC',
 			'System nur am PC',
 			'Hilfe'
 		]);
+		// The mark stands once, visibly, at the heading of the group (UI-1); each link keeps it in
+		// its name for screen readers.
+		const admin = nav.getByRole('list', { name: 'Verwaltung nur am PC' });
+		expect(within(admin).getByRole('link', { name: 'Konten verwalten nur am PC' })).toBeTruthy();
+		for (const mark of within(admin).getAllByText('nur am PC')) {
+			expect(mark.classList.contains('visually-hidden')).toBe(true);
+		}
+		expect(nav.getByRole('list', { name: 'Persönlich' })).toBeTruthy();
 	});
 
 	it('shows the way to the machine of the app instead of a page of the administrator on another device (KOB-1)', async () => {
@@ -305,5 +316,126 @@ describe('settings layout', () => {
 		expect(rules).not.toMatch(/margin(-right)?:\s*[^;]*auto/);
 		expect(rules).toMatch(/grid-template-columns:\s*15rem minmax\(0, 1fr\)/);
 		expect(rules).toMatch(/top:\s*calc\(var\(--app-header-height, 0px\) \+ 1rem\)/);
+	});
+});
+
+// The groups of the navigation (UI-1, ADR-0060) in every context of the matrix of KOB-1
+// (ADR-0057): the administrator at the machine of the app, the administrator on another device,
+// every other account and a tab whose context is still loading.
+describe('groups of the settings navigation (UI-1)', () => {
+	/** Each list of the navigation: its name (the heading of the group) and its links. */
+	function groups(): [string, string[]][] {
+		const nav = screen.getByRole('navigation', { name: 'Einstellungen' });
+		return within(nav)
+			.getAllByRole('list')
+			.map((list) => [
+				(list.getAttribute('aria-labelledby') ?? '')
+					.split(' ')
+					.filter(Boolean)
+					.map((id) => document.getElementById(id)?.textContent?.replace(/\s+/g, ' ').trim())
+					.join(' '),
+				within(list)
+					.getAllByRole('link')
+					.map((link) => link.textContent?.replace(/\s+/g, ' ').trim() ?? '')
+			]);
+	}
+
+	const WORK: [string, string[]] = [
+		'Eingang und Tickets',
+		['Kanäle', 'Datei-Importe', 'Tags', 'Tickets']
+	];
+	const PERSONAL: [string, string[]] = ['Persönlich', ['Darstellung', 'Haushalt', 'Mein Konto']];
+	const HELP: [string, string[]] = ['', ['Hilfe']];
+
+	it('shows the administrator at the machine of the app every group with its pages', async () => {
+		mocks.platform = 'windows';
+		await renderSettings('/einstellungen/konten');
+
+		expect(groups()).toEqual([
+			WORK,
+			PERSONAL,
+			['Verwaltung', ['Konten verwalten', 'Sicherheit', 'Sicherung', 'Speicher', 'System']],
+			HELP
+		]);
+		// "Mein Konto" and "Konten verwalten" stand next to each other, apart by name.
+		const nav = within(screen.getByRole('navigation', { name: 'Einstellungen' }));
+		const links = nav.getAllByRole('link').map((link) => link.textContent?.trim());
+		expect(links.indexOf('Konten verwalten') - links.indexOf('Mein Konto')).toBe(1);
+		expect(nav.getByRole('link', { name: 'Konten verwalten' }).getAttribute('aria-current')).toBe(
+			'page'
+		);
+		expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Konten verwalten');
+	});
+
+	it('marks the group "Verwaltung" "nur am PC" for the administrator on another device', async () => {
+		await useContext(REMOTE_CONTEXT);
+		mocks.platform = 'windows';
+		await renderSettings('/einstellungen/konto');
+
+		expect(groups()).toEqual([
+			WORK,
+			PERSONAL,
+			[
+				'Verwaltung nur am PC',
+				[
+					'Konten verwalten nur am PC',
+					'Sicherheit nur am PC',
+					'Sicherung nur am PC',
+					'Speicher nur am PC',
+					'System nur am PC'
+				]
+			],
+			HELP
+		]);
+		expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Mein Konto');
+	});
+
+	it('leaves the group "Verwaltung" out for every other account', async () => {
+		await useContext(MEMBER_CONTEXT);
+		mocks.platform = 'windows';
+		await renderSettings('/einstellungen/haushalt');
+
+		expect(groups()).toEqual([WORK, PERSONAL, HELP]);
+	});
+
+	it('leaves the group out while the context loads and shows it once it is known', async () => {
+		await useContext('pending');
+		mocks.platform = 'windows';
+		await renderSettings('/einstellungen/darstellung');
+		expect(groups()).toEqual([WORK, PERSONAL, HELP]);
+
+		await useContext(PC_CONTEXT);
+		await tick();
+		expect(groups().map(([name]) => name)).toEqual([
+			'Eingang und Tickets',
+			'Persönlich',
+			'Verwaltung',
+			''
+		]);
+	});
+
+	it('lists only the pages a Linux server has in "Verwaltung"', async () => {
+		mocks.platform = 'linux';
+		await renderSettings('/einstellungen/konto');
+
+		expect(groups()[2]).toEqual(['Verwaltung', ['Konten verwalten', 'Sicherheit', 'Speicher']]);
+	});
+
+	it('puts the overview of the form controls below "Hilfe" in heading, crumbs and navigation', async () => {
+		await renderSettings('/einstellungen/hilfe/elemente');
+
+		expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Eingabeelemente');
+		const crumbs = within(screen.getByRole('navigation', { name: 'Brotkrumenpfad' }));
+		expect(crumbs.getAllByRole('listitem').map((item) => item.textContent?.trim())).toEqual([
+			'Einstellungen',
+			'Hilfe',
+			'Eingabeelemente'
+		]);
+		expect(crumbs.getByRole('link', { name: 'Hilfe' }).getAttribute('href')).toBe(
+			'/einstellungen/hilfe'
+		);
+		const nav = within(screen.getByRole('navigation', { name: 'Einstellungen' }));
+		expect(nav.getByRole('link', { name: 'Hilfe' }).getAttribute('aria-current')).toBe('page');
+		expect(screen.getByText(CONTENT)).toBeTruthy();
 	});
 });

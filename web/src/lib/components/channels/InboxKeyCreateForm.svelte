@@ -7,7 +7,7 @@
 		type CreatedInboxKey
 	} from '$lib/domain/inbox-keys';
 	import type { InboxKeysStore } from '$lib/stores/inbox-keys.svelte';
-	import ErrorIcon from '../ErrorIcon.svelte';
+	import Field from '../form/Field.svelte';
 	import CodeBlock from '../guidance/CodeBlock.svelte';
 	import SectionMessage from '../guidance/SectionMessage.svelte';
 
@@ -26,9 +26,6 @@
 		/** The new key in plain text, null before one was created. */
 		created?: CreatedInboxKey | null;
 	} = $props();
-
-	const uid = $props.id();
-	const ids = { name: `${uid}-name`, hint: `${uid}-hint` };
 
 	// The first value only: the field belongs to the user once it is shown.
 	let name = $state(untrack(() => initialName));
@@ -59,25 +56,22 @@
 
 {#if created === null}
 	<form class="form" novalidate onsubmit={create} aria-busy={saving}>
-		<div class="field">
-			<label for={ids.name}>Name des Schlüssels (Pflichtfeld)</label>
-			<input
-				id={ids.name}
-				type="text"
-				maxlength={INBOX_KEY_NAME_MAX_LENGTH}
-				autocomplete="off"
-				aria-required="true"
-				aria-invalid={error !== null ? 'true' : undefined}
-				aria-describedby={error !== null ? `${ids.name}-error ${ids.hint}` : ids.hint}
-				bind:value={name}
-			/>
-			<p id={ids.hint} class="hint">
-				Woran du ihn später erkennst, etwa „WhatsApp Web auf dem Laptop“ oder „Skript Einkauf“.
-			</p>
-			{#if error !== null}
-				<p id={`${ids.name}-error`} class="field-error"><ErrorIcon /><span>{error}</span></p>
-			{/if}
-		</div>
+		<Field
+			label="Name des Schlüssels (Pflichtfeld)"
+			hint="Woran du ihn später erkennst, etwa „WhatsApp Web auf dem Laptop“ oder „Skript Einkauf“."
+			error={error ?? ''}
+		>
+			{#snippet control(field)}
+				<input
+					{...field}
+					type="text"
+					maxlength={INBOX_KEY_NAME_MAX_LENGTH}
+					autocomplete="off"
+					aria-required="true"
+					bind:value={name}
+				/>
+			{/snippet}
+		</Field>
 		<div>
 			<button class="button-primary" type="submit" aria-disabled={saving}>
 				{saving ? 'Wird erzeugt …' : 'Schlüssel erzeugen'}
@@ -109,26 +103,6 @@
 	.created {
 		display: grid;
 		gap: 0.875rem;
-	}
-
-	.field {
-		display: grid;
-		gap: 0.25rem;
-		min-width: 0;
-	}
-
-	label {
-		font-size: var(--font-size-control);
-		font-weight: 500;
-		color: var(--color-text-muted);
-	}
-
-	input {
-		width: 100%;
-		padding: 0.375rem 0.5rem;
-		background: var(--color-surface);
-		border: 1px solid var(--color-text-muted);
-		border-radius: var(--radius-control);
 	}
 
 	.hint {

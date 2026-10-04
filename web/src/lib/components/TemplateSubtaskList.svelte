@@ -346,18 +346,10 @@
 	.title {
 		flex: 1 1 10rem;
 		min-width: 0;
-		padding: 0.375rem 0.5rem;
-		background: var(--color-surface);
-		border: 1px solid var(--color-text-muted);
-		border-radius: var(--radius-control);
 	}
 
 	.row :global(select) {
 		flex: 0 1 auto;
-		padding: 0.375rem 0.5rem;
-		background: var(--color-surface);
-		border: 1px solid var(--color-text-muted);
-		border-radius: var(--radius-control);
 	}
 
 	.moves {

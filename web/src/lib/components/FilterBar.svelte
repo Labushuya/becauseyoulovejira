@@ -341,14 +341,10 @@
 		align-items: center;
 	}
 
-	/* The search field of base.css (ADR-0029 section 9); here only its width and the busy pointer. */
+	/* The search field of base.css (ADR-0029 section 9); here only its width (busy: base.css). */
 	.search-field input[type='search'] {
 		width: 16rem;
 		max-width: 100%;
-	}
-
-	.search-field input[aria-busy='true'] {
-		cursor: progress;
 	}
 
 	.search-error {

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import ActionsMenu, { type MenuAction } from '$lib/components/ActionsMenu.svelte';
-	import ErrorIcon from '$lib/components/ErrorIcon.svelte';
+	import Field from '$lib/components/form/Field.svelte';
 	import Lozenge from '$lib/components/guidance/Lozenge.svelte';
 	import SectionMessage from '$lib/components/guidance/SectionMessage.svelte';
 	import ConfirmDialog from '$lib/components/overlay/ConfirmDialog.svelte';
@@ -43,9 +43,7 @@
 	const ids = {
 		title: `${uid}-title`,
 		members: `${uid}-members`,
-		leave: `${uid}-leave`,
-		name: `${uid}-name`,
-		nameError: `${uid}-name-error`
+		leave: `${uid}-leave`
 	};
 
 	const current = $derived(store.household);
@@ -218,24 +216,20 @@
 					onsubmit={rename}
 					aria-busy={store.busy?.kind === 'rename' ? 'true' : undefined}
 				>
-					<div class="field">
-						<label class="label" for={ids.name}>Neuer Name</label>
-						<input
-							id={ids.name}
-							type="text"
-							autocomplete="off"
-							maxlength="100"
-							bind:this={nameInput}
-							bind:value={draft}
-							oninput={() => (nameError = '')}
-							onkeydown={renameKey}
-							aria-invalid={nameError === '' ? undefined : 'true'}
-							aria-describedby={nameError === '' ? undefined : ids.nameError}
-						/>
-						{#if nameError !== ''}
-							<p class="field-error" id={ids.nameError}><ErrorIcon /><span>{nameError}</span></p>
-						{/if}
-					</div>
+					<Field label="Neuer Name" error={nameError}>
+						{#snippet control(field)}
+							<input
+								{...field}
+								type="text"
+								autocomplete="off"
+								maxlength="100"
+								bind:this={nameInput}
+								bind:value={draft}
+								oninput={() => (nameError = '')}
+								onkeydown={renameKey}
+							/>
+						{/snippet}
+					</Field>
 					<div class="buttons">
 						<button class="button-secondary" type="button" onclick={() => void stopRename()}>
 							Abbrechen
@@ -412,16 +406,6 @@
 		display: grid;
 		gap: 0.5rem;
 		max-width: 32rem;
-	}
-
-	.field {
-		display: grid;
-		gap: 0.25rem;
-	}
-
-	.label {
-		font-size: var(--font-size-body);
-		font-weight: 500;
 	}
 
 	.buttons {

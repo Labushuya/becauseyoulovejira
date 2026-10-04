@@ -535,23 +535,11 @@
 		font-weight: 400;
 	}
 
-	.field input:not([type='radio'], [type='checkbox']),
-	.field textarea,
-	.field select,
-	.form :global(select) {
-		max-width: 100%;
-		padding: 0.375rem 0.5rem;
-		background: var(--color-surface);
-		border: 1px solid var(--color-text-muted);
-		border-radius: var(--radius-control);
-	}
-
 	.field input[type='text'],
 	.field input[type='tel'],
 	.field input[type='url'],
 	.field textarea {
 		width: 100%;
-		font: inherit;
 	}
 
 	.button-primary[aria-disabled='true'] {

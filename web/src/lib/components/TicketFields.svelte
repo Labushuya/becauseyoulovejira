@@ -234,9 +234,5 @@
 	.fields :global(input[type='date']) {
 		width: fit-content;
 		max-width: 100%;
-		padding: 0.25rem 0.5rem;
-		background: var(--color-surface);
-		border: 1px solid var(--color-text-muted);
-		border-radius: var(--radius-control);
 	}
 </style>

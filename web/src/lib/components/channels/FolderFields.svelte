@@ -125,6 +125,7 @@
 		<label for={ids.exclude}>Ausschlüsse, ein Muster je Zeile</label>
 		<textarea
 			id={ids.exclude}
+			class="input-mono"
 			rows="6"
 			spellcheck="false"
 			autocomplete="off"
@@ -205,16 +206,6 @@
 	input[type='text'],
 	textarea {
 		width: 100%;
-		padding: 0.375rem 0.5rem;
-		background: var(--color-surface);
-		border: 1px solid var(--color-text-muted);
-		border-radius: var(--radius-control);
-	}
-
-	textarea {
-		font-family: var(--font-mono);
-		font-size: var(--font-size-control);
-		resize: vertical;
 	}
 
 	.path {
@@ -229,9 +220,5 @@
 
 	.field :global(select) {
 		width: 100%;
-		padding: 0.25rem 0.375rem;
-		background: var(--color-surface);
-		border: 1px solid var(--color-text-muted);
-		border-radius: var(--radius-control);
 	}
 </style>

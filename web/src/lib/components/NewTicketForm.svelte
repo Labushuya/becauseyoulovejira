@@ -677,15 +677,6 @@
 		color: var(--color-text-muted);
 	}
 
-	input,
-	.form :global(select) {
-		max-width: 100%;
-		padding: 0.375rem 0.5rem;
-		background: var(--color-surface);
-		border: 1px solid var(--color-text-muted);
-		border-radius: var(--radius-control);
-	}
-
 	input[type='text'] {
 		width: 100%;
 	}

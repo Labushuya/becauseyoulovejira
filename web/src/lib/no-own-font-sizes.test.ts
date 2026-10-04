@@ -50,7 +50,6 @@ const LEGACY_FILES = [
 	'lib/components/channels/ProtonGuide.svelte',
 	'lib/components/channels/SecretValueField.svelte',
 	'lib/components/channels/SetupCheck.svelte',
-	'lib/components/channels/SetupConnectForm.svelte',
 	'lib/components/guidance/CodeBlock.svelte',
 	'lib/components/guidance/EmptyState.svelte',
 	'lib/components/guidance/Lozenge.svelte',

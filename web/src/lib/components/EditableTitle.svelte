@@ -104,15 +104,16 @@
 		outline: 2px solid var(--color-brand-text);
 	}
 
+	/*
+	 * The field takes the place of the heading and keeps its size and weight, so the title does not
+	 * jump while it is edited; surface, line and states come from base.css (allowlist of
+	 * no-own-form-styles.test.ts).
+	 */
 	.input {
 		flex: 1;
 		width: 100%;
-		padding: 0.25rem 0.5rem;
 		font-size: 1.25rem;
 		font-weight: 600;
-		background: var(--color-surface);
-		border: 1px solid var(--color-text-muted);
-		border-radius: var(--radius-control);
 	}
 
 	.edit {

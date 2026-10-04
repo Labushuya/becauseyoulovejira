@@ -117,7 +117,7 @@ describe('page "Konten": the list', () => {
 			within(rowOf('Chris Beispiel')).queryByRole('button', { name: /Weitere Aktionen/ })
 		).toBeNull();
 		expect(
-			within(rowOf('Chris Beispiel')).getByText(/Dein Konto änderst du unter „Konto“/)
+			within(rowOf('Chris Beispiel')).getByText(/Dein Konto änderst du unter „Mein Konto“/)
 		).toBeTruthy();
 		const trigger = within(rowOf('Anna Beispiel')).getByRole('button', {
 			name: 'Weitere Aktionen für Anna Beispiel'

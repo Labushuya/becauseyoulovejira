@@ -419,15 +419,6 @@
 		border-radius: var(--radius-control);
 	}
 
-	input:not([type='radio'], [type='checkbox']),
-	select {
-		padding: 0.375rem 0.5rem;
-		font-size: var(--font-size-body);
-		background: var(--color-surface);
-		border: 1px solid var(--color-line);
-		border-radius: var(--radius-control);
-	}
-
 	input[type='date'] {
 		width: fit-content;
 	}
@@ -446,12 +437,6 @@
 		font-size: var(--font-size-body);
 		font-weight: 400;
 		cursor: pointer;
-	}
-
-	/* Disabled fields; checkboxes and radios keep the look of base.css. */
-	input:not([type='radio'], [type='checkbox']):disabled {
-		color: var(--color-text-muted);
-		background: var(--color-bg);
 	}
 
 	.hint,
