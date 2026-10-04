@@ -1302,30 +1302,75 @@ $BylProblemCatalog = [ordered]@{
         Command = 'netsh advfirewall firewall delete rule name="becauseyoulovejira (Heimnetz)" program="{app}\pocketbase.exe"'
         Offer   = 'Soll ich die Firewall-Regel jetzt entfernen (Windows fragt dafür nach Administratorrechten)? (J/N)'
     }
-    'lan-firewall-add-failed'  = @{
+    # A change of the rule that did not happen, one entry per outcome of lan-firewall
+    # (Write-FirewallFailure): {change} is "angelegt" or "entfernt", {firewall} the netsh command of
+    # the change with the real path.
+    'lan-firewall-cancelled'   = @{
         Exit    = 1
         Level   = 'error'
         Faq     = ''
-        Problem = 'Die Firewall-Regel „becauseyoulovejira (Heimnetz)“ wurde nicht angelegt: {detail}.'
-        Cause   = 'Zum Ändern der Firewall braucht Windows Administratorrechte; die Anfrage wurde abgelehnt, nicht beantwortet, oder Windows hat die Regel nicht angenommen.'
+        Problem = 'Die Firewall-Regel „becauseyoulovejira (Heimnetz)“ wurde nicht {change}: Die Anfrage nach Administratorrechten wurde abgelehnt oder abgebrochen.'
+        Cause   = 'Windows ändert die Firewall nur mit Administratorrechten. In der Benutzerkontensteuerung wurde „Nein“ gewählt oder das Fenster geschlossen.'
         Steps   = @(
-            'Erneut versuchen und die Frage der Benutzerkontensteuerung bestätigen (am Rechner der App, gegebenenfalls mit dem Passwort eines Administrators).'
-            'Oder von Hand: eine Eingabeaufforderung als Administrator öffnen und den Befehl unten einfügen.'
+            'Erneut versuchen und in der Benutzerkontensteuerung „Ja“ wählen (gegebenenfalls mit dem Passwort eines Administrators).'
+            'Oder von Hand: eine Eingabeaufforderung als Administrator öffnen (Start, „cmd“ eingeben, Rechtsklick auf „Eingabeaufforderung“ → „Als Administrator ausführen“), den Befehl unten einfügen und mit Enter bestätigen.'
         )
-        Command = 'netsh advfirewall firewall add rule name="becauseyoulovejira (Heimnetz)" dir=in action=allow protocol=TCP localport={port} program="{app}\pocketbase.exe" profile=private'
+        Command = '{firewall}'
         Offer   = ''
     }
-    'lan-firewall-remove-failed' = @{
+    'lan-firewall-timeout'     = @{
         Exit    = 1
         Level   = 'error'
         Faq     = ''
-        Problem = 'Die Firewall-Regel „becauseyoulovejira (Heimnetz)“ wurde nicht entfernt: {detail}.'
-        Cause   = 'Zum Ändern der Firewall braucht Windows Administratorrechte; die Anfrage wurde abgelehnt, nicht beantwortet, oder Windows hat die Änderung nicht angenommen.'
+        Problem = 'Die Firewall-Regel „becauseyoulovejira (Heimnetz)“ wurde nicht {change}: Windows hat binnen {seconds} s nicht geantwortet.'
+        Cause   = 'Die Anfrage nach Administratorrechten blieb unbeantwortet. Kommt sie aus dem Hintergrund, zeigt Windows sie oft nicht als Fenster, sondern nur als blinkendes Schild-Symbol in der Taskleiste.'
         Steps   = @(
-            'Erneut versuchen und die Frage der Benutzerkontensteuerung bestätigen.'
-            'Oder von Hand: eine Eingabeaufforderung als Administrator öffnen und den Befehl unten einfügen.'
+            'Erneut versuchen und dabei auf das blinkende Symbol der Benutzerkontensteuerung in der Taskleiste klicken, dann „Ja“ wählen.'
+            'Wurde eine noch offene Abfrage später bestätigt: den Zustand neu prüfen (Seite „Sicherheit“: „Zustand neu prüfen“, im Ordner app: lan-info).'
+            'Oder von Hand: eine Eingabeaufforderung als Administrator öffnen (Start, „cmd“ eingeben, Rechtsklick auf „Eingabeaufforderung“ → „Als Administrator ausführen“), den Befehl unten einfügen und mit Enter bestätigen.'
         )
-        Command = 'netsh advfirewall firewall delete rule name="becauseyoulovejira (Heimnetz)" program="{app}\pocketbase.exe"'
+        Command = '{firewall}'
+        Offer   = ''
+    }
+    'lan-firewall-unavailable' = @{
+        Exit    = 1
+        Level   = 'error'
+        Faq     = ''
+        Problem = 'Die Firewall-Regel „becauseyoulovejira (Heimnetz)“ wurde nicht {change}: Windows kann hier nicht nach Administratorrechten fragen ({detail}).'
+        Cause   = 'Die App läuft ohne eine Sitzung, in der Windows eine Abfrage zeigen kann (etwa als Dienst oder als Aufgabe „unabhängig von der Benutzeranmeldung“), oder Windows lehnt Anfragen nach Administratorrechten für dieses Konto ab.'
+        Steps   = @(
+            'Eine Eingabeaufforderung als Administrator öffnen: Start, „cmd“ eingeben, Rechtsklick auf „Eingabeaufforderung“ → „Als Administrator ausführen“.'
+            'Den Befehl unten einfügen und mit Enter bestätigen; Windows antwortet mit „OK.“.'
+            'Danach den Zustand neu prüfen (Seite „Sicherheit“: „Zustand neu prüfen“, im Ordner app: lan-info).'
+        )
+        Command = '{firewall}'
+        Offer   = ''
+    }
+    'lan-firewall-failed'      = @{
+        Exit    = 1
+        Level   = 'error'
+        Faq     = ''
+        Problem = 'Die Firewall-Regel „becauseyoulovejira (Heimnetz)“ wurde nicht {change}: netsh hat einen Fehler gemeldet ({detail}).'
+        Cause   = 'Die Windows-Firewall hat die Änderung abgelehnt, etwa weil eine Gruppenrichtlinie lokale Regeln verbietet oder der Dienst „Windows Defender Firewall“ nicht läuft.'
+        Steps   = @(
+            'Den Befehl unten in einer Eingabeaufforderung als Administrator ausführen (Start, „cmd“ eingeben, Rechtsklick auf „Eingabeaufforderung“ → „Als Administrator ausführen“); netsh nennt dort den Grund.'
+            'Danach den Zustand neu prüfen (Seite „Sicherheit“: „Zustand neu prüfen“, im Ordner app: lan-info).'
+        )
+        Command = '{firewall}'
+        Offer   = ''
+    }
+    'lan-firewall-unconfirmed' = @{
+        Exit    = 1
+        Level   = 'error'
+        Faq     = ''
+        Problem = 'Die Firewall-Regel „becauseyoulovejira (Heimnetz)“ ist nicht {change}, obwohl Windows die Änderung gemeldet hat: {detail}.'
+        Cause   = 'Nach jeder Änderung liest die App die Regeln der Windows-Firewall neu und meldet Erfolg nur, wenn die Regel wirklich so ist. Eine Gruppenrichtlinie oder die Firewall eines anderen Herstellers kann lokale Regeln übergehen.'
+        Steps   = @(
+            'Den Zustand neu prüfen (Seite „Sicherheit“: „Zustand neu prüfen“, im Ordner app: lan-info).'
+            'In „Windows Defender Firewall mit erweiterter Sicherheit“ → Eingehende Regeln nach „becauseyoulovejira (Heimnetz)“ sehen.'
+            'Oder von Hand: eine Eingabeaufforderung als Administrator öffnen (Start, „cmd“ eingeben, Rechtsklick auf „Eingabeaufforderung“ → „Als Administrator ausführen“), den Befehl unten einfügen und mit Enter bestätigen.'
+        )
+        Command = '{firewall}'
         Offer   = ''
     }
     'lan-firewall-action'      = @{

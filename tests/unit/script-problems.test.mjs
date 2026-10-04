@@ -69,8 +69,9 @@ const CODES = Object.keys(CATALOG);
 
 // Placeholders every command may use (Get-BylProblemValues), and those a call fills.
 const GLOBAL_VALUES = ['app', 'appq', 'control', 'log', 'tail', 'root', 'build', 'fetch'];
-// index: the network adapter of an address of the home network (plan heimnetz, lan-profile).
-const CALL_VALUES = ['port', 'next', 'command', 'folder', 'nodeDir', 'rerun', 'index'];
+// index: the network adapter of an address of the home network (plan heimnetz, lan-profile);
+// firewall: the netsh command of a change of the firewall rule that did not happen (lan-firewall-*).
+const CALL_VALUES = ['port', 'next', 'command', 'folder', 'nodeDir', 'rerun', 'index', 'firewall'];
 
 describe('the catalog (app/byl-problems.ps1)', () => {
 	it('has every entry complete: exit code, level, problem, cause and at least one step', () => {
