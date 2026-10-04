@@ -1596,6 +1596,57 @@ $BylProblemCatalog = [ordered]@{
         Command = '{rerun}'
         Offer   = ''
     }
+    'build-skip-tests-git'     = @{
+        Exit    = 1
+        Level   = 'error'
+        Faq     = ''
+        Problem = 'build.ps1 -SkipTests konnte den Stand nicht prüfen ({detail}) und baut deshalb nicht ohne Tests.'
+        Cause   = 'Ohne Tests darf nur ein Stand von origin/main gebaut werden. Das prüft git; es fehlt im PATH, der Ordner ist kein Klon des Repositorys, oder origin/main ist dort noch unbekannt.'
+        Steps   = @(
+            'Im Klon des Repositorys bauen; fehlt origin/main, zuerst git fetch origin ausführen.'
+            'Oder mit den Tests bauen (Befehl unten).'
+        )
+        Command = '{build}'
+        Offer   = ''
+    }
+    'build-skip-tests-dirty'   = @{
+        Exit    = 1
+        Level   = 'error'
+        Faq     = ''
+        Problem = 'build.ps1 -SkipTests läuft nur auf einem sauberen Arbeitsbaum; hier gibt es Änderungen, die nicht committet sind.'
+        Cause   = 'Ohne Tests darf nur ein Stand veröffentlicht werden, den die CI geprüft hat. Die geänderten oder neuen Dateien (oben aufgeführt) hat sie nie gesehen.'
+        Steps   = @(
+            'Die Änderungen committen und über einen Pull Request mergen, oder sie verwerfen.'
+            'Oder mit den Tests bauen (Befehl unten).'
+        )
+        Command = '{build}'
+        Offer   = ''
+    }
+    'build-skip-tests-off-main' = @{
+        Exit    = 1
+        Level   = 'error'
+        Faq     = ''
+        Problem = 'build.ps1 -SkipTests läuft nur auf einem Stand von origin/main; HEAD ({head}) liegt nicht darauf.'
+        Cause   = 'Ausgecheckt ist ein Branch oder ein lokaler Commit. Ohne Tests darf nur ein Stand veröffentlicht werden, den die CI geprüft hat.'
+        Steps   = @(
+            'Im Live-Ordner zuerst git pull --ff-only ausführen, danach erneut mit -SkipTests bauen.'
+            'Jeden anderen Stand mit den Tests bauen (Befehl unten).'
+        )
+        Command = '{build}'
+        Offer   = ''
+    }
+    'build-tests-skipped'      = @{
+        Exit    = 0
+        Level   = 'warning'
+        Faq     = ''
+        Problem = 'Tests übersprungen – nur für Stände verwenden, die in der CI grün sind.'
+        Cause   = 'build.ps1 lief mit -SkipTests: Prüfung, Lint, Build, Veröffentlichung nach app\pb_public und die Hilfsprogramme liefen, die Tests (Root, Web, Erweiterung) nicht.'
+        Steps   = @(
+            'So nur einen gemergten Stand von origin/main bauen, dessen CI grün ist; vor einem Pull Request immer mit den Tests bauen (Befehl unten).'
+        )
+        Command = '{build}'
+        Offer   = ''
+    }
     'helper-build'             = @{
         Exit    = 1
         Level   = 'error'

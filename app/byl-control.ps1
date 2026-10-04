@@ -86,10 +86,13 @@ Der Einrichtungslink ist 30 Minuten gültig – ist er abgelaufen, erst stop.bat
 $MissedLinkHint
 "@
 
-# {0} = expiry time (HH:mm), {1} = installer URL.
+# {0} = expiry time (HH:mm), {1} = installer URL, {2} = $PendingSetupOpens, or $PendingSetupCopy with
+# -NoBrowser (the link is only shown then).
+$PendingSetupOpens = 'Der Einrichtungslink öffnet sich jetzt im Browser'
+$PendingSetupCopy = 'Kopiere diesen Einrichtungslink in den Browser'
 $PendingSetupHint = @"
 becauseyoulovejira läuft, aber die Einrichtung ist noch nicht abgeschlossen: Es gibt noch kein Admin-Konto.
-Der Einrichtungslink öffnet sich jetzt im Browser (gültig bis {0} Uhr):
+{2} (gültig bis {0} Uhr):
 {1}
   1. Lege dort dein Admin-Konto an.
   2. Lege danach im Admin-Bereich unter „users“ dein App-Konto an (E-Mail und Passwort).
@@ -1201,8 +1204,11 @@ function Invoke-Start {
             $link = Get-PendingInstallerLink -ProcessId $processId
             if ($null -ne $link) {
                 # Setup missed: open the installer link (once, instead of the app) and pause start.bat.
-                Show-Message ($PendingSetupHint -f $link.ExpiresUtc.ToLocalTime().ToString('HH:mm'), $link.Url)
-                Start-Process -FilePath $link.Url
+                # -NoBrowser never opens a browser, not even for the link: it is only shown.
+                $how = if ($NoBrowser) { $PendingSetupCopy } else { $PendingSetupOpens }
+                Show-Message ($PendingSetupHint -f $link.ExpiresUtc.ToLocalTime().ToString('HH:mm'), $link.Url, $how)
+                if (-not $NoBrowser) { Start-Process -FilePath $link.Url }
+                $script:LogDetail = ("$script:LogDetail setup-pending browser=$(if ($NoBrowser) { 'no' } else { 'yes' })").Trim()
                 return $BylExitSetupPending
             }
             Start-MailHelper
