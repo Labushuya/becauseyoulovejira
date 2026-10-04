@@ -169,14 +169,18 @@ function stateFor(app, userId, now) {
 
 // --- Realtime ---------------------------------------------------------------------------------------
 
-/** After the commit: the topic byl/household (no data) to the open tabs of these accounts. Never throws. */
-function notify(app, userIds) {
+/**
+ * After the commit: the topic byl/household to the open tabs of these accounts. Never throws. The
+ * message carries no data, except `{ dissolved: true }` when the household was dissolved (E7-4), so a
+ * tab can say so instead of "nicht mehr Mitglied".
+ */
+function notify(app, userIds, data) {
   if (userIds.length === 0) {
     return;
   }
   try {
     var clients = app.subscriptionsBroker().clients();
-    var message = new SubscriptionMessage({ name: TOPIC, data: '{}' });
+    var message = new SubscriptionMessage({ name: TOPIC, data: JSON.stringify(data || {}) });
     for (var id in clients) {
       var client = clients[id];
       if (!client || client.isDiscarded() || !client.hasSubscription(TOPIC)) {
@@ -667,6 +671,7 @@ function leave(e) {
 
 module.exports = {
   TOPIC: TOPIC,
+  notify: notify,
   ready: ready,
   stateFor: stateFor,
   view: view,

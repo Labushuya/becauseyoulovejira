@@ -865,16 +865,20 @@ const MEMBERS_RULE_BEFORE_ACCOUNTS = 'user = @request.auth.id';
 // household_invites and the rights of household_members (1790203800), the rule of joining in the
 // rate limiter (1790203810, only settings) and the owner branch of the API rules only for private
 // records (1790203900, only rules); since the areas (ADR-0059, E7-3) also the retention of the trash
-// of a household (1790204100, one field at households).
+// of a household (1790204100, one field at households); since moving between the areas (ADR-0060,
+// E7-4) the connections of a household from before into the private area of their owner (1790204200,
+// only rows with a household, which no earlier test writes).
 const HOUSEHOLD_INVITES_MIGRATION = '1790203800_household_invites.js';
 const JOIN_LIMIT_MIGRATION = '1790203810_household_join_limit.js';
 const ACCESS_RULES_MIGRATION = '1790203900_household_access_rules.js';
 const AREA_RETENTION_MIGRATION = '1790204100_household_trash_retention.js';
+const PRIVATE_CONNECTIONS_MIGRATION = '1790204200_connections_private.js';
 const HOUSEHOLD_MIGRATIONS = [
 	HOUSEHOLD_INVITES_MIGRATION,
 	JOIN_LIMIT_MIGRATION,
 	ACCESS_RULES_MIGRATION,
-	AREA_RETENTION_MIGRATION
+	AREA_RETENTION_MIGRATION,
+	PRIVATE_CONNECTIONS_MIGRATION
 ];
 const HOUSEHOLD_INVITES_COLLECTION = 'household_invites';
 // [after, before] of the owner branch of 1790203900, of a record and of a record through its ticket.
@@ -2726,7 +2730,7 @@ describe('migration rollback of the retention of a household (ADR-0059 §6)', ()
 		'adds the retention of every household empty (30 days), and back, without touching another row',
 		async () => {
 			const fromRetention = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(AREA_RETENTION_MIGRATION));
-			expect(fromRetention).toEqual([AREA_RETENTION_MIGRATION]);
+			expect(fromRetention).toEqual([AREA_RETENTION_MIGRATION, PRIVATE_CONNECTIONS_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -2754,7 +2758,7 @@ describe('migration rollback of the retention of a household (ADR-0059 §6)', ()
 					db.prepare('UPDATE households SET trash_retention = ? WHERE id = ?').run('7', 'household000002');
 				});
 				const down = await migrate(args, 'down', String(fromRetention.length));
-				expect(appliedFiles(down, 'Reverted')).toEqual(fromRetention);
+				expect(appliedFiles(down, 'Reverted')).toEqual([...fromRetention].reverse());
 				expect(households(dataDir)).toEqual(before);
 				expect(withoutTimestamps(readDataDir(dataDir).collections)).toEqual(schemaBefore);
 				expect(withDatabase(dataDir, snapshot)).toEqual(rows);
@@ -2762,6 +2766,86 @@ describe('migration rollback of the retention of a household (ADR-0059 §6)', ()
 				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromRetention);
 				assertSchema(readDataDir(dataDir).collections);
 				expect(households(dataDir).map((row) => row.trash_retention)).toEqual(['', '']);
+			});
+		}
+	);
+});
+
+describe('migration of the connections of a household from before (ADR-0060 §7)', () => {
+	const rowsOf = (dataDir, table) =>
+		withDatabase(dataDir, (db) => db.prepare(`SELECT * FROM ${table} ORDER BY id`).all());
+
+	it(
+		'puts a connection of a household into the private area of its active owner, and leaves everything else',
+		async () => {
+			const fromConnections = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(PRIVATE_CONNECTIONS_MIGRATION));
+			expect(fromConnections).toEqual([PRIVATE_CONNECTIONS_MIGRATION]);
+
+			await withTempDataDir(async ({ dataDir, args }) => {
+				await migrate(args, 'up');
+				await migrate(args, 'down', String(fromConnections.length));
+				const owner = 'user00000000001';
+				const sleeper = 'user00000000002';
+				const home = 'household000001';
+				withDatabase(dataDir, (db) => {
+					const user = db.prepare(
+						'INSERT INTO users (id, email, tokenKey, password, disabled, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?)'
+					);
+					user.run(owner, 'eins@example.invalid', 'tk1', 'hash', 0, STAMP, STAMP);
+					user.run(sleeper, 'zwei@example.invalid', 'tk2', 'hash', 1, STAMP, STAMP);
+					db.prepare('INSERT INTO households (id, name, created, updated) VALUES (?, ?, ?, ?)').run(home, 'Haus', STAMP, STAMP);
+					const project = db.prepare(
+						'INSERT INTO projects (id, name, code, archived, owner, household, scope, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+					);
+					project.run('project00000001', 'Eigen', 'EIGEN', 0, owner, '', `u:${owner}`, STAMP, STAMP);
+					project.run('project00000002', 'Haus', 'HAUS', 0, owner, home, `h:${home}`, STAMP, STAMP);
+					const connection = db.prepare(
+						'INSERT INTO connections (id, type, label, enabled, secret_env, settings, owner, household, scope, target_project, created, updated) ' +
+							'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+					);
+					connection.run('conn00000000001', 'mail', 'Familie', 1, 'BYL_FAMILIE', '{}', owner, home, `h:${home}`, 'project00000002', STAMP, STAMP);
+					connection.run('conn00000000002', 'calendar', 'Termine', 1, 'BYL_TERMINE', '{}', owner, home, `h:${home}`, 'project00000001', STAMP, STAMP);
+					connection.run('conn00000000003', 'mail', 'Alt', 1, 'BYL_ALT', '{}', sleeper, home, `h:${home}`, 'project00000002', STAMP, STAMP);
+					connection.run('conn00000000004', 'mail', 'Eigen', 1, 'BYL_EIGEN', '{}', owner, '', `u:${owner}`, '', STAMP, STAMP);
+					const item = db.prepare(
+						'INSERT INTO inbox_items (id, channel, kind, title, body, fingerprint, state, connection, owner, household, scope, created, updated) ' +
+							'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+					);
+					item.run('item00000000001', 'mail', 'mail', 'Familie', '', 'f1', 'new', 'conn00000000001', owner, home, `h:${home}`, STAMP, STAMP);
+					item.run('item00000000002', 'mail', 'mail', 'Alt', '', 'f2', 'new', 'conn00000000003', sleeper, home, `h:${home}`, STAMP, STAMP);
+					item.run('item00000000003', 'mail', 'mail', 'Eigen', '', 'f3', 'new', 'conn00000000004', owner, '', `u:${owner}`, STAMP, STAMP);
+				});
+				const before = rowsOf(dataDir, 'connections');
+				const schemaBefore = withoutTimestamps(readDataDir(dataDir).collections);
+
+				const up = await migrate(args, 'up');
+				expect(appliedFiles(up, 'Applied')).toEqual(fromConnections);
+				expect(withoutTimestamps(readDataDir(dataDir).collections)).toEqual(schemaBefore);
+				const connections = rowsOf(dataDir, 'connections');
+				expect(connections.map((row) => [row.id, row.household, row.scope, row.target_project])).toEqual([
+					// The active owner takes it; a target project of the household goes, an own one stays.
+					['conn00000000001', '', `u:${owner}`, ''],
+					['conn00000000002', '', `u:${owner}`, 'project00000001'],
+					// The owner is disabled: it stays where it was.
+					['conn00000000003', home, `h:${home}`, 'project00000002'],
+					['conn00000000004', '', `u:${owner}`, '']
+				]);
+				// Plain UPDATEs: `updated` and every other column stay.
+				const unchanged = ({ household, scope, target_project, ...rest }) => rest;
+				expect(connections.map(unchanged)).toEqual(before.map(unchanged));
+				// The entry of the household keeps its area and loses the reference to the private connection.
+				expect(rowsOf(dataDir, 'inbox_items').map((row) => [row.id, row.scope, row.connection])).toEqual([
+					['item00000000001', `h:${home}`, ''],
+					['item00000000002', `h:${home}`, 'conn00000000003'],
+					['item00000000003', `u:${owner}`, 'conn00000000004']
+				]);
+
+				// Down changes nothing: the connections stay private.
+				const down = await migrate(args, 'down', String(fromConnections.length));
+				expect(appliedFiles(down, 'Reverted')).toEqual(fromConnections);
+				expect(rowsOf(dataDir, 'connections')).toEqual(connections);
+				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromConnections);
+				expect(rowsOf(dataDir, 'connections')).toEqual(connections);
 			});
 		}
 	);

@@ -164,8 +164,17 @@ describe('the web app (web/src/lib/domain/accounts.ts)', () => {
 
 	it('reads the answers strictly', () => {
 		const account = { id: 'u1', name: 'Anna', email: 'a@example.com', admin: false, disabled: true, created: 'x', self: false };
-		expect(parseAccountList({ accounts: [account], passwordMin: 10 })).toEqual({ accounts: [account], passwordMin: 10 });
+		expect(parseAccountList({ accounts: [account], passwordMin: 10 })).toEqual({ accounts: [account], passwordMin: 10, households: [] });
 		expect(parseAccountList({ accounts: [account] })?.passwordMin).toBe(8);
+		// Since E7-4 (ADR-0060 §6): the household an account owns and the households without an active owner.
+		const owner = { ...account, owns: { id: 'h1', name: 'Wohnung' } };
+		const orphan = { id: 'h1', name: 'Wohnung', owner: null, members: [{ id: 'm1', user: 'u2', name: 'Max', disabled: false }] };
+		expect(parseAccountList({ accounts: [owner], households: [orphan] })).toEqual({
+			accounts: [owner],
+			passwordMin: 8,
+			households: [orphan]
+		});
+		expect(parseAccountList({ accounts: [account], households: [{ id: 'h1', members: 'x' }] })).toBeNull();
 		expect(parseAccountList({ accounts: [{ ...account, admin: 'nein' }] })).toBeNull();
 		expect(parseAccountList({})).toBeNull();
 		expect(parsePasswordGrant({ account, password: 'abcd-efgh-ijkm-npqr' })).toEqual({ account, password: 'abcd-efgh-ijkm-npqr' });

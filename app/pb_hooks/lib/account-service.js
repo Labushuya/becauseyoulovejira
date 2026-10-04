@@ -241,18 +241,144 @@ function withPassword(e, status, body) {
   e.json(status, body);
 }
 
+var MEMBERS = 'household_members';
+var HOUSEHOLDS = 'households';
+
+/**
+ * The households as the page "Konten" needs them (E7-4, ADR-0060 §6): which account owns which
+ * household (`owns`, by account ID, for the hint before disabling an owner), and the households
+ * without an active owner (owner disabled, or deleted in the admin UI) with their other members.
+ */
+function householdsOf(app) {
+  var memberships = app.findRecordsByFilter(MEMBERS, 'id != ""', 'created,id', 0, 0);
+  var byHousehold = {};
+  for (var i = 0; i < memberships.length; i++) {
+    var householdId = memberships[i].getString('household');
+    (byHousehold[householdId] = byHousehold[householdId] || []).push(memberships[i]);
+  }
+  var owns = {};
+  var orphaned = [];
+  var households = app.findRecordsByFilter(HOUSEHOLDS, 'id != ""', 'created,id', 0, 0);
+  for (var h = 0; h < households.length; h++) {
+    var household = households[h];
+    var rows = byHousehold[household.id] || [];
+    var owner = null;
+    var members = [];
+    for (var m = 0; m < rows.length; m++) {
+      var user = findUser(app, rows[m].getString('user'));
+      if (user === null) {
+        continue;
+      }
+      if (rows[m].getString('role') === 'owner') {
+        owner = user;
+      } else {
+        members.push({ id: rows[m].id, user: user.id, name: user.getString('name'), disabled: user.getBool('disabled') });
+      }
+    }
+    var view = { id: household.id, name: household.getString('name') };
+    if (owner !== null) {
+      owns[owner.id] = view;
+    }
+    if (owner === null || owner.getBool('disabled')) {
+      orphaned.push({
+        id: household.id,
+        name: household.getString('name'),
+        owner: owner === null ? null : { id: owner.id, name: owner.getString('name') },
+        members: members
+      });
+    }
+  }
+  return { owns: owns, orphaned: orphaned };
+}
+
+/** The answer of the list: every account (with the household it owns), and the households without an active owner. */
+function listAnswer(e) {
+  var selfId = system().userOf(e);
+  var found = e.app.findRecordsByFilter(USERS, 'id != ""', 'created,id', 0, 0);
+  var households = householdsOf(e.app);
+  var accounts = [];
+  for (var i = 0; i < found.length; i++) {
+    var account = viewOf(found[i], selfId);
+    account.owns = households.owns[found[i].id] || null;
+    accounts.push(account);
+  }
+  return { accounts: accounts, passwordMin: passwordMin(e.app), households: households.orphaned };
+}
+
 /** GET /api/byl/accounts: every account with name, e-mail, right, switch and creation. */
 function list(e) {
   if (refused(e, 'accounts', 'GET', READ)) {
     return;
   }
-  var selfId = system().userOf(e);
-  var found = e.app.findRecordsByFilter(USERS, 'id != ""', 'created,id', 0, 0);
-  var accounts = [];
-  for (var i = 0; i < found.length; i++) {
-    accounts.push(viewOf(found[i], selfId));
+  e.json(200, listAnswer(e));
+}
+
+/**
+ * POST /api/byl/accounts/households/{id}/owner { member } (E7-4, ADR-0060 §6): the administrator of
+ * the app makes an active member the owner of a household whose owner is disabled or gone. The old
+ * owner stays a member with every right set, like handing the household on (ADR-0058 §4). Answers the
+ * list; the tabs of the members read their household again.
+ */
+function setHouseholdOwner(e) {
+  var name = 'accounts-household-owner';
+  if (refused(e, name, 'POST', CHANGE)) {
+    return;
   }
-  e.json(200, { accounts: accounts, passwordMin: passwordMin(e.app) });
+  var body = e.requestInfo().body;
+  var memberId = body !== null && typeof body === 'object' && typeof body.member === 'string' ? body.member : '';
+  if (memberId === '') {
+    problem(e, name, 'format');
+    return;
+  }
+  var householdId = String(e.request.pathValue('id') || '');
+  var outcome = { problem: '', notify: [] };
+  e.app.runInTransaction(function (txApp) {
+    var found = txApp.findRecordsByFilter(HOUSEHOLDS, 'id = {:id}', '', 1, 0, { id: householdId });
+    if (found.length === 0) {
+      outcome.problem = 'household-missing';
+      return;
+    }
+    var rows = txApp.findRecordsByFilter(MEMBERS, 'household = {:h}', 'created,id', 0, 0, { h: householdId });
+    var owner = null;
+    var target = null;
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].getString('role') === 'owner') {
+        owner = rows[i];
+      } else if (rows[i].id === memberId) {
+        target = rows[i];
+      }
+      outcome.notify.push(rows[i].getString('user'));
+    }
+    var ownerUser = owner === null ? null : findUser(txApp, owner.getString('user'));
+    if (ownerUser !== null && !ownerUser.getBool('disabled')) {
+      outcome.problem = 'owner-active';
+      return;
+    }
+    if (target === null) {
+      outcome.problem = 'member';
+      return;
+    }
+    var targetUser = findUser(txApp, target.getString('user'));
+    if (targetUser === null || targetUser.getBool('disabled')) {
+      outcome.problem = 'member-disabled';
+      return;
+    }
+    if (owner !== null) {
+      owner.set('role', 'member');
+      owner.set('rights', require(__hooks + '/lib/household-rules.js').RIGHTS.slice());
+      txApp.save(owner);
+    }
+    target.set('role', 'owner');
+    target.set('rights', []);
+    txApp.save(target);
+  });
+  if (outcome.problem !== '') {
+    problem(e, name, outcome.problem);
+    return;
+  }
+  require(__hooks + '/lib/household-service.js').notify(e.app, outcome.notify);
+  audit(e, 'household-owner', householdId);
+  e.json(200, listAnswer(e));
 }
 
 /** POST /api/byl/accounts { email, name }: a new account with a start password, shown once. */
@@ -410,5 +536,6 @@ module.exports = {
   create: create,
   resetPassword: resetPassword,
   setDisabled: setDisabled,
-  setAdmin: setAdmin
+  setAdmin: setAdmin,
+  setHouseholdOwner: setHouseholdOwner
 };

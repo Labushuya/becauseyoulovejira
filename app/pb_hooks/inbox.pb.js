@@ -22,8 +22,13 @@ onRecordUpdateRequest(function (e) {
 }, 'inbox_items');
 
 // Linking an item to a ticket and releasing it write the history of the ticket in the same
-// transaction as the item (ADR-0031 section 2).
+// transaction as the item (ADR-0031 section 2). A move between the areas (ADR-0060) sets the area,
+// the connection, the target project and the fingerprint itself.
 onRecordUpdate(function (e) {
+  if (e.record.get(require(`${__hooks}/lib/area-move-rules.js`).MOVE_KEY)) {
+    e.next();
+    return;
+  }
   var service = require(`${__hooks}/lib/inbox-service.js`);
   require(`${__hooks}/lib/transaction.js`).inTransaction(e, function (txApp) {
     var change = service.prepareUpdate(txApp, e.record);

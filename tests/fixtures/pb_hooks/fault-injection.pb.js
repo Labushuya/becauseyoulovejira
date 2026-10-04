@@ -86,6 +86,18 @@ onRecordUpdateExecute(function (e) {
   e.next();
 }, 'projects');
 
+// Fails moving a ticket with the marker title into another area (ADR-0060): the move runs in one
+// transaction, so every record moved, numbered or written before it must stay as it was.
+onRecordUpdateExecute(function (e) {
+  if (
+    e.record.getString('title') === '__byl_fail_area_move__' &&
+    e.record.original().getString('scope') !== e.record.getString('scope')
+  ) {
+    throw new BadRequestError('Injected area move failure.');
+  }
+  e.next();
+}, 'tickets');
+
 // Fails the last write of "Ticket duplizieren" (ADR-0045): the entry "Dupliziert nach …" in the
 // history of an original with the marker title. Copy of the source, duplicate, sub-tickets,
 // comments, pin and the history of the duplicate were written before in the same transaction, so

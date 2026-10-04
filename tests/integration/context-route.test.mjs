@@ -112,6 +112,7 @@ const PC_ROUTES = [
 	{ method: 'POST', path: '/api/byl/accounts/abcdefghijklmno/password' },
 	{ method: 'POST', path: '/api/byl/accounts/abcdefghijklmno/disabled', body: { disabled: true } },
 	{ method: 'POST', path: '/api/byl/accounts/abcdefghijklmno/admin', body: { admin: true } },
+	{ method: 'POST', path: '/api/byl/accounts/households/abcdefghijklmno/owner', body: { member: 'abcdefghijklmno' } },
 	{ method: 'GET', path: '/api/byl/folders/items/abcdefghijklmno' },
 	{ method: 'GET', path: '/api/byl/folders/items/abcdefghijklmno/file' }
 ];

@@ -106,6 +106,17 @@ routerAdd(
   $apis.requireAuth('users')
 );
 
+// { mode: adopt | delete, preview?, name? }: dissolves the household (E7-4, ADR-0060 §5; only the
+// owner): everything into his private area, or deleted for good after typing its name.
+routerAdd(
+  'POST',
+  '/api/byl/household/dissolve',
+  function (e) {
+    return require(`${__hooks}/lib/area-move-service.js`).dissolve(e);
+  },
+  $apis.requireAuth('users')
+);
+
 // { retention }: the retention of the trash of the household (E7-3; owner or right "purge").
 routerAdd(
   'POST',

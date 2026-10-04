@@ -12,7 +12,7 @@
 //   delegate - give and take rights, only those one holds oneself
 //   rename   - rename the household
 //   purge    - delete for good in the household and set the retention of its trash (since E7-3)
-//   move_out - move household records into the private area (in effect with E7-4)
+//   move_out - move household records of others into the private area (since E7-4, ADR-0060 §4)
 var RIGHTS = ['invite', 'remove', 'delegate', 'rename', 'purge', 'move_out'];
 var OWNER = 'owner';
 var MEMBER = 'member';
@@ -60,8 +60,8 @@ var PROBLEMS = {
   'invite-closed': 'Dieser Code ist nicht mehr offen.',
   'invites-full': 'Höchstens ' + OPEN_INVITES_MAX + ' offene Codes. Widerrufe zuerst einen.',
   'owner-leave':
-    'Als Inhaber kannst du nicht austreten. Übertrage zuerst die Inhaberschaft an ein anderes Mitglied. ' +
-    'Einen Haushalt auflösen geht erst mit einer späteren Version.',
+    'Als Inhaber kannst du nicht austreten. Übertrage zuerst die Inhaberschaft an ein anderes Mitglied, ' +
+    'oder löse den Haushalt auf.',
   retention: 'Bitte 7, 30 oder 90 Tage oder „Nie automatisch“ wählen.'
 };
 
