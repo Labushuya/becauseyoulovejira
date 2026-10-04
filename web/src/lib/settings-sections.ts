@@ -22,6 +22,8 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
 	{ id: 'tickets', label: 'Tickets', href: resolve('/einstellungen/tickets') },
 	{ id: 'darstellung', label: 'Darstellung', href: resolve('/einstellungen/darstellung') },
 	{ id: 'konto', label: 'Konto', href: resolve('/einstellungen/konto') },
+	// The household of the account (ADR-0058, E7-2): for every account, on every device.
+	{ id: 'haushalt', label: 'Haushalt', href: resolve('/einstellungen/haushalt') },
 	// The accounts of the app for its administrator (ADR-0056 §3), on every server.
 	{ id: 'konten', label: 'Konten', href: resolve('/einstellungen/konten') },
 	// How the app protects itself and what can be set (ADR-0055 §8), on every server; the further
@@ -122,7 +124,9 @@ export const HELP_SECTIONS = [
 	// The protection of the app (ADR-0055): linked from the page "Sicherheit".
 	{ id: 'sicherheit', label: 'Sicherheit' },
 	// Accounts and the administrator (ADR-0056): linked from the pages "Konto" and "Konten".
-	{ id: 'konten', label: 'Konten und Verwalter' }
+	{ id: 'konten', label: 'Konten und Verwalter' },
+	// The household (ADR-0058): linked from the page "Haushalt".
+	{ id: 'haushalt', label: 'Haushalt' }
 ] as const;
 
 export type HelpSection = (typeof HELP_SECTIONS)[number]['id'];

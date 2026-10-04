@@ -37,11 +37,12 @@ var TRASH_OP_KEY = '@trash_op';
 // Realtime topic that tells the tabs of the owners that the trash changed (no data).
 var TOPIC = 'byl/trash';
 
-// Visibility without the trash condition: the rule of tickets and inbox items before 1790202300
-// (owner or household member). Used for the trash routes and to decide who gets the "delete"
-// event of a hidden record.
+// Visibility without the trash condition: the rule of tickets and inbox items without the
+// condition of 1790202300 (the owner of a private record, or a member of its household; since
+// 1790203900 the owner branch holds for private records only, ADR-0058 §5). Used for the trash
+// routes and to decide who gets the "delete" event of a hidden record.
 var VISIBLE_RULE =
-  '@request.auth.id != "" && (owner = @request.auth.id || (household != "" && ' +
+  '@request.auth.id != "" && ((owner = @request.auth.id && household = "") || (household != "" && ' +
   '@collection.household_members.household ?= household && @collection.household_members.user ?= @request.auth.id))';
 
 // Rows per batch of the daily run.
@@ -128,16 +129,18 @@ function historyEntry(txApp, ticketId, field, oldValue, newValue, actor) {
   txApp.save(entry);
 }
 
-// The users that see a ticket: its owner and the members of its household.
+// The users that see a ticket: the owner of a private one, the members of the household of a
+// household ticket (an owner who left the household no longer sees it, ADR-0058 §5).
 function viewersOf(app, ticket) {
-  var ids = [ticket.getString('owner')];
   var household = ticket.getString('household');
-  if (household !== '') {
-    var members = app.findRecordsByFilter('household_members', 'household = {:h}', '', 0, 0, { h: household });
-    for (var i = 0; i < members.length; i++) {
-      if (ids.indexOf(members[i].getString('user')) === -1) {
-        ids.push(members[i].getString('user'));
-      }
+  if (household === '') {
+    return [ticket.getString('owner')];
+  }
+  var ids = [];
+  var members = app.findRecordsByFilter('household_members', 'household = {:h}', '', 0, 0, { h: household });
+  for (var i = 0; i < members.length; i++) {
+    if (ids.indexOf(members[i].getString('user')) === -1) {
+      ids.push(members[i].getString('user'));
     }
   }
   return ids;
@@ -709,10 +712,11 @@ function purge(e, id) {
   notifyTrash(e.app, viewers);
 }
 
-// Tickets of the trash (groups only by their first ticket) the user sees, newest first.
+// Tickets of the trash (groups only by their first ticket) the user sees, newest first: own private
+// ones and those of the current households (VISIBLE_RULE).
 function visibleRoots(app, userId) {
   var memberships = app.findRecordsByFilter('household_members', 'user = {:user}', '', 0, 0, { user: userId });
-  var filter = "deleted_at != '' && parent = '' && (owner = {:user}";
+  var filter = "deleted_at != '' && parent = '' && ((owner = {:user} && household = '')";
   var params = { user: userId };
   for (var i = 0; i < memberships.length; i++) {
     filter += ' || household = {:h' + i + '}';

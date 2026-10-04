@@ -504,14 +504,16 @@ describe('who may duplicate', () => {
 		expect((await rejectionOf(duplicate(s.c, ticket.id, {}))).status).toBe(404);
 	});
 
-	it('refuses an owner who left the household: seeing is not creating (403)', async () => {
+	it('refuses an owner who left the household: the ticket is gone for him (404, ADR-0058 §5)', async () => {
 		const scenario = await createScenario();
 		const ticket = await scenario.a
 			.collection('tickets')
 			.create({ owner: scenario.ids.a, household: scenario.h1.id, title: 'Vor dem Austritt' });
 		await scenario.superuser.collection('household_members').delete(scenario.members.aH1.id);
-		expect(await statusOf(scenario.a.collection('tickets').getOne(ticket.id))).toBe(200);
-		expect((await rejectionOf(duplicate(scenario.a, ticket.id, {}))).status).toBe(403);
+		expect(await statusOf(scenario.a.collection('tickets').getOne(ticket.id))).toBe(404);
+		expect((await rejectionOf(duplicate(scenario.a, ticket.id, {}))).status).toBe(404);
+		// The member B still duplicates it.
+		expect((await duplicate(scenario.b, ticket.id, {})).original.id).toBe(ticket.id);
 	});
 
 	it('does not duplicate a ticket in the trash', async () => {
