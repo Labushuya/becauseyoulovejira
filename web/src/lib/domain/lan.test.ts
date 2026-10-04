@@ -8,6 +8,7 @@ import {
 	LAN_TEXTS,
 	candidateText,
 	firewallDoneTitle,
+	firewallFailureTitle,
 	lanInvalidText,
 	lanRestartNeeded,
 	lanUrls,
@@ -93,13 +94,13 @@ describe('answers of the routes', () => {
 				action: 'add',
 				outcome: 'cancelled',
 				report: {
-					code: 'lan-firewall-add-failed',
+					code: 'lan-firewall-cancelled',
 					level: 'error',
 					exitCode: 1,
 					problem:
-						'Die Firewall-Regel „becauseyoulovejira (Heimnetz)“ wurde nicht angelegt: die Anfrage nach Administratorrechten wurde abgelehnt.',
+						'Die Firewall-Regel „becauseyoulovejira (Heimnetz)“ wurde nicht angelegt: Die Anfrage nach Administratorrechten wurde abgelehnt oder abgebrochen.',
 					facts: [],
-					cause: 'Zum Ändern der Firewall braucht Windows Administratorrechte.',
+					cause: 'Windows ändert die Firewall nur mit Administratorrechten.',
 					remedy: {
 						steps: ['Erneut versuchen.'],
 						command: 'netsh advfirewall firewall add rule …'
@@ -112,14 +113,44 @@ describe('answers of the routes', () => {
 		expect(declined?.result).toMatchObject({
 			ok: false,
 			outcome: 'cancelled',
-			report: { code: 'lan-firewall-add-failed' }
+			report: { code: 'lan-firewall-cancelled' }
 		});
 		expect(declined?.lan).toBeNull();
 		expect(parseFirewallAnswer({ result: { ok: true, action: 'delete' } })).toBeNull();
-		expect(
-			parseFirewallAnswer({ result: { ok: true, action: 'remove', outcome: 'egal' } })?.result
-				.outcome
-		).toBe('');
+		for (const outcome of ['timeout', 'unavailable', 'failed', 'unconfirmed']) {
+			expect(
+				parseFirewallAnswer({ result: { ok: false, action: 'add', outcome } })?.result.outcome
+			).toBe(outcome);
+		}
+		// "test" was the outcome of a copy of the tests before the rule was read again afterwards.
+		for (const outcome of ['egal', 'test']) {
+			expect(
+				parseFirewallAnswer({ result: { ok: true, action: 'remove', outcome } })?.result.outcome
+			).toBe('');
+		}
+	});
+
+	it('title a change that did not happen by its entry, without one by its outcome', () => {
+		const declined = parseFirewallAnswer({
+			result: {
+				ok: false,
+				action: 'add',
+				outcome: 'cancelled',
+				report: { code: 'lan-firewall-cancelled', level: 'error', problem: 'Abgelehnt.' }
+			}
+		});
+		expect(firewallFailureTitle(declined!.result)).toBe('Abgelehnt.');
+		const titles = (
+			['cancelled', 'timeout', 'unavailable', 'failed', 'unconfirmed', ''] as const
+		).map((outcome) => firewallFailureTitle({ ok: false, action: 'add', outcome, report: null }));
+		expect(titles).toEqual([
+			'Abgelehnt: Windows hat keine Administratorrechte bekommen',
+			'Windows hat nicht rechtzeitig geantwortet',
+			'Windows kann hier nicht nach Administratorrechten fragen',
+			'netsh hat einen Fehler gemeldet',
+			'Firewall-Regel nicht bestätigt',
+			'Firewall-Regel nicht geändert'
+		]);
 	});
 
 	it('read the home network of the overview; before the restart after the update there is none', () => {
@@ -176,6 +207,11 @@ describe('words of the page', () => {
 		);
 		expect(LAN_TEXTS.warning).toMatch(/Passwörter und Inhalte gehen unverschlüsselt durchs WLAN/);
 		expect(LAN_TEXTS.warning).toMatch(/Raspberry Pi/);
+		// The prompt may only blink in the taskbar or not come at all; the page checks afterwards.
+		expect(LAN_TEXTS.uac).toMatch(/blinkt die Abfrage als Schild-Symbol in der Taskleiste/);
+		expect(LAN_TEXTS.uac).toMatch(/ohne Rückfrage erhöht, erscheint keine Abfrage/);
+		expect(LAN_TEXTS.uac).toMatch(/höchstens 2 Minuten und prüft die Regel danach/);
+		expect(LAN_TEXTS.manual).toMatch(/Als Administrator ausführen.*mit Enter bestätigen/);
 		expect(LAN_TEXTS.fritzSteps.join(' ')).toMatch(
 			/Diesem Netzwerkgerät immer die gleiche IPv4-Adresse zuweisen/
 		);
