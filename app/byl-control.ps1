@@ -3,7 +3,9 @@
 # mail helper byl-mail.exe next to PocketBase (E4 plan, package 11). The page "Einstellungen →
 # System" of the app (ADR-0043) calls fixed commands of it: status, doctor and logs with -Json,
 # restart -Detach, mail-restart, autostart-on and autostart-off; the page "Einstellungen →
-# Sicherung" (ADR-0046) the commands backup-* and restore -Detach.
+# Sicherung" (ADR-0046) the commands backup-* and restore -Detach; the page "Einstellungen →
+# Sicherheit" (ADR-0055) security-configure and, for the access in the home network (plan
+# heimnetz), lan-info, lan-configure and lan-firewall.
 # Called by start.bat, start-hidden.vbs, stop.bat, neu-starten.bat, status.bat, autostart-an.bat,
 # autostart-aus.bat, admin-zuruecksetzen.bat and wiederherstellen.bat, always with -NoProfile
 # -ExecutionPolicy Bypass (script execution is disabled on the target machine):
@@ -54,7 +56,8 @@ $AppDir = $PSScriptRoot
 . ([System.IO.Path]::Combine($PSScriptRoot, 'byl-problems.ps1'))
 
 $BylCommands = @('start', 'stop', 'restart', 'reload', 'status', 'open', 'logs', 'doctor', 'port', 'autostart-on', 'autostart-off', 'mail-restart', 'reset-admin',
-    'backup-info', 'backup-configure', 'backup-passphrase', 'backup-export', 'backup-verify', 'restore', 'security-configure', 'help')
+    'backup-info', 'backup-configure', 'backup-passphrase', 'backup-export', 'backup-verify', 'restore', 'security-configure', 'lan-info', 'lan-configure',
+    'lan-firewall', 'help')
 $Title = 'becauseyoulovejira'
 $HealthTimeoutSeconds = 30
 # PocketBase ends about 1 s after the console break (1 s for open requests, then the database).
@@ -122,6 +125,14 @@ Befehle:
                   Stellt die zusätzlichen Adressen ein (nur für späteren Zugriff von anderen Geräten, etwa
                   über Tailscale; mit Komma getrennt, leer: keine; gespeichert in $BylConfigName, gilt nach
                   einem Neustart).
+  lan-info        Zugriff im Heimnetz: Zustand, Adressen dieses Rechners, Firewall-Regel und Netzwerkprofil.
+  lan-configure [on|off|Adressen]
+                  Schaltet den Zugriff im Heimnetz ein oder aus (Adressen mit Komma getrennt, etwa
+                  192.168.178.20; unverschlüsselt über HTTP; gespeichert in $BylConfigName, gilt nach einem
+                  Neustart).
+  lan-firewall add|remove
+                  Legt die Firewall-Regel „becauseyoulovejira (Heimnetz)“ an (nur private Netzwerke, nur
+                  dieser Port) oder entfernt sie; Windows fragt dafür nach Administratorrechten.
   help            Diese Hilfe.
 
 Optionen:
@@ -154,6 +165,7 @@ $RestartReasonText = @{
     hooks       = 'geänderte Server-Logik (pb_hooks)'
     port        = "anderer Port eingestellt ($BylConfigName)"
     hosts       = "andere zusätzliche Adressen eingestellt ($BylConfigName)"
+    lan         = "Zugriff im Heimnetz geändert ($BylConfigName)"
     environment = 'BYL_*-Variable angelegt, geändert oder entfernt'
     mailHelper  = 'neuer Mail-Hilfsprozess (byl-mail.exe)'
 }
@@ -572,8 +584,9 @@ function Write-TextFile {
 }
 
 function Get-Config {
-    # Settings of byl-config.json: Port and Problem (ConvertFrom-BylConfig) and the further hosts
-    # (ConvertFrom-BylSecurityConfig, ADR-0055); an unreadable file counts as broken.
+    # Settings of byl-config.json: Port and Problem (ConvertFrom-BylConfig), the further hosts
+    # (ConvertFrom-BylSecurityConfig, ADR-0055) and the access in the home network (Lan,
+    # ConvertFrom-BylLanConfig, plan heimnetz); an unreadable file counts as broken.
     $path = Get-BylConfigPath -AppDir $AppDir
     $text = ''
     if ([System.IO.File]::Exists($path)) {
@@ -581,11 +594,16 @@ function Get-Config {
             $text = [System.IO.File]::ReadAllText($path)
         }
         catch {
-            return [pscustomobject]@{ Port = $BylDefaultPort; Problem = 'Json'; Hosts = [string[]]@() }
+            return [pscustomobject]@{ Port = $BylDefaultPort; Problem = 'Json'; Hosts = [string[]]@(); Lan = (ConvertFrom-BylLanConfig -Text '') }
         }
     }
     $config = ConvertFrom-BylConfig -Text $text
-    return [pscustomobject]@{ Port = $config.Port; Problem = $config.Problem; Hosts = [string[]](ConvertFrom-BylSecurityConfig -Text $text).Hosts }
+    return [pscustomobject]@{
+        Port    = $config.Port
+        Problem = $config.Problem
+        Hosts   = [string[]](ConvertFrom-BylSecurityConfig -Text $text).Hosts
+        Lan     = ConvertFrom-BylLanConfig -Text $text
+    }
 }
 
 function Save-PortSetting {
@@ -1022,10 +1040,12 @@ function Show-PreStartNotice {
 
 function Start-Server {
     # Cold start of PocketBase: checks, start, state file with the start fingerprint, waiting for
-    # /api/health, first run. $Hosts are the further hosts of byl-config.json (ADR-0055).
+    # /api/health, first run. $Hosts are the further hosts of byl-config.json (ADR-0055), $Lan the
+    # addresses of the home network while that access is on (Get-BylLanAddress, plan heimnetz).
     param(
         [Parameter(Mandatory = $true)][int]$Port,
         [AllowNull()][AllowEmptyCollection()][string[]]$Hosts = @(),
+        [AllowNull()][AllowEmptyCollection()][string[]]$Lan = @(),
         [Parameter(Mandatory = $true)][object[]]$Processes
     )
 
@@ -1065,10 +1085,10 @@ function Start-Server {
             $environmentHash = ''
             [void](Write-BylProblem -Code 'dpapi-start' -Values @{ detail = $_.Exception.GetType().Name })
         }
-        $fingerprint = Get-BylFingerprint -AppDir $AppDir -Port $Port -Hosts $Hosts -EnvironmentHash $environmentHash
+        $fingerprint = Get-BylFingerprint -AppDir $AppDir -Port $Port -Hosts $Hosts -Lan $Lan -EnvironmentHash $environmentHash
         Invoke-LogRotation -Path $log.Output
         Invoke-LogRotation -Path $log.Error
-        $server = Start-Process -FilePath $exe -ArgumentList (Get-ServerArgumentString -AppDir $AppDir -Port $Port -Hosts $Hosts) `
+        $server = Start-Process -FilePath $exe -ArgumentList (Get-ServerArgumentString -AppDir $AppDir -Port $Port -Hosts $Hosts -Lan $Lan) `
             -WorkingDirectory $AppDir -WindowStyle Hidden -PassThru `
             -RedirectStandardOutput $log.Output -RedirectStandardError $log.Error
     }
@@ -1113,6 +1133,7 @@ function Start-Server {
     }
 
     Complete-Start -ProcessId $server.Id -ColdStart $true
+    if (@($Lan).Count -gt 0) { Show-LanStart -Lan $Lan -Port $Port }
     return $BylExitOk
 }
 
@@ -1139,13 +1160,13 @@ function Invoke-Start {
         'Unhealthy' {
             return Write-BylProblem -Code 'app-unhealthy' -Values @{ pid = $processId; url = $BylAppUrl } -Facts (Get-LogTailFacts) -Fix {
                 if ((Invoke-StopCore -Config $Config) -eq 'Failed') { return $BylExitError }
-                return Start-Server -Port $Config.Port -Hosts $Config.Hosts -Processes $look.Processes
+                return Start-Server -Port $Config.Port -Hosts $Config.Hosts -Lan (Get-BylLanAddress -Lan $Config.Lan) -Processes $look.Processes
             }
         }
         'Restart' {
             Write-Status "becauseyoulovejira (PID $processId) antwortet nicht; starte neu (-Force) ..."
             if ((Invoke-StopCore -Config $Config) -eq 'Failed') { return $BylExitError }
-            return Start-Server -Port $Config.Port -Hosts $Config.Hosts -Processes $look.Processes
+            return Start-Server -Port $Config.Port -Hosts $Config.Hosts -Lan (Get-BylLanAddress -Lan $Config.Lan) -Processes $look.Processes
         }
         'Wait' {
             # Own instance exists but does not answer yet (started a moment ago): no second server.
@@ -1158,7 +1179,7 @@ function Invoke-Start {
             if ($state -ne 'Ready') {
                 return Write-BylProblem -Code 'app-unhealthy' -Values @{ pid = $processId; url = $BylAppUrl } -Facts (Get-LogTailFacts) -Fix {
                     if ((Invoke-StopCore -Config $Config) -eq 'Failed') { return $BylExitError }
-                    return Start-Server -Port $Config.Port -Hosts $Config.Hosts -Processes $look.Processes
+                    return Start-Server -Port $Config.Port -Hosts $Config.Hosts -Lan (Get-BylLanAddress -Lan $Config.Lan) -Processes $look.Processes
                 }
             }
             Complete-Start -ProcessId $processId -ColdStart $true
@@ -1183,7 +1204,7 @@ function Invoke-Start {
             return $BylExitOk
         }
     }
-    return Start-Server -Port $Config.Port -Hosts $Config.Hosts -Processes $look.Processes
+    return Start-Server -Port $Config.Port -Hosts $Config.Hosts -Lan (Get-BylLanAddress -Lan $Config.Lan) -Processes $look.Processes
 }
 
 function Send-ConsoleBreak {
@@ -1402,6 +1423,11 @@ function Get-StatusData {
     $look = Get-Look -Port $Config.Port
     $running = $look.ServerState -ne 'Stopped'
     $port = if ($null -ne $look.RunningPort) { [int]$look.RunningPort } else { [int]$Config.Port }
+    $lanAddresses = Get-BylLanAddress -Lan $Config.Lan
+    $active = if ($running) { Get-BylActiveLan -Arguments (Get-ProcessArgument -Process $look.Own[0]) } else { [pscustomobject]@{ Bound = $false; Hosts = [string[]]@() } }
+    # The firewall and the networks are read only when the home network matters (on, or still
+    # active in the running server).
+    $lanReport = if ($lanAddresses.Count -gt 0 -or $active.Bound) { Get-LanReport -Addresses $lanAddresses -Port $Config.Port } else { $null }
     $comparison = [pscustomobject]@{ Verdict = 'Current'; Restart = @(); Reload = @() }
     if ($running) {
         $started = if ($null -ne $look.State) { $look.State.Fingerprint } else { $null }
@@ -1413,7 +1439,7 @@ function Get-StatusData {
             if ($null -ne $key) { $environmentHash = Get-EnvironmentFingerprint -Key $key }
             elseif (-not [string]::IsNullOrEmpty($started['environment'])) { $environmentHash = 'unreadable' }
         }
-        $current = Get-BylFingerprint -AppDir $AppDir -Port $Config.Port -Hosts $Config.Hosts -EnvironmentHash $environmentHash
+        $current = Get-BylFingerprint -AppDir $AppDir -Port $Config.Port -Hosts $Config.Hosts -Lan $lanAddresses -EnvironmentHash $environmentHash
         $comparison = Compare-BylFingerprint -Started $started -Current $current
     }
     $helpers = @(Select-MailHelperProcess -Process $look.Processes -AppDir $AppDir -Url @("http://127.0.0.1:$port"))
@@ -1439,6 +1465,30 @@ function Get-StatusData {
         PortOwner    = $owner
         Others       = @(Select-OtherServerProcess -Process $look.Processes -AppDir $AppDir)
         Autostart    = Get-AutostartState
+        Lan          = [pscustomobject]@{ Enabled = $Config.Lan.Enabled; Addresses = $lanAddresses; Active = $active; Report = $lanReport }
+    }
+}
+
+function ConvertTo-LanStatus {
+    # The home network in status -Json: switched on in byl-config.json (enabled, addresses), what
+    # the running server allows (bound, hosts, urls), the firewall rule (present, missing, mismatch,
+    # unknown; null when it does not matter) and the network category of each address.
+    param([Parameter(Mandatory = $true)][object]$Lan)
+
+    $report = $Lan.Report
+    return [ordered]@{
+        enabled   = [bool]$Lan.Enabled
+        addresses = @($Lan.Addresses)
+        bound     = [bool]$Lan.Active.Bound
+        hosts     = @($Lan.Active.Hosts)
+        urls      = @(@($Lan.Active.Hosts) | ForEach-Object { "http://$_/" })
+        firewall  = if ($null -ne $report) { $report.Firewall } else { $null }
+        blocked   = $null -ne $report -and $report.Blocked
+        networks  = @(if ($null -ne $report) {
+                foreach ($state in $report.Addresses) {
+                    [ordered]@{ address = $state.Address; present = $state.Present; adapter = $state.Adapter; category = $state.Category }
+                }
+            })
     }
 }
 
@@ -1476,6 +1526,7 @@ function Invoke-Status {
             portOwner      = $data.PortOwner
             otherServers   = @($data.Others | ForEach-Object { [ordered]@{ pid = $_.ProcessId; path = $_.ExecutablePath; port = $_.Port; sameFolder = $_.SameFolder; testInstance = $_.TestInstance } })
             autostart      = $data.Autostart
+            lan            = ConvertTo-LanStatus -Lan $data.Lan
             backgroundProblem = if ($null -ne $background) {
                 [ordered]@{ atUtc = $background.AtUtc; run = $background.Run; report = ConvertTo-BylProblemData -Report $background.Report }
             }
@@ -1509,6 +1560,7 @@ function Invoke-Status {
     }
     $autostart = switch ($data.Autostart) { 'on' { 'an' } 'other' { 'zeigt auf einen anderen Ordner (autostart-an.bat hier erneut ausführen)' } default { 'aus' } }
     & $label 'Autostart:' $autostart
+    Write-LanStatusLines -Lan $data.Lan -Port $data.Port -Label $label
     & $label 'Ordner:' $AppDir
     # A real second installation by itself, test instances in one line (RS-4).
     foreach ($other in @($data.Others | Where-Object { -not $_.TestInstance })) {
@@ -1832,6 +1884,28 @@ function Invoke-Doctor {
         'other' { & $add 'autostart' 'warning' 'Autostart zeigt auf einen anderen Ordner' 'autostart-other' }
         default { & $add 'autostart' 'info' 'Autostart aus' }
     }
+    # Access in the home network (plan heimnetz): the firewall rule and the network category of each
+    # address; switched off, only a rule that is left over.
+    $lanAddresses = Get-BylLanAddress -Lan $Config.Lan
+    $lanReport = Get-LanReport -Addresses $lanAddresses -Port $Config.Port
+    if ($lanAddresses.Count -eq 0) {
+        & $add 'lan' 'info' 'Zugriff im Heimnetz aus'
+        if (@('present', 'mismatch') -contains $lanReport.Firewall) {
+            & $add 'lan-firewall' 'warning' ('Firewall-Regel „{0}“ besteht noch' -f $BylLanRuleName) 'lan-firewall-leftover' @{ port = $Config.Port }
+        }
+    }
+    else {
+        & $add 'lan' 'info' ('Zugriff im Heimnetz an: ' + ((@($lanAddresses) | ForEach-Object { "http://$($_):$($Config.Port)/" }) -join ', '))
+        $findings = Get-LanFindings -Report $lanReport -Port $Config.Port
+        foreach ($finding in $findings) { & $add $finding.Check 'warning' $finding.Text $finding.Code $finding.Values }
+        if (@($findings | Where-Object { $_.Check -eq 'lan-firewall' }).Count -eq 0) {
+            $text = if ($lanReport.Firewall -eq 'present') { 'Firewall-Regel „{0}“ vorhanden' -f $BylLanRuleName } else { 'Firewall-Regeln nicht lesbar' }
+            & $add 'lan-firewall' $(if ($lanReport.Firewall -eq 'present') { 'ok' } else { 'info' }) $text
+        }
+        foreach ($state in @($lanReport.Addresses | Where-Object { $_.Present -eq $true -and $_.Category -eq 'private' })) {
+            & $add 'lan-network' 'ok' "Netzwerk von $($state.Address) ($($state.Adapter)): Privat"
+        }
+    }
     & $add 'powershell' 'info' "Windows PowerShell $($PSVersionTable.PSVersion)"
 
     $failed = @($checks | Where-Object { $_.level -eq 'error' }).Count
@@ -1890,6 +1964,10 @@ function Invoke-Port {
     }
     $text += ("`nBitte anpassen: Lesezeichen, die installierte App (unter der neuen Adresse neu installieren) und die App-Adresse" +
         "`nin der Browser-Erweiterung für WhatsApp Web. Die Anmeldung gilt je Adresse: unter der neuen einmal neu anmelden.")
+    if ((Get-BylLanAddress -Lan $Config.Lan).Count -gt 0) {
+        $text += ("`nZugriff im Heimnetz: Die Firewall-Regel gilt noch für den alten Port. Erneuern mit: $ControlCall lan-firewall add" +
+            "`n(Windows fragt dabei nach Administratorrechten); die Geräte im Heimnetz nutzen danach Port $port.")
+    }
     Show-Message $text
     return $BylExitOk
 }
@@ -2367,6 +2445,475 @@ function Invoke-SecurityConfigure {
     $text = if ($hosts.Count -eq 0) { 'Keine zusätzlichen Adressen.' } else { "Zusätzliche Adressen: $($hosts -join ', ')" }
     return Write-BackupAnswer -Answer ([ordered]@{ ok = $true; hosts = @($hosts.ToArray()) }) `
         -Text "$text Gilt nach einem Neustart (neu-starten.bat)."
+}
+
+# --- Access in the home network (plan docs/plan/heimnetz.md, ADR-0055 addendum) -----------------------
+# Other devices of the home network reach the app over plain HTTP under an address of this computer:
+# lan-configure switches it on or off in byl-config.json (after a restart the server listens on
+# 0.0.0.0 with the http origins of these addresses), lan-info tells the state, and lan-firewall
+# creates or removes the inbound rule of the Windows firewall, with the UAC prompt of Windows, only
+# after a click on the page or a yes in the console. The page "Sicherheit" runs the three with -Json
+# (parameters as JSON on standard input); status, doctor and start report the rule and the network
+# category. Reading the network and the firewall needs no rights. A disposable copy of the tests
+# (BYL_TEST_ISOLATED=1) never changes the firewall and may read a network of its test instead of
+# the real one.
+
+# How long lan-firewall waits for the elevated Windows PowerShell (the UAC prompt comes first).
+$FirewallSeconds = 120
+# German words of the network categories of Windows and of the states of the rule.
+$NetworkCategoryText = @{ private = 'Privat'; public = 'Öffentlich'; domain = 'Domäne'; unknown = 'unbekannt' }
+$FirewallStateText = @{
+    present  = 'Regel vorhanden'
+    missing  = 'Regel fehlt'
+    mismatch = 'Regel passt nicht (anderer Port, nicht nur private Netzwerke oder ausgeschaltet)'
+    unknown  = 'nicht lesbar'
+}
+
+function Read-TestNetwork {
+    # The network of a disposable copy of the tests: the JSON file BYL_TEST_NETWORK_FILE (addresses,
+    # profiles, suffixes, hostName and firewall with rules and blocks, shaped like the snapshots
+    # below), $null without it. Only in a copy with BYL_TEST_ISOLATED=1.
+    if (-not $IsolatedEnvironment) { return $null }
+    $file = [Environment]::GetEnvironmentVariable('BYL_TEST_NETWORK_FILE', 'Process')
+    if ([string]::IsNullOrWhiteSpace($file) -or -not [System.IO.File]::Exists($file)) { return $null }
+    return ([System.IO.File]::ReadAllText($file) | ConvertFrom-Json)
+}
+
+function Get-NetworkSnapshot {
+    # The IPv4 addresses, connection profiles and DNS suffixes of the adapters and the DNS name of
+    # this computer, read only; Available is false when Windows does not tell.
+    $test = Read-TestNetwork
+    if ($null -ne $test) {
+        return [pscustomobject]@{
+            Available = $true
+            Addresses = @($test.addresses)
+            Profiles  = @($test.profiles)
+            Suffixes  = @($test.suffixes)
+            HostName  = [string]$test.hostName
+        }
+    }
+    try {
+        $addresses = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop | ForEach-Object {
+                [pscustomobject]@{ IPAddress = [string]$_.IPAddress; InterfaceIndex = [int]$_.InterfaceIndex; InterfaceAlias = [string]$_.InterfaceAlias; AddressState = [string]$_.AddressState }
+            })
+        $profiles = @(Get-NetConnectionProfile -ErrorAction SilentlyContinue | ForEach-Object {
+                [pscustomobject]@{ InterfaceIndex = [int]$_.InterfaceIndex; NetworkCategory = [string]$_.NetworkCategory }
+            })
+        $suffixes = @(Get-DnsClient -ErrorAction SilentlyContinue | ForEach-Object {
+                [pscustomobject]@{ InterfaceIndex = [int]$_.InterfaceIndex; ConnectionSpecificSuffix = [string]$_.ConnectionSpecificSuffix }
+            })
+        return [pscustomobject]@{ Available = $true; Addresses = $addresses; Profiles = $profiles; Suffixes = $suffixes; HostName = [System.Net.Dns]::GetHostName() }
+    }
+    catch {
+        return [pscustomobject]@{ Available = $false; Addresses = @(); Profiles = @(); Suffixes = @(); HostName = '' }
+    }
+}
+
+function Get-FirewallSnapshot {
+    # The rules named $BylLanRuleName with their filters and the switched-on inbound block rules for
+    # $Program, read only; Available is false when Windows does not tell.
+    param([Parameter(Mandatory = $true)][string]$Program)
+
+    $test = Read-TestNetwork
+    if ($null -ne $test) {
+        $firewall = $test.PSObject.Properties['firewall']
+        if ($null -eq $firewall -or $null -eq $firewall.Value) { return [pscustomobject]@{ Available = $false; Rules = @(); Blocks = @() } }
+        return [pscustomobject]@{ Available = $true; Rules = @($firewall.Value.rules); Blocks = @($firewall.Value.blocks) }
+    }
+    try {
+        $rules = @(Get-NetFirewallRule -DisplayName $BylLanRuleName -ErrorAction SilentlyContinue | ForEach-Object {
+                $application = $_ | Get-NetFirewallApplicationFilter
+                $filter = $_ | Get-NetFirewallPortFilter
+                [pscustomobject]@{
+                    Enabled   = [string]$_.Enabled
+                    Direction = [string]$_.Direction
+                    Action    = [string]$_.Action
+                    Profile   = [string]$_.Profile
+                    Program   = [string]$application.Program
+                    Protocol  = [string]$filter.Protocol
+                    LocalPort = @(@($filter.LocalPort) | ForEach-Object { [string]$_ })
+                }
+            })
+        $blocks = @(Get-NetFirewallApplicationFilter -Program $Program -ErrorAction SilentlyContinue | Get-NetFirewallRule -ErrorAction SilentlyContinue |
+                Where-Object { [string]$_.Direction -eq 'Inbound' -and [string]$_.Action -eq 'Block' -and [string]$_.Enabled -eq 'True' } |
+                ForEach-Object { [pscustomobject]@{ Name = [string]$_.DisplayName; Profile = [string]$_.Profile } })
+        return [pscustomobject]@{ Available = $true; Rules = $rules; Blocks = $blocks }
+    }
+    catch {
+        return [pscustomobject]@{ Available = $false; Rules = @(); Blocks = @() }
+    }
+}
+
+function Get-LanReport {
+    # The state of the home network for status, doctor, start and lan-info: Program (pocketbase.exe
+    # of this folder), Firewall ('present', 'mismatch', 'missing' or 'unknown') and Blocked of its
+    # rule for $Port, Network (whether Windows told), the addresses $Addresses with adapter and
+    # network category (Resolve-BylLanAddressState) and, with -Candidates, the addresses of this
+    # computer to choose from (Select-BylLanCandidate).
+    param([AllowNull()][AllowEmptyCollection()][string[]]$Addresses = @(), [Parameter(Mandatory = $true)][int]$Port, [switch]$Candidates)
+
+    $program = [System.IO.Path]::Combine($AppDir, 'pocketbase.exe')
+    $network = Get-NetworkSnapshot
+    $firewall = Get-FirewallSnapshot -Program $program
+    $state = if ($firewall.Available) {
+        Resolve-BylFirewallState -Rules $firewall.Rules -Blocks $firewall.Blocks -Program $program -Port $Port
+    }
+    else {
+        [pscustomobject]@{ State = 'unknown'; Blocked = $false }
+    }
+    # Assign first: both functions return their list as one pipeline object.
+    $choices = if ($Candidates) { Select-BylLanCandidate -Addresses $network.Addresses -Profiles $network.Profiles -Suffixes $network.Suffixes -HostName $network.HostName } else { @() }
+    $states = Resolve-BylLanAddressState -Lan $Addresses -Addresses $network.Addresses -Profiles $network.Profiles
+    return [pscustomobject]@{
+        Program    = $program
+        Firewall   = $state.State
+        Blocked    = $state.Blocked
+        Network    = $network.Available
+        Addresses  = $states
+        Candidates = $choices
+    }
+}
+
+function Get-LanFindings {
+    # What stands in the way of the access in the home network ($Report of Get-LanReport for $Port):
+    # a block rule, a missing or unfitting rule, an address no adapter has, a network that is not
+    # private. Each with the check of doctor, its text and the entry of the catalog with its values.
+    # Assign first: the list comes as one pipeline object.
+    param([Parameter(Mandatory = $true)][object]$Report, [Parameter(Mandatory = $true)][int]$Port)
+
+    $findings = New-Object System.Collections.Generic.List[object]
+    $finding = {
+        param([string]$Check, [string]$Text, [string]$Code, [System.Collections.IDictionary]$Values)
+        $findings.Add([pscustomobject]@{ Check = $Check; Text = $Text; Code = $Code; Values = $Values })
+    }
+    if ($Report.Blocked) { & $finding 'lan-firewall' 'Eine Sperrregel der Firewall blockiert pocketbase.exe' 'lan-firewall-blocked' @{ port = $Port } }
+    switch ($Report.Firewall) {
+        'missing' { & $finding 'lan-firewall' ('Firewall-Regel „{0}“ fehlt' -f $BylLanRuleName) 'lan-firewall-missing' @{ port = $Port } }
+        'mismatch' { & $finding 'lan-firewall' ('Firewall-Regel „{0}“ passt nicht' -f $BylLanRuleName) 'lan-firewall-mismatch' @{ port = $Port } }
+    }
+    foreach ($state in @($Report.Addresses)) {
+        if ($state.Present -eq $false) {
+            & $finding 'lan-address' "$($state.Address) gehört zu keinem Netzwerkadapter" 'lan-address-missing' @{ address = $state.Address; port = $Port }
+        }
+        elseif ($state.Present -eq $true -and $state.Category -ne 'private') {
+            $category = $NetworkCategoryText[$state.Category]
+            & $finding 'lan-network' "Netzwerk von $($state.Address) ($($state.Adapter)): $category" 'lan-profile' @{
+                address = $state.Address; adapter = $state.Adapter; category = $category; index = $state.Index
+            }
+        }
+    }
+    return , @($findings.ToArray())
+}
+
+function Write-LanProblems {
+    # The findings of Get-LanFindings in the console, each with its entry of the catalog; a missing or
+    # unfitting rule with the offer to create it (UAC prompt of Windows).
+    param([Parameter(Mandatory = $true)][object]$Report, [Parameter(Mandatory = $true)][int]$Port)
+
+    $findings = Get-LanFindings -Report $Report -Port $Port
+    foreach ($found in $findings) {
+        if (@('lan-firewall-missing', 'lan-firewall-mismatch') -contains $found.Code) {
+            [void](Write-BylProblem -Code $found.Code -Values $found.Values -Fix { Invoke-LanFirewallFix -Action 'add' -Port $Port })
+        }
+        else {
+            [void](Write-BylProblem -Code $found.Code -Values $found.Values)
+        }
+    }
+}
+
+function Write-LanStatusLines {
+    # The lines of status for the home network: switched on or off, the address for other devices,
+    # the firewall rule and the network category of each address (a public one stands out).
+    param([Parameter(Mandatory = $true)][object]$Lan, [Parameter(Mandatory = $true)][int]$Port, [Parameter(Mandatory = $true)][scriptblock]$Label)
+
+    $on = @($Lan.Addresses).Count -gt 0
+    if (-not $on -and -not $Lan.Active.Bound) {
+        & $Label 'Heimnetz:' 'aus (nur dieser Rechner)'
+        return
+    }
+    $hosts = if ($Lan.Active.Bound) { @($Lan.Active.Hosts) } else { @(@($Lan.Addresses) | ForEach-Object { "$($_):$Port" }) }
+    $urls = (@($hosts) | ForEach-Object { "http://$_/" }) -join ', '
+    $state = if ($on -and $Lan.Active.Bound) { 'an' } elseif ($on) { 'an (gilt nach einem Neustart)' } else { 'aus (gilt nach einem Neustart; bis dahin noch im Heimnetz erreichbar)' }
+    & $Label 'Heimnetz:' "$state – für andere Geräte: $urls (unverschlüsselt)"
+    if ($null -eq $Lan.Report) { return }
+    & $Label 'Firewall:' $FirewallStateText[$Lan.Report.Firewall]
+    if ($Lan.Report.Blocked) { Write-Notice '  Hinweis: Eine Sperrregel der Firewall blockiert pocketbase.exe; doctor zeigt, wie sie entfernt wird.' }
+    foreach ($address in @($Lan.Report.Addresses)) {
+        if ($address.Present -eq $false) {
+            Write-Notice "  Hinweis: $($address.Address) gehört gerade zu keinem Netzwerkadapter; Geräte erreichen die App darunter nicht (doctor)."
+        }
+        elseif ($address.Present -eq $true) {
+            & $Label 'Netzwerk:' "$($address.Adapter) ($($address.Address)): $($NetworkCategoryText[$address.Category])"
+            if ($address.Category -ne 'private') {
+                Write-Notice '  Achtung: Das Netzwerk ist in Windows nicht als „Privat“ eingestuft; die Firewall-Regel gilt dort nicht (doctor zeigt die Schritte).'
+            }
+        }
+    }
+    if ($Lan.Report.Firewall -ne 'present') { Write-Notice "  Hinweis: Ohne passende Firewall-Regel erreichen andere Geräte die App nicht: $ControlCall lan-firewall add" }
+}
+
+function Show-LanStart {
+    # After a start with the access in the home network: the address for other devices and what
+    # stands in its way (firewall, network), in a console window with the offer to create the rule.
+    # Never fails the start.
+    param([Parameter(Mandatory = $true)][string[]]$Lan, [Parameter(Mandatory = $true)][int]$Port)
+
+    $urls = (@($Lan) | ForEach-Object { "http://$($_):$Port/" }) -join ', '
+    Write-Status "Im Heimnetz erreichbar unter: $urls (unverschlüsselt, nur in vertrauenswürdigen Netzen)."
+    if ($Hidden -or $Json -or $WaitForProcess -gt 0) { return }
+    try {
+        $report = Get-LanReport -Addresses $Lan -Port $Port
+        Write-LanProblems -Report $report -Port $Port
+    }
+    catch {
+        [void](Write-BylProblem -Code 'lan-unreadable' -Values @{ detail = $_.Exception.GetType().Name })
+    }
+}
+
+function Invoke-FirewallElevated {
+    # Creates ('add') or removes ('remove') the inbound rule of the home network for pocketbase.exe
+    # of this folder in an elevated Windows PowerShell: Windows asks with its UAC prompt first.
+    # Returns 'done', 'cancelled' (the prompt was declined), 'failed' (no start or an error of the
+    # script) or 'timeout'. A disposable copy of the tests never asks for rights: it writes the
+    # request into the file BYL_TEST_FIREWALL_FILE of its test ('test') and refuses without it
+    # (lan-firewall-test). The only place that elevates.
+    param([Parameter(Mandatory = $true)][ValidateSet('add', 'remove')][string]$Action, [Parameter(Mandatory = $true)][int]$Port)
+
+    $program = [System.IO.Path]::Combine($AppDir, 'pocketbase.exe')
+    $arguments = Get-BylElevatedArgumentString -Script (Get-BylFirewallScript -Action $Action -Program $program -Port $Port)
+    if ($IsolatedEnvironment) {
+        $file = [Environment]::GetEnvironmentVariable('BYL_TEST_FIREWALL_FILE', 'Process')
+        if ([string]::IsNullOrWhiteSpace($file)) { throw (New-BylProblemError -Code 'lan-firewall-test') }
+        Write-TextFile -Path $file -Text (ConvertTo-Json -InputObject ([ordered]@{ action = $Action; port = $Port; program = $program; arguments = $arguments }) -Compress)
+        return 'test'
+    }
+    $shell = [System.IO.Path]::Combine([Environment]::SystemDirectory, 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+    try {
+        $process = Start-Process -FilePath $shell -ArgumentList $arguments -Verb RunAs -WindowStyle Hidden -PassThru
+    }
+    catch {
+        # ERROR_CANCELLED (1223): the person said no to the UAC prompt.
+        $inner = $_.Exception
+        while ($null -ne $inner) {
+            if ($inner -is [System.ComponentModel.Win32Exception] -and $inner.NativeErrorCode -eq 1223) { return 'cancelled' }
+            $inner = $inner.InnerException
+        }
+        return 'failed'
+    }
+    if (-not $process.WaitForExit($FirewallSeconds * 1000)) { return 'timeout' }
+    if ($process.ExitCode -eq 0) { return 'done' }
+    return 'failed'
+}
+
+function Write-FirewallFailure {
+    # A change of the rule that did not happen ($Outcome of Invoke-FirewallElevated), with the command
+    # to run by hand; returns the exit code of the entry.
+    param([Parameter(Mandatory = $true)][string]$Action, [Parameter(Mandatory = $true)][string]$Outcome, [Parameter(Mandatory = $true)][int]$Port, [System.Collections.IDictionary]$Answer)
+
+    $detail = switch ($Outcome) {
+        'cancelled' { 'die Anfrage nach Administratorrechten wurde abgelehnt' }
+        'timeout' { "keine Antwort binnen $FirewallSeconds s" }
+        default { 'Windows meldete einen Fehler' }
+    }
+    $code = if ($Action -eq 'add') { 'lan-firewall-add-failed' } else { 'lan-firewall-remove-failed' }
+    if ($null -ne $Answer) { return Write-BylProblem -Code $code -Values @{ detail = $detail; port = $Port } -Answer $Answer }
+    return Write-BylProblem -Code $code -Values @{ detail = $detail; port = $Port }
+}
+
+function Get-FirewallDoneText {
+    param([Parameter(Mandatory = $true)][string]$Action, [Parameter(Mandatory = $true)][int]$Port)
+
+    if ($Action -eq 'add') {
+        return 'Firewall-Regel „{0}“ angelegt: nur pocketbase.exe dieses Ordners, nur TCP-Port {1}, nur private Netzwerke.' -f $BylLanRuleName, $Port
+    }
+    return 'Firewall-Regel „{0}“ entfernt.' -f $BylLanRuleName
+}
+
+function Invoke-LanFirewallFix {
+    # The offer of the catalog to create or remove the rule after a yes in the console: the UAC
+    # prompt of Windows, then the result. Returns the exit code (0 when done).
+    param([Parameter(Mandatory = $true)][ValidateSet('add', 'remove')][string]$Action, [Parameter(Mandatory = $true)][int]$Port)
+
+    Write-Status 'Windows fragt jetzt nach Administratorrechten (Benutzerkontensteuerung); bitte dort bestätigen.'
+    $outcome = Invoke-FirewallElevated -Action $Action -Port $Port
+    $script:LogDetail = ("$script:LogDetail firewall=$Action outcome=$outcome").Trim()
+    if (@('done', 'test') -contains $outcome) {
+        Show-Message (Get-FirewallDoneText -Action $Action -Port $Port)
+        return $BylExitOk
+    }
+    return Write-FirewallFailure -Action $Action -Outcome $outcome -Port $Port
+}
+
+function Get-LanAnswer {
+    # The state of the home network for lan-info and as the answer of lan-configure and lan-firewall:
+    # the setting of byl-config.json, the addresses of this computer to choose from, the network
+    # category of each address and the firewall rule with the commands to create or remove it by
+    # hand (real paths of this folder).
+    param([Parameter(Mandatory = $true)][object]$Config)
+
+    $report = Get-LanReport -Addresses @($Config.Lan.Addresses) -Port $Config.Port -Candidates
+    return [ordered]@{
+        ok         = $true
+        port       = $Config.Port
+        enabled    = [bool]$Config.Lan.Enabled
+        addresses  = @($Config.Lan.Addresses)
+        max        = $BylLanMax
+        network    = [bool]$report.Network
+        candidates = @(foreach ($candidate in $report.Candidates) {
+                [ordered]@{ address = $candidate.Address; kind = $candidate.Kind; adapter = $candidate.Adapter; category = $candidate.Category }
+            })
+        states     = @(foreach ($state in $report.Addresses) {
+                [ordered]@{ address = $state.Address; present = $state.Present; adapter = $state.Adapter; index = $state.Index; category = $state.Category }
+            })
+        firewall   = [ordered]@{
+            state   = $report.Firewall
+            blocked = [bool]$report.Blocked
+            rule    = $BylLanRuleName
+            program = $report.Program
+            add     = Get-BylFirewallCommand -Action 'add' -Program $report.Program -Port $Config.Port
+            remove  = Get-BylFirewallCommand -Action 'remove' -Program $report.Program -Port $Config.Port
+        }
+    }
+}
+
+function Invoke-LanInfo {
+    # lan-info: the state of the home network (-Json for the page "Sicherheit"); in the console with
+    # what stands in its way and the offers to solve it.
+    param([Parameter(Mandatory = $true)][object]$Config)
+
+    $answer = Get-LanAnswer -Config $Config
+    if ($Json) {
+        Write-JsonLine (ConvertTo-Json -InputObject $answer -Depth 6 -Compress)
+        return $BylExitOk
+    }
+    $label = { param([string]$Name, [string]$Text) Write-Host ('  {0,-13} {1}' -f $Name, $Text) }
+    Write-Host 'becauseyoulovejira – Zugriff im Heimnetz'
+    $on = $answer.enabled -and $answer.addresses.Count -gt 0
+    & $label 'Zustand:' $(if ($on) { 'an (unverschlüsselt über HTTP, nur in vertrauenswürdigen Netzen)' } else { 'aus (nur dieser Rechner)' })
+    if ($answer.addresses.Count -gt 0) {
+        & $label 'Adressen:' ((@($answer.addresses) | ForEach-Object { "http://$($_):$($Config.Port)/" }) -join ', ')
+    }
+    & $label 'Firewall:' $FirewallStateText[$answer.firewall.state]
+    foreach ($candidate in $answer.candidates) {
+        & $label 'Zur Auswahl:' "$($candidate.address) ($($candidate.adapter), Netzwerk $($NetworkCategoryText[$candidate.category]))"
+    }
+    if ($answer.candidates.Count -eq 0) { & $label 'Zur Auswahl:' 'keine private IPv4-Adresse gefunden' }
+    if (-not $on) {
+        $first = if ($answer.candidates.Count -gt 0) { $answer.candidates[0].address } else { '192.168.178.20' }
+        & $label 'Einschalten:' "$ControlCall lan-configure $first"
+        if (@('present', 'mismatch') -contains $answer.firewall.state) {
+            [void](Write-BylProblem -Code 'lan-firewall-leftover' -Values @{ port = $Config.Port } -Fix { Invoke-LanFirewallFix -Action 'remove' -Port $Config.Port })
+        }
+        return $BylExitOk
+    }
+    Write-LanProblems -Report (Get-LanReport -Addresses @($Config.Lan.Addresses) -Port $Config.Port) -Port $Config.Port
+    return $BylExitOk
+}
+
+function Invoke-LanConfigure {
+    # lan-configure: switches the access in the home network on or off in byl-config.json. From the
+    # page "Sicherheit" as { enabled, addresses } on standard input; from the console $Value is
+    # "on" (with the saved addresses), "off" (the addresses stay) or the addresses separated by
+    # commas (switches on). Every address must be one of the home network (ConvertTo-BylLanAddress),
+    # at most $BylLanMax, switching on needs one; otherwise nothing changes. Applies after a restart
+    # (part "lan" of the fingerprint). In the console it offers the firewall rule afterwards.
+    param([Parameter(Mandatory = $true)][object]$Config)
+
+    $request = Read-InputJson
+    if ($null -ne $request) {
+        $switch = Get-InputValue $request 'enabled'
+        if ($switch -isnot [bool]) { throw (New-BylProblemError -Code 'input-invalid' -Values @{ detail = 'enabled fehlt oder ist kein Wahrheitswert' }) }
+        $enabled = $switch
+        $entries = @(Get-InputValue $request 'addresses')
+    }
+    else {
+        $word = ([string]$Value).Trim().ToLowerInvariant()
+        if ($word -eq '') {
+            return Invoke-LanInfo -Config $Config
+        }
+        $enabled = $word -ne 'off'
+        $entries = if (@('on', 'off') -contains $word) { @($Config.Lan.Addresses) } else { @(([string]$Value) -split '[,\s]+') }
+    }
+    $addresses = New-Object System.Collections.Generic.List[string]
+    $invalid = New-Object System.Collections.Generic.List[string]
+    foreach ($entry in $entries) {
+        if ($null -eq $entry -or ($entry -is [string] -and $entry.Trim() -eq '')) { continue }
+        $address = if ($entry -is [string]) { ConvertTo-BylLanAddress -Text $entry } else { $null }
+        if ($null -eq $address) { $invalid.Add(([string]$entry).Trim()) }
+        elseif (-not $addresses.Contains($address)) { $addresses.Add($address) }
+    }
+    if ($invalid.Count -gt 0 -or $addresses.Count -gt $BylLanMax) {
+        $script:LogDetail = 'problem=lan-addresses'
+        return Write-BackupAnswer -Answer ([ordered]@{ ok = $false; problem = 'addresses'; invalid = @($invalid.ToArray()) }) `
+            -Code 'lan-addresses' -Values @{ max = $BylLanMax; port = $Config.Port }
+    }
+    if ($enabled -and $addresses.Count -eq 0) {
+        $script:LogDetail = 'problem=lan-address-required'
+        return Write-BackupAnswer -Answer ([ordered]@{ ok = $false; problem = 'required'; invalid = @() }) `
+            -Code 'lan-address-required' -Values @{ port = $Config.Port }
+    }
+    $path = Get-BylConfigPath -AppDir $AppDir
+    try {
+        Write-TextFile -Path $path -Text (Merge-BylConfigText -Text (Read-TextFile -Path $path) -Lan ([pscustomobject]@{ Enabled = $enabled; Addresses = [string[]]$addresses.ToArray() }))
+    }
+    catch {
+        throw (New-BylProblemError -Code 'config-write' -Values @{ detail = $_.Exception.GetType().Name })
+    }
+    $script:LogDetail = if ($enabled) { "lan=on addresses=$($addresses.Count)" } else { 'lan=off' }
+    $fresh = Get-Config
+    if ($Json) {
+        $answer = Get-LanAnswer -Config $fresh
+        $answer['saved'] = $true
+        Write-JsonLine (ConvertTo-Json -InputObject $answer -Depth 6 -Compress)
+        return $BylExitOk
+    }
+    if ($enabled) {
+        $urls = (@($addresses) | ForEach-Object { "http://$($_):$($fresh.Port)/" }) -join ', '
+        Show-Message ("Zugriff im Heimnetz eingeschaltet. Andere Geräte im Heimnetz erreichen die App nach einem Neustart (neu-starten.bat) unter: $urls" +
+            "`nUnverschlüsselt über HTTP: nur in vertrauenswürdigen Netzen nutzen; Passwörter gehen unverschlüsselt durchs WLAN.")
+        Write-LanProblems -Report (Get-LanReport -Addresses @($addresses.ToArray()) -Port $fresh.Port) -Port $fresh.Port
+        return $BylExitOk
+    }
+    Show-Message 'Zugriff im Heimnetz ausgeschaltet. Nach einem Neustart (neu-starten.bat) ist die App nur noch auf diesem Rechner erreichbar.'
+    $report = Get-LanReport -Port $fresh.Port
+    if (@('present', 'mismatch') -contains $report.Firewall) {
+        [void](Write-BylProblem -Code 'lan-firewall-leftover' -Values @{ port = $fresh.Port } -Fix { Invoke-LanFirewallFix -Action 'remove' -Port $fresh.Port })
+    }
+    return $BylExitOk
+}
+
+function Invoke-LanFirewall {
+    # lan-firewall add|remove: creates or removes the inbound rule of the home network (Windows asks
+    # with its UAC prompt). From the page "Sicherheit" as { action } on standard input after a click;
+    # from the console the word. Answers the state of the home network (-Json).
+    param([Parameter(Mandatory = $true)][object]$Config)
+
+    $request = Read-InputJson
+    $action = if ($null -ne $request) { [string](Get-InputValue $request 'action') } else { ([string]$Value).Trim().ToLowerInvariant() }
+    if (@('add', 'remove') -notcontains $action) {
+        return Write-BylProblem -Code 'lan-firewall-action' -Values @{ value = $action }
+    }
+    if ($action -eq 'add') {
+        Write-Status (('Lege die Firewall-Regel „{0}“ an: nur pocketbase.exe dieses Ordners, nur TCP-Port {1}, nur private Netzwerke.' -f $BylLanRuleName, $Config.Port) +
+            "`nWindows fragt dafür nach Administratorrechten (Benutzerkontensteuerung); bitte dort bestätigen.")
+    }
+    else {
+        Write-Status ('Entferne die Firewall-Regel „{0}“. Windows fragt dafür nach Administratorrechten (Benutzerkontensteuerung); bitte dort bestätigen.' -f $BylLanRuleName)
+    }
+    $outcome = Invoke-FirewallElevated -Action $action -Port $Config.Port
+    $script:LogDetail = "firewall=$action outcome=$outcome"
+    if (@('done', 'test') -contains $outcome) {
+        if ($Json) {
+            $answer = Get-LanAnswer -Config $Config
+            $answer['action'] = $action
+            $answer['outcome'] = $outcome
+            Write-JsonLine (ConvertTo-Json -InputObject $answer -Depth 6 -Compress)
+            return $BylExitOk
+        }
+        Show-Message (Get-FirewallDoneText -Action $action -Port $Config.Port)
+        return $BylExitOk
+    }
+    return Write-FirewallFailure -Action $action -Outcome $outcome -Port $Config.Port -Answer ([ordered]@{ ok = $false; action = $action; outcome = $outcome; problem = $outcome })
 }
 
 # Codes of the problems of a passphrase for the app; the entry of the catalog is passphrase-<code>.
@@ -3482,6 +4029,9 @@ try {
                 'backup-verify' { Invoke-BackupVerify }
                 'restore' { Invoke-Restore -Config $config }
                 'security-configure' { Invoke-SecurityConfigure }
+                'lan-info' { Invoke-LanInfo -Config $config }
+                'lan-configure' { Invoke-LanConfigure -Config $config }
+                'lan-firewall' { Invoke-LanFirewall -Config $config }
                 'help' {
                     Write-Host $HelpText
                     $BylExitOk
@@ -3512,7 +4062,7 @@ $exitCode = [int](@($exitCode)[-1])
 # Commands that change something go into byl-control.log, the others only after an error (status
 # and logs would flood it).
 if ($script:ProblemError -or @('start', 'stop', 'restart', 'reload', 'port', 'autostart-on', 'autostart-off', 'mail-restart', 'reset-admin',
-        'backup-configure', 'backup-passphrase', 'backup-export', 'backup-verify', 'restore', 'security-configure') -contains $Command) {
+        'backup-configure', 'backup-passphrase', 'backup-export', 'backup-verify', 'restore', 'security-configure', 'lan-configure', 'lan-firewall') -contains $Command) {
     Write-ControlLog -Name $Command -ExitCode $exitCode
 }
 # A run without window that went well clears the problem an earlier one kept (ADR-0048).

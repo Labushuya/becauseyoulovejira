@@ -36,13 +36,24 @@ function prune(store, now) {
   }
 }
 
-/** Realtime clients of signed-in app users that subscribed to the topic (the open app tabs). */
+/**
+ * Marks a realtime connection by its peer (onRealtimeConnectRequest): from this machine or not. The
+ * address of the connection decides, never a header (plan heimnetz).
+ */
+function markClient(e) {
+  e.client.set(rules.LOCAL_CLIENT_KEY, rules.isLoopback(e.remoteIP()));
+}
+
+/**
+ * Realtime clients of signed-in app users on this machine that subscribed to the topic (the open
+ * app tabs here); tabs on other devices of the home network do not count.
+ */
 function listeners(app) {
   var clients = app.subscriptionsBroker().clients();
   var found = [];
   for (var id in clients) {
     var client = clients[id];
-    if (!client || !client.hasSubscription(rules.TOPIC) || client.isDiscarded()) {
+    if (!client || !client.hasSubscription(rules.TOPIC) || client.isDiscarded() || client.get(rules.LOCAL_CLIENT_KEY) !== true) {
       continue;
     }
     var auth = client.get('auth');
@@ -143,6 +154,7 @@ function ack(e, nonce) {
 }
 
 module.exports = {
+  markClient: markClient,
   presence: presence,
   attention: attention,
   attentionState: attentionState,

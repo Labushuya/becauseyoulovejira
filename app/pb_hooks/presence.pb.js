@@ -4,6 +4,14 @@
 // realtime topic byl/attention and confirm a message. The logic lives in lib/presence-service.js;
 // handlers run in isolated scopes, so modules are required inside them.
 
+// Every realtime connection remembers whether it comes from this machine (plan heimnetz): only the
+// tabs here count as open and get the messages. The handler must call e.next(); the connection
+// lives inside it.
+onRealtimeConnectRequest(function (e) {
+  require(`${__hooks}/lib/presence-service.js`).markClient(e);
+  e.next();
+});
+
 // Number of open app tabs and whether a landing page reported lately: scripts on this machine only.
 routerAdd('GET', '/api/byl/presence', function (e) {
   return require(`${__hooks}/lib/presence-service.js`).presence(e);

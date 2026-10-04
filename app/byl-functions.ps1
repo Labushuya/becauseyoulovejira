@@ -9,8 +9,9 @@
 # --- Address and port (ADR-0039 section 2) ----------------------------------------------------
 
 # Standard port of the app. The only place to change it is byl-config.json in the app folder
-# ({"port": <number>}, written by "byl-control.ps1 port <number>"); the app always binds to the
-# loopback address 127.0.0.1 (CLAUDE.md section 3).
+# ({"port": <number>}, written by "byl-control.ps1 port <number>"); the app binds to the loopback
+# address 127.0.0.1 (CLAUDE.md section 3), with the access in the home network switched on to all
+# addresses of the computer (0.0.0.0, plan heimnetz); every address of the scripts stays 127.0.0.1.
 $BylDefaultPort = 8090
 $BylPortMin = 1024
 $BylPortMax = 65535
@@ -152,30 +153,359 @@ function ConvertFrom-BylSecurityConfig {
 
 function Get-BylOrigins {
     # CORS origins of the server (--origins, ADR-0055 section 3): the app on this machine under
-    # 127.0.0.1 and localhost with $Port, then every further host over HTTPS. PocketBase allows "*"
-    # without the flag. The browser extension needs no origin (host_permissions), the landing page
-    # per file:// gets its answers from the guard of pb_hooks (security.pb.js).
-    param([Parameter(Mandatory = $true)][int]$Port, [AllowNull()][AllowEmptyCollection()][string[]]$Hosts = @())
+    # 127.0.0.1 and localhost with $Port, then the addresses $Lan of the home network over plain
+    # HTTP with the same port (plan heimnetz), then every further host over HTTPS. PocketBase allows
+    # "*" without the flag. The browser extension needs no origin (host_permissions), the landing
+    # page per file:// gets its answers from the guard of pb_hooks (security.pb.js), which also
+    # takes the hosts of these origins as the only names besides this machine.
+    param(
+        [Parameter(Mandatory = $true)][int]$Port,
+        [AllowNull()][AllowEmptyCollection()][string[]]$Hosts = @(),
+        [AllowNull()][AllowEmptyCollection()][string[]]$Lan = @()
+    )
 
     $origins = New-Object System.Collections.Generic.List[string]
     $origins.Add("http://127.0.0.1:$Port")
     $origins.Add("http://localhost:$Port")
+    foreach ($address in @($Lan)) {
+        if (-not [string]::IsNullOrEmpty($address)) { $origins.Add("http://$($address):$Port") }
+    }
     foreach ($name in @($Hosts)) {
         if (-not [string]::IsNullOrEmpty($name)) { $origins.Add("https://$name") }
     }
     return ($origins -join ',')
 }
 
+# --- Access in the home network (plan docs/plan/heimnetz.md, ADR-0055 addendum) ------------------
+
+# Other devices of the home network reach the app over plain HTTP under an address of this
+# computer: byl-config.json {"network": {"lan": {"enabled": true, "addresses": [...]}}}, off by
+# default. An address is a private IPv4 address (10/8, 172.16/12, 192.168/16, written without
+# leading zeros as a browser sends it in the Host header) or a name of the computer in the local
+# network with one of the local endings below (a FRITZ!Box names its devices <name>.fritz.box),
+# without a port: the port stays the one of the app. At most $BylLanMax. The same rule as
+# normalizeLanAddress in pb_hooks/lib/lan-rules.js and web/src/lib/domain/lan.ts (parity tests).
+$BylLanMax = 5
+$BylLanOctet = '(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])'
+$BylLanIPv4Pattern = "^$BylLanOctet\.$BylLanOctet\.$BylLanOctet\.$BylLanOctet$"
+$BylLanNamePattern = '^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:fritz\.box|local|lan|home\.arpa|internal)$'
+$BylLanNameSuffixes = @('fritz.box', 'local', 'lan', 'home.arpa', 'internal')
+# Display name of the inbound rule of the Windows firewall for pocketbase.exe of a folder; one rule
+# per folder (the program path tells them apart), only private networks, only TCP on the port.
+$BylLanRuleName = 'becauseyoulovejira (Heimnetz)'
+$BylLanRuleDescription = 'Access of devices in the home network to becauseyoulovejira (private networks only), created by byl-control.ps1'
+
+function Test-BylPrivateIPv4 {
+    # True for an IPv4 address in 10.0.0.0/8, 172.16.0.0/12 or 192.168.0.0/16, written in the form a
+    # browser sends (four decimal numbers without leading zeros).
+    param([AllowNull()][AllowEmptyString()][string]$Text)
+
+    if ($null -eq $Text -or $Text -cnotmatch $BylLanIPv4Pattern) { return $false }
+    $first = [int]$Matches[1]
+    $second = [int]$Matches[2]
+    return $first -eq 10 -or ($first -eq 172 -and $second -ge 16 -and $second -le 31) -or ($first -eq 192 -and $second -eq 168)
+}
+
+function ConvertTo-BylLanAddress {
+    # $Text trimmed and in lower case if it is an address of the home network (a private IPv4
+    # address or a local name, see above), otherwise $null.
+    param([AllowNull()][AllowEmptyString()][string]$Text)
+
+    if ($null -eq $Text) { return $null }
+    $value = $Text.Trim().ToLowerInvariant()
+    if (Test-BylPrivateIPv4 -Text $value) { return $value }
+    if ($value -cmatch $BylLanNamePattern) { return $value }
+    return $null
+}
+
+function ConvertFrom-BylLanConfig {
+    # The access in the home network from the text of byl-config.json: Present (the file has the
+    # section network.lan), Enabled (only a real true switches it on) and Addresses (the valid
+    # entries in lower case, without duplicates, at most $BylLanMax). Never throws: invalid entries
+    # are left out, so a typing error can only allow less; a broken file is the business of the
+    # port check.
+    param([AllowNull()][AllowEmptyString()][string]$Text)
+
+    $result = [pscustomobject]@{ Present = $false; Enabled = $false; Addresses = [string[]]@() }
+    try {
+        $value = if ([string]::IsNullOrWhiteSpace($Text)) { $null } else { $Text | ConvertFrom-Json }
+    }
+    catch {
+        return $result
+    }
+    if ($null -eq $value -or $value -isnot [System.Management.Automation.PSCustomObject] -or $null -eq $value.PSObject.Properties['network']) {
+        return $result
+    }
+    $network = $value.network
+    if ($null -eq $network -or $network -isnot [System.Management.Automation.PSCustomObject] -or $null -eq $network.PSObject.Properties['lan']) {
+        return $result
+    }
+    $lan = $network.lan
+    if ($null -eq $lan -or $lan -isnot [System.Management.Automation.PSCustomObject]) { return $result }
+    $result.Present = $true
+    $enabled = $lan.PSObject.Properties['enabled']
+    $result.Enabled = $null -ne $enabled -and $enabled.Value -is [bool] -and $enabled.Value
+    $property = $lan.PSObject.Properties['addresses']
+    if ($null -eq $property -or $null -eq $property.Value) { return $result }
+    $addresses = New-Object System.Collections.Generic.List[string]
+    foreach ($entry in @($property.Value)) {
+        if ($entry -isnot [string]) { continue }
+        $address = ConvertTo-BylLanAddress -Text $entry
+        if ($null -ne $address -and -not $addresses.Contains($address) -and $addresses.Count -lt $BylLanMax) { $addresses.Add($address) }
+    }
+    $result.Addresses = [string[]]$addresses.ToArray()
+    return $result
+}
+
+function Get-BylLanAddress {
+    # The addresses of the home network a start uses ($Lan in the shape of ConvertFrom-BylLanConfig):
+    # its addresses while it is switched on, none otherwise (then the app binds to 127.0.0.1 only).
+    # Assign first: the list comes as one pipeline object.
+    param([AllowNull()][object]$Lan)
+
+    if ($null -eq $Lan -or -not $Lan.Enabled) { return , [string[]]@() }
+    return , [string[]]@($Lan.Addresses | Where-Object { -not [string]::IsNullOrEmpty($_) })
+}
+
+function Get-BylActiveLan {
+    # What the running server allows in the home network, read from its arguments: Bound (it listens
+    # on every address, --http=0.0.0.0:<port>) and Hosts (the hosts of its http origins besides this
+    # machine, e.g. 192.168.178.20:8090, as the guard of pb_hooks allows them).
+    param([AllowNull()][AllowEmptyCollection()][string[]]$Arguments)
+
+    $http = Get-FlagValue -Arguments $Arguments -Name 'http'
+    $bound = $null -ne $http -and $http -cmatch '^0\.0\.0\.0:\d{1,5}$'
+    $hosts = New-Object System.Collections.Generic.List[string]
+    $origins = Get-FlagValue -Arguments $Arguments -Name 'origins'
+    foreach ($origin in @(([string]$origins) -split ',')) {
+        if ($origin.Trim() -notmatch '^http://([^/?#*\s]+)$') { continue }
+        $name = $Matches[1].ToLowerInvariant()
+        if ($name -match '^(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?$' -or $hosts.Contains($name)) { continue }
+        $hosts.Add($name)
+    }
+    return [pscustomobject]@{ Bound = $bound; Hosts = [string[]]$hosts.ToArray() }
+}
+
+function ConvertTo-BylNetworkCategory {
+    # The network category of a connection profile of Windows (NetworkCategory of
+    # Get-NetConnectionProfile: Private, Public, DomainAuthenticated) as 'private', 'public',
+    # 'domain' or 'unknown'.
+    param([AllowNull()][object]$Value)
+
+    switch ([string]$Value) {
+        'Private' { return 'private' }
+        'Public' { return 'public' }
+        'DomainAuthenticated' { return 'domain' }
+        default { return 'unknown' }
+    }
+}
+
+function Select-BylLanCandidate {
+    # The addresses of this computer that devices of the home network can use: every private IPv4
+    # address in use (AddressState Preferred) with the adapter and the network category of its
+    # connection profile, then the name of the computer with the DNS suffix of such an adapter when
+    # the suffix is a local one (a FRITZ!Box hands out fritz.box). Inputs shaped like
+    # Get-NetIPAddress (IPAddress, InterfaceIndex, InterfaceAlias, AddressState),
+    # Get-NetConnectionProfile (InterfaceIndex, NetworkCategory) and Get-DnsClient (InterfaceIndex,
+    # ConnectionSpecificSuffix); $HostName is the DNS name of the computer. Returns Address, Kind
+    # ('ip' or 'name'), Adapter, Index and Category, private networks first; assign first (one
+    # pipeline object).
+    param(
+        [AllowNull()][AllowEmptyCollection()][object[]]$Addresses = @(),
+        [AllowNull()][AllowEmptyCollection()][object[]]$Profiles = @(),
+        [AllowNull()][AllowEmptyCollection()][object[]]$Suffixes = @(),
+        [AllowNull()][AllowEmptyString()][string]$HostName = ''
+    )
+
+    $categoryOf = @{}
+    foreach ($profile in @($Profiles)) {
+        if ($null -ne $profile) { $categoryOf[[int]$profile.InterfaceIndex] = ConvertTo-BylNetworkCategory -Value $profile.NetworkCategory }
+    }
+    $suffixOf = @{}
+    foreach ($entry in @($Suffixes)) {
+        if ($null -ne $entry -and -not [string]::IsNullOrWhiteSpace([string]$entry.ConnectionSpecificSuffix)) {
+            $suffixOf[[int]$entry.InterfaceIndex] = ([string]$entry.ConnectionSpecificSuffix).Trim().TrimEnd('.').ToLowerInvariant()
+        }
+    }
+    $found = New-Object System.Collections.Generic.List[object]
+    $seen = New-Object System.Collections.Generic.List[string]
+    $add = {
+        param([string]$Address, [string]$Kind, [object]$Source)
+        if ([string]::IsNullOrEmpty($Address) -or $seen.Contains($Address)) { return }
+        $seen.Add($Address)
+        $index = [int]$Source.InterfaceIndex
+        $category = if ($categoryOf.ContainsKey($index)) { $categoryOf[$index] } else { 'unknown' }
+        $found.Add([pscustomobject]@{ Address = $Address; Kind = $Kind; Adapter = [string]$Source.InterfaceAlias; Index = $index; Category = $category })
+    }
+    $used = @(@($Addresses) | Where-Object {
+            $null -ne $_ -and (Test-BylPrivateIPv4 -Text ([string]$_.IPAddress)) -and ([string]::IsNullOrEmpty([string]$_.AddressState) -or [string]$_.AddressState -eq 'Preferred')
+        })
+    foreach ($address in $used) { & $add ([string]$address.IPAddress) 'ip' $address }
+    $name = ([string]$HostName).Trim().ToLowerInvariant()
+    foreach ($address in $used) {
+        $index = [int]$address.InterfaceIndex
+        if ($name -eq '' -or -not $suffixOf.ContainsKey($index) -or $BylLanNameSuffixes -notcontains $suffixOf[$index]) { continue }
+        & $add (ConvertTo-BylLanAddress -Text "$name.$($suffixOf[$index])") 'name' $address
+    }
+    # Private networks first, then the others in the order found (Sort-Object of Windows PowerShell
+    # 5.1 is not stable, hence the passes).
+    $sorted = New-Object System.Collections.Generic.List[object]
+    foreach ($category in @('private', 'domain', 'unknown', 'public')) {
+        foreach ($candidate in $found) {
+            if ($candidate.Category -eq $category) { $sorted.Add($candidate) }
+        }
+    }
+    return , @($sorted.ToArray())
+}
+
+function Resolve-BylLanAddressState {
+    # For every address of the home network in $Lan: whether it belongs to an adapter of this
+    # computer now (Present; $null for a name, which only the router resolves) with Adapter, Index
+    # and Category of its connection profile. Inputs as for Select-BylLanCandidate; assign first
+    # (one pipeline object).
+    param(
+        [AllowNull()][AllowEmptyCollection()][string[]]$Lan = @(),
+        [AllowNull()][AllowEmptyCollection()][object[]]$Addresses = @(),
+        [AllowNull()][AllowEmptyCollection()][object[]]$Profiles = @()
+    )
+
+    $categoryOf = @{}
+    foreach ($profile in @($Profiles)) {
+        if ($null -ne $profile) { $categoryOf[[int]$profile.InterfaceIndex] = ConvertTo-BylNetworkCategory -Value $profile.NetworkCategory }
+    }
+    $result = foreach ($address in @($Lan | Where-Object { -not [string]::IsNullOrEmpty($_) })) {
+        if (-not (Test-BylPrivateIPv4 -Text $address)) {
+            [pscustomobject]@{ Address = $address; Present = $null; Adapter = ''; Index = $null; Category = 'unknown' }
+            continue
+        }
+        $match = @(@($Addresses) | Where-Object { $null -ne $_ -and [string]$_.IPAddress -eq $address } | Select-Object -First 1)
+        if ($match.Count -eq 0) {
+            [pscustomobject]@{ Address = $address; Present = $false; Adapter = ''; Index = $null; Category = 'unknown' }
+            continue
+        }
+        $index = [int]$match[0].InterfaceIndex
+        [pscustomobject]@{
+            Address  = $address
+            Present  = $true
+            Adapter  = [string]$match[0].InterfaceAlias
+            Index    = $index
+            Category = if ($categoryOf.ContainsKey($index)) { $categoryOf[$index] } else { 'unknown' }
+        }
+    }
+    return , @($result)
+}
+
+function Resolve-BylFirewallState {
+    # State of the inbound rule of the home network for $Program (pocketbase.exe of this folder) on
+    # TCP $Port. $Rules: the rules with the display name $BylLanRuleName, each with Enabled,
+    # Direction, Action, Profile (as Get-NetFirewallRule writes them), Program, Protocol and
+    # LocalPort (of their filters); $Blocks: switched-on inbound block rules for the program (they
+    # win over every allow rule, e.g. after "Abbrechen" in the alert of Windows). Returns State:
+    #   present  - a switched-on inbound allow rule for the program, TCP (or any) on the port (or
+    #              any), for private networks,
+    #   mismatch - a rule for the program exists, but for another port, profile or switched off,
+    #   missing  - none for this program,
+    # and Blocked.
+    param(
+        [AllowNull()][AllowEmptyCollection()][object[]]$Rules = @(),
+        [AllowNull()][AllowEmptyCollection()][object[]]$Blocks = @(),
+        [Parameter(Mandatory = $true)][string]$Program,
+        [Parameter(Mandatory = $true)][int]$Port
+    )
+
+    $own = @(@($Rules) | Where-Object {
+            $null -ne $_ -and (Test-SamePath -Path ([Environment]::ExpandEnvironmentVariables([string]$_.Program)) -Expected $Program)
+        })
+    $fits = @($own | Where-Object {
+            $ports = @(@($_.LocalPort) | ForEach-Object { [string]$_ })
+            $profiles = @(([string]$_.Profile) -split ',\s*')
+            [string]$_.Enabled -eq 'True' -and [string]$_.Direction -eq 'Inbound' -and [string]$_.Action -eq 'Allow' -and
+            @('TCP', 'Any') -contains [string]$_.Protocol -and
+            ($ports -contains [string]$Port -or $ports -contains 'Any') -and
+            ($profiles -contains 'Private' -or $profiles -contains 'Any')
+        })
+    $state = if ($fits.Count -gt 0) { 'present' } elseif ($own.Count -gt 0) { 'mismatch' } else { 'missing' }
+    return [pscustomobject]@{ State = $state; Blocked = @(@($Blocks) | Where-Object { $null -ne $_ }).Count -gt 0 }
+}
+
+function ConvertTo-BylQuotedText {
+    # $Text as a single-quoted PowerShell string (a quote doubled), for the elevated script.
+    param([AllowEmptyString()][string]$Text)
+
+    return "'" + $Text.Replace("'", "''") + "'"
+}
+
+function Get-BylFirewallScript {
+    # The script the elevated Windows PowerShell runs for lan-firewall: it removes every rule named
+    # $BylLanRuleName for $Program (also one of an earlier port) and, for 'add', creates the one
+    # inbound rule: only $Program, only TCP on $Port, only private networks. Exit code 0 when done,
+    # 1 after an error. Fixed text and the quoted path only; nothing of a request reaches it.
+    param(
+        [Parameter(Mandatory = $true)][ValidateSet('add', 'remove')][string]$Action,
+        [Parameter(Mandatory = $true)][string]$Program,
+        [Parameter(Mandatory = $true)][ValidateRange(1, 65535)][int]$Port
+    )
+
+    $lines = New-Object System.Collections.Generic.List[string]
+    $lines.Add('$ErrorActionPreference = ''Stop''')
+    $lines.Add('$name = ' + (ConvertTo-BylQuotedText -Text $BylLanRuleName))
+    $lines.Add('$program = ' + (ConvertTo-BylQuotedText -Text $Program))
+    $lines.Add('try {')
+    $lines.Add('    foreach ($rule in @(Get-NetFirewallRule -DisplayName $name -ErrorAction SilentlyContinue)) {')
+    $lines.Add('        $filter = $rule | Get-NetFirewallApplicationFilter')
+    $lines.Add('        if ([string]::Equals([string]$filter.Program, $program, [System.StringComparison]::OrdinalIgnoreCase)) { $rule | Remove-NetFirewallRule }')
+    $lines.Add('    }')
+    if ($Action -eq 'add') {
+        $lines.Add('    New-NetFirewallRule -DisplayName $name -Description ' + (ConvertTo-BylQuotedText -Text $BylLanRuleDescription) +
+            " -Direction Inbound -Action Allow -Protocol TCP -LocalPort $Port -Program `$program -Profile Private -Enabled True | Out-Null")
+    }
+    $lines.Add('    exit 0')
+    $lines.Add('}')
+    $lines.Add('catch {')
+    $lines.Add('    exit 1')
+    $lines.Add('}')
+    return ($lines -join "`r`n")
+}
+
+function Get-BylElevatedArgumentString {
+    # Arguments of the elevated Windows PowerShell: the script $Script as -EncodedCommand (UTF-16LE,
+    # Base64), so no quote of a path can break the command line.
+    param([Parameter(Mandatory = $true)][string]$Script)
+
+    $encoded = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($Script))
+    return "-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand $encoded"
+}
+
+function Get-BylFirewallCommand {
+    # The same change as one command to copy into a prompt started "as administrator" (netsh works in
+    # the command prompt and in PowerShell): the way by hand next to the offer, also in the entries
+    # lan-firewall-* of the catalog.
+    param(
+        [Parameter(Mandatory = $true)][ValidateSet('add', 'remove')][string]$Action,
+        [Parameter(Mandatory = $true)][string]$Program,
+        [Parameter(Mandatory = $true)][ValidateRange(1, 65535)][int]$Port
+    )
+
+    if ($Action -eq 'add') {
+        return ('netsh advfirewall firewall add rule name="{0}" dir=in action=allow protocol=TCP localport={1} program="{2}" profile=private' -f
+            $BylLanRuleName, $Port, $Program)
+    }
+    return ('netsh advfirewall firewall delete rule name="{0}" program="{1}"' -f $BylLanRuleName, $Program)
+}
+
 function Merge-BylConfigText {
     # Text of byl-config.json from the current text $Text with a new $Port, new backup settings
-    # $Backup (ConvertFrom-BylBackupConfig shape) and/or new further hosts $Hosts (an empty list
-    # removes them); what is not given stays as it was. The file holds only these settings: the
-    # port (ADR-0039 section 2), the backup (ADR-0046) and the further hosts (ADR-0055).
+    # $Backup (ConvertFrom-BylBackupConfig shape), new further hosts $Hosts (an empty list removes
+    # them) and/or a new access in the home network $Lan (ConvertFrom-BylLanConfig shape; switched
+    # off without addresses removes it); what is not given stays as it was. The file holds only
+    # these settings: the port (ADR-0039 section 2), the backup (ADR-0046), the further hosts
+    # (ADR-0055) and the home network (plan heimnetz).
     param(
         [AllowNull()][AllowEmptyString()][string]$Text,
         [AllowNull()][object]$Port,
         [AllowNull()][object]$Backup,
-        [AllowNull()][AllowEmptyCollection()][string[]]$Hosts
+        [AllowNull()][AllowEmptyCollection()][string[]]$Hosts,
+        [AllowNull()][object]$Lan
     )
 
     $current = $null
@@ -212,6 +542,21 @@ function Merge-BylConfigText {
     if ($kept.Count -gt 0) {
         $list = ($kept | ForEach-Object { ConvertTo-Json -InputObject ([string]$_) -Compress }) -join ', '
         $parts.Add("  `"security`": {`r`n    `"hosts`": [$list]`r`n  }")
+    }
+    if (-not $PSBoundParameters.ContainsKey('Lan') -or $null -eq $Lan) {
+        $Lan = ConvertFrom-BylLanConfig -Text $Text
+    }
+    $addresses = New-Object System.Collections.Generic.List[string]
+    foreach ($entry in @($Lan.Addresses)) {
+        $address = ConvertTo-BylLanAddress -Text $entry
+        if ($null -ne $address -and -not $addresses.Contains($address) -and $addresses.Count -lt $BylLanMax) { $addresses.Add($address) }
+    }
+    # Switched off, the addresses stay for switching on again; without any the section goes (on
+    # without an address would mean nothing).
+    if ($addresses.Count -gt 0) {
+        $switch = if ($Lan.Enabled) { 'true' } else { 'false' }
+        $list = ($addresses | ForEach-Object { ConvertTo-Json -InputObject ([string]$_) -Compress }) -join ', '
+        $parts.Add("  `"network`": {`r`n    `"lan`": {`r`n      `"enabled`": $switch,`r`n      `"addresses`": [$list]`r`n    }`r`n  }")
     }
     if ($parts.Count -eq 0) { return "{`r`n}`r`n" }
     return "{`r`n" + ($parts -join ",`r`n") + "`r`n}`r`n"
@@ -398,7 +743,7 @@ function Resolve-StateMatch {
 # Parts whose change needs a restart of PocketBase, and parts that only need a reload (F5) of the
 # open tabs. PocketBase 0.40.4 does not reload pb_hooks on Windows ("--hooksWatch ... has no effect
 # on Windows"), runs new migrations only at the start and serves pb_public fresh at every request.
-$BylRestartParts = @('server', 'migrations', 'hooks', 'port', 'hosts', 'environment', 'mailHelper')
+$BylRestartParts = @('server', 'migrations', 'hooks', 'port', 'hosts', 'lan', 'environment', 'mailHelper')
 $BylReloadParts = @('web')
 
 function Get-BytesHash {
@@ -498,11 +843,13 @@ function Get-EnvironmentHash {
 function Get-BylFingerprint {
     # Start fingerprint of the app folder: what a server started now would load. $EnvironmentHash is
     # Get-EnvironmentHash of the BYL_* variables ('' if it cannot be built); $Hosts the further hosts
-    # of byl-config.json (ADR-0055), '' without any, also in a state file of before.
+    # of byl-config.json (ADR-0055), '' without any, also in a state file of before; $Lan the
+    # addresses of the home network a start uses (Get-BylLanAddress, plan heimnetz), likewise.
     param(
         [Parameter(Mandatory = $true)][string]$AppDir,
         [Parameter(Mandatory = $true)][int]$Port,
         [AllowNull()][AllowEmptyCollection()][string[]]$Hosts = @(),
+        [AllowNull()][AllowEmptyCollection()][string[]]$Lan = @(),
         [AllowEmptyString()][string]$EnvironmentHash = ''
     )
 
@@ -512,6 +859,7 @@ function Get-BylFingerprint {
         hooks       = Get-FolderHash -Folder ([System.IO.Path]::Combine($AppDir, 'pb_hooks')) -Recurse
         port        = [string]$Port
         hosts       = (@($Hosts) | Where-Object { -not [string]::IsNullOrEmpty($_) }) -join ','
+        lan         = (@($Lan) | Where-Object { -not [string]::IsNullOrEmpty($_) }) -join ','
         environment = $EnvironmentHash
         mailHelper  = Get-FileStamp -Path ([System.IO.Path]::Combine($AppDir, $BylMailHelperName))
         web         = Get-WebBuildId -AppDir $AppDir
@@ -720,11 +1068,12 @@ function Test-FileInFolder {
 }
 
 function Get-HttpPort {
-    # Port of a --http value "127.0.0.1:<port>"; $null for any other host (0.0.0.0, a name, IPv6)
-    # or form.
+    # Port of a --http value "127.0.0.1:<port>", or "0.0.0.0:<port>" of a start with the access in
+    # the home network (plan heimnetz); $null for any other host (a name, IPv6, another address) or
+    # form.
     param([AllowNull()][AllowEmptyString()][string]$Value)
 
-    if ([string]::IsNullOrEmpty($Value) -or $Value -cnotmatch '^127\.0\.0\.1:(\d{1,5})$') { return $null }
+    if ([string]::IsNullOrEmpty($Value) -or $Value -cnotmatch '^(?:127\.0\.0\.1|0\.0\.0\.0):(\d{1,5})$') { return $null }
     $port = [int]$Matches[1]
     if ($port -lt 1 -or $port -gt 65535) { return $null }
     return $port
@@ -741,7 +1090,8 @@ function Get-ProcessArgument {
 }
 
 function Get-ServerProcessPort {
-    # Port of a PocketBase server process from its --http flag; $null if it is not 127.0.0.1:<port>.
+    # Port of a PocketBase server process from its --http flag; $null if it is neither
+    # 127.0.0.1:<port> nor 0.0.0.0:<port>.
     param([AllowNull()][object]$Process)
 
     return Get-HttpPort -Value (Get-FlagValue -Arguments (Get-ProcessArgument -Process $Process) -Name 'http')
@@ -750,7 +1100,8 @@ function Get-ServerProcessPort {
 function Select-AppProcess {
     # Returns the app's own PocketBase instance(s) from process objects shaped like Win32_Process
     # (ProcessId, ExecutablePath, CommandLine). A process qualifies only if ALL of this holds:
-    #   ExecutablePath = <AppDir>\pocketbase.exe, argument "serve", --http=127.0.0.1:<any port> and
+    #   ExecutablePath = <AppDir>\pocketbase.exe, argument "serve", --http=127.0.0.1:<any port> (or
+    #   0.0.0.0:<any port> with the access in the home network, plan heimnetz) and
     #   --dir=<AppDir>\pb_data.
     # The program path in this folder is the safety rule of stop (ADR-0039 section 4): a copy of the
     # app in another folder never qualifies, whatever its port. Test instances of the harness (same
@@ -788,7 +1139,7 @@ function Test-DevelopmentPath {
 function Select-OtherServerProcess {
     # PocketBase servers ("serve") that are not the own instance: a copy of the app in another
     # folder or a test instance. Only reported (status, doctor), never stopped. Returns ProcessId,
-    # ExecutablePath, Port ($null if not on 127.0.0.1), SameFolder (the program of this folder
+    # ExecutablePath, Port ($null if not on 127.0.0.1 or 0.0.0.0), SameFolder (the program of this folder
     # with another data folder, e.g. the test harness) and TestInstance (SameFolder, or a program
     # in a worktree or a disposable copy, Test-DevelopmentPath): status and the page System fold
     # test instances into one line, a real second installation stays visible.
@@ -827,7 +1178,8 @@ function Get-TestInstanceSummary {
 function Resolve-PortState {
     # Classifies LISTEN sockets shaped like Get-NetTCPConnection (LocalAddress, LocalPort,
     # OwningProcess) for http://127.0.0.1:<Port>:
-    #   App     - the own instance (Select-AppProcess) listens on 127.0.0.1:<Port>,
+    #   App     - the own instance (Select-AppProcess) listens on 127.0.0.1:<Port>, or on 0.0.0.0 or
+    #             :: with the access in the home network (Go listens on both stacks for 0.0.0.0),
     #   Foreign - another process listens on 127.0.0.1, 0.0.0.0 or :: (the wildcards accept
     #             127.0.0.1 as well); ProcessId, ProcessName and ExecutablePath name the owner,
     #   Free    - nothing relevant listens (a socket on ::1 or another address does not collide).
@@ -845,7 +1197,7 @@ function Resolve-PortState {
         return [pscustomobject]@{ State = 'Free'; ProcessId = $null; ProcessName = $null; ExecutablePath = $null }
     }
     $ownIds = @(Select-AppProcess -Process $Process -AppDir $AppDir | ForEach-Object { [int]$_.ProcessId })
-    $own = @($relevant | Where-Object { [string]$_.LocalAddress -eq '127.0.0.1' -and $ownIds -contains [int]$_.OwningProcess })
+    $own = @($relevant | Where-Object { $ownIds -contains [int]$_.OwningProcess })
     if ($own.Count -gt 0) {
         return [pscustomobject]@{
             State          = 'App'
@@ -1036,13 +1388,22 @@ function Get-ServerLogPath {
 function Get-ServerArgumentString {
     # Arguments for pocketbase.exe (CLAUDE.md sections 3 and 9): only 127.0.0.1:<Port>, CORS only
     # for the own origins and the further hosts $Hosts (Get-BylOrigins, ADR-0055), data, hooks,
-    # migrations and web build from the app folder, --automigrate=false, never --dev. Paths are
-    # quoted (spaces, #); Windows paths cannot contain double quotes, origins contain no spaces.
-    param([Parameter(Mandatory = $true)][string]$AppDir, [int]$Port = $BylPort, [AllowNull()][AllowEmptyCollection()][string[]]$Hosts = @())
+    # migrations and web build from the app folder, --automigrate=false, never --dev. With addresses
+    # of the home network $Lan (Get-BylLanAddress, plan heimnetz) on every address of the computer,
+    # 0.0.0.0:<Port>, and with their http origins: PocketBase takes one address for --http only, and
+    # the guard of pb_hooks lets through only the hosts of the origins. Paths are quoted (spaces, #);
+    # Windows paths cannot contain double quotes, origins contain no spaces.
+    param(
+        [Parameter(Mandatory = $true)][string]$AppDir,
+        [int]$Port = $BylPort,
+        [AllowNull()][AllowEmptyCollection()][string[]]$Hosts = @(),
+        [AllowNull()][AllowEmptyCollection()][string[]]$Lan = @()
+    )
 
     $folder = { param([string]$Name) [System.IO.Path]::Combine($AppDir, $Name) }
-    return ('serve --http=127.0.0.1:{0} --origins={1} --dir="{2}" --hooksDir="{3}" --migrationsDir="{4}" --publicDir="{5}" --automigrate=false --indexFallback=true' -f
-        $Port, (Get-BylOrigins -Port $Port -Hosts $Hosts), (& $folder 'pb_data'), (& $folder 'pb_hooks'), (& $folder 'pb_migrations'), (& $folder 'pb_public'))
+    $bind = if (@(@($Lan) | Where-Object { -not [string]::IsNullOrEmpty($_) }).Count -gt 0) { '0.0.0.0' } else { '127.0.0.1' }
+    return ('serve --http={0}:{1} --origins={2} --dir="{3}" --hooksDir="{4}" --migrationsDir="{5}" --publicDir="{6}" --automigrate=false --indexFallback=true' -f
+        $bind, $Port, (Get-BylOrigins -Port $Port -Hosts $Hosts -Lan $Lan), (& $folder 'pb_data'), (& $folder 'pb_hooks'), (& $folder 'pb_migrations'), (& $folder 'pb_public'))
 }
 
 function Get-AutostartShortcut {

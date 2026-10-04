@@ -158,9 +158,14 @@ describe('address and port (ADR-0039 section 2)', () => {
 		expect(control()).not.toMatch(/127\.0\.0\.1:8090|:8090\b/);
 	});
 
-	it('reads the port from byl-config.json only and binds only to the loopback address', () => {
+	it('reads the port from byl-config.json only and binds to the loopback address unless the home network is on', () => {
 		expect(functions()).toContain("$BylConfigName = 'byl-config.json'");
-		expect(functionBody(functions(), 'Get-ServerArgumentString')).toContain("'serve --http=127.0.0.1:{0} ");
+		const serve = functionBody(functions(), 'Get-ServerArgumentString');
+		expect(serve).toContain("'serve --http={0}:{1} ");
+		// 0.0.0.0 only with addresses of the home network (plan heimnetz), else 127.0.0.1.
+		expect(serve).toContain(
+			"$bind = if (@(@($Lan) | Where-Object { -not [string]::IsNullOrEmpty($_) }).Count -gt 0) { '0.0.0.0' } else { '127.0.0.1' }"
+		);
 		const main = mainBlock();
 		expect(main).toContain('$config = Get-Config');
 		expect(main).toContain('Set-BylAddress -Port $config.Port');
@@ -237,13 +242,16 @@ describe('start', () => {
 	it('starts the server with the arguments from Get-ServerArgumentString and writes the state file', () => {
 		const start = functionBody(control(), 'Start-Server');
 		expect(start).toMatch(
-			/Start-Process -FilePath \$exe -ArgumentList \(Get-ServerArgumentString -AppDir \$AppDir -Port \$Port -Hosts \$Hosts\)/
+			/Start-Process -FilePath \$exe -ArgumentList \(Get-ServerArgumentString -AppDir \$AppDir -Port \$Port -Hosts \$Hosts -Lan \$Lan\)/
 		);
-		// Every start passes the further hosts of byl-config.json (ADR-0055), so --origins and the
-		// fingerprint follow the file.
+		// Every start passes the further hosts of byl-config.json (ADR-0055) and the addresses of the
+		// home network (plan heimnetz), so --http, --origins and the fingerprint follow the file.
 		const calls = control().match(/Start-Server -Port [^\r\n]*/g);
 		expect(calls.length).toBeGreaterThan(0);
-		for (const call of calls) expect(call).toContain('-Hosts $Config.Hosts');
+		for (const call of calls) {
+			expect(call).toContain('-Hosts $Config.Hosts');
+			expect(call).toContain('-Lan (Get-BylLanAddress -Lan $Config.Lan)');
+		}
 		expect(start.indexOf('ConvertTo-BylStateText -ProcessId $server.Id -Port $Port')).toBeGreaterThan(
 			start.indexOf('Start-Process -FilePath $exe')
 		);
@@ -566,7 +574,9 @@ describe('stop', () => {
 describe('status, reload, logs and doctor (ADR-0039 sections 5 to 7, BS-2)', () => {
 	it('stores the start fingerprint taken before the start, and rotates the logs of the run', () => {
 		const start = functionBody(control(), 'Start-Server');
-		const fingerprint = start.indexOf('$fingerprint = Get-BylFingerprint -AppDir $AppDir -Port $Port -Hosts $Hosts -EnvironmentHash $environmentHash');
+		const fingerprint = start.indexOf(
+			'$fingerprint = Get-BylFingerprint -AppDir $AppDir -Port $Port -Hosts $Hosts -Lan $Lan -EnvironmentHash $environmentHash'
+		);
 		expect(fingerprint).toBeGreaterThan(start.indexOf('Sync-BylEnvironment'));
 		expect(fingerprint).toBeLessThan(start.indexOf('Start-Process -FilePath $exe'));
 		expect(start.indexOf('$environmentHash = Get-EnvironmentFingerprint -Key $key')).toBeLessThan(fingerprint);
@@ -622,7 +632,7 @@ describe('status, reload, logs and doctor (ADR-0039 sections 5 to 7, BS-2)', () 
 
 	it('names every reason of a restart and returns the documented exit codes of status', () => {
 		const reasons = control().match(/\$RestartReasonText = @\{([\s\S]*?)\r\n\}/)[1];
-		for (const part of ['unknown', 'server', 'migrations', 'hooks', 'port', 'hosts', 'environment', 'mailHelper']) expect(reasons).toMatch(new RegExp(`\\b${part}\\s+=`));
+		for (const part of ['unknown', 'server', 'migrations', 'hooks', 'port', 'hosts', 'lan', 'environment', 'mailHelper']) expect(reasons).toMatch(new RegExp(`\\b${part}\\s+=`));
 		expect(functionBody(control(), 'Invoke-Status')).toContain('Resolve-StatusExitCode -ServerState $data.ServerState -Verdict $data.Comparison.Verdict');
 		expect(functions()).toContain('$BylExitNotRunning = 3');
 		expect(functions()).toContain('$BylExitRestartNeeded = 6');
@@ -631,7 +641,7 @@ describe('status, reload, logs and doctor (ADR-0039 sections 5 to 7, BS-2)', () 
 	it('logs changing commands and errors only, with numbers and fixed words, never the admin e-mail', () => {
 		expect(mainBlock()).toContain(
 			"if ($script:ProblemError -or @('start', 'stop', 'restart', 'reload', 'port', 'autostart-on', 'autostart-off', 'mail-restart', 'reset-admin',\r\n" +
-				"        'backup-configure', 'backup-passphrase', 'backup-export', 'backup-verify', 'restore', 'security-configure') -contains $Command) {"
+				"        'backup-configure', 'backup-passphrase', 'backup-export', 'backup-verify', 'restore', 'security-configure', 'lan-configure', 'lan-firewall') -contains $Command) {"
 		);
 		const write = functionBody(control(), 'Write-ControlLog');
 		expect(write).toContain('Invoke-LogRotation -Path $path -LimitBytes $BylControlLogLimitBytes');
@@ -856,6 +866,54 @@ describe('admin reset', () => {
 		expect(body).toMatch(/\.RedirectStandardOutput = \$true/);
 		expect(body).toMatch(/\.RedirectStandardError = \$true/);
 		expect(body).toMatch(/\.Replace\(\$Password, '\*\*\*'\)/);
+	});
+});
+
+describe('access in the home network (plan heimnetz)', () => {
+	it('asks Windows for administrator rights at one place only, never in a disposable copy of the tests', () => {
+		expect(control().match(/-Verb RunAs/g)).toHaveLength(1);
+		expect(functions()).not.toMatch(/-Verb RunAs|RunAs/);
+		const elevated = functionBody(control(), 'Invoke-FirewallElevated');
+		const guard = elevated.indexOf('if ($IsolatedEnvironment) {');
+		expect(guard).toBeGreaterThan(-1);
+		expect(elevated.indexOf("return 'test'")).toBeGreaterThan(guard);
+		expect(elevated.indexOf("return 'test'")).toBeLessThan(elevated.indexOf('-Verb RunAs'));
+		expect(elevated).toContain("throw (New-BylProblemError -Code 'lan-firewall-test')");
+		expect(elevated).toContain(
+			'Start-Process -FilePath $shell -ArgumentList $arguments -Verb RunAs -WindowStyle Hidden -PassThru'
+		);
+		expect(elevated).toContain("$shell = [System.IO.Path]::Combine([Environment]::SystemDirectory, 'WindowsPowerShell', 'v1.0', 'powershell.exe')");
+		// Only the command lan-firewall (a click on the page or the command) and an offer after a yes
+		// (inside -Fix) change the firewall.
+		const callers = [...control().matchAll(/^function (\S+) \{[\s\S]*?^\}/gm)]
+			.filter(([body, name]) => name !== 'Invoke-FirewallElevated' && body.includes('= Invoke-FirewallElevated -Action'))
+			.map(([, name]) => name);
+		expect(callers.sort()).toEqual(['Invoke-LanFirewall', 'Invoke-LanFirewallFix']);
+		for (const line of control().split(/\r?\n/).filter((text) => text.includes('Invoke-LanFirewallFix -Action'))) {
+			expect(line, line).toMatch(/-Fix \{ Invoke-LanFirewallFix -Action '(add|remove)' -Port \$/);
+		}
+	});
+
+	it('changes the firewall only through the elevated script, never the network profile', () => {
+		for (const source of [control(), functions()]) {
+			expect(source).not.toMatch(/Set-NetConnectionProfile|Set-NetFirewallRule|Enable-NetFirewallRule|Set-NetFirewallProfile/);
+		}
+		expect(control()).not.toMatch(/New-NetFirewallRule|Remove-NetFirewallRule|netsh /);
+		const script = functionBody(functions(), 'Get-BylFirewallScript');
+		expect(script).toContain('New-NetFirewallRule');
+		expect(script).toContain('-Profile Private');
+		expect(functions().match(/New-NetFirewallRule/g)).toHaveLength(1);
+		// Reading the firewall and the network needs no rights.
+		const read = functionBody(control(), 'Get-FirewallSnapshot') + functionBody(control(), 'Get-NetworkSnapshot');
+		expect(read).not.toMatch(/New-|Remove-|Set-|Enable-|Disable-/);
+	});
+
+	it('starts with the home network only from byl-config.json, and the app pages run only the whitelisted commands', () => {
+		const rules = read(join('pb_hooks', 'lib', 'system-rules.js'));
+		for (const name of ['lan-info', 'lan-configure', 'lan-firewall']) {
+			expect(rules).toMatch(new RegExp(`'${name}': \\{[^}]*security: true \\}`));
+		}
+		expect(functionBody(control(), 'Get-Config')).toContain('Lan     = ConvertFrom-BylLanConfig -Text $text');
 	});
 });
 

@@ -29,6 +29,9 @@ describe('whitelist', () => {
 			'backup-restore',
 			'backup-verify',
 			'doctor',
+			'lan-configure',
+			'lan-firewall',
+			'lan-info',
 			'logs',
 			'mail-restart',
 			'restart',
@@ -36,6 +39,12 @@ describe('whitelist', () => {
 			'status'
 		]);
 		expect(rules.ACTIONS.status).toEqual({ method: 'GET', args: ['status', '-Json'], output: true, changes: false });
+		// Plan heimnetz: the home network of the page "Sicherheit", run by its own routes only; the
+		// switch and the firewall rule take their parameters on standard input only.
+		expect(rules.ACTIONS['lan-info']).toEqual({ method: 'GET', args: ['lan-info', '-Json'], output: true, changes: false, security: true });
+		for (const name of ['lan-configure', 'lan-firewall']) {
+			expect(rules.ACTIONS[name], name).toEqual({ method: 'POST', args: [name, '-Json'], output: true, changes: true, input: true, security: true });
+		}
 		// ADR-0055 §8: the further hosts of the page "Sicherheit", run by its own route only.
 		expect(rules.ACTIONS['security-configure']).toEqual({
 			method: 'POST',
@@ -181,11 +190,14 @@ describe('own instance of the app folder', () => {
 		// Windows paths in another case and with slashes name the same folder.
 		const otherSpelling = ['c:/apps/BYL #1/app/POCKETBASE.EXE', 'serve', '--http=127.0.0.1:8095', '--dir=C:/Apps/byl #1/app/pb_data/'];
 		expect(rules.isOwnInstance(otherSpelling, APP)).toBe(true);
+		// With the access in the home network the own instance listens on 0.0.0.0 (plan heimnetz).
+		expect(rules.isOwnInstance([OWN_ARGS[0], 'serve', '--http=0.0.0.0:8095', `--dir=${APP}\\pb_data`], APP)).toBe(true);
 		const variants = {
 			'other program': ['C:\\Temp\\pocketbase.exe', ...OWN_ARGS.slice(1)],
 			'test harness (temp data)': [OWN_ARGS[0], 'serve', '--http=127.0.0.1:8095', '--dir=C:\\Temp\\byl-test-1\\pb_data'],
 			'no serve': [OWN_ARGS[0], 'superuser', 'upsert', `--dir=${APP}\\pb_data`, '--http=127.0.0.1:8095'],
-			'all addresses': [OWN_ARGS[0], 'serve', '--http=0.0.0.0:8095', `--dir=${APP}\\pb_data`],
+			'one address of the computer': [OWN_ARGS[0], 'serve', '--http=192.168.178.20:8095', `--dir=${APP}\\pb_data`],
+			'IPv6 wildcard': [OWN_ARGS[0], 'serve', '--http=[::]:8095', `--dir=${APP}\\pb_data`],
 			'no data folder': [OWN_ARGS[0], 'serve', '--http=127.0.0.1:8095'],
 			'relative program': ['pocketbase.exe', ...OWN_ARGS.slice(1)],
 			'nothing': []
@@ -270,8 +282,12 @@ describe('answers', () => {
 			portOwner: null,
 			otherServers: [{ pid: 9, path: 'D:\\Kopie\\app\\pocketbase.exe', port: 8090, sameFolder: false, testInstance: false }],
 			autostart: 'other',
+			lan: null,
 			backgroundProblem: null
 		});
+		// The part of the home network is read by the rule it gets (lanStatusView of lan-rules.js).
+		const lanView = (raw) => ({ read: raw });
+		expect(rules.statusView({ ...STATUS, lan: { enabled: true } }, lanView).lan).toEqual({ read: { enabled: true } });
 		expect(rules.statusView({ ...STATUS, state: 'weg' })).toBeNull();
 		expect(rules.statusView(null)).toBeNull();
 		expect(rules.statusView([])).toBeNull();

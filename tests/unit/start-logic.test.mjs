@@ -329,7 +329,8 @@ beforeAll(() => {
 
 describe('Select-AppProcess (stop.bat and the start check)', () => {
 	it('selects only the own instance from a mixed process list', () => {
-		expect(result.selectAll).toEqual([100, 101, 102]);
+		// 204: the own instance on 0.0.0.0, started with the access in the home network (plan heimnetz).
+		expect(result.selectAll).toEqual([100, 101, 102, 204]);
 	});
 
 	it.each([
@@ -340,7 +341,7 @@ describe('Select-AppProcess (stop.bat and the start check)', () => {
 		['harnessOn8090', 0],
 		['migrate', 0],
 		['relativeDir', 0],
-		['allInterfaces', 0],
+		['allInterfaces', 1],
 		['otherCopy', 0],
 		['foreignNode', 0],
 		['unreadable', 0]
@@ -380,8 +381,8 @@ describe('Resolve-PortState (no second server, clear error for a foreign port ow
 		expect(result.port8091).toMatchObject({ State: 'App', ProcessId: 102, ExecutablePath: EXE });
 	});
 
-	it('reads the port of a server from its --http flag (127.0.0.1 only)', () => {
-		expect(result.processPorts).toEqual([8090, 8090, 8091, 53211, 8090, null, 8090, null, 8090, 8090, null]);
+	it('reads the port of a server from its --http flag (127.0.0.1 or 0.0.0.0 only)', () => {
+		expect(result.processPorts).toEqual([8090, 8090, 8091, 53211, 8090, null, 8090, 8090, 8090, 8090, null]);
 	});
 });
 

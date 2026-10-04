@@ -69,7 +69,8 @@ const CODES = Object.keys(CATALOG);
 
 // Placeholders every command may use (Get-BylProblemValues), and those a call fills.
 const GLOBAL_VALUES = ['app', 'appq', 'control', 'log', 'tail', 'root', 'build', 'fetch'];
-const CALL_VALUES = ['port', 'next', 'command', 'folder', 'nodeDir', 'rerun'];
+// index: the network adapter of an address of the home network (plan heimnetz, lan-profile).
+const CALL_VALUES = ['port', 'next', 'command', 'folder', 'nodeDir', 'rerun', 'index'];
 
 describe('the catalog (app/byl-problems.ps1)', () => {
 	it('has every entry complete: exit code, level, problem, cause and at least one step', () => {
@@ -98,7 +99,19 @@ describe('the catalog (app/byl-problems.ps1)', () => {
 
 	it('offers to solve a problem only with a command next to it and as a question for J or N', () => {
 		const offers = Object.entries(CATALOG).filter(([, entry]) => entry.offer !== '');
-		expect(offers.map(([code]) => code).sort()).toEqual(['app-unhealthy', 'config-json', 'config-port', 'mail-not-running', 'not-running', 'port-busy']);
+		// The firewall rule of the home network (plan heimnetz): after the yes Windows still asks for
+		// administrator rights.
+		expect(offers.map(([code]) => code).sort()).toEqual([
+			'app-unhealthy',
+			'config-json',
+			'config-port',
+			'lan-firewall-leftover',
+			'lan-firewall-mismatch',
+			'lan-firewall-missing',
+			'mail-not-running',
+			'not-running',
+			'port-busy'
+		]);
 		for (const [code, entry] of offers) {
 			expect(entry.command, code).not.toBe('');
 			expect(entry.offer, code).toMatch(/^Soll ich .+\? \(J\/N\)$/);

@@ -203,7 +203,7 @@ function mailState(app, appDir) {
 
 /** Status of the control script with the state of the mail helper, or null. */
 function readStatus(e, appDir) {
-  var view = rules.statusView(runJson(appDir, 'status'));
+  var view = rules.statusView(runJson(appDir, 'status'), require(__hooks + '/lib/lan-rules.js').lanStatusView);
   if (view === null) {
     return null;
   }
