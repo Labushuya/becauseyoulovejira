@@ -28,6 +28,7 @@ import {
 	githubSettingsValue,
 	type GitHubSettings
 } from '../domain/github';
+import { isDuplicateState } from '../domain/inbox';
 import { keywordListOf } from '../domain/keywords';
 import {
 	MAILBOX_IMPORT_BATCH,
@@ -646,10 +647,9 @@ async function mailboxCall<T>(
 	}
 }
 
-const INBOX_STATES_OF_MAILBOX = ['new', 'converted', 'discarded'] as const;
-
 function toMailboxMail(raw: Record<string, unknown>): MailboxMail {
-	const state = INBOX_STATES_OF_MAILBOX.find((value) => value === raw.state) ?? '';
+	// Also "moved": the mail came once, and its entry moved into another area (E7-4b).
+	const state = isDuplicateState(raw.state) ? raw.state : '';
 	return {
 		uid: count(raw.uid),
 		size: count(raw.size),

@@ -25,11 +25,11 @@ import {
 	type NotionSource,
 	type NotionSourceList
 } from '../domain/notion';
+import { isDuplicateState } from '../domain/inbox';
 import { DATA_ERROR_MESSAGES, toDataError, withDataErrors } from './errors';
 import type { RequestOptions } from './options';
 
 const IMPORT_STATUSES = ['created', 'duplicate', 'skipped', 'failed'] as const;
-const INBOX_STATES = ['new', 'converted', 'discarded'] as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -218,7 +218,7 @@ function toPreviewItem(raw: Record<string, unknown>): NotionPreviewItem | null {
 		section: textOf(raw.section),
 		done: raw.done === true,
 		url: textOf(raw.url),
-		state: INBOX_STATES.find((value) => value === raw.state) ?? '',
+		state: isDuplicateState(raw.state) ? raw.state : '',
 		message: textOf(raw.message)
 	};
 }

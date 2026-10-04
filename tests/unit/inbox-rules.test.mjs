@@ -2,6 +2,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { loadHookLib } from '../support/hook-lib.mjs';
+import * as inbox from '../../web/src/lib/domain/inbox.ts';
 
 const rules = loadHookLib('inbox-rules.js');
 
@@ -195,5 +196,16 @@ describe('handledAtAction and duplicateMessage', () => {
 		expect(rules.duplicateMessage('discarded', '')).toBe('Schon verworfen.');
 		expect(rules.duplicateMessage('converted', 'HAUS-12')).toBe('Schon Ticket HAUS-12.');
 		expect(rules.duplicateMessage('converted', '')).toBe('Schon umgewandelt.');
+	});
+
+	it('names an entry moved into another area, with the same states and texts as the web app (E7-4b)', () => {
+		expect(rules.MOVED_STATE).toBe('moved');
+		expect(rules.duplicateMessage('moved', 'HAUS-12')).toBe('In einen anderen Bereich verschoben.');
+		expect(inbox.DUPLICATE_STATES).toContain(rules.MOVED_STATE);
+		for (const state of inbox.DUPLICATE_STATES) {
+			for (const key of ['', 'HAUS-12']) {
+				expect(inbox.duplicateMessage(state, key), `${state} ${key}`).toBe(rules.duplicateMessage(state, key));
+			}
+		}
 	});
 });

@@ -1,6 +1,7 @@
 // Pure rules of moving records between the areas Privat and Haushalt and of dissolving a household
 // (E7-4, ADR-0061): the input of the routes, who may move what, the codes of moved projects, the
-// mapping of tags by name, the history entry of a moved ticket and the answers of a refusal.
+// mapping of tags by name, the history entry of a moved ticket, the targets of repositories and
+// folders that a move clears (E7-4b) and the answers of a refusal.
 // CommonJS module, ES5 only, no dependencies (Goja runtime and Vitest load it the same way); the
 // routes live in area.pb.js and household.pb.js with lib/area-move-service.js.
 // web/src/lib/domain/area-move.ts mirrors the texts and the rules of the dialog (parity test).
@@ -237,6 +238,54 @@ function historyValue(input) {
   return JSON.stringify(value);
 }
 
+// The list in `settings` whose units carry a target project of their own (ADR-0049 §3): the
+// repositories of a GitHub connection, the folders of a folder connection.
+var UNIT_LISTS = { github: 'repos', folder: 'folders' };
+
+/**
+ * The settings of a GitHub or folder connection with the target of every repository or folder
+ * cleared for which `clear(target)` is true (E7-4b, ADR-0061 addendum E7-4b: no target crosses the
+ * border of an area). Everything else stays as it is. Returns { settings, cleared }: a copy of the
+ * settings and the number of cleared targets, or settings null when nothing changes (also for any
+ * other kind of connection or settings of another shape).
+ */
+function clearedUnitTargets(type, settings, clear) {
+  var list = Object.prototype.hasOwnProperty.call(UNIT_LISTS, type) ? UNIT_LISTS[type] : '';
+  var units = list !== '' && isObject(settings) ? settings[list] : null;
+  if (Object.prototype.toString.call(units) !== '[object Array]') {
+    return { settings: null, cleared: 0 };
+  }
+  var next = [];
+  var cleared = 0;
+  for (var i = 0; i < units.length; i++) {
+    var unit = units[i];
+    if (isObject(unit) && text(unit.target) !== '' && clear(unit.target)) {
+      var copy = {};
+      for (var key in unit) {
+        if (Object.prototype.hasOwnProperty.call(unit, key)) {
+          copy[key] = unit[key];
+        }
+      }
+      copy.target = '';
+      next.push(copy);
+      cleared += 1;
+    } else {
+      next.push(unit);
+    }
+  }
+  if (cleared === 0) {
+    return { settings: null, cleared: 0 };
+  }
+  var result = {};
+  for (var name in settings) {
+    if (Object.prototype.hasOwnProperty.call(settings, name)) {
+      result[name] = settings[name];
+    }
+  }
+  result[list] = next;
+  return { settings: result, cleared: cleared };
+}
+
 /** Body of POST /api/byl/household/dissolve: { mode, preview?, name? } or { problem: 'mode' }. */
 function dissolveInput(body) {
   var value = isObject(body) ? body : {};
@@ -280,6 +329,7 @@ module.exports = {
   mayMove: mayMove,
   tagMapping: tagMapping,
   historyValue: historyValue,
+  clearedUnitTargets: clearedUnitTargets,
   dissolveInput: dissolveInput,
   nameConfirmed: nameConfirmed,
   problemBody: problemBody

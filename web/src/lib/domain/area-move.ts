@@ -142,6 +142,8 @@ export interface MovePreview {
 		rulesProject: { id: string; title: string }[];
 		items: { connection: number; target: number; duplicate: number };
 		targets: number;
+		/** Targets of repositories and folders in GitHub and folder channels that are cleared (E7-4b). */
+		unitTargets: number;
 	};
 	needs: { project: boolean; dependencies: boolean; codes: string[] };
 	/** After a move: the new keys and codes. */
@@ -293,7 +295,8 @@ export function parseMovePreview(value: unknown): MovePreview | null {
 				target: count(items.target),
 				duplicate: count(items.duplicate)
 			},
-			targets: count(c.targets)
+			targets: count(c.targets),
+			unitTargets: count(c.unit_targets)
 		},
 		needs: {
 			project: value.needs.project === true,
@@ -374,6 +377,11 @@ export function noteLines(preview: MovePreview): string[] {
 	if (c.targets > 0) {
 		lines.push(
 			`${plural(c.targets, 'Zielprojekt', 'Zielprojekte')} von Einträgen, Verbindungen oder Karten des Eingangs ${c.targets === 1 ? 'wird' : 'werden'} geleert.`
+		);
+	}
+	if (c.unitTargets > 0) {
+		lines.push(
+			`${plural(c.unitTargets, 'Zielprojekt', 'Zielprojekte')} von Repositorys oder Ordnern in den Kanälen ${c.unitTargets === 1 ? 'wird' : 'werden'} geleert.`
 		);
 	}
 	return lines;

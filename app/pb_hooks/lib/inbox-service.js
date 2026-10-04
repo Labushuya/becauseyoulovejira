@@ -15,6 +15,10 @@ var targets = require(__hooks + '/lib/target-project-service.js');
 
 var INBOX = 'inbox_items';
 
+// Fingerprints of entries that moved out of an area (E7-4b, ADR-0061 addendum E7-4b, migration
+// 1790204300): the duplicate check of that area reads them after its own entries.
+var MOVED = 'inbox_moved_fingerprints';
+
 // Set once on create; a client update that changes them is rejected (ADR-0014 section 1). The
 // target project is the one the entry got when it came in (ADR-0049 §2): only the server sets it.
 // The status of a watched source (ADR-0050 §5) is written by the server only, too.
@@ -133,18 +137,18 @@ function watchOf(record) {
 }
 
 // Throws the duplicate result with state, item and ticket of the existing entry as params, so
-// every way into the inbox can report "schon im Eingang / verworfen / Ticket HAUS-12".
+// every way into the inbox can report "schon im Eingang / verworfen / Ticket HAUS-12". An object
+// whose entry moved out of the area names no entry (state "moved", E7-4b).
 function assertNoDuplicate(txApp, scope, fingerprint) {
-  var existing = findByFingerprint(txApp, scope, fingerprint);
+  var existing = duplicateOf(txApp, scope, fingerprint);
   if (!existing) {
     return;
   }
-  var state = existing.getString('state');
-  var ticket = visibleTicket(txApp, existing.getString('ticket'));
+  var ticket = existing.item ? visibleTicket(txApp, existing.item.getString('ticket')) : null;
   var key = ticket ? ticket.getString('key') : '';
-  throw errors.fieldFailure('fingerprint', 'validation_inbox_duplicate', rules.duplicateMessage(state, key), {
-    state: state,
-    item: existing.id,
+  throw errors.fieldFailure('fingerprint', 'validation_inbox_duplicate', rules.duplicateMessage(existing.state, key), {
+    state: existing.state,
+    item: existing.item ? existing.item.id : '',
     ticket: ticket ? ticket.id : '',
     ticketKey: key
   });
@@ -228,6 +232,63 @@ function findByFingerprint(txApp, scope, fingerprint) {
   return found.length > 0 ? found[0] : null;
 }
 
+// Whether the collection of the moved fingerprints exists (migration 1790204300 has run).
+function hasMovedFingerprints(app) {
+  try {
+    app.findCollectionByNameOrId(MOVED);
+    return true;
+  } catch (err) {
+    return false;
+  }
+}
+
+// Whether an entry with `fingerprint` once moved out of the area `scope` (E7-4b).
+function movedAway(app, scope, fingerprint) {
+  return (
+    hasMovedFingerprints(app) &&
+    app.findRecordsByFilter(MOVED, 'scope = {:scope} && fingerprint = {:fingerprint}', '', 1, 0, {
+      scope: scope,
+      fingerprint: fingerprint
+    }).length > 0
+  );
+}
+
+/**
+ * The duplicate of a fingerprint in an area (ADR-0014 §3): { item, state } of the entry there, or,
+ * when an entry with it moved out of the area (E7-4b), { item: null, state: "moved" }; else null.
+ * So what a channel brought once stays known in its area, wherever the entry went since.
+ */
+function duplicateOf(app, scope, fingerprint) {
+  var item = findByFingerprint(app, scope, fingerprint);
+  if (item) {
+    return { item: item, state: item.getString('state') };
+  }
+  return movedAway(app, scope, fingerprint) ? { item: null, state: rules.MOVED_STATE } : null;
+}
+
+/**
+ * A move between the areas (E7-4b, ADR-0061 addendum E7-4b), in its transaction: the area `scope`
+ * keeps the fingerprint of an entry that leaves it, once per area and fingerprint. It stays when the
+ * entry moves on, comes back or is deleted. Before the migration nothing is kept.
+ */
+function rememberMovedAway(txApp, scope, fingerprint) {
+  if (fingerprint === '' || !hasMovedFingerprints(txApp) || movedAway(txApp, scope, fingerprint)) {
+    return;
+  }
+  var record = new Record(txApp.findCollectionByNameOrId(MOVED));
+  record.set('scope', scope);
+  record.set('fingerprint', fingerprint);
+  txApp.save(record);
+}
+
+/** Dissolving a household (E7-4b): its area is gone, and so is what it kept of moved entries. */
+function forgetMovedAway(txApp, scope) {
+  if (!hasMovedFingerprints(txApp)) {
+    return;
+  }
+  txApp.db().newQuery('DELETE FROM ' + MOVED + ' WHERE scope = {:scope}').bind({ scope: scope }).execute();
+}
+
 /**
  * Creates an inbox item of `owner` from a draft of a channel that runs in the server (the .ics
  * route, the calendar feed, the Telegram bot, the mail helper, GitHub). The draft has the fields of
@@ -239,18 +300,20 @@ function findByFingerprint(txApp, scope, fingerprint) {
  * taken as it is. `target` is a target project the channel resolved itself (the target of a
  * repository, ADR-0049 §3; absent: the target of the connection), `watch` the first status of a
  * watched source (ADR-0050 §5).
- * Returns { kind: 'created', item } or { kind: 'duplicate', item } with the existing record, so a
- * channel counts duplicates instead of failing (ADR-0014 section 3). Validation errors throw.
- * Runs in its own transaction; the record hook repeats the check as a safety net.
+ * Returns { kind: 'created', item } or { kind: 'duplicate', item, state } with the existing record
+ * and its state, so a channel counts duplicates instead of failing (ADR-0014 section 3); an object
+ * whose entry moved out of the area is a duplicate without a record (item null, state "moved",
+ * E7-4b). Validation errors throw. Runs in its own transaction; the record hook repeats the check
+ * as a safety net.
  */
 function ingest(app, owner, draft) {
   var outcome = null;
   app.runInTransaction(function (txApp) {
     var record = draftRecord(txApp, owner, draft);
     var prepared = prepareRecord(record);
-    var existing = prepared.fingerprint === '' ? null : findByFingerprint(txApp, prepared.scope, prepared.fingerprint);
+    var existing = prepared.fingerprint === '' ? null : duplicateOf(txApp, prepared.scope, prepared.fingerprint);
     if (existing) {
-      outcome = { kind: 'duplicate', item: existing };
+      outcome = { kind: 'duplicate', item: existing.item, state: existing.state };
       return;
     }
     if (draft.originalFile) {
@@ -323,6 +386,7 @@ function draftRecord(app, owner, draft) {
 /**
  * Whether a draft is in the private inbox of `owner` already, without saving anything (selection
  * views, E4 plan package 21): { state, item, ticketKey, message } of the existing entry, or null.
+ * An object whose entry moved out of the area answers state "moved" without an entry (E7-4b).
  * A draft the hook would refuse (e.g. a link other than http(s)) counts as not there; saving it
  * reports the reason.
  */
@@ -334,14 +398,18 @@ function lookup(app, owner, draft) {
   } catch (err) {
     return null;
   }
-  var existing = prepared.fingerprint === '' ? null : findByFingerprint(app, prepared.scope, prepared.fingerprint);
+  var existing = prepared.fingerprint === '' ? null : duplicateOf(app, prepared.scope, prepared.fingerprint);
   if (!existing) {
     return null;
   }
-  var state = existing.getString('state');
-  var ticket = visibleTicket(app, existing.getString('ticket'));
+  var ticket = existing.item ? visibleTicket(app, existing.item.getString('ticket')) : null;
   var key = ticket ? ticket.getString('key') : '';
-  return { state: state, item: existing.id, ticketKey: key, message: rules.duplicateMessage(state, key) };
+  return {
+    state: existing.state,
+    item: existing.item ? existing.item.id : '',
+    ticketKey: key,
+    message: rules.duplicateMessage(existing.state, key)
+  };
 }
 
 // onRecordUpdateRequest: what a client may change (ADR-0014 section 1). Internal saves (the
@@ -642,6 +710,8 @@ module.exports = {
   prepareCreate: prepareCreate,
   ingest: ingest,
   lookup: lookup,
+  rememberMovedAway: rememberMovedAway,
+  forgetMovedAway: forgetMovedAway,
   requestHousehold: requestHousehold,
   rememberActor: rememberActor,
   guardClientUpdate: guardClientUpdate,

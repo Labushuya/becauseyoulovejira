@@ -105,6 +105,13 @@ function repoTarget(ctx, config) {
   if (!Object.prototype.hasOwnProperty.call(ctx.targets, config.target)) {
     var facts = targets.projectFacts(ctx.app, config.target);
     ctx.targets[config.target] = facts !== null && facts.scope === ctx.scope;
+    // A target of another area (settings from before E7-4b, ADR-0061 addendum E7-4b) never fails the
+    // run; it is noted once per run.
+    if (facts !== null && facts.scope !== ctx.scope) {
+      ctx.app
+        .logger()
+        .warn('byl-github: Zielprojekt eines Repositorys liegt in einem anderen Bereich und gilt nicht', 'connection', ctx.record.id, 'project', config.target);
+    }
   }
   // A deleted target (or one of another area) counts as none: the target of the connection applies.
   return ctx.targets[config.target] ? config.target : undefined;

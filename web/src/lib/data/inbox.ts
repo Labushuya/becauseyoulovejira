@@ -5,9 +5,11 @@
 import type PocketBase from 'pocketbase';
 import {
 	duplicateMessage,
+	isDuplicateState,
 	isInboxChannel,
 	isInboxKind,
 	isInboxState,
+	type DuplicateState,
 	type InboxChannel,
 	type InboxDraft,
 	type InboxDuplicate,
@@ -164,7 +166,7 @@ function duplicateOf(error: unknown): InboxDuplicate | null {
 	if (field?.code !== 'validation_inbox_duplicate') return null;
 	const params = field.params ?? {};
 	const text = (value: unknown) => (typeof value === 'string' ? value : '');
-	const state: InboxState = isInboxState(params.state) ? params.state : 'new';
+	const state: DuplicateState = isDuplicateState(params.state) ? params.state : 'new';
 	const ticketKey = text(params.ticketKey);
 	return {
 		kind: 'duplicate',
@@ -504,8 +506,11 @@ export interface CalendarPreviewItem {
 	location: string;
 	/** Keyword of the user that matches, '' for none (ADR-0020). */
 	keyword: string;
-	/** State of the entry in the inbox already ('' for none) and its text, e.g. "Schon verworfen." */
-	state: '' | 'new' | 'discarded' | 'converted';
+	/**
+	 * State of the entry in the inbox already ('' for none; `moved` for one that moved into another
+	 * area, E7-4b) and its text, e.g. "Schon verworfen."
+	 */
+	state: '' | DuplicateState;
 	message: string;
 }
 
@@ -517,14 +522,12 @@ export interface CalendarPreview {
 
 /** Whether a draft is in the inbox already: the state ('' for not) and the text of the hook. */
 export interface LookupState {
-	state: '' | 'new' | 'discarded' | 'converted';
+	state: '' | DuplicateState;
 	message: string;
 }
 
-const STATES = ['', 'new', 'discarded', 'converted'] as const;
-
 function stateOf(value: unknown): LookupState['state'] {
-	return STATES.find((state) => state === value) ?? '';
+	return isDuplicateState(value) ? value : '';
 }
 
 function textOf(value: unknown): string {

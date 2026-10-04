@@ -180,7 +180,8 @@ function ingest(e) {
     meta: draft.meta
   });
   if (outcome.kind === 'duplicate') {
-    return e.json(200, { status: 'duplicate', item: outcome.item.id, state: outcome.item.getString('state') });
+    // An object whose entry moved into another area names no entry (state "moved", E7-4b).
+    return e.json(200, { status: 'duplicate', item: outcome.item ? outcome.item.id : '', state: outcome.state });
   }
   return e.json(201, { status: 'created', item: outcome.item.id });
 }

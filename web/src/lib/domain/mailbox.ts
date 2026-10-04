@@ -2,7 +2,7 @@
 // mails of a mail connection as the hook lists them, which are chosen at first, and the texts of
 // the result. The only way to take older mails or mails without keyword from a mailbox.
 
-import type { InboxState } from './inbox';
+import type { DuplicateState } from './inbox';
 
 /** How many of the last mails the view lists (the hook allows 1 to 200). */
 export const MAILBOX_LIMITS = [50, 100, 200] as const;
@@ -21,9 +21,12 @@ export interface MailboxMail {
 	date: string | null;
 	/** Keyword of the connection in the subject, '' without one. */
 	keyword: string;
-	/** State of the entry in the inbox, '' if the mail is not there yet. */
-	state: InboxState | '';
-	/** "Schon im Eingang.", "Schon verworfen." or "Schon Ticket HAUS-12." */
+	/**
+	 * State of the entry in the inbox, '' if the mail is not there yet, `moved` if its entry moved
+	 * into another area (E7-4b).
+	 */
+	state: DuplicateState | '';
+	/** "Schon im Eingang.", "Schon verworfen.", "Schon Ticket HAUS-12." or "In einen anderen Bereich verschoben." */
 	stateMessage: string;
 }
 

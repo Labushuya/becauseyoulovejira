@@ -16,6 +16,10 @@
 //   state). Before the first write the module notes which subscription of which tab sees each moved
 //   record; after the commit every one of them that no longer sees it gets the "delete" a hard delete
 //   would have sent, marked `moved`. Tabs that see the record now get the update of PocketBase.
+// - Since E7-4b the area an entry of the inbox leaves keeps its fingerprint
+//   (inbox_moved_fingerprints, lib/inbox-service.js), so its channel does not bring it there again,
+//   and the targets of repositories and folders in the settings of GitHub and folder connections
+//   never point across the border either (ADR-0061, addendum E7-4b).
 // - POST /api/byl/household/dissolve: only the owner; `adopt` moves everything of the household with
 //   the same rules into his private area (codes taken there get a suffix), `delete` deletes it for
 //   good after the name of the household is typed. Then the memberships, the codes and the household
@@ -406,6 +410,8 @@ function analyse(txApp, plan) {
     outsideItems: [],
     outsideConnections: [],
     userTargets: [],
+    unitTargets: [],
+    unitTargetCount: 0,
     comments: 0
   };
   var stayingSeen = {};
@@ -499,6 +505,13 @@ function analyse(txApp, plan) {
   analysis.codes.sort(function (a, b) {
     return a.getString('code') < b.getString('code') ? -1 : 1;
   });
+  // Targets of repositories and folders in the settings of GitHub and folder connections (E7-4b).
+  if (plan.order.projects.length > 0 || plan.order.connections.length > 0) {
+    var units = txApp.findRecordsByFilter(CONNECTIONS, "type = 'github' || type = 'folder'", 'created,id', 0, 0);
+    for (i = 0; i < units.length; i++) {
+      noteUnitTargets(txApp, plan, analysis, units[i]);
+    }
+  }
   // The cards of the own inbox and of the files keep their target per account (ADR-0049 §4): only
   // the projects of the private area of the actor can be there.
   if (plan.direction === 'household') {
@@ -550,6 +563,42 @@ function analyse(txApp, plan) {
   }
   plan.analysis = analysis;
   return analysis;
+}
+
+/**
+ * The targets of the repositories or folders of `connection` (ADR-0049 §3) that would cross the border
+ * after the move (E7-4b, ADR-0061 addendum E7-4b): a moved project named by a connection that stays,
+ * or, when a household is dissolved, a project that stays named by a connection that moves along. A
+ * target of a deleted project stays as it is (the card names it "gibt es nicht mehr").
+ */
+function noteUnitTargets(txApp, plan, analysis, connection) {
+  var moves = has(plan, 'connections', connection.id);
+  var connectionScope = moves ? plan.to.scope : connection.getString('scope');
+  var result = rules.clearedUnitTargets(connection.getString('type'), parsedObject(connection.getString('settings')), function (target) {
+    if (has(plan, 'projects', target)) {
+      return plan.to.scope !== connectionScope;
+    }
+    if (!moves) {
+      return false;
+    }
+    var project = findById(txApp, PROJECTS, target);
+    return project !== null && project.getString('scope') !== connectionScope;
+  });
+  if (result.settings !== null) {
+    analysis.unitTargets.push({ id: connection.id, settings: result.settings });
+    analysis.unitTargetCount += result.cleared;
+  }
+}
+
+// The settings of a connection with its cleared targets (noteUnitTargets), or null.
+function unitSettingsOf(plan, connectionId) {
+  var list = plan.analysis.unitTargets;
+  for (var i = 0; i < list.length; i++) {
+    if (list[i].id === connectionId) {
+      return list[i].settings;
+    }
+  }
+  return null;
 }
 
 function parsedObject(raw) {
@@ -731,7 +780,8 @@ function summaryOf(txApp, plan, input) {
       rule_tickets: analysis.ruleTickets.length,
       rules_project: rulesProject,
       items: analysis.itemCounts,
-      targets: analysis.outsideItems.length + analysis.outsideConnections.length + analysis.userTargets.length
+      targets: analysis.outsideItems.length + analysis.outsideConnections.length + analysis.userTargets.length,
+      unit_targets: analysis.unitTargetCount
     },
     needs: {
       project: staying.length > 0,
@@ -974,10 +1024,16 @@ function detachStayingInstances(txApp, plan) {
 }
 
 function moveItems(txApp, plan) {
+  var inbox = require(__hooks + '/lib/inbox-service.js');
   var items = recordsOf(plan, 'items');
   for (var i = 0; i < items.length; i++) {
     var item = items[i];
     var note = plan.analysis.items[item.id];
+    // The area it leaves keeps its fingerprint, so its channel does not bring the same object again
+    // (E7-4b). A dissolved household is gone and keeps nothing.
+    if (!plan.dissolved) {
+      inbox.rememberMovedAway(txApp, plan.from.scope, item.getString('fingerprint'));
+    }
     place(plan, item);
     if (note.connection) {
       item.set('connection', '');
@@ -1014,6 +1070,16 @@ function clearOutsideReferences(txApp, plan) {
     var connection = findById(txApp, CONNECTIONS, analysis.outsideConnections[i].id);
     connection.set('target_project', '');
     txApp.save(connection);
+  }
+  // Targets of repositories and folders of connections that stay (E7-4b); those that move along
+  // took theirs in moveConnections.
+  for (i = 0; i < analysis.unitTargets.length; i++) {
+    if (has(plan, 'connections', analysis.unitTargets[i].id)) {
+      continue;
+    }
+    var unitConnection = findById(txApp, CONNECTIONS, analysis.unitTargets[i].id);
+    unitConnection.set('settings', analysis.unitTargets[i].settings);
+    txApp.save(unitConnection);
   }
   if (analysis.userTargets.length > 0) {
     var user = findById(txApp, 'users', plan.actor);
@@ -1056,6 +1122,10 @@ function moveConnections(txApp, plan) {
     var target = connection.getString('target_project');
     if (target !== '' && !has(plan, 'projects', target)) {
       connection.set('target_project', '');
+    }
+    var settings = unitSettingsOf(plan, connection.id);
+    if (settings !== null) {
+      connection.set('settings', settings);
     }
     txApp.save(connection);
   }
@@ -1352,6 +1422,9 @@ function removeHousehold(txApp, householdId) {
     .newQuery('DELETE FROM ticket_counters WHERE key LIKE {:prefix}')
     .bind({ prefix: ticketKey.scopeOf('', householdId) + ':%' })
     .execute();
+  // What the household kept of entries that left it (E7-4b); fingerprints its entries left in other
+  // areas stay there.
+  require(__hooks + '/lib/inbox-service.js').forgetMovedAway(txApp, ticketKey.scopeOf('', householdId));
   var lists = [INVITES, MEMBERS];
   for (var i = 0; i < lists.length; i++) {
     var found = listOf(txApp.findRecordsByFilter(lists[i], 'household = {:h}', 'created,id', 0, 0, { h: householdId }));

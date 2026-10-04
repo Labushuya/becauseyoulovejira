@@ -193,6 +193,22 @@ describe('what the dialog shows', () => {
 			'2 Einträge gibt es im Ziel schon; beide bleiben.'
 		]);
 	});
+
+	it('names the targets of repositories and folders that are cleared (E7-4b)', () => {
+		const conflicts = answer().conflicts as Record<string, unknown>;
+		// A server before E7-4b does not name them: none.
+		expect(preview().conflicts.unitTargets).toBe(0);
+		const one = preview({ conflicts: { ...conflicts, unit_targets: 1 } });
+		expect(one.conflicts.unitTargets).toBe(1);
+		expect(noteLines(one).at(-1)).toBe(
+			'1 Zielprojekt von Repositorys oder Ordnern in den Kanälen wird geleert.'
+		);
+		const two = preview({ conflicts: { ...conflicts, targets: 1, unit_targets: 2 } });
+		expect(noteLines(two).slice(-2)).toEqual([
+			'1 Zielprojekt von Einträgen, Verbindungen oder Karten des Eingangs wird geleert.',
+			'2 Zielprojekte von Repositorys oder Ordnern in den Kanälen werden geleert.'
+		]);
+	});
 });
 
 describe('the choices of the dialog', () => {
