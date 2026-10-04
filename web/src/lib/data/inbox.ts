@@ -43,6 +43,8 @@ export const INBOX_LIST_FIELDS = [
 	'handled_at',
 	// Area of the entry: the ticket picker offers only tickets of the same area (ADR-0042).
 	'scope',
+	// Who brought it in: moving it into the private area is offered to that account (ADR-0061 §4).
+	'owner',
 	// The connection that brought the entry: panel and sources name it (ADR-0026, addendum KK-3).
 	'connection',
 	// The project the entry got from its way (ADR-0049); missing before the migration 1790203100.
@@ -81,6 +83,7 @@ export interface InboxRecord {
 	ticket: string;
 	handled_at: string;
 	scope?: string;
+	owner?: string;
 	connection?: string;
 	/** Missing while the server has not run the migration 1790203100 (ADR-0049). */
 	target_project?: string;
@@ -137,6 +140,7 @@ export function toInboxItemSummary(record: InboxRecord): InboxItemSummary {
 		ticket: ticketRefOf(record),
 		handledAt: record.handled_at || null,
 		...(record.scope ? { scope: record.scope } : {}),
+		...(record.owner ? { owner: record.owner } : {}),
 		...(record.connection ? { connectionId: record.connection } : {}),
 		targetProjectId: record.target_project || null,
 		...(record.target_project === undefined ? { withoutTargetField: true } : {}),

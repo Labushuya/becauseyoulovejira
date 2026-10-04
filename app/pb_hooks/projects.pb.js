@@ -11,7 +11,13 @@ onRecordCreate(function (e) {
   });
 }, 'projects');
 
+// A move between the areas (ADR-0061) sets the area, the code and the parent itself, with its
+// sub projects and tickets in one transaction; the checks of a single project would refuse it.
 onRecordUpdate(function (e) {
+  if (e.record.get(require(`${__hooks}/lib/area-move-rules.js`).MOVE_KEY)) {
+    e.next();
+    return;
+  }
   var service = require(`${__hooks}/lib/catalog-service.js`);
   require(`${__hooks}/lib/transaction.js`).inTransaction(e, function (txApp) {
     service.prepareProject(txApp, e.record, false);

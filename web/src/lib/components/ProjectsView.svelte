@@ -3,6 +3,7 @@
 	import { SvelteSet } from 'svelte/reactivity';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import { areaMover } from '$lib/area-move-entry';
 	import type { Project } from '$lib/domain/project';
 	import {
 		PROJECT_SEARCH_MAX_LENGTH,
@@ -118,6 +119,9 @@
 		/** "Duplizieren …" in that menu (ADR-0045). */
 		duplicates?: boolean;
 	} = $props();
+
+	/** "In den Haushalt verschieben …" of a project (E7-4, ADR-0061). */
+	const mover = areaMover();
 
 	const uid = $props.id();
 	const ids = {
@@ -469,6 +473,13 @@
 				onselect: () => restore(project, archivedParent)
 			});
 		}
+		// Moving between the areas (E7-4, ADR-0061): with sub projects and tickets.
+		const move = mover.entry({
+			kind: 'project',
+			records: [project],
+			label: `Projekt „${project.name}“`
+		});
+		if (move !== null) entries.push({ label: move.label, dialog: true, onselect: move.run });
 		if (canDeleteProject(totalOf(project), catalog.subProjectsOf(project.id))) {
 			entries.push({
 				label: 'Löschen …',

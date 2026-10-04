@@ -34,7 +34,21 @@ var PROBLEMS = {
   'self-admin': 'Dein eigenes Verwalter-Recht kann dir nur ein anderer Verwalter entziehen.',
   'self-password': 'Dein eigenes Passwort änderst du unter „Konto“.',
   'last-admin': 'Mindestens ein aktives Konto muss Verwalter bleiben. Gib zuerst einem anderen Konto das Recht.',
-  missing: 'Dieses Konto gibt es nicht.'
+  missing: 'Dieses Konto gibt es nicht.',
+  // A new owner of a household without an active owner (E7-4, ADR-0061 §6).
+  'household-missing': 'Diesen Haushalt gibt es nicht mehr.',
+  'owner-active': 'Der Haushalt hat einen aktiven Inhaber. Den Inhaber wechselt nur er selbst auf der Seite „Haushalt“.',
+  member: 'Dieses Mitglied gibt es im Haushalt nicht mehr.',
+  'member-disabled': 'Ein deaktiviertes Konto kann nicht Inhaber werden.'
+};
+
+// Status of the refusals other than 400.
+var STATUS_OF_PROBLEM = {
+  'last-admin': 409,
+  'owner-active': 409,
+  missing: 404,
+  'household-missing': 404,
+  member: 404
 };
 
 // Validation codes of the Record API (hooks of users), the same texts in web/src/lib/domain/accounts.ts.
@@ -163,10 +177,13 @@ function accountView(values, selfId) {
   };
 }
 
-/** Answer of a refused input of the routes: 404 for an unknown account, 409 for the last administrator, else 400. */
+/**
+ * Answer of a refused input of the routes: 404 for an unknown account, household or member, 409 for
+ * the last administrator and a household with an active owner, else 400.
+ */
 function problemBody(problem) {
   var known = Object.prototype.hasOwnProperty.call(PROBLEMS, problem) ? problem : 'format';
-  var status = known === 'last-admin' ? 409 : known === 'missing' ? 404 : 400;
+  var status = STATUS_OF_PROBLEM[known] || 400;
   return {
     status: status,
     body: { status: status, message: PROBLEMS[known], reason: 'invalid', problem: known }

@@ -718,6 +718,17 @@ describe('detail store live', () => {
 			record: full({ updated: '2026-09-24 12:00:00.000Z' })
 		});
 		expect(store.state).toBe('deleted');
+		expect(store.movedAway).toBe(false);
+	});
+
+	it('says that the shown ticket went into another area (E7-4, ADR-0061 §3)', async () => {
+		const { store, live } = await opened();
+		live.emit('ticket', ID, { action: 'delete', id: ID, moved: true });
+		expect(store.state).toBe('deleted');
+		expect(store.movedAway).toBe(true);
+		// Opening another ticket starts without the note.
+		store.open('ticket000000002');
+		expect(store.movedAway).toBe(false);
 	});
 
 	it('does not report its own deletion as a deletion elsewhere', async () => {

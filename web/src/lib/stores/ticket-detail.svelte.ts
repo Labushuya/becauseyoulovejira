@@ -235,6 +235,8 @@ export class TicketDetailStore implements CommentPinControl {
 	/** Text in the input of the tag picker (T-14), kept here for the question on leaving. */
 	#tagInput = $state('');
 	#error = $state<string | null>(null);
+	/** The shown ticket went into an area this tab does not see (E7-4, ADR-0061 §3). */
+	#movedAway = $state(false);
 
 	/** The loaded ticket, or the list's version of it if that one is newer (check mark). */
 	#ticket = $derived.by((): Ticket | null => {
@@ -275,6 +277,11 @@ export class TicketDetailStore implements CommentPinControl {
 
 	get error(): string | null {
 		return this.#error;
+	}
+
+	/** With the state "deleted": the ticket was moved into an area this account does not see. */
+	get movedAway(): boolean {
+		return this.#movedAway;
 	}
 
 	/** Value shown in the control of a field: the draft while editing, else the ticket's. */
@@ -977,6 +984,7 @@ export class TicketDetailStore implements CommentPinControl {
 		this.#own = null;
 		this.#state = 'idle';
 		this.#error = null;
+		this.#movedAway = false;
 	}
 
 	/**
@@ -1018,7 +1026,9 @@ export class TicketDetailStore implements CommentPinControl {
 					id,
 					guard((change) => {
 						if (change.action !== 'delete') this.upsert(change.record);
-						else if (change.id === this.#id && change.id !== this.#deletingId) this.#gone();
+						else if (change.id === this.#id && change.id !== this.#deletingId) {
+							this.#gone(change.moved === true);
+						}
 					})
 				),
 			{ recovered: () => void this.#refresh() }
@@ -1027,9 +1037,10 @@ export class TicketDetailStore implements CommentPinControl {
 
 	/**
 	 * The shown ticket was deleted elsewhere: the panel says so instead of vanishing. Drafts go,
-	 * because there is nothing left to save them to.
+	 * because there is nothing left to save them to. `moved`: it went into an area this account does
+	 * not see (E7-4), and the panel says that instead.
 	 */
-	#gone(): void {
+	#gone(moved = false): void {
 		this.#controller?.abort();
 		this.#controller = null;
 		this.#drafts.clear();
@@ -1037,6 +1048,7 @@ export class TicketDetailStore implements CommentPinControl {
 		this.#fieldErrors.clear();
 		this.#state = 'deleted';
 		this.#error = null;
+		this.#movedAway = moved;
 	}
 
 	/**

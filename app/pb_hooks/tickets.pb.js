@@ -49,9 +49,13 @@ onRecordCreate(function (e) {
 // A change sent with `expected_updated` (ADR-0032 section 6) is refused first if the ticket
 // changed meanwhile. Completing a ticket with open blocking sub-tickets (ADR-0033 section 2) needs
 // `force` or `complete_children`; the latter completes them in the same transaction.
-// Writes of the trash and internal saves of a ticket in the trash (ADR-0037) skip all of this.
+// Writes of the trash and internal saves of a ticket in the trash (ADR-0037) skip all of this, and so
+// do the writes of a move between the areas (ADR-0061), which set scope, key and history themselves.
 onRecordUpdate(function (e) {
-  if (require(`${__hooks}/lib/trash-service.js`).skipsTicketHooks(e.record)) {
+  if (
+    require(`${__hooks}/lib/trash-service.js`).skipsTicketHooks(e.record) ||
+    e.record.get(require(`${__hooks}/lib/area-move-rules.js`).MOVE_KEY)
+  ) {
     e.next();
     return;
   }

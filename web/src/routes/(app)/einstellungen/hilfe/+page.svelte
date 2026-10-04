@@ -1529,6 +1529,16 @@
 				<dd>
 					Das Konto kann sich nicht mehr anmelden, offene Anmeldungen enden. Tickets, Kommentare und
 					Verlauf bleiben; „Aktivieren“ macht es rückgängig. Löschen lassen sich Konten hier nicht.
+					Ist das Konto Inhaber eines Haushalts, sagt die Frage das vorher.
+				</dd>
+			</div>
+			<div class="row">
+				<dt>Haushalt ohne aktiven Inhaber</dt>
+				<dd>
+					Ist der Inhaber eines Haushalts deaktiviert oder in der Verwaltung gelöscht, steht der
+					Haushalt unter „Haushalte ohne aktiven Inhaber“. Der Verwalter wählt dort ein aktives
+					Mitglied und „Zum Inhaber machen …“; der bisherige Inhaber bleibt Mitglied mit allen
+					Rechten.
 				</dd>
 			</div>
 			<div class="row">
@@ -1595,9 +1605,10 @@
 				<dd>
 					Neue Mitglieder nutzen den Haushalt ganz normal, haben aber keine Sonderrechte: Einladen,
 					Mitglieder entfernen, Rechte weitergeben, Umbenennen, Endgültig löschen (im Papierkorb des
-					Haushalts, dazu seine Aufbewahrung) und Ins Private verschieben (wirkt mit einer späteren
-					Version). Wer „Rechte weitergeben“ hat, kann anderen Mitgliedern nur Rechte geben oder
-					nehmen, die er selbst hat; nie sich selbst und nie dem Inhaber.
+					Haushalts, dazu seine Aufbewahrung) und Ins Private verschieben (Einträge anderer
+					Mitglieder; eigene darf jedes Mitglied, siehe <a href="#bereiche">Verschieben</a>). Wer
+					„Rechte weitergeben“ hat, kann anderen Mitgliedern nur Rechte geben oder nehmen, die er
+					selbst hat; nie sich selbst und nie dem Inhaber.
 				</dd>
 			</div>
 			<div class="row">
@@ -1614,8 +1625,19 @@
 					Mitglied außer dem Inhaber kann selbst austreten. In beiden Fällen bleiben die Einträge im
 					Haushalt, auch die selbst angelegten, und der Zugriff darauf endet sofort, auch in offenen
 					Tabs: Sie wechseln ohne Neuladen in den Bereich Privat, und was du gerade tippst, bleibt
-					stehen. Der Inhaber überträgt zuerst die Inhaberschaft; einen Haushalt auflösen geht erst
-					mit einer späteren Version.
+					stehen. Der Inhaber überträgt zuerst die Inhaberschaft oder löst den Haushalt auf.
+				</dd>
+			</div>
+			<div class="row">
+				<dt>Auflösen</dt>
+				<dd>
+					Nur der Inhaber: „Haushalt auflösen …“ zeigt vorher, was der Haushalt enthält und wer
+					Mitglied ist. „Alles in meinen privaten Bereich übernehmen“ holt Tickets, Projekte,
+					Wiederholungen, Einträge und den Papierkorb zu dir, mit neuen Nummern (die alten stehen im
+					Verlauf); ein Projektkürzel, das du schon hast, bekommt ein Suffix wie <code>HAUSH</code>.
+					„Alles endgültig löschen“ geht erst, wenn du den Namen des Haushalts eintippst, und lässt
+					sich nicht rückgängig machen. Danach gibt es den Haushalt nicht mehr; alle Mitglieder sind
+					ohne Neuladen im Bereich Privat und sehen einen Hinweis.
 				</dd>
 			</div>
 		</dl>
@@ -1684,6 +1706,32 @@
 					fehlen die Knöpfe. Wie lange Tickets dort liegen, stellen sie unter Einstellungen →
 					Haushalt ein; dein privater Papierkorb behält seine Einstellung unter Einstellungen →
 					Tickets.
+				</dd>
+			</div>
+			<div class="row">
+				<dt>Verschieben</dt>
+				<dd>
+					Im Menü „•••“ eines Tickets, Projekts, einer Wiederholung oder eines Eintrags im Eingang
+					(und für ausgewählte Tickets in der Leiste) steht „In den Haushalt verschieben …“ bzw.
+					„Ins Private verschieben …“. In den Haushalt verschiebst du deine privaten Einträge;
+					Kommentare und Verlauf werden dann für alle Mitglieder sichtbar. Ins Private holen ihre
+					Ersteller, der Inhaber und Mitglieder mit dem Recht „Ins Private verschieben“; der Eintrag
+					gehört dann dir, und für die anderen verschwindet er. Unteraufgaben, Unterprojekte, die
+					Tickets eines Projekts und die Quellen eines Tickets kommen mit; Verbindungen bleiben
+					immer privat.
+				</dd>
+			</div>
+			<div class="row">
+				<dt>Vorschau und Fragen</dt>
+				<dd>
+					Vor dem Verschieben zeigt die App, was mitkommt und was sich ändert, und fragt nur, was
+					sie wissen muss: das Projekt im Ziel (oder „Ohne Projekt“), ob verknüpfte Tickets
+					mitkommen oder die Verknüpfung gelöst wird, und einen neuen Code, wenn es das Kürzel im
+					Ziel schon gibt. Tags werden nach Namen zugeordnet, eine Unteraufgabe ohne ihr Ticket wird
+					ein eigenes, und ein Ticket ohne seine Wiederholung löst sich aus der Serie. Verschobene
+					Tickets bekommen neue Nummern im Ziel; der Verlauf nennt die alte („vorher PRIV-12“), und
+					Links funktionieren weiter. Alles geschieht in einem Schritt oder gar nicht; offene Tabs
+					folgen ohne Neuladen.
 				</dd>
 			</div>
 		</dl>

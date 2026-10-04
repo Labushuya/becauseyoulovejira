@@ -367,6 +367,22 @@ describe('duplicate in the history (ADR-0045)', () => {
 	});
 });
 
+describe('moving between the areas in the history (ADR-0061 §3)', () => {
+	it('names the direction and the key before, with the user', () => {
+		const line = describeHistoryEntry(
+			entry({
+				field: 'area_move',
+				oldValue: 'PRIV-12',
+				newValue: JSON.stringify({ to: 'household', key: 'HAUS-3' })
+			}),
+			lookups,
+			ME
+		);
+		expect(line.text).toBe('In den Haushalt verschoben (vorher PRIV-12)');
+		expect(line.actor).toBe('Du');
+	});
+});
+
 describe('historyLookups', () => {
 	it('keys projects and tags by ID', () => {
 		const project = { id: 'p1', name: 'Finanzen', code: 'FIN', archived: false };

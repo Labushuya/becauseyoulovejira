@@ -17,12 +17,37 @@ export interface Account {
 	created: string;
 	/** The signed-in account itself. */
 	self: boolean;
+	/** The household this account owns (E7-4, ADR-0061 §6); left out when it owns none. */
+	owns?: { id: string; name: string };
+}
+
+/** A member of a household without an active owner, by its membership. */
+export interface OrphanMember {
+	/** ID of the membership (the route names it). */
+	id: string;
+	user: string;
+	name: string;
+	disabled: boolean;
+}
+
+/**
+ * A household whose owner is disabled or gone (E7-4, ADR-0061 §6): the administrator of the app makes
+ * an active member its owner.
+ */
+export interface OrphanHousehold {
+	id: string;
+	name: string;
+	/** The disabled owner, null when the account is gone. */
+	owner: { id: string; name: string } | null;
+	members: OrphanMember[];
 }
 
 export interface AccountList {
 	accounts: Account[];
 	/** Minimum length of a password of PocketBase. */
 	passwordMin: number;
+	/** Households without an active owner (since E7-4; empty before the restart). */
+	households?: OrphanHousehold[];
 }
 
 /** What the routes answer for a new or reset password: the account and the password, once. */
@@ -50,7 +75,12 @@ export const ACCOUNT_PROBLEMS: Readonly<Record<string, string>> = {
 	'self-password': 'Dein eigenes Passwort änderst du unter „Konto“.',
 	'last-admin':
 		'Mindestens ein aktives Konto muss Verwalter bleiben. Gib zuerst einem anderen Konto das Recht.',
-	missing: 'Dieses Konto gibt es nicht.'
+	missing: 'Dieses Konto gibt es nicht.',
+	'household-missing': 'Diesen Haushalt gibt es nicht mehr.',
+	'owner-active':
+		'Der Haushalt hat einen aktiven Inhaber. Den Inhaber wechselt nur er selbst auf der Seite „Haushalt“.',
+	member: 'Dieses Mitglied gibt es im Haushalt nicht mehr.',
+	'member-disabled': 'Ein deaktiviertes Konto kann nicht Inhaber werden.'
 };
 
 /** Validation codes of the Record API for users, the same as MESSAGES of lib/account-rules.js. */
@@ -118,6 +148,7 @@ export function parseAccount(value: unknown): Account | null {
 	if (typeof admin !== 'boolean' || typeof disabled !== 'boolean' || typeof self !== 'boolean') {
 		return null;
 	}
+	const owns = namedRef(value.owns);
 	return {
 		id,
 		name,
@@ -125,11 +156,31 @@ export function parseAccount(value: unknown): Account | null {
 		admin,
 		disabled,
 		created: typeof created === 'string' ? created : '',
-		self
+		self,
+		...(owns !== null && { owns })
 	};
 }
 
-/** The answer of GET /api/byl/accounts, or null. */
+/** `{ id, name }` of an answer, or null. */
+function namedRef(value: unknown): { id: string; name: string } | null {
+	if (!isRecord(value) || typeof value.id !== 'string' || value.id === '') return null;
+	return { id: value.id, name: typeof value.name === 'string' ? value.name : '' };
+}
+
+/** A household without an active owner of an answer, or null. */
+function parseOrphan(value: unknown): OrphanHousehold | null {
+	const household = namedRef(value);
+	if (household === null || !isRecord(value) || !Array.isArray(value.members)) return null;
+	const members: OrphanMember[] = [];
+	for (const entry of value.members) {
+		const member = namedRef(entry);
+		if (member === null || !isRecord(entry) || typeof entry.user !== 'string') return null;
+		members.push({ ...member, user: entry.user, disabled: entry.disabled === true });
+	}
+	return { ...household, owner: namedRef(value.owner), members };
+}
+
+/** The answer of GET /api/byl/accounts (and of a new owner of a household), or null. */
 export function parseAccountList(value: unknown): AccountList | null {
 	if (!isRecord(value) || !Array.isArray(value.accounts)) return null;
 	const accounts: Account[] = [];
@@ -138,10 +189,17 @@ export function parseAccountList(value: unknown): AccountList | null {
 		if (account === null) return null;
 		accounts.push(account);
 	}
+	const households: OrphanHousehold[] = [];
+	for (const entry of Array.isArray(value.households) ? value.households : []) {
+		const household = parseOrphan(entry);
+		if (household === null) return null;
+		households.push(household);
+	}
 	const min = value.passwordMin;
 	return {
 		accounts,
-		passwordMin: typeof min === 'number' && Number.isInteger(min) && min > 0 ? min : PASSWORD_MIN
+		passwordMin: typeof min === 'number' && Number.isInteger(min) && min > 0 ? min : PASSWORD_MIN,
+		households
 	};
 }
 
@@ -219,6 +277,23 @@ export const ACCOUNTS_TEXTS = {
 	disableQuestion: (label: string) => `${label} deaktivieren?`,
 	disableText:
 		'Das Konto kann sich danach nicht mehr anmelden, und seine Anmeldungen enden sofort. Tickets, Kommentare und Verlauf bleiben. „Aktivieren“ macht das rückgängig.',
+	disableOwnerText: (household: string) =>
+		`Das Konto ist Inhaber des Haushalts „${household}“. Danach hat der Haushalt keinen aktiven Inhaber mehr; du bestimmst dann hier unter „Haushalte ohne aktiven Inhaber“ ein Mitglied als neuen Inhaber.`,
+	ownerOf: (household: string) => `Inhaber von „${household}“`,
+	orphansTitle: 'Haushalte ohne aktiven Inhaber',
+	orphansText:
+		'Der Inhaber dieser Haushalte ist deaktiviert oder gelöscht. Bestimme ein aktives Mitglied als neuen Inhaber; der bisherige bleibt Mitglied mit allen Rechten.',
+	orphanOwner: (owner: string | null) =>
+		owner === null ? 'Inhaber: gelöscht' : `Inhaber: ${owner} (deaktiviert)`,
+	noMembers: 'Keine aktiven Mitglieder. Ohne Mitglied lässt sich kein neuer Inhaber bestimmen.',
+	newOwnerLabel: 'Neuer Inhaber',
+	newOwnerButton: 'Zum Inhaber machen …',
+	newOwnerQuestion: (member: string, household: string) =>
+		`${member} zum Inhaber von „${household}“ machen?`,
+	newOwnerText:
+		'Das Mitglied verwaltet den Haushalt danach mit allen Rechten. Der bisherige Inhaber bleibt Mitglied mit allen Rechten, solange er im Haushalt ist.',
+	newOwnerDone: (member: string, household: string) =>
+		`${member} ist jetzt Inhaber von „${household}“.`,
 	revokeQuestion: (label: string) => `${label} das Verwalter-Recht entziehen?`,
 	revokeText:
 		'Das Konto sieht danach die Seiten Konten, Sicherheit, Sicherung, Speicher und System nicht mehr und richtet keine Kanäle mit Zugangsdaten mehr ein.',

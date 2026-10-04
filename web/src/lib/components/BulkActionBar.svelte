@@ -21,6 +21,7 @@
 	import SourceHandlingChoice from './SourceHandlingChoice.svelte';
 	import { retentionText } from '$lib/domain/trash';
 	import { findTrashStore } from '$lib/stores/trash.svelte';
+	import { areaMover } from '$lib/area-move-entry';
 
 	// Bar of the bulk actions (plan BI-2, ADR-0036 §3): it appears with at least one chosen row,
 	// names their number and offers "Fälligkeit …", "Priorität", "Status", "Projekt …", since
@@ -32,7 +33,9 @@
 	// blocking sub-tasks (ADR-0033 section 2), "In den Papierkorb …" always, with the choice for the
 	// sources (ADR-0031, addendum B) and the note on the trash (ADR-0037). While an action runs, a
 	// progress bar replaces the buttons; the result lists every ticket that failed (as an error)
-	// or was skipped (neutral).
+	// or was skipped (neutral). Since E7-4 (ADR-0061) "In den Haushalt verschieben …" or "Ins Private
+	// verschieben …" moves the chosen tickets with their sub-tasks, only when the account may move
+	// every one of them (lib/area-move-entry.ts); the dialog of the layout shows the preview.
 	let {
 		tickets,
 		store,
@@ -60,6 +63,7 @@
 	};
 
 	const trash = findTrashStore();
+	const mover = areaMover();
 
 	let dialog = $state<Dialog | null>(null);
 	let project = $state('');
@@ -71,6 +75,9 @@
 
 	const count = $derived(tickets.length);
 	const chosenIds = $derived(tickets.map((ticket) => ticket.id));
+	const move = $derived(
+		mover.entry({ kind: 'ticket', records: tickets, label: ticketCount(count) })
+	);
 	const busy = $derived(store.busy);
 	/** Chosen open tickets whose open blocking sub-tasks are not chosen themselves. */
 	const blocked = $derived(
@@ -217,6 +224,11 @@
 			Tags …
 		</button>
 		<button class="button-secondary" type="button" onclick={complete}>Erledigen</button>
+		{#if move !== null}
+			<button class="button-secondary" type="button" aria-haspopup="dialog" onclick={move.run}>
+				{move.label}
+			</button>
+		{/if}
 		<button class="button-secondary" type="button" onclick={() => void askDelete()}>
 			In den Papierkorb …
 		</button>
