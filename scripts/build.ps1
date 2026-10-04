@@ -1,3 +1,11 @@
+param(
+	# Skips only the test runs (root, web, extension): check, lint, build, the publishing to
+	# app\pb_public without a gap (ADR-0040) and the helpers run as always. Only on a clean working
+	# tree whose HEAD is a commit of origin/main, a state the CI tested (Get-BylSkipTestsProblem): the
+	# fast build of the live folder after a merge (CLAUDE.md section 11.6).
+	[switch]$SkipTests
+)
+
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'build-functions.ps1')
 
@@ -23,6 +31,15 @@ function Invoke-BylBuildStep {
 }
 
 try {
+	# -SkipTests: the state is checked first, before anything is installed or built
+	if ($SkipTests) {
+		$refused = Get-BylSkipTestsProblem -Root $rootDir
+		if ($null -ne $refused) {
+			exit (Write-BylBuildProblem -Code $refused.Code -Values $refused.Values -Facts $refused.Facts)
+		}
+		Write-Host "Skipping the tests (-SkipTests): clean working tree, HEAD is a commit of origin/main."
+	}
+
 	$node = Assert-BylNode
 	if ($node -is [int]) { exit $node }
 	Write-Host "Using Node.js $((& $node.Source --version | Out-String).Trim()) ($($node.Source))"
@@ -74,9 +91,15 @@ try {
 			& powershell -NoProfile -ExecutionPolicy Bypass -File $backupHelper
 		}
 
-		# Run tests (root unit, helper and integration tests, then the web and extension tests)
-		Write-Host "Running tests..."
-		Invoke-BylBuildStep -Name 'npm test' -Rerun ($npm -f $rootDir, 'test') -Run { npm test }
+		# Run tests (root unit, helper and integration tests, then the web and extension tests); with
+		# -SkipTests only the hint build-tests-skipped of the catalog
+		if ($SkipTests) {
+			[void](Write-BylBuildProblem -Code 'build-tests-skipped')
+		}
+		else {
+			Write-Host "Running tests..."
+			Invoke-BylBuildStep -Name 'npm test' -Rerun ($npm -f $rootDir, 'test') -Run { npm test }
+		}
 
 		Write-Host "Build complete!"
 		exit 0
