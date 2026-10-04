@@ -93,10 +93,23 @@ describe('parseOverview', () => {
 				mailHelperPid: null,
 				otherServers: [],
 				autostart: 'off',
+				lan: null,
 				backgroundProblem: null
 			},
 			mail: { installed: true, running: false, blocker: '' }
 		});
+	});
+
+	it('reads the home network of the status (plan heimnetz), null from a script of before', () => {
+		const parsed = overview({
+			lan: {
+				enabled: true,
+				urls: ['http://192.168.178.20:8090/', 7],
+				bound: true
+			} as unknown as SystemStatus['lan']
+		});
+		expect(parsed.status.lan).toEqual({ enabled: true, urls: ['http://192.168.178.20:8090/'] });
+		expect(RESTART_REASON_LABELS.lan).toBe('Zugriff im Heimnetz geändert (byl-config.json)');
 	});
 
 	it('reads the error of the last run without window with its entry of the catalog (ADR-0048)', () => {

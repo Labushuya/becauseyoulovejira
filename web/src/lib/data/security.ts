@@ -7,6 +7,13 @@
 
 import type PocketBase from 'pocketbase';
 import {
+	parseFirewallAnswer,
+	parseLanInfo,
+	type FirewallAction,
+	type FirewallResult,
+	type LanInfo
+} from '../domain/lan';
+import {
 	parseNotice,
 	parseSecurity,
 	type LevelChoice,
@@ -104,6 +111,59 @@ export function saveSecurityHosts(
 				signal: options.signal
 			}),
 		parseSecurity
+	);
+}
+
+/** The access in the home network (plan heimnetz): setting, addresses, network and firewall rule. */
+export function fetchSecurityLan(
+	pb: PocketBase,
+	options: RequestOptions = {}
+): Promise<SecurityAnswer<LanInfo>> {
+	return ask(
+		options.signal,
+		() => pb.send(`${ROUTE}/lan`, { method: 'GET', requestKey: null, signal: options.signal }),
+		parseLanInfo
+	);
+}
+
+/** Switches the access in the home network on or off with its addresses; applies after a restart. */
+export function saveSecurityLan(
+	pb: PocketBase,
+	setting: { enabled: boolean; addresses: readonly string[] },
+	options: RequestOptions = {}
+): Promise<SecurityAnswer<LanInfo>> {
+	return ask(
+		options.signal,
+		() =>
+			pb.send(`${ROUTE}/lan`, {
+				method: 'POST',
+				body: { enabled: setting.enabled, addresses: setting.addresses },
+				requestKey: null,
+				signal: options.signal
+			}),
+		parseLanInfo
+	);
+}
+
+/**
+ * Creates or removes the firewall rule of the home network. Windows asks for administrator rights
+ * on the machine of the app first; the request waits for that answer.
+ */
+export function changeSecurityFirewall(
+	pb: PocketBase,
+	action: FirewallAction,
+	options: RequestOptions = {}
+): Promise<SecurityAnswer<{ result: FirewallResult; lan: LanInfo | null }>> {
+	return ask(
+		options.signal,
+		() =>
+			pb.send(`${ROUTE}/lan/firewall`, {
+				method: 'POST',
+				body: { action },
+				requestKey: null,
+				signal: options.signal
+			}),
+		parseFirewallAnswer
 	);
 }
 

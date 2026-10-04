@@ -110,6 +110,7 @@ describe('overview of the page', () => {
 			'Schutz vor Rateversuchen',
 			'Nur eigene Oberfläche (CORS)',
 			'Host-Schutz',
+			'Zugriff im Heimnetz',
 			'Admin-Oberfläche',
 			'Sicherungen verschlüsselt',
 			'Zugangsdaten',
@@ -120,6 +121,7 @@ describe('overview of the page', () => {
 			'Aktiv (Normal)',
 			'Aktiv',
 			'Aktiv',
+			'Aus',
 			'Nur dieser Rechner',
 			'Verschlüsselt',
 			'In Umgebungsvariablen',
@@ -131,11 +133,39 @@ describe('overview of the page', () => {
 			expect(line.meaning.length, line.id).toBeGreaterThan(40);
 		}
 		expect(lines[2]?.text).toBe('Die App antwortet nur unter 127.0.0.1:8090, localhost:8090.');
-		expect(lines[4]?.text).toBe(
+		expect(lines[3]?.text).toBe('Die App ist nur auf diesem Rechner erreichbar.');
+		expect(lines[5]?.text).toBe(
 			'3 verschlüsselte Sicherungen im Zielverzeichnis, die neueste 03.10.2026 10:00.'
 		);
-		expect(lines[5]?.text).toContain('BYL_INGEST_TOKEN, BYL_WEBDE_PASSWORD');
-		expect(lines[6]?.text).toBe('Zuletzt benutzt 02.10.2026 20:30.');
+		expect(lines[6]?.text).toContain('BYL_INGEST_TOKEN, BYL_WEBDE_PASSWORD');
+		expect(lines[7]?.text).toBe('Zuletzt benutzt 02.10.2026 20:30.');
+	});
+
+	it('names the access in the home network with its address, unencrypted, as a warning without red', () => {
+		const lines = statusLines(
+			overviewOf({
+				lan: { active: true, hosts: ['192.168.178.20:8090'], editable: true }
+			})
+		);
+		expect(lines[2]?.text).toBe(
+			'Die App antwortet nur unter 127.0.0.1:8090, localhost:8090 und 192.168.178.20:8090.'
+		);
+		expect(lines[3]).toMatchObject({
+			id: 'lan',
+			state: 'An (unverschlüsselt)',
+			tone: 'neutral',
+			icon: 'warning',
+			text: 'Andere Geräte erreichen die App unter http://192.168.178.20:8090/.'
+		});
+		// Before the restart after the update the server names no home network.
+		const before = securityAnswer();
+		delete before.lan;
+		expect(parseSecurity(before)?.lan).toEqual({
+			active: false,
+			hosts: [],
+			editable: false,
+			ready: false
+		});
 	});
 
 	it('warns calmly when something is off, and says what helps', () => {
@@ -161,6 +191,7 @@ describe('overview of the page', () => {
 			['Aus', 'neutral'],
 			['Neustart nötig', 'neutral'],
 			['Aktiv', 'brand'],
+			['Aus', 'brand'],
 			['Ohne Beschränkung', 'neutral'],
 			['Kein Zielverzeichnis', 'neutral'],
 			['Keine', 'muted'],
@@ -179,7 +210,7 @@ describe('overview of the page', () => {
 			sealed: 0,
 			newest: null
 		};
-		expect(statusLines(overviewOf({ backup: unavailable }))[4]?.state).toBe('Nicht verfügbar');
+		expect(statusLines(overviewOf({ backup: unavailable }))[5]?.state).toBe('Nicht verfügbar');
 	});
 
 	it('words the protocol of failed sign-ins without a password', () => {

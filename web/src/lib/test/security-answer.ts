@@ -1,6 +1,6 @@
 // An answer of GET /api/byl/security (ADR-0055 §8) for the tests of the page "Sicherheit": the
-// limiter at "Normal", the own addresses only, encrypted backups, two access data, two keys, the
-// built extension and two groups of failed sign-ins.
+// limiter at "Normal", the own addresses only, the home network off, encrypted backups, two access
+// data, two keys, the built extension and two groups of failed sign-ins.
 
 export function securityAnswer(overrides: Record<string, unknown> = {}): Record<string, unknown> {
 	return {
@@ -13,6 +13,7 @@ export function securityAnswer(overrides: Record<string, unknown> = {}): Record<
 			editable: true,
 			max: 10
 		},
+		lan: { active: false, hosts: [], editable: true },
 		admin: { ips: ['127.0.0.1', '::1'], loopbackOnly: true },
 		session: { days: 5, seconds: 432000, choices: [1, 5, 14, 30], standard: 5 },
 		backup: {

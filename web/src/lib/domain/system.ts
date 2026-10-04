@@ -19,6 +19,7 @@ export const RESTART_REASONS = [
 	'hooks',
 	'port',
 	'hosts',
+	'lan',
 	'environment',
 	'mailHelper'
 ] as const;
@@ -90,6 +91,11 @@ export interface SystemStatus {
 	mailHelperPid: number | null;
 	otherServers: OtherServer[];
 	autostart: AutostartState;
+	/**
+	 * The access in the home network (plan heimnetz): switched on in byl-config.json and the
+	 * addresses under which other devices reach the running server now; null from a script of before.
+	 */
+	lan: { enabled: boolean; urls: string[] } | null;
 	backgroundProblem: BackgroundProblem | null;
 }
 
@@ -169,6 +175,7 @@ export const RESTART_REASON_LABELS: Readonly<Record<RestartReason, string>> = {
 	hooks: 'geänderte Server-Logik (pb_hooks)',
 	port: 'anderer Port eingestellt (byl-config.json)',
 	hosts: 'andere zusätzliche Adressen eingestellt (byl-config.json)',
+	lan: 'Zugriff im Heimnetz geändert (byl-config.json)',
 	environment: 'BYL_*-Variable angelegt, geändert oder entfernt',
 	mailHelper: 'neuer Mail-Hilfsprozess (byl-mail.exe)'
 };
@@ -343,6 +350,9 @@ function parseStatus(raw: unknown): SystemStatus | null {
 			testInstance: server.testInstance === true || server.sameFolder === true
 		})),
 		autostart: oneOf(AUTOSTART_STATES, raw.autostart) ? raw.autostart : 'off',
+		lan: isRecord(raw.lan)
+			? { enabled: raw.lan.enabled === true, urls: texts(raw.lan.urls) }
+			: null,
 		backgroundProblem: parseBackgroundProblem(raw.backgroundProblem)
 	};
 }

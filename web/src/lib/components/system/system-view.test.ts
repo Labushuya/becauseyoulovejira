@@ -147,6 +147,23 @@ describe('page System', () => {
 		expect(details?.open).toBe(false);
 		expect(within(details as HTMLElement).getByText('4321')).toBeTruthy();
 		expect(screen.queryByText(/Test-Instanz/)).toBeNull();
+		// A script of before names no home network: no row for it.
+		expect(screen.queryByText('Im Heimnetz')).toBeNull();
+	});
+
+	it('names the address for other devices of the home network, or that it is off (plan heimnetz)', async () => {
+		await show({
+			status: vi.fn(async () =>
+				ok(overview({ lan: { enabled: true, urls: ['http://192.168.178.20:8090/'] } }))
+			)
+		});
+		const state = within(screen.getByRole('region', { name: 'Zustand' }));
+		const row = state.getByText('Im Heimnetz').nextElementSibling as HTMLElement;
+		expect(within(row).getByText('http://192.168.178.20:8090/')).toBeTruthy();
+		expect(row.textContent).toMatch(/Adresse für andere Geräte, unverschlüsselt \(HTTP\)/);
+		expect(within(row).getByRole('link', { name: 'Sicherheit' }).getAttribute('href')).toBe(
+			'/einstellungen/sicherheit'
+		);
 	});
 
 	it('folds test instances into one line and keeps a second installation visible (RS-4)', async () => {

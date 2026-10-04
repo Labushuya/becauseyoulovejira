@@ -63,10 +63,13 @@ describe('page "Sicherheit"', () => {
 		await show();
 		const overview = screen.getByRole('region', { name: 'Überblick' });
 		const items = within(overview).getAllByRole('listitem');
-		expect(items).toHaveLength(8);
+		expect(items).toHaveLength(9);
 		expect(within(items[0]!).getByText('Schutz vor Rateversuchen')).toBeTruthy();
 		expect(within(items[0]!).getByText('Aktiv (Normal)')).toBeTruthy();
-		expect(within(items[4]!).getByText('Verschlüsselt')).toBeTruthy();
+		// Plan heimnetz: the access in the home network, off by default.
+		expect(within(items[3]!).getByText('Zugriff im Heimnetz')).toBeTruthy();
+		expect(within(items[3]!).getByText('Aus')).toBeTruthy();
+		expect(within(items[5]!).getByText('Verschlüsselt')).toBeTruthy();
 		const meaning = within(items[0]!).getByText('Was bedeutet das?', { exact: false });
 		expect(meaning.closest('summary')).not.toBeNull();
 		expect(within(items[0]!).getByText(/\(Schutz vor Rateversuchen\)/).className).toContain(
