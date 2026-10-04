@@ -314,7 +314,11 @@
 		<p class="alert-error" role="alert">
 			<ErrorIcon />
 			<span class="grow">Die Tickets konnten nicht geladen werden. {tickets.openError}</span>
-			<button class="retry" type="button" onclick={() => void tickets.reload()}>
+			<button
+				class="button-secondary button-small"
+				type="button"
+				onclick={() => void tickets.reload()}
+			>
 				Erneut versuchen
 			</button>
 		</p>
@@ -323,7 +327,11 @@
 		<p class="alert-error" role="alert">
 			<ErrorIcon />
 			<span class="grow">Die erledigten Tickets konnten nicht geladen werden. {done.error}</span>
-			<button class="retry" type="button" onclick={() => void done.reload()}>
+			<button
+				class="button-secondary button-small"
+				type="button"
+				onclick={() => void done.reload()}
+			>
 				Erneut versuchen
 			</button>
 		</p>
@@ -398,14 +406,5 @@
 
 	.grow {
 		flex: 1;
-	}
-
-	.retry {
-		padding: 0.125rem 0.5rem;
-		font-size: var(--font-size-control);
-		background: none;
-		border: 1px solid currentColor;
-		border-radius: var(--radius-control);
-		cursor: pointer;
 	}
 </style>

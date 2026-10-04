@@ -68,7 +68,9 @@
 		<div class="alert-error">
 			<ErrorIcon />
 			<span class="grow">{store.commentsError}</span>
-			<button class="retry" type="button" onclick={() => store.reload()}>Erneut versuchen</button>
+			<button class="button-secondary button-small" type="button" onclick={() => store.reload()}>
+				Erneut versuchen
+			</button>
 		</div>
 	{:else}
 		{#if store.comments.length > 1}
@@ -133,15 +135,6 @@
 		to {
 			visibility: visible;
 		}
-	}
-
-	.retry {
-		padding: 0.125rem 0.5rem;
-		font-size: var(--font-size-control);
-		background: none;
-		border: 1px solid currentColor;
-		border-radius: var(--radius-control);
-		cursor: pointer;
 	}
 
 	.grow {

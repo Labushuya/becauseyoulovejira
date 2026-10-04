@@ -80,7 +80,12 @@
 	<div class="section-head">
 		<h3 id={titleId}>Beschreibung</h3>
 		{#if !editing}
-			<button class="small" type="button" bind:this={editButton} onclick={edit}>
+			<button
+				class="button-secondary button-small"
+				type="button"
+				bind:this={editButton}
+				onclick={edit}
+			>
 				Bearbeiten<span class="visually-hidden">: Beschreibung</span>
 			</button>
 		{/if}
@@ -128,7 +133,7 @@
 		{:else}
 			<div class="buttons">
 				<button
-					class="button-primary small-primary"
+					class="button-primary button-small"
 					type="button"
 					disabled={saving}
 					aria-busy={saving ? 'true' : undefined}
@@ -136,7 +141,9 @@
 				>
 					{saving ? 'Wird gespeichert …' : 'Speichern'}
 				</button>
-				<button class="small" type="button" onclick={() => end(false)}>Abbrechen</button>
+				<button class="button-secondary button-small" type="button" onclick={() => end(false)}
+					>Abbrechen</button
+				>
 			</div>
 		{/if}
 	{:else if ticket.description.trim() !== ''}
@@ -179,20 +186,6 @@
 		display: flex;
 		flex-wrap: wrap;
 		gap: 0.5rem;
-	}
-
-	.small {
-		padding: 0.125rem 0.625rem;
-		font-size: var(--font-size-control);
-		background: none;
-		border: 1px solid var(--color-line);
-		border-radius: var(--radius-control);
-		cursor: pointer;
-	}
-
-	.small-primary {
-		padding: 0.25rem 0.75rem;
-		font-size: var(--font-size-control);
 	}
 
 	.muted {

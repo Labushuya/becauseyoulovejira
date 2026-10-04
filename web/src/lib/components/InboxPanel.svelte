@@ -459,7 +459,7 @@
 								>{ticket.key} {ticket.title}</a
 							>
 							<button
-								class="text-button"
+								class="button-secondary button-small assign"
 								type="button"
 								disabled={store.isPending(item.id)}
 								aria-busy={store.isPending(item.id) ? 'true' : undefined}
@@ -685,22 +685,7 @@
 		border-top: 1px solid var(--color-line);
 	}
 
-	.text-button {
+	.assign {
 		margin-left: 0.5rem;
-		padding: 0.0625rem 0.5rem;
-		font-size: 0.75rem;
-		background: none;
-		border: 1px solid currentColor;
-		border-radius: var(--radius-control);
-		cursor: pointer;
-	}
-
-	.text-button:disabled {
-		cursor: not-allowed;
-	}
-
-	/* The entry is being changed (ADR-0026, addendum of 2026-09-30). */
-	.text-button[aria-busy='true'] {
-		cursor: progress;
 	}
 </style>

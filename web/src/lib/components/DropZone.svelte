@@ -72,7 +72,7 @@
 		(.txt, .zip; je höchstens 20 MB) hierher ziehen. Bilder und Links der Mail werden nicht geladen.
 	</p>
 	<button
-		class="pick"
+		class="button-secondary"
 		type="button"
 		aria-disabled={busy ? 'true' : undefined}
 		onclick={() => {
@@ -144,21 +144,6 @@
 		color: var(--color-brand-soft-text);
 		background: var(--color-brand-soft-bg);
 		border-color: var(--color-brand);
-	}
-
-	.pick {
-		padding: 0.25rem 0.75rem;
-		font-size: 0.8125rem;
-		color: var(--color-brand-text);
-		background: var(--color-surface);
-		border: 1px solid var(--color-brand);
-		border-radius: var(--radius-control);
-		cursor: pointer;
-	}
-
-	/* Files are being taken over (ADR-0026, addendum of 2026-09-30). */
-	.drop-zone[aria-busy='true'] .pick {
-		cursor: progress;
 	}
 
 	.results {

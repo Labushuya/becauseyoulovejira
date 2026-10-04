@@ -61,7 +61,14 @@
 		/>
 	{:else}
 		<h2 id={headingId} tabindex="-1" bind:this={heading}>{store.ticket?.title}</h2>
-		<button class="edit" type="button" bind:this={editButton} onclick={start}>
+		<button
+			class="button-icon"
+			type="button"
+			aria-label="Titel bearbeiten"
+			title="Titel bearbeiten"
+			bind:this={editButton}
+			onclick={start}
+		>
 			<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
 				<path
 					d="M10.5 2.5l3 3L6 13H3v-3z"
@@ -71,7 +78,6 @@
 					stroke-linejoin="round"
 				/>
 			</svg>
-			<span class="visually-hidden">Titel bearbeiten</span>
 		</button>
 	{/if}
 	{#if error}
@@ -114,19 +120,5 @@
 		width: 100%;
 		font-size: 1.25rem;
 		font-weight: 600;
-	}
-
-	.edit {
-		display: inline-flex;
-		padding: 0.375rem;
-		color: var(--color-text-muted);
-		background: none;
-		border: 1px solid transparent;
-		border-radius: var(--radius-control);
-		cursor: pointer;
-	}
-
-	.edit:hover {
-		border-color: var(--color-line);
 	}
 </style>

@@ -13,7 +13,7 @@ const SRC_DIR = resolve(import.meta.dirname, '..');
 const TOKENS_CSS = join('lib', 'styles', 'tokens.css');
 
 /** Numbers left from before G-6 in all listed files together; lower it when one goes. */
-const LEGACY_COUNT = 138;
+const LEGACY_COUNT = 130;
 
 /** Files that still carry font sizes as numbers (as of G-6). */
 const LEGACY_FILES = [
