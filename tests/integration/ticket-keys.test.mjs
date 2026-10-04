@@ -77,23 +77,27 @@ describe('ticket keys', () => {
 		expect(titles).not.toContain(FAIL_TICKET_INSERT);
 	});
 
-	it('ignores scope, key and number sent by the client', async () => {
+	it('ignores scope, key and number sent by the client on create, and key and number on update', async () => {
 		const u = await freshUser();
 		const created = await u.ticket({ scope: `u:${s.ids.b}`, key: 'HACK-9', number: 99 });
 		expect(created).toMatchObject({ key: 'TASK-1', number: 1, scope: `u:${u.id}` });
 
 		const updated = await u.client
 			.collection('tickets')
-			.update(created.id, { scope: 'h:fremd', key: 'HACK-10', number: 100, title: 'neu' });
+			.update(created.id, { scope: `u:${u.id}`, key: 'HACK-10', number: 100, title: 'neu' });
 		expect(updated).toMatchObject({ key: 'TASK-1', number: 1, scope: `u:${u.id}`, title: 'neu' });
 
 		const project = await u.project(uniqueCode(), { scope: `u:${s.ids.b}` });
 		expect(project.scope).toBe(`u:${u.id}`);
 		const tag = await u.tag(`tag-${uniqueSuffix()}`, { scope: 'h:fremd' });
 		expect(tag.scope).toBe(`u:${u.id}`);
-		expect((await u.client.collection('tags').update(tag.id, { scope: 'x' })).scope).toBe(
-			`u:${u.id}`
-		);
+
+		// Since the fix after E7-2 a changed scope is refused instead of ignored (scope-guard.pb.js,
+		// ADR-0058, addendum "Bereich eines Eintrags").
+		const locked = { status: 400, codes: { scope: 'validation_scope_locked' } };
+		expect(await rejectionOf(u.client.collection('tickets').update(created.id, { scope: 'h:fremd' }))).toEqual(locked);
+		expect(await rejectionOf(u.client.collection('tags').update(tag.id, { scope: 'x' }))).toEqual(locked);
+		expect((await s.superuser.collection('tags').getOne(tag.id)).scope).toBe(`u:${u.id}`);
 	});
 
 	it('draws a new key in the target counter when the project changes', async () => {
@@ -113,8 +117,10 @@ describe('ticket keys', () => {
 	});
 
 	it('draws a new key in the target scope when the household changes', async () => {
-		const tickets = s.a.collection('tickets');
-		const ticket = await tickets.create({ owner: s.ids.a, title: 'wandert' });
+		// A client moves no record through the Record API (scope-guard.pb.js, ADR-0058); the model
+		// hooks keep their rules for every other way, here and below the superuser.
+		const tickets = s.superuser.collection('tickets');
+		const ticket = await s.a.collection('tickets').create({ owner: s.ids.a, title: 'wandert' });
 		const privateKey = ticket.key;
 		const moved = await tickets.update(ticket.id, { household: s.h1.id });
 		expect(moved.scope).toBe(scopeOf(s.ids.a, s.h1.id));
@@ -193,7 +199,8 @@ describe('projects', () => {
 			status: 400,
 			codes: { code: 'validation_project_in_use' }
 		});
-		expect(await rejectionOf(own.update(project.id, { household: s.h1.id }))).toEqual({
+		// The area changes through the superuser only (scope-guard.pb.js, ADR-0058).
+		expect(await rejectionOf(s.superuser.collection('projects').update(project.id, { household: s.h1.id }))).toEqual({
 			status: 400,
 			codes: { household: 'validation_project_in_use' }
 		});
@@ -226,8 +233,9 @@ describe('tags (OF-8)', () => {
 	it('keep their scope while tickets use them', async () => {
 		const tag = await s.a.collection('tags').create({ owner: s.ids.a, name: `t-${uniqueSuffix()}` });
 		await s.a.collection('tickets').create({ owner: s.ids.a, title: 'mit Tag', tags: [tag.id] });
+		// The area changes through the superuser only (scope-guard.pb.js, ADR-0058).
 		expect(
-			await rejectionOf(s.a.collection('tags').update(tag.id, { household: s.h1.id }))
+			await rejectionOf(s.superuser.collection('tags').update(tag.id, { household: s.h1.id }))
 		).toEqual({ status: 400, codes: { household: 'validation_tag_in_use' } });
 	});
 });
@@ -315,8 +323,10 @@ describe('relations across scopes (OF-3 c)', () => {
 
 	it('rejects updates that leave relations in the old scope', async () => {
 		const tickets = s.a.collection('tickets');
+		// The area changes through the superuser only (scope-guard.pb.js, ADR-0058).
+		const moves = s.superuser.collection('tickets');
 		const ticket = await privateTicket({ project: rec.aProject.id, tags: [rec.aTag.id] });
-		expect(await rejectionOf(tickets.update(ticket.id, { household: s.h1.id }))).toEqual({
+		expect(await rejectionOf(moves.update(ticket.id, { household: s.h1.id }))).toEqual({
 			status: 400,
 			codes: { project: 'validation_scope_mismatch', tags: 'validation_scope_mismatch' }
 		});
@@ -325,7 +335,7 @@ describe('relations across scopes (OF-3 c)', () => {
 			codes: { project: 'validation_scope_mismatch' }
 		});
 
-		const moved = await tickets.update(ticket.id, {
+		const moved = await moves.update(ticket.id, {
 			household: s.h1.id,
 			project: rec.aH1Project.id,
 			tags: [rec.aH1Tag.id]

@@ -406,10 +406,11 @@
 		flags,
 		open: () => void goto(securityLoginsHref())
 	});
-	// Context of the tab (KOB-1, ADR-0057): who uses it from where. Loaded after the sign-in and
-	// every refresh of the session, back to the most restrictive view when the layout goes.
+	// Context of the tab (KOB-1, ADR-0057): who uses it from where. Loaded after the sign-in, every
+	// refresh of the session and every reconnection (the restart after an update), back to the most
+	// restrictive view when the layout goes.
 	$effect(() =>
-		untrack(() => appContext.start((signal) => fetchContext(pb, { signal }), pb.authStore))
+		untrack(() => appContext.start((signal) => fetchContext(pb, { signal }), pb.authStore, live))
 	);
 	const adminHere = $derived(appContext.capabilities.adminPages === 'full');
 	// Backups and failed sign-ins are matters of the administrator of the app on its machine

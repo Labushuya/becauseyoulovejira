@@ -341,7 +341,7 @@
   "meta": {
     "projekt": "becauseyoulovejira",
     "stand": "2026-10-04",
-    "commit": "cc85a5d"
+    "commit": "07c4bb6"
   },
   "bereiche": [
     { "id": "betrieb", "titel": "Betrieb: Start, Stopp, Skripte und Daten" },
@@ -565,10 +565,10 @@
       "vermerk": "Migration 1790203700, Hooks und Routen wirken erst nach einem Neustart der App (neu-starten.bat); bis dahin bleibt das erste Konto Verwalter. Zwei manuelle Fälle (BYL-E7-023, BYL-E7-024)." },
     { "id": "HN-1", "vorhaben": "Zugriff im Heimnetz", "titel": "Zugriff im Heimnetz: Schalter und Adressen (Seite „Sicherheit“, lan-configure), Start auf 0.0.0.0 mit den http-Origins der Adressen, Firewall-Regel per UAC oder Befehl, Netzwerkprofil in status und doctor, nur-lokale Routen und Tabs anderer Geräte getrennt", "bereich": "betrieb", "quelle": "Nutzerentscheidung", "datum": "2026-10-04", "adr": ["0055-sicherheits-haertung.md, Nachtrag 2026-10-04", "0001-betriebsmodell-lokal-mehrgeraete-spaeter.md, Nachtrag 2026-10-04", "0028-plattform-strategie.md, Nachtrag 2026-10-04", "0039-betriebsskripte.md, Nachtrag 2026-10-04", "0043-system-seite.md, Nachtrag 2026-10-04", "0035-start-einstieg-und-offene-tabs.md, Nachtrag 2026-10-04"], "plan": "heimnetz.md", "faelle": ["BYL-E6-1400..BYL-E6-1416", "BYL-E6-1420..BYL-E6-1426"],
       "vermerk": "Hooks und Steuerskript wirken erst nach einem Neustart der App (neu-starten.bat); keine Migration. Sieben manuelle Fälle (BYL-E6-1420 bis BYL-E6-1426)." },
-    { "id": "KOB-1", "vorhaben": "Kontextabhängige Oberfläche", "titel": "Route GET /api/byl/context; Seiten des Verwalters, Befehle, Skripte und „Ansehen“ nur dort, wo sie funktionieren (am Handy „nur am PC“, für andere Konten „Bitte den Verwalter fragen.“); Audit der Routen am PC, Pfad der Erweiterung nur für den Verwalter", "bereich": "konten", "quelle": "Nutzerwunsch", "datum": "2026-10-04", "adr": ["0057-kontextabhaengige-oberflaeche.md", "0055-sicherheits-haertung.md, Nachtrag KOB-1", "0056-konten-und-verwalter.md, Nachtrag KOB-1"], "plan": "e7-haushalt.md", "faelle": ["BYL-E6-1430..BYL-E6-1437", "BYL-E6-1440..BYL-E6-1445"],
-      "vermerk": "Hooks wirken erst nach einem Neustart der App (neu-starten.bat); keine Migration. Paket-ID KOB-1, weil KX-1 zu „Tickets im Kontext“ gehört. Sechs manuelle Fälle (BYL-E6-1440 bis BYL-E6-1445)." },
-    { "id": "E7-2", "vorhaben": "E7 Haushalt", "titel": "Haushalt verwalten: gründen, Einladungscode (einmal gezeigt, nur Hash), Beitritt mit neutraler Antwort und strengem Rate-Limit, Rechte mit Delegation nur eigener Rechte, übertragen, entfernen, austreten; Zugriff nur über die aktuelle Mitgliedschaft; Seite „Haushalt“ auf jedem Gerät", "bereich": "konten", "quelle": "Nutzerentscheidung", "datum": "2026-10-04", "adr": ["0058-haushalt-mitgliedschaft-einladungen-rechte.md", "0011-roadmap-e3-bis-e7.md, Nachtrag E7-2", "0037-papierkorb.md, Nachtrag E7-2", "0055-sicherheits-haertung.md, Nachtrag E7-2", "0056-konten-und-verwalter.md, Nachtrag E7-2", "0057-kontextabhaengige-oberflaeche.md, Nachtrag E7-2"], "plan": "e7-haushalt.md", "faelle": ["BYL-E7-100..BYL-E7-115", "BYL-E7-120..BYL-E7-124"],
-      "vermerk": "Migrationen 1790203800, 1790203810 und 1790203900, Hooks und Routen wirken erst nach einem Neustart der App (neu-starten.bat). Fünf manuelle Fälle (BYL-E7-120 bis BYL-E7-124)." },
+    { "id": "KOB-1", "vorhaben": "Kontextabhängige Oberfläche", "titel": "Route GET /api/byl/context; Seiten des Verwalters, Befehle, Skripte und „Ansehen“ nur dort, wo sie funktionieren (am Handy „nur am PC“, für andere Konten „Bitte den Verwalter fragen.“); Audit der Routen am PC, Pfad der Erweiterung nur für den Verwalter", "bereich": "konten", "quelle": "Nutzerwunsch", "datum": "2026-10-04", "adr": ["0057-kontextabhaengige-oberflaeche.md", "0055-sicherheits-haertung.md, Nachtrag KOB-1", "0056-konten-und-verwalter.md, Nachtrag KOB-1"], "plan": "e7-haushalt.md", "faelle": ["BYL-E6-1430..BYL-E6-1437", "BYL-E6-1440..BYL-E6-1446"],
+      "vermerk": "Hooks wirken erst nach einem Neustart der App (neu-starten.bat); keine Migration. Paket-ID KOB-1, weil KX-1 zu „Tickets im Kontext“ gehört. Sechs manuelle Fälle (BYL-E6-1440 bis BYL-E6-1445). Fix fix/kontext-verwalter-sicht: erneute Abfrage nach dem Neustart (BYL-E6-1446)." },
+    { "id": "E7-2", "vorhaben": "E7 Haushalt", "titel": "Haushalt verwalten: gründen, Einladungscode (einmal gezeigt, nur Hash), Beitritt mit neutraler Antwort und strengem Rate-Limit, Rechte mit Delegation nur eigener Rechte, übertragen, entfernen, austreten; Zugriff nur über die aktuelle Mitgliedschaft; Seite „Haushalt“ auf jedem Gerät", "bereich": "konten", "quelle": "Nutzerentscheidung", "datum": "2026-10-04", "adr": ["0058-haushalt-mitgliedschaft-einladungen-rechte.md", "0011-roadmap-e3-bis-e7.md, Nachtrag E7-2", "0037-papierkorb.md, Nachtrag E7-2", "0055-sicherheits-haertung.md, Nachtrag E7-2", "0056-konten-und-verwalter.md, Nachtrag E7-2", "0057-kontextabhaengige-oberflaeche.md, Nachtrag E7-2"], "plan": "e7-haushalt.md", "faelle": ["BYL-E7-100..BYL-E7-115", "BYL-E7-120..BYL-E7-128"],
+      "vermerk": "Migrationen 1790203800, 1790203810 und 1790203900, Hooks und Routen wirken erst nach einem Neustart der App (neu-starten.bat). Fünf manuelle Fälle (BYL-E7-120 bis BYL-E7-124). Sicherheits-Fix danach: scope-guard.pb.js (BYL-E7-125 bis BYL-E7-128), ebenfalls nach einem Neustart." },
     { "id": "E7-3", "vorhaben": "E7 Haushalt", "titel": "Bereiche Privat | Haushalt: Umschalter nur für Mitglieder, je Gerät und Konto gemerkt, Listen und Realtime auf dem Server gefiltert, Anlegen im aktiven Bereich, keine Verweise über die Grenze, Deep-Links wechseln den Bereich, Papierkorb und Aufbewahrung je Haushalt", "bereich": "konten", "quelle": "Nutzerentscheidung", "datum": "2026-10-04", "adr": ["0059-bereiche-privat-und-haushalt.md", "0058-haushalt-mitgliedschaft-einladungen-rechte.md, Nachtrag E7-3"], "plan": "e7-haushalt.md", "faelle": ["BYL-E7-200..BYL-E7-215", "BYL-E7-220..BYL-E7-228"],
       "vermerk": "Migration 1790204100 und Hooks wirken erst nach einem Neustart der App (neu-starten.bat), die Oberfläche nach F5. Neun manuelle Fälle (BYL-E7-220 bis BYL-E7-228)." },
     { "id": "querschnitt", "vorhaben": "Querschnitt", "titel": "Testumgebung, Regeln der Datenschicht, Hook-Module und dieses Manifest", "bereich": "entwicklung", "faelle": ["BYL-X-001..BYL-X-004"] }
@@ -825,8 +825,8 @@
           "tests": ["tests/integration/rules.test.mjs::rejects create with a foreign owner", "tests/integration/rules.test.mjs::rejects create in a household without membership", "tests/integration/rules.test.mjs::rejects updates that change the owner"] },
         { "id": "BYL-E1-075", "title": "Haushalts-Join-Semantik", "art": ["integration"], "status": "bestanden",
           "pre": "–", "steps": ["npm run test:integration"],
-          "expect": "Mitglieder sehen und ändern Haushaltsdatensätze; Verschieben nur in eigene Haushalte.",
-          "tests": ["tests/integration/rules.test.mjs::lets household members view and update household records", "tests/integration/rules.test.mjs::allows moving into own households only"] },
+          "expect": "Mitglieder sehen und ändern Haushaltsdatensätze. Verschieben über die Record-API seit dem Sicherheits-Fix nach E7-2 nicht mehr (BYL-E7-125): ein fremder Haushalt 404, jeder andere Wechsel 400.",
+          "tests": ["tests/integration/rules.test.mjs::lets household members view and update household records", "tests/integration/rules.test.mjs::moves no record into or out of a household"] },
         { "id": "BYL-E1-076", "title": "Regeln für Kommentare, Verlauf, Abhängigkeiten, Zähler", "art": ["integration"], "status": "bestanden",
           "pre": "–", "steps": ["npm run test:integration"],
           "expect": "Kommentare: author = eigene ID, Sichtbarkeit wie das Ticket, nur der Autor ändert. ticket_history und dependencies nur lesbar, ticket_counters komplett gesperrt.",
@@ -866,7 +866,7 @@
           "tests": ["tests/integration/ticket-keys.test.mjs::does not advance the counter when a creation fails", "tests/unit/counters.test.mjs"] },
         { "id": "BYL-E1-093", "title": "Clientwerte für Scope, Key und Nummer werden ignoriert", "art": ["integration"], "status": "bestanden",
           "pre": "–", "steps": ["npm run test:integration"],
-          "expect": "Der Hook überschreibt scope, key und number.",
+          "expect": "Der Hook überschreibt scope, key und number; beim Ändern lehnt er seit dem Sicherheits-Fix nach E7-2 einen anderen scope ab (BYL-E7-125).",
           "tests": ["tests/integration/ticket-keys.test.mjs::ignores scope, key and number sent by the client"] },
         { "id": "BYL-E1-094", "title": "Neuer Key bei Projekt- oder Scopewechsel", "art": ["unit", "integration"], "status": "bestanden",
           "pre": "–", "steps": ["npm run test:unit", "npm run test:integration"],
@@ -5171,7 +5171,11 @@
           "pre": "Zweites Konto angemeldet (PC oder Handy).",
           "steps": ["In die Adresszeile …/einstellungen/system, …/einstellungen/konten und …/notfallkarte eingeben.", "Die Entwicklertools (Netzwerk) dabei offen lassen."],
           "expect": "Die Seiten sagen freundlich „Nur für den Verwalter“ (ohne Rot, ohne Daten); im Netzwerk keine Anfrage an /api/byl/system, /api/byl/accounts oder /api/byl/backup, nur /api/byl/context.",
-          "tests": [] }
+          "tests": [] },
+        { "id": "BYL-E6-1446", "title": "Kontext nach dem Neustart erneut abfragen: Seiten des Verwalters ohne Neuladen zurück (KOB-1, Fix)", "art": ["unit", "komponente"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web"],
+          "expect": "Ein Tab mit der Sitzung aus dem Speicher, der vor dem Neustart nach einem Update 404 („outdated“) oder keine Antwort bekam, fragt nach der neuen Realtime-Verbindung (neu-starten.bat) den Kontext erneut und zeigt dem Verwalter am PC die Seiten des Verwalters ohne Neuladen; ohne Sitzung keine Anfrage, nach dem Ende kein Zuhören mehr. Das (app)-Layout gibt dem Store seine Live-Quelle.",
+          "tests": ["web/src/lib/stores/context-store.test.ts::asks again once the server is back after a restart", "web/src/lib/stores/context-store.test.ts::asks nothing after a reconnection without a session", "web/src/routes/(app)/app-layout.test.ts::asks for the context again once the server is back after the restart after an update"] }
       ]
     },
     {
@@ -5368,7 +5372,23 @@
           "pre": "Wie BYL-E7-120.",
           "steps": ["Am PC unter Einstellungen → Haushalt den Abschnitt „Haushalt verlassen“ ansehen."],
           "expect": "Es gibt kein „Austreten …“, sondern den Hinweis „Als Inhaber kannst du nicht austreten. Übertrage zuerst die Inhaberschaft an ein anderes Mitglied. Einen Haushalt auflösen geht erst mit einer späteren Version.“",
-          "tests": [] }
+          "tests": [] },
+        { "id": "BYL-E7-125", "title": "Haushalt, Besitzer und Bereich eines Eintrags lassen sich über die Record-API nicht ändern (Sicherheits-Fix nach E7-2)", "art": ["integration", "unit"], "status": "bestanden",
+          "pre": "Eigene Wegwerf-Instanz; A gründet H1, B tritt mit Code bei, C gründet H2; je Collection mit Bereich ein Haushalts- und ein privater Eintrag von A.", "steps": ["npm run test:integration", "npm run test:unit"],
+          "expect": "B und A leeren household eines Haushaltseintrags in keiner Form (\"\", null, household-, multipart, Batch): 400 validation_scope_locked „Der Bereich eines Eintrags kann nicht direkt geändert werden.“; ein fremder Haushalt 404. Ein anderer scope 400, ein anderer owner 404 (Regel) bzw. 400 validation_scope_owner_locked ohne die Regel. Kein privater Eintrag zieht in einen Haushalt. Abhängigkeiten schreibt nur der Server (403). Alles bleibt gespeichert wie vorher.",
+          "tests": ["tests/integration/household-fields.test.mjs::refuses a member to take a household record out of the household, in every form of the body", "tests/integration/household-fields.test.mjs::refuses the owner of a household record the same", "tests/integration/household-fields.test.mjs::refuses a changed scope", "tests/integration/household-fields.test.mjs::refuses a changed owner", "tests/integration/household-fields.test.mjs::keeps writing dependencies to the server, for members as for the owner", "tests/integration/household-fields.test.mjs::refuses a changed area through the batch API as well, should it be switched on", "tests/integration/household-fields.test.mjs::refuses a changed owner with a message even when the update rule no longer keeps it", "tests/integration/rules.test.mjs::moves no record into or out of a household", "tests/integration/rules.test.mjs::moves no household record between own households either", "tests/unit/scope-rules.test.mjs"] },
+        { "id": "BYL-E7-126", "title": "Normale Felder, unveränderte Werte, private Einträge und der Superuser wie bisher (Sicherheits-Fix nach E7-2)", "art": ["integration"], "status": "bestanden",
+          "pre": "Wie BYL-E7-125.", "steps": ["npm run test:integration"],
+          "expect": "Titel, Name, Status und Bezeichnung ändern Mitglied und Besitzer weiter; owner, household und scope unverändert im Body sind erlaubt. Private Einträge ändert nur ihr Besitzer, B sieht sie nicht. Der Superuser ändert den Bereich weiter; die Modell-Hooks prüfen dabei wie bisher (neuer Key, Unteraufgaben, Projekte und Tags in Gebrauch, Oberprojekt).",
+          "tests": ["tests/integration/household-fields.test.mjs::accepts unchanged values in the body and changes of ordinary fields", "tests/integration/household-fields.test.mjs::keeps a private record private: no move into a household, editable by its owner only", "tests/integration/household-fields.test.mjs::leaves the superuser free to change the area", "tests/integration/ticket-keys.test.mjs::ignores scope, key and number sent by the client on create, and key and number on update"] },
+        { "id": "BYL-E7-127", "title": "Anlegen nur als eigenes Konto und nur im eigenen Haushalt, Bereich berechnet (Sicherheits-Fix nach E7-2)", "art": ["integration"], "status": "bestanden",
+          "pre": "Wie BYL-E7-125.", "steps": ["npm run test:integration"],
+          "expect": "B legt keinen Eintrag mit owner A an, privat oder in H1; C legt nichts in H1 an, A nichts in H2: je 400 über die Create-Regel, nichts gespeichert. Ein mitgeschickter scope zählt nicht: der Eintrag bekommt den Bereich aus owner und household.",
+          "tests": ["tests/integration/household-fields.test.mjs::refuses to create a record of another account", "tests/integration/household-fields.test.mjs::refuses to create a record in a household without membership", "tests/integration/household-fields.test.mjs::gives a new record the scope of its owner and household, whatever the body says"] },
+        { "id": "BYL-E7-128", "title": "Wege des Servers behalten den Bereich: Wiederholungen, Eingang → Ticket, Duplizieren, Papierkorb, Routen des Haushalts (Sicherheits-Fix nach E7-2)", "art": ["integration"], "status": "bestanden",
+          "pre": "Wie BYL-E7-125; die Erzeugung über die Test-Route mit der Uhr.", "steps": ["npm run test:integration"],
+          "expect": "Eine Regel von B in H1 erzeugt ihr Ticket in H1, „Wiederholen…“ verknüpft ein Haushaltsticket von A; ein Haushaltseintrag wird zum Ticket in H1; Duplizieren und Wiederherstellen aus dem Papierkorb bleiben in H1; ein Mitglied tritt über die Routen bei und aus, sein Ticket bleibt im Haushalt.",
+          "tests": ["tests/integration/household-fields.test.mjs::generates the tickets of a household rule and repeats a household ticket", "tests/integration/household-fields.test.mjs::converts a household inbox item into a ticket of the household", "tests/integration/household-fields.test.mjs::duplicates a household ticket into the household", "tests/integration/household-fields.test.mjs::restores a household ticket from the trash into the household", "tests/integration/household-fields.test.mjs::lets a member join and leave through the routes of the household; his records stay in it"] }
       ]
     },
     {

@@ -138,13 +138,16 @@ describe('sub projects (ADR-0034)', () => {
 			});
 			expect(ofB.parent).toBe(householdParent.id);
 
-			// The parent keeps its scope while it has sub projects; the sub project cannot leave.
-			expect(await rejectionOf(projectsOfA.update(householdParent.id, { household: '' }))).toEqual(
+			// The parent keeps its scope while it has sub projects; the sub project cannot leave. A client
+			// changes no area through the Record API (scope-guard.pb.js, ADR-0058), so the superuser
+			// tries it.
+			const moves = s.superuser.collection('projects');
+			expect(await rejectionOf(moves.update(householdParent.id, { household: '' }))).toEqual(
 				rejected('household', 'validation_project_scope_children')
 			);
-			expect(
-				await rejectionOf(s.b.collection('projects').update(ofB.id, { household: '' }))
-			).toEqual(rejected('parent', 'validation_project_parent_missing'));
+			expect(await rejectionOf(moves.update(ofB.id, { household: '' }))).toEqual(
+				rejected('parent', 'validation_project_parent_missing')
+			);
 		});
 	});
 

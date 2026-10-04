@@ -95,15 +95,17 @@ describe('ticket history', () => {
 	it('records household moves with the new key', async () => {
 		// Two private tickets first: the key text then differs from the first key of the household
 		// counter (an identical text, e.g. TASK-1 in both scopes, is no key change and not logged).
+		// A client moves no ticket through the Record API (scope-guard.pb.js, ADR-0058); the superuser
+		// moves it here, so the entries carry no user.
 		const tickets = s.a.collection('tickets');
 		await tickets.create({ owner: s.ids.a, title: 'Vorlauf' });
 		const ticket = await tickets.create({ owner: s.ids.a, title: 'zieht um' });
-		const moved = await tickets.update(ticket.id, { household: s.h1.id });
+		const moved = await s.superuser.collection('tickets').update(ticket.id, { household: s.h1.id });
 		expect(moved.key).not.toBe(ticket.key);
 		const changes = (await entries(ticket.id)).filter((entry) => entry.field !== 'created');
 		expect(changes).toEqual([
-			{ field: 'household', old_value: '', new_value: s.h1.id, user: s.ids.a },
-			{ field: 'key', old_value: ticket.key, new_value: moved.key, user: s.ids.a }
+			{ field: 'household', old_value: '', new_value: s.h1.id, user: '' },
+			{ field: 'key', old_value: ticket.key, new_value: moved.key, user: '' }
 		]);
 		expect(moved.scope).toBe(scopeOf(s.ids.a, s.h1.id));
 	});

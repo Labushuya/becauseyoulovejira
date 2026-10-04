@@ -74,9 +74,11 @@ describe('parent', () => {
 	});
 
 	it('keeps parent and sub-tickets in one scope when moving', async () => {
-		const tickets = s.a.collection('tickets');
-		const parent = await tickets.create({ owner: s.ids.a, title: 'Eltern' });
-		const child = await tickets.create({ owner: s.ids.a, title: 'Kind', parent: parent.id });
+		// A client moves no ticket through the Record API (scope-guard.pb.js, ADR-0058); the model
+		// hook keeps its checks for every other way, here the superuser.
+		const tickets = s.superuser.collection('tickets');
+		const parent = await s.a.collection('tickets').create({ owner: s.ids.a, title: 'Eltern' });
+		const child = await s.a.collection('tickets').create({ owner: s.ids.a, title: 'Kind', parent: parent.id });
 
 		expect(await rejectionOf(tickets.update(parent.id, { household: s.h1.id }))).toEqual({
 			status: 400,
