@@ -178,8 +178,9 @@ function machineAddress() {
 	return null;
 }
 
-// The routes that answer only on this machine, with the reason of a request from elsewhere. System
-// and backup check Windows first: on another server they refuse with "platform" before.
+// The routes that answer only on this machine, with the reason of a request from elsewhere. System,
+// backup and the access in the home network check Windows first: on another server they refuse
+// with "platform" before.
 const LOCAL_ROUTES = [
 	{ path: '/api/byl/system', method: 'GET', windows: true },
 	{ path: '/api/byl/system/actions/autostart-on', method: 'POST', windows: true },
@@ -187,9 +188,9 @@ const LOCAL_ROUTES = [
 	{ path: '/api/byl/storage', method: 'GET' },
 	{ path: '/api/byl/security', method: 'GET' },
 	{ path: '/api/byl/security/settings', method: 'POST', body: { level: 'strict' } },
-	{ path: '/api/byl/security/lan', method: 'GET' },
-	{ path: '/api/byl/security/lan', method: 'POST', body: { enabled: false, addresses: [] } },
-	{ path: '/api/byl/security/lan/firewall', method: 'POST', body: { action: 'add' } },
+	{ path: '/api/byl/security/lan', method: 'GET', windows: true },
+	{ path: '/api/byl/security/lan', method: 'POST', body: { enabled: false, addresses: [] }, windows: true },
+	{ path: '/api/byl/security/lan/firewall', method: 'POST', body: { action: 'add' }, windows: true },
 	{ path: '/api/byl/folders/items/abcdefghijklmno', method: 'GET' }
 ];
 
