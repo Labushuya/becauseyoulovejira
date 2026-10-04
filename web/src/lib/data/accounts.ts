@@ -9,9 +9,11 @@ import type PocketBase from 'pocketbase';
 import {
 	parseAccountAnswer,
 	parseAccountList,
+	parseHouseholdDeletion,
 	parsePasswordGrant,
 	type Account,
 	type AccountList,
+	type HouseholdDeletion,
 	type PasswordGrant
 } from '../domain/accounts';
 import { denialOf, type SystemDenial } from '../domain/system';
@@ -141,6 +143,28 @@ export function setHouseholdOwner(
 			options.signal
 		),
 		parseAccountList
+	);
+}
+
+/**
+ * Deletes an orphaned household for good (E7-4c): with `preview` only its counts, else with the
+ * typed name, and the answer has the new list.
+ */
+export function deleteOrphanedHousehold(
+	pb: PocketBase,
+	householdId: string,
+	input: { preview: boolean; name?: string },
+	options: RequestOptions = {}
+): Promise<AccountsAnswer<HouseholdDeletion>> {
+	return ask(
+		options.signal,
+		post(
+			pb,
+			`${ROUTE}/households/${encodeURIComponent(householdId)}/delete`,
+			input.preview ? { preview: true } : { name: input.name ?? '' },
+			options.signal
+		),
+		parseHouseholdDeletion
 	);
 }
 

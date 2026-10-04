@@ -8,7 +8,8 @@
 //   administrator always stays, disabling ends the sessions (new token key), a disabled account
 //   cannot sign in, and no client changes the right, the switch or the visibility of its e-mail.
 // - Routes of the page "Einstellungen → Konten": list, create with a start password, reset the
-//   password, disable and enable, give and take the right. They check like the page "Speicher"
+//   password, disable and enable, give and take the right; since E7-4 a new owner of a household
+//   without an active owner, since E7-4c deleting an orphaned household. They check like the page "Speicher"
 //   (signed in, this machine, the address of the app, an administrator, rate limit) and log every
 //   action and refusal without e-mail addresses and passwords.
 'use strict';
@@ -245,9 +246,25 @@ var MEMBERS = 'household_members';
 var HOUSEHOLDS = 'households';
 
 /**
+ * Whether a household is orphaned (E7-4c): no membership of it belongs to an existing account.
+ * Memberships of a deleted account go with it (cascade); one that names an account that is gone
+ * counts as none. Disabled accounts still count: the administrator can enable one again or choose a
+ * new owner, so only an orphaned household may be deleted by him.
+ */
+function isOrphaned(app, memberships) {
+  for (var i = 0; i < memberships.length; i++) {
+    if (findUser(app, memberships[i].getString('user')) !== null) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
  * The households as the page "Konten" needs them (E7-4, ADR-0061 §6): which account owns which
  * household (`owns`, by account ID, for the hint before disabling an owner), and the households
- * without an active owner (owner disabled, or deleted in the admin UI) with their other members.
+ * without an active owner (owner disabled, or deleted in the admin UI) with their other members and
+ * whether they are orphaned (E7-4c), so only deleting is left.
  */
 function householdsOf(app) {
   var memberships = app.findRecordsByFilter(MEMBERS, 'id != ""', 'created,id', 0, 0);
@@ -284,7 +301,8 @@ function householdsOf(app) {
         id: household.id,
         name: household.getString('name'),
         owner: owner === null ? null : { id: owner.id, name: owner.getString('name') },
-        members: members
+        members: members,
+        orphaned: isOrphaned(app, rows)
       });
     }
   }
@@ -379,6 +397,63 @@ function setHouseholdOwner(e) {
   require(__hooks + '/lib/household-service.js').notify(e.app, outcome.notify);
   audit(e, 'household-owner', householdId);
   e.json(200, listAnswer(e));
+}
+
+/**
+ * POST /api/byl/accounts/households/{id}/delete { preview?, name? } (E7-4c, ADR-0061 addendum
+ * E7-4c): the administrator of the app deletes an orphaned household for good, with the logic of
+ * dissolving with "delete" (deleteHousehold of lib/area-move-service.js: data, trash, counters,
+ * marks of moved entries, codes and the household). He never takes its data into an account: they
+ * are not his. The preview counts what it holds; deleting needs its name typed. Answers
+ * `{ preview, household, counts }`, after deleting with the new list in `list`. Refusals: unknown
+ * 404 `household-missing`, not orphaned 409 `household-not-orphaned`, wrong name 400 `household-name`.
+ */
+function deleteOrphanedHousehold(e) {
+  var name = 'accounts-household-delete';
+  if (refused(e, name, 'POST', CHANGE)) {
+    return;
+  }
+  var input = rules.householdDeleteInput(e.requestInfo().body);
+  if (input.problem) {
+    problem(e, name, input.problem);
+    return;
+  }
+  var householdId = String(e.request.pathValue('id') || '');
+  var area = require(__hooks + '/lib/area-move-service.js');
+  var outcome = { problem: '', household: null, counts: null };
+  e.app.runInTransaction(function (txApp) {
+    var found = txApp.findRecordsByFilter(HOUSEHOLDS, 'id = {:id}', '', 1, 0, { id: householdId });
+    if (found.length === 0) {
+      outcome.problem = 'household-missing';
+      return;
+    }
+    var rows = txApp.findRecordsByFilter(MEMBERS, 'household = {:h}', '', 0, 0, { h: householdId });
+    if (!isOrphaned(txApp, rows)) {
+      outcome.problem = 'household-not-orphaned';
+      return;
+    }
+    outcome.household = { id: found[0].id, name: found[0].getString('name') };
+    outcome.counts = area.householdCounts(txApp, householdId);
+    if (input.preview) {
+      return;
+    }
+    if (!require(__hooks + '/lib/area-move-rules.js').nameConfirmed(input.name, outcome.household.name)) {
+      outcome.problem = 'household-name';
+      return;
+    }
+    area.deleteHousehold(txApp, householdId);
+  });
+  if (outcome.problem !== '') {
+    problem(e, name, outcome.problem);
+    return;
+  }
+  var answer = { preview: input.preview, household: outcome.household, counts: outcome.counts };
+  if (!input.preview) {
+    audit(e, 'household-delete', householdId);
+    answer.list = listAnswer(e);
+  }
+  e.response.header().set('Cache-Control', 'no-store');
+  e.json(200, answer);
 }
 
 /** POST /api/byl/accounts { email, name }: a new account with a start password, shown once. */
@@ -537,5 +612,6 @@ module.exports = {
   resetPassword: resetPassword,
   setDisabled: setDisabled,
   setAdmin: setAdmin,
-  setHouseholdOwner: setHouseholdOwner
+  setHouseholdOwner: setHouseholdOwner,
+  deleteOrphanedHousehold: deleteOrphanedHousehold
 };

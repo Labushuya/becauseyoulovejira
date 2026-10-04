@@ -272,7 +272,8 @@ describe('page "Konten": households without an active owner (E7-4, ADR-0061 §6)
 		members: [
 			{ id: 'member00000002', user: ANNA.id, name: 'Anna Beispiel', disabled: false },
 			{ id: 'member00000003', user: 'user0000000009', name: 'Sina Beispiel', disabled: true }
-		]
+		],
+		orphaned: false
 	};
 
 	it('names the household an account owns and warns before disabling its owner', async () => {
@@ -325,6 +326,130 @@ describe('page "Konten": households without an active owner (E7-4, ADR-0061 §6)
 		expect(flags.map((flag) => flag.title)).toContain(
 			'Anna Beispiel ist jetzt Inhaber von „Wohnung“.'
 		);
+	});
+
+	it('offers only deleting for an orphaned household, after a preview and with its name (E7-4c)', async () => {
+		const ORPHANED = {
+			id: 'house000000003',
+			name: 'Altbau',
+			owner: null,
+			members: [],
+			orphaned: true
+		};
+		const counts = {
+			tickets: 2,
+			trash: 1,
+			projects: 1,
+			rules: 0,
+			items: 0,
+			tags: 0,
+			connections: 0,
+			comments: 1
+		};
+		const deleteHousehold = vi.fn(
+			async (householdId: string, input: { preview: boolean; name?: string }) => {
+				const household = { id: householdId, name: 'Altbau' };
+				if (input.preview) {
+					return {
+						kind: 'ok' as const,
+						value: { preview: true, household, counts, list: null }
+					};
+				}
+				return {
+					kind: 'ok' as const,
+					value: {
+						preview: false,
+						household,
+						counts,
+						list: { accounts: [SELF, ANNA, OWNER], passwordMin: 8, households: [HOUSEHOLD] }
+					}
+				};
+			}
+		);
+		const { flags } = await show({
+			list: vi.fn(async () => ({
+				kind: 'ok' as const,
+				value: { accounts: [SELF, ANNA, OWNER], passwordMin: 8, households: [HOUSEHOLD, ORPHANED] }
+			})),
+			deleteHousehold
+		});
+		const region = screen.getByRole('region', { name: 'Haushalte ohne aktiven Inhaber' });
+		const orphaned = within(region).getByText('Altbau').closest('li') as HTMLElement;
+		const kept = within(region).getByText('Wohnung').closest('li') as HTMLElement;
+		// The orphaned household offers no owner, the other one no deleting.
+		expect(within(orphaned).queryByLabelText('Neuer Inhaber')).toBeNull();
+		expect(within(orphaned).getByText(/Kein Mitglied hat mehr ein Konto/)).toBeTruthy();
+		expect(within(kept).queryByRole('button', { name: 'Haushalt löschen …' })).toBeNull();
+		expect(within(kept).getByLabelText('Neuer Inhaber')).toBeTruthy();
+
+		await fireEvent.click(within(orphaned).getByRole('button', { name: 'Haushalt löschen …' }));
+		const dialog = screen.getByRole('dialog', { name: 'Haushalt „Altbau“ löschen' });
+		await vi.waitFor(() => expect(within(dialog).getByText('2 Tickets')).toBeTruthy());
+		expect(deleteHousehold).toHaveBeenCalledWith(
+			'house000000003',
+			{ preview: true },
+			expect.anything()
+		);
+		expect(within(dialog).getByText('1 Ticket im Papierkorb')).toBeTruthy();
+		expect(within(dialog).getByText(/Niemand übernimmt sie, auch du nicht/)).toBeTruthy();
+		expect(danglingReferences(dialog)).toEqual([]);
+
+		// A wrong name stands at the field and sends nothing.
+		const typed = within(dialog).getByLabelText('Zum Bestätigen den Namen „Altbau“ eintippen');
+		await fireEvent.input(typed, { target: { value: 'Neubau' } });
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Endgültig löschen' }));
+		expect(typed.getAttribute('aria-invalid')).toBe('true');
+		expect(within(dialog).getByText('Der Name stimmt nicht.')).toBeTruthy();
+		expect(deleteHousehold).toHaveBeenCalledTimes(1);
+
+		await fireEvent.input(typed, { target: { value: ' Altbau ' } });
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Endgültig löschen' }));
+		await vi.waitFor(() =>
+			expect(deleteHousehold).toHaveBeenLastCalledWith(
+				'house000000003',
+				{ preview: false, name: ' Altbau ' },
+				expect.anything()
+			)
+		);
+		await vi.waitFor(() =>
+			expect(screen.queryByRole('dialog', { name: 'Haushalt „Altbau“ löschen' })).toBeNull()
+		);
+		expect(flags.map((flag) => flag.title)).toContain('Haushalt „Altbau“ gelöscht.');
+		expect(screen.queryByText('Altbau')).toBeNull();
+		expect(screen.getByText('Wohnung', { selector: '.name' })).toBeTruthy();
+	});
+
+	it('shows a refusal of deleting in the dialog (E7-4c)', async () => {
+		const ORPHANED = {
+			id: 'house000000003',
+			name: 'Altbau',
+			owner: null,
+			members: [],
+			orphaned: true
+		};
+		await show({
+			list: vi.fn(async () => ({
+				kind: 'ok' as const,
+				value: { accounts: [SELF, ANNA], passwordMin: 8, households: [ORPHANED] }
+			})),
+			// Someone gave the household a member in the meantime: the preview is refused already.
+			deleteHousehold: vi.fn(async () => ({
+				kind: 'invalid' as const,
+				problem: 'household-not-orphaned'
+			}))
+		});
+		await fireEvent.click(screen.getByRole('button', { name: 'Haushalt löschen …' }));
+		const dialog = screen.getByRole('dialog', { name: 'Haushalt „Altbau“ löschen' });
+		await vi.waitFor(() =>
+			expect(within(dialog).getByRole('alert').textContent).toMatch(
+				/Im Haushalt gibt es noch ein Konto/
+			)
+		);
+		expect(
+			within(dialog)
+				.getByRole('button', { name: 'Endgültig löschen' })
+				.getAttribute('aria-disabled')
+		).toBe('true');
 	});
 });
 

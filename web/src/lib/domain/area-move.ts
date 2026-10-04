@@ -506,11 +506,33 @@ export interface DissolvePreview {
 	codes: (NamedProject & { suggestion: string })[];
 }
 
+/**
+ * What a household holds, one number per kind: the preview of dissolving and, since E7-4c, of
+ * deleting an orphaned household on the page "Konten verwalten".
+ */
+export type HouseholdCounts = DissolvePreview['counts'];
+
+/** The counts of a household in an answer, or null when it is no object. */
+export function parseHouseholdCounts(value: unknown): HouseholdCounts | null {
+	if (!isRecord(value)) return null;
+	return {
+		tickets: count(value.tickets),
+		trash: count(value.trash),
+		projects: count(value.projects),
+		rules: count(value.rules),
+		items: count(value.items),
+		tags: count(value.tags),
+		connections: count(value.connections),
+		comments: count(value.comments)
+	};
+}
+
 /** The answer of the route, or null for anything else. */
 export function parseDissolvePreview(value: unknown): DissolvePreview | null {
-	if (!isRecord(value) || !isRecord(value.household) || !isRecord(value.counts)) return null;
+	if (!isRecord(value) || !isRecord(value.household)) return null;
 	const mode = value.mode === 'adopt' || value.mode === 'delete' ? value.mode : null;
 	const id = text(value.household.id);
+	const counts = parseHouseholdCounts(value.counts);
 	const members = listOf(value.members, (entry) => ({
 		name: text(entry.name),
 		role: entry.role === 'owner' ? ('owner' as const) : ('member' as const),
@@ -520,23 +542,15 @@ export function parseDissolvePreview(value: unknown): DissolvePreview | null {
 		const base = named(entry);
 		return base === null ? null : { ...base, suggestion: text(entry.suggestion) };
 	});
-	if (mode === null || id === '' || members === null || codes === null) return null;
-	const counts = value.counts;
+	if (mode === null || id === '' || counts === null || members === null || codes === null) {
+		return null;
+	}
 	return {
 		preview: value.preview === true,
 		mode,
 		household: { id, name: text(value.household.name) },
 		members,
-		counts: {
-			tickets: count(counts.tickets),
-			trash: count(counts.trash),
-			projects: count(counts.projects),
-			rules: count(counts.rules),
-			items: count(counts.items),
-			tags: count(counts.tags),
-			connections: count(counts.connections),
-			comments: count(counts.comments)
-		},
+		counts,
 		codes
 	};
 }
