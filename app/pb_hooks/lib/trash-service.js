@@ -1067,7 +1067,7 @@ function preview(e, id) {
 
 /**
  * How many groups of the whole trash wait for a decision (ADR-0047), for the page "Speicher" of the
- * owner of the instance; 0 before the migration.
+ * administrator of the app; 0 before the migration.
  */
 function blockedCount(app) {
   if (!trashReady(app)) {

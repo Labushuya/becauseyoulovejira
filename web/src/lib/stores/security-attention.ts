@@ -1,7 +1,8 @@
 // Failed sign-ins that need attention (ADR-0055 §8, ADR-0035): when the app opens and when it is
 // opened again, one quiet info flag with "Ansehen", only after 10 or more within 24 hours, and only
 // once for the same newest failure (remembered per device). Any failure of the question, also a
-// refusal for an account that is not the owner, means no flag.
+// refusal for an account that is not the administrator of the app, means no flag (the (app)
+// layout asks only for the administrator, ADR-0056 §7).
 
 import { NOTICE_TEXTS, type SecurityNotice } from '$lib/domain/security';
 import type { FlagSink } from './flags.svelte';

@@ -69,7 +69,8 @@ async function ingest(token, json) {
 
 beforeAll(async () => {
 	superuser = await superuserClient();
-	owner = await createOwner(superuser);
+	// Only an administrator of the app sets up connections with access data (ADR-0056 §5).
+	owner = await createOwner(superuser, { admin: true });
 	other = await createOwner(superuser);
 });
 

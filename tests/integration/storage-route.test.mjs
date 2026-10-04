@@ -103,7 +103,7 @@ beforeAll(async () => {
 	windows = await startPocketBase({ env: { BYL_HOST_PLATFORM: 'windows' } });
 	linux = await startPocketBase({ env: { BYL_HOST_PLATFORM: 'linux' } });
 	const superuser = await superuserOf(windows);
-	// The account created first owns the instance (ADR-0043 §3).
+	// The account created first becomes the administrator of the app (ADR-0056 §2).
 	accounts.owner = await account(superuser, windows);
 	accounts.other = await account(superuser, windows);
 	accounts.superuserToken = superuser.authStore.token;

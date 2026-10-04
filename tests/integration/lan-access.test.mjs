@@ -191,6 +191,9 @@ const LOCAL_ROUTES = [
 	{ path: '/api/byl/security/lan', method: 'GET', windows: true },
 	{ path: '/api/byl/security/lan', method: 'POST', body: { enabled: false, addresses: [] }, windows: true },
 	{ path: '/api/byl/security/lan/firewall', method: 'POST', body: { action: 'add' }, windows: true },
+	{ path: '/api/byl/accounts', method: 'GET' },
+	{ path: '/api/byl/accounts', method: 'POST', body: { name: 'Gast', email: 'gast@example.com' } },
+	{ path: '/api/byl/accounts/abcdefghijklmno/admin', method: 'POST', body: { admin: true } },
 	{ path: '/api/byl/folders/items/abcdefghijklmno', method: 'GET' }
 ];
 
@@ -215,7 +218,7 @@ describe('simulated device of the home network (every machine)', () => {
 		local = { host: '127.0.0.1', port };
 		host = `${LAN_ADDRESS}:${port}`;
 		superuser = await superuserOf(instance);
-		// The owner of the instance is the app account created first (ADR-0043 §3).
+		// The administrator of the app is the app account created first (ADR-0056).
 		owner = await account(superuser);
 		other = await account(superuser);
 		for (const user of [owner, other]) {

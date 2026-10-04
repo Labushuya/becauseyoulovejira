@@ -1,6 +1,6 @@
 // Page "Einstellungen → Speicher" (ADR-0047 §6 to §9; ADR-0006 sections 1 to 5): the routes of
 // app/pb_hooks/storage.pb.js. A refusal of the route (this machine, the address of the app, the
-// owner of the instance, rate limit, busy) and a missing route (404 before the restart after an
+// administrator of the app, rate limit, busy) and a missing route (404 before the restart after an
 // update) come as `denied` with their reason; the session, the network and an aborted signal are
 // DataErrors. The browser sends Origin itself; nothing here names an address.
 

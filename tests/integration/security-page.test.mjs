@@ -64,7 +64,7 @@ beforeAll(async () => {
 	superuser = new PocketBase(instance.url);
 	superuser.autoCancellation(false);
 	await superuser.collection('_superusers').authWithPassword(instance.email, instance.password);
-	// The owner of the instance is the app account created first (ADR-0043 §3).
+	// The account created first becomes the administrator of the app (ADR-0056 §2).
 	owner = await account();
 	other = await account();
 });

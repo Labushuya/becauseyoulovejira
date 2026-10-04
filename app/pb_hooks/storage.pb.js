@@ -2,7 +2,7 @@
 // Page "Einstellungen → Speicher" (ADR-0047 §6 to §9, SPE-2): what the app takes, measured when the
 // page asks, and the actions "Datenbank verdichten", "Liegengebliebenes aufräumen" and "Verworfene
 // jetzt leeren". The checks of the page System (lib/system-service.js: this machine, the address of
-// the app, the owner of the instance, rate limit) on every platform; logic in
+// the app, the administrator of the app, rate limit) on every platform; logic in
 // lib/storage-service.js. Handlers run in isolated scopes, so modules are required inside them.
 
 routerAdd(

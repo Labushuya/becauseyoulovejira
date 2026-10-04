@@ -10,7 +10,7 @@
 ## 1. Ziel und Grenzen
 
 - Andere Geräte im Heimnetz öffnen die App unter einer Adresse dieses Rechners mit demselben Port, etwa `http://192.168.178.66:8090`, und melden sich mit ihrem eigenen App-Konto an.
-- **Standard: aus.** Eingeschaltet wird auf der Seite „Einstellungen → Sicherheit“ (nur Besitzer bzw. Verwalter, nur auf diesem Rechner) oder mit `byl-control.ps1 lan-configure`.
+- **Standard: aus.** Eingeschaltet wird auf der Seite „Einstellungen → Sicherheit“ (nur der Verwalter der App nach [ADR-0056](../adr/0056-konten-und-verwalter.md), nur auf diesem Rechner) oder mit `byl-control.ps1 lan-configure`.
 - **Bewusst unverschlüsselt (HTTP):** Passwörter und Inhalte gehen unverschlüsselt durchs WLAN. Deshalb nur im eigenen, vertrauenswürdigen Heimnetz, deutlich gesagt auf der Seite, in der Hilfe und im README. HTTPS ist nicht Ziel dieses Pakets.
 - `start.bat`, die Landing-Seite, die Browser-Erweiterung, der Mail-Hilfsprozess und alle Skripte bleiben auf `127.0.0.1`.
 
@@ -39,7 +39,7 @@
 - `byl-config.json`: `{ "network": { "lan": { "enabled": true, "addresses": ["192.168.178.66"] } } }`. Nur ein echtes `true` schaltet ein, ungültige Einträge fallen weg (ein Tippfehler erlaubt nur weniger). Ausschalten behält die Adressen. Nur das Steuerskript schreibt die Datei.
 - Neue Befehle: `lan-info` (Zustand, Adressen dieses Rechners, Netzwerkprofil, Firewall-Regel, Befehle von Hand), `lan-configure [on|off|Adressen]` und `lan-firewall add|remove`, für die Seite mit `-Json` und den Parametern auf der Standardeingabe (Whitelist in `lib/system-rules.js` mit dem Merkmal `security`, `/api/byl/system/actions/…` lehnt sie ab).
 - Fingerabdruck: neuer Teil `lan` (die Adressen, mit denen der Start lauscht). Grund „Zugriff im Heimnetz geändert (byl-config.json)“; ein Zustand von vorher ohne den Teil zählt wie „aus“.
-- Routen in `security.pb.js` mit `check` (angemeldet, dieser Rechner, Adresse der App, Besitzer bzw. Verwalter, Rate-Limit, eigene Instanz unter Windows): `GET /api/byl/security/lan`, `POST /api/byl/security/lan` (`{ enabled, addresses }`, 400 `invalid` mit `problem` `format|invalid|too-many|required`) und `POST /api/byl/security/lan/firewall` (`{ action }`, Antwort `{ result: { ok, action, outcome, report }, lan }`). Der Überblick `GET /api/byl/security` nennt ohne Steuerskript `lan: { active, hosts, editable }`.
+- Routen in `security.pb.js` mit `check` (angemeldet, dieser Rechner, Adresse der App, Verwalter der App, Rate-Limit, eigene Instanz unter Windows): `GET /api/byl/security/lan`, `POST /api/byl/security/lan` (`{ enabled, addresses }`, 400 `invalid` mit `problem` `format|invalid|too-many|required`) und `POST /api/byl/security/lan/firewall` (`{ action }`, Antwort `{ result: { ok, action, outcome, report }, lan }`). Der Überblick `GET /api/byl/security` nennt ohne Steuerskript `lan: { active, hosts, editable }`.
 
 ### 2.5 Windows-Firewall
 
@@ -57,7 +57,7 @@
 
 ### 2.7 Sicherheit
 
-- **Nur von diesem Rechner** bleiben System, Sicherung, Speicher, Sicherheit (auch Heimnetz und Firewall), „Ansehen“ beobachteter Dateien, Präsenz und Hinweis (Art „control“ und Landing-Seite) und die Admin-Oberfläche. Die Prüfungen nehmen die echte Adresse der Verbindung: `check` in `lib/system-service.js` verlangt `e.remoteIP()` **und** `e.realIP()` auf Loopback und keine Proxy-Kopfzeile, Präsenz und Hinweis `e.remoteIP()`. PocketBase 0.40.4: `RemoteIP()` liest `Request.RemoteAddr`, `RealIP()` liest Kopfzeilen nur aus `settings.trustedProxy.headers` (leer, ADR-0055 §6) und fällt sonst auf `RemoteIP()` zurück; `superuserIPs` prüft `RealIP()`. Eine gefälschte `X-Forwarded-For: 127.0.0.1` hilft einem Gerät im Heimnetz also nicht (Tests).
+- **Nur von diesem Rechner** bleiben System, Sicherung, Speicher, Sicherheit (auch Heimnetz und Firewall), seit E7-1 Konten ([ADR-0056](../adr/0056-konten-und-verwalter.md); auch für den Verwalter der App), „Ansehen“ beobachteter Dateien, Präsenz und Hinweis (Art „control“ und Landing-Seite) und die Admin-Oberfläche. Die Prüfungen nehmen die echte Adresse der Verbindung: `check` in `lib/system-service.js` verlangt `e.remoteIP()` **und** `e.realIP()` auf Loopback und keine Proxy-Kopfzeile, Präsenz und Hinweis `e.remoteIP()`. PocketBase 0.40.4: `RemoteIP()` liest `Request.RemoteAddr`, `RealIP()` liest Kopfzeilen nur aus `settings.trustedProxy.headers` (leer, ADR-0055 §6) und fällt sonst auf `RemoteIP()` zurück; `superuserIPs` prüft `RealIP()`. Eine gefälschte `X-Forwarded-For: 127.0.0.1` hilft einem Gerät im Heimnetz also nicht (Tests).
 - **Rate-Limiter:** PocketBase zählt je `RealIP()`. Bisher war alles 127.0.0.1; jetzt zählt jedes Gerät im Heimnetz für sich, der Rechner der App weiter als 127.0.0.1.
 - **Tabs anderer Geräte:** `onRealtimeConnectRequest` merkt sich an jeder Realtime-Verbindung, ob sie von diesem Rechner kommt (`byl.local`). `GET /api/byl/presence` zählt und `POST /api/byl/attention` benachrichtigt nur solche Tabs. Sonst hätte ein offener Tab auf dem Handy `start.bat` daran gehindert, die App auf dem Rechner zu öffnen, und den Hinweis „erneut geöffnet“ bekommen.
 - **Anmeldung** normaler Konten geht aus dem Heimnetz wie vorher; Selbstregistrierung bleibt gesperrt.

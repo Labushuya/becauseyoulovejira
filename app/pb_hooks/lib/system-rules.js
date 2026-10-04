@@ -1,5 +1,5 @@
 // Pure rules of the page "Einstellungen → System" (ADR-0043): the fixed commands of byl-control.ps1
-// the routes may run, who may ask (this machine, the own address, the owner of the instance), the
+// the routes may run, who may ask (this machine, the own address, the administrator of the app), the
 // own instance of the app folder, rate limits, and the shape of the answers. CommonJS module, ES5
 // only, no dependencies (Goja runtime and Vitest load it the same way); the routes live in
 // system.pb.js with lib/system-service.js.
@@ -68,7 +68,8 @@ var REFUSALS = {
   platform: { status: 404, message: 'Die Seite System gibt es nur für einen Server unter Windows.' },
   loopback: { status: 403, message: 'Nur auf dem Rechner, auf dem die App läuft.' },
   origin: { status: 403, message: 'Nur aus der App unter ihrer eigenen Adresse.' },
-  owner: { status: 403, message: 'Nur für das Konto, dem diese Installation gehört.' },
+  // The administrator of the app (ADR-0056); the reason keeps its name from ADR-0043.
+  owner: { status: 403, message: 'Nur für den Verwalter der App.' },
   rate: { status: 429, message: 'Zu viele Anfragen in kurzer Zeit.' },
   unavailable: { status: 503, message: 'Die Steuerung dieser Installation ist hier nicht verfügbar.' },
   busy: { status: 409, message: 'Eine andere Aktion läuft gerade.' },

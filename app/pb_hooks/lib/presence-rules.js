@@ -109,9 +109,29 @@ function landingAgo(seenAt, now) {
   return now - seenAt;
 }
 
-/** Text for the store: creation time and whether a tab confirmed. */
-function serializeEntry(createdAt, acked) {
-  return JSON.stringify({ createdAt: createdAt, acked: acked === true });
+/**
+ * Text for the store: creation time, whether a tab confirmed, and the accounts whose tabs got the
+ * message (since E7-1, ADR-0056 §6: only they may confirm it).
+ */
+function serializeEntry(createdAt, acked, users) {
+  return JSON.stringify({ createdAt: createdAt, acked: acked === true, users: accountList(users) });
+}
+
+/** The distinct account IDs of `users` (strings only). */
+function accountList(users) {
+  var list = [];
+  var values = Object.prototype.toString.call(users) === '[object Array]' ? users : [];
+  for (var i = 0; i < values.length; i++) {
+    if (typeof values[i] === 'string' && values[i] !== '' && list.indexOf(values[i]) === -1) {
+      list.push(values[i]);
+    }
+  }
+  return list;
+}
+
+/** Whether the account `userId` may confirm the message of `entry`: one of its tabs got it. */
+function mayAck(entry, userId) {
+  return entry !== null && typeof userId === 'string' && userId !== '' && entry.users.indexOf(userId) !== -1;
 }
 
 /** The entry of the store, or null for anything that is not one. */
@@ -128,7 +148,7 @@ function parseEntry(raw) {
   if (value === null || typeof value !== 'object' || !isTime(value.createdAt)) {
     return null;
   }
-  return { createdAt: value.createdAt, acked: value.acked === true };
+  return { createdAt: value.createdAt, acked: value.acked === true, users: accountList(value.users) };
 }
 
 /** Data of the realtime message: only the nonce and the reason, nothing about accounts or data. */
@@ -156,5 +176,6 @@ module.exports = {
   landingAgo: landingAgo,
   serializeEntry: serializeEntry,
   parseEntry: parseEntry,
+  mayAck: mayAck,
   messageData: messageData
 };

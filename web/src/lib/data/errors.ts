@@ -2,6 +2,7 @@
 // (`status`, `isAbort`, `response`) instead of `instanceof ClientResponseError`, because the
 // root integration tests and the web app each load their own copy of the SDK.
 
+import { ACCOUNT_MESSAGES } from '../domain/accounts';
 import { PIN_MESSAGES } from '../domain/comments';
 import { CONNECTION_LABEL_MESSAGES } from '../domain/connections';
 import { DUPLICATE_MESSAGES } from '../domain/duplicate';
@@ -103,7 +104,11 @@ const FIELD_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
 	...TARGET_MESSAGES,
 	...GITHUB_MESSAGES,
 	...FOLDER_MESSAGES,
-	validation_connection_secret_none: 'Diese Verbindungsart braucht keine Zugangsdaten.'
+	validation_connection_secret_none: 'Diese Verbindungsart braucht keine Zugangsdaten.',
+	// Accounts and the administrator of the app (ADR-0056), the same texts as the hooks.
+	validation_connection_admin_only:
+		'Kanäle mit Zugangsdaten und Ordner richtet nur der Verwalter der App ein.',
+	...ACCOUNT_MESSAGES
 });
 
 /** Texts that depend on the field as well, keyed by `<field>:<code>`; they win over the above. */

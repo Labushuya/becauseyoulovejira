@@ -382,13 +382,13 @@ const HOUSEHOLD_MEMBER =
 	`${AUTH} && @collection.household_members.household ?= id && ` +
 	'@collection.household_members.user ?= @request.auth.id';
 
+// Members of the own households see each other (ADR-0056 §4, migration 1790203700; before only the
+// own rows, 'user = @request.auth.id').
+const SAME_HOUSEHOLD = `${AUTH} && household.household_members_via_household.user ?= @request.auth.id`;
+
 export const EXPECTED_RULES = {
 	households: { listRule: HOUSEHOLD_MEMBER, viewRule: HOUSEHOLD_MEMBER, ...READ_ONLY },
-	household_members: {
-		listRule: 'user = @request.auth.id',
-		viewRule: 'user = @request.auth.id',
-		...READ_ONLY
-	},
+	household_members: { listRule: SAME_HOUSEHOLD, viewRule: SAME_HOUSEHOLD, ...READ_ONLY },
 	projects: OWNED_RULES,
 	tags: OWNED_RULES,
 	recurrence_rules: OWNED_RULES,
@@ -445,16 +445,28 @@ export const EXPECTED_RULES = {
 	login_failures: { listRule: null, viewRule: null, ...READ_ONLY }
 };
 
+// The own record, every record for the administrator of the app and the accounts of the own
+// households (ADR-0056 §4, migration 1790203700); writing stays with the own record.
+const READABLE_USERS =
+	`${AUTH} && (id = @request.auth.id || @request.auth.instance_admin = true || ` +
+	'household_members_via_user.household.household_members_via_household.user ?= @request.auth.id)';
+
 export const EXPECTED_USERS_RULES = {
-	listRule: 'id = @request.auth.id',
-	viewRule: 'id = @request.auth.id',
+	listRule: READABLE_USERS,
+	viewRule: READABLE_USERS,
 	createRule: null,
 	updateRule: 'id = @request.auth.id',
 	deleteRule: null
 };
 
 /** PocketBase 0.40.4 defaults, restored by the down migrations. */
-export const DEFAULT_USERS_RULES = { ...EXPECTED_USERS_RULES, createRule: '', deleteRule: 'id = @request.auth.id' };
+export const DEFAULT_USERS_RULES = {
+	listRule: 'id = @request.auth.id',
+	viewRule: 'id = @request.auth.id',
+	createRule: '',
+	updateRule: 'id = @request.auth.id',
+	deleteRule: 'id = @request.auth.id'
+};
 /**
  * The automatic backup of PocketBase after all migrations: off since the backups of the app took
  * over (ADR-0046, 1790203000), with the number kept of ADR-0003 (1790200800) that no longer matters.

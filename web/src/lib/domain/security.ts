@@ -389,7 +389,7 @@ function lanLine(lan: LanOverview): StatusLine {
 		id: 'lan',
 		title: 'Zugriff im Heimnetz',
 		meaning:
-			'Ausgeschaltet ist die App nur auf diesem Rechner erreichbar. Eingeschaltet öffnen andere Geräte im Heimnetz (etwa ein Handy im WLAN) sie unter einer Adresse dieses Rechners, unverschlüsselt über HTTP und mit eigener Anmeldung. Die Seiten System, Sicherung, Speicher und Sicherheit und die Verwaltung bleiben auch dann nur auf diesem Rechner.'
+			'Ausgeschaltet ist die App nur auf diesem Rechner erreichbar. Eingeschaltet öffnen andere Geräte im Heimnetz (etwa ein Handy im WLAN) sie unter einer Adresse dieses Rechners, unverschlüsselt über HTTP und mit eigener Anmeldung. Die Seiten Konten, Sicherheit, Sicherung, Speicher und System und die Verwaltung bleiben auch dann nur auf diesem Rechner.'
 	};
 	if (lan.active && lan.hosts.length > 0) {
 		return {
@@ -496,8 +496,8 @@ export function denialText(reason: SystemDenial): { title: string; text: string 
 		case 'owner':
 		case 'forbidden':
 			return {
-				title: 'Nur für das erste Konto',
-				text: 'Die Sicherheit der App sieht und ändert nur das Konto, das zuerst angelegt wurde.'
+				title: 'Nur für den Verwalter der App',
+				text: 'Die Sicherheit der App sieht und ändert nur ein Konto mit dem Recht „Verwalter der App“.'
 			};
 		case 'rate':
 			return {

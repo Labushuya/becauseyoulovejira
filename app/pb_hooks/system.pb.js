@@ -1,7 +1,7 @@
 /// <reference path="../pb_data/types.d.ts" />
 // Page "Einstellungen → System" (ADR-0043): operation of the app from the dashboard through fixed
 // commands of byl-control.ps1 (ADR-0039). Signed-in app users only; lib/system-service.js checks
-// the rest (Windows, this machine, the address of the app, the owner of the instance, rate limit,
+// the rest (Windows, this machine, the address of the app, the administrator of the app, rate limit,
 // the own instance). Handlers run in isolated scopes, so the module is required inside them.
 
 // Status of the app: state, address, mail helper, start fingerprint, autostart, other copies.

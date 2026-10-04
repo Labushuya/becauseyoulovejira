@@ -1,6 +1,6 @@
 # ADR-0011: Neue Etappen E3 bis E7 mit vorgezogenen Eingangskanälen
 
-- **Status:** Angenommen (mit Nachtrag 2026-09-28: Unteraufgaben aus Stufe 2 freigegeben, [ADR-0033](0033-unteraufgaben.md))
+- **Status:** Angenommen (mit Nachtrag 2026-09-28: Unteraufgaben aus Stufe 2 freigegeben, [ADR-0033](0033-unteraufgaben.md); Nachtrag 2026-10-04: E7 freigegeben, Haushalt vor Mehrgeräten, [ADR-0056](0056-konten-und-verwalter.md))
 - **Datum:** 2026-09-25
 - **Entscheidung durch:** Nutzer (Etappen, Reihenfolge der Kanäle, Papierkorb, 2026-09-25), Advisor (Zuordnung der übrigen Themen)
 
@@ -71,3 +71,11 @@ Der Text oben bleibt unverändert. Aus der Stufe 2 („Sub-Tickets, Abhängigkei
 
 - Umfang und Regeln: [ADR-0033](0033-unteraufgaben.md); Pakete UA-0 bis UA-5 und Manifest-IDs ab `BYL-E6-220`: [Plan Unteraufgaben](../plan/unteraufgaben.md).
 - Abhängigkeiten mit Entsperr-Automation, Board, Benachrichtigungen und Anhänge bleiben Stufe 2 und kommen weiter nur auf ausdrückliche Anweisung.
+
+## Nachtrag (2026-10-04): E7 freigegeben, Haushalt vor Mehrgeräten
+
+Der Text oben bleibt unverändert. Der Nutzer hat E7 am 2026-10-04 freigegeben und dabei die Etappe geteilt: **„Haushalt“ beginnt jetzt**, entkoppelt vom Zugriff von mehreren Geräten (§1 „E7 Haushalt & Mehrgeräte“, [ADR-0001](0001-betriebsmodell-lokal-mehrgeraete-spaeter.md) §3, Plattform-Stufen S2/S3 aus [ADR-0028](0028-plattform-strategie.md)). Eine zweite Person testet zunächst am selben Rechner mit eigenem Browserprofil; ein Zugang im Heimnetz kommt parallel in einem eigenen Paket.
+
+- Pakete E7-1 bis E7-5 nach dem [Plan E7 „Haushalt“](../plan/e7-haushalt.md); E7-1 „Konten und Verwalter“ ist umgesetzt ([ADR-0056](0056-konten-und-verwalter.md)), die weiteren beginnen je mit eigener Freigabe.
+- Manifest-IDs ab `BYL-E7-001`.
+- Die Plattform-Stufen S2 bis S6 und SemVer bleiben zurückgestellt (ADR-0028, Nachtrag vom 2026-09-28).

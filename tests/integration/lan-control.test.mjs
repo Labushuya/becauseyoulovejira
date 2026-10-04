@@ -255,7 +255,7 @@ describe('home network on a disposable copy (plan heimnetz)', CASE_TIMEOUT, () =
 				remove: `netsh advfirewall firewall delete rule name="becauseyoulovejira (Heimnetz)" program="${copy.program}"`
 			}
 		});
-		// Only the owner of the instance.
+		// Only the administrator of the app (ADR-0056); the reason keeps its name "owner".
 		expect((await call('GET', '/api/byl/security/lan', { token: other.token })).body.reason).toBe('owner');
 	});
 

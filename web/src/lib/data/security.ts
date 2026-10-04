@@ -1,6 +1,6 @@
 // Page "Einstellungen → Sicherheit" (ADR-0055 §8; ADR-0006 sections 1 to 5): the routes of
 // app/pb_hooks/security.pb.js. A refusal of the route (this machine, the address of the app, the
-// owner of the instance, rate limit, no own instance for the hosts) and a missing route (404 before
+// administrator of the app, rate limit, no own instance for the hosts) and a missing route (404 before
 // the restart after an update) come as `denied` with their reason, a 400 as `invalid` with its
 // problem; the session, the network and an aborted signal are DataErrors. The browser sends Origin
 // itself; nothing here names an address.

@@ -12,6 +12,7 @@
 		type TrashPreview
 	} from '$lib/domain/trash';
 	import type { ResolveAction } from '$lib/domain/trash-dependencies';
+	import { findPeople } from '$lib/stores/people.svelte';
 	import type { SourceActionResult } from '$lib/stores/ticket-sources.svelte';
 	import Markdown from './Markdown.svelte';
 	import Drawer from './overlay/Drawer.svelte';
@@ -58,6 +59,10 @@
 		onclose: () => void;
 	} = $props();
 
+	// "gelöscht von" names another account where its name is visible (ADR-0056 §4).
+	const people = findPeople();
+	const deletedBy = $derived(personLabel(preview.deletedBy, selfId, people));
+
 	const uid = $props.id();
 	const titleId = `${uid}-title`;
 	const blockedId = `${uid}-blocked`;
@@ -103,7 +108,7 @@
 		<div class="row">
 			<dt>Gelöscht</dt>
 			<dd>
-				{formatBerlinDateTime(preview.deletedAt)} von {personLabel(preview.deletedBy, selfId)}
+				{formatBerlinDateTime(preview.deletedAt)} von {deletedBy}
 			</dd>
 		</div>
 		<div class="row">

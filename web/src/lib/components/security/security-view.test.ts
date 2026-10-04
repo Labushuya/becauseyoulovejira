@@ -234,7 +234,7 @@ describe('page "Sicherheit"', () => {
 
 	it('shows a refusal with "Erneut laden"', async () => {
 		const { data } = await show(null);
-		expect(screen.getByText('Nur für das erste Konto')).toBeTruthy();
+		expect(screen.getByText('Nur für den Verwalter der App')).toBeTruthy();
 		await fireEvent.click(screen.getByRole('button', { name: 'Erneut laden' }));
 		expect(data.overview).toHaveBeenCalledTimes(2);
 	});

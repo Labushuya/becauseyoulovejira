@@ -8,7 +8,7 @@ import { duplicateHistoryText } from './duplicate';
 import { formatCalendarDate, formatBerlinDateTime } from './format';
 import { CHANNEL_LABELS, isInboxChannel } from './inbox';
 import { PRIORITY_LABELS, STATUS_LABELS, historyFieldLabel } from './labels';
-import { personLabel } from './people';
+import { personLabel, type PersonNames } from './people';
 import {
 	SKIPPED_FIELD,
 	SUBTASKS_FIELD,
@@ -30,12 +30,14 @@ export const DELETED_VALUE = '(gelöscht)';
 
 /**
  * Projects and tags visible to the user, keyed by record ID; the loaded comments of the ticket
- * name a pinned comment by author and time (ADR-0044).
+ * name a pinned comment by author and time (ADR-0044); the names of visible accounts name the
+ * actors and authors (ADR-0056 §4, otherwise "Anderes Konto").
  */
 export interface HistoryLookups {
 	projects: ReadonlyMap<string, ProjectRef>;
 	tags: ReadonlyMap<string, TagRef>;
 	comments?: ReadonlyMap<string, Pick<Comment, 'author' | 'created'>>;
+	people?: PersonNames | null;
 }
 
 /** Lookups from the visible projects and tags (read-only after creation). */
@@ -61,7 +63,7 @@ export interface HistoryLine {
 	id: string;
 	/** Berlin local time `TT.MM.JJJJ HH:MM`. */
 	time: string;
-	/** "Du", "System" or "Anderes Konto" (T-9). */
+	/** "Du", "System", the name of another account or "Anderes Konto" (T-9, ADR-0056 §4). */
 	actor: string;
 	/** What happened, e.g. "Status: Offen → In Arbeit". */
 	text: string;
@@ -239,7 +241,7 @@ function pinText(
 	else if (newValue === '') verb = 'Anpinnen gelöst';
 	const comment = lookups.comments?.get(newValue === '' ? oldValue : newValue);
 	if (comment === undefined) return verb;
-	const author = personLabel(comment.author, selfId);
+	const author = personLabel(comment.author, selfId, lookups.people ?? null);
 	return `${verb}: Kommentar von ${author} vom ${formatBerlinDateTime(comment.created)}`;
 }
 
@@ -325,7 +327,9 @@ export function describeHistoryEntry(
 	return {
 		id: entry.id,
 		time: formatBerlinDateTime(entry.created),
-		actor: createdByRule(entry) ? RECURRENCE_ACTOR : personLabel(entry.user, selfId),
+		actor: createdByRule(entry)
+			? RECURRENCE_ACTOR
+			: personLabel(entry.user, selfId, lookups.people ?? null),
 		text: describe(entry, lookups, selfId),
 		details:
 			entry.field === 'description' ? { before: entry.oldValue, after: entry.newValue } : null

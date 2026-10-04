@@ -39,6 +39,8 @@ describe('realtime subscription on one connection (plan EH-5)', () => {
 
 	beforeAll(async () => {
 		s = await createScenario();
+		// A sets up the connections: channels with access data are for an administrator (ADR-0056 §5).
+		await s.superuser.collection('users').update(s.ids.a, { instance_admin: true });
 	});
 
 	afterAll(async () => {
