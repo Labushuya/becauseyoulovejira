@@ -341,7 +341,7 @@
   "meta": {
     "projekt": "becauseyoulovejira",
     "stand": "2026-10-04",
-    "commit": "d6048bb"
+    "commit": "694f240"
   },
   "bereiche": [
     { "id": "betrieb", "titel": "Betrieb: Start, Stopp, Skripte und Daten" },
@@ -575,6 +575,8 @@
       "vermerk": "Paket-ID UI-1 neu vergeben; die Pakete UI-0 bis UI-9 des Overlay-Systems stehen gesammelt unter „UI“. Nur Oberfläche, kein Hook, keine Migration: nach dem Build Strg+F5. Neun manuelle Fälle (BYL-E6-1460 bis BYL-E6-1468)." },
     { "id": "ST-1", "vorhaben": "Test-Härtung", "titel": "Teststabilität: Stopp wartet auf Kindprozesse des Servers, Zeitstempel gegen die Uhr des Servers, web-filter-parity auf eigener Instanz, klare Meldung im Dev-Modus, Temp-Ordner mit Besitzer und Aufräumen", "bereich": "entwicklung", "quelle": "Fehlerbericht", "datum": "2026-10-04", "adr": ["0039-betriebsskripte.md, Nachtrag ST-1", "0048-fehlerkatalog-der-skripte.md, Nachtrag ST-1"], "plan": "test-haertung.md", "faelle": ["BYL-E6-506..BYL-E6-511"],
       "vermerk": "Das geänderte Steuerskript wirkt beim nächsten Stopp oder Neustart sofort, ohne Neustart der App; Hooks und Migrationen sind unverändert." },
+    { "id": "build-schnell", "vorhaben": "Robuste Skripte und Wartung", "titel": "Schneller Live-Build mit build.ps1 -SkipTests nur auf einem sauberen Stand von origin/main; start -NoBrowser öffnet auch den Einrichtungslink nicht; Firewall-Abschnitt der CLAUDE.md nach #246", "bereich": "entwicklung", "quelle": "Auftrag", "datum": "2026-10-04", "plan": "robuste-skripte.md", "faelle": ["BYL-E6-997..BYL-E6-998"],
+      "vermerk": "Skripte wirken sofort, ohne Neustart der App; Hooks und Migrationen sind unverändert." },
     { "id": "querschnitt", "vorhaben": "Querschnitt", "titel": "Testumgebung, Regeln der Datenschicht, Hook-Module und dieses Manifest", "bereich": "entwicklung", "faelle": ["BYL-X-001..BYL-X-004"] }
   ],
   "zurueckgestellt": [
@@ -4180,7 +4182,7 @@
       ]
     },
     {
-      "tag": "Alle", "name": "Robuste Skripte und Wartung", "desc": "Nutzerwunsch vom 2026-10-01 („alle Skripte so gestaltet …, dass sie Probleme abfangen und klar mit dem User kommunizieren was zu tun ist“) und Wartung (docs/plan/robuste-skripte.md): Build und Abhängigkeiten (RS-2), Tests unter Last (RS-3), Fehlerkatalog der Skripte (RS-1, ADR-0048), Test-Instanzen eingeklappt (RS-4) und der nachgetragene Fall des Prüfmodus (#204). IDs ab BYL-E6-975.",
+      "tag": "Alle", "name": "Robuste Skripte und Wartung", "desc": "Nutzerwunsch vom 2026-10-01 („alle Skripte so gestaltet …, dass sie Probleme abfangen und klar mit dem User kommunizieren was zu tun ist“) und Wartung (docs/plan/robuste-skripte.md): Build und Abhängigkeiten (RS-2), Tests unter Last (RS-3), Fehlerkatalog der Skripte (RS-1, ADR-0048), Test-Instanzen eingeklappt (RS-4), der nachgetragene Fall des Prüfmodus (#204) und der schnelle Live-Build mit -NoBrowser beim Einrichtungslink (build-schnell). IDs ab BYL-E6-975.",
       "items": [
         { "id": "BYL-E6-975", "title": "npm ci nach geändertem Lockfile (build.ps1 und Builds der Hilfsprogramme)", "art": ["unit"], "status": "bestanden",
           "pre": "–", "steps": ["npm run test:unit"],
@@ -4269,7 +4271,15 @@
         { "id": "BYL-E6-996", "title": "Prüfmodus des Test-Manifests in einem echten Browser (manuell)", "art": ["manuell"], "status": "offen",
           "pre": "docs\\test-manifest.html aus dem Repo per Doppelklick (file://) in Chrome, Edge, Firefox oder Opera GX geöffnet.", "steps": ["Unter „Offene manuelle Prüfungen“ einen Bereich aufklappen und auf eine ID klicken.", "Am Fall unter „Dein Ergebnis“ mit Tab und Pfeiltasten „bestanden“ wählen; an einem zweiten Fall „fehlgeschlagen“ wählen, erst ohne, dann mit Notiz.", "„Ergebnis kopieren“ und den Text in einen Editor einfügen.", "Die Seite neu laden und den Filter „Deine Eingabe“ auf „fehlgeschlagen“ stellen.", "„Zurücksetzen“."],
           "expect": "Die ID springt zum Fall. „fehlgeschlagen“ ohne Notiz bittet um eine Beschreibung; die Kopfzeile zählt „Von dir geprüft: 1 bestanden, 1 fehlgeschlagen, …“, der fehlgeschlagene Fall steht in der Übersicht oben. Der kopierte Text nennt Commit und Zeit, unter „Fehlgeschlagen“ den Fall mit Notiz, unter „Bestanden“ die ID. Nach dem Neuladen sind die Eingaben noch da, der Filter zeigt nur den fehlgeschlagenen Fall. „Zurücksetzen“ leert alle Eingaben; die Fälle selbst bleiben unverändert.",
-          "tests": [] }
+          "tests": [] },
+        { "id": "BYL-E6-997", "title": "build.ps1 -SkipTests: nur die Tests übersprungen, nur auf einem sauberen Stand von origin/main (build-schnell)", "art": ["unit"], "status": "bestanden",
+          "pre": "Statische Prüfung von scripts\\build.ps1 und des Katalogs; unter Windows Windows PowerShell mit scripts\\build-functions.ps1 und Git-Repositorys des Tests im Temp-Ordner (ohne System- und Kontokonfiguration von Git), dazu eine Kopie von build.ps1, build-functions.ps1 und byl-problems.ps1 als eigenes Repository.", "steps": ["npm run test:unit"],
+          "expect": "build.ps1 hat den Schalter -SkipTests und prüft den Stand vor Node, npm ci und jedem Schritt; check, lint, Build (mit publish-web.mjs) und beide Hilfsprogramme laufen in jedem Fall, nur „npm test“ steht im Zweig ohne Schalter, mit Schalter der Hinweis build-tests-skipped „Tests übersprungen – nur für Stände verwenden, die in der CI grün sind.“ (Exit 0, Stufe Hinweis). Ein sauberer HEAD auf origin/main oder ein älterer Commit davon darf; nicht committete oder neue Dateien ergeben build-skip-tests-dirty mit höchstens zehn Zeilen von git status, ein Commit darüber hinaus build-skip-tests-off-main mit HEAD, fehlendes origin/main und kein Repository build-skip-tests-git. build.ps1 -SkipTests endet in beiden Ablehnungen mit Exit 1, dem Eintrag und dem Befehl für den Build mit Tests, bevor Node oder npm laufen.",
+          "tests": ["tests/unit/build-skip-tests.test.mjs"] },
+        { "id": "BYL-E6-998", "title": "start -NoBrowser zeigt einen offenen Einrichtungslink nur an und öffnet keinen Browser (build-schnell)", "art": ["unit", "integration"], "status": "bestanden",
+          "pre": "Windows. Wegwerf-Kopie unter .tmp\\ wie BYL-E6-443, läuft; im Fehler-Log ihres Servers ein Link /_/#/pbinstall/ mit einem Token ihres Superusers von 30 Minuten (wie der Token des Installers), sodass Get-PendingInstallerLink ihn als noch gültig findet. Statische Prüfung von byl-control.ps1.", "steps": ["npm run test:integration", "npm run test:unit"],
+          "expect": "start -NoBrowser endet mit Exit 2, nennt die offene Einrichtung und den Link auf einer eigenen Zeile mit „Kopiere diesen Einrichtungslink in den Browser (gültig bis …)“, nie „öffnet sich jetzt“; byl-control.log hat „start exit=2 … running setup-pending browser=no“. Statisch: Start-Process für den Link nur in „if (-not $NoBrowser)“; ohne -NoBrowser bleibt es beim Öffnen mit „Der Einrichtungslink öffnet sich jetzt im Browser“. Vorher öffnete start den Link auch mit -NoBrowser.",
+          "tests": ["tests/integration/control-script.test.mjs::start -NoBrowser only shows a still working installer link and opens no browser", "tests/unit/start-scripts.test.mjs::opens a still working installer link of the running instance once and pauses"] }
       ]
     },
     {
