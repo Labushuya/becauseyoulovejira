@@ -1,6 +1,6 @@
 # ADR-0001: Betriebsmodell – vorerst lokal und Einzelnutzer, später Mehrgeräte/Mehrnutzer über Tailscale
 
-- **Status:** Angenommen (mit Nachtrag vom 2026-09-27, ergänzt durch [ADR-0028](0028-plattform-strategie.md))
+- **Status:** Angenommen (mit Nachtrag vom 2026-09-27, ergänzt durch [ADR-0028](0028-plattform-strategie.md); Nachtrag vom 2026-10-04: E7 startet ohne Mehrgeräte, mehrere Konten, [ADR-0056](0056-konten-und-verwalter.md))
 - **Datum:** 2026-09-24
 - **Entscheidung durch:** Nutzer (Betriebsmodell), Advisor (technische Voraussetzungen)
 
@@ -66,3 +66,12 @@ Drei Voraussetzungen aus §3 gelten seit SH-1 schon jetzt, weil jede Webseite im
 - **Superuser-Schutz:** `superuserIPs` = `127.0.0.1`, `::1` (dieselbe Migration statt `pocketbase superuser ips`). Hinter einem Proxy (§3) braucht es weiter `trustedProxy.headers`, sonst erscheint jeder Zugriff als `127.0.0.1`.
 - **CORS:** `--origins` nennt die eigenen Adressen (`http://127.0.0.1:<Port>`, `http://localhost:<Port>`) und jeden zusätzlichen Host aus `byl-config.json` als `https://<Host>` (ADR-0055 §3). Für die Tailnet-Origin trägt man später dort den Namen ein.
 - Dazu prüft ein Guard vor jeder Anfrage den `Host` (ADR-0055 §2): Erreichbar ist die App nur unter ihren eigenen Adressen und den zusätzlichen Hosts.
+
+## Nachtrag 2026-10-04: E7 startet ohne Mehrgeräte ([ADR-0056](0056-konten-und-verwalter.md), E7-1)
+
+Nutzerentscheidung vom 2026-10-04: Die Haushalte (§4, Etappe E7) beginnen jetzt, entkoppelt vom Mehrgeräte-Ausbau (§3, Plattform-Stufen S2/S3). Die zweite Person testet zunächst am selben Rechner mit eigenem Browserprofil; ein Zugang im Heimnetz kommt in einem eigenen Paket.
+
+- **§1 gilt nicht mehr wörtlich:** Es gibt jetzt mehrere App-Konten. Angelegt werden sie weiter nicht per Selbstregistrierung, sondern vom Verwalter der App auf „Einstellungen → Konten“ oder vom Superuser in der Verwaltung (ADR-0002, Nachtrag).
+- **Wer die App bedient** (System, Sicherung, Speicher, Sicherheit, Konten), entscheidet das ausdrückliche Recht „Verwalter der App“ (`users.instance_admin`), nicht mehr das zuerst angelegte Konto.
+- **§2 bewährt sich:** Datensätze bleiben privat (`owner`), ohne Codeänderung sieht das zweite Konto nichts vom ersten. Neu lesbar sind nur Namen von Konten, mit denen man einen Haushalt teilt (E-Mail-Adressen nie), und die Mitglieder der eigenen Haushalte. Die Schreibregeln der Haushalte bleiben bis E7-2 `null`.
+- §3 (Tailscale, Proxy-Kopfzeilen) gilt für den späteren Zugriff von anderen Geräten unverändert. Plan: [E7 „Haushalt“](../plan/e7-haushalt.md).

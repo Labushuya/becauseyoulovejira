@@ -1,6 +1,6 @@
 # ADR-0055: Sicherheits-Härtung – Schutz vor Rateversuchen, nur die eigenen Adressen, Sicherheits-Header
 
-- **Status:** Angenommen; SH-1 (Server: Rate-Limiter, Host-Allowlist, CORS, Header, Admin-Oberfläche) und SH-2 (Seite „Einstellungen → Sicherheit“, §8) umgesetzt nach [Plan „Sicherheit“](../plan/sicherheit.md)
+- **Status:** Angenommen; SH-1 (Server: Rate-Limiter, Host-Allowlist, CORS, Header, Admin-Oberfläche) und SH-2 (Seite „Einstellungen → Sicherheit“, §8) umgesetzt nach [Plan „Sicherheit“](../plan/sicherheit.md); Nachtrag 2026-10-04: Verwalter statt Besitzer ([ADR-0056](0056-konten-und-verwalter.md))
 - **Datum:** 2026-10-03
 - **Entscheidung durch:** Nutzer (Freigabe der Härtung am 2026-10-03: „Ja, kannst Du starten. Und was auch immer nötig ist, kann man auch (sofern sinnvoll und auch ganzheitlich) in den Einstellungen verankern?“), Advisor (Befunde, Maßnahmen, Pakete), Executor (Werte der Stufen, Ausnahmen, Einzelheiten)
 - **Bezug:** [ADR-0001](0001-betriebsmodell-lokal-mehrgeraete-spaeter.md) §3 (Voraussetzungen für Mehrgeräte: Rate-Limiter, Superuser nur lokal, `--origins`; Nachtrag), [ADR-0035](0035-start-einstieg-und-offene-tabs.md) §4 (Präsenz und Hinweis; Nachtrag), [ADR-0038](0038-eigener-eingang-und-whatsapp-web.md) §2 (CORS der Erweiterung; Nachtrag), [ADR-0039](0039-betriebsskripte.md) (Start-Argumente, Fingerabdruck; Nachtrag), [ADR-0043](0043-system-seite.md) (Host- und Origin-Prüfung der eigenen Routen; Nachtrag), [ADR-0040](0040-veroeffentlichen-ohne-unterbrechung.md) (`Cache-Control`), [ADR-0051](0051-ordner-kanal-verweise-statt-kopien.md) §6 (Kopfzeilen der Datei-Route)
@@ -119,3 +119,10 @@ Die Art „control“ der Präsenz- und Hinweis-Routen (ADR-0035 §4: kein `Orig
 - Negativ: Ein Aufruf der App über einen anderen Namen (etwa den Rechnernamen) geht nicht mehr; er ging wegen der Bindung an `127.0.0.1` auch vorher nicht.
 - Migration, Hooks und `--origins` wirken erst nach einem Neustart der App (`neu-starten.bat`).
 - **Nur im Browser prüfbar** (Test-Manifest, manuell): Sperre nach Fehlversuchen in der Anmeldung, eine fremde Seite (auch über DNS-Rebinding) erreicht nichts, Erweiterung, Bookmarklet und eigener Eingang funktionieren, die Seite „Sicherheit“ mit Stufe, Gültigkeit, Adressen, Protokoll und Hinweis.
+
+## Nachtrag (2026-10-04, [ADR-0056](0056-konten-und-verwalter.md), E7-1): Verwalter statt Besitzer, mehrere Konten
+
+- **§8 Zugriff:** „nur der Besitzer der Instanz“ heißt jetzt „nur der Verwalter der App“ (`users.instance_admin`, ADR-0043 Nachtrag). Andere Konten sehen die Seite nicht in der Navigation; der Hinweis beim Öffnen zu Fehlversuchen wird nur für den Verwalter gefragt.
+- **Sitzungen:** Ein neues Passwort (selbst geändert oder vom Verwalter zurückgesetzt) und das Deaktivieren eines Kontos beenden alle Sitzungen dieses Kontos sofort (neuer `tokenKey`, auch die Realtime-Verbindung). Ein deaktiviertes Konto meldet sich nicht an; der Versuch zählt im Protokoll als Fehlversuch (das Konto ist „bekannt“).
+- **Zugangsdaten:** Verbindungen, die eine `BYL_*`-Variable nennen, und Ordner-Kanäle richtet nur der Verwalter ein; sonst könnte jedes Konto die Zugangsdaten des Windows-Kontos nutzen. Der Überblick „Zugangsdaten“ nennt weiter die Variablen der Verbindungen des angemeldeten Verwalters.
+- **Konto-Hinweise (§8):** Das Passwort des App-Kontos ändert jedes Konto selbst unter „Konto“; ein vergessenes setzt der Verwalter unter „Konten“ zurück.
