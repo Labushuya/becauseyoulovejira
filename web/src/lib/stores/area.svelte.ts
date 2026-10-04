@@ -4,7 +4,8 @@
 // for the area, and new records land in it. The choice is remembered per device and account in
 // localStorage; it applies at once when the app opens and is checked against the household of the
 // account as soon as the household store knows it. Without a household there is no choice: the area
-// is "Privat", and the switch is not shown.
+// is "Privat", and instead of the switch the header shows "Privat" with a "+" to a household (only
+// once the household store knows there is none, `known`).
 //
 // Every change calls `changed` with its cause, so the layout loads the stores of the area again (no
 // page reload) and says what happened: the switch, a link into the other area ("Zum Bereich …
@@ -50,6 +51,7 @@ export class AreaStore {
 	#userId = $state<string | null>(null);
 	#choice = $state.raw<AreaChoice>(PRIVATE_CHOICE);
 	#household = $state.raw<AreaHousehold | null>(null);
+	#known = $state(false);
 	#key = $derived(this.#scopeOf(this.#choice) ?? '');
 
 	/**
@@ -110,6 +112,14 @@ export class AreaStore {
 		return this.#household !== null;
 	}
 
+	/**
+	 * Whether the household store said yet if the account has a household; false while it loads (or
+	 * could not load), so a member never sees the "+" for a household for a moment.
+	 */
+	get known(): boolean {
+		return this.#known;
+	}
+
 	/** Name of the active area: "Privat" or the name of the household. */
 	get name(): string {
 		return this.#choice.kind === 'private'
@@ -123,6 +133,7 @@ export class AreaStore {
 	 */
 	followHousehold(household: AreaHousehold | null): boolean {
 		this.#household = household;
+		this.#known = true;
 		const resolved = resolveChoice(this.#choice, household?.id ?? null);
 		if (sameChoice(resolved, this.#choice)) return false;
 		this.#set(resolved, 'household');

@@ -312,7 +312,7 @@ Ein Haushalt ist ein gemeinsamer Bereich mehrerer Konten ([ADR-0058](docs/adr/00
 
 ### Bereiche Privat und Haushalt
 
-Bist du in einem Haushalt, steht in der Kopfzeile der Umschalter **„Privat | <Name des Haushalts>“** ([ADR-0059](docs/adr/0059-bereiche-privat-und-haushalt.md)). Die beiden Bereiche sind getrennt wie zwei Arbeitsflächen: Jede Ansicht (Aufgaben, Projekte, Eingang, Wiederholungen, Kalender, Papierkorb, Tags, Suche, Auswahllisten, Zähler und Live-Aktualisierung) zeigt nur den gewählten Bereich. Ohne Haushalt gibt es keinen Umschalter, und alles bleibt wie vorher.
+Bist du in einem Haushalt, steht in der Kopfzeile der Umschalter **„Privat | <Name des Haushalts>“** ([ADR-0059](docs/adr/0059-bereiche-privat-und-haushalt.md)). Die beiden Bereiche sind getrennt wie zwei Arbeitsflächen: Jede Ansicht (Aufgaben, Projekte, Eingang, Wiederholungen, Kalender, Papierkorb, Tags, Suche, Auswahllisten, Zähler und Live-Aktualisierung) zeigt nur den gewählten Bereich. Ohne Haushalt gibt es keinen Umschalter, und alles bleibt wie vorher: Oben steht nur **Privat** und daneben ein kleines **+**, das zu Einstellungen → Haushalt führt (gründen oder mit Code beitreten).
 
 - **Umschalten** lädt nichts neu. Ein offenes Ticket, Projekt oder Formular und Filter auf Projekte oder Tags des alten Bereichs schließen sich; ungespeicherter Text fragt vorher. Im Haushalt markiert zusätzlich eine farbige Linie am oberen Fensterrand den Bereich.
 - **Gemerkt** wird die Wahl je Gerät und Konto; das Handy kann also im Haushalt stehen, während der PC privat bleibt.
