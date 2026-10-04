@@ -629,3 +629,35 @@ describe('actions', () => {
 		expect(result.items.map((entry) => entry.id)).toEqual(['item00000000005']);
 	});
 });
+
+describe('area of the tab (E7-3, ADR-0059 §2)', () => {
+	it('drops the entries of the old area at once and loads the new ones for the same view', async () => {
+		const { store, data } = setup();
+		await store.load();
+		const query: InboxQuery = { source: null, state: 'discarded' };
+		data.listHandled.mockResolvedValueOnce({
+			items: [discarded(item('item00000000010'), T2)],
+			page: 1,
+			hasMore: false
+		});
+		store.activate(query);
+		await vi.waitFor(() => expect(store.handledLoad).toBe('ready'));
+		const fresh = deferred<InboxItemSummary[]>();
+		data.listNew.mockImplementationOnce(() => fresh.promise);
+		const shared = item('item00000000020', { created: T2 });
+		data.listHandled.mockResolvedValueOnce({ items: [], page: 1, hasMore: false });
+
+		store.rescope();
+
+		expect(store.newItems).toEqual([]);
+		expect(store.handled).toEqual([]);
+		expect(store.newCount).toBeNull();
+		fresh.resolve([shared]);
+		await vi.waitFor(() => expect(store.state).toBe('ready'));
+		await vi.waitFor(() => expect(store.handledLoad).toBe('ready'));
+		expect(store.newItems.map((entry) => entry.id)).toEqual([shared.id]);
+		expect(store.handledState).toBe('discarded');
+		expect(data.listNew).toHaveBeenCalledTimes(2);
+		expect(data.listHandled).toHaveBeenCalledTimes(2);
+	});
+});

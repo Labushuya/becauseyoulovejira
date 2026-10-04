@@ -49,7 +49,7 @@ function setup(answers: (HouseholdState | null)[], overrides: Partial<HouseholdD
 }
 
 describe('HouseholdStore', () => {
-	it('loads without a notice, and asks for a reload when the membership ends elsewhere', async () => {
+	it('loads without a notice, and tells the layout when the membership ends elsewhere', async () => {
 		const { store, notices } = setup([
 			state('house000000001'),
 			state('house000000001', 'Neu'),
@@ -58,7 +58,7 @@ describe('HouseholdStore', () => {
 		await store.load();
 		expect(store.state).toBe('ready');
 		expect(notices).toEqual([]);
-		// Renamed by another member: same household, no reload.
+		// Renamed by another member: same household, no notice.
 		await store.load();
 		expect(store.household?.household.name).toBe('Neu');
 		expect(notices).toEqual([]);
@@ -68,14 +68,14 @@ describe('HouseholdStore', () => {
 		expect(notices).toEqual([{ title: 'Du bist nicht mehr Mitglied im Haushalt „Neu“.' }]);
 	});
 
-	it('asks for a reload when another tab joins a household, with the general text', async () => {
+	it('tells the layout when another tab joins a household, with the general text', async () => {
 		const { store, notices } = setup([null, state('house000000001')]);
 		await store.load();
 		await store.load();
 		expect(notices).toEqual([{ title: 'Deine Mitgliedschaft im Haushalt hat sich geändert.' }]);
 	});
 
-	it('founds without a reload, but joins and leaves with one', async () => {
+	it('founds without a notice, but tells about joining and leaving', async () => {
 		const first = setup([null]);
 		await first.store.load();
 		expect(await first.store.found('  Haus  ')).toEqual({ ok: true });

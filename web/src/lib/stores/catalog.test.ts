@@ -604,3 +604,25 @@ describe('CatalogStore: realtime', () => {
 		expect(live.active).toEqual([]);
 	});
 });
+
+describe('CatalogStore: area of the tab (E7-3, ADR-0059 §2)', () => {
+	it('drops the projects and tags of the old area at once and loads those of the new one', async () => {
+		const { store, data } = setup();
+		await store.load();
+		const shared = project({ id: 'proj00000000010', name: 'Garten', code: 'HAUS' });
+		const projects = deferred<Project[]>();
+		data.listProjects.mockImplementationOnce(() => projects.promise);
+		data.listTags.mockResolvedValueOnce([]);
+
+		store.rescope();
+
+		expect(store.projects).toEqual([]);
+		expect(store.tags).toEqual([]);
+		expect(store.projectById(HOUSE.id)).toBeNull();
+		expect(store.state).toBe('loading');
+		projects.resolve([shared]);
+		await vi.waitFor(() => expect(store.state).toBe('ready'));
+		expect(ids(store.projects)).toEqual([shared.id]);
+		expect(data.listProjects).toHaveBeenCalledTimes(2);
+	});
+});

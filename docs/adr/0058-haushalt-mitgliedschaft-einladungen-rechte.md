@@ -116,3 +116,9 @@ Zwei Lücken zeigte die Prüfung der Regeln:
 - Neu: Migrationen `1790203800`, `1790203810`, `1790203900`, Hooks und Routen wirken nach einem Neustart (`neu-starten.bat`). Bis dahin sagt die Seite „Nach dem nächsten Neustart verfügbar“, und die Regeln gelten wie vorher.
 - **Tests:** rein `tests/unit/household-rules.test.mjs` (mit Gleichstand zu `domain/household.ts`), `security-rules.test.mjs`; gegen Wegwerf-Instanzen `tests/integration/household.test.mjs`, `household-access.test.mjs`, `household-join-limit.test.mjs`, `migrations-rollback.test.mjs`, `hooks-before-migration.test.mjs`; in `web/` Domain, Store, Seite, Layout, Navigation und Hilfe.
 - **Nur im Browser prüfbar** (Test-Manifest, manuell): gründen und Code am PC, Beitritt am Handy im Heimnetz, Recht weitergeben und entziehen, Austritt mit offenem Tab, Inhaber versucht auszutreten.
+
+## Nachtrag E7-3 (2026-10-04, [ADR-0059](0059-bereiche-privat-und-haushalt.md))
+
+- **`purge` wirkt:** Endgültig löschen und „Papierkorb leeren“ im Haushalt nur mit der Rolle Inhaber oder dem Recht `purge` (sonst 403); dasselbe Recht ändert die Aufbewahrung des Papierkorbs im Haushalt (`households.trash_retention`, `POST /api/byl/household/retention`, Migration `1790204100`). `GET /api/byl/household` nennt sie als `household.trash_retention`.
+- **§5 „Offene Tabs“ geändert:** Beginnt oder endet die Mitgliedschaft eines Tabs, lädt er nicht mehr neu. Weil jeder Store seit E7-3 nur den Bereich des Tabs zeigt (Filter auf dem Server, auch Realtime), genügt es, Haushalt und Namen neu zu laden; geht der Haushalt des Tabs verloren, wechselt er in den Bereich Privat. Ungespeicherte Eingaben bleiben.
+- **§7:** Der Umschalter „Privat | Haushalt“ ist aktiv und erscheint nur für Mitglieder eines Haushalts.

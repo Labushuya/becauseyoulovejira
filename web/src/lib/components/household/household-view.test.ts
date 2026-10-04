@@ -194,7 +194,7 @@ describe('page "Haushalt" without a household', () => {
 		expect(notices).toEqual([]);
 	});
 
-	it('groups the code while it is typed and joins, then loads anew with a notice', async () => {
+	it('groups the code while it is typed and joins with a notice', async () => {
 		const { data, notices } = await show(null);
 		const input = screen.getByLabelText('Einladungscode') as HTMLInputElement;
 		await fireEvent.input(input, { target: { value: 'abcdefgh' } });
