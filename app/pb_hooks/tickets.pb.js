@@ -50,7 +50,7 @@ onRecordCreate(function (e) {
 // changed meanwhile. Completing a ticket with open blocking sub-tickets (ADR-0033 section 2) needs
 // `force` or `complete_children`; the latter completes them in the same transaction.
 // Writes of the trash and internal saves of a ticket in the trash (ADR-0037) skip all of this, and so
-// do the writes of a move between the areas (ADR-0060), which set scope, key and history themselves.
+// do the writes of a move between the areas (ADR-0061), which set scope, key and history themselves.
 onRecordUpdate(function (e) {
   if (
     require(`${__hooks}/lib/trash-service.js`).skipsTicketHooks(e.record) ||

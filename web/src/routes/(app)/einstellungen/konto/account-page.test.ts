@@ -1,7 +1,7 @@
-// Settings "Konto" (plan EH-8; since E7-1, ADR-0056 §3): the signed-in app account with its e-mail,
-// its display name and its password, and who manages the accounts: the administrator on "Konten"
-// (with the separate admin account of PocketBase), every other account the administrator. The forms
-// themselves are tested in own-account-view.test.ts.
+// Settings "Mein Konto" (plan EH-8; since E7-1, ADR-0056 §3; named so since UI-1): the signed-in app
+// account with its e-mail, its display name and its password, and who manages the accounts: the
+// administrator on "Konten verwalten" (with the separate admin account of PocketBase), every other
+// account the administrator. The forms themselves are tested in own-account-view.test.ts.
 
 import { render, screen, within } from '@testing-library/svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -49,7 +49,7 @@ describe('account page (EH-8, E7-1)', () => {
 		expect(screen.getByRole('button', { name: 'Passwort ändern' })).toBeTruthy();
 	});
 
-	it('leads the administrator to "Konten" and names the admin account of PocketBase', () => {
+	it('leads the administrator to "Konten verwalten" and names the admin account of PocketBase', () => {
 		render(Page);
 
 		expect(screen.getByText('Verwalter der App')).toBeTruthy();
@@ -61,9 +61,10 @@ describe('account page (EH-8, E7-1)', () => {
 		expect(text).toMatch(/Admin-Konto/);
 		expect(text).toMatch(/admin-zuruecksetzen\.bat/);
 		const scope = within(message as HTMLElement);
-		expect(scope.getByRole('link', { name: 'Zu den Konten' }).getAttribute('href')).toBe(
+		expect(scope.getByRole('link', { name: 'Zu „Konten verwalten“' }).getAttribute('href')).toBe(
 			'/einstellungen/konten'
 		);
+		expect(text).toMatch(/verwaltest du unter „Konten verwalten“/);
 		const admin = scope.getByRole('link', { name: /Verwaltung öffnen/ });
 		expect(admin.getAttribute('href')).toBe('/_/');
 		expect(admin.getAttribute('rel')).toBe('external');
@@ -80,7 +81,7 @@ describe('account page (EH-8, E7-1)', () => {
 		expect(text).not.toMatch(/\.bat/);
 		expect(text).toMatch(/Nur direkt am PC verfügbar, auf dem becauseyoulovejira läuft/);
 		const scope = within(message as HTMLElement);
-		expect(scope.getByRole('link', { name: 'Zu den Konten' })).toBeTruthy();
+		expect(scope.getByRole('link', { name: 'Zu „Konten verwalten“' })).toBeTruthy();
 		expect(scope.queryByRole('link', { name: /Verwaltung öffnen/ })).toBeNull();
 	});
 

@@ -4,10 +4,11 @@
 	import { insideModal } from '$lib/overlay/modal-context';
 	import type { AreaMoveStore } from '$lib/stores/area-move.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
+	import Field from './form/Field.svelte';
 	import InlineDialog from './InlineDialog.svelte';
 	import Modal from './overlay/Modal.svelte';
 
-	// "In den Haushalt verschieben …" / "Ins Private verschieben …" (E7-4, ADR-0060): the preview of the
+	// "In den Haushalt verschieben …" / "Ins Private verschieben …" (E7-4, ADR-0061): the preview of the
 	// server with what moves (count per kind) and what changes, the choices it needs (the project in
 	// the target, what happens to dependencies with tickets that stay behind, new codes of projects
 	// whose code the target has), and the hint for the people of the household. In the layout a modal
@@ -26,9 +27,6 @@
 	const formId = `${uid}-form`;
 	const ids = {
 		hint: `${uid}-hint`,
-		project: `${uid}-project`,
-		projectHint: `${uid}-project-hint`,
-		projectError: `${uid}-project-error`,
 		dependencies: `${uid}-dependencies`,
 		dependenciesError: `${uid}-dependencies-error`
 	};
@@ -95,36 +93,31 @@
 			</section>
 
 			{#if project !== null}
-				<div class="field">
-					<label for={ids.project}>{MOVE_TEXTS.projectLegend}</label>
-					<select
-						id={ids.project}
-						value={store.choices.project ?? UNCHOSEN}
-						aria-invalid={errors.project ? 'true' : undefined}
-						aria-describedby={errors.project
-							? `${ids.projectHint} ${ids.projectError}`
-							: ids.projectHint}
-						onchange={(event) => {
-							if (event.currentTarget.value !== UNCHOSEN) {
-								store.chooseProject(event.currentTarget.value);
-							}
-						}}
-					>
-						{#if store.choices.project === null}
-							<option value={UNCHOSEN} disabled>{MOVE_TEXTS.chooseProject}</option>
-						{/if}
-						<option value="">{MOVE_TEXTS.noProject}</option>
-						{#each project.targets as target (target.id)}
-							<option value={target.id}>{target.name} ({target.code})</option>
-						{/each}
-					</select>
-					<p class="note" id={ids.projectHint}>{MOVE_TEXTS.projectHint(codesOfProject)}</p>
-					{#if errors.project}
-						<p class="field-error" id={ids.projectError}>
-							<ErrorIcon /><span>{errors.project}</span>
-						</p>
-					{/if}
-				</div>
+				<Field
+					label={MOVE_TEXTS.projectLegend}
+					hint={MOVE_TEXTS.projectHint(codesOfProject)}
+					error={errors.project ?? ''}
+				>
+					{#snippet control(field)}
+						<select
+							{...field}
+							value={store.choices.project ?? UNCHOSEN}
+							onchange={(event) => {
+								if (event.currentTarget.value !== UNCHOSEN) {
+									store.chooseProject(event.currentTarget.value);
+								}
+							}}
+						>
+							{#if store.choices.project === null}
+								<option value={UNCHOSEN} disabled>{MOVE_TEXTS.chooseProject}</option>
+							{/if}
+							<option value="">{MOVE_TEXTS.noProject}</option>
+							{#each project.targets as target (target.id)}
+								<option value={target.id}>{target.name} ({target.code})</option>
+							{/each}
+						</select>
+					{/snippet}
+				</Field>
 			{/if}
 
 			{#if store.dependencies.length > 0}
@@ -171,26 +164,25 @@
 			{/if}
 
 			{#each preview.conflicts.codes as entry (entry.id)}
-				{@const field = `${uid}-code-${entry.id}`}
-				{@const error = errors[`code:${entry.id}`]}
-				<div class="field">
-					<label for={field}>{MOVE_TEXTS.codeLegend} für „{entry.name}“</label>
-					<input
-						id={field}
-						type="text"
-						maxlength="6"
-						autocomplete="off"
-						class="code"
-						value={store.choices.codes[entry.id] ?? ''}
-						aria-invalid={error ? 'true' : undefined}
-						aria-describedby={error ? `${field}-hint ${field}-error` : `${field}-hint`}
-						oninput={(event) => store.setCode(entry.id, event.currentTarget.value)}
-					/>
-					<p class="note" id={`${field}-hint`}>{MOVE_TEXTS.codeHint(entry.code)}</p>
-					{#if error}
-						<p class="field-error" id={`${field}-error`}><ErrorIcon /><span>{error}</span></p>
-					{/if}
-				</div>
+				<Field
+					label={`${MOVE_TEXTS.codeLegend} für „${entry.name}“`}
+					hint={MOVE_TEXTS.codeHint(entry.code)}
+					error={errors[`code:${entry.id}`] ?? ''}
+					width="auto"
+				>
+					{#snippet control(field)}
+						<input
+							{...field}
+							type="text"
+							maxlength="6"
+							size="8"
+							autocomplete="off"
+							class="input-mono code"
+							value={store.choices.codes[entry.id] ?? ''}
+							oninput={(event) => store.setCode(entry.id, event.currentTarget.value)}
+						/>
+					{/snippet}
+				</Field>
 			{/each}
 
 			{#if notes.length > 0}
@@ -284,13 +276,6 @@
 		font-weight: 600;
 	}
 
-	.field {
-		display: grid;
-		gap: 0.25rem;
-		min-width: 0;
-	}
-
-	.field label,
 	legend {
 		font-size: var(--font-size-control);
 		font-weight: 600;
@@ -319,8 +304,8 @@
 		color: var(--color-text-muted);
 	}
 
+	/* Codes are capitals (domain/project.ts); the field shows them so, the store normalizes them. */
 	.code {
-		font-family: var(--font-mono);
 		text-transform: uppercase;
 	}
 </style>

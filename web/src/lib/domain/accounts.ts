@@ -17,7 +17,7 @@ export interface Account {
 	created: string;
 	/** The signed-in account itself. */
 	self: boolean;
-	/** The household this account owns (E7-4, ADR-0060 §6); left out when it owns none. */
+	/** The household this account owns (E7-4, ADR-0061 §6); left out when it owns none. */
 	owns?: { id: string; name: string };
 }
 
@@ -31,7 +31,7 @@ export interface OrphanMember {
 }
 
 /**
- * A household whose owner is disabled or gone (E7-4, ADR-0060 §6): the administrator of the app makes
+ * A household whose owner is disabled or gone (E7-4, ADR-0061 §6): the administrator of the app makes
  * an active member its owner.
  */
 export interface OrphanHousehold {
@@ -270,7 +270,7 @@ export const ACCOUNTS_TEXTS = {
 	resetTitle: (label: string) => `Neues Passwort für ${label}`,
 	passwordLabel: (label: string) => `Startpasswort für ${label}`,
 	passwordOnce:
-		'Das Passwort steht nur jetzt hier. Gib es der Person auf einem sicheren Weg weiter, etwa auf Papier oder im Passwort-Manager; sie ändert es danach unter „Einstellungen → Konto“. Vergessen? Dann „Passwort zurücksetzen …“.',
+		'Das Passwort steht nur jetzt hier. Gib es der Person auf einem sicheren Weg weiter, etwa auf Papier oder im Passwort-Manager; sie ändert es danach unter „Einstellungen → Mein Konto“. Vergessen? Dann „Passwort zurücksetzen …“.',
 	resetQuestion: (label: string) => `Passwort von ${label} zurücksetzen?`,
 	resetText:
 		'Die App erzeugt ein neues Passwort und zeigt es einmal an. Das bisherige gilt nicht mehr, und alle Anmeldungen dieses Kontos enden sofort.',

@@ -1,13 +1,16 @@
 <script lang="ts">
 	import { CONTEXT_TEXTS } from '$lib/guidance/texts';
-	import type { VisibleSettingsSection } from '$lib/settings-sections';
+	import { groupSettingsSections, type VisibleSettingsSection } from '$lib/settings-sections';
 
 	// Navigation of the settings area (ADR-0026 section 1, plan EH-1): first the way back to the last
-	// view, then one link per page. The pages have their own addresses, so these are links, not tabs;
-	// the current one carries aria-current="page" and is marked by weight and surface besides its
-	// colour. From 64rem it is a floating glass card (ADR-0029, G-6). The small title "Einstellungen" is hidden from screen readers, because
-	// the navigation has that name already. A page of the administrator on another device carries the
-	// quiet mark "nur am PC" (KOB-1, ADR-0057), part of the name of its link.
+	// view, then the pages in groups (UI-1, ADR-0060): "Eingang und Tickets", "Persönlich",
+	// "Verwaltung" and the help at the end. Each group is a list named by its heading. The pages have
+	// their own addresses, so these are links, not tabs; the current one carries aria-current="page"
+	// and is marked by weight and surface besides its colour. From 64rem it is a floating glass card
+	// (ADR-0029, G-6). The small title "Einstellungen" is hidden from screen readers, because the
+	// navigation has that name already. The pages of the administrator on another device are marked
+	// "nur am PC" once at the heading of their group (KOB-1, ADR-0057); each link keeps the mark in
+	// its name for screen readers, which read a link on its own.
 	let {
 		sections,
 		current,
@@ -20,6 +23,9 @@
 		backHref: string;
 		backLabel: string;
 	} = $props();
+
+	const uid = $props.id();
+	const groups = $derived(groupSettingsSections(sections));
 </script>
 
 <nav class="settings-nav" aria-label="Einstellungen">
@@ -31,18 +37,30 @@
 		{backLabel}
 	</a>
 	<p class="title" aria-hidden="true">Einstellungen</p>
-	<ul>
-		{#each sections as section (section.id)}
-			<li>
-				<a href={section.href} aria-current={section.id === current ? 'page' : undefined}>
-					{section.label}
-					{#if section.pcOnly}
+	{#each groups as group (group.id)}
+		<div class="group" class:unnamed={group.label === null}>
+			{#if group.label !== null}
+				<p class="group-label" id={`${uid}-${group.id}`}>
+					{group.label}
+					{#if group.pcOnly}
 						<span class="mark">{CONTEXT_TEXTS.pcOnlyMark}</span>
 					{/if}
-				</a>
-			</li>
-		{/each}
-	</ul>
+				</p>
+			{/if}
+			<ul aria-labelledby={group.label === null ? undefined : `${uid}-${group.id}`}>
+				{#each group.sections as section (section.id)}
+					<li>
+						<a href={section.href} aria-current={section.id === current ? 'page' : undefined}>
+							{section.label}
+							{#if section.pcOnly}
+								<span class="visually-hidden">{CONTEXT_TEXTS.pcOnlyMark}</span>
+							{/if}
+						</a>
+					</li>
+				{/each}
+			</ul>
+		</div>
+	{/each}
 </nav>
 
 <style>
@@ -83,6 +101,18 @@
 		color: var(--color-text-muted);
 	}
 
+	.group {
+		display: grid;
+		gap: 0.25rem;
+	}
+
+	/* The heading of a group: quiet, above its pages. */
+	.group-label {
+		font-size: var(--font-size-caption);
+		font-weight: 600;
+		color: var(--color-text-muted);
+	}
+
 	ul {
 		display: grid;
 		gap: 0.125rem;
@@ -103,10 +133,10 @@
 		background: var(--fill-control-hover);
 	}
 
-	/* "nur am PC": quiet, after the name, never instead of it. */
+	/* "nur am PC": quiet, after the name of the group, never instead of it. */
 	.mark {
 		margin-left: 0.5rem;
-		font-size: var(--font-size-caption);
+		font-weight: 400;
 		color: var(--color-text-muted);
 	}
 
@@ -135,14 +165,22 @@
 		}
 
 		.back,
-		.title {
+		.title,
+		.group-label {
 			margin-inline: 0.75rem;
+		}
+
+		/* The help after a line, without a heading of its own. */
+		.unnamed {
+			padding-top: 0.5rem;
+			border-top: 1px solid var(--color-separator);
 		}
 	}
 
 	/*
-	 * Narrow: the pages become a wrapping line of links above the content, without glass; the
-	 * current one also carries a line below (the accent as text, 3 : 1 on the gradient).
+	 * Narrow: each group becomes a wrapping line of links below its heading, above the content and
+	 * without glass; the current one also carries a line below (the accent as text, 3 : 1 on the
+	 * gradient).
 	 */
 	@media (max-width: 63.99rem) {
 		.title {

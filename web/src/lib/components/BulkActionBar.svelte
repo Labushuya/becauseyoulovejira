@@ -33,7 +33,7 @@
 	// blocking sub-tasks (ADR-0033 section 2), "In den Papierkorb …" always, with the choice for the
 	// sources (ADR-0031, addendum B) and the note on the trash (ADR-0037). While an action runs, a
 	// progress bar replaces the buttons; the result lists every ticket that failed (as an error)
-	// or was skipped (neutral). Since E7-4 (ADR-0060) "In den Haushalt verschieben …" or "Ins Private
+	// or was skipped (neutral). Since E7-4 (ADR-0061) "In den Haushalt verschieben …" or "Ins Private
 	// verschieben …" moves the chosen tickets with their sub-tasks, only when the account may move
 	// every one of them (lib/area-move-entry.ts); the dialog of the layout shows the preview.
 	let {

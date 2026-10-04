@@ -23,7 +23,7 @@ export interface Project extends ProjectRef {
 	 * migration): the choice of the color is not offered. Only the data layer sets it.
 	 */
 	withoutColorField?: boolean;
-	/** The account that created the project (`owner`); the data layer sets it (ADR-0060 §4). */
+	/** The account that created the project (`owner`); the data layer sets it (ADR-0061 §4). */
 	owner?: string;
 }
 

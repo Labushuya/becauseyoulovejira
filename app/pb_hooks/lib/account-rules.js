@@ -35,7 +35,7 @@ var PROBLEMS = {
   'self-password': 'Dein eigenes Passwort änderst du unter „Konto“.',
   'last-admin': 'Mindestens ein aktives Konto muss Verwalter bleiben. Gib zuerst einem anderen Konto das Recht.',
   missing: 'Dieses Konto gibt es nicht.',
-  // A new owner of a household without an active owner (E7-4, ADR-0060 §6).
+  // A new owner of a household without an active owner (E7-4, ADR-0061 §6).
   'household-missing': 'Diesen Haushalt gibt es nicht mehr.',
   'owner-active': 'Der Haushalt hat einen aktiven Inhaber. Den Inhaber wechselt nur er selbst auf der Seite „Haushalt“.',
   member: 'Dieses Mitglied gibt es im Haushalt nicht mehr.',

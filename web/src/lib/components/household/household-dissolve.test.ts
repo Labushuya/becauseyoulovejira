@@ -1,4 +1,4 @@
-// "Haushalt auflösen …" on the page "Einstellungen → Haushalt" (E7-4, ADR-0060 §5): only the owner
+// "Haushalt auflösen …" on the page "Einstellungen → Haushalt" (E7-4, ADR-0061 §5): only the owner
 // gets the section; the dialog shows the preview of the server (what the household holds, its
 // members, the codes that get a suffix), takes everything into the private area or deletes it for
 // good only with the name typed, and a refusal stands in the dialog. Afterwards the household is gone
@@ -100,7 +100,7 @@ async function openDialog() {
 	return dialog;
 }
 
-describe('"Haushalt auflösen" on the page (ADR-0060 §5)', () => {
+describe('"Haushalt auflösen" on the page (ADR-0061 §5)', () => {
 	it('is there only for the owner', async () => {
 		await setup('member');
 		expect(screen.queryByRole('button', { name: 'Haushalt auflösen …' })).toBeNull();
@@ -176,7 +176,7 @@ describe('"Haushalt auflösen" on the page (ADR-0060 §5)', () => {
 	});
 });
 
-describe('the other members hear it (ADR-0060 §5)', () => {
+describe('the other members hear it (ADR-0061 §5)', () => {
 	it('say that the household was dissolved instead of "nicht mehr Mitglied"', async () => {
 		let answer: HouseholdState | null = stateAs('member');
 		let notify: ((change?: HouseholdChange) => void) | null = null;

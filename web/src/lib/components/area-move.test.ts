@@ -1,4 +1,4 @@
-// "In den Haushalt verschieben …" and "Ins Private verschieben …" (E7-4, ADR-0060): the entry of the
+// "In den Haushalt verschieben …" and "Ins Private verschieben …" (E7-4, ADR-0061): the entry of the
 // menu of a ticket only for an account in a household and with the right (own private records into
 // the household; records of the household into the private area for the creator, "move_out" and the
 // owner), the entry of the bulk action only when every chosen ticket may move, and the dialog with the
@@ -205,7 +205,7 @@ async function choose(entry: string) {
 	await tick();
 }
 
-describe('the entry of the menu of a ticket (ADR-0060 §4)', () => {
+describe('the entry of the menu of a ticket (ADR-0061 §4)', () => {
 	it('is missing without a household', async () => {
 		await setup({ inHousehold: false });
 		expect(menuEntries()).not.toContain('In den Haushalt verschieben …');
@@ -254,7 +254,7 @@ describe('the entry of the bulk action', () => {
 	});
 });
 
-describe('the dialog of a move (ADR-0060 §1, §2)', () => {
+describe('the dialog of a move (ADR-0061 §1, §2)', () => {
 	it('shows the preview with the hint for the household, and moves only with the choices', async () => {
 		const { move, moved, flags } = await setup({ area: 'private' });
 		await choose('In den Haushalt verschieben …');

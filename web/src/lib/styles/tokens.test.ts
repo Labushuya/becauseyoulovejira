@@ -71,6 +71,9 @@ const NON_COLOR_TOKENS = {
 	'--control-height-s': '1.5rem',
 	'--control-height-m': '1.75rem',
 	'--control-height-l': '2.25rem',
+	// Touch screens (UI-1, ADR-0060): 44 px high and 16 px in fields, so iOS does not zoom.
+	'--control-height-touch': '2.75rem',
+	'--font-size-field-touch': '1rem',
 	'--font-size-caption': '0.6875rem',
 	'--font-size-small': '0.75rem',
 	'--font-size-control': '0.8125rem',

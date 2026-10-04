@@ -1,4 +1,4 @@
-// Moving between the areas Privat and Haushalt and dissolving a household (E7-4, ADR-0060): when the
+// Moving between the areas Privat and Haushalt and dissolving a household (E7-4, ADR-0061): when the
 // menus offer it, the answers of POST /api/byl/area/move and POST /api/byl/household/dissolve read
 // strictly, the choices of the dialog and what it says, and the history entry of a moved ticket. The
 // texts of a refusal are the same as PROBLEMS of app/pb_hooks/lib/area-move-rules.js (parity test).
@@ -51,7 +51,7 @@ export const MOVE_TEXTS = Object.freeze({
 	running: 'Wird verschoben …',
 	title: (label: string, to: MoveDirection) =>
 		`${label} ${to === 'household' ? 'in den Haushalt' : 'ins Private'} verschieben`,
-	/** What the people of the household should know before (ADR-0060 §1). */
+	/** What the people of the household should know before (ADR-0061 §1). */
 	hint: {
 		household: 'Kommentare und Verlauf werden für alle Mitglieder sichtbar.',
 		private: 'Für die anderen Mitglieder verschwindet der Eintrag.'
@@ -77,7 +77,7 @@ export const MOVE_TEXTS = Object.freeze({
 });
 
 /**
- * Which way a record may move from the area of the tab (ADR-0060 §4), null when the menu leaves the
+ * Which way a record may move from the area of the tab (ADR-0061 §4), null when the menu leaves the
  * entry out: only for an account in a household; out of the private area its own records into the
  * household; from the household into the private area those it created, and every one with the
  * right "move_out" (the owner by the role). The server checks every record of the cascade again.
@@ -306,7 +306,7 @@ export function parseMovePreview(value: unknown): MovePreview | null {
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
-/** What moves, one line per kind with at least one (ADR-0060 §1: "Anzahl der Einträge je Art"). */
+/** What moves, one line per kind with at least one (ADR-0061 §1: "Anzahl der Einträge je Art"). */
 export function countLines(preview: MovePreview): string[] {
 	const { counts } = preview;
 	const lines: string[] = [];
@@ -451,7 +451,7 @@ export function moveBody(
 }
 
 /**
- * The history entry of a moved ticket (field `area_move`, ADR-0060 §3): the old key is the old value,
+ * The history entry of a moved ticket (field `area_move`, ADR-0061 §3): the old key is the old value,
  * the new value JSON with the direction and what else changed. E.g. "In den Haushalt verschoben
  * (vorher PRIV-12); Projekt: Haus → –".
  */

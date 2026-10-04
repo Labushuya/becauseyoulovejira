@@ -43,7 +43,7 @@ export const INBOX_LIST_FIELDS = [
 	'handled_at',
 	// Area of the entry: the ticket picker offers only tickets of the same area (ADR-0042).
 	'scope',
-	// Who brought it in: moving it into the private area is offered to that account (ADR-0060 §4).
+	// Who brought it in: moving it into the private area is offered to that account (ADR-0061 §4).
 	'owner',
 	// The connection that brought the entry: panel and sources name it (ADR-0026, addendum KK-3).
 	'connection',

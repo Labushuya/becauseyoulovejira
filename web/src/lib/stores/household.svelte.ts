@@ -410,7 +410,7 @@ export class HouseholdStore {
 	}
 
 	/**
-	 * The preview of "Haushalt auflösen" (E7-4, ADR-0060 §5): what the household holds, its members
+	 * The preview of "Haushalt auflösen" (E7-4, ADR-0061 §5): what the household holds, its members
 	 * and, for `adopt`, the codes that get a suffix. Changes nothing.
 	 */
 	async dissolvePreview(

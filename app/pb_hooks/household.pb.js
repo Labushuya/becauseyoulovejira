@@ -106,7 +106,7 @@ routerAdd(
   $apis.requireAuth('users')
 );
 
-// { mode: adopt | delete, preview?, name? }: dissolves the household (E7-4, ADR-0060 §5; only the
+// { mode: adopt | delete, preview?, name? }: dissolves the household (E7-4, ADR-0061 §5; only the
 // owner): everything into his private area, or deleted for good after typing its name.
 routerAdd(
   'POST',

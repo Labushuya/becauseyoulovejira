@@ -1,4 +1,4 @@
-// Moving between the areas (E7-4, ADR-0060; ADR-0006 sections 1 to 5): POST /api/byl/area/move
+// Moving between the areas (E7-4, ADR-0061; ADR-0006 sections 1 to 5): POST /api/byl/area/move
 // (app/pb_hooks/area.pb.js). A refused request comes as `invalid` with its problem and params (the
 // texts in domain/area-move.ts), the server before the restart (404 without the route, 503) as
 // `missing`; the session, the network and an aborted signal are DataErrors. Answers are read

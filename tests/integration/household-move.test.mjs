@@ -1,4 +1,4 @@
-// Moving between the areas Privat and Haushalt and dissolving a household (E7-4, ADR-0060) against an
+// Moving between the areas Privat and Haushalt and dissolving a household (E7-4, ADR-0061) against an
 // own disposable PocketBase: A and B share a household (A founds it, so A is its owner), C is alone.
 // Every kind of move in both directions with its cascade (sub-tasks, sub projects, tickets of a
 // project, sources), every conflict and its choice (project, tags, dependencies, parent, @CODE, entry
@@ -455,7 +455,7 @@ describe('an entry of the inbox', () => {
 	});
 });
 
-describe('rights for every record of the cascade (ADR-0060 §4)', () => {
+describe('rights for every record of the cascade (ADR-0061 §4)', () => {
 	it('lets the creator move into the private area, others only with "move_out", the owner always', async () => {
 		const ofA = await a.ticket({ household: householdId });
 		const ofB = await b.ticket({ household: householdId });
@@ -513,7 +513,7 @@ describe('one transaction', () => {
 	});
 });
 
-describe('realtime (ADR-0060 §3)', () => {
+describe('realtime (ADR-0061 §3)', () => {
 	it('removes a record from tabs that lose it, marked as moved, and shows it where it is now', async () => {
 		const aPrivate = await watch(a, 'tickets', privateScope(a));
 		const aHousehold = await watch(a, 'tickets', householdScope());
@@ -566,7 +566,7 @@ describe('data layer of the SPA (web/src/lib/data/area-move.ts, household.ts)', 
 	});
 });
 
-describe('dissolving a household (ADR-0060 §5)', () => {
+describe('dissolving a household (ADR-0061 §5)', () => {
 	/** A household of `owner` with `member`, filled with records of both. */
 	async function filledHousehold(owner, member) {
 		const id = (await owner.send(ROUTE, { name: `Wohnung ${uniqueSuffix()}` })).household.id;

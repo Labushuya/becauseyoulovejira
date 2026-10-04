@@ -114,7 +114,7 @@
 			busy,
 			onselect: () => ontoggle(rule)
 		});
-		// Moving between the areas (E7-4, ADR-0060): the rule alone, its tickets stay.
+		// Moving between the areas (E7-4, ADR-0061): the rule alone, its tickets stay.
 		const move = mover.entry({
 			kind: 'rule',
 			records: [rule],

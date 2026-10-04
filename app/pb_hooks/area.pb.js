@@ -1,5 +1,5 @@
 /// <reference path="../pb_data/types.d.ts" />
-// Moving records between the areas Privat and Haushalt (E7-4, ADR-0060): a ticket with its sub-tasks,
+// Moving records between the areas Privat and Haushalt (E7-4, ADR-0061): a ticket with its sub-tasks,
 // a project with its sub projects and tickets, a rule or an entry of the inbox, also several of one
 // kind, into the household of the account or into its private area. JSON { kind, ids, to, preview?,
 // project?, dependencies?, codes? }; with `preview` nothing changes. For every app account on every

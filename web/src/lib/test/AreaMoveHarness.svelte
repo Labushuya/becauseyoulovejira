@@ -8,7 +8,7 @@
 	import { setHouseholdStore, type HouseholdStore } from '$lib/stores/household.svelte';
 
 	// Tests: the menu of a ticket and the dialog of a move with the stores of the (app) layout in the
-	// context (E7-4, ADR-0060); `bulk` shows the entry of the bulk action for several records.
+	// context (E7-4, ADR-0061); `bulk` shows the entry of the bulk action for several records.
 	let {
 		area,
 		household,

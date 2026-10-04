@@ -1,4 +1,4 @@
-// Moving between the areas and dissolving a household (E7-4, ADR-0060): when the menus offer it, the
+// Moving between the areas and dissolving a household (E7-4, ADR-0061): when the menus offer it, the
 // answers of the routes read strictly, the lines of the dialog, its choices and their checks, the body
 // of the request and the history entry of a moved ticket.
 
@@ -78,7 +78,7 @@ function preview(overrides: Record<string, unknown> = {}): MovePreview {
 	return parsed;
 }
 
-describe('when the menus offer moving (ADR-0060 §4)', () => {
+describe('when the menus offer moving (ADR-0061 §4)', () => {
 	it('offers nothing without a household or a session', () => {
 		expect(moveDirection({ area: 'private', membership: null, userId: ME, owner: ME })).toBeNull();
 		expect(

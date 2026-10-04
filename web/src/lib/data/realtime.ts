@@ -30,7 +30,7 @@ import {
 
 /**
  * A created or updated record, or the ID of a deleted one; `moved` when it went into another area
- * the tab does not see (E7-4, ADR-0060 §3: the server marks that "delete").
+ * the tab does not see (E7-4, ADR-0061 §3: the server marks that "delete").
  */
 export type RecordChange<T> =
 	{ action: 'create' | 'update'; record: T } | { action: 'delete'; id: string; moved?: true };

@@ -235,7 +235,7 @@ export class TicketDetailStore implements CommentPinControl {
 	/** Text in the input of the tag picker (T-14), kept here for the question on leaving. */
 	#tagInput = $state('');
 	#error = $state<string | null>(null);
-	/** The shown ticket went into an area this tab does not see (E7-4, ADR-0060 §3). */
+	/** The shown ticket went into an area this tab does not see (E7-4, ADR-0061 §3). */
 	#movedAway = $state(false);
 
 	/** The loaded ticket, or the list's version of it if that one is newer (check mark). */

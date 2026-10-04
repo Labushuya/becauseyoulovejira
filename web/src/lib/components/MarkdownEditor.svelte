@@ -116,15 +116,6 @@
 
 	textarea {
 		width: 100%;
-		padding: 0.5rem 0.625rem;
-		font: inherit;
-		font-size: 0.875rem;
-		line-height: 1.5;
-		color: inherit;
-		background: var(--color-surface);
-		border: 1px solid var(--color-text-muted);
-		border-radius: var(--radius-control);
-		resize: vertical;
 	}
 
 	.preview {

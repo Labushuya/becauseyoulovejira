@@ -1,9 +1,9 @@
-# ADR-0060: Verschieben zwischen Bereichen und Auflösen (E7-4)
+# ADR-0061: Verschieben zwischen Bereichen und Auflösen (E7-4)
 
 - **Status:** Angenommen und umgesetzt (E7-4, [Plan E7 „Haushalt“](../plan/e7-haushalt.md) §3b)
 - **Datum:** 2026-10-04
 - **Entscheidung durch:** Nutzer (Freigabe der Etappe E7 und des Pakets E7-4 „Verschieben und Auflösen“), Advisor (Akzeptanzkriterien: Vorschau, Transaktion, Kaskaden, Konflikte, Nummern, Rechte, Realtime, Auflösen, Inhaber ohne Konto, Altbestand), Executor (Route, Kaskaden im Einzelnen, Eingangseinträge, Abhängigkeiten, Realtime, Oberfläche, Altbestand)
-- **Bezug:** [ADR-0058](0058-haushalt-mitgliedschaft-einladungen-rechte.md) (Rechte, `move_out`, Nachtrag „Bereich eines Eintrags“), [ADR-0059](0059-bereiche-privat-und-haushalt.md) (Bereiche, keine Verweise über die Grenze), [ADR-0037](0037-papierkorb.md) (Papierkorb, Realtime-Muster `broadcastRemoved`), [ADR-0033](0033-unteraufgaben.md), [ADR-0034](0034-unterprojekte.md), [ADR-0023](0023-lebenszyklus-von-regeln-und-instanzen.md) §6 („Aus der Serie lösen“), [ADR-0049](0049-zielprojekt-je-eingangsweg.md) (Zielprojekt), [ADR-0054](0054-tickets-im-kontext-oeffnen.md), [ADR-0056](0056-konten-und-verwalter.md) (Verwalter, Seite „Konten“)
+- **Bezug:** [ADR-0058](0058-haushalt-mitgliedschaft-einladungen-rechte.md) (Rechte, `move_out`, Nachtrag „Bereich eines Eintrags“), [ADR-0059](0059-bereiche-privat-und-haushalt.md) (Bereiche, keine Verweise über die Grenze), [ADR-0037](0037-papierkorb.md) (Papierkorb, Realtime-Muster `broadcastRemoved`), [ADR-0033](0033-unteraufgaben.md), [ADR-0034](0034-unterprojekte.md), [ADR-0023](0023-lebenszyklus-von-regeln-und-instanzen.md) §6 („Aus der Serie lösen“), [ADR-0049](0049-zielprojekt-je-eingangsweg.md) (Zielprojekt), [ADR-0054](0054-tickets-im-kontext-oeffnen.md), [ADR-0056](0056-konten-und-verwalter.md) (Verwalter, Seite „Konten verwalten“)
 
 ## Kontext
 
@@ -64,8 +64,8 @@ Ein Datensatz ohne Recht lehnt den ganzen Vorgang mit 403 `right` ab und nennt i
 ### 6. Haushalt ohne aktiven Inhaber
 
 - `GET /api/byl/accounts` nennt je Konto den Haushalt, den es besitzt (`owns`), und die Haushalte ohne aktiven Inhaber (`households`: Inhaber deaktiviert oder in der Verwaltung gelöscht, mit den übrigen Mitgliedern).
-- `POST /api/byl/accounts/households/{id}/owner { member }` mit den Prüfungen der Seite „Konten“ (`check`: dieser Rechner, Adresse der App, Verwalter, Rate-Limit; KOB-1): nur ohne aktiven Inhaber (sonst 409 `owner-active`), nur ein aktives Mitglied (`member` 404, `member-disabled` 400). Der bisherige Inhaber bleibt Mitglied mit allen Rechten, wie beim Übertragen (ADR-0058 §4). Danach `byl/household` an die Mitglieder.
-- Die Seite „Konten“ zeigt „Inhaber von „…““ am Konto, warnt in der Frage „deaktivieren?“ davor und hat den Abschnitt „Haushalte ohne aktiven Inhaber“ mit Auswahl und Bestätigung.
+- `POST /api/byl/accounts/households/{id}/owner { member }` mit den Prüfungen der Seite „Konten verwalten“ (`check`: dieser Rechner, Adresse der App, Verwalter, Rate-Limit; KOB-1): nur ohne aktiven Inhaber (sonst 409 `owner-active`), nur ein aktives Mitglied (`member` 404, `member-disabled` 400). Der bisherige Inhaber bleibt Mitglied mit allen Rechten, wie beim Übertragen (ADR-0058 §4). Danach `byl/household` an die Mitglieder.
+- Die Seite „Konten verwalten“ zeigt „Inhaber von „…““ am Konto, warnt in der Frage „deaktivieren?“ davor und hat den Abschnitt „Haushalte ohne aktiven Inhaber“ mit Auswahl und Bestätigung.
 
 ### 7. Altbestand: Verbindungen mit `household`
 
@@ -94,6 +94,6 @@ Migration `1790204200_connections_private.js` (SQL, ohne Hooks, `updated` bleibt
 
 - **Neustart nötig** (`neu-starten.bat`): neue Hooks und Routen, Migration `1790204200`; die Oberfläche nach dem Build und F5. Vor dem Neustart antworten die Routen 404 (die Oberfläche sagt „nach dem nächsten Neustart verfügbar“).
 - Neue Module: `app/pb_hooks/area.pb.js`, `lib/area-move-rules.js`, `lib/area-move-service.js`; `web/src/lib/domain/area-move.ts`, `data/area-move.ts`, `stores/area-move.svelte.ts`, `lib/area-move-entry.ts`, `components/AreaMoveDialog.svelte`, `components/household/HouseholdDissolveDialog.svelte`. Die Datenschicht liest dafür `owner` von Tickets, Projekten, Regeln und Einträgen.
-- **Tests:** `tests/integration/household-move.test.mjs` (eigene Instanz, A und B im Haushalt, C allein), `accounts.test.mjs` (Inhaber durch den Verwalter), `migrations-rollback.test.mjs` (Altbestand), `context-route.test.mjs` und `lan-access.test.mjs` (neue Route des Verwalters), `tests/unit/area-move-rules.test.mjs`; in `web/` Domain, Dialog, Menüeinträge je Recht, Sammelaktion, Auflösen, Seite „Konten“, Verlauf, Hilfe.
+- **Tests:** `tests/integration/household-move.test.mjs` (eigene Instanz, A und B im Haushalt, C allein), `accounts.test.mjs` (Inhaber durch den Verwalter), `migrations-rollback.test.mjs` (Altbestand), `context-route.test.mjs` und `lan-access.test.mjs` (neue Route des Verwalters), `tests/unit/area-move-rules.test.mjs`; in `web/` Domain, Dialog, Menüeinträge je Recht, Sammelaktion, Auflösen, Seite „Konten verwalten“, Verlauf, Hilfe.
 - **Grenzen:** Ein Eintrag, der den Bereich seiner Verbindung verlässt, schützt diesen Bereich nicht mehr vor erneutem Eintreffen (Fingerabdrücke gelten je Bereich); eine Vollsuche des Postfachs kann ihn dort neu anlegen. Ein Haushalt, dessen Inhaber gelöscht wurde und der kein Mitglied mehr hat, bleibt ohne Inhaber (Folgepunkt im Plan).
 - **Nur im Browser prüfbar** (Test-Manifest, manuell): Verschieben mit Live-Anzeige bei der Partnerin, `@CODE`-Kollision, Ablehnung ohne `move_out`, Auflösen auf beide Arten mit offenem Tab der Partnerin, Inhaber durch den Verwalter.

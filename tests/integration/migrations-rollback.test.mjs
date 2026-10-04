@@ -865,7 +865,7 @@ const MEMBERS_RULE_BEFORE_ACCOUNTS = 'user = @request.auth.id';
 // household_invites and the rights of household_members (1790203800), the rule of joining in the
 // rate limiter (1790203810, only settings) and the owner branch of the API rules only for private
 // records (1790203900, only rules); since the areas (ADR-0059, E7-3) also the retention of the trash
-// of a household (1790204100, one field at households); since moving between the areas (ADR-0060,
+// of a household (1790204100, one field at households); since moving between the areas (ADR-0061,
 // E7-4) the connections of a household from before into the private area of their owner (1790204200,
 // only rows with a household, which no earlier test writes).
 const HOUSEHOLD_INVITES_MIGRATION = '1790203800_household_invites.js';
@@ -2771,7 +2771,7 @@ describe('migration rollback of the retention of a household (ADR-0059 §6)', ()
 	);
 });
 
-describe('migration of the connections of a household from before (ADR-0060 §7)', () => {
+describe('migration of the connections of a household from before (ADR-0061 §7)', () => {
 	const rowsOf = (dataDir, table) =>
 		withDatabase(dataDir, (db) => db.prepare(`SELECT * FROM ${table} ORDER BY id`).all());
 

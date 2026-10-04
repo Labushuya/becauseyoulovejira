@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { tick, untrack } from 'svelte';
 	import ErrorIcon from '$lib/components/ErrorIcon.svelte';
+	import Field from '$lib/components/form/Field.svelte';
 	import Modal from '$lib/components/overlay/Modal.svelte';
 	import {
 		DISSOLVE_TEXTS,
@@ -11,7 +12,7 @@
 	} from '$lib/domain/area-move';
 	import type { HouseholdStore } from '$lib/stores/household.svelte';
 
-	// "Haushalt auflösen …" (E7-4, ADR-0060 §5), only for the owner: the preview of the server (what
+	// "Haushalt auflösen …" (E7-4, ADR-0061 §5), only for the owner: the preview of the server (what
 	// the household holds, its members, the codes that get a suffix) and the two ways, everything into
 	// the own private area or everything deleted for good; deleting needs the name of the household
 	// typed. Modal M on the page "Einstellungen → Haushalt"; a refusal stands in the dialog. Afterwards
@@ -33,9 +34,7 @@
 		holds: `${uid}-holds`,
 		members: `${uid}-members`,
 		adopt: `${uid}-adopt-hint`,
-		remove: `${uid}-remove-hint`,
-		name: `${uid}-name`,
-		nameError: `${uid}-name-error`
+		remove: `${uid}-remove-hint`
 	};
 
 	let mode = $state<DissolveMode>('adopt');
@@ -181,23 +180,19 @@
 		</fieldset>
 
 		{#if mode === 'delete'}
-			<div class="field">
-				<label for={ids.name}>{DISSOLVE_TEXTS.nameLabel(name)}</label>
-				<input
-					id={ids.name}
-					type="text"
-					autocomplete="off"
-					maxlength="100"
-					bind:this={nameInput}
-					bind:value={typed}
-					oninput={() => (nameError = '')}
-					aria-invalid={nameError === '' ? undefined : 'true'}
-					aria-describedby={nameError === '' ? undefined : ids.nameError}
-				/>
-				{#if nameError !== ''}
-					<p class="field-error" id={ids.nameError}><ErrorIcon /><span>{nameError}</span></p>
-				{/if}
-			</div>
+			<Field label={DISSOLVE_TEXTS.nameLabel(name)} error={nameError}>
+				{#snippet control(field)}
+					<input
+						{...field}
+						type="text"
+						autocomplete="off"
+						maxlength="100"
+						bind:this={nameInput}
+						bind:value={typed}
+						oninput={() => (nameError = '')}
+					/>
+				{/snippet}
+			</Field>
 		{/if}
 
 		{#if message !== null}
@@ -218,8 +213,7 @@
 	}
 
 	h3,
-	legend,
-	.field label {
+	legend {
 		font-size: var(--font-size-control);
 		font-weight: 600;
 	}
@@ -257,11 +251,5 @@
 	.note {
 		font-size: var(--font-size-small);
 		color: var(--color-text-muted);
-	}
-
-	.field {
-		display: grid;
-		gap: 0.25rem;
-		min-width: 0;
 	}
 </style>

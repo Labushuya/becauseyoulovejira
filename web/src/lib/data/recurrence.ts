@@ -52,7 +52,7 @@ export const RULE_FIELDS = [
 	'initial_status',
 	'template_subtasks',
 	'color',
-	// Who created it: moving it into the private area is offered to the creator (ADR-0060 §4).
+	// Who created it: moving it into the private area is offered to the creator (ADR-0061 §4).
 	'owner',
 	'created',
 	'updated'

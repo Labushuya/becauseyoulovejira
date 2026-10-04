@@ -1,4 +1,4 @@
-// "In den Haushalt verschieben …" and "Ins Private verschieben …" (E7-4, ADR-0060): one store in the
+// "In den Haushalt verschieben …" and "Ins Private verschieben …" (E7-4, ADR-0061): one store in the
 // (app) layout for every menu (ticket, project, rule, entry of the inbox) and the bulk action of the
 // table "Aufgaben". Opening a move loads the preview of the server (nothing changes yet); the dialog
 // shows what moves and asks the choices the preview needs; "Mitnehmen" of dependencies loads the
@@ -98,7 +98,7 @@ export class AreaMoveStore {
 		return this.#message;
 	}
 
-	/** Dependencies with tickets that stay behind (ADR-0060 §2), as the first preview named them. */
+	/** Dependencies with tickets that stay behind (ADR-0061 §2), as the first preview named them. */
 	get dependencies(): Dependencies {
 		return this.#dependencies;
 	}

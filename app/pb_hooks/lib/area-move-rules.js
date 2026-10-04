@@ -1,5 +1,5 @@
 // Pure rules of moving records between the areas Privat and Haushalt and of dissolving a household
-// (E7-4, ADR-0060): the input of the routes, who may move what, the codes of moved projects, the
+// (E7-4, ADR-0061): the input of the routes, who may move what, the codes of moved projects, the
 // mapping of tags by name, the history entry of a moved ticket and the answers of a refusal.
 // CommonJS module, ES5 only, no dependencies (Goja runtime and Vitest load it the same way); the
 // routes live in area.pb.js and household.pb.js with lib/area-move-service.js.
@@ -153,7 +153,7 @@ function codeProblem(code, taken) {
 
 /**
  * A free code for a project whose code is taken in the target, by a suffix (dissolving a household,
- * ADR-0060 §5): the code with H, else another letter, at the end (shortened to 6 letters), else two
+ * ADR-0061 §5): the code with H, else another letter, at the end (shortened to 6 letters), else two
  * letters. '' only if every one of them is taken.
  */
 function suffixedCode(code, taken) {
@@ -177,7 +177,7 @@ function suffixedCode(code, taken) {
 }
 
 /**
- * Whether `actor` may move a record { owner, household } in `direction` (ADR-0060 §4): into the
+ * Whether `actor` may move a record { owner, household } in `direction` (ADR-0061 §4): into the
  * household only an own private record; into the private area a record of the household created by
  * the actor, or any with the right "move_out" (`moveOut`, the owner by the role).
  */
@@ -191,7 +191,7 @@ function mayMove(direction, record, actor, moveOut) {
 }
 
 /**
- * Tags of the moved records by name (ADR-0060 §2): a name the target has is reused, any other is
+ * Tags of the moved records by name (ADR-0061 §2): a name the target has is reused, any other is
  * created there. Case does not count, like the unique index of tags. Returns { reused, created } with
  * the names once each, in the order given.
  */

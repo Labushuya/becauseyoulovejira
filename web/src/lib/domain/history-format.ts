@@ -287,7 +287,7 @@ function describe(entry: HistoryEntry, lookups: HistoryLookups, selfId: string |
 			// ADR-0045 §6: the duplicate names its original, the original its duplicate.
 			return duplicateHistoryText(newValue);
 		case 'area_move':
-			// ADR-0060 §3: moved into another area, with the key before ("vorher PRIV-12").
+			// ADR-0061 §3: moved into another area, with the key before ("vorher PRIV-12").
 			return areaMoveHistoryText(oldValue, newValue);
 		case SKIPPED_FIELD: {
 			// ADR-0022 addendum 4: a catch-up ticket names the missed dates it stands for.

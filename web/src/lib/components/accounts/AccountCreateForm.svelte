@@ -1,5 +1,6 @@
 <script lang="ts">
 	import ErrorIcon from '$lib/components/ErrorIcon.svelte';
+	import Field from '$lib/components/form/Field.svelte';
 	import { emailProblem, nameProblem, problemText } from '$lib/domain/accounts';
 	import type { AccountsStore } from '$lib/stores/accounts.svelte';
 
@@ -7,15 +8,6 @@
 	// password and the page shows it once. Checks before sending with the rules of the hook, refusals
 	// of the server at their field (ADR-0009), a general one below the form.
 	let { store, oncreated }: { store: AccountsStore; oncreated: () => void } = $props();
-
-	const uid = $props.id();
-	const ids = {
-		name: `${uid}-name`,
-		nameError: `${uid}-name-error`,
-		email: `${uid}-email`,
-		emailError: `${uid}-email-error`,
-		emailHint: `${uid}-email-hint`
-	};
 
 	let name = $state('');
 	let email = $state('');
@@ -63,44 +55,36 @@
 </script>
 
 <form class="form" novalidate onsubmit={submit} aria-busy={running ? 'true' : undefined}>
-	<div class="field">
-		<label class="label" for={ids.name}>Name</label>
-		<input
-			id={ids.name}
-			type="text"
-			autocomplete="off"
-			maxlength="100"
-			bind:this={nameInput}
-			bind:value={name}
-			oninput={() => (nameError = '')}
-			aria-invalid={nameError === '' ? undefined : 'true'}
-			aria-describedby={nameError === '' ? undefined : ids.nameError}
-		/>
-		{#if nameError !== ''}
-			<p class="field-error" id={ids.nameError}><ErrorIcon /><span>{nameError}</span></p>
-		{/if}
-	</div>
-	<div class="field">
-		<label class="label" for={ids.email}>E-Mail-Adresse</label>
-		<input
-			id={ids.email}
-			type="email"
-			autocomplete="off"
-			spellcheck="false"
-			bind:this={emailInput}
-			bind:value={email}
-			oninput={() => (emailError = '')}
-			aria-invalid={emailError === '' ? undefined : 'true'}
-			aria-describedby={emailError === '' ? ids.emailHint : `${ids.emailError} ${ids.emailHint}`}
-		/>
-		{#if emailError !== ''}
-			<p class="field-error" id={ids.emailError}><ErrorIcon /><span>{emailError}</span></p>
-		{/if}
-		<p class="hint" id={ids.emailHint}>
-			Damit meldet sich die Person an. Die App schickt keine Mail; das Startpasswort gibst du selbst
-			weiter.
-		</p>
-	</div>
+	<Field label="Name" error={nameError}>
+		{#snippet control(field)}
+			<input
+				{...field}
+				type="text"
+				autocomplete="off"
+				maxlength="100"
+				bind:this={nameInput}
+				bind:value={name}
+				oninput={() => (nameError = '')}
+			/>
+		{/snippet}
+	</Field>
+	<Field
+		label="E-Mail-Adresse"
+		hint="Damit meldet sich die Person an. Die App schickt keine Mail; das Startpasswort gibst du selbst weiter."
+		error={emailError}
+	>
+		{#snippet control(field)}
+			<input
+				{...field}
+				type="email"
+				autocomplete="off"
+				spellcheck="false"
+				bind:this={emailInput}
+				bind:value={email}
+				oninput={() => (emailError = '')}
+			/>
+		{/snippet}
+	</Field>
 	{#if formError !== ''}
 		<p class="alert-error" role="alert"><ErrorIcon /><span>{formError}</span></p>
 	{/if}
@@ -121,20 +105,5 @@
 		display: grid;
 		gap: 0.75rem;
 		max-width: 32rem;
-	}
-
-	.field {
-		display: grid;
-		gap: 0.25rem;
-	}
-
-	.label {
-		font-size: var(--font-size-body);
-		font-weight: 500;
-	}
-
-	.hint {
-		font-size: var(--font-size-small);
-		color: var(--color-text-muted);
 	}
 </style>

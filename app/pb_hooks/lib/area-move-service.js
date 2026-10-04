@@ -1,4 +1,4 @@
-// Moving records between the areas Privat and Haushalt and dissolving a household (E7-4, ADR-0060).
+// Moving records between the areas Privat and Haushalt and dissolving a household (E7-4, ADR-0061).
 // CommonJS module, ES5 only, Goja runtime only; the pure rules are in lib/area-move-rules.js.
 //
 // - POST /api/byl/area/move: a ticket (with its sub-tasks), a project (with its sub projects and
@@ -287,7 +287,7 @@ function addRoots(txApp, plan, kind, ids) {
   return '';
 }
 
-/** Collects the cascade of a move (ADR-0060 §1). `take`: dependencies take their other ticket along. */
+/** Collects the cascade of a move (ADR-0061 §1). `take`: dependencies take their other ticket along. */
 function collect(txApp, plan, kind, ids, take) {
   var problem = addRoots(txApp, plan, kind, ids);
   if (problem !== '') {
@@ -302,7 +302,7 @@ function collect(txApp, plan, kind, ids, take) {
   return '';
 }
 
-/** Everything of a household (dissolving, ADR-0060 §5): live and trashed tickets, all records. */
+/** Everything of a household (dissolving, ADR-0061 §5): live and trashed tickets, all records. */
 function collectHousehold(txApp, plan) {
   var scope = plan.from.scope;
   var lists = [
@@ -341,7 +341,7 @@ function labelOf(set, record) {
   return record.getString('title');
 }
 
-/** The first record of the plan the actor may not move (ADR-0060 §4), as { label }, or null. */
+/** The first record of the plan the actor may not move (ADR-0061 §4), as { label }, or null. */
 function rightViolation(plan) {
   var sets = ['tickets', 'projects', 'rules', 'items'];
   for (var i = 0; i < sets.length; i++) {
@@ -384,7 +384,7 @@ function fingerprintTaken(txApp, scope, fingerprint) {
 }
 
 /**
- * What the move changes besides the area (ADR-0060 §2), read before the first write: projects that
+ * What the move changes besides the area (ADR-0061 §2), read before the first write: projects that
  * stay behind, parents that stay, codes taken in the target, tickets leaving their series, tags by
  * name, notes of the entries, references from outside to moved projects and rules.
  */
@@ -652,7 +652,7 @@ function targetProjects(txApp, plan) {
   return list;
 }
 
-/** The answer of a preview and of a move (ADR-0060 §1). */
+/** The answer of a preview and of a move (ADR-0061 §1). */
 function summaryOf(txApp, plan, input) {
   var analysis = plan.analysis;
   var tickets = recordsOf(plan, 'tickets');
@@ -993,7 +993,7 @@ function moveItems(txApp, plan) {
   }
 }
 
-// References from outside to moved projects go (ADR-0060 §2: no reference crosses the border).
+// References from outside to moved projects go (ADR-0061 §2: no reference crosses the border).
 function clearOutsideReferences(txApp, plan) {
   var recurrence = require(__hooks + '/lib/recurrence-service.js');
   var analysis = plan.analysis;
@@ -1061,7 +1061,7 @@ function moveConnections(txApp, plan) {
   }
 }
 
-/** All writes of a move in the transaction of the caller, after every check (ADR-0060 §1). */
+/** All writes of a move in the transaction of the caller, after every check (ADR-0061 §1). */
 function execute(txApp, plan, nowMs) {
   var i;
   for (i = 0; i < plan.analysis.series.length; i++) {
@@ -1212,7 +1212,7 @@ function movedOf(plan, previous) {
 }
 
 /**
- * POST /api/byl/area/move (ADR-0060 §1): the preview, or the move in one transaction. Answers the
+ * POST /api/byl/area/move (ADR-0061 §1): the preview, or the move in one transaction. Answers the
  * summary (with `moved` after a move) or a refusal { reason: "invalid", problem, params }.
  */
 function move(e) {
@@ -1277,7 +1277,7 @@ function move(e) {
   return e.json(200, summary);
 }
 
-// --- Dissolving a household (ADR-0060 §5) -------------------------------------------------------------
+// --- Dissolving a household (ADR-0061 §5) -------------------------------------------------------------
 
 function namesOf(app, members, actor) {
   var list = [];
@@ -1363,7 +1363,7 @@ function removeHousehold(txApp, householdId) {
 }
 
 /**
- * POST /api/byl/household/dissolve { mode, preview?, name? } (ADR-0060 §5): only the owner. The
+ * POST /api/byl/household/dissolve { mode, preview?, name? } (ADR-0061 §5): only the owner. The
  * preview names the household, its members, what it holds and, for `adopt`, the codes that get a
  * suffix; `adopt` moves everything into the private area of the owner, `delete` deletes it for good
  * when `name` is the name of the household. Then the household goes with its memberships and codes.

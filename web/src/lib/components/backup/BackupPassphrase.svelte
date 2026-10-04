@@ -1,5 +1,5 @@
 <script lang="ts">
-	import ErrorIcon from '$lib/components/ErrorIcon.svelte';
+	import Field from '$lib/components/form/Field.svelte';
 	import SectionMessage from '$lib/components/guidance/SectionMessage.svelte';
 	import {
 		PASSPHRASE_MIN_LENGTH,
@@ -17,12 +17,6 @@
 	let { store, overview }: { store: BackupStore; overview: BackupOverview } = $props();
 
 	const uid = $props.id();
-	const ids = {
-		passphrase: `${uid}-passphrase`,
-		confirmation: `${uid}-confirmation`,
-		hint: `${uid}-hint`,
-		error: `${uid}-error`
-	};
 
 	let passphrase = $state('');
 	let confirmation = $state('');
@@ -52,36 +46,30 @@
 	}
 </script>
 
+{#snippet passphraseHint()}
+	Mindestens {PASSPHRASE_MIN_LENGTH} Zeichen; am besten mehrere Wörter. {PASSPHRASE_TEXTS.bound}
+	{#if isSet}{PASSPHRASE_TEXTS.change}{/if}
+{/snippet}
+
 <section class="part" aria-labelledby={`${uid}-title`}>
 	<h3 id={`${uid}-title`}>Passphrase</h3>
 	<p class="state">{PASSPHRASE_STATE_TEXTS[overview.passphrase]}</p>
 	<SectionMessage tone="warning" compact>{PASSPHRASE_TEXTS.keep}</SectionMessage>
 	<form class="form" novalidate aria-busy={store.busy === 'passphrase'} onsubmit={save}>
-		<label class="label" for={ids.passphrase}>{isSet ? 'Neue Passphrase' : 'Passphrase'}</label>
-		<input
-			id={ids.passphrase}
-			type="password"
-			autocomplete="new-password"
-			bind:value={passphrase}
-			aria-invalid={error !== '' && errorOnFirst ? 'true' : undefined}
-			aria-describedby={error !== '' && errorOnFirst ? `${ids.error} ${ids.hint}` : ids.hint}
-		/>
-		<label class="label" for={ids.confirmation}>Passphrase wiederholen</label>
-		<input
-			id={ids.confirmation}
-			type="password"
-			autocomplete="new-password"
-			bind:value={confirmation}
-			aria-invalid={error !== '' && !errorOnFirst ? 'true' : undefined}
-			aria-describedby={error !== '' && !errorOnFirst ? ids.error : undefined}
-		/>
-		{#if error !== ''}
-			<p class="field-error" id={ids.error}><ErrorIcon /><span>{error}</span></p>
-		{/if}
-		<p class="hint" id={ids.hint}>
-			Mindestens {PASSPHRASE_MIN_LENGTH} Zeichen; am besten mehrere Wörter. {PASSPHRASE_TEXTS.bound}
-			{#if isSet}{PASSPHRASE_TEXTS.change}{/if}
-		</p>
+		<Field
+			label={isSet ? 'Neue Passphrase' : 'Passphrase'}
+			hint={passphraseHint}
+			error={errorOnFirst ? error : ''}
+		>
+			{#snippet control(field)}
+				<input {...field} type="password" autocomplete="new-password" bind:value={passphrase} />
+			{/snippet}
+		</Field>
+		<Field label="Passphrase wiederholen" error={errorOnFirst ? '' : error}>
+			{#snippet control(field)}
+				<input {...field} type="password" autocomplete="new-password" bind:value={confirmation} />
+			{/snippet}
+		</Field>
 		<div>
 			<button
 				class="button-secondary"
@@ -96,15 +84,9 @@
 </section>
 
 <style>
-	.hint,
 	.state {
 		font-size: var(--font-size-body);
 		color: var(--color-text-muted);
-	}
-
-	.label {
-		font-size: var(--font-size-body);
-		font-weight: 500;
 	}
 
 	.part {
@@ -120,7 +102,7 @@
 
 	.form {
 		display: grid;
-		gap: 0.375rem;
+		gap: 0.75rem;
 		max-width: 28rem;
 	}
 </style>

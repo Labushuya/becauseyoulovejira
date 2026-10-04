@@ -120,7 +120,7 @@
 		duplicates?: boolean;
 	} = $props();
 
-	/** "In den Haushalt verschieben …" of a project (E7-4, ADR-0060). */
+	/** "In den Haushalt verschieben …" of a project (E7-4, ADR-0061). */
 	const mover = areaMover();
 
 	const uid = $props.id();
@@ -473,7 +473,7 @@
 				onselect: () => restore(project, archivedParent)
 			});
 		}
-		// Moving between the areas (E7-4, ADR-0060): with sub projects and tickets.
+		// Moving between the areas (E7-4, ADR-0061): with sub projects and tickets.
 		const move = mover.entry({
 			kind: 'project',
 			records: [project],
@@ -524,7 +524,9 @@
 	<div class="alert-error failure">
 		<ErrorIcon />
 		<span class="failure-text">{message}</span>
-		<button class="text-button" type="button" onclick={onretry}>Erneut versuchen</button>
+		<button class="button-secondary button-small" type="button" onclick={onretry}>
+			Erneut versuchen
+		</button>
 	</div>
 {/snippet}
 
@@ -824,14 +826,5 @@
 
 	.failure-text {
 		flex: 1;
-	}
-
-	.text-button {
-		padding: 0.125rem 0.5rem;
-		font-size: var(--font-size-control);
-		background: none;
-		border: 1px solid currentColor;
-		border-radius: var(--radius-control);
-		cursor: pointer;
 	}
 </style>

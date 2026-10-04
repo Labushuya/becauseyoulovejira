@@ -117,7 +117,7 @@ describe('page "Konten": the list', () => {
 			within(rowOf('Chris Beispiel')).queryByRole('button', { name: /Weitere Aktionen/ })
 		).toBeNull();
 		expect(
-			within(rowOf('Chris Beispiel')).getByText(/Dein Konto änderst du unter „Konto“/)
+			within(rowOf('Chris Beispiel')).getByText(/Dein Konto änderst du unter „Mein Konto“/)
 		).toBeTruthy();
 		const trigger = within(rowOf('Anna Beispiel')).getByRole('button', {
 			name: 'Weitere Aktionen für Anna Beispiel'
@@ -263,7 +263,7 @@ describe('page "Konten": changes of an account', () => {
 	});
 });
 
-describe('page "Konten": households without an active owner (E7-4, ADR-0060 §6)', () => {
+describe('page "Konten": households without an active owner (E7-4, ADR-0061 §6)', () => {
 	const OWNER: Account = { ...BERT, owns: { id: 'house000000001', name: 'Wohnung' } };
 	const HOUSEHOLD = {
 		id: 'house000000001',

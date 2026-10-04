@@ -129,7 +129,7 @@
 		actions?: Snippet;
 	} = $props();
 
-	/** "In den Haushalt verschieben …" of an entry (E7-4, ADR-0060). */
+	/** "In den Haushalt verschieben …" of an entry (E7-4, ADR-0061). */
 	const mover = areaMover();
 
 	// Ticket links open the panel or the full view, as the user last chose (plan BI-1).
@@ -396,7 +396,7 @@
 				);
 			}
 		}
-		// Moving between the areas (E7-4, ADR-0060): only an entry without a ticket; one with a ticket
+		// Moving between the areas (E7-4, ADR-0061): only an entry without a ticket; one with a ticket
 		// moves with its ticket.
 		const move =
 			item.ticketId === null

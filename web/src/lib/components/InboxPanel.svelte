@@ -106,7 +106,7 @@
 		initialFocus?: (() => HTMLElement | null) | null;
 	} = $props();
 
-	/** "In den Haushalt verschieben …" of the entry (E7-4, ADR-0060). */
+	/** "In den Haushalt verschieben …" of the entry (E7-4, ADR-0061). */
 	const mover = areaMover();
 
 	// Ticket links open the panel or the full view, as the user last chose (plan BI-1).
@@ -386,7 +386,7 @@
 <Drawer labelledby={headingId} closeFromFields {onclose}>
 	{#snippet context()}Eintrag im Eingang{/snippet}
 	{#snippet actions()}
-		<!-- Moving between the areas (E7-4, ADR-0060): an entry with a ticket moves with it. -->
+		<!-- Moving between the areas (E7-4, ADR-0061): an entry with a ticket moves with it. -->
 		{#if item !== null && item.ticketId === null}
 			{@const move = mover.entry({
 				kind: 'item',
@@ -478,7 +478,7 @@
 								>{ticket.key} {ticket.title}</a
 							>
 							<button
-								class="text-button"
+								class="button-secondary button-small assign"
 								type="button"
 								disabled={store.isPending(item.id)}
 								aria-busy={store.isPending(item.id) ? 'true' : undefined}
@@ -704,22 +704,7 @@
 		border-top: 1px solid var(--color-line);
 	}
 
-	.text-button {
+	.assign {
 		margin-left: 0.5rem;
-		padding: 0.0625rem 0.5rem;
-		font-size: 0.75rem;
-		background: none;
-		border: 1px solid currentColor;
-		border-radius: var(--radius-control);
-		cursor: pointer;
-	}
-
-	.text-button:disabled {
-		cursor: not-allowed;
-	}
-
-	/* The entry is being changed (ADR-0026, addendum of 2026-09-30). */
-	.text-button[aria-busy='true'] {
-		cursor: progress;
 	}
 </style>

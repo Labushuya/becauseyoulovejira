@@ -1,4 +1,4 @@
-// Pure rules of moving between the areas and dissolving a household (E7-4, ADR-0060;
+// Pure rules of moving between the areas and dissolving a household (E7-4, ADR-0061;
 // app/pb_hooks/lib/area-move-rules.js) and their mirror in the web app
 // (web/src/lib/domain/area-move.ts): the input of the routes read strictly, who may move what, the
 // codes of moved projects with the suffix of a dissolved household, tags by name, the history entry,
@@ -65,7 +65,7 @@ describe('the input of POST /api/byl/area/move', () => {
 	});
 });
 
-describe('rights (ADR-0060 §4)', () => {
+describe('rights (ADR-0061 §4)', () => {
 	it('moves into the household only own private records', () => {
 		expect(rules.mayMove('household', { owner: ID, household: '' }, ID, false)).toBe(true);
 		expect(rules.mayMove('household', { owner: OTHER, household: '' }, ID, true)).toBe(false);

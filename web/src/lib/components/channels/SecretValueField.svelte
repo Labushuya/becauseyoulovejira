@@ -67,6 +67,7 @@
 		<div class="row">
 			<input
 				id={ids.field}
+				class="input-mono"
 				name={`${uid}-v`}
 				type={secret && !shown ? 'password' : 'text'}
 				autocomplete="off"
@@ -155,12 +156,6 @@
 		flex: 1;
 		min-width: 0;
 		max-width: 100%;
-		padding: 0.375rem 0.5rem;
-		font-family: var(--font-mono);
-		font-size: 0.8125rem;
-		background: var(--color-surface);
-		border: 1px solid var(--color-line);
-		border-radius: var(--radius-control);
 	}
 
 	.button-secondary[aria-pressed='true'] {

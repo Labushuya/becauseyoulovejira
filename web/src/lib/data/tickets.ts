@@ -66,7 +66,7 @@ export const TICKET_LIST_FIELDS = [
 	'source',
 	// Area of the ticket, for the rules of the ticket picker (ADR-0042).
 	'scope',
-	// Who created it: moving it into the private area is offered to the creator (ADR-0060 §4).
+	// Who created it: moving it into the private area is offered to the creator (ADR-0061 §4).
 	'owner',
 	// Own color (ADR-0052); unknown to the server before the migration 1790203400.
 	'color',

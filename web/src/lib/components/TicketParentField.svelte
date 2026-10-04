@@ -129,7 +129,7 @@
 			{/if}
 			<div class="buttons">
 				<button
-					class="button-primary small-primary"
+					class="button-primary button-small"
 					type="button"
 					aria-disabled={saving ? 'true' : undefined}
 					aria-busy={saving ? 'true' : undefined}
@@ -137,7 +137,7 @@
 				>
 					{saving ? 'Wird gespeichert …' : 'Übernehmen'}
 				</button>
-				<button class="small" type="button" onclick={end}>Abbrechen</button>
+				<button class="button-secondary button-small" type="button" onclick={end}>Abbrechen</button>
 			</div>
 		</div>
 	{:else if parent}
@@ -199,7 +199,12 @@
 	{:else}
 		<div class="parent-line">
 			<span class="muted">Keins</span>
-			<button class="small" type="button" bind:this={startButton} onclick={start}>
+			<button
+				class="button-secondary button-small"
+				type="button"
+				bind:this={startButton}
+				onclick={start}
+			>
 				Festlegen …
 			</button>
 		</div>
@@ -275,19 +280,5 @@
 	.muted {
 		font-size: var(--font-size-small);
 		color: var(--color-text-muted);
-	}
-
-	.small {
-		padding: 0.125rem 0.625rem;
-		font-size: var(--font-size-control);
-		background: none;
-		border: 1px solid var(--color-line);
-		border-radius: var(--radius-control);
-		cursor: pointer;
-	}
-
-	.small-primary {
-		padding: 0.25rem 0.75rem;
-		font-size: var(--font-size-control);
 	}
 </style>

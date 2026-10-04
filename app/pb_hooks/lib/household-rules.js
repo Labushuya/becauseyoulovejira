@@ -12,7 +12,7 @@
 //   delegate - give and take rights, only those one holds oneself
 //   rename   - rename the household
 //   purge    - delete for good in the household and set the retention of its trash (since E7-3)
-//   move_out - move household records of others into the private area (since E7-4, ADR-0060 §4)
+//   move_out - move household records of others into the private area (since E7-4, ADR-0061 §4)
 var RIGHTS = ['invite', 'remove', 'delegate', 'rename', 'purge', 'move_out'];
 var OWNER = 'owner';
 var MEMBER = 'member';

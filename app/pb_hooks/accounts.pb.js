@@ -45,7 +45,7 @@ routerAdd(
   $apis.requireAuth('users')
 );
 
-// { member }: a new owner for a household whose owner is disabled or gone (E7-4, ADR-0060 §6).
+// { member }: a new owner for a household whose owner is disabled or gone (E7-4, ADR-0061 §6).
 routerAdd(
   'POST',
   '/api/byl/accounts/households/{id}/owner',

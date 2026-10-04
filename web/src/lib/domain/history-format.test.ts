@@ -367,7 +367,7 @@ describe('duplicate in the history (ADR-0045)', () => {
 	});
 });
 
-describe('moving between the areas in the history (ADR-0060 §3)', () => {
+describe('moving between the areas in the history (ADR-0061 §3)', () => {
 	it('names the direction and the key before, with the user', () => {
 		const line = describeHistoryEntry(
 			entry({

@@ -245,7 +245,7 @@ var MEMBERS = 'household_members';
 var HOUSEHOLDS = 'households';
 
 /**
- * The households as the page "Konten" needs them (E7-4, ADR-0060 §6): which account owns which
+ * The households as the page "Konten" needs them (E7-4, ADR-0061 §6): which account owns which
  * household (`owns`, by account ID, for the hint before disabling an owner), and the households
  * without an active owner (owner disabled, or deleted in the admin UI) with their other members.
  */
@@ -314,7 +314,7 @@ function list(e) {
 }
 
 /**
- * POST /api/byl/accounts/households/{id}/owner { member } (E7-4, ADR-0060 §6): the administrator of
+ * POST /api/byl/accounts/households/{id}/owner { member } (E7-4, ADR-0061 §6): the administrator of
  * the app makes an active member the owner of a household whose owner is disabled or gone. The old
  * owner stays a member with every right set, like handing the household on (ADR-0058 §4). Answers the
  * list; the tabs of the members read their household again.

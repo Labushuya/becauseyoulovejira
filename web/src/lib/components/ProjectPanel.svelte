@@ -225,7 +225,7 @@
 	const canDelete = $derived(
 		!creating && canDeleteProject(total, subProjects) && ondelete !== undefined
 	);
-	/** "In den Haushalt verschieben …" or "Ins Private verschieben …" (E7-4, ADR-0060). */
+	/** "In den Haushalt verschieben …" or "Ins Private verschieben …" (E7-4, ADR-0061). */
 	const mover = areaMover();
 	const move = $derived(
 		project === null
@@ -516,7 +516,7 @@
 			<label for={ids.code}>Code</label>
 			<input
 				id={ids.code}
-				class="code"
+				class="code input-mono"
 				type="text"
 				autocomplete="off"
 				spellcheck="false"
@@ -843,26 +843,9 @@
 		font-weight: 600;
 	}
 
-	input,
-	select {
-		max-width: 100%;
-		padding: 0.375rem 0.5rem;
-		font-size: var(--font-size-body);
-		background: var(--color-surface);
-		border: 1px solid var(--color-line);
-		border-radius: var(--radius-control);
-	}
-
 	input.code {
 		width: 8rem;
-		font-family: var(--font-mono);
 		text-transform: uppercase;
-	}
-
-	input[readonly],
-	select:disabled {
-		color: var(--color-text-muted);
-		background: var(--color-bg);
 	}
 
 	.hint {

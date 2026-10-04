@@ -1,6 +1,6 @@
 # E7-Plan „Haushalt“
 
-- **Stand:** E7-1 „Konten und Verwalter“ umgesetzt ([ADR-0056](../adr/0056-konten-und-verwalter.md)). E7-2 „Haushalt verwalten“ umgesetzt ([ADR-0058](../adr/0058-haushalt-mitgliedschaft-einladungen-rechte.md)). E7-3 „Bereiche Privat und Haushalt“ umgesetzt ([ADR-0059](../adr/0059-bereiche-privat-und-haushalt.md)). E7-4 „Verschieben und Auflösen“ umgesetzt ([ADR-0060](../adr/0060-verschieben-zwischen-bereichen-und-aufloesen.md)). E7-5 bis E7-7 sind Entwurf und beginnen je mit eigener Freigabe. Offen sind die manuellen Prüfungen von E7-1 bis E7-4.
+- **Stand:** E7-1 „Konten und Verwalter“ umgesetzt ([ADR-0056](../adr/0056-konten-und-verwalter.md)). E7-2 „Haushalt verwalten“ umgesetzt ([ADR-0058](../adr/0058-haushalt-mitgliedschaft-einladungen-rechte.md)). E7-3 „Bereiche Privat und Haushalt“ umgesetzt ([ADR-0059](../adr/0059-bereiche-privat-und-haushalt.md)). E7-4 „Verschieben und Auflösen“ umgesetzt ([ADR-0061](../adr/0061-verschieben-zwischen-bereichen-und-aufloesen.md)). E7-5 bis E7-7 sind Entwurf und beginnen je mit eigener Freigabe. Offen sind die manuellen Prüfungen von E7-1 bis E7-4.
 - **Grundlage:**
   - Nutzerentscheidungen vom 2026-10-04: E7 startet jetzt, entkoppelt vom Mehrgeräte-Ausbau (Plattform-Stufen S2/S3, [ADR-0028](../adr/0028-plattform-strategie.md)). Die zweite Person testet zunächst am selben Rechner mit eigenem Browserprofil; ein Zugang im Heimnetz kommt parallel in einem eigenen Paket. Haushaltsrollen: Der Gründer verwaltet und kann Rechte delegieren (E7-2). Ein ausdrückliches Recht „Verwalter der App“ ersetzt „erstes Konto = Besitzer“. Kanäle mit Zugangsdaten (`BYL_*`) und Ordner richtet vorerst nur der Verwalter ein; eigene verschlüsselte Zugangsdaten je Konto kommen später (E7-7). Persönliche Einstellungen je Konto kommen als späteres Zusatzpaket (E7-6).
   - Auftrag zu E7-2 (2026-10-04): Der Nutzer und seine Frau teilen sich einen Haushalt als „Shared Space“. Privat und Haushalt sind isolierte Arbeitsbereiche, umschaltbar wie virtuelle Desktops (E7-3). Man tritt per Code bei und tritt aktiv wieder aus. Rechte lassen sich an Mitglieder weitergeben. Später soll das erweiterbar bleiben (Datenmodell N:M). Mit diesem Auftrag gilt die Nummerierung E7-1 bis E7-7 unten; die frühere Fassung dieses Plans zählte E7-1 bis E7-5 (Zuordnung unter der Tabelle in §1).
@@ -74,7 +74,7 @@ Einzelheiten und Begründungen in [ADR-0059](../adr/0059-bereiche-privat-und-hau
 
 ## 3b. E7-4: Verschieben und Auflösen (umgesetzt)
 
-Einzelheiten und Begründungen in [ADR-0060](../adr/0060-verschieben-zwischen-bereichen-und-aufloesen.md).
+Einzelheiten und Begründungen in [ADR-0061](../adr/0061-verschieben-zwischen-bereichen-und-aufloesen.md).
 
 - **Route:** `POST /api/byl/area/move` (`area.pb.js`, `lib/area-move-service.js`, rein `lib/area-move-rules.js`) für Ticket, Projekt, Wiederholung und Eintrag im Eingang, auch mehrere Tickets (Sammelaktion); `preview` ändert nichts, sonst eine Transaktion. Kaskaden: Unteraufgaben, Quellen, Kommentare und Verlauf; Unterprojekte und Tickets; künftige Tickets einer Regel im Ziel.
 - **Konflikte:** Projekt im Ziel oder „Ohne Projekt“, Abhängigkeiten mitnehmen oder lösen, neuer `@CODE`; ohne Wahl: Tags nach Namen, Elternticket bleibt zurück, Serie wird gelöst, Eintrag ohne Verbindung und Zielprojekt eines anderen Bereichs, eigener Fingerabdruck bei Doppel.
@@ -82,9 +82,9 @@ Einzelheiten und Begründungen in [ADR-0060](../adr/0060-verschieben-zwischen-be
 - **Rechte:** je Datensatz der Kaskade; privat → Haushalt eigene, Haushalt → privat Ersteller, `move_out` oder Inhaber; der Eintrag gehört danach dem Verschiebenden.
 - **Realtime:** `delete` mit `moved` für Tabs, die den Datensatz verlieren; offene Detailansichten folgen in den Bereich oder sagen „in einem anderen Bereich“.
 - **Auflösen:** `POST /api/byl/household/dissolve` nur der Inhaber, Vorschau mit Anzahl je Art und Mitgliedern; (a) alles ins Private des Inhabers (Codes mit Suffix, Papierkorb mit), (b) alles löschen mit eingetipptem Namen; danach keine Mitgliedschaften, Codes und Zähler mehr, alle Tabs in Privat mit Hinweis.
-- **Haushalt ohne aktiven Inhaber:** `POST /api/byl/accounts/households/{id}/owner` auf der Seite „Konten“ (nur am PC, Verwalter).
+- **Haushalt ohne aktiven Inhaber:** `POST /api/byl/accounts/households/{id}/owner` auf der Seite „Konten verwalten“ (nur am PC, Verwalter).
 - **Altbestand:** Migration `1790204200` setzt Verbindungen mit `household` ins Private ihres aktiven Besitzers.
-- **Oberfläche:** Menüeinträge „In den Haushalt verschieben …“ / „Ins Private verschieben …“ bei Ticket, Projekt, Regel und Eintrag (nur mit Haushalt und Recht), Sammel-Leiste der Aufgaben, `AreaMoveDialog`, „Haushalt auflösen …“ auf der Seite „Haushalt“, Abschnitt „Haushalte ohne aktiven Inhaber“ auf der Seite „Konten“, Hilfe in „Haushalt“, „Bereiche“ und „Konten“.
+- **Oberfläche:** Menüeinträge „In den Haushalt verschieben …“ / „Ins Private verschieben …“ bei Ticket, Projekt, Regel und Eintrag (nur mit Haushalt und Recht), Sammel-Leiste der Aufgaben, `AreaMoveDialog`, „Haushalt auflösen …“ auf der Seite „Haushalt“, Abschnitt „Haushalte ohne aktiven Inhaber“ auf der Seite „Konten verwalten“, Hilfe in „Haushalt“, „Bereiche“ und „Konten“.
 
 ## 4. Festlegungen für die nächsten Pakete
 
@@ -104,7 +104,7 @@ Einzelheiten und Begründungen in [ADR-0060](../adr/0060-verschieben-zwischen-be
 - **Mehrere Haushalte je Konto:** Das Datenmodell ist N:M; die Routen von E7-2 arbeiten auf dem einen Haushalt des Kontos und bekommen erst mit einer Freigabe eine Kennung des Haushalts. Der Umschalter von E7-3 kennt ebenfalls genau einen Haushalt.
 - **Ungelesen-Punkt am Umschalter** (aus E7-3): Die Zählung „neu“ entsteht im Client aus den Tickets des aktiven Bereichs; ein Punkt für Ungelesenes im anderen Bereich bräuchte eine eigene Abfrage und Ereignisse des anderen Bereichs. Offen.
 - **Verschieben und Abhängigkeiten** (erledigt mit E7-4): mitnehmen oder lösen, nach Wahl in der Vorschau.
-- **Haushalt ohne Inhaber und ohne Mitglieder** (aus E7-4): Wurde der Inhaber in der Verwaltung gelöscht und ist niemand mehr Mitglied, bleibt der Haushalt ohne Inhaber stehen (die Seite „Konten“ nennt ihn, kann aber niemanden wählen). Ob der Verwalter ihn dann auflösen oder einem Konto geben darf, ist eine Produktentscheidung.
+- **Haushalt ohne Inhaber und ohne Mitglieder** (aus E7-4): Wurde der Inhaber in der Verwaltung gelöscht und ist niemand mehr Mitglied, bleibt der Haushalt ohne Inhaber stehen (die Seite „Konten verwalten“ nennt ihn, kann aber niemanden wählen). Ob der Verwalter ihn dann auflösen oder einem Konto geben darf, ist eine Produktentscheidung.
 - **Erneutes Eintreffen nach dem Verschieben** (aus E7-4): Fingerabdrücke gelten je Bereich. Ein Eintrag, der den Bereich seiner Verbindung verlässt, schützt ihn nicht mehr; eine Vollsuche des Postfachs kann denselben Eintrag dort neu anlegen.
 - **Ziele je Repository bzw. Ordner** (aus E7-4): Verschiebt man ein Projekt, das im JSON `settings` einer GitHub- oder Ordner-Verbindung als Ziel steht, bleibt der Eintrag stehen und wirkt als „kein Ziel“; die Karte zeigt ihn nicht mehr an. Aufräumen beim Speichern der Einstellungen wäre möglich.
 

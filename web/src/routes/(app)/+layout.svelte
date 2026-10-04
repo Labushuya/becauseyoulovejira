@@ -251,7 +251,7 @@
 	$effect(() => untrack(() => household.start()));
 	$effect(() => untrack(() => household.connect(householdLive(pb))));
 
-	// Moving between the areas (E7-4, ADR-0060): one dialog for every menu and the bulk action. The
+	// Moving between the areas (E7-4, ADR-0061): one dialog for every menu and the bulk action. The
 	// moved tickets leave the list at once (their realtime "delete" follows); a tab that shows a moved
 	// record follows it into its area, like a link into the other area.
 	const areaMove = setAreaMoveStore(

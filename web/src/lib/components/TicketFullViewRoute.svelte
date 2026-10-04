@@ -114,7 +114,7 @@
 	$effect(() => untrack(() => route.askInline()));
 
 	/**
-	 * "In den Haushalt verschieben …" of the menu (E7-4, ADR-0060) unfolds here like the other
+	 * "In den Haushalt verschieben …" of the menu (E7-4, ADR-0061) unfolds here like the other
 	 * questions; leaving the full view drops it.
 	 */
 	const moving = $derived(

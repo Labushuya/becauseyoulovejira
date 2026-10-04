@@ -329,7 +329,7 @@ describe('web data layer: tickets', () => {
 		});
 		expect(detail).toMatchObject({ ...relations, project: projectRef, tags: [tagRef] });
 		// The catalog has the color of the project (ADR-0052), null for none, and its owner, who may
-		// move it to the other area (ADR-0060).
+		// move it to the other area (ADR-0061).
 		expect(await listProjects(owner.client)).toEqual([
 			{ ...projectRef, updated: project.updated, parentId: null, color: null, owner: owner.id }
 		]);

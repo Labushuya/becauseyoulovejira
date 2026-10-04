@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { resolve } from '$app/paths';
-	import ErrorIcon from '$lib/components/ErrorIcon.svelte';
+	import Field from '$lib/components/form/Field.svelte';
 	import SectionMessage from '$lib/components/guidance/SectionMessage.svelte';
 	import { extraHostProblem, sameHosts, type SecurityOverview } from '$lib/domain/security';
 	import type { SecurityStore } from '$lib/stores/security.svelte';
@@ -12,12 +12,6 @@
 	// restart, which the page "System" offers. Checks speak inline at the field (ADR-0009).
 	let { store, overview }: { store: SecurityStore; overview: SecurityOverview } = $props();
 
-	const uid = $props.id();
-	const ids = {
-		input: `${uid}-input`,
-		error: `${uid}-error`,
-		hint: `${uid}-hint`
-	};
 	// The list starts with the saved hosts; what the user changes stays until it is saved.
 	let draft = $state<string[]>(untrack(() => [...overview.hosts.configured]));
 	let entry = $state('');
@@ -89,31 +83,29 @@
 	{/if}
 
 	<form class="form" novalidate onsubmit={add}>
-		<label class="label" for={ids.input}>Adresse hinzufügen</label>
-		<div class="line">
-			<input
-				id={ids.input}
-				type="text"
-				spellcheck="false"
-				autocomplete="off"
-				placeholder="rechner.tailnet.ts.net"
-				bind:this={input}
-				bind:value={entry}
-				oninput={() => (entryError = '')}
-				aria-invalid={entryError === '' ? undefined : 'true'}
-				aria-describedby={entryError === '' ? ids.hint : `${ids.error} ${ids.hint}`}
-			/>
-			<button class="button-secondary" type="submit" aria-disabled={busy ? 'true' : undefined}>
-				Hinzufügen
-			</button>
-		</div>
-		{#if entryError !== ''}
-			<p class="field-error" id={ids.error}><ErrorIcon /><span>{entryError}</span></p>
-		{/if}
-		<p class="hint" id={ids.hint}>
-			Ein Name mit Punkt, optional mit Port (pi.example.org:8443), ohne http:// und ohne IP-Adresse;
-			höchstens {overview.hosts.max}.
-		</p>
+		<Field
+			label="Adresse hinzufügen"
+			hint={`Ein Name mit Punkt, optional mit Port (pi.example.org:8443), ohne http:// und ohne IP-Adresse; höchstens ${overview.hosts.max}.`}
+			error={entryError}
+		>
+			{#snippet control(field)}
+				<div class="line">
+					<input
+						{...field}
+						type="text"
+						spellcheck="false"
+						autocomplete="off"
+						placeholder="rechner.tailnet.ts.net"
+						bind:this={input}
+						bind:value={entry}
+						oninput={() => (entryError = '')}
+					/>
+					<button class="button-secondary" type="submit" aria-disabled={busy ? 'true' : undefined}>
+						Hinzufügen
+					</button>
+				</div>
+			{/snippet}
+		</Field>
 	</form>
 
 	{#if message !== null}
@@ -149,8 +141,7 @@
 {/if}
 
 <style>
-	.note,
-	.hint {
+	.note {
 		font-size: var(--font-size-body);
 		color: var(--color-text-muted);
 	}
@@ -174,11 +165,6 @@
 		display: grid;
 		gap: 0.375rem;
 		max-width: 40rem;
-	}
-
-	.label {
-		font-size: var(--font-size-body);
-		font-weight: 500;
 	}
 
 	.line {

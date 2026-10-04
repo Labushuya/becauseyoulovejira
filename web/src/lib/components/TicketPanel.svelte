@@ -180,7 +180,7 @@
 			<a href={listHref}>{listLabel}</a>
 		</div>
 	{:else if store.state === 'deleted' && store.movedAway}
-		<!-- Moved into an area this account does not see (E7-4, ADR-0060 §3). -->
+		<!-- Moved into an area this account does not see (E7-4, ADR-0061 §3). -->
 		<div class="message">
 			<h2 id={headingId} tabindex="-1" bind:this={messageHeading}>{MOVE_TEXTS.movedAway}</h2>
 			<p>{MOVE_TEXTS.movedAwayText}</p>
@@ -201,7 +201,9 @@
 			<div class="alert-error">
 				<ErrorIcon />
 				<span class="grow">{store.error}</span>
-				<button class="small" type="button" onclick={() => store.reload()}>Erneut versuchen</button>
+				<button class="button-secondary button-small" type="button" onclick={() => store.reload()}
+					>Erneut versuchen</button
+				>
 			</div>
 		</div>
 	{:else if store.state === 'ready' && ticket}
@@ -249,15 +251,6 @@
 
 	.message a {
 		color: var(--color-brand-text);
-	}
-
-	.small {
-		padding: 0.125rem 0.625rem;
-		font-size: var(--font-size-control);
-		background: none;
-		border: 1px solid var(--color-line);
-		border-radius: var(--radius-control);
-		cursor: pointer;
 	}
 
 	.loading {

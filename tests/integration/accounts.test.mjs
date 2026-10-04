@@ -466,7 +466,7 @@ describe('data layer of the SPA (web/src/lib/data/accounts.ts, people.ts)', () =
 	});
 });
 
-describe('a household without an active owner (E7-4, ADR-0060 §6)', () => {
+describe('a household without an active owner (E7-4, ADR-0061 §6)', () => {
 	it('names the household an account owns and lists only households without an active owner', async () => {
 		const list = await app(admin, 'GET', '/api/byl/accounts');
 		expect(list.body.accounts.find((entry) => entry.id === anna.id).owns).toEqual({ id: household.id, name: 'Zuhause' });

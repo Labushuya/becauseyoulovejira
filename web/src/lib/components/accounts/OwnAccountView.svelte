@@ -2,6 +2,7 @@
 	import { untrack } from 'svelte';
 	import type { ResolvedPathname } from '$app/types';
 	import ErrorIcon from '$lib/components/ErrorIcon.svelte';
+	import Field from '$lib/components/form/Field.svelte';
 	import Lozenge from '$lib/components/guidance/Lozenge.svelte';
 	import PcOnly from '$lib/components/guidance/PcOnly.svelte';
 	import SectionMessage from '$lib/components/guidance/SectionMessage.svelte';
@@ -12,10 +13,11 @@
 
 	// The own app account (ADR-0056 §3): e-mail, display name and right; "Anzeigename" and "Passwort
 	// ändern" as two forms with errors at their fields (ADR-0009), results as flags. The old password
-	// is required (PocketBase checks it), the new one twice with the minimum of PocketBase. Who
-	// manages accounts: the administrator on "Konten"; the administrator also learns about the
-	// separate admin account of PocketBase and admin-zuruecksetzen.bat, on the machine of the app
-	// only, where the admin UI and the script work (KOB-1, ADR-0057).
+	// is required (PocketBase checks it), the new one twice with the minimum of PocketBase; the
+	// fields are Fields (UI-1, ADR-0060). Who manages accounts: the administrator on "Konten
+	// verwalten"; the administrator also learns about the separate admin account of PocketBase and
+	// admin-zuruecksetzen.bat, on the machine of the app only, where the admin UI and the script work
+	// (KOB-1, ADR-0057).
 	let {
 		store,
 		email,
@@ -28,20 +30,11 @@
 		name: string;
 		/** The account is the administrator of the app. */
 		admin: boolean;
-		/** Address of the page "Konten". */
+		/** Address of the page "Konten verwalten". */
 		accountsHref: ResolvedPathname;
 	} = $props();
 
 	const uid = $props.id();
-	const ids = {
-		name: `${uid}-name`,
-		nameError: `${uid}-name-error`,
-		nameHint: `${uid}-name-hint`,
-		current: `${uid}-current`,
-		next: `${uid}-next`,
-		again: `${uid}-again`,
-		passwordHint: `${uid}-password-hint`
-	};
 
 	let draft = $state(untrack(() => name));
 	let nameError = $state('');
@@ -90,13 +83,6 @@
 		if (first !== undefined) inputs[first]?.focus();
 	}
 
-	function describedBy(field: PasswordField): string | undefined {
-		const error = passwordErrors[field] ? `${uid}-${field}-error` : '';
-		const hint = field === 'next' ? ids.passwordHint : '';
-		const list = [error, hint].filter((part) => part !== '').join(' ');
-		return list === '' ? undefined : list;
-	}
-
 	function clearError(field: PasswordField) {
 		if (passwordErrors[field] === undefined) return;
 		const rest = { ...passwordErrors };
@@ -104,14 +90,6 @@
 		passwordErrors = rest;
 	}
 </script>
-
-{#snippet fieldError(field: PasswordField)}
-	{#if passwordErrors[field]}
-		<p class="field-error" id={`${uid}-${field}-error`}>
-			<ErrorIcon /><span>{passwordErrors[field]}</span>
-		</p>
-	{/if}
-{/snippet}
 
 <dl class="account">
 	<div class="row">
@@ -137,35 +115,33 @@
 		onsubmit={saveName}
 		aria-busy={store.busy === 'name' ? 'true' : undefined}
 	>
-		<label class="label" for={ids.name}>Name</label>
-		<div class="line">
-			<input
-				id={ids.name}
-				type="text"
-				autocomplete="name"
-				maxlength={NAME_MAX}
-				bind:this={nameInput}
-				bind:value={draft}
-				oninput={() => (nameError = '')}
-				aria-invalid={nameError === '' ? undefined : 'true'}
-				aria-describedby={nameError === '' ? ids.nameHint : `${ids.nameError} ${ids.nameHint}`}
-			/>
-			<button
-				class="button-secondary"
-				type="submit"
-				aria-disabled={busy ? 'true' : undefined}
-				aria-busy={store.busy === 'name' ? 'true' : undefined}
-			>
-				Name speichern
-			</button>
-		</div>
-		{#if nameError !== ''}
-			<p class="field-error" id={ids.nameError}><ErrorIcon /><span>{nameError}</span></p>
-		{/if}
-		<p class="hint" id={ids.nameHint}>
-			So sehen dich die anderen Konten deines Haushalts in Kommentaren, im Verlauf und im
-			Papierkorb.
-		</p>
+		<Field
+			label="Name"
+			hint="So sehen dich die anderen Konten deines Haushalts in Kommentaren, im Verlauf und im Papierkorb."
+			error={nameError}
+		>
+			{#snippet control(field)}
+				<div class="line">
+					<input
+						{...field}
+						type="text"
+						autocomplete="name"
+						maxlength={NAME_MAX}
+						bind:this={nameInput}
+						bind:value={draft}
+						oninput={() => (nameError = '')}
+					/>
+					<button
+						class="button-secondary"
+						type="submit"
+						aria-disabled={busy ? 'true' : undefined}
+						aria-busy={store.busy === 'name' ? 'true' : undefined}
+					>
+						Name speichern
+					</button>
+				</div>
+			{/snippet}
+		</Field>
 		{#if nameFormError !== ''}
 			<p class="alert-error" role="alert"><ErrorIcon /><span>{nameFormError}</span></p>
 		{/if}
@@ -180,52 +156,46 @@
 		onsubmit={changePassword}
 		aria-busy={store.busy === 'password' ? 'true' : undefined}
 	>
-		<div class="field">
-			<label class="label" for={ids.current}>Bisheriges Passwort</label>
-			<input
-				id={ids.current}
-				type="password"
-				autocomplete="current-password"
-				bind:this={inputs.current}
-				bind:value={current}
-				oninput={() => clearError('current')}
-				aria-invalid={passwordErrors.current ? 'true' : undefined}
-				aria-describedby={describedBy('current')}
-			/>
-			{@render fieldError('current')}
-		</div>
-		<div class="field">
-			<label class="label" for={ids.next}>Neues Passwort</label>
-			<input
-				id={ids.next}
-				type="password"
-				autocomplete="new-password"
-				bind:this={inputs.next}
-				bind:value={next}
-				oninput={() => clearError('next')}
-				aria-invalid={passwordErrors.next ? 'true' : undefined}
-				aria-describedby={describedBy('next')}
-			/>
-			{@render fieldError('next')}
-			<p class="hint" id={ids.passwordHint}>
-				Mindestens {PASSWORD_MIN} Zeichen. Danach gilt nur noch das neue Passwort, auch auf anderen Geräten;
-				hier bleibst du angemeldet.
-			</p>
-		</div>
-		<div class="field">
-			<label class="label" for={ids.again}>Neues Passwort wiederholen</label>
-			<input
-				id={ids.again}
-				type="password"
-				autocomplete="new-password"
-				bind:this={inputs.again}
-				bind:value={again}
-				oninput={() => clearError('again')}
-				aria-invalid={passwordErrors.again ? 'true' : undefined}
-				aria-describedby={describedBy('again')}
-			/>
-			{@render fieldError('again')}
-		</div>
+		<Field label="Bisheriges Passwort" error={passwordErrors.current ?? ''}>
+			{#snippet control(field)}
+				<input
+					{...field}
+					type="password"
+					autocomplete="current-password"
+					bind:this={inputs.current}
+					bind:value={current}
+					oninput={() => clearError('current')}
+				/>
+			{/snippet}
+		</Field>
+		<Field
+			label="Neues Passwort"
+			hint={`Mindestens ${PASSWORD_MIN} Zeichen. Danach gilt nur noch das neue Passwort, auch auf anderen Geräten; hier bleibst du angemeldet.`}
+			error={passwordErrors.next ?? ''}
+		>
+			{#snippet control(field)}
+				<input
+					{...field}
+					type="password"
+					autocomplete="new-password"
+					bind:this={inputs.next}
+					bind:value={next}
+					oninput={() => clearError('next')}
+				/>
+			{/snippet}
+		</Field>
+		<Field label="Neues Passwort wiederholen" error={passwordErrors.again ?? ''}>
+			{#snippet control(field)}
+				<input
+					{...field}
+					type="password"
+					autocomplete="new-password"
+					bind:this={inputs.again}
+					bind:value={again}
+					oninput={() => clearError('again')}
+				/>
+			{/snippet}
+		</Field>
 		{#if passwordFormError !== ''}
 			<p class="alert-error" role="alert"><ErrorIcon /><span>{passwordFormError}</span></p>
 		{/if}
@@ -246,15 +216,17 @@
 	<SectionMessage tone="info" title="Konten verwalten">
 		<p>
 			Neue Konten, vergessene Passwörter und das Recht „Verwalter der App“ verwaltest du unter
-			„Konten“. Die Verwaltung von PocketBase braucht ein eigenes <strong>Admin-Konto</strong> mit
-			eigenem Passwort, auch wenn es dieselbe E-Mail-Adresse hat.
+			„Konten verwalten“. Die Verwaltung von PocketBase braucht ein eigenes <strong
+				>Admin-Konto</strong
+			>
+			mit eigenem Passwort, auch wenn es dieselbe E-Mail-Adresse hat.
 			<PcOnly need="script" inline>
 				Ein vergessenes Admin-Passwort setzt <code>admin-zuruecksetzen.bat</code> im Ordner
 				<code>app</code> neu.
 			</PcOnly>
 		</p>
 		{#snippet actions()}
-			<a href={accountsHref}>Zu den Konten</a>
+			<a href={accountsHref}>Zu „Konten verwalten“</a>
 			{#if appContext.capabilities.pc}
 				<a href="/_/" rel="external">Verwaltung öffnen (nur mit dem Admin-Konto)</a>
 			{/if}
@@ -320,18 +292,8 @@
 
 	.form {
 		display: grid;
-		gap: 0.5rem;
+		gap: 0.75rem;
 		max-width: 32rem;
-	}
-
-	.field {
-		display: grid;
-		gap: 0.25rem;
-	}
-
-	.label {
-		font-size: var(--font-size-body);
-		font-weight: 500;
 	}
 
 	.line {
@@ -343,10 +305,5 @@
 
 	.line input {
 		flex: 1 1 min(16rem, 100%);
-	}
-
-	.hint {
-		font-size: var(--font-size-small);
-		color: var(--color-text-muted);
 	}
 </style>

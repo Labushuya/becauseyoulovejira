@@ -166,7 +166,7 @@ describe('the web app (web/src/lib/domain/accounts.ts)', () => {
 		const account = { id: 'u1', name: 'Anna', email: 'a@example.com', admin: false, disabled: true, created: 'x', self: false };
 		expect(parseAccountList({ accounts: [account], passwordMin: 10 })).toEqual({ accounts: [account], passwordMin: 10, households: [] });
 		expect(parseAccountList({ accounts: [account] })?.passwordMin).toBe(8);
-		// Since E7-4 (ADR-0060 §6): the household an account owns and the households without an active owner.
+		// Since E7-4 (ADR-0061 §6): the household an account owns and the households without an active owner.
 		const owner = { ...account, owns: { id: 'h1', name: 'Wohnung' } };
 		const orphan = { id: 'h1', name: 'Wohnung', owner: null, members: [{ id: 'm1', user: 'u2', name: 'Max', disabled: false }] };
 		expect(parseAccountList({ accounts: [owner], households: [orphan] })).toEqual({

@@ -1038,15 +1038,6 @@
 		align-items: center;
 	}
 
-	select {
-		padding: 0.375rem 0.5rem;
-		font: inherit;
-		color: var(--color-text);
-		background: var(--color-surface);
-		border: 1px solid var(--color-text-muted);
-		border-radius: var(--radius-control);
-	}
-
 	.head-box,
 	.group-box {
 		display: inline-flex;

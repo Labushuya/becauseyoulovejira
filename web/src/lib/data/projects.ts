@@ -29,7 +29,7 @@ export interface ProjectRecord {
 /**
  * Fields of the catalog (T-16), with `updated` for the order of events, `parent` (ADR-0034) and
  * `color` (ADR-0052). A server without `parent` or `color` simply leaves them out of the answer.
- * `owner`: moving the project into the private area is offered to its creator (ADR-0060 §4).
+ * `owner`: moving the project into the private area is offered to its creator (ADR-0061 §4).
  */
 export const PROJECT_FIELDS = 'id,name,code,archived,parent,color,updated,owner';
 

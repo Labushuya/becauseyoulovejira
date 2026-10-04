@@ -86,7 +86,7 @@ onRecordUpdateExecute(function (e) {
   e.next();
 }, 'projects');
 
-// Fails moving a ticket with the marker title into another area (ADR-0060): the move runs in one
+// Fails moving a ticket with the marker title into another area (ADR-0061): the move runs in one
 // transaction, so every record moved, numbered or written before it must stay as it was.
 onRecordUpdateExecute(function (e) {
   if (

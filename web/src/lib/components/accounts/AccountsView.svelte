@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import ActionsMenu, { type MenuAction } from '$lib/components/ActionsMenu.svelte';
+	import Field from '$lib/components/form/Field.svelte';
 	import CodeBlock from '$lib/components/guidance/CodeBlock.svelte';
 	import Lozenge from '$lib/components/guidance/Lozenge.svelte';
 	import SectionMessage from '$lib/components/guidance/SectionMessage.svelte';
@@ -17,15 +18,15 @@
 	import type { AccountsStore } from '$lib/stores/accounts.svelte';
 	import AccountCreateForm from './AccountCreateForm.svelte';
 
-	// Page "Einstellungen → Konten" (ADR-0056 §3): every account of the app with name, e-mail, the
+	// Page "Einstellungen → Konten verwalten" (ADR-0056 §3): every account of the app with name, e-mail, the
 	// right "Verwalter der App", the switch "deaktiviert" and its creation; "Konto anlegen" with a
 	// start password and per account in the menu "•••" a new password, disabling or enabling and
 	// giving or taking the right. Every change that ends sessions or changes the right asks first (a
 	// confirmation, no red, ADR-0009); "Aktivieren" undoes a disabling and runs at once, with a flag.
 	// A password stands only once on the page, in a code block with
 	// "Kopieren", until "Weitergegeben" removes it. The own account has no menu: it changes its
-	// password and name on "Konto". No deleting of accounts (plan e7-haushalt, follow-up).
-	// Since E7-4 (ADR-0060 §6) an account that owns a household says so, disabling it says what that
+	// password and name on "Mein Konto". No deleting of accounts (plan e7-haushalt, follow-up).
+	// Since E7-4 (ADR-0061 §6) an account that owns a household says so, disabling it says what that
 	// means for the household, and "Haushalte ohne aktiven Inhaber" lets the administrator make an
 	// active member the owner of a household whose owner is disabled or gone.
 	let { store }: { store: AccountsStore } = $props();
@@ -176,7 +177,7 @@
 {:else}
 	<p class="intro">
 		Jede Person meldet sich mit einem eigenen Konto an. Neue Konten legst du hier an; die Person
-		ändert ihr Startpasswort danach unter „Einstellungen → Konto“.
+		ändert ihr Startpasswort danach unter „Einstellungen → Mein Konto“.
 		<a href={helpHref('konten')}>Mehr zu Konten und Verwaltern</a>
 	</p>
 
@@ -230,7 +231,7 @@
 					</div>
 					<div class="actions">
 						{#if account.self}
-							<span class="note">Dein Konto änderst du unter „Konto“.</span>
+							<span class="note">Dein Konto änderst du unter „Mein Konto“.</span>
 						{:else}
 							<ActionsMenu
 								label={`Aktionen für ${label}`}
@@ -252,7 +253,6 @@
 				{#each store.households as household (household.id)}
 					{@const options = candidates(household)}
 					{@const choice = choiceOf(household)}
-					{@const selectId = `${uid}-owner-${household.id}`}
 					<li class="account" aria-busy={busyHousehold === household.id ? 'true' : undefined}>
 						<div class="who">
 							<span class="name">{household.name}</span>
@@ -262,17 +262,20 @@
 							<p class="note">{ACCOUNTS_TEXTS.noMembers}</p>
 						{:else}
 							<div class="owner-choice">
-								<label for={selectId}>{ACCOUNTS_TEXTS.newOwnerLabel}</label>
-								<select
-									id={selectId}
-									value={choice?.id ?? ''}
-									onchange={(event) =>
-										(chosen = { ...chosen, [household.id]: event.currentTarget.value })}
-								>
-									{#each options as member (member.id)}
-										<option value={member.id}>{memberName(member)}</option>
-									{/each}
-								</select>
+								<Field label={ACCOUNTS_TEXTS.newOwnerLabel} width="auto">
+									{#snippet control(field)}
+										<select
+											{...field}
+											value={choice?.id ?? ''}
+											onchange={(event) =>
+												(chosen = { ...chosen, [household.id]: event.currentTarget.value })}
+										>
+											{#each options as member (member.id)}
+												<option value={member.id}>{memberName(member)}</option>
+											{/each}
+										</select>
+									{/snippet}
+								</Field>
 								<button
 									class="button-secondary"
 									type="button"
@@ -401,15 +404,11 @@
 		align-items: center;
 	}
 
+	/* The field with its label above, the button beside the select. */
 	.owner-choice {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 0.375rem 0.5rem;
-		align-items: center;
-	}
-
-	.owner-choice label {
-		font-size: var(--font-size-control);
-		font-weight: 600;
+		align-items: end;
 	}
 </style>

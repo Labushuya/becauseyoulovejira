@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import ActionsMenu, { type MenuAction } from '$lib/components/ActionsMenu.svelte';
-	import ErrorIcon from '$lib/components/ErrorIcon.svelte';
+	import Field from '$lib/components/form/Field.svelte';
 	import Lozenge from '$lib/components/guidance/Lozenge.svelte';
 	import SectionMessage from '$lib/components/guidance/SectionMessage.svelte';
 	import ConfirmDialog from '$lib/components/overlay/ConfirmDialog.svelte';
@@ -35,7 +35,7 @@
 	// members with role and rights (rights with "delegate", remove with "remove", hand on as owner,
 	// each in the menu "•••" of the member), the codes with "invite", since E7-3 the retention of the
 	// trash of the household ("purge", ADR-0059 §6) and "Austreten", since E7-4 for the owner "Haushalt
-	// auflösen …" (ADR-0060 §5). What the server would refuse is left out, not only disabled;
+	// auflösen …" (ADR-0061 §5). What the server would refuse is left out, not only disabled;
 	// removing, leaving and handing on ask first (no red, ADR-0009). Refusals stand on the page;
 	// results go out as flags.
 	let { store }: { store: HouseholdStore } = $props();
@@ -47,9 +47,7 @@
 		title: `${uid}-title`,
 		members: `${uid}-members`,
 		leave: `${uid}-leave`,
-		dissolve: `${uid}-dissolve`,
-		name: `${uid}-name`,
-		nameError: `${uid}-name-error`
+		dissolve: `${uid}-dissolve`
 	};
 
 	const current = $derived(store.household);
@@ -224,24 +222,20 @@
 					onsubmit={rename}
 					aria-busy={store.busy?.kind === 'rename' ? 'true' : undefined}
 				>
-					<div class="field">
-						<label class="label" for={ids.name}>Neuer Name</label>
-						<input
-							id={ids.name}
-							type="text"
-							autocomplete="off"
-							maxlength="100"
-							bind:this={nameInput}
-							bind:value={draft}
-							oninput={() => (nameError = '')}
-							onkeydown={renameKey}
-							aria-invalid={nameError === '' ? undefined : 'true'}
-							aria-describedby={nameError === '' ? undefined : ids.nameError}
-						/>
-						{#if nameError !== ''}
-							<p class="field-error" id={ids.nameError}><ErrorIcon /><span>{nameError}</span></p>
-						{/if}
-					</div>
+					<Field label="Neuer Name" error={nameError}>
+						{#snippet control(field)}
+							<input
+								{...field}
+								type="text"
+								autocomplete="off"
+								maxlength="100"
+								bind:this={nameInput}
+								bind:value={draft}
+								oninput={() => (nameError = '')}
+								onkeydown={renameKey}
+							/>
+						{/snippet}
+					</Field>
 					<div class="buttons">
 						<button class="button-secondary" type="button" onclick={() => void stopRename()}>
 							Abbrechen
@@ -363,7 +357,7 @@
 		{/if}
 	</section>
 
-	<!-- Dissolving (E7-4, ADR-0060 §5): only the owner, with a preview and two ways. -->
+	<!-- Dissolving (E7-4, ADR-0061 §5): only the owner, with a preview and two ways. -->
 	{#if me.role === 'owner'}
 		<section class="part" aria-labelledby={ids.dissolve}>
 			<h3 id={ids.dissolve}>{DISSOLVE_TEXTS.section}</h3>
@@ -445,16 +439,6 @@
 		display: grid;
 		gap: 0.5rem;
 		max-width: 32rem;
-	}
-
-	.field {
-		display: grid;
-		gap: 0.25rem;
-	}
-
-	.label {
-		font-size: var(--font-size-body);
-		font-weight: 500;
 	}
 
 	.buttons {

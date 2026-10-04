@@ -329,7 +329,7 @@
 					<span>Künftige Tickets: {summary}</span>
 					{#if draft === null}
 						<button
-							class="small"
+							class="button-secondary button-small"
 							type="button"
 							aria-label="Vorlage bearbeiten"
 							bind:this={editButton}
@@ -401,7 +401,7 @@
 			{#if rule !== null}
 				{@const current = rule}
 				<button
-					class="small"
+					class="button-secondary button-small"
 					type="button"
 					aria-haspopup={inline ? undefined : 'dialog'}
 					aria-expanded={inline ? dialog === 'edit' : undefined}
@@ -411,7 +411,7 @@
 					Regel bearbeiten
 				</button>
 				<button
-					class="small"
+					class="button-secondary button-small"
 					type="button"
 					aria-disabled={busy}
 					onclick={() => act(() => store.setActive(current.id, !current.active))}
@@ -419,7 +419,12 @@
 					{current.active ? 'Pausieren' : 'Fortsetzen'}
 				</button>
 			{/if}
-			<button class="small" type="button" aria-disabled={busy} onclick={detach}>
+			<button
+				class="button-secondary button-small"
+				type="button"
+				aria-disabled={busy}
+				onclick={detach}
+			>
 				Aus der Serie lösen
 			</button>
 		</div>
@@ -427,7 +432,7 @@
 		<SectionMessage tone="info" compact>{RECURRENCE_UNAVAILABLE}</SectionMessage>
 	{:else if ticket.status !== 'done'}
 		<button
-			class="small"
+			class="button-secondary button-small"
 			type="button"
 			aria-haspopup={inline ? undefined : 'dialog'}
 			aria-expanded={inline ? dialog === 'create' : undefined}
@@ -542,24 +547,8 @@
 		color: var(--color-text-muted);
 	}
 
-	.small {
+	/* The small buttons of base.css keep their own width in the grid (UI-1). */
+	.button-small {
 		width: fit-content;
-		padding: 0.125rem 0.625rem;
-		font-size: var(--font-size-control);
-		background: none;
-		border: 1px solid var(--color-line);
-		border-radius: var(--radius-control);
-		cursor: pointer;
-	}
-
-	[aria-disabled='true'] {
-		cursor: not-allowed;
-		opacity: 0.75;
-	}
-
-	/* Locked because an action of the series or the template runs (ADR-0026, addendum of 2026-09-30). */
-	[aria-busy='true'] [aria-disabled='true'],
-	[aria-busy='true'][aria-disabled='true'] {
-		cursor: progress;
 	}
 </style>

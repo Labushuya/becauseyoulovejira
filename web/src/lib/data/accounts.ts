@@ -123,7 +123,7 @@ export function setAccountAdmin(
 }
 
 /**
- * A new owner for a household whose owner is disabled or gone (E7-4, ADR-0060 §6): an active member,
+ * A new owner for a household whose owner is disabled or gone (E7-4, ADR-0061 §6): an active member,
  * by its membership. Answers the list like `fetchAccounts`.
  */
 export function setHouseholdOwner(

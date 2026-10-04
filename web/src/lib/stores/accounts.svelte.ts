@@ -137,7 +137,7 @@ export class AccountsStore {
 		return this.#passwordMin;
 	}
 
-	/** Households whose owner is disabled or gone (E7-4, ADR-0060 §6). */
+	/** Households whose owner is disabled or gone (E7-4, ADR-0061 §6). */
 	get households(): readonly OrphanHousehold[] {
 		return this.#households;
 	}
@@ -275,7 +275,7 @@ export class AccountsStore {
 	}
 
 	/**
-	 * "Zum Inhaber machen" of a household without an active owner (E7-4, ADR-0060 §6): an active
+	 * "Zum Inhaber machen" of a household without an active owner (E7-4, ADR-0061 §6): an active
 	 * member becomes its owner; the answer is the new list.
 	 */
 	async setHouseholdOwner(household: OrphanHousehold, member: OrphanMember): Promise<boolean> {

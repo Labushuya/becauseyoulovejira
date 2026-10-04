@@ -470,7 +470,7 @@
 		{#if sourceDate !== null}
 			<p class="hint source-date" id={ids.sourceDate}>
 				Quelldatum: {formatBerlinDateTime(sourceDate)}
-				<button class="text-button" type="button" onclick={takeSourceDate}>
+				<button class="button-secondary button-small" type="button" onclick={takeSourceDate}>
 					Als Fälligkeit übernehmen
 				</button>
 			</p>
@@ -677,27 +677,8 @@
 		color: var(--color-text-muted);
 	}
 
-	input,
-	.form :global(select) {
-		max-width: 100%;
-		padding: 0.375rem 0.5rem;
-		background: var(--color-surface);
-		border: 1px solid var(--color-text-muted);
-		border-radius: var(--radius-control);
-	}
-
 	input[type='text'] {
 		width: 100%;
-	}
-
-	.button-primary[aria-disabled='true'] {
-		cursor: not-allowed;
-		opacity: 0.6;
-	}
-
-	/* The ticket is being created (ADR-0026, addendum of 2026-09-30). */
-	.button-primary[aria-busy='true'] {
-		cursor: progress;
 	}
 
 	.hint {
@@ -760,15 +741,5 @@
 		flex-wrap: wrap;
 		gap: 0.25rem 0.5rem;
 		align-items: center;
-	}
-
-	.text-button {
-		padding: 0.0625rem 0.5rem;
-		font-size: var(--font-size-control);
-		color: var(--color-brand-text);
-		background: none;
-		border: 1px solid var(--color-brand);
-		border-radius: var(--radius-control);
-		cursor: pointer;
 	}
 </style>

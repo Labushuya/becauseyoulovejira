@@ -1,5 +1,5 @@
 /// <reference path="../pb_data/types.d.ts" />
-// Connections of a household from before (E7-4, ADR-0060 §7). Since E7-3 no app account creates a
+// Connections of a household from before (E7-4, ADR-0061 §7). Since E7-3 no app account creates a
 // connection in a household (ADR-0059 §5); one could only come from the admin UI. Such a connection
 // goes into the private area of its owner, if that account is active (not disabled):
 //

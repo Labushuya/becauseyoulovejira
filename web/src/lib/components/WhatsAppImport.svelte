@@ -271,16 +271,6 @@
 		color: var(--color-text-muted);
 	}
 
-	select,
-	input[type='date'] {
-		padding: 0.375rem 0.5rem;
-		font: inherit;
-		color: var(--color-text);
-		background: var(--color-surface);
-		border: 1px solid var(--color-text-muted);
-		border-radius: var(--radius-control);
-	}
-
 	.choice {
 		display: flex;
 		flex-wrap: wrap;

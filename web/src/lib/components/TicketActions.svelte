@@ -17,7 +17,7 @@
 	// whatever way is remembered, and remember nothing (ADR-0036 §1: only the buttons in the ticket
 	// do); the button names its ticket, because every row has one. In the grid of the calendar an open
 	// ticket adds "Fälligkeit verschieben …" (`onmovedue`, ADR-0053 §12), which then asks for the day.
-	// Since E7-4 (ADR-0060) "In den Haushalt verschieben …" or "Ins Private verschieben …" follows
+	// Since E7-4 (ADR-0061) "In den Haushalt verschieben …" or "Ins Private verschieben …" follows
 	// "Duplizieren …", only for an account in a household with the right (lib/area-move-entry.ts); in
 	// the full view its dialog unfolds inline like the others.
 	let {

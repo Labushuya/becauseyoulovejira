@@ -186,7 +186,7 @@ export function leaveHousehold(
 }
 
 /**
- * Dissolving the household (E7-4, ADR-0060 §5; only its owner): with `preview` what it holds and the
+ * Dissolving the household (E7-4, ADR-0061 §5; only its owner): with `preview` what it holds and the
  * codes that would get a suffix, else `adopt` (everything into the private area of the owner) or
  * `delete` (with the typed name). The answer of both is the preview.
  */
