@@ -76,7 +76,7 @@ routerAdd(
 );
 
 // "Ansehen", step 1: whether the file of an entry can be shown, with the address of step 2 (a file
-// token of PocketBase in it). Only for the owner of the instance, from this machine, from the app
+// token of PocketBase in it). Only for the administrator of the app (ADR-0056), from this machine, from the app
 // itself (ADR-0043 §4); nothing is read from the file.
 routerAdd(
   'GET',

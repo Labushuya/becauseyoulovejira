@@ -273,6 +273,6 @@ describe('data layer of the folder channel', () => {
 		await other.collection('users').authWithPassword(email, password);
 		const outcome = await viewFolderFile(other, items[0].id);
 		expect(outcome).toMatchObject({ kind: 'refused', reason: 'owner' });
-		expect(outcome.message).toMatch(/^Nur für das Konto/);
+		expect(outcome.message).toBe('Nur für den Verwalter der App.');
 	});
 });

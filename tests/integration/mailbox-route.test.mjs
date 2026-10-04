@@ -53,10 +53,13 @@ function client() {
 	return pb;
 }
 
+/** An administrator of the app: only it sets up channels with access data (ADR-0056 §5). */
 async function user() {
 	const email = `user-${randomBytes(12).toString('hex')}@example.com`;
 	const password = randomBytes(24).toString('base64url');
-	const record = await superuser.collection('users').create({ email, password, passwordConfirm: password });
+	const record = await superuser
+		.collection('users')
+		.create({ email, password, passwordConfirm: password, instance_admin: true });
 	const pb = client();
 	await pb.collection('users').authWithPassword(email, password);
 	return { id: record.id, pb };

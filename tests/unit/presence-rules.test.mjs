@@ -126,12 +126,28 @@ describe('times', () => {
 });
 
 describe('entries and messages', () => {
-	it('stores and reads an entry as text', () => {
-		const raw = rules.serializeEntry(NOW, false);
+	it('stores and reads an entry as text, with the accounts whose tabs got the message (E7-1)', () => {
+		const raw = rules.serializeEntry(NOW, false, ['user0000000001', 'user0000000002', 'user0000000001']);
 		expect(typeof raw).toBe('string');
-		expect(rules.parseEntry(raw)).toEqual({ createdAt: NOW, acked: false });
-		expect(rules.parseEntry(rules.serializeEntry(NOW, true))).toEqual({ createdAt: NOW, acked: true });
-		expect(rules.parseEntry(rules.serializeEntry(NOW, 'yes'))).toEqual({ createdAt: NOW, acked: false });
+		expect(rules.parseEntry(raw)).toEqual({ createdAt: NOW, acked: false, users: ['user0000000001', 'user0000000002'] });
+		expect(rules.parseEntry(rules.serializeEntry(NOW, true))).toEqual({ createdAt: NOW, acked: true, users: [] });
+		expect(rules.parseEntry(rules.serializeEntry(NOW, 'yes', 'user0000000001'))).toEqual({
+			createdAt: NOW,
+			acked: false,
+			users: []
+		});
+		expect(rules.parseEntry(JSON.stringify({ createdAt: NOW, acked: false, users: ['a', 5, '', null, 'b'] })).users).toEqual([
+			'a',
+			'b'
+		]);
+	});
+
+	it('lets only an account whose tabs got the message confirm it (E7-1)', () => {
+		const entry = rules.parseEntry(rules.serializeEntry(NOW, false, ['user0000000001']));
+		expect(rules.mayAck(entry, 'user0000000001')).toBe(true);
+		expect(rules.mayAck(entry, 'user0000000002')).toBe(false);
+		expect(rules.mayAck(entry, '')).toBe(false);
+		expect(rules.mayAck(null, 'user0000000001')).toBe(false);
 	});
 
 	it.each([null, undefined, 5, '', 'kein json', '[]', 'null', '{"acked":true}', '{"createdAt":"1"}'])(

@@ -64,7 +64,8 @@ var MESSAGES = {
   validation_connection_label: 'Bitte einen Namen eingeben.',
   validation_connection_label_max: 'Höchstens 100 Zeichen.',
   validation_connection_rename_only: 'Beim Umbenennen ändert sich nur der Name; andere Einstellungen bitte getrennt speichern.',
-  validation_connection_secret_none: 'Diese Verbindungsart braucht keine Zugangsdaten.'
+  validation_connection_secret_none: 'Diese Verbindungsart braucht keine Zugangsdaten.',
+  validation_connection_admin_only: 'Kanäle mit Zugangsdaten und Ordner richtet nur der Verwalter der App ein.'
 };
 
 function text(value) {
@@ -213,6 +214,33 @@ function updateViolation(before, after, secrets, keywords, github, folder) {
   );
 }
 
+/**
+ * Whether a connection reaches into the server machine (ADR-0056 §5): it names a variable of the
+ * server (`secret_env`, the allowlist of Telegram) or watches its folders. `values` like those of
+ * createViolation.
+ */
+function usesServerAccess(values) {
+  if (text(values.type) === 'folder' || text(values.secret_env) !== '') {
+    return true;
+  }
+  return text(values.type) === 'telegram' && isPlainObject(values.settings) && text(values.settings.allowed_env) !== '';
+}
+
+/**
+ * Client create or update by an app account that is not the administrator of the app (ADR-0056 §5):
+ * only the administrator sets up or changes connections with access data or folders, so no other
+ * account reads the variables of the server or its folders. `before` is null for a create.
+ */
+function adminViolation(isAdmin, before, after) {
+  if (isAdmin) {
+    return '';
+  }
+  if (usesServerAccess(after) || (before !== null && usesServerAccess(before))) {
+    return failure('type', 'validation_connection_admin_only');
+  }
+  return '';
+}
+
 /** Whether a connection of `type` runs only with its secret (GitHub reads public repositories without, folders need none). */
 function requiresSecret(type) {
   return SECRET_OPTIONAL_TYPES.indexOf(type) === -1;
@@ -320,6 +348,8 @@ module.exports = {
   secretViolation: secretViolation,
   createViolation: createViolation,
   updateViolation: updateViolation,
+  usesServerAccess: usesServerAccess,
+  adminViolation: adminViolation,
   requiresSecret: requiresSecret,
   normalizeLabel: normalizeLabel,
   labelViolation: labelViolation,
