@@ -133,3 +133,10 @@ Zwei Lücken zeigte die Prüfung der Regeln:
 - **§5 „Offene Tabs“ geändert:** Beginnt oder endet die Mitgliedschaft eines Tabs, lädt er nicht mehr neu. Weil jeder Store seit E7-3 nur den Bereich des Tabs zeigt (Filter auf dem Server, auch Realtime), genügt es, Haushalt und Namen neu zu laden; geht der Haushalt des Tabs verloren, wechselt er in den Bereich Privat. Ungespeicherte Eingaben bleiben.
 - **§7:** Der Umschalter „Privat | Haushalt“ ist aktiv und erscheint nur für Mitglieder eines Haushalts.
 - **Bereich eines Eintrags:** E7-3 nutzt den Schutz aus dem Nachtrag oben (`scope-guard`) für Updates, auch der Verbindungen; neue Verbindungen mit `household` lehnt `connection-rules.areaViolation` ab.
+
+## Nachtrag E7-4 (2026-10-04, [ADR-0060](0060-verschieben-zwischen-bereichen-und-aufloesen.md))
+
+- **`move_out` wirkt:** Einträge anderer Mitglieder holt ins Private nur, wer das Recht hat (der Inhaber durch die Rolle); eigene Einträge darf jedes Mitglied ins Private holen. Verschoben wird nur über `POST /api/byl/area/move`; der Schutz `scope-guard` bleibt, wie er ist.
+- **§4 „Austreten“ und §1:** Der Inhaber kann den Haushalt jetzt auflösen (`POST /api/byl/household/dissolve`, alles ins Private übernehmen oder alles löschen); der Text von `owner-leave` nennt das statt „mit einer späteren Version“.
+- **Ohne aktiven Inhaber:** Ist der Inhaber deaktiviert oder in der Verwaltung gelöscht, bestimmt der Verwalter der App auf der Seite „Konten“ ein aktives Mitglied als Inhaber (wie Übertragen: der bisherige bleibt Mitglied mit allen Rechten).
+- **§5 „Offene Tabs“:** Das Thema `byl/household` trägt beim Auflösen `{ dissolved: true }`; sonst bleibt es ohne Daten.
