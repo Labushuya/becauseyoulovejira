@@ -6,7 +6,8 @@
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
+import { PC_CONTEXT, REMOTE_CONTEXT, useContext } from '$lib/test/context';
 import type { ResolvedPathname } from '$app/types';
 import { CARD_STATUS } from '$lib/domain/channel-card';
 import {
@@ -132,6 +133,11 @@ async function openDetails(article: HTMLElement, name: string) {
 	await fireEvent.click(toggle);
 	return within(document.getElementById(toggle.getAttribute('aria-controls') ?? '')!);
 }
+
+// The administrator on the machine of the app (KOB-1, ADR-0057): everything as before.
+beforeEach(async () => {
+	await useContext(PC_CONTEXT);
+});
 
 describe('channel card building block (KK-2)', () => {
 	const details = createRawSnippet(() => ({
@@ -453,6 +459,37 @@ describe('channel card', () => {
 		const { article } = renderCard(connection());
 		const details = await openDetails(article, 'Kalender');
 		expect(details.queryByText('Hilfsprozess')).toBeNull();
+	});
+
+	it('names no script in the hints of a card on another device (KOB-1)', async () => {
+		await useContext(REMOTE_CONTEXT);
+		const mail = connection({
+			type: 'mail',
+			label: 'Web.de',
+			mailProvider: 'webde',
+			lastError: 'Variable BYL_WEBDE_PASSWORD fehlt (Variable anlegen, dann neu-starten.bat).'
+		});
+		const spies = callbacks();
+		render(ConnectionCard, {
+			props: {
+				connection: mail,
+				secretStatus: { secret: true, allowlist: null },
+				running: false,
+				helper: { state: 'stopped', version: '', message: '' },
+				...spies
+			}
+		});
+		const article = screen.getByRole('article', { name: 'Web.de' });
+		const details = await openDetails(article, 'Web.de');
+		const helper = details.getByText('Hilfsprozess').closest('div') as HTMLElement;
+		expect(within(helper).getByRole('definition').textContent?.trim()).toBe(
+			'läuft nicht. Nur direkt am PC verfügbar, auf dem becauseyoulovejira läuft (dort über http://127.0.0.1:8090 öffnen).'
+		);
+		const error = details.getByText('Letzter Fehler').closest('div') as HTMLElement;
+		expect(within(error).getByRole('definition').textContent?.trim()).toMatch(
+			/^Variable BYL_WEBDE_PASSWORD fehlt\. Nur direkt am PC verfügbar/
+		);
+		expect(article.textContent).not.toMatch(/\.bat\b|\bsetx\b/);
 	});
 
 	it('shows the result of the last run: counts on this page, else with or without error (package A)', async () => {

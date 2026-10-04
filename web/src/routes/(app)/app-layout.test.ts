@@ -7,10 +7,12 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { createRawSnippet, tick } from 'svelte';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import AppHeader from '$lib/components/AppHeader.svelte';
 import { EMPTY_LIST_QUERY, type ListQuery } from '$lib/domain/list-query';
 import type { TicketSummary } from '$lib/domain/ticket';
+import { pb } from '$lib/pocketbase';
+import { appContext } from '$lib/stores/context.svelte';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import { NEW_TICKET_LINK_ID } from '$lib/ticket-links';
 import Layout from './+layout.svelte';
@@ -193,6 +195,39 @@ const attentionMocks = vi.hoisted(() => ({
 vi.mock('$lib/data/attention', async (importOriginal) => ({
 	...(await importOriginal<object>()),
 	ackAttention: attentionMocks.ack
+}));
+// Context of the tab (KOB-1, ADR-0057) and the notices of the administrator when the app opens.
+const contextMocks = vi.hoisted(() => ({
+	who: 'pc' as 'pc' | 'remote' | 'member',
+	fetchContext: vi.fn(),
+	// Nothing to say: no flag, only the question.
+	backup: vi.fn(async () => false),
+	security: vi.fn(async () => null)
+}));
+vi.mock('$lib/data/context', async (importOriginal) => ({
+	...(await importOriginal<object>()),
+	fetchContext: contextMocks.fetchContext.mockImplementation(async () => {
+		const admin = contextMocks.who !== 'member';
+		const local = contextMocks.who !== 'remote';
+		return {
+			kind: 'ready',
+			context: {
+				admin,
+				local,
+				platform: 'windows',
+				scripts: admin && local,
+				localUrl: admin ? 'http://127.0.0.1:8090' : null
+			}
+		};
+	})
+}));
+vi.mock('$lib/data/backup', async (importOriginal) => ({
+	...(await importOriginal<object>()),
+	fetchBackupAttention: contextMocks.backup
+}));
+vi.mock('$lib/data/security', async (importOriginal) => ({
+	...(await importOriginal<object>()),
+	fetchSecurityNotice: contextMocks.security
 }));
 vi.mock('$lib/stores/catalog.svelte', async (importOriginal) => ({
 	...(await importOriginal<object>()),
@@ -708,5 +743,41 @@ describe('app layout: opened again (ADR-0035 section 5)', () => {
 
 		expect(attentionMocks.ack).not.toHaveBeenCalled();
 		expect(screen.getByText('becauseyoulovejira wurde beendet.')).toBeTruthy();
+	});
+});
+
+describe('app layout: context of the tab (KOB-1, ADR-0057)', () => {
+	afterEach(() => {
+		pb.authStore.clear();
+		contextMocks.who = 'pc';
+	});
+
+	it.each([
+		['the administrator at the PC', 'pc' as const, 1],
+		['the administrator on another device', 'remote' as const, 0],
+		['another account', 'member' as const, 0]
+	])(
+		'asks for the notices of backups and sign-ins only for the administrator at the PC: %s',
+		async (_who, who, asked) => {
+			contextMocks.who = who;
+			contextMocks.fetchContext.mockClear();
+			contextMocks.backup.mockClear();
+			contextMocks.security.mockClear();
+			pb.authStore.save('token', { id: 'u0000000000000a', collectionName: 'users' } as never);
+			await renderLayout();
+			await vi.waitFor(() => expect(contextMocks.fetchContext).toHaveBeenCalledOnce());
+			await vi.waitFor(() => expect(appContext.capabilities.mode).toBe(who));
+			await tick();
+			expect(contextMocks.backup).toHaveBeenCalledTimes(asked);
+			expect(contextMocks.security).toHaveBeenCalledTimes(asked);
+		}
+	);
+
+	it('goes back to the most restrictive view when the layout goes away', async () => {
+		pb.authStore.save('token', { id: 'u0000000000000a', collectionName: 'users' } as never);
+		const { unmount } = await renderLayout();
+		await vi.waitFor(() => expect(appContext.capabilities.mode).toBe('pc'));
+		unmount();
+		expect(appContext.capabilities.mode).toBe('pending');
 	});
 });

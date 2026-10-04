@@ -279,6 +279,8 @@ Admin- und App-Konto dürfen dieselbe E-Mail-Adresse haben. Es bleiben trotzdem 
 
 **Zweite Person am selben Rechner:** Die Anmeldung gilt je Browserprofil. Die zweite Person nutzt ein eigenes Profil (Chrome und Edge: „Profil hinzufügen“, Firefox: `about:profiles`) und meldet sich dort mit ihrem Konto an.
 
+**Was wer sieht** ([ADR-0057](docs/adr/0057-kontextabhaengige-oberflaeche.md)): Die App fragt den Server, wer von wo angemeldet ist, und zeigt Befehle, `.bat`-Dateien, Skripte und die Seiten des Verwalters nur dort, wo sie funktionieren. Der Verwalter am Rechner der App sieht alles wie gewohnt. Am Handy oder einem anderen Gerät stehen die Seiten des Verwalters mit „nur am PC“ in der Navigation und sagen, dass sie nur direkt am PC unter `http://127.0.0.1:<Port>` gehen; Befehle ebenso. Jedes andere Konto, auch im zweiten Browserprofil am selben Rechner, sieht keine Seite des Verwalters, keinen Befehl und kein Skript, sondern „Bitte den Verwalter fragen.“; Betrieb und Sicherung übernimmt der Verwalter. Bis die App weiß, wer fragt, zeigt sie nichts davon.
+
 **`admin-zuruecksetzen.bat`** fragt die E-Mail-Adresse des Admin-Kontos ab und zweimal verdeckt das neue Passwort (mindestens 10 Zeichen, keine Anführungszeichen `"`).
 
 - Gibt es zu der E-Mail schon ein Admin-Konto, bekommt es das neue Passwort. Sonst wird ein neues Admin-Konto angelegt.

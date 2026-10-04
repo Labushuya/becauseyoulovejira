@@ -2,7 +2,8 @@
 // kind of file, the start of the text for mail files, the hint before the migration, failures.
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { PC_CONTEXT, useContext } from '$lib/test/context';
 import { DataError } from '$lib/data/errors';
 import { EMPTY_IMPORT_KEYWORDS, type ImportKeywords } from '$lib/domain/keywords';
 import {
@@ -25,6 +26,11 @@ function setup(loaded: ImportKeywords | null = EMPTY_IMPORT_KEYWORDS) {
 
 /** Title of the newest flag (ADR-0025 section 8), `undefined` without one. */
 const latestFlag = (flags: FlagStore) => flags.flags[0]?.title;
+
+// The administrator on the machine of the app (KOB-1, ADR-0057): everything as before.
+beforeEach(async () => {
+	await useContext(PC_CONTEXT);
+});
 
 describe('ImportKeywordsStore', () => {
 	it('loads the lists, knows the state before the migration and logs out on 401', async () => {
@@ -121,8 +127,10 @@ describe('ImportKeywordsSection', () => {
 		// Since EH-2 a section message with the one restart text.
 		const status = screen.getByRole('status');
 		expect(status.textContent).toMatch(/Nach dem nächsten Neustart verfügbar/);
+		// The section message follows the context of the tab (the administrator at the PC here); the
+		// sentence of the store is worded when the module loads and names no script (KOB-1).
 		expect(status.textContent).toMatch(/neu-starten\.bat im Ordner app/);
-		expect(IMPORT_KEYWORDS_UNAVAILABLE_MESSAGE).toMatch(/neu-starten\.bat im Ordner app/);
+		expect(IMPORT_KEYWORDS_UNAVAILABLE_MESSAGE).toMatch(/erst nach einem Neustart wirkt\.$/);
 		expect(screen.queryByRole('group', { name: 'Stichwörter' })).toBeNull();
 	});
 });

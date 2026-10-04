@@ -4,13 +4,19 @@
 
 import { render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { PC_CONTEXT, useContext } from '$lib/test/context';
 import type { HostPlatform } from '$lib/domain/host-platform';
 import { HostStore } from '$lib/stores/host.svelte';
 import HostPlatformHarness from '$lib/test/HostPlatformNoteHarness.svelte';
 import HostPlatformNote from './HostPlatformNote.svelte';
 
 const storeFor = (platform: HostPlatform) => new HostStore(async () => platform);
+
+// The administrator on the machine of the app (KOB-1, ADR-0057): everything as before.
+beforeEach(async () => {
+	await useContext(PC_CONTEXT);
+});
 
 describe('HostPlatformNote', () => {
 	it('renders nothing outside the (app) layout', () => {

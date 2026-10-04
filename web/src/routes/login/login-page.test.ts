@@ -25,8 +25,9 @@ const USER = {
 	email: 'anna@example.com'
 };
 const GENERIC_MESSAGE = 'Anmeldung fehlgeschlagen. Bitte E-Mail und Passwort prüfen.';
+// Before the sign-in nobody is known, so the message names no script (KOB-1, ADR-0057).
 const NETWORK_MESSAGE =
-	'Server nicht erreichbar. Bitte prüfen, ob becauseyoulovejira gestartet ist (start.bat), und erneut versuchen.';
+	'Server nicht erreichbar. Bitte prüfen, ob becauseyoulovejira läuft, und erneut versuchen.';
 const ADMIN_NOTE = 'Hinweis: Das Admin-Konto gilt nur für die Verwaltung, nicht für die App.';
 
 function stubFetch(respond: () => Response | Promise<Response>) {

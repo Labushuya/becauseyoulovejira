@@ -4,7 +4,8 @@
 // the connection through "zuletzt benutzt" and the keywords of the channel.
 
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { MEMBER_CONTEXT, PC_CONTEXT, useContext } from '$lib/test/context';
 import type { ResolvedPathname } from '$app/types';
 import type { CreatedInboxKey, InboxKey } from '$lib/domain/inbox-keys';
 import { EMPTY_IMPORT_KEYWORDS } from '$lib/domain/keywords';
@@ -100,6 +101,11 @@ async function openSetup(
 function next(dialog: HTMLElement) {
 	return fireEvent.click(within(dialog).getByRole('button', { name: 'Weiter' }));
 }
+
+// The administrator on the machine of the app (KOB-1, ADR-0057): everything as before.
+beforeEach(async () => {
+	await useContext(PC_CONTEXT);
+});
 
 describe('WhatsAppWebCard', () => {
 	const NAME = 'WhatsApp Web (Browser-Erweiterung)';
@@ -308,5 +314,28 @@ describe('WhatsAppWebSetup', () => {
 		expect(
 			within(dialog).getByRole('heading', { name: 'Schritt 2 von 6: Erweiterung laden' })
 		).toBeTruthy();
+	});
+
+	it('leaves loading the extension from the folder of the app to the administrator (KOB-1)', async () => {
+		await useContext(MEMBER_CONTEXT);
+		// The server names no folder to another account (ADR-0057).
+		const { dialog } = await openSetup(
+			[
+				{
+					id: 'key000000000001',
+					name: 'Skript',
+					tokenHint: 'byl_Ab12',
+					created: '2026-09-01 10:00:00.000Z',
+					lastUsedAt: null
+				}
+			],
+			{ folder: '', built: true, version: '0.1.0' }
+		);
+		expect(
+			within(dialog).getByRole('heading', { name: 'Schritt 2 von 6: Erweiterung laden' })
+		).toBeTruthy();
+		expect(within(dialog).getByText('Bitte den Verwalter fragen.')).toBeTruthy();
+		expect(within(dialog).queryByRole('region', { name: 'Ordner der Erweiterung' })).toBeNull();
+		expect(dialog.textContent).not.toMatch(/\.bat\b|\.ps1\b|erweiterung-whatsapp-web/);
 	});
 });

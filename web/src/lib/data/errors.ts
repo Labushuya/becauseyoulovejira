@@ -17,7 +17,9 @@ import {
 } from '../domain/recurrence-rule';
 import { SUBTASK_MESSAGES, openChildrenMessage } from '../domain/subtasks';
 import { TARGET_MESSAGES } from '../domain/target-project';
+import { unreachableHint } from '../domain/context';
 import { TRASH_MESSAGES } from '../domain/trash';
+import { currentCapabilities } from './context';
 
 export type DataErrorKind =
 	'aborted' | 'network' | 'not_found' | 'forbidden' | 'validation' | 'session' | 'server';
@@ -31,11 +33,15 @@ export interface FieldError {
 	params?: Readonly<Record<string, unknown>>;
 }
 
-/** German default texts per kind; the UI may use more specific ones. */
+/**
+ * German default texts per kind; the UI may use more specific ones. "network" names start.bat only
+ * for the administrator on the machine of the app (KOB-1, ADR-0057).
+ */
 export const DATA_ERROR_MESSAGES: Readonly<Record<DataErrorKind, string>> = Object.freeze({
 	aborted: 'Die Anfrage wurde abgebrochen.',
-	network:
-		'Server nicht erreichbar. Bitte prüfen, ob becauseyoulovejira gestartet ist (start.bat), und erneut versuchen.',
+	get network(): string {
+		return `Server nicht erreichbar. ${unreachableHint(currentCapabilities())}`;
+	},
 	not_found: 'Nicht gefunden. Der Eintrag wurde gelöscht oder ist nicht sichtbar.',
 	forbidden: 'Dafür fehlt die Berechtigung.',
 	validation: 'Bitte die markierten Eingaben prüfen.',

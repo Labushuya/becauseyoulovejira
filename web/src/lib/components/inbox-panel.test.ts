@@ -3,7 +3,8 @@
 // possible duplicate, entry not found, Escape. The store is real with fake data.
 
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
+import { MEMBER_CONTEXT, PC_CONTEXT, REMOTE_CONTEXT, useContext } from '$lib/test/context';
 import { DataError } from '$lib/data/errors';
 import type { InboxItem } from '$lib/domain/inbox';
 import type { TicketSummary } from '$lib/domain/ticket';
@@ -155,6 +156,11 @@ afterEach(() => {
 	vi.restoreAllMocks();
 });
 
+// The administrator on the machine of the app (KOB-1, ADR-0057): everything as before.
+beforeEach(async () => {
+	await useContext(PC_CONTEXT);
+});
+
 describe('inbox panel', () => {
 	it('shows the details of the source and focuses the title', async () => {
 		const { onclose } = setup();
@@ -257,6 +263,24 @@ describe('inbox panel', () => {
 		expect(data.view).toHaveBeenCalledWith(ID);
 		await fireEvent.click(screen.getByRole('button', { name: 'Herunterladen' }));
 		await vi.waitFor(() => expect(open).toHaveBeenLastCalledWith(`${view.url}&download=1`, false));
+	});
+
+	it.each([
+		['the administrator on another device', REMOTE_CONTEXT],
+		['another account', MEMBER_CONTEXT],
+		['a tab whose context loads', 'pending' as const]
+	])('offers no "Ansehen" of a file of this machine to %s (KOB-1)', async (_who, context) => {
+		await useContext(context);
+		const { data, viewer } = folderViewer(async () => ({
+			kind: 'refused',
+			reason: 'x',
+			message: ''
+		}));
+		setup(entry(FILE_ITEM), [], {}, null, viewer);
+		await screen.findByRole('heading', { name: 'Neue Datei: Angebot.pdf' });
+		expect(screen.queryByRole('button', { name: 'Ansehen' })).toBeNull();
+		expect(screen.queryByRole('button', { name: 'Herunterladen' })).toBeNull();
+		expect(data.view).not.toHaveBeenCalled();
 	});
 
 	it('says neutrally that a file is gone, and a failed request as an error', async () => {

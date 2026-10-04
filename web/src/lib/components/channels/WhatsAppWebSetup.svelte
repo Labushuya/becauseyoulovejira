@@ -25,6 +25,7 @@
 	import type { InboxKeysStore } from '$lib/stores/inbox-keys.svelte';
 	import type { InboxTargetsStore } from '$lib/stores/inbox-targets.svelte';
 	import CodeBlock from '../guidance/CodeBlock.svelte';
+	import PcOnly from '../guidance/PcOnly.svelte';
 	import SectionMessage from '../guidance/SectionMessage.svelte';
 	import Stepper from '../guidance/Stepper.svelte';
 	import Tabs from '../guidance/Tabs.svelte';
@@ -40,6 +41,9 @@
 	// eintragen → Testen (the app sees "zuletzt benutzt" of the key after "Verbindung testen" in the
 	// extension) → Stichwörter → Zielprojekt (optional, ADR-0049). A new key stays in this component
 	// until the modal closes, so the step "Schlüssel eintragen" can offer it again; it is never stored.
+	// The extension is loaded from a folder of the machine of the app and talks to the app there:
+	// "Erweiterung laden" and "Schlüssel eintragen" show only for the administrator at that machine;
+	// elsewhere the note "nur am PC" resp. "Bitte den Verwalter fragen." (KOB-1, ADR-0057).
 	let {
 		inboxKeys,
 		importKeywords = null,
@@ -87,7 +91,8 @@
 	const current = $derived(chosen ?? start);
 	const step = $derived(WHATSAPP_WEB_STEPS[current] ?? WHATSAPP_WEB_STEPS[0]);
 	const states = $derived(whatsappStepStates(facts, current));
-	const folder = $derived(extension?.folder ?? EXTENSION_FOLDER);
+	// The server names the folder only to the administrator at the machine of the app.
+	const folder = $derived(extension?.folder || EXTENSION_FOLDER);
 
 	const check = $derived<StepCheck>(
 		watched === null
@@ -172,41 +177,43 @@
 					<InboxKeyCreateForm store={inboxKeys} initialName="WhatsApp Web" bind:created />
 				{/if}
 			{:else if step.id === 'load'}
-				<p>
-					Die Erweiterung liegt im Ordner der App. Du lädst sie einmal als „entpackte Erweiterung“;
-					sie steht nicht im Store und sendet nur an diese App.
-				</p>
-				<Tabs
-					label="Browser"
-					tabs={BROWSERS.map((id) => ({ id, label: BROWSER_LABELS[id] }))}
-					selected={browser}
-					onselect={(id) => (browser = id)}
-				>
-					{#snippet panel(id)}
-						<ol class="actions">
-							{#each LOAD_STEPS[id] as action (action)}
-								<li>{action}</li>
-							{/each}
-						</ol>
-					{/snippet}
-				</Tabs>
-				<CodeBlock code={folder} label="Ordner der Erweiterung" wrap />
-				{#if extension === null}
-					<p class="hint">
-						Der Ordner liegt im Ordner der App (dort, wo start.bat liegt) unter
-						erweiterung-whatsapp-web.
+				<PcOnly need="pc">
+					<p>
+						Die Erweiterung liegt im Ordner der App. Du lädst sie einmal als „entpackte
+						Erweiterung“; sie steht nicht im Store und sendet nur an diese App.
 					</p>
-				{:else if !extension.built}
-					<SectionMessage tone="warning" compact>
-						Der Ordner fehlt noch. Er entsteht beim Bauen der App (scripts\build.ps1).
-					</SectionMessage>
-				{:else}
-					<p class="hint">Version {extension.version} ist gebaut.</p>
-				{/if}
-				<p class="hint">
-					Nach einem Update der App auf der Seite der Erweiterungen bei „becauseyoulovejira für
-					WhatsApp Web“ auf „Neu laden“ klicken.
-				</p>
+					<Tabs
+						label="Browser"
+						tabs={BROWSERS.map((id) => ({ id, label: BROWSER_LABELS[id] }))}
+						selected={browser}
+						onselect={(id) => (browser = id)}
+					>
+						{#snippet panel(id)}
+							<ol class="actions">
+								{#each LOAD_STEPS[id] as action (action)}
+									<li>{action}</li>
+								{/each}
+							</ol>
+						{/snippet}
+					</Tabs>
+					<CodeBlock code={folder} label="Ordner der Erweiterung" wrap />
+					{#if extension === null}
+						<p class="hint">
+							Der Ordner liegt im Ordner der App (dort, wo start.bat liegt) unter
+							erweiterung-whatsapp-web.
+						</p>
+					{:else if !extension.built}
+						<SectionMessage tone="warning" compact>
+							Der Ordner fehlt noch. Er entsteht beim Bauen der App (scripts\build.ps1).
+						</SectionMessage>
+					{:else}
+						<p class="hint">Version {extension.version} ist gebaut.</p>
+					{/if}
+					<p class="hint">
+						Nach einem Update der App auf der Seite der Erweiterungen bei „becauseyoulovejira für
+						WhatsApp Web“ auf „Neu laden“ klicken.
+					</p>
+				</PcOnly>
 			{:else if step.id === 'enter'}
 				<ol class="actions">
 					{#each ENTER_STEPS as action (action)}

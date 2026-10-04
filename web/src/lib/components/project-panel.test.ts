@@ -8,7 +8,8 @@
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
+import { PC_CONTEXT, useContext } from '$lib/test/context';
 import type { ResolvedPathname } from '$app/types';
 import type { Project, ProjectDraft } from '$lib/domain/project';
 import { CatalogStore } from '$lib/stores/catalog.svelte';
@@ -115,6 +116,11 @@ function navigate(path: string, overrides: Record<string, unknown> = {}) {
 	for (const guard of navigation.guards) guard(nav);
 	return nav;
 }
+
+// The administrator on the machine of the app (KOB-1, ADR-0057): everything as before.
+beforeEach(async () => {
+	await useContext(PC_CONTEXT);
+});
 
 describe('project panel: creating', () => {
 	it('is a side panel "Neues Projekt" with the focus on the name and "Anlegen" in the footer', async () => {

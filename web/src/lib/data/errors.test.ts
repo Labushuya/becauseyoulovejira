@@ -2,6 +2,8 @@
 
 import { ClientResponseError } from 'pocketbase';
 import { describe, expect, it } from 'vitest';
+import { capabilitiesOf } from '../domain/context';
+import { provideCapabilities } from './context';
 import { DATA_ERROR_MESSAGES, DataError, isDataError, toDataError, withDataErrors } from './errors';
 
 function responseError(status: number, data: Record<string, unknown> = {}) {
@@ -33,6 +35,33 @@ describe('toDataError', () => {
 
 		expect(error.kind).toBe('network');
 		expect(error.status).toBe(0);
+	});
+
+	it('names start.bat for an unreachable server only to the administrator at the PC (KOB-1)', () => {
+		const fetchFailed = () => toDataError(new ClientResponseError(new TypeError('fetch failed')));
+		// Without the context of the tab (the root tests load the data layer alone): no script.
+		expect(fetchFailed().message).toBe(
+			'Server nicht erreichbar. Bitte prüfen, ob becauseyoulovejira läuft, und erneut versuchen.'
+		);
+		const pc = capabilitiesOf({
+			kind: 'ready',
+			context: {
+				admin: true,
+				local: true,
+				platform: 'windows',
+				scripts: true,
+				localUrl: 'http://127.0.0.1:8090'
+			}
+		});
+		const restore = provideCapabilities(() => pc);
+		try {
+			expect(fetchFailed().message).toBe(
+				'Server nicht erreichbar. Bitte prüfen, ob becauseyoulovejira gestartet ist (start.bat), und erneut versuchen.'
+			);
+		} finally {
+			restore();
+		}
+		expect(DATA_ERROR_MESSAGES.network).not.toMatch(/\.bat/);
 	});
 
 	it('maps an aborted request to "aborted", not "network"', () => {

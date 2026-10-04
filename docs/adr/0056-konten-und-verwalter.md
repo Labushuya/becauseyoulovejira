@@ -1,6 +1,6 @@
 # ADR-0056: Konten und Verwalter (E7-1) – ausdrückliches Recht „Verwalter der App“, Konten in der App anlegen, Passwort und Name selbst ändern, Namen im Haushalt sichtbar, Kanäle mit Zugangsdaten nur für den Verwalter
 
-- **Status:** Angenommen und umgesetzt (E7-1, [Plan E7 „Haushalt“](../plan/e7-haushalt.md))
+- **Status:** Angenommen und umgesetzt (E7-1, [Plan E7 „Haushalt“](../plan/e7-haushalt.md)); Nachtrag KOB-1: Navigation und Hinweise nach dem Kontext des Tabs ([ADR-0057](0057-kontextabhaengige-oberflaeche.md))
 - **Datum:** 2026-10-04
 - **Entscheidung durch:** Nutzer (Start von E7 ohne Mehrgeräte, Haushaltsrollen mit Gründer, ausdrückliches Recht „Verwalter der App“ statt „erstes Konto = Besitzer“, Kanäle mit Zugangsdaten und Ordner nur für den Verwalter, persönliche Einstellungen später; 2026-10-04), Advisor (Inventur, Umfang des Pakets), Executor (Datenmodell, Regeln, Routen, Oberfläche, Einzelheiten)
 - **Ersetzt:** die Regel „Besitzer der Instanz = das zuerst angelegte App-Konto“ aus [ADR-0043](0043-system-seite.md) §3 (Nachtrag dort)
@@ -107,3 +107,10 @@ Der Nutzer startet E7 jetzt, ohne den Mehrgeräte-Ausbau abzuwarten: Eine zweite
 - Neu: Migration, Hooks und Routen wirken nach einem Neustart (`neu-starten.bat`).
 - **Tests:** rein `tests/unit/account-rules.test.mjs` (mit Gleichstand zu `domain/accounts.ts`), `connection-rules.test.mjs`, `presence-rules.test.mjs`; gegen Wegwerf-Instanzen `tests/integration/accounts.test.mjs` (Recht, Routen je Ablehnung, Konten anlegen, zurücksetzen, deaktivieren, Recht, eigenes Passwort und Name, Sichtbarkeit und E-Mail-Schutz, Recht je Route des Verwalters, Kanal-Sperren, Datenschicht), `presence-route.test.mjs`, `rules.test.mjs`, `migrations-rollback.test.mjs`, `hooks-before-migration.test.mjs`; in `web/` Konten-Seite, Konto-Seite, Navigation, Katalog, `PeopleStore`, `personLabel`, Hilfe.
 - **Nur im Browser prüfbar** (Test-Manifest, manuell): zweites Konto anlegen und mit eigenem Browserprofil anmelden, Passwort weitergeben und ändern, Deaktivieren beendet die Sitzung im anderen Profil, Namen in Kommentaren und Verlauf, Navigation ohne Verwalter-Seiten, Kanäle-Hinweis.
+
+## Nachtrag (2026-10-04, [ADR-0057](0057-kontextabhaengige-oberflaeche.md), KOB-1): Navigation und Hinweise nach dem Kontext des Tabs
+
+- **§7 Navigation:** Ob die Seiten des Verwalters erscheinen, entscheidet nicht mehr der Datensatz (`auth.isAdmin`), sondern der Kontext des Servers (`GET /api/byl/context`, `adminPages`): mit Daten nur für den Verwalter an diesem Rechner, für ihn auf einem anderen Gerät mit „nur am PC“ und dem Hinweis statt der Seite, für jedes andere Konto nicht; per Adresse „Nur für den Verwalter“. Solange der Kontext lädt oder fehlt, auch vor dem Neustart nach diesem Update, fehlen die Seiten für alle (restriktivste Sicht); die Regel „ein Datensatz ohne das Feld zählt als Verwalter“ gilt für die Navigation nicht mehr.
+- **§7 Hinweise beim Öffnen:** Sicherung und Fehlversuche fragt das `(app)`-Layout nur noch für den Verwalter an diesem Rechner; sonst wäre jedes Öffnen am Handy eine Ablehnung `loopback` im Log.
+- **§5 Kanäle:** Der Katalog für andere Konten bleibt; in WhatsApp Web steht „Erweiterung laden“ (Ordner des Servers) für sie als „Bitte den Verwalter fragen.“, die Route nennt ihnen den Ordner nicht mehr.
+- **Ablehnungscode:** bleibt `owner` (§1); die Oberfläche unterscheidet `loopback`, `owner` und `platform` und lädt nach jeder dieser Ablehnungen den Kontext neu.

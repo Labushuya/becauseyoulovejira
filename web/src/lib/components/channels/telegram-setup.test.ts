@@ -7,7 +7,8 @@
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
+import { PC_CONTEXT, REMOTE_CONTEXT, useContext } from '$lib/test/context';
 import { DataError } from '$lib/data/errors';
 import type { RecordChange } from '$lib/data/realtime';
 import { TELEGRAM_REPLIES_HINT, type Connection, type SecretStatus } from '$lib/domain/connections';
@@ -114,6 +115,11 @@ const heading = (dialog: HTMLElement) =>
 afterEach(() => {
 	document.body.innerHTML = '';
 	sessionStorage.clear();
+});
+
+// The administrator on the machine of the app (KOB-1, ADR-0057): everything as before.
+beforeEach(async () => {
+	await useContext(PC_CONTEXT);
 });
 
 describe('Telegram assistant (EH-6)', () => {
@@ -236,5 +242,33 @@ describe('Telegram assistant (EH-6)', () => {
 			expect(within(dialog).getByText(/Der Server hat mit einem Fehler geantwortet/)).toBeTruthy()
 		);
 		await vi.waitFor(() => expect(reply.checked).toBe(true));
+	});
+});
+
+describe('Telegram assistant on another device (KOB-1, ADR-0057)', () => {
+	const PC_ONLY =
+		'Nur direkt am PC verfügbar, auf dem becauseyoulovejira läuft (dort über http://127.0.0.1:8090 öffnen).';
+
+	it('puts the hint "nur am PC" instead of the variables and the restart, without setx', async () => {
+		await useContext(REMOTE_CONTEXT);
+		const { dialog } = await open(bot(), { secret: true, allowlist: false });
+		expect(heading(dialog).textContent).toMatch(/^Schritt 5 von 7: App neu starten/);
+		expect(within(dialog).getByText(PC_ONLY)).toBeTruthy();
+		expect(within(dialog).queryByText(/Hast du setx schon ausgeführt\?/)).toBeNull();
+
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Alle Schritte anzeigen' }));
+		const text = dialog.textContent ?? '';
+		expect(text).not.toMatch(/\bsetx\b|\.bat\b/);
+		expect(within(dialog).getAllByText(PC_ONLY).length).toBeGreaterThanOrEqual(2);
+	});
+
+	it('names the chat ID but leaves the command for the allowlist to the PC', async () => {
+		await useContext(REMOTE_CONTEXT);
+		const { dialog, data } = await open(bot(), { secret: true, allowlist: true });
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Jetzt abrufen' }));
+		await vi.waitFor(() => expect(data.run).toHaveBeenCalledWith(ID));
+		await vi.waitFor(() => expect(within(dialog).getByText(PC_ONLY)).toBeTruthy());
+		expect(dialog.textContent).not.toMatch(/\bsetx\b|\.bat\b/);
+		expect(within(dialog).queryByRole('button', { name: /Kopieren/ })).toBeNull();
 	});
 });

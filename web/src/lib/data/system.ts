@@ -17,6 +17,7 @@ import {
 	type SystemLogs,
 	type SystemOverview
 } from '../domain/system';
+import { reportRefusal } from './context';
 import { toDataError } from './errors';
 import type { RequestOptions } from './options';
 
@@ -44,6 +45,7 @@ async function ask<T>(
 		const status = isRecord(error) && typeof error.status === 'number' ? error.status : 0;
 		if (!signal?.aborted && DENIAL_STATUSES.includes(status)) {
 			const response = isRecord(error) && isRecord(error.response) ? error.response : {};
+			reportRefusal(response.reason);
 			return { kind: 'denied', reason: denialOf(status, response.reason) };
 		}
 		throw toDataError(error, signal);

@@ -18,6 +18,7 @@
 	import { formatBerlinDateTime } from '$lib/domain/format';
 	import { connectionAnchor } from '$lib/domain/sync-all';
 	import type { ProjectRef } from '$lib/domain/ticket';
+	import { textForContext } from '$lib/guidance/texts';
 	import { helpHref } from '$lib/settings-sections';
 	import ChipList from '../ChipList.svelte';
 	import CardTargetProject from './CardTargetProject.svelte';
@@ -242,13 +243,13 @@
 				{/if}
 				<div>
 					<dt>Hilfsprozess</dt>
-					<dd>{mailHelperText(helper)}</dd>
+					<dd>{textForContext(mailHelperText(helper))}</dd>
 				</div>
 			{/if}
 			{#if connection.lastError !== ''}
 				<div>
 					<dt>Letzter Fehler</dt>
-					<dd>{connection.lastError}</dd>
+					<dd>{textForContext(connection.lastError)}</dd>
 				</div>
 			{/if}
 		</dl>

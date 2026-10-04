@@ -3,7 +3,8 @@
 // the title blinks for "start" and "datei", repeated messages show one flag. Plus the parser of
 // the realtime event and the subscription through a fake source.
 
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { PC_CONTEXT, useContext } from '$lib/test/context';
 import { parseAttention, type AttentionMessage } from '$lib/data/attention';
 import { APP_OPENED_AGAIN, APP_STOPPED } from '$lib/guidance/texts';
 import { AttentionStore, type AttentionSource } from './attention.svelte';
@@ -41,6 +42,11 @@ function setup(ack: (nonce: string) => Promise<unknown> = async () => undefined)
 const message = (reason: AttentionMessage['reason']): AttentionMessage => ({
 	nonce: NONCE,
 	reason
+});
+
+// The administrator on the machine of the app (KOB-1, ADR-0057): everything as before.
+beforeEach(async () => {
+	await useContext(PC_CONTEXT);
 });
 
 describe('AttentionStore', () => {

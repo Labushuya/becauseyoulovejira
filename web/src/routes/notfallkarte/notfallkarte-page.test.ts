@@ -10,13 +10,35 @@ import Page from './+page.svelte';
 
 const mocks = vi.hoisted(() => ({
 	platform: 'windows' as string,
+	// Who uses the tab (KOB-1, ADR-0057): the administrator here or elsewhere, or another account.
+	who: 'pc' as 'pc' | 'remote' | 'member',
+	contextRequests: 0,
 	requests: 0,
 	answer: null as unknown
 }));
 
 vi.mock('$lib/auth.svelte', () => ({ auth: { ensureValid: () => true, logout: () => undefined } }));
-vi.mock('$lib/pocketbase', () => ({ pb: {} }));
-vi.mock('$lib/data/host', () => ({ fetchHostPlatform: vi.fn(async () => mocks.platform) }));
+vi.mock('$lib/pocketbase', () => ({
+	pb: { authStore: { token: 'token', record: { id: 'u0000000000000a' }, onChange: () => () => {} } }
+}));
+vi.mock('$lib/data/context', async (importOriginal) => ({
+	...(await importOriginal<object>()),
+	fetchContext: vi.fn(async () => {
+		mocks.contextRequests += 1;
+		const admin = mocks.who !== 'member';
+		const local = mocks.who !== 'remote';
+		return {
+			kind: 'ready',
+			context: {
+				admin,
+				local,
+				platform: mocks.platform,
+				scripts: admin && local && mocks.platform === 'windows',
+				localUrl: admin ? 'http://127.0.0.1:8090' : null
+			}
+		};
+	})
+}));
 vi.mock('$lib/data/backup', async (importOriginal) => ({
 	...(await importOriginal<object>()),
 	fetchBackupOverview: vi.fn(async () => {
@@ -48,6 +70,8 @@ const OVERVIEW = parseOverview({
 });
 
 beforeEach(() => {
+	mocks.who = 'pc';
+	mocks.contextRequests = 0;
 	mocks.requests = 0;
 	mocks.answer = { kind: 'ok', value: OVERVIEW };
 	document.body.innerHTML = '';
@@ -124,5 +148,29 @@ describe('Notfallkarte', () => {
 		render(Page);
 		await screen.findByText('Nur für einen Server unter Windows');
 		expect(mocks.requests).toBe(0);
+	});
+
+	it('shows the way to the machine of the app on another device, without asking for the backups (KOB-1)', async () => {
+		mocks.platform = 'windows';
+		mocks.who = 'remote';
+		render(Page);
+		await screen.findByText('Nur direkt am PC');
+		expect(
+			screen.getByText(
+				'Nur direkt am PC verfügbar, auf dem becauseyoulovejira läuft (dort über http://127.0.0.1:8090 öffnen).'
+			)
+		).toBeTruthy();
+		expect(mocks.contextRequests).toBe(1);
+		expect(mocks.requests).toBe(0);
+		expect(screen.queryByRole('button', { name: 'Drucken' })).toBeNull();
+	});
+
+	it('says "Nur für den Verwalter" to another account, without asking for the backups (KOB-1)', async () => {
+		mocks.platform = 'windows';
+		mocks.who = 'member';
+		render(Page);
+		await screen.findByText('Nur für den Verwalter');
+		expect(mocks.requests).toBe(0);
+		expect(document.body.textContent).not.toMatch(/\.bat/);
 	});
 });

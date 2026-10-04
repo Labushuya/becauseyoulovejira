@@ -8,7 +8,8 @@
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
+import { PC_CONTEXT, useContext } from '$lib/test/context';
 import { DataError } from '$lib/data/errors';
 import type { Connection } from '$lib/domain/connections';
 import type {
@@ -220,6 +221,11 @@ function notionMenu(card: ReturnType<typeof within>) {
 		menu.getAllByRole('menuitem', { hidden: true }).map((item) => item.textContent?.trim());
 	return { trigger, menu, items };
 }
+
+// The administrator on the machine of the app (KOB-1, ADR-0057): everything as before.
+beforeEach(async () => {
+	await useContext(PC_CONTEXT);
+});
 
 describe('Notion card', () => {
 	it('shows the imported sources and offers import, check and "Erneut abrufen", no run and no pause', async () => {

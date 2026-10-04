@@ -1,7 +1,8 @@
 // Component tests of the settings area (ADR-0026 section 1, plan EH-1): the switch without a
 // current view, the navigation with the way back, breadcrumbs, the heading as focus target after a
 // change of the page, the forward from /einstellungen and the full width. Page state, navigation
-// and the stores of the (app) layout are fakes; the way back is the real store.
+// and the stores of the (app) layout are fakes; the way back is the real store. The pages of the
+// administrator follow the context of the tab (KOB-1, ADR-0057), set like an answer of the server.
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -9,6 +10,7 @@ import { render, screen, within } from '@testing-library/svelte';
 import { createRawSnippet, tick } from 'svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { LAST_VIEW_KEY, LastViewStore } from '$lib/stores/last-view.svelte';
+import { MEMBER_CONTEXT, PC_CONTEXT, REMOTE_CONTEXT, useContext } from '$lib/test/context';
 import Layout from './+layout.svelte';
 import { load } from './+page';
 
@@ -20,13 +22,10 @@ const mocks = vi.hoisted(() => ({
 	stored: {} as Record<string, string>,
 	lastView: null as unknown,
 	// Operating system of the server (host store of the (app) layout); null: no store.
-	platform: null as string | null,
-	// The signed-in account (ADR-0056 §7: the pages of the administrator only for it).
-	auth: { isAdmin: true }
+	platform: null as string | null
 }));
 
 vi.mock('$app/state', () => ({ page: mocks.page }));
-vi.mock('$lib/auth.svelte', () => ({ auth: mocks.auth }));
 vi.mock('$app/navigation', () => ({
 	afterNavigate: (callback: (navigation: Navigation) => void) => {
 		mocks.afterNavigate.push(callback);
@@ -70,11 +69,12 @@ async function renderSettings(path: string, remembered: string | null = null) {
 	return result;
 }
 
-beforeEach(() => {
+beforeEach(async () => {
 	mocks.afterNavigate.length = 0;
 	mocks.platform = null;
-	mocks.auth.isAdmin = true;
 	document.body.innerHTML = '';
+	// The administrator on the machine of the app: every page with its content.
+	await useContext(PC_CONTEXT);
 });
 
 describe('settings layout', () => {
@@ -117,8 +117,11 @@ describe('settings layout', () => {
 		expect(screen.getByText(CONTENT)).toBeTruthy();
 	});
 
-	it('leaves out the pages of the administrator for every other account (ADR-0056 §7)', async () => {
-		mocks.auth.isAdmin = false;
+	it.each([
+		['every other account (ADR-0056 §7)', MEMBER_CONTEXT],
+		['a tab whose context is not known yet (KOB-1)', 'pending' as const]
+	])('leaves out the pages of the administrator for %s', async (_who, context) => {
+		await useContext(context);
 		mocks.platform = 'windows';
 		await renderSettings('/einstellungen/konto');
 
@@ -135,6 +138,78 @@ describe('settings layout', () => {
 		]);
 		expect(nav.queryByRole('link', { name: 'Konten' })).toBeNull();
 		expect(nav.queryByRole('link', { name: 'Sicherheit' })).toBeNull();
+	});
+
+	it('marks the pages of the administrator "nur am PC" on another device (KOB-1)', async () => {
+		await useContext(REMOTE_CONTEXT);
+		mocks.platform = 'windows';
+		await renderSettings('/einstellungen/konto');
+
+		const nav = within(screen.getByRole('navigation', { name: 'Einstellungen' }));
+		const pages = nav.getAllByRole('listitem').map((item) => within(item).getByRole('link'));
+		expect(pages.map((link) => link.textContent?.replace(/\s+/g, ' ').trim())).toEqual([
+			'Kanäle',
+			'Datei-Importe',
+			'Tags',
+			'Tickets',
+			'Darstellung',
+			'Konto',
+			'Konten nur am PC',
+			'Sicherheit nur am PC',
+			'Sicherung nur am PC',
+			'Speicher nur am PC',
+			'System nur am PC',
+			'Hilfe'
+		]);
+	});
+
+	it('shows the way to the machine of the app instead of a page of the administrator on another device (KOB-1)', async () => {
+		await useContext(REMOTE_CONTEXT);
+		await renderSettings('/einstellungen/system');
+
+		expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('System');
+		expect(screen.getByText('Nur direkt am PC')).toBeTruthy();
+		expect(
+			screen.getByText(
+				'Nur direkt am PC verfügbar, auf dem becauseyoulovejira läuft (dort über http://127.0.0.1:8090 öffnen).'
+			)
+		).toBeTruthy();
+		// The page itself never mounts, so it asks the server nothing.
+		expect(screen.queryByText(CONTENT)).toBeNull();
+		expect(document.body.textContent).not.toMatch(/\.bat|\.ps1/);
+	});
+
+	it('says "Nur für den Verwalter" for a page of the administrator opened by another account (KOB-1)', async () => {
+		await useContext(MEMBER_CONTEXT);
+		await renderSettings('/einstellungen/konten');
+
+		expect(screen.getByText('Nur für den Verwalter')).toBeTruthy();
+		expect(
+			screen.getByText('Diese Seite gehört zur Verwaltung der App. Bitte den Verwalter fragen.')
+		).toBeTruthy();
+		expect(screen.queryByText(CONTENT)).toBeNull();
+		expect(document.querySelector('.section-message.error')).toBeNull();
+	});
+
+	it('shows nothing of a page of the administrator while the context loads, then the page (KOB-1)', async () => {
+		await useContext('pending');
+		await renderSettings('/einstellungen/speicher');
+
+		expect(screen.getByRole('status').textContent).toBe('Wird geladen …');
+		expect(screen.queryByText(CONTENT)).toBeNull();
+
+		await useContext(PC_CONTEXT);
+		await tick();
+		expect(screen.getByText(CONTENT)).toBeTruthy();
+	});
+
+	it('names the restart for a page of the administrator before the server knows the context (KOB-1)', async () => {
+		await useContext('outdated');
+		await renderSettings('/einstellungen/sicherheit');
+
+		expect(screen.getByText('Nach dem nächsten Neustart verfügbar')).toBeTruthy();
+		expect(screen.queryByText(CONTENT)).toBeNull();
+		expect(document.body.textContent).not.toMatch(/\.bat/);
 	});
 
 	it.each([

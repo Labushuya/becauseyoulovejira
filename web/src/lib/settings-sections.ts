@@ -4,6 +4,7 @@
 
 import { resolve } from '$app/paths';
 import type { ResolvedPathname } from '$app/types';
+import type { AdminPages } from '$lib/domain/context';
 import type { HostPlatform } from '$lib/domain/host-platform';
 
 export interface SettingsSection {
@@ -48,21 +49,35 @@ export const ADMIN_ONLY: readonly string[] = [
 	'system'
 ];
 
+/** A page in the navigation; `pcOnly` marks a page of the administrator on another device. */
+export interface VisibleSettingsSection extends SettingsSection {
+	readonly pcOnly: boolean;
+}
+
+/** Whether `id` is a page of the administrator of the app. */
+export function isAdminSection(id: string): boolean {
+	return ADMIN_ONLY.includes(id);
+}
+
 /**
  * The pages the navigation lists for a server on `platform`: "Sicherung" and "System" drive the
- * scripts of the folder app under Windows, so they are left out for Linux and containers. An
- * account that is not the administrator of the app (`admin` false) does not see the pages of the
- * administrator at all (ADR-0056 §7, instead of a page that only says "nicht für dich").
+ * scripts of the folder app under Windows, so they are left out for Linux and containers. The pages
+ * of the administrator follow the context of the tab (KOB-1, ADR-0057): with data on the machine of
+ * the app ("full"), marked "nur am PC" for the administrator on another device ("pc-only"), not at
+ * all for every other account and while the context loads ("hidden", ADR-0056 §7).
  */
 export function visibleSettingsSections(
 	platform: HostPlatform,
-	admin: boolean = true
-): readonly SettingsSection[] {
+	adminPages: AdminPages = 'full'
+): readonly VisibleSettingsSection[] {
 	return SETTINGS_SECTIONS.filter(
 		(section) =>
 			(platform === 'windows' || !WINDOWS_ONLY.includes(section.id)) &&
-			(admin || !ADMIN_ONLY.includes(section.id))
-	);
+			(adminPages !== 'hidden' || !isAdminSection(section.id))
+	).map((section) => ({
+		...section,
+		pcOnly: adminPages === 'pc-only' && isAdminSection(section.id)
+	}));
 }
 
 /** Start of the settings area; it forwards to the first page. */

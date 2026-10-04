@@ -21,6 +21,7 @@
 	import { TARGET_LABEL, targetOfItem, targetText } from '$lib/domain/target-project';
 	import type { ProjectRef, TicketSummary } from '$lib/domain/ticket';
 	import { findConnectionNames } from '$lib/stores/connection-names.svelte';
+	import { appContext } from '$lib/stores/context.svelte';
 	import { findFolderViewer, type FileViewNote } from '$lib/stores/folder-view.svelte';
 	import type { InboxStore } from '$lib/stores/inbox.svelte';
 	import type { RecurrenceStore } from '$lib/stores/recurrence.svelte';
@@ -227,8 +228,11 @@
 		else message = result.message;
 	}
 
-	// "Ansehen" of a file of a folder (ADR-0051 §6); outside the (app) layout there is none.
+	// "Ansehen" of a file of a folder (ADR-0051 §6); outside the (app) layout there is none. Only the
+	// administrator on the machine of the app gets the file (KOB-1, ADR-0057); elsewhere the buttons
+	// are left out instead of a refusal.
 	const viewer = findFolderViewer();
+	const filesHere = $derived(appContext.capabilities.pc);
 	let viewNote = $state<FileViewNote | null>(null);
 
 	async function view(entry: InboxItem, download: boolean) {
@@ -281,7 +285,7 @@
 </script>
 
 {#snippet entryActions(entry: InboxItem)}
-	{#if entry.channel === 'folder' && viewer !== null}
+	{#if entry.channel === 'folder' && viewer !== null && filesHere}
 		<button
 			class="button-secondary"
 			type="button"

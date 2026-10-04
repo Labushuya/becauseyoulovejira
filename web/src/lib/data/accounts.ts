@@ -15,6 +15,7 @@ import {
 	type PasswordGrant
 } from '../domain/accounts';
 import { denialOf, type SystemDenial } from '../domain/system';
+import { reportRefusal } from './context';
 import { toDataError, withDataErrors } from './errors';
 import type { RequestOptions } from './options';
 
@@ -46,6 +47,7 @@ async function ask<T>(
 			return { kind: 'invalid', problem: response.problem };
 		}
 		if (!signal?.aborted && (status === 400 || DENIAL_STATUSES.includes(status))) {
+			reportRefusal(response.reason);
 			return { kind: 'denied', reason: denialOf(status, response.reason) };
 		}
 		throw toDataError(error, signal);

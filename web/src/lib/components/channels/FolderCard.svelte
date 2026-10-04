@@ -25,6 +25,7 @@
 	import { projectChoiceLabel } from '$lib/domain/project-tree';
 	import { connectionAnchor } from '$lib/domain/sync-all';
 	import type { ProjectRef } from '$lib/domain/ticket';
+	import { textForContext } from '$lib/guidance/texts';
 	import { helpHref } from '$lib/settings-sections';
 	import type { FoldersStore } from '$lib/stores/folders.svelte';
 	import { findHostStore } from '$lib/stores/host.svelte';
@@ -282,7 +283,7 @@
 			{#if connection.lastError !== ''}
 				<div>
 					<dt>Letzter Fehler</dt>
-					<dd>{connection.lastError}</dd>
+					<dd>{textForContext(connection.lastError)}</dd>
 				</div>
 			{/if}
 		</dl>

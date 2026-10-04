@@ -7,6 +7,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { PC_CONTEXT, useContext } from '$lib/test/context';
 import type { RecordChange } from '$lib/data/realtime';
 import type { SetupTarget } from '$lib/domain/channel-setup';
 import { NO_KEYWORDS_WARNING, type Connection, type SecretStatus } from '$lib/domain/connections';
@@ -106,6 +107,11 @@ beforeEach(() => {
 
 afterEach(() => {
 	document.body.innerHTML = '';
+});
+
+// The administrator on the machine of the app (KOB-1, ADR-0057): everything as before.
+beforeEach(async () => {
+	await useContext(PC_CONTEXT);
 });
 
 describe('mailbox assistant (EH-7)', () => {

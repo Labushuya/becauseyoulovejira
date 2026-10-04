@@ -12,12 +12,15 @@
 	} from '$lib/domain/backup';
 	import { KEY_PLACEHOLDER, ingestExamples } from '$lib/domain/inbox-keys';
 	import HostPlatformNote from '$lib/components/guidance/HostPlatformNote.svelte';
+	import PcOnly from '$lib/components/guidance/PcOnly.svelte';
+	import SectionMessage from '$lib/components/guidance/SectionMessage.svelte';
 	import RecurrenceHelp from '$lib/components/help/RecurrenceHelp.svelte';
 	import ScriptProblemsHelp from '$lib/components/help/ScriptProblemsHelp.svelte';
 	import ShortcutList from '$lib/components/help/ShortcutList.svelte';
 	import { PRIORITY_NUMBERS, PRIORITY_WORDS } from '$lib/domain/quick-syntax';
-	import { RESTART_NEEDED } from '$lib/guidance/texts';
+	import { CONTEXT_TEXTS, RESTART_NEEDED } from '$lib/guidance/texts';
 	import { HELP_SECTIONS, helpHref } from '$lib/settings-sections';
+	import { appContext } from '$lib/stores/context.svelte';
 	import { calendarHref, channelSetupHref, trashHref } from '$lib/ticket-links';
 
 	// Settings "Hilfe" (ADR-0026 section 7, plan EH-9 §3.10): jump links, the keyboard shortcuts from
@@ -30,7 +33,12 @@
 	// engine computes; the form, the overview and the rule panel link to it. The section "Sicherung &
 	// Notfall" (ADR-0046 §8) takes the steps for a new machine from the one source of the Notfallkarte.
 	// "Betrieb" ends with the frequent problems of the scripts in the words of their catalog
-	// (ADR-0048, ScriptProblemsHelp).
+	// (ADR-0048, ScriptProblemsHelp). Since KOB-1 (ADR-0057) commands, .bat files, setx, the Explorer
+	// and the steps at the machine of the app show only for the administrator there (PcOnly); the
+	// administrator on another device reads "nur am PC" instead, every other account "Bitte den
+	// Verwalter fragen.", and "Betrieb" and "Sicherung & Notfall" become one sentence for them.
+
+	const mode = $derived(appContext.capabilities.mode);
 
 	// Examples of the own inbox (ADR-0038) with the address of this app and the key as placeholder.
 	const examples = $derived(ingestExamples(page.url.origin));
@@ -226,30 +234,33 @@
 		</p>
 		<HostPlatformNote headingLevel={4} />
 		<h4>Zugangsdaten als Windows-Variable setzen</h4>
-		<ol>
-			<li>
-				<strong>Per Eingabeaufforderung:</strong> Windows-Taste, „cmd“ eingeben, Eingabetaste. Dann
-				<code>setx NAME "Wert"</code> eingeben, also etwa
-				<code>setx BYL_TELEGRAM_TOKEN "123456789:AA…"</code>. Den Wert in Anführungszeichen setzen.
-				Die Meldung „Erfolgreich: Der angegebene Wert wurde gespeichert.“ bestätigt es.
-			</li>
-			<li>
-				<strong>Oder per Systemsteuerung:</strong> Windows-Taste, „Umgebungsvariablen“ eingeben und „Umgebungsvariablen
-				für dieses Konto bearbeiten“ öffnen. Unter „Benutzervariablen“ auf „Neu…“, Name und Wert eintragen,
-				mit „OK“ bestätigen.
-			</li>
-			<li>
-				Danach die App neu starten: <code>neu-starten.bat</code> im Ordner <code>app</code>
-				doppelklicken. Es erkennt die neue oder geänderte Variable und startet neu. Erst dann sieht die
-				App die Variable, und die Karte der Verbindung steht nicht mehr auf „Einrichtung offen“.
-			</li>
-		</ol>
-		<p class="note">
-			Ändern geht genauso (<code>setx</code> mit neuem Wert, dann neu starten). Entfernen: in der
-			Systemsteuerung die Variable löschen oder
-			<code>reg delete HKCU\Environment /v NAME /f</code>, dann neu starten. Auf einem anderen
-			Rechner musst du die Variablen neu anlegen.
-		</p>
+		<PcOnly>
+			<ol>
+				<li>
+					<strong>Per Eingabeaufforderung:</strong> Windows-Taste, „cmd“ eingeben, Eingabetaste.
+					Dann
+					<code>setx NAME "Wert"</code> eingeben, also etwa
+					<code>setx BYL_TELEGRAM_TOKEN "123456789:AA…"</code>. Den Wert in Anführungszeichen
+					setzen. Die Meldung „Erfolgreich: Der angegebene Wert wurde gespeichert.“ bestätigt es.
+				</li>
+				<li>
+					<strong>Oder per Systemsteuerung:</strong> Windows-Taste, „Umgebungsvariablen“ eingeben und
+					„Umgebungsvariablen für dieses Konto bearbeiten“ öffnen. Unter „Benutzervariablen“ auf „Neu…“,
+					Name und Wert eintragen, mit „OK“ bestätigen.
+				</li>
+				<li>
+					Danach die App neu starten: <code>neu-starten.bat</code> im Ordner <code>app</code>
+					doppelklicken. Es erkennt die neue oder geänderte Variable und startet neu. Erst dann sieht
+					die App die Variable, und die Karte der Verbindung steht nicht mehr auf „Einrichtung offen“.
+				</li>
+			</ol>
+			<p class="note">
+				Ändern geht genauso (<code>setx</code> mit neuem Wert, dann neu starten). Entfernen: in der
+				Systemsteuerung die Variable löschen oder
+				<code>reg delete HKCU\Environment /v NAME /f</code>, dann neu starten. Auf einem anderen
+				Rechner musst du die Variablen neu anlegen.
+			</p>
+		</PcOnly>
 	</section>
 
 	<section id="eigener-eingang" aria-labelledby="eigener-eingang-title">
@@ -267,20 +278,22 @@
 			<a href="#heimnetz">Zugriff im Heimnetz</a> auch von Geräten im Heimnetz, nie aus dem Internet.
 			Anfragen aus Webseiten lehnt die App ab.
 		</p>
-		<h4>Beispiel für PowerShell</h4>
-		<CodeBlock
-			code={examples.powershell}
-			label="Beispiel für PowerShell"
-			placeholders={EXAMPLE_PLACEHOLDERS}
-			wrap
-		/>
-		<h4>Beispiel für die Eingabeaufforderung (curl)</h4>
-		<CodeBlock
-			code={examples.curl}
-			label="Beispiel für die Eingabeaufforderung"
-			placeholders={EXAMPLE_PLACEHOLDERS}
-			wrap
-		/>
+		<PcOnly>
+			<h4>Beispiel für PowerShell</h4>
+			<CodeBlock
+				code={examples.powershell}
+				label="Beispiel für PowerShell"
+				placeholders={EXAMPLE_PLACEHOLDERS}
+				wrap
+			/>
+			<h4>Beispiel für die Eingabeaufforderung (curl)</h4>
+			<CodeBlock
+				code={examples.curl}
+				label="Beispiel für die Eingabeaufforderung"
+				placeholders={EXAMPLE_PLACEHOLDERS}
+				wrap
+			/>
+		</PcOnly>
 		<h4>Felder</h4>
 		<dl class="tokens">
 			<div class="row">
@@ -425,11 +438,13 @@
 				„Create a new connection“) und unter „Capabilities“ nur „Read content“ eingeschaltet lassen.
 			</li>
 			<li>
-				Das Token (beginnt mit <code>ntn_</code>) als Windows-Variable setzen, Vorschlag
-				<code>BYL_NOTION_TOKEN</code>, dann <code>neu-starten.bat</code> im Ordner
-				<code>app</code> doppelklicken. Für einen weiteren Arbeitsbereich legst du eine weitere
-				Verbindung an; der Assistent schlägt dann einen freien Namen vor (etwa
-				<code>BYL_NOTION_TOKEN_2</code>), damit das erste Token bleibt.
+				<PcOnly inline>
+					Das Token (beginnt mit <code>ntn_</code>) als Windows-Variable setzen, Vorschlag
+					<code>BYL_NOTION_TOKEN</code>, dann <code>neu-starten.bat</code> im Ordner
+					<code>app</code> doppelklicken. Für einen weiteren Arbeitsbereich legst du eine weitere
+					Verbindung an; der Assistent schlägt dann einen freien Namen vor (etwa
+					<code>BYL_NOTION_TOKEN_2</code>), damit das erste Token bleibt.
+				</PcOnly>
 			</li>
 			<li>
 				In Notion jede Seite oder Datenbank freigeben, die du übernehmen willst: „•••“ →
@@ -546,8 +561,10 @@
 				zeigt es nur einmal.
 			</li>
 			<li>
-				Das Token als Windows-Variable setzen, Vorschlag <code>BYL_GITHUB_TOKEN</code>, und
-				<code>neu-starten.bat</code> im Ordner <code>app</code> doppelklicken.
+				<PcOnly inline>
+					Das Token als Windows-Variable setzen, Vorschlag <code>BYL_GITHUB_TOKEN</code>, und
+					<code>neu-starten.bat</code> im Ordner <code>app</code> doppelklicken.
+				</PcOnly>
 			</li>
 		</ol>
 		<p>
@@ -637,10 +654,12 @@
 		<h4>Ordner eintragen</h4>
 		<ul>
 			<li>
-				Den vollständigen Pfad aus der Adressleiste des Explorers kopieren, etwa
-				<code>C:\Daten\Projekte</code> oder <code>\\NAS\Projekte</code>; läuft der Server unter
-				Linux, etwa <code>/home/anna/Projekte</code>. Die App prüft, ob es den Ordner gibt und ob
-				sie ihn lesen darf.
+				<PcOnly inline>
+					Den vollständigen Pfad aus der Adressleiste des Explorers kopieren, etwa
+					<code>C:\Daten\Projekte</code> oder <code>\\NAS\Projekte</code>; läuft der Server unter
+					Linux, etwa <code>/home/anna/Projekte</code>. Die App prüft, ob es den Ordner gibt und ob
+					sie ihn lesen darf.
+				</PcOnly>
 			</li>
 			<li>
 				Je Ordner wählst du, ob Unterordner dazugehören, welche Dateitypen zählen (Endungen wie
@@ -721,9 +740,12 @@
 						„•••“ mit „Aus dem Postfach wählen …“.
 					</li>
 					<li>
-						Postfächer ruft der Hilfsprozess <code>byl-mail.exe</code> alle 5 Minuten ab. Er startet
-						mit <code>start.bat</code>, sobald eine eingeschaltete Postfach-Verbindung besteht; sein
-						Protokoll steht in <code>app\logs\byl-mail.log</code>.
+						Postfächer ruft der Hilfsprozess alle 5 Minuten ab.
+						<PcOnly need="script" inline>
+							Er heißt <code>byl-mail.exe</code> und startet mit <code>start.bat</code>, sobald eine
+							eingeschaltete Postfach-Verbindung besteht; sein Protokoll steht in
+							<code>app\logs\byl-mail.log</code>.
+						</PcOnly>
 					</li>
 					<li>
 						Die Karte der Verbindung unter „Kanäle“ zeigt, ob sie pausiert ist, ob Zugangsdaten
@@ -763,8 +785,11 @@
 			<details>
 				<summary>Was bedeutet „{RESTART_NEEDED.title}“?</summary>
 				<p>
-					{RESTART_NEEDED.text} Läuft die App, öffnet <code>start.bat</code> allein nur den Browser;
-					<code>neu-starten.bat</code> startet den Server neu, wenn ein Update es braucht.
+					{RESTART_NEEDED.text}
+					<PcOnly need="script" inline quiet>
+						Läuft die App, öffnet <code>start.bat</code> allein nur den Browser;
+						<code>neu-starten.bat</code> startet den Server neu, wenn ein Update es braucht.
+					</PcOnly>
 				</p>
 			</details>
 			<details>
@@ -1136,6 +1161,12 @@
 	<section id="betrieb" aria-labelledby="betrieb-title">
 		<h3 id="betrieb-title">Betrieb</h3>
 		<HostPlatformNote headingLevel={4} />
+		<PcOnly need="script" member={CONTEXT_TEXTS.operations}>
+			{@render operations()}
+		</PcOnly>
+	</section>
+
+	{#snippet operations()}
 		<dl class="tokens">
 			<div class="row">
 				<dt>Starten</dt>
@@ -1252,56 +1283,63 @@
 		</dl>
 		<h4 id="betrieb-probleme">Probleme mit den Skripten</h4>
 		<ScriptProblemsHelp origin={page.url.origin} port={page.url.port || '8090'} />
-	</section>
+	{/snippet}
 
 	<section id="sicherung" aria-labelledby="sicherung-title">
 		<h3 id="sicherung-title">Sicherung & Notfall</h3>
-		<p>
-			Die App sichert einmal am Tag in <code>app\pb_data\backups</code> und, mit Zielverzeichnis und
-			Passphrase, verschlüsselt auf ein anderes Laufwerk; einmal in der Woche prüft sie die neueste
-			Sicherung. Alles dazu unter
-			<a href={resolve('/einstellungen/sicherung')}>Einstellungen → Sicherung</a>.
-		</p>
-		<h4>Einrichten</h4>
-		<ol>
-			<li>
-				Ein Zielverzeichnis auf einem anderen Laufwerk angeben: USB-Platte, NAS-Freigabe oder ein
-				Ordner, den ein Cloud-Dienst synchronisiert.
-			</li>
-			<li>
-				Eine Passphrase festlegen. Bewahre die Passphrase in deinem Passwort-Manager auf – ohne sie
-				lässt sich die Sicherung nicht öffnen.
-			</li>
-			<li>„Jetzt sichern“, danach „Jetzt prüfen“.</li>
-			<li>
-				Die <a href={resolve('/notfallkarte')}>Notfallkarte</a> drucken und neben die USB-Platte legen.
-			</li>
-		</ol>
-		<h4>Wiederherstellen</h4>
-		<p>
-			An einer Sicherung „Wiederherstellen …“ oder <code>app\wiederherstellen.bat</code>. Die App
-			prüft die Sicherung zuerst, fragt nach den Zugangsdaten und dem Wort WIEDERHERSTELLEN, legt
-			die jetzigen Daten sieben Tage als Sicherheitskopie in den Ordner <code>app</code> und geht zurück,
-			wenn sie mit der Sicherung nicht startet.
-		</p>
-		<h4>Neuer Rechner, Schritt für Schritt</h4>
-		<ol>
-			{#each EMERGENCY_STEPS as step (step.title)}
-				<li><strong>{step.title}:</strong> {step.text}</li>
-			{/each}
-		</ol>
-		<h4>Ohne die App öffnen</h4>
-		<p>
-			Mit dem Programm age (age-encryption.org) und tar von Windows, in einer Eingabeaufforderung:
-		</p>
-		<CodeBlock code={EMERGENCY_MANUAL.join('\n')} label="Sicherung ohne die App öffnen" />
-		<p>{EMERGENCY_CONTENTS}</p>
-		<h4>Was verloren gehen kann</h4>
-		<ul>
-			{#each EMERGENCY_LOSSES as loss (loss)}
-				<li>{loss}</li>
-			{/each}
-		</ul>
+		{#if mode === 'member'}
+			<SectionMessage tone="info" compact>{CONTEXT_TEXTS.operations}</SectionMessage>
+		{:else if mode !== 'pending'}
+			<p>
+				Die App sichert einmal am Tag in <code>app\pb_data\backups</code> und, mit Zielverzeichnis
+				und Passphrase, verschlüsselt auf ein anderes Laufwerk; einmal in der Woche prüft sie die
+				neueste Sicherung. Alles dazu unter
+				<a href={resolve('/einstellungen/sicherung')}>Einstellungen → Sicherung</a>.
+			</p>
+			<h4>Einrichten</h4>
+			<ol>
+				<li>
+					Ein Zielverzeichnis auf einem anderen Laufwerk angeben: USB-Platte, NAS-Freigabe oder ein
+					Ordner, den ein Cloud-Dienst synchronisiert.
+				</li>
+				<li>
+					Eine Passphrase festlegen. Bewahre die Passphrase in deinem Passwort-Manager auf – ohne
+					sie lässt sich die Sicherung nicht öffnen.
+				</li>
+				<li>„Jetzt sichern“, danach „Jetzt prüfen“.</li>
+				<li>
+					Die <a href={resolve('/notfallkarte')}>Notfallkarte</a> drucken und neben die USB-Platte legen.
+				</li>
+			</ol>
+			<PcOnly need="script">
+				<h4>Wiederherstellen</h4>
+				<p>
+					An einer Sicherung „Wiederherstellen …“ oder <code>app\wiederherstellen.bat</code>. Die
+					App prüft die Sicherung zuerst, fragt nach den Zugangsdaten und dem Wort WIEDERHERSTELLEN,
+					legt die jetzigen Daten sieben Tage als Sicherheitskopie in den Ordner
+					<code>app</code> und geht zurück, wenn sie mit der Sicherung nicht startet.
+				</p>
+				<h4>Neuer Rechner, Schritt für Schritt</h4>
+				<ol>
+					{#each EMERGENCY_STEPS as step (step.title)}
+						<li><strong>{step.title}:</strong> {step.text}</li>
+					{/each}
+				</ol>
+				<h4>Ohne die App öffnen</h4>
+				<p>
+					Mit dem Programm age (age-encryption.org) und tar von Windows, in einer
+					Eingabeaufforderung:
+				</p>
+				<CodeBlock code={EMERGENCY_MANUAL.join('\n')} label="Sicherung ohne die App öffnen" />
+				<p>{EMERGENCY_CONTENTS}</p>
+				<h4>Was verloren gehen kann</h4>
+				<ul>
+					{#each EMERGENCY_LOSSES as loss (loss)}
+						<li>{loss}</li>
+					{/each}
+				</ul>
+			</PcOnly>
+		{/if}
 	</section>
 
 	<section id="speicher" aria-labelledby="speicher-title">
@@ -1379,10 +1417,13 @@
 			</li>
 		</ul>
 		<p>
-			Ein vergessenes Admin-Passwort setzt <code>admin-zuruecksetzen.bat</code> im Ordner
-			<code>app</code> neu, ohne Daten zu löschen; das Passwort deines App-Kontos änderst du unter
+			Das Passwort deines App-Kontos änderst du unter
 			<a href={resolve('/einstellungen/konto')}>Konto</a>, ein vergessenes setzt der Verwalter der
 			App unter <a href={resolve('/einstellungen/konten')}>Konten</a> zurück.
+			<PcOnly need="script" inline quiet>
+				Ein vergessenes Admin-Passwort setzt <code>admin-zuruecksetzen.bat</code> im Ordner
+				<code>app</code> neu, ohne Daten zu löschen.
+			</PcOnly>
 		</p>
 		<h4 id="heimnetz">Zugriff im Heimnetz</h4>
 		<p>
@@ -1415,8 +1456,10 @@
 				Die App neu starten: unter <a href={resolve('/einstellungen/system')}
 					>Einstellungen → System</a
 				>
-				„Jetzt neu starten“ oder <code>neu-starten.bat</code>. Erscheint danach die
-				Windows-Sicherheitswarnung für pocketbase.exe, nur „Private Netzwerke“ anhaken.
+				„Jetzt neu starten“<PcOnly need="script" inline quiet>
+					oder <code>neu-starten.bat</code></PcOnly
+				>. Erscheint danach die Windows-Sicherheitswarnung für pocketbase.exe, nur „Private
+				Netzwerke“ anhaken.
 			</li>
 			<li>
 				Auf dem anderen Gerät im selben WLAN die „Adresse für andere Geräte“ der Seite Sicherheit im

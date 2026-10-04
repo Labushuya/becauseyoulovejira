@@ -40,6 +40,7 @@
 	import { projectChoiceLabel } from '$lib/domain/project-tree';
 	import { connectionAnchor } from '$lib/domain/sync-all';
 	import type { ProjectRef } from '$lib/domain/ticket';
+	import { textForContext } from '$lib/guidance/texts';
 	import { helpHref } from '$lib/settings-sections';
 	import { GITHUB_AUTO_UNAVAILABLE_MESSAGE, type GitHubStore } from '$lib/stores/github.svelte';
 	import ChipList from '../ChipList.svelte';
@@ -380,7 +381,7 @@
 			{#if connection.lastError !== ''}
 				<div>
 					<dt>Letzter Fehler</dt>
-					<dd>{connection.lastError}</dd>
+					<dd>{textForContext(connection.lastError)}</dd>
 				</div>
 			{/if}
 		</dl>

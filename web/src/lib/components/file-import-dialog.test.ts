@@ -4,7 +4,8 @@
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { PC_CONTEXT, useContext } from '$lib/test/context';
 import type { InboxDraft } from '$lib/domain/inbox';
 import type { FileImportResult, FileSelection, SelectionEntry } from '$lib/stores/mail-import';
 import FileImportDialog from './FileImportDialog.svelte';
@@ -79,6 +80,11 @@ function renderDialog(overrides: Partial<FileSelection> = {}) {
 
 const submit = () => screen.getByRole('button', { name: /in den Eingang$/ });
 
+// The administrator on the machine of the app (KOB-1, ADR-0057): everything as before.
+beforeEach(async () => {
+	await useContext(PC_CONTEXT);
+});
+
 describe('FileImportDialog', () => {
 	it('chooses keyword matches at first and blocks what is in the inbox', () => {
 		const { dialog } = renderDialog();
@@ -143,7 +149,10 @@ describe('FileImportDialog', () => {
 				/Die Stichwörter für Datei-Importe sind nach dem nächsten Neustart verfügbar/
 			)
 		).toBeTruthy();
-		expect(screen.getByText(/neu-starten\.bat im Ordner app/)).toBeTruthy();
+		// The sentence of a store is worded when the module loads, before the context of the tab is
+		// known, so it names no script (KOB-1, ADR-0057).
+		expect(screen.getByText(/erst nach einem Neustart wirkt\./)).toBeTruthy();
+		expect(screen.queryByText(/\.bat/)).toBeNull();
 	});
 
 	it('closes with Escape without saving', async () => {

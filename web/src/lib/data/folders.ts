@@ -17,6 +17,7 @@ import {
 	type FileView,
 	type FolderDetails
 } from '../domain/folders';
+import { reportRefusal } from './context';
 import { DATA_ERROR_MESSAGES, toDataError, withDataErrors } from './errors';
 import type { RequestOptions } from './options';
 
@@ -105,6 +106,8 @@ export async function viewFolderFile(
 		const response = isRecord(error) && isRecord(error.response) ? error.response : {};
 		const reason = typeof response.reason === 'string' ? response.reason : '';
 		if (!signal?.aborted && reason !== '' && reason !== 'auth' && status >= 400 && status < 500) {
+			// "loopback", "owner": the context of the tab is out of date (KOB-1).
+			reportRefusal(reason);
 			const message = typeof response.message === 'string' ? response.message : '';
 			return { kind: 'refused', reason, message: fileRefusalText(reason, message) };
 		}

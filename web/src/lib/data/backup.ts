@@ -23,6 +23,7 @@ import {
 	type VerifyResult
 } from '../domain/backup';
 import { denialOf, type SystemDenial } from '../domain/system';
+import { reportRefusal } from './context';
 import { toDataError } from './errors';
 import type { RequestOptions } from './options';
 
@@ -57,6 +58,7 @@ async function ask<T>(
 			};
 		}
 		if (!signal?.aborted && DENIAL_STATUSES.includes(status)) {
+			reportRefusal(response.reason);
 			return { kind: 'denied', reason: denialOf(status, response.reason) };
 		}
 		throw toDataError(error, signal);

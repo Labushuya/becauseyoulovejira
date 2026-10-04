@@ -1,17 +1,19 @@
 <script lang="ts">
 	import { afterNavigate } from '$app/navigation';
 	import { page } from '$app/state';
-	import { auth } from '$lib/auth.svelte';
+	import AdminPageNotice from '$lib/components/AdminPageNotice.svelte';
 	import Breadcrumbs from '$lib/components/Breadcrumbs.svelte';
 	import SettingsNav from '$lib/components/SettingsNav.svelte';
 	import ViewSwitch from '$lib/components/ViewSwitch.svelte';
 	import { DEFAULT_HOST_PLATFORM } from '$lib/domain/host-platform';
 	import {
 		SETTINGS_HOME,
+		isAdminSection,
 		isSettingsPath,
 		settingsSectionOf,
 		visibleSettingsSections
 	} from '$lib/settings-sections';
+	import { appContext } from '$lib/stores/context.svelte';
 	import { findHostStore } from '$lib/stores/host.svelte';
 	import { getInboxStore } from '$lib/stores/inbox.svelte';
 	import { getLastViewStore, lastViewLabel } from '$lib/stores/last-view.svelte';
@@ -28,17 +30,24 @@
 	const inbox = getInboxStore();
 	const lastView = getLastViewStore();
 	// "System" only for a server on Windows (ADR-0043); until the answer and outside the app layout
-	// the server counts as Windows, like the guides. The pages of the administrator only for the
-	// administrator of the app (ADR-0056 §7).
+	// the server counts as Windows, like the guides. The pages of the administrator follow the
+	// context of the tab (KOB-1, ADR-0057): with data only for the administrator on the machine of the
+	// app; on another device listed as "nur am PC", for every other account not listed (ADR-0056 §7).
+	// Opened by address, such a page shows the hint instead and never mounts, so nothing asks the
+	// server what it would refuse.
 	const host = findHostStore();
+	const capabilities = $derived(appContext.capabilities);
 	const sections = $derived(
-		visibleSettingsSections(host?.platform ?? DEFAULT_HOST_PLATFORM, auth.isAdmin)
+		visibleSettingsSections(host?.platform ?? DEFAULT_HOST_PLATFORM, capabilities.adminPages)
 	);
 
 	const uid = $props.id();
 	const headingId = `${uid}-heading`;
 
 	const section = $derived(settingsSectionOf(page.url.pathname));
+	const blocked = $derived(
+		section !== null && isAdminSection(section.id) && capabilities.adminPages !== 'full'
+	);
 	const title = $derived(section?.label ?? 'Einstellungen');
 	const backHref = $derived(lastView.href);
 	const backLabel = $derived(lastViewLabel(backHref, (id) => tickets.find(id)?.key ?? null));
@@ -51,6 +60,12 @@
 	});
 </script>
 
+<svelte:head>
+	{#if blocked}
+		<title>{title} · Einstellungen · becauseyoulovejira</title>
+	{/if}
+</svelte:head>
+
 <div class="settings-bar">
 	<ViewSwitch current={null} inboxCount={inbox.newCount} projectsNewCount={tickets.newInProjects} />
 </div>
@@ -62,7 +77,11 @@
 	<div class="page">
 		<Breadcrumbs items={[{ label: 'Einstellungen', href: SETTINGS_HOME }, { label: title }]} />
 		<h2 id={headingId} tabindex="-1" data-view-heading bind:this={heading}>{title}</h2>
-		{@render children()}
+		{#if blocked}
+			<AdminPageNotice {capabilities} />
+		{:else}
+			{@render children()}
+		{/if}
 	</div>
 </div>
 

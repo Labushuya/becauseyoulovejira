@@ -3,7 +3,8 @@
 // "Lösen" as named icon buttons; the dialog of new inbox entries. Real store with fake data.
 
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
+import { MEMBER_CONTEXT, PC_CONTEXT, REMOTE_CONTEXT, useContext } from '$lib/test/context';
 import type { RecordChange } from '$lib/data/realtime';
 import type { ConnectionName } from '$lib/domain/connections';
 import type { InboxItemSummary } from '$lib/domain/inbox';
@@ -103,6 +104,11 @@ async function setup(
 afterEach(() => {
 	cleanup();
 	vi.restoreAllMocks();
+});
+
+// The administrator on the machine of the app (KOB-1, ADR-0057): everything as before.
+beforeEach(async () => {
+	await useContext(PC_CONTEXT);
 });
 
 describe('TicketSources', () => {
@@ -244,6 +250,38 @@ describe('TicketSources', () => {
 		// A blocked tab is said neutrally, with the way out.
 		const note = await screen.findByText(/^Der Browser hat den neuen Tab blockiert/);
 		expect(note.closest('[data-tone]')?.getAttribute('data-tone')).toBe('info');
+	});
+
+	it.each([
+		['the administrator on another device', REMOTE_CONTEXT],
+		['another account', MEMBER_CONTEXT]
+	])('offers no opening of a file of this machine to %s (KOB-1)', async (_who, context) => {
+		await useContext(context);
+		const file = item('file00000000002', { channel: 'folder', kind: 'file' });
+		const store = new TicketSourcesStore(
+			{
+				list: vi.fn<TicketSourcesData['list']>(async () => [file]),
+				link: vi.fn<TicketSourcesData['link']>(),
+				release: vi.fn<TicketSourcesData['release']>(),
+				originalUrl: vi.fn<TicketSourcesData['originalUrl']>()
+			},
+			{ ensureValid: () => true, logout: vi.fn() },
+			new FlagStore()
+		);
+		store.open(TICKET.id, TICKET.sourceItem);
+		const view = vi.fn(async () => ({ kind: 'refused' as const, reason: 'x', message: '' }));
+		const viewer = new FolderViewer({ view }, { ensureValid: () => true, logout: vi.fn() });
+		render(FolderViewerHarness, {
+			props: {
+				viewer,
+				component: TicketSources,
+				props: { ticket: TICKET, store, candidates: [], picker: PICKER.source }
+			}
+		});
+		const section = within(await screen.findByRole('region', { name: 'Quellen' }));
+		const row = await vi.waitFor(() => section.getByRole('listitem'));
+		expect(within(row).queryByRole('button', { name: /öffnen/ })).toBeNull();
+		expect(view).not.toHaveBeenCalled();
 	});
 
 	it('names the connection of a source and follows a rename at once (KK-3)', async () => {
