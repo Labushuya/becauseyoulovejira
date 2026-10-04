@@ -97,3 +97,4 @@ Hooks und Steuerskript wirken erst nach einem Neustart der App (`neu-starten.bat
 
 - QR-Code fürs Handy (2.8): nur mit Freigabe einer kleinen Bibliothek.
 - HTTPS im Heimnetz kommt mit S3 (Raspberry Pi, Traefik); dann wird dieser Zugang ersetzt oder auf HTTPS umgestellt.
+- Erledigt mit KOB-1 ([ADR-0057](../adr/0057-kontextabhaengige-oberflaeche.md)): Geräte im Heimnetz und andere Konten sehen keine Befehle, Skripte und Seiten des Verwalters mehr; die Oberfläche fragt `GET /api/byl/context` mit derselben Regel für „dieser Rechner“.

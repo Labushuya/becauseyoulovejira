@@ -49,7 +49,7 @@ Siehe [ADR-0056](../adr/0056-konten-und-verwalter.md) §5: Ohne Verwalter-Recht 
 - **Eigene Zugangsdaten je Konto** (E7-4): verschlüsselt am Konto statt als Variable des Windows-Kontos; erst dann können Konten ohne Verwalter-Recht Kalender, Telegram, Postfächer, Notion oder GitHub nutzen.
 - **Verbindungen im Haushalt** (E7-4): Heute ändert nur der Verwalter Verbindungen mit Zugangsdaten, auch ihren Namen. Für gemeinsame Verbindungen klären, was Mitglieder ändern dürfen.
 - **Präsenz und `start.bat`:** Das Skript kennt die Person nicht; ein offener Tab der zweiten Person verhindert, dass `start.bat` einen Tab öffnet. Mit dem Heimnetz-Zugang neu bewerten (etwa Landing-Seite je Browserprofil).
-- **Seite „Konten“ nur auf diesem Rechner:** Wie alle Seiten des Verwalters (ADR-0043 §4). Mit dem Heimnetz-Zugang entscheiden, ob der Verwalter auch von anderen Geräten Konten verwaltet.
+- **Seite „Konten“ nur auf diesem Rechner:** Wie alle Seiten des Verwalters (ADR-0043 §4). Mit dem Heimnetz-Zugang entscheiden, ob der Verwalter auch von anderen Geräten Konten verwaltet. Seit KOB-1 ([ADR-0057](../adr/0057-kontextabhaengige-oberflaeche.md)) sagt die Oberfläche das am anderen Gerät ausdrücklich („nur am PC“) und fragt die Route dort nicht; die zweite Person sieht keine Seite des Verwalters und keinen Befehl.
 - **Persönliche Einstellungen je Konto** (E7-5).
 
 ## 4. Neustart
