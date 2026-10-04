@@ -370,16 +370,23 @@ describe('start', () => {
 		expect(branch).toContain('$link = Get-PendingInstallerLink -ProcessId $processId');
 		expect(branch).toContain('$PendingSetupHint');
 		expect(branch.match(/Start-Process/g)).toHaveLength(1);
-		expect(branch).toMatch(/Start-Process -FilePath \$link\.Url\r\n\s*return \$BylExitSetupPending$/);
+		// -NoBrowser never opens a browser, not even for the installer link: it is only shown, with
+		// words that say so (regression: start -NoBrowser opened it).
+		expect(branch).toContain('$how = if ($NoBrowser) { $PendingSetupCopy } else { $PendingSetupOpens }');
+		expect(branch).toContain("Show-Message ($PendingSetupHint -f $link.ExpiresUtc.ToLocalTime().ToString('HH:mm'), $link.Url, $how)");
+		expect(branch).toMatch(/\r\n\s*if \(-not \$NoBrowser\) \{ Start-Process -FilePath \$link\.Url \}\r\n/);
+		expect(branch).toMatch(/setup-pending browser=[^\r\n]*\r\n\s*return \$BylExitSetupPending$/);
 		expect(branch).not.toContain('Open-App');
 
 		const pending = functionBody(control(), 'Get-PendingInstallerLink');
 		expect(pending).toContain('Get-InstallerLink -LogText (Read-ServerLog) -ProcessStartUtc $startUtc');
 		expect(pending).toContain('Test-InstallerPending -Token $link.Token');
 		const hint = control().match(/\$PendingSetupHint = @"\r\n([\s\S]*?)\r\n"@/)[1];
-		expect(hint).toContain('{0} Uhr');
+		expect(hint).toContain('{2} (gültig bis {0} Uhr):');
 		expect(hint).toContain('{1}');
 		expect(hint).toContain('$MissedLinkHint');
+		expect(control()).toContain("$PendingSetupOpens = 'Der Einrichtungslink öffnet sich jetzt im Browser'");
+		expect(control()).toContain("$PendingSetupCopy = 'Kopiere diesen Einrichtungslink in den Browser'");
 	});
 
 	it('only opens links it rebuilt on the address of the app', () => {

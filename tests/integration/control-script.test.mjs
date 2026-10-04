@@ -16,10 +16,11 @@
 // another folder. BS-2: status with its exit codes, reload only when needed (a new web build only
 // asks for F5, changed hooks restart), open, logs and doctor. ST-1: a stop while the server runs a
 // child process in its console waits for the child and stops in order; another program on that
-// console never gets the signal.
+// console never gets the signal. A pending setup with -NoBrowser only shows the installer link.
 
 import { randomBytes } from 'node:crypto';
 import {
+	appendFileSync,
 	closeSync,
 	copyFileSync,
 	cpSync,
@@ -738,6 +739,34 @@ describe('byl-control.ps1: test instances folded in status and doctor (RS-4)', C
 			const copiesChecks = doctor.checks.filter((check) => check.name === 'copies');
 			expect(copiesChecks.filter((check) => check.text.includes(`(PID ${serverA.pid})`))).toEqual([]);
 			expect(copiesChecks.some((check) => /^\d+ Test-Instanz(en)? \(Entwicklung\) auf Port /.test(check.text) && check.text.includes(String(copies.a.port)))).toBe(true);
+		} finally {
+			expect(control(copies.a, 'stop').code).toBe(0);
+		}
+	});
+});
+
+// A missed setup while the app runs: start opens the still working installer link instead of the
+// app. With -NoBrowser it never opens a browser, not even for that link; it only shows it
+// (regression: start -NoBrowser opened /_/#/pbinstall/...). The copy has its superuser, so the link
+// carries a token of that superuser with the 30 minutes of the token of the installer, written
+// into the error log of the running server as PocketBase writes a link. The script finds it there
+// and asks the server whether it still works (Get-PendingInstallerLink), as with a real one.
+describe('byl-control.ps1: a pending setup with -NoBrowser', CASE_TIMEOUT, () => {
+	it('start -NoBrowser only shows a still working installer link and opens no browser', async () => {
+		expect(control(copies.a, 'start').code).toBe(0);
+		try {
+			const pb = await superuserOf(copies.a);
+			const installer = await pb.collection('_superusers').impersonate(pb.authStore.record.id, 30 * 60);
+			const link = `http://127.0.0.1:${copies.a.port}/_/#/pbinstall/${installer.authStore.token}`;
+			appendFileSync(join(copies.a.dir, 'logs', 'pocketbase.err.log'), `\n(!) Launch the URL below in the browser:\n${link}\n`);
+
+			const result = control(copies.a, 'start');
+			expect(result.code, result.output).toBe(2);
+			expect(result.output).toContain('die Einrichtung ist noch nicht abgeschlossen');
+			expect(result.output).toContain(`Kopiere diesen Einrichtungslink in den Browser (g`);
+			expect(result.output).toMatch(new RegExp(`\\n${escapeRegExp(link)}\\r?\\n`));
+			expect(result.output).not.toMatch(/Einrichtungslink .{1,2}ffnet sich jetzt/);
+			expect(controlLog(copies.a)).toMatch(/ start exit=2 pid=\d+ port=\d+ running setup-pending browser=no\r$/m);
 		} finally {
 			expect(control(copies.a, 'stop').code).toBe(0);
 		}
