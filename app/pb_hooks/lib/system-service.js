@@ -71,10 +71,35 @@ function takeRate(e, kind) {
   return result;
 }
 
-/** Whether the server runs under Windows (the rule of GET /api/byl/host). */
-function onWindows() {
+/** The system of the server, "windows", "linux" or "container" (the rule of GET /api/byl/host). */
+function serverPlatform() {
   var args = argsOfServer();
-  return hostPlatform.hostPlatform($os.getenv(hostPlatform.ENV), args.length > 0 ? args[0] : '') === 'windows';
+  return hostPlatform.hostPlatform($os.getenv(hostPlatform.ENV), args.length > 0 ? args[0] : '');
+}
+
+/** Whether the server runs under Windows. */
+function onWindows() {
+  return serverPlatform() === 'windows';
+}
+
+/**
+ * Whether the request comes from this machine: the peer of the connection and the client address
+ * PocketBase derives are loopback, and no proxy header is set (ADR-0043 §3, plan heimnetz). The one
+ * rule for the check of every route below and for GET /api/byl/context (ADR-0057): a device of the
+ * home network, also this machine under its own address in the home network, is not local.
+ */
+function isLocalRequest(e) {
+  var proxy = [];
+  for (var i = 0; i < rules.PROXY_HEADERS.length; i++) {
+    proxy.push(header(e, rules.PROXY_HEADERS[i]));
+  }
+  return rules.isLocal(presenceRules.isLoopback(e.remoteIP()), presenceRules.isLoopback(e.realIP()), proxy);
+}
+
+/** Whether the signed-in app account of the request is an active administrator of the app. */
+function isAdminRequest(e) {
+  var user = userOf(e);
+  return user !== '' && require(__hooks + '/lib/account-service.js').isInstanceAdmin(e.app, user);
 }
 
 /**
@@ -106,11 +131,7 @@ function check(e, name, method, options) {
   if (!opts.anyPlatform && !onWindows()) {
     return { refused: 'platform' };
   }
-  var proxy = [];
-  for (var i = 0; i < rules.PROXY_HEADERS.length; i++) {
-    proxy.push(header(e, rules.PROXY_HEADERS[i]));
-  }
-  if (!rules.isLocal(presenceRules.isLoopback(e.remoteIP()), presenceRules.isLoopback(e.realIP()), proxy)) {
+  if (!isLocalRequest(e)) {
     return { refused: 'loopback' };
   }
   var host = String(e.request.host || '');
@@ -119,8 +140,7 @@ function check(e, name, method, options) {
   }
   // The administrator of the app (ADR-0056; before E7 the account created first, ADR-0043 §3). The
   // reason keeps its name "owner".
-  var user = userOf(e);
-  if (user === '' || !require(__hooks + '/lib/account-service.js').isInstanceAdmin(e.app, user)) {
+  if (!isAdminRequest(e)) {
     return { refused: 'owner' };
   }
   var kind = opts.kind || (rules.action(name).changes ? 'change' : 'read');
@@ -297,9 +317,31 @@ function act(e, name) {
   return status === null ? refuse(e, name, 'script') : e.json(200, status);
 }
 
+/**
+ * GET /api/byl/context (KX-1, ADR-0057): who asks from where, for the SPA to leave out what the
+ * routes would refuse. `local` is the rule of check (the address of the connection, never a
+ * header); only the administrator gets the address of the app on this machine. Changes nothing
+ * and logs nothing.
+ */
+function context(e) {
+  e.response.header().set('Cache-Control', 'no-store');
+  return e.json(
+    200,
+    require(__hooks + '/lib/context-rules.js').contextView({
+      admin: isAdminRequest(e),
+      local: isLocalRequest(e),
+      platform: serverPlatform(),
+      port: rules.listenPort(argsOfServer())
+    })
+  );
+}
+
 module.exports = {
   read: read,
   act: act,
+  context: context,
+  isLocalRequest: isLocalRequest,
+  isAdminRequest: isAdminRequest,
   // Shared with the page "Sicherung" (lib/backup-service.js, ADR-0046): the same checks, refusals,
   // owner and commands of the control script.
   check: check,
