@@ -444,6 +444,22 @@ describe('unreachable folders, target projects and settings', () => {
 		expect((await itemByRef(owner, b))[0].target_project).toBe(fallback.id);
 	});
 
+	it('takes a target of a folder in another area as none, the one of the connection applies, and notes it (E7-4b)', async () => {
+		const foreign = await other.pb.collection('projects').create({ owner: other.id, name: 'Anderer Bereich', code: code() });
+		const fallback = await owner.pb.collection('projects').create({ owner: owner.id, name: 'Verbindung', code: code() });
+		const dir = folder('ziel-fremd');
+		// Settings from before E7-4b: the superuser writes what no check of the app lets through.
+		const conn = await connection(owner, [{ path: dir, target: foreign.id }], { target_project: fallback.id });
+		await run(owner, conn);
+		const path = put(dir, 'c.txt', 'c');
+		expect(await run(owner, conn)).toMatchObject({ status: 'ok', created: 1, failed: 0 });
+		expect((await itemByRef(owner, path))[0].target_project).toBe(fallback.id);
+		const notes = appLogs(await writtenLogs(superuser)).filter(
+			(entry) => entry.message === 'byl-folders: Zielprojekt eines Ordners liegt in einem anderen Bereich und gilt nicht'
+		);
+		expect(notes.map((entry) => [entry.data.connection, entry.data.project])).toEqual([[conn.id, foreign.id]]);
+	});
+
 	it('checks a new folder on the disk: exists, is a folder, no link on the way, not the app', async () => {
 		const dir = folder('pruefung');
 		const conn = await connection(owner, [{ path: dir }]);

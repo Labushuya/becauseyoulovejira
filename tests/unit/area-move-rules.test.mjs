@@ -135,6 +135,54 @@ describe('the history entry of a moved ticket', () => {
 	});
 });
 
+describe('targets of repositories and folders (E7-4b)', () => {
+	const P1 = 'proj00000000001';
+	const P2 = 'proj00000000002';
+	const moved = (target) => target === P1;
+
+	it('clears the target of every repository or folder the rule names, and nothing else', () => {
+		const github = {
+			interval: 15,
+			auto: true,
+			repos: [
+				{ repo: 'octo/a', paths: ['CHANGELOG*'], target: P1 },
+				{ repo: 'octo/b', target: P2 },
+				{ repo: 'octo/c' },
+				{ repo: 'octo/d', target: P1, events: { files: true, pulls: false, releases: true } }
+			]
+		};
+		const result = rules.clearedUnitTargets('github', github, moved);
+		expect(result.cleared).toBe(2);
+		expect(result.settings).toEqual({
+			interval: 15,
+			auto: true,
+			repos: [
+				{ repo: 'octo/a', paths: ['CHANGELOG*'], target: '' },
+				{ repo: 'octo/b', target: P2 },
+				{ repo: 'octo/c' },
+				{ repo: 'octo/d', target: '', events: { files: true, pulls: false, releases: true } }
+			]
+		});
+		// The settings given stay as they were (the service saves the copy).
+		expect(github.repos[0].target).toBe(P1);
+
+		const folder = { interval: 5, folders: [{ path: 'C:\\Daten\\Rechnungen', target: P1, subfolders: true }] };
+		expect(rules.clearedUnitTargets('folder', folder, moved)).toEqual({
+			settings: { interval: 5, folders: [{ path: 'C:\\Daten\\Rechnungen', target: '', subfolders: true }] },
+			cleared: 1
+		});
+	});
+
+	it('changes nothing without such a target, for other kinds and for settings of another shape', () => {
+		const none = { repos: [{ repo: 'octo/b', target: P2 }, { repo: 'octo/c', target: '' }] };
+		expect(rules.clearedUnitTargets('github', none, moved)).toEqual({ settings: null, cleared: 0 });
+		expect(rules.clearedUnitTargets('mail', { repos: [{ target: P1 }] }, moved)).toEqual({ settings: null, cleared: 0 });
+		expect(rules.clearedUnitTargets('folder', { folders: 'C:\\Daten' }, moved)).toEqual({ settings: null, cleared: 0 });
+		expect(rules.clearedUnitTargets('github', null, moved)).toEqual({ settings: null, cleared: 0 });
+		expect(rules.clearedUnitTargets('github', { repos: [null, 'octo/a'] }, moved)).toEqual({ settings: null, cleared: 0 });
+	});
+});
+
 describe('dissolving a household', () => {
 	it('reads the way and confirms deleting only with the name', () => {
 		expect(rules.dissolveInput({ mode: 'adopt', preview: true })).toEqual({ mode: 'adopt', preview: true, name: '' });

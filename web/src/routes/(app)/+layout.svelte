@@ -49,7 +49,12 @@
 		type AreaChangeCause,
 		type AreaHousehold
 	} from '$lib/stores/area.svelte';
-	import { AreaMoveStore, areaMoveData, setAreaMoveStore } from '$lib/stores/area-move.svelte';
+	import {
+		AreaMoveStore,
+		areaMoveData,
+		dropMovedTickets,
+		setAreaMoveStore
+	} from '$lib/stores/area-move.svelte';
 	import type { MovePreview } from '$lib/domain/area-move';
 	import { PeopleStore, peopleData, setPeople } from '$lib/stores/people.svelte';
 	import { FolderViewer, folderViewData, setFolderViewer } from '$lib/stores/folder-view.svelte';
@@ -261,7 +266,7 @@
 	function followMove(result: MovePreview) {
 		const moved = result.moved;
 		if (moved === null) return;
-		for (const ticket of moved.tickets) tickets.remove(ticket.id);
+		dropMovedTickets(tickets, result);
 		const record = recordOfRoute(page.route.id, page.params.id);
 		if (record === null) return;
 		const ids: Readonly<Record<string, readonly string[]>> = {

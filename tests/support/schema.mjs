@@ -267,6 +267,18 @@ export const EXPECTED_COLLECTIONS = {
 			'CREATE INDEX idx_inbox_items_target_project ON inbox_items (target_project)'
 		]
 	},
+	// Fingerprints of entries that moved out of an area (E7-4b, ADR-0061 addendum E7-4b, migration
+	// 1790204300): the area keeps them for its duplicate check.
+	inbox_moved_fingerprints: {
+		fields: {
+			scope: text({ required: true, max: 100 }),
+			fingerprint: text({ required: true, max: 100 }),
+			created: created()
+		},
+		indexes: [
+			'CREATE UNIQUE INDEX idx_inbox_moved_fingerprints_scope_fingerprint ON inbox_moved_fingerprints (scope, fingerprint)'
+		]
+	},
 	connections: {
 		fields: {
 			type: select(CONNECTION_TYPES, true),
@@ -474,7 +486,9 @@ export const EXPECTED_RULES = {
 		deleteRule: `${AUTH} && owner = @request.auth.id`
 	},
 	// Only the hooks write and read the failed sign-ins (ADR-0055 §8).
-	login_failures: { listRule: null, viewRule: null, ...READ_ONLY }
+	login_failures: { listRule: null, viewRule: null, ...READ_ONLY },
+	// Only the hooks read and write the fingerprints of moved entries (E7-4b).
+	inbox_moved_fingerprints: { listRule: null, viewRule: null, ...READ_ONLY }
 };
 
 // The own record, every record for the administrator of the app and the accounts of the own

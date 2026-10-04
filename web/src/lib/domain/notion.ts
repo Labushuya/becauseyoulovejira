@@ -4,7 +4,7 @@
 // results. Notion is only read; entries are copies in the inbox.
 
 import { formatCount } from './connections';
-import type { InboxItemSummary, InboxState } from './inbox';
+import type { DuplicateState, InboxItemSummary } from './inbox';
 import { serializeInboxQuery } from './inbox-query';
 
 export const NOTION_SOURCE_TYPES = ['data_source', 'page'] as const;
@@ -91,8 +91,8 @@ export interface NotionPreviewItem {
 	section: string;
 	done: boolean;
 	url: string;
-	/** State of the entry in the inbox, '' if it is not there. */
-	state: InboxState | '';
+	/** State of the entry in the inbox, '' if it is not there, `moved` if it moved into another area. */
+	state: DuplicateState | '';
 	/** "Schon im Eingang." and the like, '' if it is not there. */
 	message: string;
 }

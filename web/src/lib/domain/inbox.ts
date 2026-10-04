@@ -168,6 +168,18 @@ export function isInboxState(value: unknown): value is InboxState {
 	return typeof value === 'string' && (INBOX_STATES as readonly string[]).includes(value);
 }
 
+/**
+ * State of a duplicate the server names (ADR-0014 section 3): the state of the existing entry, or
+ * `moved` when the entry moved out of the area and only its fingerprint stayed (E7-4b, ADR-0061
+ * addendum E7-4b; MOVED_STATE of app/pb_hooks/lib/inbox-rules.js).
+ */
+export const DUPLICATE_STATES = [...INBOX_STATES, 'moved'] as const;
+export type DuplicateState = (typeof DUPLICATE_STATES)[number];
+
+export function isDuplicateState(value: unknown): value is DuplicateState {
+	return typeof value === 'string' && (DUPLICATE_STATES as readonly string[]).includes(value);
+}
+
 /** Entry of the inbox as lists show it (without the text). */
 export interface InboxItemSummary {
 	id: string;
@@ -260,11 +272,11 @@ export interface InboxDraft {
 /**
  * Answer of the server that the object is in the inbox already (ADR-0014 section 3), with the
  * state of the existing entry and the key of its ticket: "schon im Eingang", "schon verworfen",
- * "schon Ticket HAUS-12".
+ * "schon Ticket HAUS-12", or that its entry moved into another area (E7-4b).
  */
 export interface InboxDuplicate {
 	kind: 'duplicate';
-	state: InboxState;
+	state: DuplicateState;
 	/** ID of the existing entry, '' if the server did not name it. */
 	itemId: string;
 	/** Ticket of the existing entry, '' without one. */
@@ -277,9 +289,11 @@ export interface InboxDuplicate {
 /**
  * Text of a duplicate (ADR-0014 section 3), the same as the hook writes
  * (app/pb_hooks/lib/inbox-rules.js): "Schon im Eingang.", "Schon verworfen.",
- * "Schon Ticket HAUS-12." and without the ticket "Schon umgewandelt.".
+ * "Schon Ticket HAUS-12." and without the ticket "Schon umgewandelt.", for an entry that moved into
+ * another area "In einen anderen Bereich verschoben." (E7-4b).
  */
-export function duplicateMessage(state: InboxState, ticketKey: string): string {
+export function duplicateMessage(state: DuplicateState, ticketKey: string): string {
+	if (state === 'moved') return 'In einen anderen Bereich verschoben.';
 	if (state === 'discarded') return 'Schon verworfen.';
 	if (state === 'converted') {
 		return ticketKey === '' ? 'Schon umgewandelt.' : `Schon Ticket ${ticketKey}.`;

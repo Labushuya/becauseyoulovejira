@@ -190,9 +190,17 @@ function withoutDeletedTicket(meta) {
   return copy;
 }
 
+// State of a duplicate whose entry moved out of the area (E7-4b, ADR-0061 addendum E7-4b): the area
+// still knows its fingerprint (inbox_moved_fingerprints), but no entry of it is there any more.
+var MOVED_STATE = 'moved';
+
 // Message of a duplicate (ADR-0014 section 3): "schon im Eingang", "schon verworfen",
-// "schon Ticket HAUS-12".
+// "schon Ticket HAUS-12", and for an entry moved into another area "In einen anderen Bereich
+// verschoben.".
 function duplicateMessage(state, ticketKey) {
+  if (state === MOVED_STATE) {
+    return 'In einen anderen Bereich verschoben.';
+  }
   if (state === 'discarded') {
     return 'Schon verworfen.';
   }
@@ -219,5 +227,6 @@ module.exports = {
   TICKET_DELETED: TICKET_DELETED,
   deletedTicketMeta: deletedTicketMeta,
   withoutDeletedTicket: withoutDeletedTicket,
+  MOVED_STATE: MOVED_STATE,
   duplicateMessage: duplicateMessage
 };

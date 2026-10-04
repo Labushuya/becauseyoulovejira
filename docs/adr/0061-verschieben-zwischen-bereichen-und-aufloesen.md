@@ -32,7 +32,7 @@ Seit E7-3 zeigt jeder Tab genau einen Bereich, „Privat“ oder den Haushalt, u
 | Eintrag im Eingang | nur der Eintrag, nur ohne Ticket | Mit Ticket: 409 `linked`, er zieht mit seinem Ticket um. Verbindung in einem anderen Bereich als dem Ziel: Verweis geleert (Verbindungen bleiben privat, der Kanal bleibt). Zielprojekt, das zurückbleibt: geleert. Gleicher Fingerabdruck schon im Ziel: der verschobene bekommt einen eigenen (`sha256(moved|…)`), beide bleiben. |
 
 - **Verbindungen** sind nie verschiebbar (Festlegung im Plan §4 und ADR-0059 §5).
-- **Kein Verweis bleibt über der Grenze**: Das gilt für alle Relationsfelder. Die Ziele je Repository bzw. Ordner im JSON `settings` von GitHub- und Ordner-Verbindungen bleiben stehen; sie gelten außerhalb ihres Bereichs schon heute als „kein Ziel“ (`usableTarget`).
+- **Kein Verweis bleibt über der Grenze**: Das gilt für alle Relationsfelder. Die Ziele je Repository bzw. Ordner im JSON `settings` von GitHub- und Ordner-Verbindungen bleiben stehen; sie gelten außerhalb ihres Bereichs schon heute als „kein Ziel“ (`usableTarget`). *(Überholt durch den Nachtrag E7-4b: Das Verschieben leert auch sie.)*
 - Die Schreibvorgänge tragen den flüchtigen Schlüssel `@area_move` (Tickets, Projekte, Einträge) bzw. `@recurrence_system` (Regeln): Die Modell-Hooks überspringen ihre Prüfungen, die eine Kaskade sonst zerlegen würden (Bereichswechsel mit Unteraufgaben, Projekt mit Tickets), und der Dienst setzt Bereich, Key und Verlauf selbst. Abhängigkeiten laufen durch ihren Hook (`checkDependencyArea`) und bestehen ihn, weil beide Enden schon umgezogen sind.
 
 ### 3. Nummern, Verlauf, Realtime
@@ -95,5 +95,44 @@ Migration `1790204200_connections_private.js` (SQL, ohne Hooks, `updated` bleibt
 - **Neustart nötig** (`neu-starten.bat`): neue Hooks und Routen, Migration `1790204200`; die Oberfläche nach dem Build und F5. Vor dem Neustart antworten die Routen 404 (die Oberfläche sagt „nach dem nächsten Neustart verfügbar“).
 - Neue Module: `app/pb_hooks/area.pb.js`, `lib/area-move-rules.js`, `lib/area-move-service.js`; `web/src/lib/domain/area-move.ts`, `data/area-move.ts`, `stores/area-move.svelte.ts`, `lib/area-move-entry.ts`, `components/AreaMoveDialog.svelte`, `components/household/HouseholdDissolveDialog.svelte`. Die Datenschicht liest dafür `owner` von Tickets, Projekten, Regeln und Einträgen.
 - **Tests:** `tests/integration/household-move.test.mjs` (eigene Instanz, A und B im Haushalt, C allein), `accounts.test.mjs` (Inhaber durch den Verwalter), `migrations-rollback.test.mjs` (Altbestand), `context-route.test.mjs` und `lan-access.test.mjs` (neue Route des Verwalters), `tests/unit/area-move-rules.test.mjs`; in `web/` Domain, Dialog, Menüeinträge je Recht, Sammelaktion, Auflösen, Seite „Konten verwalten“, Verlauf, Hilfe.
-- **Grenzen:** Ein Eintrag, der den Bereich seiner Verbindung verlässt, schützt diesen Bereich nicht mehr vor erneutem Eintreffen (Fingerabdrücke gelten je Bereich); eine Vollsuche des Postfachs kann ihn dort neu anlegen. Ein Haushalt, dessen Inhaber gelöscht wurde und der kein Mitglied mehr hat, bleibt ohne Inhaber (Folgepunkt im Plan).
+- **Grenzen:** Ein Eintrag, der den Bereich seiner Verbindung verlässt, schützt diesen Bereich nicht mehr vor erneutem Eintreffen (Fingerabdrücke gelten je Bereich); eine Vollsuche des Postfachs kann ihn dort neu anlegen. *(Behoben mit dem Nachtrag E7-4b.)* Ein Haushalt, dessen Inhaber gelöscht wurde und der kein Mitglied mehr hat, bleibt ohne Inhaber (Folgepunkt im Plan).
 - **Nur im Browser prüfbar** (Test-Manifest, manuell): Verschieben mit Live-Anzeige bei der Partnerin, `@CODE`-Kollision, Ablehnung ohne `move_out`, Auflösen auf beide Arten mit offenem Tab der Partnerin, Inhaber durch den Verwalter.
+
+## Nachtrag E7-4b (2026-10-04): Keine Dubletten nach dem Verschieben, keine Ziele über die Grenze
+
+- **Entscheidung durch:** Advisor (Auftrag E7-4b: Dubletten nach dem Verschieben, Ziele in Karten-Einstellungen, Sammelauswahl), Executor (Merker je Bereich, Umsetzung).
+
+### A. Dublettenerkennung nach dem Verschieben
+
+**Befund.** Fingerabdrücke sind je Bereich eindeutig (`UNIQUE (scope, fingerprint)`, [ADR-0014](0014-datenmodell-eingang.md) §3). Ein Eintrag, der seinen Bereich verließ (eine Mail aus dem privaten Eingang in den Haushalt), nahm seinen Fingerabdruck mit. Der nächste Abruf seines Kanals, die Vollsuche des Postfachs oder ein Datei-Import legte dasselbe Objekt im alten Bereich neu an. Ebenso nach einem Zurückschieben über einen eigenen Fingerabdruck (`moved|…`) und nach dem Auflösen eines Haushalts mit „löschen“.
+
+**Entscheidung.**
+
+- **Merker je Bereich:** Die neue Collection `inbox_moved_fingerprints` (Migration `1790204300`, alle API-Regeln `null`) hält `scope` (der Bereich, den ein Eintrag verlassen hat), `fingerprint` und `created`. Eindeutig ist das Paar (`scope`, `fingerprint`). Das Verschieben schreibt den Merker in seiner Transaktion, bevor es Bereich und Fingerabdruck des Eintrags ändert (`inbox-service.rememberMovedAway`), einmal je Bereich und Fingerabdruck.
+- **Unabhängig vom Eintrag:** Der Merker bleibt, wenn der Eintrag weiterzieht, zurückkommt, einen eigenen Fingerabdruck bekommt oder mit seinem Haushalt gelöscht wird. Nur das Auflösen eines Haushalts entfernt die Merker *dieses* Haushalts (`forgetMovedAway`); sein Bereich existiert danach nicht mehr. Beim Auflösen selbst entstehen keine Merker.
+- **Prüfung:** Die Dublettenerkennung jedes Wegs (`ingest` der Kanäle, Hook der Record-API, `lookup` der Auswahlansichten) sucht zuerst einen Eintrag im Bereich, dann einen Merker (`duplicateOf`). Ein Merker ist ein Duplikat ohne Eintrag: Zustand `moved`, Text „In einen anderen Bereich verschoben.“ (`MOVED_STATE`, `duplicateMessage`; gleich in `domain/inbox.ts`, Paritätstest). Die Ingest-Route und der eigene Eingang antworten `{ status: "duplicate", item: "", state: "moved" }`. Mail-Hilfsprozess und Erweiterung zählen das wie jedes Duplikat. Die SPA liest `moved` in Postfach-Auswahl, `.ics`-Vorschau, Notion und beim Anlegen (`DUPLICATE_STATES`): Die Zeile ist gesperrt und nennt den Text.
+- **Abschaltbar:** Eine Einstellung „Dublettenerkennung aus“ gibt es nicht. Ohne harte Sperre sind nur die manuellen Wege (`manual`, `quick`, `clipboard` mit Zufallsschlüssel, §3 von ADR-0014) und die Kopie einer Quelle ([ADR-0045](0045-ticket-duplizieren.md)). Ihre Fingerabdrücke trifft kein Kanal, also sperrt auch ihr Merker nichts.
+- **Endgültiges Löschen:** Kein Löschweg sieht ein bewusstes Vergessen vor. ADR-0014 (Nachtrag 2026-10-01) und [ADR-0037](0037-papierkorb.md) §6 halten Fingerabdrücke gerade fest, damit dasselbe Objekt nicht wiederkommt. Auch das Auflösen mit „löschen“ (§5 (b)) löscht nur die Daten des Haushalts. Die Merker der Bereiche, aus denen seine Einträge kamen, bleiben.
+
+**Alternativen.**
+
+| Alternative | Bewertung |
+|---|---|
+| Merker je Verbindung und Fingerabdruck | Verfehlt Wege ohne Verbindung (eigener Eingang, WhatsApp Web, Datei-Importe, `.ics` im Haushalt) und geht verloren, wenn eine Verbindung neu angelegt wird. Je Bereich prüft genau dort, wo die Eindeutigkeit gilt, und braucht keine zweite Regel. |
+| Verworfener Platzhalter-Eintrag im alten Bereich | Er stünde unter „Verworfen“, ließe sich wiederherstellen (dann gäbe es doch zwei) und zählte im Speicher und in den Listen mit. |
+| Alte Bereiche am Eintrag merken (Feld oder `source_meta`) | Nach dem Auflösen mit „löschen“ wäre der Eintrag weg und mit ihm die Sperre. Der eigene Fingerabdruck einer Kollision träfe den Kanal nicht mehr. |
+| Fingerabdrücke über alle Bereiche eindeutig | Bricht §2 von ADR-0061 (Doppel im Ziel bleiben getrennt). Zwei Konten dürfen dieselbe Mail je in ihrem Bereich haben. |
+
+**Folgen.** Ein Eintrag, der vor E7-4b verschoben wurde, hinterließ keinen Merker; die Migration legt keine nachträglich an, weil sich der alte Bereich eines Eintrags nicht sicher bestimmen lässt (in den Haushalt verschoben behält er seinen `owner`, aber auch ein `.ics`-Import liegt dort mit `owner`). E7-4 war bis dahin nur wenige Stunden auf `main`. Einträge eines Haushalts, die die Migration `1790204200` von ihrer Verbindung löste (§7), bekommen keinen Merker; sie sind nicht mehr erkennbar und kamen auf echten Daten vermutlich nie vor.
+
+### B. Zielprojekte in den Einstellungen von GitHub- und Ordner-Kanälen
+
+- **Verschieben:** Wer ein Projekt verschiebt, leert jedes Ziel eines Repositorys bzw. Ordners (`settings.repos[].target`, `settings.folders[].target`, [ADR-0049](0049-zielprojekt-je-eingangsweg.md) §3), das danach in einen anderen Bereich zeigen würde. Beim Auflösen gilt das auch für Verbindungen, die mitziehen und auf zurückbleibende Projekte zeigen. Die reine Regel `clearedUnitTargets` (`lib/area-move-rules.js`) lässt alle anderen Einstellungen unverändert. Ein Ziel, dessen Projekt gelöscht ist, bleibt stehen (die Karte nennt es „gibt es nicht mehr“).
+- **Vorschau:** Die Antwort nennt die Anzahl in `conflicts.unit_targets`. Der Dialog sagt „N Zielprojekte von Repositorys oder Ordnern in den Kanälen werden geleert.“
+- **Abruf:** Ein Ziel über die Grenze aus der Zeit davor lässt den Lauf nicht scheitern. Es gilt wie ein geleertes (§3 von ADR-0049: das Ziel der Verbindung, sonst ohne Projekt). Neu ist ein Log-Eintrag je Lauf und Ziel: „byl-github: Zielprojekt eines Repositorys liegt in einem anderen Bereich und gilt nicht“ bzw. „byl-folders: … eines Ordners …“, mit Verbindung und Projekt, ohne Pfad.
+
+### C. Sammelauswahl nach dem Verschieben
+
+Geprüft, kein Fehler: Das Layout nimmt die verschobenen Tickets sofort aus der Liste (jetzt `dropMovedTickets` in `stores/area-move.svelte.ts`). Die Tabelle behält nur gezeigte Zeilen in der Auswahl (`keepShown`). Ein Komponententest belegt das: Danach gibt es keine Leiste und kein gewähltes Kästchen, und keine ID bleibt gewählt, auch wenn die Tickets wieder erscheinen.
+
+**Neustart nötig** (`neu-starten.bat`): Hooks und Migration `1790204300`; die Oberfläche nach dem Build und F5.

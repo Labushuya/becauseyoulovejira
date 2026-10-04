@@ -566,7 +566,7 @@ function importEntries(e) {
       results.push({ ref: ref, status: 'created', message: '', item: saved.item.id });
     } else {
       // Taken by another request since the check above.
-      var state = saved.item.getString('state');
+      var state = saved.state;
       counts.duplicates += 1;
       results.push({ ref: ref, status: 'duplicate', message: inboxRules.duplicateMessage(state, ''), state: state });
     }

@@ -867,20 +867,24 @@ const MEMBERS_RULE_BEFORE_ACCOUNTS = 'user = @request.auth.id';
 // records (1790203900, only rules); since the areas (ADR-0059, E7-3) also the retention of the trash
 // of a household (1790204100, one field at households); since moving between the areas (ADR-0061,
 // E7-4) the connections of a household from before into the private area of their owner (1790204200,
-// only rows with a household, which no earlier test writes).
+// only rows with a household, which no earlier test writes), and since E7-4b the fingerprints of
+// entries that moved out of an area (1790204300, a new collection).
 const HOUSEHOLD_INVITES_MIGRATION = '1790203800_household_invites.js';
 const JOIN_LIMIT_MIGRATION = '1790203810_household_join_limit.js';
 const ACCESS_RULES_MIGRATION = '1790203900_household_access_rules.js';
 const AREA_RETENTION_MIGRATION = '1790204100_household_trash_retention.js';
 const PRIVATE_CONNECTIONS_MIGRATION = '1790204200_connections_private.js';
+const MOVED_FINGERPRINTS_MIGRATION = '1790204300_inbox_moved_fingerprints.js';
 const HOUSEHOLD_MIGRATIONS = [
 	HOUSEHOLD_INVITES_MIGRATION,
 	JOIN_LIMIT_MIGRATION,
 	ACCESS_RULES_MIGRATION,
 	AREA_RETENTION_MIGRATION,
-	PRIVATE_CONNECTIONS_MIGRATION
+	PRIVATE_CONNECTIONS_MIGRATION,
+	MOVED_FINGERPRINTS_MIGRATION
 ];
 const HOUSEHOLD_INVITES_COLLECTION = 'household_invites';
+const MOVED_FINGERPRINTS_COLLECTION = 'inbox_moved_fingerprints';
 // [after, before] of the owner branch of 1790203900, of a record and of a record through its ticket.
 const PRIVATE_BRANCHES = [
 	['((owner = @request.auth.id && household = "") || (household != ""', '(owner = @request.auth.id || (household != ""'],
@@ -1017,9 +1021,14 @@ function withoutLoginFailures(collections) {
 	);
 }
 
-/** The collections as before managing a household (ADR-0058): no household_invites, withoutHousehold. */
+/**
+ * The collections as before managing a household (ADR-0058): no household_invites, withoutHousehold,
+ * and no fingerprints of moved entries (E7-4b, 1790204300).
+ */
 function withoutHouseholdCollections(collections) {
-	return collections.filter((collection) => collection.name !== HOUSEHOLD_INVITES_COLLECTION).map(withoutHousehold);
+	return collections
+		.filter((collection) => collection.name !== HOUSEHOLD_INVITES_COLLECTION && collection.name !== MOVED_FINGERPRINTS_COLLECTION)
+		.map(withoutHousehold);
 }
 
 /**
@@ -2730,7 +2739,7 @@ describe('migration rollback of the retention of a household (ADR-0059 §6)', ()
 		'adds the retention of every household empty (30 days), and back, without touching another row',
 		async () => {
 			const fromRetention = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(AREA_RETENTION_MIGRATION));
-			expect(fromRetention).toEqual([AREA_RETENTION_MIGRATION, PRIVATE_CONNECTIONS_MIGRATION]);
+			expect(fromRetention).toEqual([AREA_RETENTION_MIGRATION, PRIVATE_CONNECTIONS_MIGRATION, MOVED_FINGERPRINTS_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -2779,7 +2788,7 @@ describe('migration of the connections of a household from before (ADR-0061 §7)
 		'puts a connection of a household into the private area of its active owner, and leaves everything else',
 		async () => {
 			const fromConnections = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(PRIVATE_CONNECTIONS_MIGRATION));
-			expect(fromConnections).toEqual([PRIVATE_CONNECTIONS_MIGRATION]);
+			expect(fromConnections).toEqual([PRIVATE_CONNECTIONS_MIGRATION, MOVED_FINGERPRINTS_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -2820,7 +2829,10 @@ describe('migration of the connections of a household from before (ADR-0061 §7)
 
 				const up = await migrate(args, 'up');
 				expect(appliedFiles(up, 'Applied')).toEqual(fromConnections);
-				expect(withoutTimestamps(readDataDir(dataDir).collections)).toEqual(schemaBefore);
+				// The fingerprints of moved entries (1790204300) run along; no other collection changes.
+				expect(
+					withoutTimestamps(readDataDir(dataDir).collections).filter((collection) => collection.name !== MOVED_FINGERPRINTS_COLLECTION)
+				).toEqual(schemaBefore);
 				const connections = rowsOf(dataDir, 'connections');
 				expect(connections.map((row) => [row.id, row.household, row.scope, row.target_project])).toEqual([
 					// The active owner takes it; a target project of the household goes, an own one stays.
@@ -2842,10 +2854,73 @@ describe('migration of the connections of a household from before (ADR-0061 §7)
 
 				// Down changes nothing: the connections stay private.
 				const down = await migrate(args, 'down', String(fromConnections.length));
-				expect(appliedFiles(down, 'Reverted')).toEqual(fromConnections);
+				expect(appliedFiles(down, 'Reverted')).toEqual([...fromConnections].reverse());
 				expect(rowsOf(dataDir, 'connections')).toEqual(connections);
 				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromConnections);
 				expect(rowsOf(dataDir, 'connections')).toEqual(connections);
+			});
+		}
+	);
+});
+
+describe('migration rollback of the fingerprints of moved entries (ADR-0061, addendum E7-4b)', () => {
+	const collectionOf = (dataDir) =>
+		readDataDir(dataDir).collections.find((collection) => collection.name === MOVED_FINGERPRINTS_COLLECTION);
+
+	it(
+		'adds the collection without touching a row, and back with its rows',
+		async () => {
+			const fromMoved = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(MOVED_FINGERPRINTS_MIGRATION));
+			expect(fromMoved).toEqual([MOVED_FINGERPRINTS_MIGRATION]);
+
+			await withTempDataDir(async ({ dataDir, args }) => {
+				await migrate(args, 'up');
+				await migrate(args, 'down', String(fromMoved.length));
+				expect(collectionOf(dataDir)).toBeUndefined();
+				// An entry of a private area, so the snapshot has a row of the inbox.
+				withDatabase(dataDir, (db) => {
+					db.prepare('INSERT INTO users (id, email, tokenKey, password, created, updated) VALUES (?, ?, ?, ?, ?, ?)').run(
+						'user00000000001',
+						'eins@example.invalid',
+						'tk1',
+						'hash',
+						STAMP,
+						STAMP
+					);
+					db.prepare(
+						'INSERT INTO inbox_items (id, channel, kind, title, body, fingerprint, state, owner, household, scope, created, updated) ' +
+							'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+					).run('item00000000001', 'mail', 'mail', 'Rechnung', '', 'f1', 'new', 'user00000000001', '', 'u:user00000000001', STAMP, STAMP);
+				});
+				const rows = withDatabase(dataDir, snapshot);
+				const schemaBefore = withoutTimestamps(readDataDir(dataDir).collections);
+
+				const up = await migrate(args, 'up');
+				expect(appliedFiles(up, 'Applied')).toEqual(fromMoved);
+				assertSchema(readDataDir(dataDir).collections);
+				expect(
+					withoutTimestamps(readDataDir(dataDir).collections).filter((collection) => collection.name !== MOVED_FINGERPRINTS_COLLECTION)
+				).toEqual(schemaBefore);
+				expect(withDatabase(dataDir, snapshot)).toEqual(rows);
+				expect(withDatabase(dataDir, (db) => db.prepare(`SELECT * FROM ${MOVED_FINGERPRINTS_COLLECTION}`).all())).toEqual([]);
+
+				// A fingerprint an entry left in its area, then back: the collection goes with it, every other row stays.
+				withDatabase(dataDir, (db) => {
+					db.prepare(`INSERT INTO ${MOVED_FINGERPRINTS_COLLECTION} (id, scope, fingerprint, created) VALUES (?, ?, ?, ?)`).run(
+						'moved0000000001',
+						'u:user00000000001',
+						'f2',
+						STAMP
+					);
+				});
+				const down = await migrate(args, 'down', String(fromMoved.length));
+				expect(appliedFiles(down, 'Reverted')).toEqual(fromMoved);
+				expect(collectionOf(dataDir)).toBeUndefined();
+				expect(withoutTimestamps(readDataDir(dataDir).collections)).toEqual(schemaBefore);
+				expect(withDatabase(dataDir, snapshot)).toEqual(rows);
+
+				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromMoved);
+				assertSchema(readDataDir(dataDir).collections);
 			});
 		}
 	);

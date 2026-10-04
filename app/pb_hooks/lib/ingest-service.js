@@ -158,8 +158,8 @@ function ingestItem(e) {
     originalFile: files && files.length > 0 ? files[0] : null
   });
   if (outcome.kind === 'duplicate') {
-    var state = outcome.item.getString('state');
-    return e.json(200, { status: 'duplicate', item: outcome.item.id, state: state });
+    // An object whose entry moved into another area names no entry (state "moved", E7-4b).
+    return e.json(200, { status: 'duplicate', item: outcome.item ? outcome.item.id : '', state: outcome.state });
   }
   return e.json(200, { status: 'created', item: outcome.item.id });
 }

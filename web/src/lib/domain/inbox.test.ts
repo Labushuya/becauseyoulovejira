@@ -8,6 +8,7 @@ import {
 	duplicateMessage,
 	eventDueDate,
 	findSoftDuplicates,
+	isDuplicateState,
 	isInboxChannel,
 	isInboxKind,
 	isInboxState,
@@ -162,6 +163,15 @@ describe('value lists and texts', () => {
 		expect(duplicateMessage('discarded', '')).toBe('Schon verworfen.');
 		expect(duplicateMessage('converted', 'HAUS-12')).toBe('Schon Ticket HAUS-12.');
 		expect(duplicateMessage('converted', '')).toBe('Schon umgewandelt.');
+	});
+
+	it('knows a duplicate whose entry moved into another area (E7-4b)', () => {
+		expect(isDuplicateState('moved')).toBe(true);
+		expect(isDuplicateState('discarded')).toBe(true);
+		expect(isDuplicateState('gone')).toBe(false);
+		// Not a state of an entry: no list or filter of the inbox takes it.
+		expect(isInboxState('moved')).toBe(false);
+		expect(duplicateMessage('moved', '')).toBe('In einen anderen Bereich verschoben.');
 	});
 });
 

@@ -86,7 +86,8 @@ function preview(overrides: Partial<MovePreview> = {}): MovePreview {
 			ruleTickets: 0,
 			rulesProject: [],
 			items: { connection: 0, target: 0, duplicate: 0 },
-			targets: 0
+			targets: 0,
+			unitTargets: 0
 		},
 		needs: { project: true, dependencies: true, codes: [] },
 		moved: null,

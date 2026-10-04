@@ -16,6 +16,7 @@ import { FAIL_AREA_MOVE, uniqueCode, uniqueSuffix } from '../support/scenario.mj
 import { scaled } from '../support/timing.mjs';
 import { moveRecords } from '../../web/src/lib/data/area-move.ts';
 import { dissolveHousehold } from '../../web/src/lib/data/household.ts';
+import { createItem, lookupDrafts } from '../../web/src/lib/data/inbox.ts';
 
 const ROUTE = '/api/byl/household';
 const MOVE = '/api/byl/area/move';
@@ -122,6 +123,48 @@ async function runRecurrence(iso) {
 
 async function memberOf(person) {
 	return a.client.collection('household_members').getFirstListItem(a.client.filter('user = {:u}', { u: person.id }));
+}
+
+/** A mail connection of `person`, created by the superuser (an account without the right may not). */
+function mailConnectionOf(person) {
+	return superuser.collection('connections').create({
+		owner: person.id,
+		type: 'mail',
+		label: `Post ${uniqueSuffix()}`,
+		enabled: true,
+		secret_env: 'BYL_TEST_MAIL',
+		settings: { provider: 'webde', user: 'post@web.de', keywords: ['todo'] }
+	});
+}
+
+/** A new mail with the keyword of mailConnectionOf. */
+function newMail() {
+	return {
+		title: `Todo: Rechnung ${uniqueSuffix()}`,
+		body: 'Bitte bis Freitag zahlen.',
+		source_ref: `<${uniqueSuffix()}@example.com>`,
+		source_date: '2032-01-05 08:00:00.000Z',
+		source_meta: { from: 'Shop <shop@example.com>' }
+	};
+}
+
+/** The mail helper brings a mail of a connection, as "Jetzt abrufen" or the full scan of the mailbox does. */
+async function bringMail(connectionId, mail) {
+	const response = await fetch(`${instance.url}/api/byl/ingest/items`, {
+		method: 'POST',
+		headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' },
+		body: JSON.stringify({ connection: connectionId, origin: 'auto', ...mail })
+	});
+	expect(response.status).toBe(200);
+	return response.json();
+}
+
+/** Every entry of a mail (source_ref) in any area, as [id, scope]. */
+async function entriesOfMail(mail) {
+	const items = await superuser
+		.collection('inbox_items')
+		.getFullList({ filter: superuser.filter('source_ref = {:ref}', { ref: mail.source_ref }), sort: 'created,id' });
+	return items.map((item) => [item.id, item.scope]);
 }
 
 beforeAll(async () => {
@@ -452,6 +495,118 @@ describe('an entry of the inbox', () => {
 		expect(moved.counts.items).toBe(1);
 		expect(await superuser.collection('inbox_items').getOne(item.id)).toMatchObject({ scope: householdScope(), ticket: ticket.id });
 		expect((await ticketOf(ticket.id)).source_item).toBe(item.id);
+	});
+});
+
+describe('duplicate detection after a move (E7-4b)', () => {
+	it('knows a mail moved into the household when its channel brings it again, also after moving it back', async () => {
+		const connection = await mailConnectionOf(a);
+		const mail = newMail();
+		const first = await bringMail(connection.id, mail);
+		expect(first.status).toBe('created');
+		await a.send(MOVE, { kind: 'item', ids: [first.item], to: 'household' });
+
+		// "Jetzt abrufen" and the full scan bring the same mail: no new entry in the private area.
+		expect(await bringMail(connection.id, mail)).toEqual({ status: 'duplicate', item: '', state: 'moved' });
+		expect(await entriesOfMail(mail)).toEqual([[first.item, householdScope()]]);
+		// The mail as a file and the selection views of the private area know it as well.
+		const draft = { channel: 'eml', kind: 'mail', title: mail.title, sourceRef: mail.source_ref };
+		expect(await createItem(a.client, draft)).toEqual({
+			kind: 'duplicate',
+			state: 'moved',
+			itemId: '',
+			ticketId: '',
+			ticketKey: '',
+			message: 'In einen anderen Bereich verschoben.'
+		});
+		expect(await lookupDrafts(a.client, [{ ...draft, channel: 'mail' }])).toEqual([
+			{ state: 'moved', message: 'In einen anderen Bereich verschoben.' }
+		]);
+		expect(await entriesOfMail(mail)).toEqual([[first.item, householdScope()]]);
+
+		// Back into the private area: still exactly one entry, the channel finds it there again.
+		await a.send(MOVE, { kind: 'item', ids: [first.item], to: 'private' });
+		expect(await bringMail(connection.id, mail)).toEqual({ status: 'duplicate', item: first.item, state: 'new' });
+		expect(await entriesOfMail(mail)).toEqual([[first.item, privateScope(a)]]);
+		// Into the household once more: the area keeps one mark per fingerprint, the move works again.
+		await a.send(MOVE, { kind: 'item', ids: [first.item], to: 'household' });
+		expect(await bringMail(connection.id, mail)).toMatchObject({ status: 'duplicate', state: 'moved' });
+		expect(await entriesOfMail(mail)).toEqual([[first.item, householdScope()]]);
+	});
+
+	it('keeps knowing it after the household is dissolved with "delete"; the household takes its own marks along', async () => {
+		const owner = await createAccount('Hanna Beispiel');
+		const home = (await owner.send(ROUTE, { name: `Wohnung ${uniqueSuffix()}` })).household.id;
+		const connection = await mailConnectionOf(owner);
+		const mail = newMail();
+		const first = await bringMail(connection.id, mail);
+		await owner.send(MOVE, { kind: 'item', ids: [first.item], to: 'household' });
+		// An entry that leaves the household leaves a mark there.
+		const local = await owner.client
+			.collection('inbox_items')
+			.create({ owner: owner.id, household: home, channel: 'eml', kind: 'mail', title: `Brief ${uniqueSuffix()}`, source_ref: `<${uniqueSuffix()}@example.com>` });
+		await owner.send(MOVE, { kind: 'item', ids: [local.id], to: 'private' });
+		const marks = () =>
+			superuser
+				.collection('inbox_moved_fingerprints')
+				.getFullList({ filter: superuser.filter('scope = {:mine} || scope = {:home}', { mine: privateScope(owner), home: `h:${home}` }), sort: 'scope' });
+		expect((await marks()).map((mark) => mark.scope)).toEqual([`h:${home}`, privateScope(owner)]);
+
+		const { name } = await superuser.collection('households').getOne(home);
+		await owner.send(`${ROUTE}/dissolve`, { mode: 'delete', name });
+		expect(await statusOf(superuser.collection('inbox_items').getOne(first.item))).toBe(404);
+
+		expect(await bringMail(connection.id, mail)).toEqual({ status: 'duplicate', item: '', state: 'moved' });
+		expect(await entriesOfMail(mail)).toEqual([]);
+		expect((await marks()).map((mark) => mark.scope)).toEqual([privateScope(owner)]);
+	});
+});
+
+describe('targets of repositories and folders (E7-4b)', () => {
+	it('clears a target that would point into another area, names it in the preview and keeps every other setting', async () => {
+		const moving = await a.project();
+		const staying = await a.project();
+		// Created by the superuser: no check of tokens or folders on the disk.
+		const github = await superuser.collection('connections').create({
+			owner: a.id,
+			type: 'github',
+			label: 'GitHub',
+			enabled: true,
+			secret_env: '',
+			settings: {
+				interval: 15,
+				repos: [
+					{ repo: 'octo/a', paths: ['CHANGELOG*'], target: moving.id },
+					{ repo: 'octo/b', target: staying.id }
+				]
+			}
+		});
+		const folder = await superuser.collection('connections').create({
+			owner: a.id,
+			type: 'folder',
+			label: 'Ordner',
+			enabled: true,
+			secret_env: '',
+			settings: { interval: 5, folders: [{ path: 'C:\\Beispiel\\Rechnungen', subfolders: false, target: moving.id }] }
+		});
+
+		const preview = await a.send(MOVE, { kind: 'project', ids: [moving.id], to: 'household', preview: true });
+		expect(preview.conflicts.unit_targets).toBe(2);
+		await a.send(MOVE, { kind: 'project', ids: [moving.id], to: 'household' });
+		expect((await superuser.collection('connections').getOne(github.id)).settings).toEqual({
+			interval: 15,
+			repos: [
+				{ repo: 'octo/a', paths: ['CHANGELOG*'], target: '' },
+				{ repo: 'octo/b', target: staying.id }
+			]
+		});
+		const after = await superuser.collection('connections').getOne(folder.id);
+		expect(after.settings).toEqual({ interval: 5, folders: [{ path: 'C:\\Beispiel\\Rechnungen', subfolders: false, target: '' }] });
+		expect(after.scope).toBe(privateScope(a));
+
+		// Back into the private area: nothing points across the border, nothing to clear.
+		const back = await a.send(MOVE, { kind: 'project', ids: [moving.id], to: 'private', preview: true });
+		expect(back.conflicts.unit_targets).toBe(0);
 	});
 });
 

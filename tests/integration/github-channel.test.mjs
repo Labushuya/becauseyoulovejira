@@ -362,6 +362,21 @@ describe('target project of repository and connection (ADR-0049 §3)', () => {
 		expect(later.target_project).toBe(shared.id);
 	});
 
+	it('fetches with a target of another area as without a target and notes it in the log (E7-4b)', async () => {
+		const foreign = await other.pb.collection('projects').create({ owner: other.id, name: 'Anderer Bereich', code: 'ANDB' });
+		fake.addRepo('octo/target-c', { files: FILES });
+		// Settings from before E7-4b: the superuser writes what no check of the app lets through.
+		const conn = await connection(owner, { repos: [{ repo: 'octo/target-c', target: foreign.id }] });
+		await run(owner, conn);
+		fake.openPull('octo/target-c', { title: 'C' });
+		expect(await run(owner, conn)).toMatchObject({ status: 'ok', created: 1, failed: 0 });
+		const [entry] = await entryOf(owner, conn, 'PR #1 in octo/target-c: C');
+		expect(entry.target_project).toBe('');
+		const logs = await writtenLogs(superuser);
+		const notes = logs.filter((log) => log.message === 'byl-github: Zielprojekt eines Repositorys liegt in einem anderen Bereich und gilt nicht');
+		expect(notes.map((log) => [log.data.connection, log.data.project])).toEqual([[conn.id, foreign.id]]);
+	});
+
 	it('takes only an active project of the area as new target of a repository', async () => {
 		const archived = await owner.pb.collection('projects').create({ owner: owner.id, name: 'Alt', code: 'ALT' });
 		await owner.pb.collection('projects').update(archived.id, { archived: true });
