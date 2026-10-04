@@ -210,6 +210,14 @@ export class AreaMoveStore {
 	}
 }
 
+/**
+ * After a move: the moved tickets leave the list of the tab at once (their realtime "delete" follows,
+ * ADR-0061 §3), and with them every selection of the table that held them (E7-4b).
+ */
+export function dropMovedTickets(list: { remove(id: string): void }, result: MovePreview): void {
+	for (const ticket of result.moved?.tickets ?? []) list.remove(ticket.id);
+}
+
 const [getAreaMoveStore, setAreaMoveStore, hasAreaMoveStore] = createContext<AreaMoveStore>();
 
 /** The store of the (app) layout, or null outside it (tests of single components). */
