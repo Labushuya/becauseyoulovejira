@@ -1,15 +1,19 @@
-// Managing a household (ADR-0058, E7-2) against the shared disposable instance: founding with the
-// owner and one household per account, the life of an invitation code (valid, expired through a
-// stored time in the past, used, revoked, unknown) with one neutral answer, the rights (delegating
-// only own ones, never at the owner or oneself, no way to more rights), removing, handing on,
-// leaving, what non-members and the Record API see, the topic byl/household for open tabs, the
-// routes from a device in the home network and no code in the log. Each test founds its own
-// households with fresh accounts.
+// Managing a household (ADR-0058, E7-2) against an own disposable instance (its memberships, codes
+// and log stay out of the shared instance of the other files): founding with the owner and one
+// household per account, the life of an invitation code (valid, expired through a stored time in
+// the past, used, revoked, unknown) with one neutral answer, the rights (delegating only own ones,
+// never at the owner or oneself, no way to more rights), removing, handing on, leaving, what
+// non-members and the Record API see, the topic byl/household for open tabs, the routes from a
+// device in the home network and no code in the log. Each test founds its own households with fresh
+// accounts.
 
+import { randomBytes } from 'node:crypto';
+import PocketBase from 'pocketbase';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createClient, pocketBaseUrl, superuserClient } from '../support/api.mjs';
 import { writtenLogs } from '../support/logs.mjs';
-import { createOwner, uniqueSuffix } from '../support/scenario.mjs';
+import { startPocketBase } from '../support/pocketbase-harness.mjs';
+import { uniqueSuffix } from '../support/scenario.mjs';
+import { scaled } from '../support/timing.mjs';
 import {
 	createHouseholdInvite,
 	foundHousehold,
@@ -21,12 +25,48 @@ const ROUTE = '/api/byl/household';
 const RIGHTS = ['invite', 'remove', 'delegate', 'rename', 'purge', 'move_out'];
 // A device in the home network for the fixture remote-address.pb.js of the harness.
 const REMOTE = 'X-Byl-Test-Remote-Address';
+const EVENT_TIMEOUT_MS = scaled(5_000);
 
+let instance;
 let superuser;
 
+function createClient() {
+	const pb = new PocketBase(instance.url);
+	pb.autoCancellation(false);
+	return pb;
+}
+
+/** A new app account with random credentials (in memory only), signed in. */
+async function createOwner() {
+	const email = `user-${randomBytes(12).toString('hex')}@example.com`;
+	const password = randomBytes(24).toString('base64url');
+	const record = await superuser.collection('users').create({ email, password, passwordConfirm: password });
+	const client = createClient();
+	await client.collection('users').authWithPassword(email, password);
+	return { id: record.id, client };
+}
+
 beforeAll(async () => {
-	superuser = await superuserClient();
+	instance = await startPocketBase();
+	superuser = createClient();
+	await superuser.collection('_superusers').authWithPassword(instance.email, instance.password);
+	// The first account becomes the administrator of the app (ADR-0056 §1); this one takes that place,
+	// so every account of the tests is a plain one.
+	await createOwner();
 });
+
+afterAll(async () => {
+	await instance?.stop();
+});
+
+/** Waits until `ready()` holds, at most EVENT_TIMEOUT_MS. */
+async function until(ready) {
+	const deadline = Date.now() + EVENT_TIMEOUT_MS;
+	while (!ready()) {
+		if (Date.now() > deadline) throw new Error(`Not reached within ${EVENT_TIMEOUT_MS} ms`);
+		await new Promise((resolve) => setTimeout(resolve, 50));
+	}
+}
 
 /** The answer of a route: status and body, also for refusals. */
 async function call(person, path, body, method = 'POST') {
@@ -61,11 +101,11 @@ async function membershipRow(person) {
 
 /** A household of a new owner with `count` further members who joined with codes. */
 async function household(count = 1) {
-	const owner = await createOwner(superuser);
+	const owner = await createOwner();
 	expect((await found(owner)).status).toBe(200);
 	const members = [];
 	for (let i = 0; i < count; i++) {
-		const person = await createOwner(superuser);
+		const person = await createOwner();
 		const { body } = await invite(owner);
 		expect((await join(person, body.code)).status).toBe(200);
 		members.push(person);
@@ -76,7 +116,7 @@ async function household(count = 1) {
 
 describe('founding a household', () => {
 	it('makes the account its owner with every right and keeps it in one household', async () => {
-		const person = await createOwner(superuser);
+		const person = await createOwner();
 		expect(await stateOf(person)).toEqual({ household: null });
 		const answer = await found(person, '  Haus Beispiel  ');
 		expect(answer.status).toBe(200);
@@ -98,7 +138,7 @@ describe('founding a household', () => {
 	});
 
 	it('checks the name and refuses accounts that are not signed in', async () => {
-		const person = await createOwner(superuser);
+		const person = await createOwner();
 		expect((await found(person, '   ')).body.problem).toBe('name');
 		expect((await found(person, 'x'.repeat(101))).body.problem).toBe('name-long');
 		expect(await stateOf(person)).toEqual({ household: null });
@@ -109,12 +149,12 @@ describe('founding a household', () => {
 	});
 
 	it('works through the data layer of the page', async () => {
-		const person = await createOwner(superuser);
+		const person = await createOwner();
 		const founded = await foundHousehold(person.client, 'Haus Daten');
 		expect(founded.kind).toBe('ok');
 		const grant = await createHouseholdInvite(person.client);
 		expect(grant.kind).toBe('ok');
-		const partner = await createOwner(superuser);
+		const partner = await createOwner();
 		const refused = await joinHousehold(partner.client, 'ZZZZ-ZZZZ');
 		expect(refused).toEqual({ kind: 'invalid', problem: 'code' });
 		const joined = await joinHousehold(partner.client, grant.kind === 'ok' ? grant.value.code.toLowerCase() : '');
@@ -135,7 +175,7 @@ describe('invitation codes', () => {
 		// Neither the code nor a hash of it is part of the state.
 		expect(JSON.stringify(created.body.state)).not.toMatch(/[0-9a-f]{64}|[A-HJKMNP-Z2-9]{4}-[A-HJKMNP-Z2-9]{4}/);
 
-		const partner = await createOwner(superuser);
+		const partner = await createOwner();
 		const joined = await join(partner, ` ${created.body.code.replace('-', '').toLowerCase()} `);
 		expect(joined.status).toBe(200);
 		expect(joined.body.me).toEqual({ member: (await membershipRow(partner)).id, role: 'member', rights: [] });
@@ -149,7 +189,7 @@ describe('invitation codes', () => {
 	it('answers an unknown, expired, used and revoked code the same, neutral way', async () => {
 		const { owner } = await household(0);
 		const used = (await invite(owner)).body;
-		expect((await join(await createOwner(superuser), used.code)).status).toBe(200);
+		expect((await join(await createOwner(), used.code)).status).toBe(200);
 		const expired = (await invite(owner)).body;
 		// Time in the past instead of waiting 7 days: the superuser moves the end of the code to an
 		// hour ago (still listed, not yet removed).
@@ -160,7 +200,7 @@ describe('invitation codes', () => {
 
 		const answers = [];
 		for (const code of [used.code, expired.code, revoked.code, 'ZZZZ-ZZZZ', 'kaputt', '']) {
-			const stranger = await createOwner(superuser);
+			const stranger = await createOwner();
 			answers.push(await join(stranger, code));
 			expect(await stateOf(stranger)).toEqual({ household: null });
 		}
@@ -174,13 +214,13 @@ describe('invitation codes', () => {
 		expect(statuses).toMatchObject({ [used.invite]: 'used', [expired.invite]: 'expired', [revoked.invite]: 'revoked', [open.invite]: 'open' });
 		// A revoked code cannot be revoked again; an open one still works.
 		expect((await call(owner, `${ROUTE}/invites/${revoked.invite}/revoke`, {})).body.problem).toBe('invite-closed');
-		expect((await join(await createOwner(superuser), open.code)).status).toBe(200);
+		expect((await join(await createOwner(), open.code)).status).toBe(200);
 	});
 
 	it('tells a member of a household first and leaves the code open', async () => {
 		const { owner } = await household(0);
 		const code = (await invite(owner)).body;
-		const other = await createOwner(superuser);
+		const other = await createOwner();
 		await found(other);
 		const answer = await join(other, code.code);
 		expect(answer.status).toBe(409);
@@ -227,8 +267,8 @@ describe('invitation codes', () => {
 		const { owner } = await household(0);
 		const { code } = (await invite(owner)).body;
 		const wrong = 'ABCD-EFGH';
-		await join(await createOwner(superuser), wrong);
-		await join(await createOwner(superuser), code);
+		await join(await createOwner(), wrong);
+		await join(await createOwner(), code);
 		const text = JSON.stringify(await writtenLogs(superuser));
 		for (const value of [code, code.replace('-', ''), wrong.replace('-', '')]) {
 			expect(text).not.toContain(value);
@@ -331,7 +371,7 @@ describe('members', () => {
 describe('who sees and writes what', () => {
 	it('shows a household and its members only to its members, the codes to nobody', async () => {
 		const { owner, members, id } = await household(1);
-		const stranger = await createOwner(superuser);
+		const stranger = await createOwner();
 		const names = await superuser.collection('users').update(owner.id, { name: 'Chris Beispiel' });
 		expect(names.name).toBe('Chris Beispiel');
 		const seen = (await stateOf(members[0])).members.find((member) => member.user === owner.id);
@@ -349,7 +389,7 @@ describe('who sees and writes what', () => {
 	it('keeps writing through the Record API locked', async () => {
 		const { owner, id } = await household(0);
 		const ownerRow = await membershipRow(owner);
-		const stranger = await createOwner(superuser);
+		const stranger = await createOwner();
 		const attempts = [
 			() => owner.client.collection('households').update(id, { name: 'x' }),
 			() => owner.client.collection('households').delete(id),
@@ -373,14 +413,12 @@ describe('who sees and writes what', () => {
 			await kept.client.realtime.subscribe('byl/household', () => (hints.kept += 1)),
 			await gone.client.realtime.subscribe('byl/household', () => (hints.gone += 1))
 		];
-		const stranger = await createOwner(superuser);
+		const stranger = await createOwner();
 		let strangerHints = 0;
 		stops.push(await stranger.client.realtime.subscribe('byl/household', () => (strangerHints += 1)));
 		try {
 			expect((await remove(owner, await memberId(gone))).status).toBe(200);
-			for (let attempt = 0; attempt < 50 && Object.values(hints).some((count) => count === 0); attempt++) {
-				await new Promise((resolve) => setTimeout(resolve, 100));
-			}
+			await until(() => Object.values(hints).every((count) => count > 0));
 			expect(hints.owner).toBeGreaterThan(0);
 			expect(hints.kept).toBeGreaterThan(0);
 			expect(hints.gone).toBeGreaterThan(0);
@@ -391,9 +429,9 @@ describe('who sees and writes what', () => {
 	});
 
 	it('works from a device in the home network like on this machine', async () => {
-		const owner = await createOwner(superuser);
+		const owner = await createOwner();
 		const remote = (path, body) =>
-			fetch(`${pocketBaseUrl()}${path}`, {
+			fetch(`${instance.url}${path}`, {
 				method: body === undefined ? 'GET' : 'POST',
 				headers: {
 					Authorization: owner.client.authStore.token,
@@ -408,8 +446,8 @@ describe('who sees and writes what', () => {
 		const created = await remote(`${ROUTE}/invites`, {});
 		expect(created.status).toBe(201);
 		expect(created.headers.get('cache-control')).toBe('no-store');
-		const partner = await createOwner(superuser);
-		const joined = await fetch(`${pocketBaseUrl()}${ROUTE}/join`, {
+		const partner = await createOwner();
+		const joined = await fetch(`${instance.url}${ROUTE}/join`, {
 			method: 'POST',
 			headers: { Authorization: partner.client.authStore.token, 'Content-Type': 'application/json', [REMOTE]: '192.168.178.41' },
 			body: JSON.stringify({ code: (await created.json()).code })
@@ -417,8 +455,4 @@ describe('who sees and writes what', () => {
 		expect(joined.status).toBe(200);
 		expect((await joined.json()).household.name).toBe('Haus im Heimnetz');
 	});
-});
-
-afterAll(async () => {
-	await superuser?.realtime.unsubscribe();
 });

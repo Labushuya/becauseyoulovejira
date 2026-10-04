@@ -3,17 +3,23 @@
 // it (and private ones) and leaves. From then on A can neither list, view, change nor delete any
 // household record, not even the own ones, also not through the ticket (comments, history, read
 // rows, dependencies), the trash, "Duplizieren" or realtime; B keeps everything, the private records
-// of A stay A's. The same for a member who is removed. Against the shared disposable instance.
+// of A stay A's. The same for a member who is removed. Against an own disposable instance, so its
+// memberships stay out of the shared instance of the other files.
 
+import { randomBytes } from 'node:crypto';
+import PocketBase from 'pocketbase';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { statusOf, superuserClient } from '../support/api.mjs';
-import { createOwner, ownedPayload, uniqueSuffix } from '../support/scenario.mjs';
+import { statusOf } from '../support/api.mjs';
+import { startPocketBase } from '../support/pocketbase-harness.mjs';
+import { ownedPayload, uniqueSuffix } from '../support/scenario.mjs';
+import { scaled } from '../support/timing.mjs';
 
 const ROUTE = '/api/byl/household';
 const SCOPED = ['projects', 'tags', 'recurrence_rules', 'tickets', 'inbox_items', 'connections'];
-const EVENT_TIMEOUT_MS = 5_000;
-const QUIET_PERIOD_MS = 500;
+const EVENT_TIMEOUT_MS = scaled(5_000);
+const QUIET_PERIOD_MS = scaled(500);
 
+let instance;
 let superuser;
 let a;
 let b;
@@ -57,10 +63,35 @@ function payload(collection, person, household = '') {
 	return ownedPayload(collection, person.id, household);
 }
 
+function createClient() {
+	const pb = new PocketBase(instance.url);
+	pb.autoCancellation(false);
+	return pb;
+}
+
+/** A new app account with random credentials (in memory only), signed in, with a ticket helper. */
+async function createOwner() {
+	const email = `user-${randomBytes(12).toString('hex')}@example.com`;
+	const password = randomBytes(24).toString('base64url');
+	const id = (await superuser.collection('users').create({ email, password, passwordConfirm: password })).id;
+	const client = createClient();
+	await client.collection('users').authWithPassword(email, password);
+	return {
+		id,
+		client,
+		ticket: (data = {}) => client.collection('tickets').create({ owner: id, title: `Ticket ${uniqueSuffix()}`, ...data })
+	};
+}
+
 beforeAll(async () => {
-	superuser = await superuserClient();
-	a = await createOwner(superuser);
-	b = await createOwner(superuser);
+	instance = await startPocketBase();
+	superuser = createClient();
+	await superuser.collection('_superusers').authWithPassword(instance.email, instance.password);
+	// The first account becomes the administrator of the app (ADR-0056 §1), who sees every account;
+	// this one takes that place, so A and B are plain accounts.
+	await createOwner();
+	a = await createOwner();
+	b = await createOwner();
 	// B founds the household (and owns it), A joins with a code.
 	householdId = (await send(b, ROUTE, { name: `Haus ${uniqueSuffix()}` })).household.id;
 	const { code } = await send(b, `${ROUTE}/invites`, {});
@@ -89,6 +120,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
 	for (const stop of stops) await stop();
+	await instance?.stop();
 });
 
 describe('after leaving', () => {
@@ -156,7 +188,7 @@ describe('after leaving', () => {
 
 describe('after being removed', () => {
 	it('a member loses access at once as well', async () => {
-		const c = await createOwner(superuser);
+		const c = await createOwner();
 		const { code } = await send(b, `${ROUTE}/invites`, {});
 		await send(c, `${ROUTE}/join`, { code });
 		const ticket = await c.ticket({ household: householdId });
