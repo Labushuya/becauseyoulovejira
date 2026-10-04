@@ -804,9 +804,16 @@ describe('help page (EH-9)', () => {
 			'Einladen und beitreten',
 			'Rechte',
 			'Inhaber übertragen',
-			'Entfernen und austreten'
+			'Entfernen und austreten',
+			'Auflösen'
 		]);
 		const content = text(section);
+		// Dissolving (E7-4, ADR-0061 §5): only the owner, both ways, the name before deleting.
+		expect(content).toMatch(/„Alles in meinen privaten Bereich übernehmen“/);
+		expect(content).toMatch(
+			/„Alles endgültig löschen“ geht erst, wenn du den Namen des Haushalts eintippst/
+		);
+		expect(content).not.toMatch(/späteren Version/);
 		expect(content).toMatch(/Er gilt 7 Tage und für eine Person/);
 		expect(content).toMatch(/immer „Code ungültig oder abgelaufen\.“/);
 		expect(content).toMatch(/nur Rechte geben oder nehmen, die er selbst hat/);
@@ -832,9 +839,16 @@ describe('help page (EH-9)', () => {
 			'Keine Verweise über Bereichsgrenzen',
 			'Links in den anderen Bereich',
 			'Kanäle',
-			'Papierkorb im Haushalt'
+			'Papierkorb im Haushalt',
+			'Verschieben',
+			'Vorschau und Fragen'
 		]);
 		const content = text(section);
+		// Moving between the areas (E7-4, ADR-0061): the entries, who may, what comes along.
+		expect(content).toMatch(/„In den Haushalt verschieben …“ bzw\. „Ins Private verschieben …“/);
+		expect(content).toMatch(/Kommentare und Verlauf werden dann für alle Mitglieder sichtbar/);
+		expect(content).toMatch(/„vorher PRIV-12“/);
+		expect(content).toMatch(/Verbindungen bleiben immer privat/);
 		expect(content).toMatch(/Ohne Haushalt gibt es keinen Umschalter/);
 		expect(content).toMatch(/merkt sich dieses Gerät für dein Konto/);
 		expect(content).toMatch(/ein Duplikat bleibt im Bereich des Originals/);
@@ -865,6 +879,7 @@ describe('help page (EH-9)', () => {
 			'Konto anlegen',
 			'Passwort vergessen',
 			'Deaktivieren',
+			'Haushalt ohne aktiven Inhaber',
 			'Was andere sehen',
 			'Kanäle für jedes Konto',
 			'Zweite Person am selben Rechner'

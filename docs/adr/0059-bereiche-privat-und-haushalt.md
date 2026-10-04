@@ -99,3 +99,9 @@ Verschieben zwischen Bereichen und Auflösen kommen mit E7-4; die Unveränderlic
 - Neue Module: `web/src/lib/data/area.ts`, `domain/area.ts`, `stores/area.svelte.ts`, `trash-area.svelte.ts`, `components/RetentionChoice.svelte`; Hook-Datei `app/pb_hooks/dependencies.pb.js`.
 - Tests: `tests/integration/household-areas.test.mjs` (eigene Instanz: Realtime-Filter, Verweise, Kanäle, Wiederholung und Eingang im Bereich, `@CODE`, `purge`, Aufbewahrung mit der Uhr des Papierkorbs), `migrations-rollback.test.mjs`, `hooks-before-migration.test.mjs`, Regeltests (`household-rules`, `connection-rules`, `ticket-rules` mit Gleichstand der Texte); in `web/` Datenschicht, Domain, `AreaStore`, Umschalter, Layout (Wechsel der Mitgliedschaft ohne Neuladen, Deep-Links, Regression ohne Haushalt), `rescope()` der Stores (Tickets, Katalog, Regeln, Eingang, Papierkorb). Test-Manifest: BYL-E7-200 bis BYL-E7-215, manuell BYL-E7-220 bis BYL-E7-228.
 - Nur im Browser prüfbar (Test-Manifest, manuell): Umschalten am PC, zweites Gerät, Live-Ereignisse zwischen zwei Konten, Deep-Link, Papierkorb mit und ohne `purge`, Aufbewahrung je Haushalt.
+
+## Nachtrag E7-4 (2026-10-04, [ADR-0061](0061-verschieben-zwischen-bereichen-und-aufloesen.md))
+
+- **§4:** Verschieben und Auflösen sind umgesetzt. Sie halten die Regel „keine Verweise über Bereichsgrenzen“ selbst ein: Was zurückbleibt, verliert den Verweis (Projekt, übergeordnetes Ticket, Wiederholung, Abhängigkeit nach Wahl, Zielprojekt, Verbindung eines Eintrags).
+- **§5:** Verbindungen mit `household` von vorher kommen mit der Migration `1790204200` ins Private ihres aktiven Besitzers.
+- **§7:** Eine offene Detailansicht folgt einem verschobenen Datensatz in dessen Bereich, wenn das Konto ihn weiter sieht; sonst sagt sie „Dieses Ticket ist jetzt in einem anderen Bereich.“ (das `delete` trägt `moved`).
