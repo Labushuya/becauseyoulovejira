@@ -32,6 +32,7 @@ import {
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import { resize, useResizeObserverStub } from '$lib/test/resize-observer-stub';
 import CalendarView from './CalendarView.svelte';
+import entrySource from './CalendarEntry.svelte?raw';
 
 const mocks = vi.hoisted(() => ({
 	goto: vi.fn(async () => undefined),
@@ -539,6 +540,21 @@ describe('narrow windows and many tickets', () => {
 		expect(links.length).toBeLessThanOrEqual(35 * MONTH_DAY_LIMIT);
 		// Generous for slow runners; locally about 100 ms with jsdom, stores included (plan kalender §6).
 		expect(elapsed).toBeLessThan(10_000);
+	});
+
+	it('shows a long key whole in the week and wraps it inside a narrow day (KN-1)', async () => {
+		await show('/kalender?ansicht=woche', {
+			open: [ticket(TODAY, { key: 'ABCDEF-1000000', title: 'Dach' })]
+		});
+		const key = grid().querySelector('.entry.block .key') as HTMLElement;
+		expect(key.textContent).toBe('ABCDEF-1000000');
+		expect(key.classList.contains('visually-hidden')).toBe(false);
+		// Layout is a browser case; the rule keeps the key inside its day, never cut off.
+		const style = /<style>([\s\S]*?)<\/style>/.exec(entrySource)?.[1] ?? '';
+		const rule = /\.block \.key \{([^}]*)\}/.exec(style)?.[1] ?? '';
+		expect(rule).toContain('max-width: 100%;');
+		expect(rule).toContain('overflow-wrap: anywhere;');
+		expect(rule).not.toMatch(/overflow:|text-overflow/);
 	});
 });
 

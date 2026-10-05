@@ -22,6 +22,7 @@ import {
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import ProjectTicketListHarness from '$lib/test/ProjectTicketListHarness.svelte';
 import { PROJECTS_HOST } from '$lib/ticket-host';
+import source from './ProjectTicketList.svelte?raw';
 
 const mocks = vi.hoisted(() => ({
 	page: { url: new URL('http://localhost:3000/projekte?q=Haus') }
@@ -235,6 +236,35 @@ describe('open tickets of a project', () => {
 		show({ tickets: [ticket({ title: long }), ticket({ title: 'Kurz' })] });
 		expect(links()[0]?.getAttribute('title')).toBe(long);
 		expect(links()[1]?.hasAttribute('title')).toBe(false);
+	});
+
+	it('gives every key the room of the longest shown key, so none is cut off (KN-1)', async () => {
+		const pinned = ticket({ key: 'HAUS-1000000' });
+		const pins = new PinStore(fakePins([pinOf(pinned.id, 1)]).data, SESSION);
+		await pins.load();
+		show({ tickets: [ticket({ key: 'HAUS-9' }), pinned, ticket({ key: 'HAUS-10000' })], pins });
+		await tick();
+		const lists = screen.getAllByRole('list');
+		// Both lists, the pinned and the others, share the place of the key: 12 ch.
+		expect(lists.map((element) => element.style.getPropertyValue('--key-chars'))).toEqual([
+			'12',
+			'12'
+		]);
+		expect(links().map((link) => link.querySelector('.key')?.textContent)).toEqual([
+			'HAUS-9',
+			'HAUS-10000'
+		]);
+		document.body.innerHTML = '';
+		show({ tickets: [ticket({ key: 'HAUS-9' })], pins: null });
+		expect(list().style.getPropertyValue('--key-chars')).toBe('6');
+	});
+
+	it('lets the key grow with its number instead of cutting it off (KN-1)', () => {
+		const style = /<style>([\s\S]*?)<\/style>/.exec(source)?.[1] ?? '';
+		const rule = /\n\t\.key \{([^}]*)\}/.exec(style)?.[1] ?? '';
+		expect(rule).toContain('min-width: max(5.5rem, calc(var(--key-chars, 0) * 1ch));');
+		expect(rule).toContain('white-space: nowrap;');
+		expect(rule).not.toMatch(/overflow|text-overflow|(^|[^-])width:/);
 	});
 });
 

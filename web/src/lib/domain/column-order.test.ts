@@ -81,6 +81,33 @@ describe('columnOrder', () => {
 		expect(compareKeys('HAUS-10', 'HAUS-9')).toBeGreaterThan(0);
 	});
 
+	it('sorts numbers of any length numerically, never as text (KN-1)', () => {
+		const numbers = [9, 10, 999, 1000, 10000, 1000000];
+		const shuffle = shuffler(7);
+		for (const code of ['TASK', 'ABCDEF']) {
+			const tickets = shuffle(
+				numbers.map((number) => row(String(number), { key: `${code}-${number}` }))
+			);
+			const ascending = numbers.map(String);
+			expect(sorted(tickets, natural('key')), code).toEqual(ascending);
+			expect(sorted(tickets, reversed('key')), code).toEqual([...ascending].reverse());
+		}
+		// As text "1000000" < "999" < "10"; numerically the other way round.
+		expect(compareKeys('HAUS-999', 'HAUS-1000')).toBeLessThan(0);
+		expect(compareKeys('HAUS-10000', 'HAUS-9999')).toBeGreaterThan(0);
+		expect(compareKeys('HAUS-1000000', 'HAUS-999999')).toBeGreaterThan(0);
+		expect(compareKeys('HAUS-1000000', 'HAUS-1000000')).toBe(0);
+		// The code decides first, however large the number.
+		expect(compareKeys('AUTO-1000000', 'HAUS-9')).toBeLessThan(0);
+		// Every pair in both directions: antisymmetric over the whole set.
+		for (const a of numbers) {
+			for (const b of numbers) {
+				const sign = Math.sign(compareKeys(`TASK-${a}`, `TASK-${b}`));
+				expect(sign, `${a} ${b}`).toBe(Math.sign(a - b));
+			}
+		}
+	});
+
 	it('sorts priority urgent first, reversed low first', () => {
 		const tickets = PRIORITIES.map((priority) => row(priority, { priority }));
 		expect(sorted(tickets, natural('priority'))).toEqual(['urgent', 'high', 'medium', 'low']);

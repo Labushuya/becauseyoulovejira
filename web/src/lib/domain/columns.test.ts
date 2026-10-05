@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	COLUMN_PREFS_VERSION,
 	INBOX_TABLE,
+	KEY_AUTO_MAX,
 	NEST_SUBTASKS,
 	PROJECT_TABLE,
 	RECURRENCE_TABLE,
@@ -24,12 +25,15 @@ import {
 	isDefaultColumnPrefs,
 	flexibleBounds,
 	flexibleTarget,
+	isKeyCut,
 	isResizable,
+	keyCellWidth,
 	menuColumns,
 	optionValue,
 	parseColumnPrefs,
 	resizeColumn,
 	serializeColumnPrefs,
+	withKeyDefaults,
 	type ColumnPrefs,
 	type ColumnSpec,
 	type TableOption,
@@ -110,10 +114,10 @@ describe('column specs', () => {
 			expect(isResizable(flex), table.id).toBe(true);
 			expect([flex.min, flex.max], table.id).toEqual([10 * REM, 60 * REM]);
 		}
-		// Maximum widths of the concept: Tags 20rem, Projekt 16rem, Key 8rem.
+		// Maximum widths of the concept: Tags 20rem, Projekt 16rem; Key since KN-1 12rem (8 before).
 		expect(spec(TICKET_TABLE, 'tags').max).toBe(20 * REM);
 		expect(spec(TICKET_TABLE, 'project').max).toBe(16 * REM);
-		expect(spec(TICKET_TABLE, 'key').max).toBe(8 * REM);
+		expect(spec(TICKET_TABLE, 'key').max).toBe(12 * REM);
 	});
 
 	it('names widths in rem for the menu "Spalten"', () => {
@@ -449,7 +453,7 @@ describe('width of the title (ADR-0030 Nachtrag 3)', () => {
 		const fit = fitColumns(3000, columns, withTitle(240));
 		expect(fit.widths.tags).toBe(320);
 		expect(fit.widths.project).toBe(256);
-		expect(fit.flexWidth).toBe(3000 - (40 + 128 + 96 + 160 + 256 + 320 + 192 + 144 + 88));
+		expect(fit.flexWidth).toBe(3000 - (40 + 192 + 96 + 160 + 256 + 320 + 192 + 144 + 88));
 	});
 
 	it('lets a wide title give way first when the frame is narrower, without hiding a column', () => {
@@ -473,7 +477,7 @@ describe('width of the title (ADR-0030 Nachtrag 3)', () => {
 	});
 
 	it('bounds the title by the room of the others: minimum and maximum', () => {
-		// 328 px of rest at 1200 px; the others can give 272 px and take 552 px.
+		// 328 px of rest at 1200 px; the others can give 272 px and take 616 px.
 		expect(flexibleBounds(1200, columns, NONE)).toEqual({ min: 160, max: 600 });
 		// On a very wide frame the others reach their maximum first: the title stays wide.
 		expect(flexibleBounds(3000, columns, NONE)).toEqual({ min: 960, max: 960 });
@@ -593,5 +597,124 @@ describe('fitChips', () => {
 
 	it('estimates text widths without a canvas', () => {
 		expect(estimateTextWidth('Garten', 12)).toBeCloseTo(43.2);
+	});
+});
+
+describe('columns of keys (KN-1, ADR-0030 Nachtrag 7)', () => {
+	/** The longest key of the format: a code of six letters and a seven digit number. */
+	const LONGEST = 'ABCDEF-1000000';
+	const keyColumn = (columns: readonly ColumnSpec[], id = 'key') =>
+		columns.find((entry) => entry.id === id) as ColumnSpec;
+
+	it('needs the key in ch of the mono font, the padding and the dot "neu"', () => {
+		// 14 characters of 0.6em at 13 px (7.8 px), 1.5rem of padding, 0.875rem of dot, 2 px of slack.
+		expect(keyCellWidth(LONGEST, true)).toBe(150);
+		expect(keyCellWidth(LONGEST)).toBe(136);
+		expect(keyCellWidth('HAUS-100', true)).toBe(103);
+		expect(keyCellWidth('HAUS-100')).toBe(89);
+		// Every further digit needs one more ch.
+		expect(keyCellWidth('HAUS-1000') - keyCellWidth('HAUS-100')).toBeGreaterThanOrEqual(7);
+		expect(keyCellWidth('HAUS-1000') - keyCellWidth('HAUS-100')).toBeLessThanOrEqual(9);
+		// A larger default font size of the browser makes the key wider.
+		expect(keyCellWidth('HAUS-100', true, 20)).toBeGreaterThan(keyCellWidth('HAUS-100', true));
+	});
+
+	it('lets the longest key with the dot fit into the widened bounds of every column of keys', () => {
+		const need = keyCellWidth(LONGEST, true);
+		// Before KN-1 the key had at most 8rem (128 px): "ABCDEF-1000000" with the dot did not fit.
+		expect(need).toBeGreaterThan(8 * REM);
+		for (const [table, id] of [
+			[TICKET_TABLE, 'key'],
+			[TRASH_TABLE, 'key'],
+			[TICKET_TABLE, 'parent'],
+			[RECURRENCE_TABLE, 'open']
+		] as const) {
+			const column = spec(table, id);
+			expect(column.max, `${table.id} ${id}`).toBeGreaterThanOrEqual(need);
+			expect(clampWidth(column, need), `${table.id} ${id}`).toBe(need);
+		}
+		expect(KEY_AUTO_MAX).toBe(12 * REM);
+		expect(spec(TICKET_TABLE, 'key').max).toBe(KEY_AUTO_MAX);
+		expect(spec(TRASH_TABLE, 'key').max).toBe(KEY_AUTO_MAX);
+	});
+
+	it('keeps the default for short keys, so the thresholds stay as they were', () => {
+		const columns = TICKET_TABLE.columns;
+		const short = withKeyDefaults(columns, [
+			{ id: 'key', keys: ['TASK-1', 'TASK-12', 'HAUS-9'], dot: true },
+			{ id: 'parent', keys: ['HAUS-12'] }
+		]);
+		// The very same specs: every width and threshold of ADR-0030 holds for them unchanged.
+		expect(short).toBe(columns);
+		expect(withKeyDefaults(columns, [{ id: 'key', keys: [], dot: true }])).toBe(columns);
+		expect(withKeyDefaults(columns, [])).toBe(columns);
+	});
+
+	it('fits the default width to the longest shown key, with room for the dot', () => {
+		const columns = withKeyDefaults(TICKET_TABLE.columns, [
+			{ id: 'key', keys: ['HAUS-9', 'HAUS-100', 'HAUS-10'], dot: true }
+		]);
+		// "HAUS-100" with the dot needs 103 px: 6rem (96 px) cut it off before.
+		expect(keyColumn(columns).width).toBe(103);
+		expect(isKeyCut('HAUS-100', 96, true)).toBe(true);
+		expect(isKeyCut('HAUS-100', keyColumn(columns).width, true)).toBe(false);
+		// Only the column of keys changes; min and max stay.
+		expect(keyColumn(columns)).toMatchObject({ min: 4 * REM, max: 12 * REM });
+		expect(columns.filter((entry) => entry.id !== 'key')).toEqual(
+			TICKET_TABLE.columns.filter((entry) => entry.id !== 'key')
+		);
+
+		const longest = withKeyDefaults(TICKET_TABLE.columns, [
+			{ id: 'key', keys: ['TASK-9', LONGEST, 'TASK-10'], dot: true }
+		]);
+		expect(keyColumn(longest).width).toBe(150);
+		expect(fitColumns(null, longest, NONE).widths.key).toBe(150);
+		// Measured: the key keeps its width, the title takes the rest.
+		const fit = fitColumns(1400, longest, NONE);
+		expect(fit.widths.key).toBe(150);
+		const before = fitColumns(1400, TICKET_TABLE.columns, NONE).flexWidth as number;
+		expect(fit.flexWidth).toBe(before - (150 - 96));
+	});
+
+	it('stops at 12rem on its own; only the user makes it wider or narrower', () => {
+		const huge = withKeyDefaults(TICKET_TABLE.columns, [
+			{ id: 'key', keys: ['ABCDEF-1000000000000000'], dot: true }
+		]);
+		expect(keyColumn(huge).width).toBe(KEY_AUTO_MAX);
+		// A width the user dragged wins over the default from the keys, in both directions.
+		const narrow: ColumnPrefs = { widths: { key: 80 }, hidden: NONE.hidden };
+		expect(fitColumns(null, huge, narrow).widths.key).toBe(80);
+		expect(columnWidth(keyColumn(huge), narrow)).toBe(80);
+		const wide = withKeyDefaults(TICKET_TABLE.columns, [{ id: 'key', keys: [LONGEST], dot: true }]);
+		expect(fitColumns(null, wide, { widths: { key: 180 }, hidden: NONE.hidden }).widths.key).toBe(
+			180
+		);
+		// "Standard wiederherstellen" (no stored width) brings the default from the keys back.
+		expect(fitColumns(null, wide, NONE).widths.key).toBe(150);
+	});
+
+	it('fits the trash, "Übergeordnet" and "Offene Tickets" without the dot', () => {
+		const trash = withKeyDefaults(TRASH_TABLE.columns, [{ id: 'key', keys: [LONGEST] }]);
+		expect(keyColumn(trash).width).toBe(136);
+		const parent = withKeyDefaults(TICKET_TABLE.columns, [{ id: 'parent', keys: [LONGEST] }]);
+		expect(keyColumn(parent, 'parent').width).toBe(136);
+		const open = withKeyDefaults(RECURRENCE_TABLE.columns, [
+			{ id: 'open', keys: ['TASK-7', LONGEST] }
+		]);
+		expect(keyColumn(open, 'open').width).toBe(136);
+		// Short keys keep the default of 7rem.
+		const short = withKeyDefaults(RECURRENCE_TABLE.columns, [{ id: 'open', keys: ['TASK-7'] }]);
+		expect(short).toBe(RECURRENCE_TABLE.columns);
+	});
+
+	it('names a key cut off by a narrow column, and only then', () => {
+		expect(isKeyCut(LONGEST, 150, true)).toBe(false);
+		expect(isKeyCut(LONGEST, 149, true)).toBe(true);
+		expect(isKeyCut(LONGEST, 136)).toBe(false);
+		// The default of 6rem holds a short key without the dot, not one of ten characters.
+		expect(isKeyCut('TASK-12', 6 * REM)).toBe(false);
+		expect(isKeyCut('TASK-10000', 6 * REM)).toBe(true);
+		// The narrowest column (4rem) cuts every key off.
+		expect(isKeyCut('TASK-1', 4 * REM)).toBe(true);
 	});
 });

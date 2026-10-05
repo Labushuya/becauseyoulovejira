@@ -379,6 +379,15 @@
 		align-items: flex-start;
 	}
 
+	/*
+	 * A long key ("ABCDEF-1000000") in a narrow day of the week wraps inside the day instead of
+	 * running into the next one; it is never cut off (KN-1).
+	 */
+	.block .key {
+		max-width: 100%;
+		overflow-wrap: anywhere;
+	}
+
 	.block .title,
 	.row .title {
 		display: -webkit-box;

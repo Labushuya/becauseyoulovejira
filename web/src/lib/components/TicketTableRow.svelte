@@ -1,14 +1,20 @@
 <script lang="ts" module>
 	import {
+		REM,
 		TICKET_TABLE,
 		defaultColumnPrefs,
 		estimateTextWidth,
 		fitChips,
+		isKeyCut,
 		moreChipText,
 		type MeasureText
 	} from '$lib/domain/columns';
 
 	const HIDDEN_BY_DEFAULT: readonly string[] = defaultColumnPrefs(TICKET_TABLE.columns).hidden;
+	/** Default widths of the columns, for rows without the widths of their table. */
+	const DEFAULT_WIDTHS: Readonly<Record<string, number>> = Object.fromEntries(
+		TICKET_TABLE.columns.map((column) => [column.id, column.width])
+	);
 	/** Room for chips in the default tag column: its width without the padding of 1.5rem. */
 	const DEFAULT_TAGS_SPACE =
 		(TICKET_TABLE.columns.find((column) => column.id === 'tags')?.width ?? 0) - 24;
@@ -66,7 +72,9 @@
 	// row, not the one of the browser (AM-3, the table handles it). The color of the ticket
 	// (ADR-0052: its own, else of its project or the parent of that) is a stripe at the start of the
 	// first cell, apart from the bar of the open row at the very edge, with its name for screen
-	// readers; the row keeps its height.
+	// readers; the row keeps its height. Keys grow with their number (KN-1): the table fits the
+	// default width of their column to the longest one, and a key the user's narrower column cuts
+	// off names itself in a title.
 	let {
 		ticket,
 		nested = false,
@@ -82,6 +90,8 @@
 		isNew = false,
 		recurrenceText = '',
 		columns,
+		columnWidths = DEFAULT_WIDTHS,
+		rem = REM,
 		tagsSpace = DEFAULT_TAGS_SPACE,
 		measure = estimateChip,
 		selected = false,
@@ -115,6 +125,13 @@
 		recurrenceText?: string;
 		/** Shown columns of the table (ADR-0030); without it the columns shown by default. */
 		columns?: ReadonlySet<string>;
+		/**
+		 * Shown widths of the columns in CSS pixels (fitColumns); without them their defaults. A key
+		 * cut off in its column names itself in a title (KN-1).
+		 */
+		columnWidths?: Readonly<Record<string, number>>;
+		/** Pixels of 1rem on the page, for the width a key needs. */
+		rem?: number;
 		/** Room for the chips in the tag column in CSS pixels (its width without the padding). */
 		tagsSpace?: number;
 		/** Width of a whole tag chip (canvas in the browser, estimated without). */
@@ -196,6 +213,21 @@
 		recurrenceText === '' ? 'wiederkehrend' : `Wiederkehrend: ${recurrenceText}`
 	);
 	const createdDate = $derived(berlinDateOf(ticket.created));
+
+	function widthOf(id: string): number {
+		return columnWidths[id] ?? DEFAULT_WIDTHS[id] ?? 0;
+	}
+
+	/** The whole key as a title, only when its column is too narrow for it (KN-1). */
+	const keyTitle = $derived(
+		isKeyCut(ticket.key, widthOf('key'), isNew, rem) ? ticket.key : undefined
+	);
+	/** The title of the parent; its key first when the column "Übergeordnet" cuts that key. */
+	const parentTitle = $derived.by(() => {
+		if (!parent) return undefined;
+		if (!isKeyCut(parent.key, widthOf('parent'), false, rem)) return parent.title || undefined;
+		return parent.title ? `${parent.key} · ${parent.title}` : parent.key;
+	});
 
 	/**
 	 * Controls of the row handle their own clicks; the row only takes clicks outside of them. The
@@ -300,7 +332,7 @@
 			</label>
 		</td>
 	{/if}
-	<td class="key" data-col="key">
+	<td class="key" data-col="key" title={keyTitle}>
 		{#if !(onselect && shows('select'))}{@render colorStripe()}{/if}{#if isNew}<span
 				class="new-dot"
 				title="Neu"><span class="visually-hidden">neu,</span></span
@@ -425,7 +457,7 @@
 	{#if shows('parent')}
 		<td class="parent" data-col="parent">
 			{#if parent}
-				<span title={parent.title || undefined}>{parent.key}</span>
+				<span title={parentTitle}>{parent.key}</span>
 			{/if}
 		</td>
 	{/if}
