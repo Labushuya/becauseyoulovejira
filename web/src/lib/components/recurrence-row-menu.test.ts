@@ -106,7 +106,6 @@ async function show(props: { activeId?: string | null } = {}, data: Partial<Recu
 	const tickets = new TicketListStore(
 		{
 			listOpen: async () => OPEN,
-			listDone: async (page: number) => ({ items: [], page, hasMore: false }),
 			searchOpen: vi.fn(async (): Promise<string[]> => []),
 			setDone: vi.fn(),
 			update: vi.fn()

@@ -43,7 +43,10 @@ export interface ListQuery {
 	 * empty is "Alle offenen". Kept in the order of FILTER_CARDS, each once.
 	 */
 	cards: readonly FilterCard[];
-	/** One status (OF-E3-3); null: every status that is not done. */
+	/**
+	 * One status (OF-E3-3); null: every status that is not done. "Erledigt" is a value only in the
+	 * calendar (ADR-0053); "Aufgaben" leads it to the view "Erledigte" (ADR-0066).
+	 */
 	status: Status | null;
 	priority: Priority | null;
 	due: DueFilter | null;
@@ -70,13 +73,13 @@ export interface ListQuery {
 	 * never the same as it; null for one level.
 	 */
 	subGrouping: Grouping | null;
-	/** Switch "Erledigte anzeigen" (since E2). */
-	showDone: boolean;
 }
 
 /**
  * The detail filters of the filter bar and the search (T-6); "Zurücksetzen" clears them and the
- * cards. Sort, grouping and the switch are view settings.
+ * cards. Sort and grouping are view settings. Done tickets have their own view since ER-1
+ * (ADR-0066): "Aufgaben" leads old addresses with the switch "Erledigte anzeigen" or the status
+ * "Erledigt" there (domain/done-view.ts), the calendar keeps the status "Erledigt" as a filter.
  */
 export const FILTER_KEYS = [
 	'status',
@@ -103,8 +106,7 @@ export const EMPTY_LIST_QUERY: Readonly<ListQuery> = Object.freeze({
 	search: null,
 	sort: null,
 	grouping: null,
-	subGrouping: null,
-	showDone: false
+	subGrouping: null
 });
 
 /**
@@ -124,8 +126,7 @@ export const LIST_PARAMS = Object.freeze({
 	search: 'q',
 	sort: 'sort',
 	grouping: 'gruppe',
-	subGrouping: 'untergruppe',
-	showDone: 'erledigte'
+	subGrouping: 'untergruppe'
 } as const);
 
 const PARAM_ORDER = Object.values(LIST_PARAMS) as readonly string[];
@@ -222,8 +223,7 @@ export function parseListQuery(params: URLSearchParams): ListQuery {
 		subGrouping: secondLevel(
 			grouping,
 			keyOf(GROUPINGS, GROUPING_VALUES, single(params, LIST_PARAMS.subGrouping))
-		),
-		showDone: single(params, LIST_PARAMS.showDone) === '1'
+		)
 	};
 }
 
@@ -268,8 +268,7 @@ function queryEntries(query: ListQuery): [string, string][] {
 				: `${query.sort.reversed ? REVERSED_PREFIX : ''}${SORT_VALUES[query.sort.key]}`
 		],
 		[LIST_PARAMS.grouping, query.grouping === null ? null : GROUPING_VALUES[query.grouping]],
-		[LIST_PARAMS.subGrouping, subGroupingValue(query)],
-		[LIST_PARAMS.showDone, query.showDone ? '1' : null]
+		[LIST_PARAMS.subGrouping, subGroupingValue(query)]
 	];
 	return entries.filter((entry): entry is [string, string] => entry[1] !== null);
 }
@@ -302,7 +301,7 @@ export function withFilter<K extends FilterKey>(
 
 /**
  * "Zurücksetzen" (T-6): clears the cards (back to "Alle offenen"), every filter and the search,
- * keeps sort, grouping and switch.
+ * keeps sort and grouping.
  */
 export function resetFilters(query: ListQuery): ListQuery {
 	return {

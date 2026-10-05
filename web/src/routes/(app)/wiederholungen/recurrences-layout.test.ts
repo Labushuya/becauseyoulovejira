@@ -149,7 +149,6 @@ async function show(
 	const tickets = new TicketListStore(
 		{
 			listOpen: async () => [instance()],
-			listDone: async (page: number) => ({ items: [], page, hasMore: false }),
 			searchOpen: vi.fn(async (): Promise<string[]> => []),
 			setDone: vi.fn(),
 			update: vi.fn()

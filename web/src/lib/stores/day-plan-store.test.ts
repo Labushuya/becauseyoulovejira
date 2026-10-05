@@ -150,7 +150,6 @@ describe('suggestions and pool, live from the open tickets', () => {
 		const list = new TicketListStore(
 			{
 				listOpen: vi.fn(async () => open),
-				listDone: vi.fn(async (page: number) => ({ items: [], page, hasMore: false })),
 				searchOpen: vi.fn(async () => []),
 				setDone: vi.fn(),
 				update: vi.fn()

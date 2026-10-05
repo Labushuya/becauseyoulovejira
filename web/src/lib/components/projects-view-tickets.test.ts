@@ -104,7 +104,6 @@ async function show(path = '/projekte', { open = [] as TicketSummary[], withMenu
 	const listOpen = vi.fn(async () => open);
 	const listData: TicketListData = {
 		listOpen,
-		listDone: async (page) => ({ items: [], page, hasMore: false }),
 		searchOpen: vi.fn(async (): Promise<string[]> => []),
 		setDone: vi.fn(),
 		update: vi.fn()

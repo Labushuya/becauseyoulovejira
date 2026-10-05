@@ -5,6 +5,8 @@
 	import {
 		calendarHref,
 		dayPlanHref,
+		doneHref,
+		doneViewHref,
 		inboxHref,
 		listHref,
 		projectsHref,
@@ -12,27 +14,36 @@
 		trashHref
 	} from '$lib/ticket-links';
 
-	// Switch "Aufgaben | Projekte | Eingang | Wiederholungen" in the section bar of the views (E3
-	// plan, T-3 and package 14; E4 plan, package 3; E5 plan, T-6 and package 5; ADR-0010 section
-	// 5): a navigation with one link per view,
-	// because each has its own address. The current one carries aria-current="page" and is marked
-	// as the thumb of the segmented control of base.css (ADR-0029 section 9): weight, frame and
-	// shadow besides its colour. "Aufgaben" keeps the list state of the URL while the
-	// list is shown, "Eingang" its chips while the inbox is shown. The number of new inbox entries
-	// stands next to "Eingang" (ADR-0015 section 5), as text for screen readers too. In the settings
-	// (ADR-0026 section 1) no view is current: current is null, and all links lead to the plain views.
-	// After the segments stands the quiet link "Papierkorb" (ADR-0037 §9) with the number of tickets
-	// in it, from the store of the (app) layout; it is no segment, so it does not compete with the
-	// views. "Kalender" (ADR-0053) comes last among the views and keeps its view, date and filters
-	// while the calendar is shown. "Tagesplan" (ADR-0065) stands right after "Aufgaben", the place used
-	// most, and keeps its day while the plan is shown.
+	// Navigation of the views in the section bar (E3 plan, T-3 and package 14; ADR-0010 section 5):
+	// one link per view, because each has its own address, in the fixed order of ER-1 (ADR-0066 §1,
+	// decision of the user): Aufgaben, Tagesplan, Projekte, Eingang, Wiederholungen, Kalender,
+	// Erledigte, Papierkorb. The same order holds in every context of the tab (KOB-1, ADR-0057): no
+	// entry depends on the device or the account. On a narrow window the segments wrap in this order
+	// (.segmented of base.css); there is no folded variant. The current one carries
+	// aria-current="page" and is the thumb of the segmented control (ADR-0029 section 9): weight,
+	// frame and shadow besides its colour. A view keeps its state while it is shown: "Aufgaben" the
+	// list state of the URL, "Tagesplan" its day (ADR-0065), "Eingang" its chips, "Kalender" its view,
+	// date and filters (ADR-0053), "Erledigte" its filters. The number of new inbox entries stands
+	// next to "Eingang" (ADR-0015 section 5), that of new tickets in projects next to "Projekte", the
+	// number of tickets in the trash next to "Papierkorb" (ADR-0037 §9, since ER-1 a segment like the
+	// others instead of a quiet link after them), each as text for screen readers too. In the
+	// settings (ADR-0026 section 1) no view is current: current is null, and all links lead to the
+	// plain views.
 	let {
 		current,
 		inboxCount = null,
 		projectsNewCount = 0
 	}: {
 		current:
-			'tasks' | 'dayplan' | 'projects' | 'inbox' | 'recurrences' | 'calendar' | 'trash' | null;
+			| 'tasks'
+			| 'dayplan'
+			| 'projects'
+			| 'inbox'
+			| 'recurrences'
+			| 'calendar'
+			| 'done'
+			| 'trash'
+			| null;
 		/** New inbox entries; null while not loaded (no number is shown). */
 		inboxCount?: number | null;
 		/** New tickets in projects (ADR-0015 section 5); 0 shows no number. */
@@ -45,6 +56,7 @@
 	const inboxLink = $derived(current === 'inbox' ? inboxHref(page.url) : inboxHref());
 	const calendarLink = $derived(current === 'calendar' ? calendarHref(page.url) : calendarHref());
 	const dayPlanLink = $derived(current === 'dayplan' ? dayPlanHref(page.url) : dayPlanHref());
+	const doneLink = $derived(current === 'done' ? doneViewHref(page.url) : doneHref());
 </script>
 
 <nav class="view-switch" aria-label="Ansicht">
@@ -100,37 +112,36 @@
 			</svg>
 			Kalender
 		</a>
+		<a href={doneLink} aria-current={current === 'done' ? 'page' : undefined}>
+			<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+				<circle cx="8" cy="8" r="5.5" />
+				<path d="M5.5 8.25l1.75 1.75 3.25-3.5" />
+			</svg>
+			Erledigte
+		</a>
+		<a href={trashHref()} aria-current={current === 'trash' ? 'page' : undefined}>
+			<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+				<path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.75 9h5.5l.75-9M7 7v4M9 7v4" />
+			</svg>
+			Papierkorb
+			{#if trashCount !== null && trashCount > 0}
+				<span class="count quiet"
+					><span aria-hidden="true">{trashCount}</span><span class="visually-hidden"
+						>({trashCount === 1 ? '1 Ticket' : `${trashCount} Tickets`})</span
+					></span
+				>
+			{/if}
+		</a>
 	</div>
-	<a
-		class="trash-link"
-		class:current={current === 'trash'}
-		href={trashHref()}
-		aria-current={current === 'trash' ? 'page' : undefined}
-	>
-		<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-			<path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.75 9h5.5l.75-9M7 7v4M9 7v4" />
-		</svg>
-		Papierkorb
-		{#if trashCount !== null && trashCount > 0}
-			<span class="trash-count"
-				><span aria-hidden="true">{trashCount}</span><span class="visually-hidden"
-					>({trashCount === 1 ? '1 Ticket' : `${trashCount} Tickets`})</span
-				></span
-			>
-		{/if}
-	</a>
 </nav>
 
 <style>
 	/*
 	 * Track, entries, thumb, hover, focus and wrapping on narrow windows come from .segmented in
-	 * base.css; here only the counts, the icons and the quiet link "Papierkorb".
+	 * base.css; here only the counts and the icons.
 	 */
 	.view-switch {
 		display: inline-flex;
-		flex-wrap: wrap;
-		gap: 0.25rem 0.5rem;
-		align-items: center;
 		max-width: 100%;
 	}
 
@@ -148,40 +159,11 @@
 		border-radius: var(--radius-pill);
 	}
 
-	/* Quiet: muted text without a track; current as text weight and colour, not as a thumb. */
-	.trash-link {
-		display: inline-flex;
-		gap: 0.375rem;
-		align-items: center;
-		min-height: var(--control-height-m);
-		padding: 0 0.5rem;
-		font-size: var(--font-size-control);
+	/* The number of the trash is no call to act: muted, without the colour of "neu". */
+	.count.quiet {
 		color: var(--color-text-muted);
-		text-decoration: none;
-		border-radius: var(--radius-control);
-	}
-
-	.trash-link:hover {
-		color: var(--color-text);
-		background: var(--fill-control-hover);
-	}
-
-	.trash-link.current {
-		font-weight: 600;
-		color: var(--color-brand-text);
-	}
-
-	.trash-count {
-		min-width: 1.25rem;
-		padding: 0 0.3125rem;
-		font-size: var(--font-size-caption);
-		font-weight: 600;
-		line-height: 1.125rem;
-		text-align: center;
-		font-variant-numeric: tabular-nums;
-		color: var(--color-text-muted);
-		border: 1px solid var(--color-line);
-		border-radius: var(--radius-pill);
+		background: none;
+		border-color: var(--color-line);
 	}
 
 	svg {

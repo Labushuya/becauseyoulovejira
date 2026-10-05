@@ -12,6 +12,7 @@ import TicketLinksHarness from '$lib/test/TicketLinksHarness.svelte';
 import {
 	CALENDAR_HOST,
 	CALENDAR_RULE_ROUTE,
+	DONE_HOST,
 	INBOX_HOST,
 	LIST_HOST,
 	PROJECTS_HOST,
@@ -330,6 +331,22 @@ describe('ticketHrefIn: "Ticket ansehen" of the quick entry (ADR-0054 §8)', () 
 		expect(ticketHrefIn(ID, RECURRENCES_HOST.panelRoute, ticket, 'panel')).toBe(
 			`/wiederholungen/tickets/${ID}?von=${RULE}`
 		);
+		// "Erledigte" (ADR-0066) with its filters.
+		expect(ticketHrefIn(ID, '/(app)/erledigt', at('/erledigt?q=Miete&prio=high'), 'full')).toBe(
+			`/erledigt/tickets/${ID}/voll?q=Miete`
+		);
+	});
+
+	it('opens a ticket next to "Erledigte" with its filters and leads back there (ADR-0066)', () => {
+		const url = at(`/erledigt/tickets/${ID}?projekt=${PROJECT}&charm=auto`);
+		expect(DONE_HOST.panel(ID, url)).toBe(`/erledigt/tickets/${ID}?projekt=${PROJECT}&charm=auto`);
+		expect(DONE_HOST.full(ID, url)).toBe(
+			`/erledigt/tickets/${ID}/voll?projekt=${PROJECT}&charm=auto`
+		);
+		expect(DONE_HOST.view(url)).toBe(`/erledigt?projekt=${PROJECT}&charm=auto`);
+		expect(DONE_HOST.origin(url)).toBeNull();
+		expect(isTicketRoute(DONE_HOST, '/(app)/erledigt/tickets/[id]/voll')).toBe(true);
+		expect(isTicketRoute(DONE_HOST, '/(app)/erledigt')).toBe(false);
 	});
 
 	it('leads to "Aufgaben" without state outside of the views', () => {

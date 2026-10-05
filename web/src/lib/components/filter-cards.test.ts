@@ -1,8 +1,7 @@
 // Component tests for the filter cards (FI-1, ADR-0013 addendum C; before the KPI tiles of E3
 // package 12): five toggles with label and number, "Alle offenen" as base state, toggling without
-// resetting other cards, "Heute fällig" together with "Überfällig", the detail filters kept, old
-// addresses, and since PL-1 the cards locked by the status filter "Erledigt". SvelteKit navigation and
-// page state are mocked.
+// resetting other cards, "Heute fällig" together with "Überfällig", the detail filters kept, and
+// old addresses. SvelteKit navigation and page state are mocked.
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -136,15 +135,13 @@ describe('filter cards', () => {
 	});
 
 	it('keeps the filters, the search, the view and the panel', async () => {
-		show(
-			'/tickets/abc123def456ghi?status=open&projekt=ohne&q=Miete&sort=titel&gruppe=prio&erledigte=1'
-		);
+		show('/tickets/abc123def456ghi?status=open&projekt=ohne&q=Miete&sort=titel&gruppe=prio');
 
 		await fireEvent.click(card('Überfällig: 4'));
 
 		expect(mocks.goto).toHaveBeenCalledExactlyOnceWith(
 			'/tickets/abc123def456ghi?karte=ueberfaellig&status=open&projekt=ohne&q=Miete&sort=titel' +
-				'&gruppe=prio&erledigte=1',
+				'&gruppe=prio',
 			NAVIGATION
 		);
 	});
@@ -192,58 +189,6 @@ describe('filter cards', () => {
 
 		expect(card('Dringend: 1').getAttribute('aria-pressed')).toBe('true');
 		expect(card('Alle offenen: 12').getAttribute('aria-pressed')).toBe('false');
-	});
-
-	it('locks every card with the status filter "Erledigt": hint, tooltip, "Alle offenen" not pressed (PL-1)', async () => {
-		show('/?karte=dringend&status=done', {
-			allOpen: 0,
-			in_progress: 0,
-			due_today: 0,
-			overdue: 0,
-			urgent: 0
-		});
-
-		const group = screen.getByRole('group', { name: 'Filter-Karten' });
-		const buttons = within(group).getAllByRole('button');
-		expect(buttons).toHaveLength(5);
-		for (const button of buttons) {
-			expect(button.getAttribute('aria-disabled')).toBe('true');
-			expect(button.getAttribute('title')).toBe('Karten gelten für offene Tickets');
-			expect(hintOf(button)).toBe('Karten gelten für offene Tickets');
-			expect(button.querySelector('.hint')).toBeNull();
-		}
-		// One visible hint below the cards, not one per card.
-		expect(within(group).getAllByText('Karten gelten für offene Tickets')).toHaveLength(1);
-		const allOpen = card('Alle offenen: 0');
-		expect(allOpen.getAttribute('aria-pressed')).toBe('false');
-		expect(allOpen.querySelector('svg.check')).toBeNull();
-		// The chosen card stays chosen, so it applies again without the status filter.
-		expect(card('Dringend: 0').getAttribute('aria-pressed')).toBe('true');
-
-		await fireEvent.click(card('Dringend: 0'));
-		await fireEvent.click(card('In Arbeit: 0'));
-		await fireEvent.click(allOpen);
-		expect(mocks.goto).not.toHaveBeenCalled();
-	});
-
-	it('locks nothing without the status filter "Erledigt" and keeps the chosen cards (PL-1)', () => {
-		show('/?status=done').unmount();
-
-		// The status filter taken back: the chosen card applies again, the cards are free.
-		const back = show('/?karte=dringend');
-		expect(card('Dringend: 1').getAttribute('aria-pressed')).toBe('true');
-		expect(card('Dringend: 1').hasAttribute('aria-disabled')).toBe(false);
-		expect(card('Alle offenen: 12').getAttribute('aria-pressed')).toBe('false');
-		back.unmount();
-
-		show('/?status=waiting');
-		const group = screen.getByRole('group', { name: 'Filter-Karten' });
-		for (const button of within(group).getAllByRole('button')) {
-			expect(button.hasAttribute('aria-disabled')).toBe(false);
-			expect(button.hasAttribute('title')).toBe(false);
-		}
-		expect(card('Alle offenen: 12').getAttribute('aria-pressed')).toBe('true');
-		expect(within(group).queryByText('Karten gelten für offene Tickets')).toBeNull();
 	});
 
 	it('uses no error colour, not even for "Überfällig" (ADR-0009)', () => {

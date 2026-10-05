@@ -113,7 +113,7 @@ describe('shared search field and segmented control (ADR-0029 section 9)', () =>
 	});
 
 	it('draws the view switch and the layout of the projects as segmented controls', () => {
-		// The segments sit in their own track; the quiet link "Papierkorb" follows it (ADR-0037).
+		// The segments sit in their own track, "Papierkorb" among them since ER-1 (ADR-0066 §1).
 		expect(markup(join('lib', 'components', 'ViewSwitch.svelte'))).toMatch(
 			/<nav class="view-switch" aria-label="Ansicht">\s*<div class="segmented">/
 		);

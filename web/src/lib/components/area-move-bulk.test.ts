@@ -139,7 +139,6 @@ async function setup() {
 	const data: TicketListData = {
 		listOpen: vi.fn(async () => open),
 		listSubtasks: vi.fn(async () => []),
-		listDone: vi.fn(async (page: number) => ({ items: [], page, hasMore: false })),
 		searchOpen: vi.fn(async (): Promise<string[]> => []),
 		setDone: vi.fn(),
 		update: vi.fn()

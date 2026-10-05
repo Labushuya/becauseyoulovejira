@@ -18,7 +18,7 @@ import {
 	createTicket,
 	deleteTicket,
 	getTicket,
-	listDoneTickets,
+	listCompletedTickets,
 	listOpenTickets,
 	listSubtaskTickets,
 	setTicketDone,
@@ -180,7 +180,7 @@ describe('web data layer: tickets', () => {
 		expect((await getTicket(a.client, created.id)).description).toBe('nur im Detail');
 	});
 
-	it('pages done tickets, most recently completed first', async () => {
+	it('pages done tickets, most recently completed first, with their number (ADR-0066)', async () => {
 		const owner = await createOwner(superuser);
 		const created = [];
 		for (let index = 0; index < 5; index += 1) {
@@ -192,14 +192,15 @@ describe('web data layer: tickets', () => {
 		}
 		const expected = created.map((ticket) => ticket.id).reverse();
 
-		const first = await listDoneTickets(owner.client, 1, { perPage: 2 });
-		const second = await listDoneTickets(owner.client, 2, { perPage: 2 });
-		const third = await listDoneTickets(owner.client, 3, { perPage: 2 });
+		const first = await listCompletedTickets(owner.client, 1, { perPage: 2 });
+		const second = await listCompletedTickets(owner.client, 2, { perPage: 2 });
+		const third = await listCompletedTickets(owner.client, 3, { perPage: 2 });
 
 		expect(first.items.map((ticket) => ticket.id)).toEqual(expected.slice(0, 2));
 		expect(second.items.map((ticket) => ticket.id)).toEqual(expected.slice(2, 4));
 		expect(third.items.map((ticket) => ticket.id)).toEqual(expected.slice(4));
 		expect([first.hasMore, second.hasMore, third.hasMore]).toEqual([true, true, false]);
+		expect([first.total, second.total, third.total]).toEqual([5, 5, 5]);
 		const completed = [...first.items, ...second.items, ...third.items].map((t) => t.completedAt);
 		expect(completed).toEqual([...completed].sort().reverse());
 		expect(completed.every((value) => typeof value === 'string' && value !== '')).toBe(true);

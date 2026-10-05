@@ -46,9 +46,11 @@ export function lastViewLabel(
 	const calendar = resolve('/kalender');
 	const rules = resolve('/wiederholungen');
 	const trash = resolve('/papierkorb');
+	const done = resolve('/erledigt');
 	const within = (base: string) => pathname === base || pathname.startsWith(`${base}/`);
-	// A ticket next to the list, the calendar (ADR-0053 §6) or in an area (ADR-0054).
-	const areas = [calendar, projects, inbox, rules].map((base) => `${base}/tickets`).join('|');
+	// A ticket next to the list, the calendar (ADR-0053 §6), "Erledigte" (ADR-0066) or in an area
+	// (ADR-0054).
+	const areas = [calendar, projects, inbox, rules, done].map((base) => `${base}/tickets`).join('|');
 	const ticket = new RegExp(`^(?:${tickets}|${areas})/([^/]+)/?$`).exec(pathname)?.[1];
 	if (ticket !== undefined && ticket !== 'neu') {
 		const key = ticketKey(decodeURIComponent(ticket));
@@ -70,6 +72,7 @@ export function lastViewLabel(
 	if (rule !== undefined && rule !== 'neu') return 'Zurück zur Regel';
 	if (within(rules)) return 'Zurück zu Wiederholungen';
 	if (within(trash)) return 'Zurück zum Papierkorb';
+	if (within(done)) return 'Zurück zu Erledigte';
 	return 'Zurück zu Aufgaben';
 }
 

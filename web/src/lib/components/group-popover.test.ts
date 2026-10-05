@@ -100,13 +100,13 @@ describe('group popover', () => {
 	});
 
 	it('removes the parameter with "Keine" and does not navigate for the current choice', async () => {
-		show('/?gruppe=status&erledigte=1');
+		show('/?gruppe=status&sort=titel');
 
 		await fireEvent.click(choice('Nach Status'));
 		expect(mocks.goto).not.toHaveBeenCalled();
 
 		await fireEvent.click(choice('Keine'));
-		expect(mocks.goto).toHaveBeenCalledExactlyOnceWith('/?erledigte=1', {
+		expect(mocks.goto).toHaveBeenCalledExactlyOnceWith('/?sort=titel', {
 			keepFocus: true,
 			noScroll: true
 		});

@@ -19,14 +19,12 @@ describe('filter summary', () => {
 		expect(screen.getByText('12 Tickets aus: In Arbeit, Heute fällig, Dringend')).toBeTruthy();
 	});
 
-	it('says when filters narrow the cards and when more tickets match', () => {
+	it('says when filters narrow the cards', () => {
 		render(FilterSummary, {
-			props: { cards: ['urgent'], count: 50, more: true, filtered: true, onreset: vi.fn() }
+			props: { cards: ['urgent'], count: 50, filtered: true, onreset: vi.fn() }
 		});
 
-		expect(
-			screen.getByText('Mehr als 50 Tickets aus: Dringend – weitere Filter aktiv')
-		).toBeTruthy();
+		expect(screen.getByText('50 Tickets aus: Dringend – weitere Filter aktiv')).toBeTruthy();
 	});
 
 	it('names matching pinned tickets like the number next to "Aufgaben" (PL-1)', () => {

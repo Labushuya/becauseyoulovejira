@@ -1,7 +1,8 @@
 // Where the panel and the full view of a ticket stand (ADR-0053 §6, ADR-0054): next to the list
 // "Aufgaben" (/tickets/<id>, /tickets/<id>/voll), next to the calendar (/kalender/tickets/<id>, …/voll)
 // and in the areas projects, inbox and rules (/projekte/tickets/<id>, /eingang/tickets/<id>,
-// /wiederholungen/tickets/<id>, each with …/voll). All routes render the same parts
+// /wiederholungen/tickets/<id>, each with …/voll), next to the day plan and the view "Erledigte"
+// (/tagesplan/tickets/<id>, /erledigt/tickets/<id>, each with …/voll). All routes render the same parts
 // (TicketRouteLayout, TicketFullViewRoute); the host names their addresses, the way back to its
 // view and the element of the ticket in the view, which gets the focus after the full view closed.
 // Every ticket link of a component below a host follows it (`ticketLinks()`), so the panel of a
@@ -22,6 +23,9 @@ import {
 	dayPlanFullViewHref,
 	dayPlanHref,
 	dayPlanTicketHref,
+	doneFullViewHref,
+	doneTicketHref,
+	doneViewHref,
 	calendarOriginFrom,
 	calendarTicketHref,
 	fullViewHref,
@@ -202,6 +206,22 @@ export const DAY_PLAN_HOST: OriginTicketHost = Object.freeze({
 	entryOf: (id: string) => ticketLinkIn(viewPart('list'), id)
 });
 
+/**
+ * The view "Erledigte" (ADR-0066): a ticket of its list opens next to it (/erledigt/tickets/<id>,
+ * …/voll) with its filters; × leads back to the list, the focus to the link that opened it. It
+ * replaces no other panel (no origin).
+ */
+export const DONE_HOST: OriginTicketHost = Object.freeze({
+	panelRoute: '/(app)/erledigt/tickets/[id]',
+	fullRoute: '/(app)/erledigt/tickets/[id]/voll',
+	backLabel: 'Zu den Erledigten',
+	view: (url: URL) => doneViewHref(url),
+	panel: doneTicketHref,
+	full: doneFullViewHref,
+	origin: () => null,
+	entryOf: (id: string) => ticketLinkIn(viewPart('list'), id)
+});
+
 /** Inbox (ADR-0054): the tickets of entries, of duplicates and of results. */
 export const INBOX_HOST = areaHost('eingang', 'Zum Eingang');
 
@@ -219,6 +239,7 @@ function hostOfRoute(routeId: string | null | undefined): TicketHost | null {
 		['/(app)/(tickets)', LIST_HOST],
 		['/(app)/kalender', CALENDAR_HOST],
 		['/(app)/tagesplan', DAY_PLAN_HOST],
+		['/(app)/erledigt', DONE_HOST],
 		['/(app)/projekte', PROJECTS_HOST],
 		['/(app)/eingang', INBOX_HOST],
 		['/(app)/wiederholungen', RECURRENCES_HOST]
