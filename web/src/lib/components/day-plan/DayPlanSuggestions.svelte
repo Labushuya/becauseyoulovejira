@@ -8,7 +8,7 @@
 	import DayPlanSettings from './DayPlanSettings.svelte';
 
 	// "Vorschläge" of the plan of today (ADR-0065 §3), a section that folds (the heading is the button,
-	// aria-expanded). Each suggestion names its reason ("heute fällig", "überfällig seit 3 Tagen", …);
+	// aria-expanded). Each suggestion names its reason ("heute fällig", "überfällig seit 05.10.", …);
 	// chosen ones go into the plan with "Übernehmen", all with "Alle übernehmen". What is in the plan is
 	// no suggestion any more. The sources are set next to the heading ("Einstellen").
 	let {
