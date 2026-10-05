@@ -48,6 +48,24 @@ describe('isNew', () => {
 		expect(isNew(ticket({ status: 'done' }), none, BASE)).toBe(false);
 		expect(isNew(ticket(), none, null)).toBe(false);
 	});
+
+	it('marks an older ticket another member gave the account after the base line (ADR-0068 §4)', () => {
+		const SELF = 'anna00000000001';
+		const old = '2026-01-01 00:00:00.000Z';
+		const given = ticket({ created: old, assignee: SELF, assignedAt: '2026-09-25 10:00:00.000Z' });
+		expect(isNew(given, none, BASE, SELF)).toBe(true);
+		// Opened again: the new read row ends it.
+		expect(isNew(given, new Set(['tick00000000001']), BASE, SELF)).toBe(false);
+		// Not for another account, not before the base line, not without the moment, not done.
+		expect(isNew(given, none, BASE, 'bert00000000002')).toBe(false);
+		expect(isNew(given, none, BASE)).toBe(false);
+		expect(isNew({ ...given, assignedAt: '2026-09-24 10:00:00.000Z' }, none, BASE, SELF)).toBe(
+			false
+		);
+		expect(isNew({ ...given, assignedAt: '' }, none, BASE, SELF)).toBe(false);
+		expect(isNew({ ...given, status: 'done' }, none, BASE, SELF)).toBe(false);
+		expect(countNew([given, ticket({ id: 'x', created: old })], none, BASE, SELF).total).toBe(1);
+	});
 });
 
 describe('countNew', () => {

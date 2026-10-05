@@ -232,3 +232,36 @@ describe('group popover: second level (plan OR-3)', () => {
 		expect(mocks.goto).not.toHaveBeenCalled();
 	});
 });
+
+describe('group popover: "Nach Zuständigkeit" (E7-5, ADR-0068 §3)', () => {
+	function showIn(path: string, household: boolean) {
+		mocks.page.url = new URL(path, 'http://localhost:3000');
+		return render(GroupPopover, { props: { household } });
+	}
+
+	const labels = () =>
+		within(field())
+			.getAllByRole('radio', { hidden: true })
+			.map((radio) => radio.closest('label')?.textContent?.trim());
+
+	it('is offered in a household and writes the address', async () => {
+		showIn('/', true);
+		expect(labels()).toContain('Nach Zuständigkeit');
+
+		await fireEvent.click(choice('Nach Zuständigkeit'));
+		expect(mocks.goto).toHaveBeenLastCalledWith('/?gruppe=zustaendig', {
+			keepFocus: true,
+			noScroll: true
+		});
+	});
+
+	it('is not offered in the private area unless the address uses it', () => {
+		showIn('/', false);
+		expect(labels()).not.toContain('Nach Zuständigkeit');
+
+		document.body.innerHTML = '';
+		showIn('/?gruppe=zustaendig', false);
+		expect(choice('Nach Zuständigkeit').checked).toBe(true);
+		expect(screen.getByRole('button', { name: 'Gruppiert: Zuständigkeit' })).toBeTruthy();
+	});
+});

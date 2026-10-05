@@ -115,7 +115,8 @@ export function fixedAssignees(
 	};
 }
 
-const [getAssignees, setAssignees, hasAssignees] = createContext<AssigneeDirectory>();
+// The layout sets its AssigneeDirectory; a test harness may set a fixed source.
+const [getAssignees, setAssignees, hasAssignees] = createContext<AssigneeSource>();
 
 /** The directory of the (app) layout, or null outside it. */
 export function findAssignees(): AssigneeSource | null {

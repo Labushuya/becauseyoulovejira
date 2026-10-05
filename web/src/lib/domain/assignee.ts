@@ -58,6 +58,11 @@ function isIndex(value: number): boolean {
 	return Number.isInteger(value) && value >= 0;
 }
 
+/** The people of a list: without empty values and repetitions, in their order (`listOf` of the hook). */
+function peopleOf(list: readonly string[]): string[] {
+	return list.filter((id, index) => id !== '' && list.indexOf(id) === index);
+}
+
 /**
  * The person of the next new occurrence and the pointer after it: "fest" its one person, "abwechselnd"
  * the person at the pointer (0 outside the list), round and round; '' without a mode. The same as
@@ -65,7 +70,7 @@ function isIndex(value: number): boolean {
  */
 export function nextAssignee(rule: RuleAssignment): { assignee: string; next: number } {
 	const mode = assigneeModeOf(rule.mode);
-	const assignees = rule.assignees.filter((id) => id !== '');
+	const assignees = peopleOf(rule.assignees);
 	const first = assignees[0];
 	if (mode === 'fixed' && first !== undefined) return { assignee: first, next: 0 };
 	if (mode === 'rotate' && assignees.length > 0) {
@@ -78,7 +83,7 @@ export function nextAssignee(rule: RuleAssignment): { assignee: string; next: nu
 /** The people of the next `count` new occurrences, for the preview of the dialog. */
 export function upcomingAssignees(rule: RuleAssignment, count: number): string[] {
 	const result: string[] = [];
-	let state: RuleAssignment = { ...rule, assignees: rule.assignees.filter((id) => id !== '') };
+	let state: RuleAssignment = { ...rule, assignees: peopleOf(rule.assignees) };
 	for (let i = 0; i < count; i++) {
 		const step = nextAssignee(state);
 		if (step.assignee === '') break;
@@ -93,7 +98,7 @@ export function upcomingAssignees(rule: RuleAssignment, count: number): string[]
  * dialog shows it so and sends it back with the pointer 0 (ADR-0068 §5), so what it shows is what comes.
  */
 export function rotationOrder(rule: RuleAssignment): string[] {
-	const assignees = rule.assignees.filter((id) => id !== '');
+	const assignees = peopleOf(rule.assignees);
 	if (assigneeModeOf(rule.mode) !== 'rotate' || assignees.length === 0) return assignees;
 	const start = isIndex(rule.next) && rule.next < assignees.length ? rule.next : 0;
 	return [...assignees.slice(start), ...assignees.slice(0, start)];
@@ -240,9 +245,7 @@ export function formAssignmentOf(rule: RuleAssignment | null | undefined): FormA
 
 /** The people a mode sends: none, the first one for "fest", every one for "abwechselnd". */
 function sentAssignees(form: FormAssignment): string[] {
-	const people = form.assignees.filter(
-		(id, index, list) => id !== '' && list.indexOf(id) === index
-	);
+	const people = peopleOf(form.assignees);
 	if (form.mode === '') return [];
 	return form.mode === 'fixed' ? people.slice(0, 1) : people;
 }
@@ -250,8 +253,10 @@ function sentAssignees(form: FormAssignment): string[] {
 /** What the form refuses before it sends: "fest" without a person, "abwechselnd" without anyone. */
 export function assignmentProblem(form: FormAssignment): string | null {
 	const people = sentAssignees(form);
-	if (form.mode === 'fixed' && people.length !== 1) return 'Bitte eine Person wählen.';
-	if (form.mode === 'rotate' && people.length === 0) return 'Bitte mindestens eine Person wählen.';
+	if (form.mode === 'fixed' && people.length !== 1)
+		return ASSIGNEE_MESSAGES.validation_recurrence_assignee_fixed ?? '';
+	if (form.mode === 'rotate' && people.length === 0)
+		return ASSIGNEE_MESSAGES.validation_recurrence_assignee_rotate ?? '';
 	if (people.length > ASSIGNEES_MAX)
 		return ASSIGNEE_MESSAGES.validation_recurrence_assignees_max ?? '';
 	return null;

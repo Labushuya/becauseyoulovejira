@@ -511,6 +511,48 @@ describe('filter cards (FI-1)', () => {
 		expect(store.cardCounts).toMatchObject({ allOpen: 1, urgent: 1 });
 	});
 
+	it('counts and shows "Mir zugewiesen", filters, groups and sorts by assignee (ADR-0068 §3)', async () => {
+		const SELF = 'anna00000000001';
+		const BERT = 'bert00000000002';
+		const mine = ticket({ assignee: SELF, priority: 'urgent' });
+		const bert = ticket({ assignee: BERT });
+		const nobody = ticket({ assignee: null });
+		const context = {
+			selfId: SELF,
+			selfName: 'Anna Beispiel',
+			names: { nameOf: (id: string) => (id === BERT ? 'Bert Beispiel' : null) }
+		};
+		const store = new TicketListStore(fakeData([nobody, bert, mine]), session(), {
+			assignees: () => context
+		});
+		store.activate(query({ cards: ['mine'] }));
+		await settle();
+
+		expect(store.cardCounts).toMatchObject({ allOpen: 3, mine: 1, urgent: 1 });
+		expect(ids(store.visible)).toEqual(ids([mine]));
+		store.activate(query({ cards: ['mine', 'urgent'] }));
+		expect(ids(store.visible)).toEqual(ids([mine]));
+
+		store.activate(query({ assignee: 'niemand' }));
+		expect(ids(store.visible)).toEqual(ids([nobody]));
+		store.activate(query({ assignee: BERT }));
+		expect(ids(store.visible)).toEqual(ids([bert]));
+
+		// Sorted by name: Anna, Bert, then nobody; reversed the names turn, nobody stays last.
+		const order = () => store.visible.map((entry) => entry.id);
+		store.activate(query({ sort: { key: 'assignee', reversed: false } }));
+		expect(order()).toEqual([mine.id, bert.id, nobody.id]);
+		store.activate(query({ sort: { key: 'assignee', reversed: true } }));
+		expect(order()).toEqual([bert.id, mine.id, nobody.id]);
+
+		store.activate(query({ grouping: 'assignee' }));
+		expect(store.groups?.map((group) => group.label)).toEqual([
+			'Anna Beispiel',
+			'Bert Beispiel',
+			'Niemand'
+		]);
+	});
+
 	it('move the due numbers at the Berlin midnight', async () => {
 		// 2026-09-24 23:59 in Berlin.
 		vi.setSystemTime(Date.UTC(2026, 8, 24, 21, 59, 0));

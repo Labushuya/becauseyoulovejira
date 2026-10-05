@@ -615,3 +615,64 @@ describe('filter bar: recurring (plan OR-2)', () => {
 		expect(lastTarget()).toBe('/?gruppe=wiederholung');
 	});
 });
+
+describe('filter "Zuständig" (E7-5, ADR-0068 §3)', () => {
+	const SELF = 'anna00000000001';
+	const BERT = 'bert00000000002';
+
+	function assignees(active: boolean) {
+		return {
+			active,
+			members: [
+				{ id: SELF, name: 'Anna Beispiel', self: true },
+				{ id: BERT, name: 'Bert Beispiel', self: false }
+			],
+			context: { selfId: SELF, selfName: 'Anna Beispiel', names: null }
+		};
+	}
+
+	async function showWith(path: string, active: boolean) {
+		mocks.page.url = new URL(path, 'http://localhost:3000');
+		const catalog = new CatalogStore(
+			{ listProjects: vi.fn(async () => []), listTags: vi.fn(async () => []), createTag: vi.fn() },
+			SESSION
+		);
+		await catalog.load();
+		return render(FilterBar, { props: { catalog, assignees: assignees(active) } });
+	}
+
+	it('offers "Niemand" and the members in a household and writes the address', async () => {
+		await showWith('/?prio=high', true);
+		expect(toggle('Zuständig').textContent?.replace(/\s+/g, ' ').trim()).toBe('Zuständig: Alle');
+		expect(choiceLabels('Zuständig')).toEqual([
+			'Alle',
+			'Niemand',
+			'Anna Beispiel (ich)',
+			'Bert Beispiel'
+		]);
+
+		await open('Zuständig');
+		await fireEvent.click(radio('Zuständig', 'Bert Beispiel'), { detail: 1 });
+		expect(lastTarget()).toBe(`/?prio=high&zustaendig=${BERT}`);
+		await fireEvent.click(radio('Zuständig', 'Niemand'), { detail: 1 });
+		expect(lastTarget()).toBe('/?prio=high&zustaendig=niemand');
+	});
+
+	it('shows the chosen person, and "Zurücksetzen" clears it', async () => {
+		await showWith(`/?zustaendig=${SELF}`, true);
+		expect(toggle('Zuständig').textContent?.replace(/\s+/g, ' ').trim()).toBe(
+			'Zuständig: Anna Beispiel (ich)'
+		);
+		await fireEvent.click(screen.getByRole('button', { name: 'Zurücksetzen' }));
+		expect(lastTarget()).toBe('/');
+	});
+
+	it('is not offered in the private area unless the address names a person', async () => {
+		await showWith('/', false);
+		expect(screen.queryByRole('button', { name: /^Zuständig:/ })).toBeNull();
+
+		document.body.innerHTML = '';
+		await showWith('/?zustaendig=niemand', false);
+		expect(toggle('Zuständig').textContent?.replace(/\s+/g, ' ').trim()).toBe('Zuständig: Niemand');
+	});
+});

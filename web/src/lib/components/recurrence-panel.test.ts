@@ -13,7 +13,9 @@ import type { ResolvedPathname } from '$app/types';
 import type { RuleDraft } from '$lib/data/recurrence';
 import { CATCH_UP_ASK_HINT, type RecurrenceRule } from '$lib/domain/recurrence-rule';
 import type { ProjectRef } from '$lib/domain/ticket';
+import { fixedAssignees } from '$lib/stores/assignees.svelte';
 import type { EditResult } from '$lib/stores/catalog-editor';
+import AssigneeContextHarness from '$lib/test/AssigneeContextHarness.svelte';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import RecurrencePanel from './RecurrencePanel.svelte';
 import source from './RecurrencePanel.svelte?raw';
@@ -635,5 +637,87 @@ describe('RecurrencePanel: the sub-tasks of the template (plan WV-3)', () => {
 		await fireEvent.click(screen.getByRole('button', { name: 'Speichern' }));
 		await vi.waitFor(() => expect(props.onsave).toHaveBeenCalledTimes(1));
 		expect(props.onsave.mock.calls[0]?.[0]).not.toHaveProperty('template_subtasks');
+	});
+});
+
+describe('RecurrencePanel: "Zuständigkeit" (E7-5, ADR-0068 §5)', () => {
+	const SELF = 'anna00000000001';
+	const BERT = 'bert00000000002';
+	const MEMBERS = [
+		{ id: SELF, name: 'Anna Beispiel', self: true },
+		{ id: BERT, name: 'Bert Beispiel', self: false }
+	];
+
+	function showInHousehold(current: RecurrenceRule) {
+		const onsave = vi.fn(async (draft: Partial<RuleDraft>): Promise<SaveResult> => ({
+			ok: true,
+			value: { ...current, title: draft.title ?? current.title }
+		}));
+		const onclose = vi.fn();
+		render(AssigneeContextHarness, {
+			props: {
+				assignees: fixedAssignees(MEMBERS, SELF),
+				component: RecurrencePanel as never,
+				props: {
+					rule: current,
+					today: TODAY,
+					projects: [HOUSE],
+					tags: [],
+					projectById: () => null,
+					ticketHrefOf: (id: string) => `/tickets/${id}` as ResolvedPathname,
+					oncreatetag: vi.fn(async () => ({ ok: false as const, message: null })),
+					assignmentAvailable: true,
+					onsave,
+					onclose
+				}
+			}
+		});
+		return { onsave, onclose };
+	}
+
+	const rotating = () => rule({ assignment: { mode: 'rotate', assignees: [SELF, BERT], next: 1 } });
+
+	it('shows the rotation from the next person and keeps the pointer while it is unchanged', async () => {
+		const { onsave } = showInHousehold(rotating());
+		const section = screen.getByRole('group', { name: 'Zuständigkeit' });
+		expect(section.querySelector('.preview')?.textContent).toBe(
+			'Nächstes Vorkommen: Bert Beispiel, danach: Anna Beispiel'
+		);
+
+		await fireEvent.input(screen.getByLabelText('Titel'), { target: { value: 'Gelbe Tonne' } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Speichern' }));
+
+		await vi.waitFor(() => expect(onsave).toHaveBeenCalledTimes(1));
+		const draft = onsave.mock.calls[0]?.[0] ?? {};
+		expect(draft.title).toBe('Gelbe Tonne');
+		expect(draft).not.toHaveProperty('assignee_mode');
+		expect(draft).not.toHaveProperty('assignees');
+		expect(draft).not.toHaveProperty('assignee_next');
+	});
+
+	it('sends a changed assignment in the shown order with the pointer 0', async () => {
+		const { onsave } = showInHousehold(rotating());
+		const section = within(screen.getByRole('group', { name: 'Zuständigkeit' }));
+
+		await fireEvent.click(section.getByRole('button', { name: 'Anna Beispiel entfernen' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Speichern' }));
+
+		await vi.waitFor(() => expect(onsave).toHaveBeenCalledTimes(1));
+		expect(onsave.mock.calls[0]?.[0]).toMatchObject({
+			assignee_mode: 'rotate',
+			assignees: [BERT],
+			assignee_next: 0
+		});
+	});
+
+	it('counts a changed assignment as unsaved input', async () => {
+		const { onclose } = showInHousehold(rotating());
+		const none = screen.getByRole('radio', { name: 'Keine' });
+		await fireEvent.click(none);
+
+		await fireEvent.keyDown(none, { key: 'Escape' });
+
+		expect(screen.getByRole('dialog', { name: 'Änderungen verwerfen?' })).toBeTruthy();
+		expect(onclose).not.toHaveBeenCalled();
 	});
 });
