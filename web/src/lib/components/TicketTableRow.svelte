@@ -89,6 +89,7 @@
 		edit,
 		menu,
 		menuBusy = false,
+		pin,
 		ontoggle
 	}: {
 		ticket: TicketSummary;
@@ -131,6 +132,11 @@
 		menu?: Snippet<[TicketSummary]>;
 		/** A dialog of the menu is being prepared for this row (aria-busy on the actions). */
 		menuBusy?: boolean;
+		/**
+		 * The pin toggle of the ticket (ADR-0064) at the end of the title cell, apart from the charm
+		 * before the title; the row marks itself for its "show on pointing" (data-pin-row).
+		 */
+		pin?: Snippet<[TicketSummary]>;
 		ontoggle: (done: boolean) => void;
 	} = $props();
 
@@ -272,6 +278,7 @@
 	class:nested
 	class:selected
 	data-ticket-id={ticket.id}
+	data-pin-row={pin ? '' : undefined}
 	{onclick}
 >
 	{#if onselect && shows('select')}
@@ -345,7 +352,7 @@
 			{/if}
 		</td>
 	{/if}
-	<th class="title" scope="row" data-col="title">
+	<th class="title" class:has-pin={pin} scope="row" data-col="title">
 		<!-- At most two lines, cut off only visually; screen readers read the whole title. -->
 		<div class="title-clamp">
 			{#if parent}
@@ -410,6 +417,10 @@
 				</span>
 			{/if}
 		</div>
+		{#if pin}
+			<!-- The pin toggle (ADR-0064) at the end of the cell; the charm stays before the title. -->
+			<span class="pin-slot">{@render pin(ticket)}</span>
+		{/if}
 	</th>
 	{#if shows('parent')}
 		<td class="parent" data-col="parent">
@@ -657,6 +668,32 @@
 
 	.title {
 		font-weight: 400;
+	}
+
+	/*
+	 * The pin toggle (ADR-0064) at the right end of the title cell, centred; the title keeps the
+	 * room it needs beside it (small control height, 44 px on touch screens, ADR-0060).
+	 */
+	.title.has-pin {
+		--pin-size: var(--control-height-s);
+		position: relative;
+		/* A table cell takes its height as the least height: the toggle is never cut off. */
+		height: var(--pin-size);
+		padding-right: calc(var(--pin-size) + 0.75rem);
+	}
+
+	.pin-slot {
+		position: absolute;
+		top: 50%;
+		right: 0.375rem;
+		display: flex;
+		transform: translateY(-50%);
+	}
+
+	@media (pointer: coarse) {
+		.title.has-pin {
+			--pin-size: var(--control-height-touch);
+		}
 	}
 
 	.title-link {

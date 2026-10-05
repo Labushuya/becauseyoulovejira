@@ -177,6 +177,19 @@ describe('help page (EH-9)', () => {
 		expect(content).toMatch(/„Kein Charm“ entfernt ihn wieder/);
 	});
 
+	it('explains pinning: the toggle, the section above every filter, personal pins, releasing (ADR-0064)', () => {
+		render(Page);
+		const content = text(screen.getByRole('region', { name: 'Häufige Fragen' }));
+		expect(content).toMatch(/Mit dem Knopf „Anheften“ \(eine Nadel\) am Ende des Titels/);
+		expect(content).toMatch(/ganz oben im Abschnitt „Angeheftet“/);
+		expect(content).toMatch(/auch wenn die Filter sie sonst ausblenden würden/);
+		expect(content).toMatch(/„\+ 2 angeheftet“/);
+		expect(content).toMatch(/Deine Pins siehst nur du, auch im Haushalt/);
+		expect(content).toMatch(
+			/ist es für alle gelöst;\s+Wiedereröffnen oder Wiederherstellen heftet es nicht neu an/
+		);
+	});
+
 	it('answers the frequent questions in folded details', () => {
 		const { container } = render(Page);
 		const section = screen.getByRole('region', { name: 'Häufige Fragen' });
@@ -201,6 +214,7 @@ describe('help page (EH-9)', () => {
 			'Wie sehe ich die offenen Tickets eines Projekts?',
 			'Wie färbe ich Projekte und Tickets?',
 			'Wie setze ich einen Charm?',
+			'Wie hefte ich ein Ticket an?',
 			'Wie formatiere ich Beschreibungen und Kommentare?',
 			'Wie ordne ich Kommentare und hebe einen hervor?'
 		]);

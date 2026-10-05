@@ -11,9 +11,11 @@ import type { ResolvedPathname } from '$app/types';
 import { DataError } from '$lib/data/errors';
 import type { Project } from '$lib/domain/project';
 import type { Tag } from '$lib/domain/tag';
+import type { TicketPin } from '$lib/domain/pins';
 import type { Ticket, TicketPatch, TicketSummary } from '$lib/domain/ticket';
 import { CatalogStore, type CatalogData } from '$lib/stores/catalog.svelte';
 import { TicketOpenModeStore } from '$lib/stores/open-mode.svelte';
+import { PinStore } from '$lib/stores/pins.svelte';
 import type { LiveSource, RecordChange } from '$lib/stores/realtime';
 import { getRecurrenceStore } from '$lib/stores/recurrence.svelte';
 import { TicketActivityStore, type TicketActivityData } from '$lib/stores/ticket-activity.svelte';
@@ -25,6 +27,8 @@ import {
 } from '$lib/stores/ticket-detail.svelte';
 import type { Editor } from '@tiptap/core';
 import FullViewRouteHarness from '$lib/test/FullViewRouteHarness.svelte';
+import { fakePins, pinOf } from '$lib/test/fake-pins';
+import PinContextHarness from '$lib/test/PinContextHarness.svelte';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import { typeText, useProseMirrorStubs } from '$lib/test/prosemirror-stubs';
 import TicketPanel from './TicketPanel.svelte';
@@ -993,6 +997,66 @@ describe('ticket panel: kind (ADR-0065)', () => {
 		await renderPanel(ticket());
 		expect(screen.queryByRole('switch', { name: 'Laufendes Vorhaben' })).toBeNull();
 		expect(badge()).toBeNull();
+	});
+});
+
+describe('ticket panel: pin (ADR-0064)', () => {
+	async function renderWithPins(initial: Ticket, pinned: TicketPin[] = []) {
+		const fake = fakePins(pinned);
+		const pins = new PinStore(fake.data, { ensureValid: () => true, logout: vi.fn() });
+		await pins.load();
+		const context = createStore(initial);
+		context.store.open(ID);
+		render(PinContextHarness, {
+			props: {
+				pins,
+				store: context.store,
+				catalog: catalogOf(),
+				listHref: LIST,
+				onclose: vi.fn(),
+				ondeleted: vi.fn()
+			}
+		});
+		await vi.waitFor(() => expect(context.store.state).toBe('ready'));
+		await tick();
+		return { fake, pins };
+	}
+
+	it('has the pin toggle in the head before "•••" and pins and releases the ticket', async () => {
+		const { fake } = await renderWithPins(ticket());
+		const panel = screen.getByRole('complementary', { name: 'Steuererklärung' });
+		const header = panel.querySelector('header');
+		const controls = [...(header?.querySelectorAll(':scope a, :scope button') ?? [])].filter(
+			(element) => element.closest('[popover]') === null
+		);
+		expect(controls.map((element) => element.getAttribute('aria-label'))).toEqual([
+			'TASK-3 anheften',
+			'Weitere Aktionen',
+			'Panel schließen'
+		]);
+		const toggle = screen.getByRole('button', { name: 'TASK-3 anheften' });
+		expect(toggle.getAttribute('aria-pressed')).toBe('false');
+		expect(toggle.getAttribute('title')).toBe('Anheften');
+		// Always visible in the head, not only on pointing.
+		expect(toggle.classList.contains('reveal')).toBe(false);
+
+		await fireEvent.click(toggle);
+		await vi.waitFor(() => expect(toggle.getAttribute('aria-pressed')).toBe('true'));
+		expect(fake.data.pin).toHaveBeenCalledWith(ID);
+		expect(toggle.getAttribute('title')).toBe('Lösen');
+		await fireEvent.click(toggle);
+		await vi.waitFor(() => expect(toggle.getAttribute('aria-pressed')).toBe('false'));
+		expect(fake.data.unpin).toHaveBeenCalledOnce();
+	});
+
+	it('shows a pinned ticket as pinned, and offers no pinning for a done one', async () => {
+		await renderWithPins(ticket(), [pinOf(ID, 10)]);
+		expect(
+			screen.getByRole('button', { name: 'TASK-3 anheften' }).getAttribute('aria-pressed')
+		).toBe('true');
+		document.body.innerHTML = '';
+		await renderWithPins(ticket({ status: 'done', completedAt: '2026-09-03 10:00:00.000Z' }));
+		expect(screen.queryByRole('button', { name: 'TASK-3 anheften' })).toBeNull();
 	});
 });
 

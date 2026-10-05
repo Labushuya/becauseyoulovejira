@@ -306,6 +306,9 @@ function trashOne(txApp, ticket, isRoot, handling, actor, nowMs) {
   if (handling === 'inbox') {
     ticket.set('source_item', '');
   }
+  // The pins of every account go, before the ticket is hidden, so the rules of their realtime
+  // "delete" still see it; restoring pins nothing again (ADR-0064).
+  require(__hooks + '/lib/pin-service.js').releaseTicket(txApp, ticket.id);
   ticket.set(TRASH_OP_KEY, true);
   txApp.save(ticket);
   historyEntry(txApp, ticket.id, rules.TRASH_FIELD, '', rules.TRASHED, actor);

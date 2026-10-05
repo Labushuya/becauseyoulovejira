@@ -360,6 +360,18 @@ export const EXPECTED_COLLECTIONS = {
 			'CREATE INDEX idx_ticket_reads_ticket ON ticket_reads (ticket)'
 		]
 	},
+	// Pinned tickets (ADR-0064, migration 1790204500): one row per account and ticket.
+	ticket_pins: {
+		fields: {
+			user: relation('users', { required: true, cascadeDelete: true }),
+			ticket: relation('tickets', { required: true, cascadeDelete: true }),
+			created: created()
+		},
+		indexes: [
+			'CREATE UNIQUE INDEX idx_ticket_pins_user_ticket ON ticket_pins (user, ticket)',
+			'CREATE INDEX idx_ticket_pins_ticket ON ticket_pins (ticket)'
+		]
+	},
 	ticket_counters: {
 		fields: {
 			key: text({ required: true }),
@@ -452,10 +464,11 @@ const OWNED =
 	`${AUTH} && ((owner = @request.auth.id && household = "") || (household != "" && ` +
 	'@collection.household_members.household ?= household && ' +
 	'@collection.household_members.user ?= @request.auth.id))';
-const VIA_TICKET =
-	`${AUTH} && ((ticket.owner = @request.auth.id && ticket.household = "") || (ticket.household != "" && ` +
+const VIA_TICKET_BRANCH =
+	'((ticket.owner = @request.auth.id && ticket.household = "") || (ticket.household != "" && ' +
 	'@collection.household_members.household ?= ticket.household && ' +
 	'@collection.household_members.user ?= @request.auth.id))';
+const VIA_TICKET = `${AUTH} && ${VIA_TICKET_BRANCH}`;
 const VIA_PLAN =
 	`${AUTH} && ((plan.owner = @request.auth.id && plan.household = "") || (plan.household != "" && ` +
 	'@collection.household_members.household ?= plan.household && ' +
@@ -529,6 +542,14 @@ export const EXPECTED_RULES = {
 			'((ticket.owner = @request.auth.id && ticket.household = "") || (ticket.household != "" && ' +
 			'@collection.household_members.household ?= ticket.household && ' +
 			`@collection.household_members.user ?= @request.auth.id))${LIVE_TICKET}`,
+		updateRule: null,
+		deleteRule: `${AUTH} && user = @request.auth.id`
+	},
+	// Only the own pins on tickets the account sees, without the trash (ADR-0064); never changed.
+	ticket_pins: {
+		listRule: `${AUTH} && user = @request.auth.id && ${VIA_TICKET_BRANCH}${LIVE_TICKET}`,
+		viewRule: `${AUTH} && user = @request.auth.id && ${VIA_TICKET_BRANCH}${LIVE_TICKET}`,
+		createRule: `${AUTH} && @request.body.user = @request.auth.id && ${VIA_TICKET_BRANCH}${LIVE_TICKET}`,
 		updateRule: null,
 		deleteRule: `${AUTH} && user = @request.auth.id`
 	},

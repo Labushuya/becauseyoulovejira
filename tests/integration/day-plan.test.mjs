@@ -418,8 +418,13 @@ describe('check marks', () => {
 		await useDay('2031-03-05');
 		const person = await createAccount();
 		const ticket = await person.ticket({ status: 'in_progress' });
+		// A pin of the ticket (ADR-0064) goes with the completion, like in the list.
+		await person.client.collection('ticket_pins').create({ user: person.id, ticket: ticket.id });
 		const { item } = await person.add({ ticket: ticket.id });
 		const checked = await person.check(item.id);
+		expect(
+			await superuser.collection('ticket_pins').getFullList({ filter: superuser.filter('ticket = {:id}', { id: ticket.id }) })
+		).toEqual([]);
 		expect(checked).toMatchObject({
 			action: 'complete',
 			ticket: { id: ticket.id, status: 'done', previous_status: 'in_progress' },
