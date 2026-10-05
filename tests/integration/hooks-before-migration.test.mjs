@@ -1129,3 +1129,57 @@ describe('E7-3 hooks before the migration of the retention of a household (ADR-0
 		expect(trash).toMatchObject({ items: [], retention: '', can_purge: true });
 	});
 });
+
+describe('TP-1 hooks before the migration of the day plan (ADR-0065)', () => {
+	const DAY_PLAN_MIGRATION = '1790204600_day_plans.js';
+	let before;
+	let pb;
+	let userId;
+
+	beforeAll(async () => {
+		before = await startPocketBase({ migrationFilter: (name) => name < DAY_PLAN_MIGRATION });
+		const superuser = new PocketBase(before.url);
+		superuser.autoCancellation(false);
+		await superuser.collection('_superusers').authWithPassword(before.email, before.password);
+		const email = `user-${randomBytes(12).toString('hex')}@example.com`;
+		const password = randomBytes(24).toString('base64url');
+		userId = (await superuser.collection('users').create({ email, password, passwordConfirm: password })).id;
+		pb = new PocketBase(before.url);
+		pb.autoCancellation(false);
+		await pb.collection('users').authWithPassword(email, password);
+	});
+
+	afterAll(async () => {
+		await before?.stop();
+	});
+
+	it('creates, changes, moves to the trash and restores tickets as before; a sent kind is ignored', async () => {
+		const ticket = await pb.collection('tickets').create({ owner: userId, title: 'Vor dem Tagesplan', kind: 'ongoing' });
+		expect(ticket).not.toHaveProperty('kind');
+		const changed = await pb.collection('tickets').update(ticket.id, { title: 'Geändert', kind: 'task' });
+		expect(changed.title).toBe('Geändert');
+		expect(changed).not.toHaveProperty('kind');
+		await pb.send(`/api/byl/tickets/${ticket.id}/delete`, { method: 'POST', body: { sources: 'inbox' } });
+		await pb.send(`/api/byl/trash/${ticket.id}/restore`, { method: 'POST', body: {} });
+		expect((await pb.collection('tickets').getOne(ticket.id)).title).toBe('Geändert');
+	});
+
+	it('answers the routes of the day plan with the restart hint', async () => {
+		for (const [method, path] of [
+			['GET', '/api/byl/dayplan'],
+			['POST', '/api/byl/dayplan/items'],
+			['POST', '/api/byl/dayplan/adopt'],
+			['POST', '/api/byl/dayplan/settings'],
+			['POST', '/api/byl/dayplan/items/abcdefghijklmno/check']
+		]) {
+			const response = await fetch(`${before.url}${path}`, {
+				method,
+				headers: { Authorization: pb.authStore.token, 'Content-Type': 'application/json' },
+				...(method === 'POST' ? { body: '{}' } : {})
+			});
+			expect(response.status, path).toBe(503);
+			expect((await response.json()).reason, path).toBe('missing');
+		}
+		await expect(pb.collection('day_plans').getList(1, 1)).rejects.toMatchObject({ status: 404 });
+	});
+});

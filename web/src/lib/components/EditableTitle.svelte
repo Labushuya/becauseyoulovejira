@@ -4,11 +4,12 @@
 	import type { TicketDetailStore } from '$lib/stores/ticket-detail.svelte';
 	import CharmIcon from './CharmIcon.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
+	import KindBadge from './KindBadge.svelte';
 
 	// Title of the panel (E2 plan, T-7): a heading with "Titel bearbeiten". While editing, Enter
 	// or leaving the field saves and Escape cancels; the heading is the focus target of the panel.
 	// The charm of the ticket (ADR-0062) stands before the heading, not in it, so the name of the
-	// panel stays the title.
+	// panel stays the title; the badge "Vorhaben" of an ongoing project (ADR-0065) after it.
 	let {
 		store,
 		headingId,
@@ -65,6 +66,7 @@
 	{:else}
 		<CharmIcon charm={store.ticket?.charm} />
 		<h2 id={headingId} tabindex="-1" bind:this={heading}>{store.ticket?.title}</h2>
+		<KindBadge kind={store.ticket?.kind} />
 		<button
 			class="button-icon"
 			type="button"
@@ -104,6 +106,11 @@
 	.title :global(.charm-mark) {
 		margin-top: 0.4rem;
 		margin-right: -0.125rem;
+	}
+
+	/* The badge "Vorhaben" (ADR-0065) on the first line of the heading. */
+	.title :global(.kind-badge) {
+		margin-top: 0.3rem;
 	}
 
 	h2 {

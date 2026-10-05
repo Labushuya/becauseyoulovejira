@@ -944,6 +944,62 @@ describe('ticket panel: charm (ADR-0062)', () => {
 	});
 });
 
+describe('ticket panel: kind (ADR-0065)', () => {
+	const badge = () => document.querySelector<HTMLElement>('.title .kind-badge');
+	const kindSwitch = () =>
+		screen.getByRole<HTMLInputElement>('switch', { name: 'Laufendes Vorhaben' });
+
+	it('shows the badge "Vorhaben" after the title of an ongoing project, and none for a task', async () => {
+		await renderPanel(ticket({ kind: 'ongoing' }));
+		expect(badge()?.textContent?.trim()).toBe('Vorhaben');
+		expect(badge()?.getAttribute('title')).toBe('Laufendes Vorhaben');
+		expect(badge()?.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+		expect(heading().contains(badge())).toBe(false);
+		expect(kindSwitch().checked).toBe(true);
+		expect(
+			screen.getByText(
+				'Im Tagesplan heißt der Haken „für heute erledigt“; das Ticket bleibt offen.'
+			)
+		).toBeTruthy();
+	});
+
+	it('marks a task as an ongoing project with the switch and back, saved at once', async () => {
+		const { data } = await renderPanel(ticket({ kind: 'task' }));
+		expect(badge()).toBeNull();
+		expect(kindSwitch().checked).toBe(false);
+		expect(kindSwitch().getAttribute('aria-describedby')).toBeTruthy();
+		expect(screen.getByText('Im Tagesplan erledigt der Haken dieses Ticket.')).toBeTruthy();
+		await fireEvent.click(kindSwitch());
+		await vi.waitFor(() => expect(data.update).toHaveBeenCalledWith(ID, { kind: 'ongoing' }));
+		await vi.waitFor(() => expect(badge()?.textContent?.trim()).toBe('Vorhaben'));
+		expect(kindSwitch().checked).toBe(true);
+		await fireEvent.click(kindSwitch());
+		await vi.waitFor(() => expect(data.update).toHaveBeenLastCalledWith(ID, { kind: 'task' }));
+		await vi.waitFor(() => expect(badge()).toBeNull());
+	});
+
+	it('sets the switch back and names a refusal of the server below it', async () => {
+		const { data } = await renderPanel(ticket({ kind: 'task' }));
+		data.update.mockRejectedValueOnce(
+			new DataError('validation', {
+				status: 400,
+				fields: { kind: { code: 'validation_invalid_value', message: 'Ungültiger Wert.' } }
+			})
+		);
+		await fireEvent.click(kindSwitch());
+		const error = await screen.findByText('Ungültiger Wert.');
+		await vi.waitFor(() => expect(kindSwitch().checked).toBe(false));
+		expect(kindSwitch().getAttribute('aria-invalid')).toBe('true');
+		expect(kindSwitch().getAttribute('aria-describedby')).toContain(error.closest('p')?.id);
+	});
+
+	it('offers no switch and no badge while the server does not know the field', async () => {
+		await renderPanel(ticket());
+		expect(screen.queryByRole('switch', { name: 'Laufendes Vorhaben' })).toBeNull();
+		expect(badge()).toBeNull();
+	});
+});
+
 describe('ticket panel: pin (ADR-0064)', () => {
 	async function renderWithPins(initial: Ticket, pinned: TicketPin[] = []) {
 		const fake = fakePins(pinned);

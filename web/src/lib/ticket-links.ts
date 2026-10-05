@@ -12,6 +12,7 @@ import {
 	serializeListQuery,
 	type ListQuery
 } from './domain/list-query';
+import { isCalendarDate, type CalendarDate } from './domain/berlin-date';
 import { replaceCalendarQuery, type CalendarQuery } from './domain/calendar';
 import { SETUP_PARAMS, type SetupTarget } from './domain/channel-setup';
 import { connectionAnchor } from './domain/sync-all';
@@ -163,6 +164,41 @@ export function recurrenceHref(id: string): ResolvedPathname {
 /** View "Papierkorb" (ADR-0037 §9). */
 export function trashHref(): ResolvedPathname {
 	return resolve('/papierkorb');
+}
+
+/** Query parameter of the shown day of the day plan (ADR-0065); without it the plan shows today. */
+export const DAY_PLAN_DATE_PARAM = 'tag';
+
+/** The day of the address of the day plan, null for today (also for a value that is no date). */
+export function dayPlanDateFrom(url: URL): CalendarDate | null {
+	const values = url.searchParams.getAll(DAY_PLAN_DATE_PARAM);
+	const value = values.length === 1 ? (values[0] ?? '') : '';
+	return isCalendarDate(value) ? value : null;
+}
+
+function dayPlanSearch(date: CalendarDate | null): string {
+	return date === null ? '' : `?${new URLSearchParams({ [DAY_PLAN_DATE_PARAM]: date }).toString()}`;
+}
+
+/** View "Tagesplan" (ADR-0065) with the day of `url` (today without one). */
+export function dayPlanHref(url?: URL): ResolvedPathname {
+	const date = url === undefined ? null : dayPlanDateFrom(url);
+	return `${resolve('/tagesplan')}${dayPlanSearch(date)}` as ResolvedPathname;
+}
+
+/** View "Tagesplan" of `date` (null: today). */
+export function dayPlanDateHref(date: CalendarDate | null): ResolvedPathname {
+	return `${resolve('/tagesplan')}${dayPlanSearch(date)}` as ResolvedPathname;
+}
+
+/** Panel of a ticket next to the day plan, with the day of `url` (ADR-0054). */
+export function dayPlanTicketHref(id: string, url: URL): ResolvedPathname {
+	return `${resolve(`/tagesplan/tickets/${encodeURIComponent(id)}`)}${dayPlanSearch(dayPlanDateFrom(url))}` as ResolvedPathname;
+}
+
+/** Full view of a ticket over the day plan, with the day of `url`. */
+export function dayPlanFullViewHref(id: string, url: URL): ResolvedPathname {
+	return `${resolve(`/tagesplan/tickets/${encodeURIComponent(id)}/voll`)}${dayPlanSearch(dayPlanDateFrom(url))}` as ResolvedPathname;
 }
 
 /** Read-only preview of a ticket in the trash, addressed by record ID. */

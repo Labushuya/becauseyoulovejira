@@ -69,3 +69,9 @@ Damit sieht niemand die Pins eines anderen, und wer einen Haushalt verlässt, li
 - Neue Module: `app/pb_hooks/pins.pb.js`, `lib/pin-service.js`, `lib/pin-rules.js`; `web/src/lib/data/pins.ts`, `domain/pins.ts`, `domain/pin-icon.ts`, `stores/pins.svelte.ts`, `components/TicketPinToggle.svelte`, `components/PinIcon.svelte`.
 - Geändert: `tickets.pb.js` (Erledigen), `lib/trash-service.js` (Papierkorb), `lib/area-move-service.js` (Verschieben), `lib/storage-rules.js`; `TicketListStore` (`pins`, `pinned`, `pinnedInFilter`, `visible` ohne Pins), `TicketTable`, `TicketTableRow` (Snippet `pin`), `ProjectTicketList`, `TicketPanel`, `TicketFullViewRoute`, `(app)`-Layout, Hilfe.
 - Tests: `tests/integration/pinned-tickets.test.mjs` (eigene Instanz: A und B im Haushalt, C allein; nur eigene Pins, keine fremden oder unsichtbaren Tickets, erledigt und Papierkorb mit Realtime, Austritt, Entfernen, Verschieben, mehrere Tabs), `migrations-rollback.test.mjs`, `tests/unit/pin-rules.test.mjs`; in `web/` Abschnitt, Umschalter, Projektliste, Panel, Store und Domain. Test-Manifest: BYL-E6-1510 bis BYL-E6-1517, manuell BYL-E6-1520 bis BYL-E6-1524.
+
+## Nachtrag TP-1 (2026-10-05): Pins sind keine Quelle des Tagesplans
+
+- **Entscheidung durch:** Nutzer (Vorgabe zu TP-1, [ADR-0065](0065-tagesplan.md) §9).
+- Der Satz im Kontext („Ein späteres Paket „Tagesplan“ soll die Pins als Vorschläge nutzen.“) und §4 gelten nicht mehr als Absicht: Pins bleiben reine Anzeige eines Kontos. Der Tagesplan fragt weder `listPins` noch den `PinStore` ab; seine Quellen sind laufende Vorhaben, Fälligkeit, Überfälligkeit, Wiederholung, „Übrig von gestern“ und „In Arbeit“. Die Funktionen aus §4 bleiben, wo sie heute gebraucht werden.
+- Was beide Pakete verbindet: Erledigt der Tagesplan eine Aufgabe, geschieht das über das Speichern des Tickets, also lösen sich ihre Pins wie in der Liste.

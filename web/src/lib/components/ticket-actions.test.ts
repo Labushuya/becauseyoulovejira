@@ -6,7 +6,9 @@
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
+import { DayPlanEntryStore } from '$lib/stores/day-plan.svelte';
 import type { FlagInput } from '$lib/stores/flags.svelte';
+import DayPlanEntryHarness from '$lib/test/DayPlanEntryHarness.svelte';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import TicketActions from './TicketActions.svelte';
 
@@ -184,5 +186,57 @@ describe('menu "•••" of a ticket (AM-1)', () => {
 		expect(shown[0]?.tone).toBe('error');
 		expect(shown[0]?.title).toBe('Link konnte nicht kopiert werden.');
 		expect(shown[0]?.description).toContain(`${window.location.origin}/tickets/ticket000000012`);
+	});
+});
+
+describe('"Zum Tagesplan" in the menu "•••" (ADR-0065)', () => {
+	function renderWithPlan(ticket: Record<string, unknown>) {
+		const add = vi.fn(async () => ({
+			item: {} as never,
+			plan: { id: 'plan00000000001', date: '2031-05-14', scope: 'u:x', dismissed: [] },
+			already: false
+		}));
+		const shown: FlagInput[] = [];
+		const flags = {
+			show: vi.fn((input: FlagInput) => {
+				shown.push(input);
+				return 'flag';
+			}),
+			dismiss: vi.fn()
+		};
+		const store = new DayPlanEntryStore(
+			{ add },
+			{ ensureValid: () => true, logout: vi.fn() },
+			flags,
+			vi.fn()
+		);
+		render(DayPlanEntryHarness, {
+			props: { store, props: { ticket, flags, onduplicate: null, ondelete: vi.fn() } }
+		});
+		const trigger = screen.getByRole('button', { name: 'Weitere Aktionen' });
+		const menu = document.getElementById(
+			trigger.getAttribute('aria-controls') ?? ''
+		) as HTMLElement;
+		const entries = () =>
+			within(menu)
+				.getAllByRole('menuitem', { hidden: true })
+				.map((item) => item.textContent?.trim());
+		return { trigger, menu, entries, add, shown };
+	}
+
+	it('puts an open ticket into the plan of today of its area', async () => {
+		const { trigger, menu, entries, add, shown } = renderWithPlan({ ...TICKET, status: 'open' });
+		expect(entries()).toEqual(['Zum Tagesplan', 'Link kopieren', 'In den Papierkorb …']);
+		await open(trigger);
+		await fireEvent.click(
+			within(menu).getByRole('menuitem', { name: 'Zum Tagesplan', hidden: true })
+		);
+		await vi.waitFor(() => expect(add).toHaveBeenCalledWith('ticket000000012'));
+		await vi.waitFor(() => expect(shown[0]?.title).toBe('HAUS-12 im Tagesplan von heute.'));
+	});
+
+	it('offers nothing for a done ticket', () => {
+		const { entries } = renderWithPlan({ ...TICKET, status: 'done' });
+		expect(entries()).toEqual(['Link kopieren', 'In den Papierkorb …']);
 	});
 });

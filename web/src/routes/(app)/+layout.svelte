@@ -126,8 +126,13 @@
 	import { TrashAttention } from '$lib/stores/trash-attention';
 	import { listTrash } from '$lib/data/trash';
 	import { waitingCount } from '$lib/domain/trash';
+	import {
+		DayPlanEntryStore,
+		dayPlanEntryData,
+		setDayPlanEntryStore
+	} from '$lib/stores/day-plan.svelte';
 	import { ticketHrefIn } from '$lib/ticket-host';
-	import { inboxItemHref, recurrenceHref, recurrencesHref } from '$lib/ticket-links';
+	import { dayPlanHref, inboxItemHref, recurrenceHref, recurrencesHref } from '$lib/ticket-links';
 
 	// Shell of every signed-in page (E2 plan, T-4). The root layout renders it only with a
 	// session; the login page stays outside this group.
@@ -220,6 +225,11 @@
 	);
 	// "Ticket duplizieren" (ADR-0045): one request, the result as a flag with the way back.
 	setTicketDuplicateStore(new TicketDuplicateStore(ticketDuplicateData(pb), auth, flags));
+	// "Zum Tagesplan" in the menu "•••" of every ticket (ADR-0065): into the plan of today of its own
+	// area; the flag leads to the plan.
+	setDayPlanEntryStore(
+		new DayPlanEntryStore(dayPlanEntryData(pb), auth, flags, () => void goto(dayPlanHref()))
+	);
 	// The menu "•••" of a row of the table (plan aktionsmenues, AM-2): its dialogs load what they
 	// need first; moving to the trash offers "Rückgängig" like the panel.
 	setTicketRowActions(
@@ -363,6 +373,7 @@
 	/** The views a change of the area leads to. */
 	const AREA_VIEW_HREFS: Readonly<Record<AreaView, ResolvedPathname>> = {
 		tasks: resolve('/'),
+		dayplan: resolve('/tagesplan'),
 		projects: resolve('/projekte'),
 		inbox: resolve('/eingang'),
 		recurrences: resolve('/wiederholungen'),

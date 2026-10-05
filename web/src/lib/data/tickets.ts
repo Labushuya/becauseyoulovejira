@@ -6,6 +6,7 @@ import type PocketBase from 'pocketbase';
 import { addDays, type CalendarDate } from '../domain/berlin-date';
 import { charmKeyOf } from '../domain/charms';
 import { colorOf } from '../domain/colors';
+import { kindOf } from '../domain/day-plan';
 import {
 	duplicateRequestBody,
 	toDuplicateOutcome,
@@ -74,6 +75,8 @@ export const TICKET_LIST_FIELDS = [
 	'color',
 	// Charm (ADR-0062); unknown to the server before the migration 1790204400.
 	'charm',
+	// Kind of the day plan (ADR-0065); unknown to the server before the migration 1790204600.
+	'kind',
 	'completed_at',
 	'created',
 	'updated',
@@ -121,6 +124,8 @@ export interface TicketRecord {
 	color?: string;
 	/** Charm, '' for none; missing before the migration 1790204400 (ADR-0062). */
 	charm?: string;
+	/** Kind, `task` or `ongoing`; missing before the migration 1790204600 (ADR-0065). */
+	kind?: string;
 	completed_at: string;
 	created: string;
 	updated: string;
@@ -161,6 +166,8 @@ export function toTicketSummary(record: TicketRecord): TicketSummary {
 		...(record.color !== undefined ? { color: colorOf(record.color) } : {}),
 		// The same for the charm (ADR-0062); a key the catalog does not know reads as none.
 		...(record.charm !== undefined ? { charm: charmKeyOf(record.charm) } : {}),
+		// The same for the kind (ADR-0065); an empty value is a task.
+		...(record.kind !== undefined ? { kind: kindOf(record.kind) } : {}),
 		completedAt: record.completed_at || null,
 		created: record.created,
 		updated: record.updated
@@ -205,6 +212,8 @@ function patchBody(patch: TicketPatch): PatchBody {
 	if (patch.color !== undefined) body.color = patch.color ?? '';
 	// '' removes the charm (ADR-0062); the hook checks the key against its catalog.
 	if (patch.charm !== undefined) body.charm = patch.charm ?? '';
+	// "Laufendes Vorhaben" or "Aufgabe" (ADR-0065); PocketBase checks the value.
+	if (patch.kind !== undefined) body.kind = patch.kind;
 	// The only change a client may make to the series: leaving it (ADR-0023 section 1).
 	if (patch.detachSeries === true) body.recurrence = '';
 	return body;

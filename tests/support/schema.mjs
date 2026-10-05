@@ -222,7 +222,10 @@ export const EXPECTED_COLLECTIONS = {
 			// Own color (ADR-0052, migration 1790203400), empty for "wie Projekt".
 			color: select(PROJECT_COLORS, false),
 			// Charm (ADR-0062, migration 1790204400), empty for none; the hook checks the key.
-			charm: text({ max: 40 })
+			charm: text({ max: 40 }),
+			// Kind (ADR-0065, migration 1790204600): "Aufgabe" or "Laufendes Vorhaben"; the hook gives
+			// every new ticket `task`.
+			kind: select(['task', 'ongoing'], false)
 		},
 		indexes: [
 			'CREATE UNIQUE INDEX idx_tickets_scope_key ON tickets (scope, key)',
@@ -391,6 +394,51 @@ export const EXPECTED_COLLECTIONS = {
 			'CREATE INDEX idx_inbox_keys_owner ON inbox_keys (owner)'
 		]
 	},
+	// The day plan (ADR-0065, migration 1790204600): one plan per area and day, its entries and the
+	// modes of the sources per area. A household that goes takes plans and settings along, a plan or a
+	// ticket its entries.
+	day_plans: {
+		fields: {
+			date: text({ required: true, min: 10, max: 10, pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' }),
+			dismissed: { type: 'json', required: false, maxSize: 200000 },
+			scope: text({ required: true, max: 100 }),
+			owner: relation('users', { required: true }),
+			household: relation('households', { cascadeDelete: true }),
+			...timestamps()
+		},
+		indexes: [
+			'CREATE UNIQUE INDEX idx_day_plans_scope_date ON day_plans (scope, date)',
+			'CREATE INDEX idx_day_plans_owner ON day_plans (owner)',
+			'CREATE INDEX idx_day_plans_household ON day_plans (household)'
+		]
+	},
+	day_plan_items: {
+		fields: {
+			plan: relation('day_plans', { required: true, cascadeDelete: true }),
+			ticket: relation('tickets', { required: true, cascadeDelete: true }),
+			position: number({ min: 0 }),
+			origin: select(['manual', 'due_today', 'overdue', 'recurrence', 'leftover', 'in_progress', 'ongoing'], true),
+			done_today: bool(),
+			done_at: date(),
+			added_by: relation('users'),
+			checked_by: relation('users'),
+			...timestamps()
+		},
+		indexes: [
+			'CREATE UNIQUE INDEX idx_day_plan_items_plan_ticket ON day_plan_items (plan, ticket)',
+			'CREATE INDEX idx_day_plan_items_ticket ON day_plan_items (ticket)'
+		]
+	},
+	day_plan_settings: {
+		fields: {
+			sources: { type: 'json', required: false, maxSize: 2000 },
+			scope: text({ required: true, max: 100 }),
+			owner: relation('users', { required: true }),
+			household: relation('households', { cascadeDelete: true }),
+			...timestamps()
+		},
+		indexes: ['CREATE UNIQUE INDEX idx_day_plan_settings_scope ON day_plan_settings (scope)']
+	},
 	// Failed sign-ins for the page "Sicherheit" (ADR-0055 §8, migration 1790203600); never a password.
 	login_failures: {
 		fields: {
@@ -421,6 +469,10 @@ const VIA_TICKET_BRANCH =
 	'@collection.household_members.household ?= ticket.household && ' +
 	'@collection.household_members.user ?= @request.auth.id))';
 const VIA_TICKET = `${AUTH} && ${VIA_TICKET_BRANCH}`;
+const VIA_PLAN =
+	`${AUTH} && ((plan.owner = @request.auth.id && plan.household = "") || (plan.household != "" && ` +
+	'@collection.household_members.household ?= plan.household && ' +
+	'@collection.household_members.user ?= @request.auth.id))';
 const BODY_HOUSEHOLD_ALLOWED =
 	'(@request.body.household:isset = false || @request.body.household = "" || (' +
 	'@collection.household_members:target.household ?= @request.body.household && ' +
@@ -514,7 +566,12 @@ export const EXPECTED_RULES = {
 	// Only the hooks write and read the failed sign-ins (ADR-0055 §8).
 	login_failures: { listRule: null, viewRule: null, ...READ_ONLY },
 	// Only the hooks read and write the fingerprints of moved entries (E7-4b).
-	inbox_moved_fingerprints: { listRule: null, viewRule: null, ...READ_ONLY }
+	inbox_moved_fingerprints: { listRule: null, viewRule: null, ...READ_ONLY },
+	// The day plan (ADR-0065): read like every record of an area (the entries through their plan),
+	// written only by the routes.
+	day_plans: { listRule: OWNED, viewRule: OWNED, ...READ_ONLY },
+	day_plan_items: { listRule: VIA_PLAN, viewRule: VIA_PLAN, ...READ_ONLY },
+	day_plan_settings: { listRule: OWNED, viewRule: OWNED, ...READ_ONLY }
 };
 
 // The own record, every record for the administrator of the app and the accounts of the own

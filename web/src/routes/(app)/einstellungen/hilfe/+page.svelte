@@ -21,7 +21,7 @@
 	import { CONTEXT_TEXTS, RESTART_NEEDED } from '$lib/guidance/texts';
 	import { HELP_SECTIONS, helpHref } from '$lib/settings-sections';
 	import { appContext } from '$lib/stores/context.svelte';
-	import { calendarHref, channelSetupHref, trashHref } from '$lib/ticket-links';
+	import { calendarHref, channelSetupHref, dayPlanHref, trashHref } from '$lib/ticket-links';
 
 	// Settings "Hilfe" (ADR-0026 section 7, plan EH-9 §3.10): jump links, the keyboard shortcuts from
 	// the one source, the short syntax of the quick entry, how the access data work (moved here from
@@ -193,6 +193,53 @@
 			einem Ticket einer Serie verschiebt sich nur dieses Ticket, nicht die Serie. Hat jemand das
 			Ticket inzwischen geändert, etwa in einem anderen Tab, wird nichts überschrieben, und eine
 			Meldung sagt es. Auf Touch-Geräten scrollt das Ziehen die Seite; dort geht es über das Menü.
+		</p>
+	</section>
+
+	<section id="tagesplan" aria-labelledby="tagesplan-title">
+		<h3 id="tagesplan-title">Tagesplan</h3>
+		<p>
+			Der <a href={dayPlanHref()}>Tagesplan</a> verbindet, was heute ansteht, mit Vorhaben, die lange
+			laufen und sonst untergehen, etwa einem Sprachkurs über viele Wochen. Er schlägt vor; du entscheidest,
+			was in den Plan kommt, und änderst ihn jederzeit.
+		</p>
+		<h4 id="tagesplan-art">Aufgabe oder laufendes Vorhaben</h4>
+		<p>
+			Jedes Ticket ist eine Aufgabe, bis du es im Ticket mit dem Schalter „Laufendes Vorhaben“ (oder
+			im Menü eines Eintrags des Plans) als Vorhaben markierst; es trägt dann das Abzeichen
+			„Vorhaben“. Die Art allein bestimmt, was der Haken im Plan bedeutet: Bei einer Aufgabe ist das
+			Ticket erledigt, mit „Rückgängig“ in der Meldung. Bei einem Vorhaben heißt der Haken „für
+			heute erledigt“; das Ticket bleibt offen. Im Menü steht jeweils die andere Variante: „Nur für
+			heute abhaken“ bei Aufgaben, „Vorhaben abschließen …“ mit Rückfrage bei Vorhaben.
+		</p>
+		<h4 id="tagesplan-vorschlaege">Vorschläge</h4>
+		<p>
+			Die Vorschläge nennen ihren Grund: laufendes Vorhaben, Wiederholung, übrig von gestern (im
+			Plan von gestern, weder erledigt noch abgehakt), überfällig seit einigen Tagen, heute fällig,
+			in Arbeit. Haken setzen und „Übernehmen“ oder gleich „Alle übernehmen“. Mit „Einstellen“
+			stellst du jede Quelle auf „Aus“, „Vorschlagen“ oder „Automatisch übernehmen“; laufende
+			Vorhaben kommen von Anfang an automatisch beim ersten Öffnen des Tages in den Plan. Was im
+			Plan steht oder heute daraus entfernt wurde, schlägt der Plan nicht noch einmal vor. „Heute“
+			ist derselbe Tag wie bei „Heute fällig“. Angeheftete Tickets sind keine Quelle; das Anheften
+			bleibt deine Ansicht in „Aufgaben“.
+		</p>
+		<h4 id="tagesplan-eingreifen">Plan und Pool</h4>
+		<p>
+			Neben dem Plan (am Handy darunter) steht der Pool: die offenen Tickets des Bereichs, die noch
+			nicht im Plan stehen, mit Suche. Mit „+“ oder per Ziehen auf den Plan kommen sie hinein; „Zum
+			Tagesplan“ im Menü „•••“ eines Tickets tut dasselbe von überall. Die Reihenfolge änderst du
+			durch Ziehen am Griff, mit „nach oben“ und „nach unten“ oder mit <kbd>Alt</kbd>+Pfeil. Je
+			Eintrag gibt es außerdem „Auf morgen schieben“ und „Entfernen“. Mit den Pfeilen im Kopf gehst
+			du zum Vortag oder Folgetag: Vergangene Tage sind nur zu lesen, morgen kannst du schon planen.
+		</p>
+		<h4 id="tagesplan-haushalt">Im Haushalt</h4>
+		<p>
+			Privat hast du deinen eigenen Plan, im Haushalt gibt es einen gemeinsamen für alle Mitglieder;
+			alle dürfen dasselbe, Änderungen erscheinen bei allen sofort, und Initialen am Eintrag zeigen,
+			wer ihn hinzugefügt oder abgehakt hat. Oben steht ein Hinweis auf den anderen Bereich, etwa
+			„Im Haushalt: 3 Einträge für heute“, mit dem Weg dorthin; seinen Inhalt zeigt der Plan nicht.
+			Ein Ticket, das in den anderen Bereich oder in den Papierkorb wandert, verschwindet aus den
+			Plänen.
 		</p>
 	</section>
 

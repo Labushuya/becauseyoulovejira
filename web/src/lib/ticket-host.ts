@@ -19,6 +19,9 @@ import {
 	areaTicketHref,
 	calendarBackHref,
 	calendarFullViewHref,
+	dayPlanFullViewHref,
+	dayPlanHref,
+	dayPlanTicketHref,
 	calendarOriginFrom,
 	calendarTicketHref,
 	fullViewHref,
@@ -183,6 +186,22 @@ function areaHost(area: TicketArea, backLabel: string): AreaTicketHost {
 /** Projects (ADR-0054): the open tickets of the list rows and of the project panel. */
 export const PROJECTS_HOST = areaHost('projekte', 'Zu den Projekten');
 
+/**
+ * The day plan (ADR-0065): a ticket of an entry, a suggestion or the pool opens next to the plan
+ * (/tagesplan/tickets/<id>, …/voll) with the shown day; × leads back to the plan, the focus to the
+ * link that opened it. It replaces no other panel (no origin).
+ */
+export const DAY_PLAN_HOST: OriginTicketHost = Object.freeze({
+	panelRoute: '/(app)/tagesplan/tickets/[id]',
+	fullRoute: '/(app)/tagesplan/tickets/[id]/voll',
+	backLabel: 'Zum Tagesplan',
+	view: (url: URL) => dayPlanHref(url),
+	panel: dayPlanTicketHref,
+	full: dayPlanFullViewHref,
+	origin: () => null,
+	entryOf: (id: string) => ticketLinkIn(viewPart('list'), id)
+});
+
 /** Inbox (ADR-0054): the tickets of entries, of duplicates and of results. */
 export const INBOX_HOST = areaHost('eingang', 'Zum Eingang');
 
@@ -199,6 +218,7 @@ function hostOfRoute(routeId: string | null | undefined): TicketHost | null {
 	const views: readonly [string, TicketHost][] = [
 		['/(app)/(tickets)', LIST_HOST],
 		['/(app)/kalender', CALENDAR_HOST],
+		['/(app)/tagesplan', DAY_PLAN_HOST],
 		['/(app)/projekte', PROJECTS_HOST],
 		['/(app)/eingang', INBOX_HOST],
 		['/(app)/wiederholungen', RECURRENCES_HOST]

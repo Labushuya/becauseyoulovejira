@@ -43,7 +43,7 @@ describe('help page (EH-9)', () => {
 		}
 	});
 
-	it('jumps to the sections that exist on the page, eighteen since the areas', () => {
+	it('jumps to the sections that exist on the page, nineteen since the day plan', () => {
 		const { container } = render(Page);
 
 		const jump = within(screen.getByRole('navigation', { name: 'Auf dieser Seite' }));
@@ -53,6 +53,7 @@ describe('help page (EH-9)', () => {
 			'Kurzsyntax',
 			'Wiederholungen',
 			'Kalender',
+			'Tagesplan',
 			'Kanäle und Zugangsdaten',
 			'Eigener Eingang (API)',
 			'WhatsApp Web',
@@ -393,6 +394,28 @@ describe('help page (EH-9)', () => {
 		expect(content).toMatch(/öffnet die Regel neben dem Kalender/);
 		expect(content).toMatch(/öffnet den Eintrag neben dem Kalender/);
 		expect(content).toMatch(/das Schließen führt zurück zur Regel bzw\. zum Eintrag/);
+	});
+
+	it('explains the day plan: kinds, check marks, sources, pool, days and the household (ADR-0065)', () => {
+		const { container } = render(Page);
+		const section = container.querySelector<HTMLElement>('section#tagesplan')!;
+		expect(section.getAttribute('aria-labelledby')).toBe('tagesplan-title');
+		expect(helpHref('tagesplan')).toBe('/einstellungen/hilfe#tagesplan');
+		expect(within(section).getByRole('link', { name: 'Tagesplan' }).getAttribute('href')).toBe(
+			'/tagesplan'
+		);
+		const content = text(section);
+		expect(content).toMatch(/Schalter „Laufendes Vorhaben“/);
+		expect(content).toMatch(/Die\s+Art allein bestimmt, was der Haken im Plan bedeutet/);
+		expect(content).toMatch(/„für heute erledigt“; das\s+Ticket bleibt offen/);
+		expect(content).toMatch(/„Nur für heute abhaken“/);
+		expect(content).toMatch(/„Vorhaben abschließen …“ mit Rückfrage/);
+		expect(content).toMatch(/„Aus“, „Vorschlagen“ oder „Automatisch übernehmen“/);
+		expect(content).toMatch(/Angeheftete Tickets sind keine Quelle/);
+		expect(content).toMatch(/„Zum\s+Tagesplan“ im Menü/);
+		expect(content).toMatch(/Vergangene Tage sind nur zu lesen, morgen kannst du schon planen/);
+		expect(content).toMatch(/einen gemeinsamen für alle Mitglieder/);
+		expect(content).toMatch(/seinen Inhalt zeigt der Plan nicht/);
 	});
 
 	it('explains moving a due date: mouse, menu or "m", undo, series and touch (ADR-0053 §12)', () => {

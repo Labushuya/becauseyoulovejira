@@ -347,6 +347,17 @@ describe('color in the history (ADR-0052)', () => {
 	});
 });
 
+describe('kind in the history (ADR-0065)', () => {
+	it('names marking an ongoing project and back', () => {
+		expect(text({ field: 'kind', oldValue: 'task', newValue: 'ongoing' })).toBe(
+			'Art: Aufgabe → Laufendes Vorhaben'
+		);
+		expect(text({ field: 'kind', oldValue: 'ongoing', newValue: 'task' })).toBe(
+			'Art: Laufendes Vorhaben → Aufgabe'
+		);
+	});
+});
+
 describe('duplicate in the history (ADR-0045)', () => {
 	const duplicateText = (newValue: string) => text({ field: 'duplicate', newValue });
 

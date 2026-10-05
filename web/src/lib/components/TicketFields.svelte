@@ -23,7 +23,9 @@
 	// "Übergeordnet" of sub-tasks (ADR-0033) comes in through `parentRow` as two cells of the grid.
 	// The own color (ADR-0052) after the project, "Wie Projekt (Blau)" first, saves at once like the
 	// project; only when the server knows the field. The charm (ADR-0062) after it, chosen in its
-	// dialog and saved at once as well.
+	// dialog and saved at once as well. The switch "Laufendes Vorhaben" (ADR-0065) after the charm:
+	// the kind decides what the check mark of the day plan means; it saves at once, a refusal sets the
+	// switch back and stands below it.
 	let {
 		store,
 		catalog,
@@ -48,7 +50,8 @@
 		project: `${uid}-project`,
 		projectHint: `${uid}-project-hint`,
 		color: `${uid}-color`,
-		tags: `${uid}-tags`
+		tags: `${uid}-tags`,
+		kindHint: `${uid}-kind-hint`
 	};
 	const errorIdOf = (field: string) => `${uid}-${field}-error`;
 
@@ -59,6 +62,16 @@
 	const colorShown = $derived(catalog.colorsReady && ticket.color !== undefined);
 	/** The charm (ADR-0062) likewise: the ticket has the field only after its migration. */
 	const charmShown = $derived(ticket.charm !== undefined);
+	/** The kind (ADR-0065) likewise. */
+	const kindShown = $derived(ticket.kind !== undefined);
+	const ongoing = $derived(store.value('kind') === 'ongoing');
+
+	/** The switch "Laufendes Vorhaben": saves at once; a refusal sets it back. */
+	async function toggleKind(event: Event & { currentTarget: HTMLInputElement }) {
+		const input = event.currentTarget;
+		await store.choose('kind', input.checked ? 'ongoing' : 'task');
+		input.checked = store.value('kind') === 'ongoing';
+	}
 
 	/** New tag from the picker: an existing one in another spelling or a new one, then assigned. */
 	async function createTag(name: string): Promise<boolean> {
@@ -204,6 +217,36 @@
 		</div>
 	{/if}
 
+	{#if kindShown}
+		<span class="term">Art</span>
+		<div class="control">
+			<label class="switch-row">
+				<span>Laufendes Vorhaben</span>
+				<input
+					type="checkbox"
+					role="switch"
+					checked={ongoing}
+					aria-busy={store.isSaving('kind') ? 'true' : undefined}
+					aria-invalid={store.fieldError('kind') ? 'true' : undefined}
+					aria-describedby={store.fieldError('kind')
+						? `${ids.kindHint} ${errorIdOf('kind')}`
+						: ids.kindHint}
+					onchange={toggleKind}
+				/>
+			</label>
+			<p class="hint" id={ids.kindHint}>
+				{ongoing
+					? 'Im Tagesplan heißt der Haken „für heute erledigt“; das Ticket bleibt offen.'
+					: 'Im Tagesplan erledigt der Haken dieses Ticket.'}
+			</p>
+			{#if store.fieldError('kind')}
+				<p class="field-error" id={errorIdOf('kind')}>
+					<ErrorIcon /><span>{store.fieldError('kind')}</span>
+				</p>
+			{/if}
+		</div>
+	{/if}
+
 	<label for={ids.tags}>Tags</label>
 	<div class="control">
 		<TagPicker
@@ -251,5 +294,20 @@
 	.fields :global(input[type='date']) {
 		width: fit-content;
 		max-width: 100%;
+	}
+
+	/* The switch "Laufendes Vorhaben" (ADR-0065): name left, switch right (ADR-0029 G-5). */
+	.fields .switch-row {
+		display: flex;
+		gap: 0.75rem;
+		align-items: center;
+		justify-content: space-between;
+		color: var(--color-text);
+		cursor: pointer;
+	}
+
+	.hint {
+		font-size: var(--font-size-small);
+		color: var(--color-text-muted);
 	}
 </style>
