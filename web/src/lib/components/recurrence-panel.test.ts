@@ -177,6 +177,23 @@ describe('RecurrencePanel: "Neue Regel"', () => {
 		expect(screen.getByText('Bitte mindestens einen Wochentag wählen.')).toBeTruthy();
 	});
 
+	// WH-2 (ADR-0022 addendum 14): a new rule has no ticket and begins from today on the server, so
+	// the same hint only says so; a rule that exists asks nothing when its rhythm is edited.
+	it('says that a new rule with "Beginnt am" in the past begins from today, and asks nothing', async () => {
+		const props = show(null);
+		await fireEvent.input(screen.getByLabelText('Titel'), { target: { value: 'Blumen' } });
+		await fireEvent.input(screen.getByLabelText('Beginnt am'), { target: { value: '2026-09-01' } });
+		const hint = screen.getByText(/„Beginnt am“ liegt in der Vergangenheit \(01\.09\.2026\)\./);
+		expect(hint.textContent?.replace(/\s+/g, ' ')).toContain(
+			'Die Serie beginnt ab heute. Erstes Vorkommen: Fr 25.09. (heute)'
+		);
+		expect(screen.queryByRole('radio', { name: 'Serie ab heute beginnen' })).toBeNull();
+		await fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }));
+		await vi.waitFor(() => expect(props.onsave).toHaveBeenCalledTimes(1));
+		expect(props.onsave.mock.calls[0]?.[0]).toMatchObject({ anchor: '2026-09-01' });
+		expect(props.onsave.mock.calls[0]?.[0]).not.toHaveProperty('start');
+	});
+
 	it('closes without a question while nothing is typed, else asks first', async () => {
 		const props = show(null);
 		await fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }));
@@ -192,6 +209,12 @@ describe('RecurrencePanel: "Neue Regel"', () => {
 });
 
 describe('RecurrencePanel: a rule', () => {
+	it('asks nothing about the start of a rule that exists, though "Beginnt am" lies in the past', () => {
+		show(rule({ anchor: '2024-03-12' }));
+		expect(screen.getByLabelText<HTMLInputElement>('Beginnt am').value).toBe('2024-03-12');
+		expect(screen.queryByText(/liegt in der Vergangenheit/)).toBeNull();
+	});
+
 	it('shows the rule with its state, next ticket and open ticket', async () => {
 		show(rule({ projectId: HOUSE.id, tagIds: ['tag000000000001'] }));
 		await tick();

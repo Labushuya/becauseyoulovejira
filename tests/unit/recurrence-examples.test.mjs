@@ -16,6 +16,7 @@ import {
 	helpExamples
 } from '../../web/src/lib/domain/recurrence-examples.ts';
 import * as mirror from '../../web/src/lib/domain/recurrence-generation.ts';
+import * as startMirror from '../../web/src/lib/domain/series-start.ts';
 import { CATCH_UP_ALL_HINT, CATCH_UP_ASK_HINT, EACH_LIMIT_HINT } from '../../web/src/lib/domain/recurrence-rule.ts';
 
 const hook = loadHookLib('recurrence.js');
@@ -162,6 +163,17 @@ describe('mirror of the generation in the SPA (recurrence-generation.ts)', () =>
 				}
 			} else {
 				expect(mirror.nextDueOnCompletion(rule, today), label).toEqual(HOOK_ENGINE.nextDueOnCompletion(rule, today));
+			}
+			// WH-2: where a new series begins, with and without a ticket, its due date and the choice.
+			expect(startMirror.firstFromToday(params, today), label).toEqual(hookRules.firstFromToday(hook.normalize(params), today, hook));
+			const ticketDue = pick(['', day(Math.floor(next() * 200)), today]);
+			for (const withTicket of [true, false]) {
+				for (const start of ['today', 'keep', undefined]) {
+					const input = { withTicket, ticketDue: withTicket ? ticketDue : '', today, start };
+					expect(startMirror.createDates({ ...input, rule: params }), `${label} ${JSON.stringify(input)}`).toEqual(
+						hookRules.createDates({ ...input, rule: hook.normalize(params) }, hook)
+					);
+				}
 			}
 		}
 	});

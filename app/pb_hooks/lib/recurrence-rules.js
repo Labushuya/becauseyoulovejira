@@ -32,6 +32,7 @@ var MESSAGES = {
     'Von dieser Serie ist schon ein anderes Ticket offen. Erledige es zuerst oder löse ein Ticket aus der Serie.',
   validation_recurrence_each_mode: '„Verpasste Termine nachholen“ gibt es nur bei einem festen Rhythmus.',
   validation_recurrence_backlog: 'Bitte „Alle nachholen“ oder „Nur ab heute“ wählen.',
+  validation_recurrence_start: 'Bitte „Serie ab heute beginnen“ oder „Ursprüngliches Datum behalten“ wählen.',
   validation_recurrence_reopen_older:
     'Von dieser Serie ist schon ein anderes Ticket offen, und dieses Ticket ist nicht das zuletzt erledigte. Du kannst es als normales Ticket wieder öffnen (aus der Serie lösen).',
   validation_recurrence_initial_status: 'Als „Status beim Anlegen“ geht jeder Status außer „Erledigt“.',
@@ -271,32 +272,63 @@ function ticketViolation(ticket, scope) {
   return '';
 }
 
+// Where a series begins whose first date lies in the past (WH-2, ADR-0022 addendum 14), sent as the
+// body field `start` when a rule is created with a ticket (no schema field, like `backlog`): 'today'
+// ("Serie ab heute beginnen") moves the ticket to the first regular date from today on, 'keep'
+// ("Ursprüngliches Datum behalten") or no value leaves it overdue as before.
+var START_CHOICES = ['today', 'keep'];
+
 /**
- * Dates on create (ADR-0023 section 1). `input`:
+ * The first date of a series that begins from today (WH-2, ADR-0022 addendum 14): for a fixed
+ * rhythm the first regular date of the rule on or after `today` (never before the anchor), after
+ * completion `today` itself, or the anchor when it lies later (as a new rule without a ticket, ADR-0023
+ * section 1). Null for an invalid rule.
+ */
+function firstFromToday(rule, today, recurrence) {
+  if (!recurrence.isValid(rule)) {
+    return null;
+  }
+  if (rule.mode === 'calendar') {
+    return recurrence.onOrAfter(rule, today);
+  }
+  return rule.anchor > today ? rule.anchor : today;
+}
+
+/**
+ * Dates on create (ADR-0023 section 1, ADR-0022 addendum 14). `input`:
  *   rule       normalized, valid rule
  *   withTicket whether the rule starts with an existing ticket
  *   ticketDue  calendar date of that ticket ('' without)
  *   today      Berlin date
+ *   start      'today' to begin a series whose first date lies before today from today on (WH-2);
+ *              anything else keeps that date
  * Returns { nextDue, ticketDue }: next_due of the rule ('' for none) and the due date the ticket
  * gets (null: unchanged). A calendar rule gives a ticket without due date its first occurrence;
- * the dialog names it before, so nothing is set without the user knowing.
+ * the dialog names it before, so nothing is set without the user knowing. A rule without a ticket
+ * begins from today anyway.
  */
 function createDates(input, recurrence) {
   var rule = input.rule;
-  if (rule.mode === 'after_completion') {
-    if (input.withTicket) {
-      return { nextDue: '', ticketDue: null };
-    }
-    return { nextDue: rule.anchor > input.today ? rule.anchor : input.today, ticketDue: null };
-  }
+  var today = input.today;
+  var calendar = rule.mode === 'calendar';
   if (!input.withTicket) {
-    return { nextDue: recurrence.onOrAfter(rule, input.today), ticketDue: null };
+    if (calendar) {
+      return { nextDue: recurrence.onOrAfter(rule, today), ticketDue: null };
+    }
+    return { nextDue: rule.anchor > today ? rule.anchor : today, ticketDue: null };
   }
-  if (!isEmpty(input.ticketDue)) {
-    return { nextDue: recurrence.after(rule, input.ticketDue), ticketDue: null };
+  // The date the ticket begins the series with: its due date, otherwise the first occurrence of a
+  // calendar rule; after completion a ticket without due date keeps none.
+  var hasDue = !isEmpty(input.ticketDue);
+  var first = hasDue ? input.ticketDue : calendar ? recurrence.onOrAfter(rule, rule.anchor) : '';
+  var moved = input.start === 'today' && first !== '' && first < today;
+  if (moved) {
+    first = firstFromToday(rule, today, recurrence);
   }
-  var first = recurrence.onOrAfter(rule, rule.anchor);
-  return { nextDue: recurrence.after(rule, first), ticketDue: first };
+  return {
+    nextDue: calendar ? recurrence.after(rule, first) : '',
+    ticketDue: first === '' || (hasDue && !moved) ? null : first
+  };
 }
 
 /**
@@ -721,6 +753,8 @@ module.exports = {
   subtasksNoteIds: subtasksNoteIds,
   subtasksUntouched: subtasksUntouched,
   ticketViolation: ticketViolation,
+  START_CHOICES: START_CHOICES,
+  firstFromToday: firstFromToday,
   createDates: createDates,
   nextDueAfterEdit: nextDueAfterEdit,
   clearsHint: clearsHint

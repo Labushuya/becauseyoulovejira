@@ -160,6 +160,105 @@ describe('createDates (ADR-0023 section 1)', () => {
 	});
 });
 
+// WH-2 (ADR-0022 addendum 14): a series whose first date lies in the past begins from today when the
+// body field `start` says so ("Serie ab heute beginnen"); otherwise as before.
+describe('a series begins from today (WH-2, ADR-0022 addendum 14)', () => {
+	const today = '2026-10-07';
+	const mondays = () => weekly({ anchor: '2024-03-12' });
+	const create = (rule, ticketDue, start) =>
+		rules.createDates({ rule, withTicket: true, ticketDue, today, start }, recurrence);
+
+	it('takes the first regular date on or after today: weekdays, daily, intervals', () => {
+		// "wöchentlich montags" on a Wednesday: the coming Monday; on a Monday that Monday.
+		expect(rules.firstFromToday(mondays(), today, recurrence)).toBe('2026-10-12');
+		expect(rules.firstFromToday(mondays(), '2026-10-05', recurrence)).toBe('2026-10-05');
+		expect(rules.firstFromToday(weekly({ weekdays: ['MO', 'TH'], anchor: '2024-03-12' }), '2026-10-06', recurrence)).toBe(
+			'2026-10-08'
+		);
+		const daily = recurrence.normalize({ mode: 'calendar', freq: 'daily', anchor: '2024-03-12' });
+		expect(rules.firstFromToday(daily, today, recurrence)).toBe(today);
+		// Every two weeks from the week of 12.03.2024: the week of 28.09.2026 is out, 05.10. in.
+		const fortnight = weekly({ weekdays: ['TU'], interval: 2, anchor: '2024-03-12' });
+		expect(rules.firstFromToday(fortnight, '2026-09-25', recurrence)).toBe('2026-10-06');
+		// Never before the anchor.
+		expect(rules.firstFromToday(weekly({ anchor: '2026-11-02' }), today, recurrence)).toBe('2026-11-02');
+		// After completion today, or a later anchor; an invalid rule gives nothing.
+		expect(rules.firstFromToday(completion({ anchor: '2024-03-12' }), today, recurrence)).toBe(today);
+		expect(rules.firstFromToday(completion({ anchor: '2026-11-01' }), today, recurrence)).toBe('2026-11-01');
+		const incomplete = { mode: 'calendar', freq: '', interval: 1, weekdays: [], month_day: null, anchor: '', lead_days: 3 };
+		expect(rules.firstFromToday(incomplete, today, recurrence)).toBeNull();
+	});
+
+	it('keeps the end of the month and the 29th of February', () => {
+		const day31 = recurrence.normalize({ mode: 'calendar', freq: 'monthly', month_day: 31, anchor: '2024-01-31' });
+		const last = recurrence.normalize({ mode: 'calendar', freq: 'monthly', month_day: -1, anchor: '2024-01-31' });
+		const leap = recurrence.normalize({ mode: 'calendar', freq: 'yearly', anchor: '2024-02-29' });
+		expect(rules.firstFromToday(day31, '2027-02-10', recurrence)).toBe('2027-02-28');
+		expect(rules.firstFromToday(day31, '2027-03-01', recurrence)).toBe('2027-03-31');
+		expect(rules.firstFromToday(last, '2028-02-10', recurrence)).toBe('2028-02-29');
+		expect(rules.firstFromToday(leap, '2026-09-25', recurrence)).toBe('2027-02-28');
+		// A ticket overdue since 31.01.2024, begun from today on 10.02.2027: the clamped 28.02.
+		expect(rules.createDates({ rule: day31, withTicket: true, ticketDue: '2024-01-31', today: '2027-02-10', start: 'today' }, recurrence)).toEqual({
+			nextDue: '2027-03-31',
+			ticketDue: '2027-02-28'
+		});
+	});
+
+	it('takes the Berlin day, also on both days of the clock change', () => {
+		const berlin = loadHookLib('berlin-time.js');
+		const sundays = weekly({ weekdays: ['SU'], anchor: '2024-03-12' });
+		// 29.03.2026 00:30 (still winter time) and 25.10.2026 00:30 (still summer time) are the day
+		// before in UTC; in Berlin they are Sundays, so the series begins that day.
+		const spring = berlin.berlinToday(Date.UTC(2026, 2, 28, 23, 30));
+		const autumn = berlin.berlinToday(Date.UTC(2026, 9, 24, 22, 30));
+		expect([spring, autumn]).toEqual(['2026-03-29', '2026-10-25']);
+		for (const day of [spring, autumn]) {
+			expect(
+				rules.createDates({ rule: sundays, withTicket: true, ticketDue: '2024-03-17', today: day, start: 'today' }, recurrence)
+			).toEqual({ nextDue: recurrence.after(sundays, day), ticketDue: day });
+		}
+		// An hour before the change of the day it is still Saturday in Berlin: the Sunday after.
+		const saturday = berlin.berlinToday(Date.UTC(2026, 2, 28, 22, 30));
+		expect(saturday).toBe('2026-03-28');
+		expect(rules.firstFromToday(sundays, saturday, recurrence)).toBe('2026-03-29');
+	});
+
+	it('moves a ticket overdue since long ago, or keeps it with "keep" and without the field', () => {
+		expect(create(mondays(), '2024-03-11', 'today')).toEqual({ nextDue: '2026-10-19', ticketDue: '2026-10-12' });
+		expect(create(mondays(), '2024-03-11', 'keep')).toEqual({ nextDue: '2024-03-18', ticketDue: null });
+		expect(create(mondays(), '2024-03-11', '')).toEqual({ nextDue: '2024-03-18', ticketDue: null });
+		expect(create(mondays(), '2024-03-11', undefined)).toEqual({ nextDue: '2024-03-18', ticketDue: null });
+	});
+
+	it('moves the first date of a ticket without due date from a "Beginnt am" in the past', () => {
+		expect(create(mondays(), '', 'today')).toEqual({ nextDue: '2026-10-19', ticketDue: '2026-10-12' });
+		expect(create(mondays(), '', 'keep')).toEqual({ nextDue: '2024-03-25', ticketDue: '2024-03-18' });
+	});
+
+	it('leaves a date from today on, after completion waits for the completion', () => {
+		// Today or later: unchanged, also with "today".
+		expect(create(mondays(), today, 'today')).toEqual({ nextDue: '2026-10-12', ticketDue: null });
+		expect(create(mondays(), '2026-10-20', 'today')).toEqual({ nextDue: '2026-10-26', ticketDue: null });
+		// After completion the ticket is due today instead; next_due waits.
+		const filter = completion({ anchor: '2024-03-11' });
+		expect(create(filter, '2024-03-11', 'today')).toEqual({ nextDue: '', ticketDue: today });
+		expect(create(filter, '2024-03-11', 'keep')).toEqual({ nextDue: '', ticketDue: null });
+		expect(create(filter, '', 'today')).toEqual({ nextDue: '', ticketDue: null });
+		// A rule without a ticket begins from today anyway.
+		expect(rules.createDates({ rule: mondays(), withTicket: false, ticketDue: '', today, start: 'today' }, recurrence)).toEqual({
+			nextDue: '2026-10-12',
+			ticketDue: null
+		});
+	});
+
+	it('knows the two choices and names a wrong one in German', () => {
+		expect(rules.START_CHOICES).toEqual(['today', 'keep']);
+		expect(rules.MESSAGES.validation_recurrence_start).toBe(
+			'Bitte „Serie ab heute beginnen“ oder „Ursprüngliches Datum behalten“ wählen.'
+		);
+	});
+});
+
 describe('nextDueAfterEdit (ADR-0023 sections 4 and 5)', () => {
 	const today = '2026-09-25';
 	const state = (rule, active, nextDue = '') => ({ ...rule, active, next_due: nextDue });

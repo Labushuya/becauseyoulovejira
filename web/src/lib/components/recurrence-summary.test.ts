@@ -393,6 +393,74 @@ describe('RecurrenceSummary', () => {
 	});
 });
 
+// WH-2 (ADR-0022 addendum 14): a ticket overdue since long ago (imported from Notion and converted)
+// does not begin its series in the past unless the user keeps the date.
+describe('RecurrenceSummary: "Wiederholen…" for a ticket overdue since long ago (WH-2)', () => {
+	const overdue = () => ticket({ due: '2024-03-12' });
+	const firstNote = (container: HTMLElement) => {
+		const radio = within(container).getByRole<HTMLInputElement>('radio', {
+			name: 'Serie ab heute beginnen'
+		});
+		return {
+			radio,
+			note: document.getElementById(radio.getAttribute('aria-describedby') ?? '')?.textContent
+		};
+	};
+
+	it('begins the series from today by default, with the first date named and sent', async () => {
+		const { fake, onticket } = await setup(overdue());
+		await fireEvent.click(screen.getByRole('button', { name: 'Wiederholen…' }));
+		const dialog = screen.getByRole('dialog', { name: 'Wiederholen…' });
+		expect(
+			within(dialog).getByRole('group', {
+				name: 'Die Fälligkeit liegt in der Vergangenheit (12.03.2024).'
+			})
+		).toBeTruthy();
+		const { radio, note } = firstNote(dialog);
+		expect(radio.checked).toBe(true);
+		expect(note).toBe('Erstes Vorkommen: Di 29.09.');
+
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Wiederholung anlegen' }));
+		await vi.waitFor(() => expect(onticket).toHaveBeenCalledTimes(1));
+		expect(fake.createRule).toHaveBeenCalledWith(
+			expect.objectContaining({ weekdays: ['TU'], anchor: '2024-03-12', start: 'today' }),
+			'ticket000000001'
+		);
+		// Panel and list show the date the hook gives the ticket until its event follows.
+		expect(onticket.mock.calls[0]?.[0]).toMatchObject({ recurring: true, due: '2026-09-29' });
+	});
+
+	it('keeps the date when the user chooses so; the ticket stays overdue', async () => {
+		const { fake, onticket } = await setup(overdue());
+		await fireEvent.click(screen.getByRole('button', { name: 'Wiederholen…' }));
+		const dialog = screen.getByRole('dialog', { name: 'Wiederholen…' });
+		await fireEvent.click(
+			within(dialog).getByRole('radio', { name: 'Ursprüngliches Datum behalten' })
+		);
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Wiederholung anlegen' }));
+		await vi.waitFor(() => expect(onticket).toHaveBeenCalledTimes(1));
+		expect(fake.createRule).toHaveBeenCalledWith(
+			expect.objectContaining({ start: 'keep' }),
+			'ticket000000001'
+		);
+		expect(onticket.mock.calls[0]?.[0]).toMatchObject({ due: '2024-03-12' });
+	});
+
+	it('asks the same in the dialog prepared from the inbox', async () => {
+		const series = { ...defaultFormValues('2024-03-12', TODAY), freq: 'daily' as const };
+		await setup(overdue(), [], {}, (store) => store.offerRepeat('ticket000000001', series));
+		const prepared = await screen.findByRole('dialog', { name: 'Wiederholen…' });
+		expect(firstNote(prepared).note).toBe('Erstes Vorkommen: Fr 25.09. (heute)');
+	});
+
+	it('asks the same inline in the full view', async () => {
+		await setup(overdue(), [], {}, undefined, [], [], true);
+		await fireEvent.click(screen.getByRole('button', { name: 'Wiederholen…' }));
+		const area = screen.getByRole('region', { name: 'Wiederholen…' });
+		expect(firstNote(area).note).toBe('Erstes Vorkommen: Di 29.09.');
+	});
+});
+
 describe('RecurrenceSummary: "Wiederholen…" prepared from a calendar series (E5 plan, package 6)', () => {
 	const series = {
 		...defaultFormValues(null, TODAY),

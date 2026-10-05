@@ -1253,3 +1253,131 @@ describe('new ticket: repeat right away (plan OR-4)', () => {
 		expect(mocks.rules.repeatCreated).not.toHaveBeenCalled();
 	});
 });
+
+// WH-2 (ADR-0022 addendum 14): "Neues Ticket" with "Wiederholen" and a due date in the past asks
+// where the series begins, like "Wiederholen…": typed by hand, taken from an old entry of the inbox
+// (Notion) or from a calendar series. Today is Friday 25.09.2026.
+describe('new ticket: a due date in the past (WH-2)', () => {
+	const RULE = { id: 'rule00000000011' };
+	const OVERDUE: Ticket = { ...CREATED, due: '2024-03-12' };
+
+	function prepare(item: InboxItem | null) {
+		mocks.page.url = new URL(
+			item === null
+				? 'http://localhost:3000/tickets/neu'
+				: `http://localhost:3000/tickets/neu?aus=${item.id}`
+		);
+		mocks.inbox.fetch.mockReset();
+		if (item !== null) mocks.inbox.fetch.mockResolvedValue(item);
+		mocks.detail.create.mockReset();
+		mocks.detail.create.mockResolvedValue({ ok: true, ticket: OVERDUE });
+		mocks.detail.upsert.mockReset();
+		mocks.tickets.upsert.mockReset();
+		mocks.rules.state = 'ready';
+		mocks.rules.statusReady = false;
+		mocks.rules.repeatCreated.mockReset();
+		mocks.rules.repeatCreated.mockResolvedValue(RULE);
+		render(NewTicketPage);
+	}
+
+	/** An entry imported from Notion: an all-day date of Tuesday 12.03.2024 (Berlin midnight). */
+	function notionEntry(sourceMeta: Record<string, unknown> = {}): InboxItem {
+		return {
+			id: 'item00000000003',
+			channel: 'notion',
+			kind: 'task',
+			title: 'Fenster putzen',
+			body: '- **Fällig:** 12.03.2024',
+			sourceUrl: '',
+			sourceRef: '00000000-0000-4000-8000-00000000c0de',
+			sourceDate: '2024-03-11 23:00:00.000Z',
+			sourceMeta: { all_day: true, ...sourceMeta },
+			original: '',
+			state: 'new',
+			ticketId: null,
+			handledAt: null,
+			created: '2026-09-25 08:00:00.000Z',
+			updated: '2026-09-25 08:00:00.000Z'
+		};
+	}
+
+	const section = () => screen.getByRole('region', { name: 'Wiederholen' });
+	const startQuestion = () =>
+		within(section()).getByRole('group', {
+			name: 'Die Fälligkeit liegt in der Vergangenheit (12.03.2024).'
+		});
+	const noteOf = (radio: HTMLElement) =>
+		document.getElementById(radio.getAttribute('aria-describedby') ?? '')?.textContent;
+
+	it('asks for a due date typed in the past and begins from today by default', async () => {
+		prepare(null);
+		await vi.waitFor(() => expect(screen.getByLabelText('Titel')).toBeTruthy());
+		await fireEvent.input(titleField(), { target: { value: 'Fenster putzen' } });
+		const due = screen.getByLabelText<HTMLInputElement>('Fälligkeit');
+		await fireEvent.input(due, { target: { value: '2024-03-12' } });
+		await fireEvent.change(due);
+		await fireEvent.click(screen.getByRole('button', { name: 'Wiederholen' }));
+		const today = within(startQuestion()).getByRole<HTMLInputElement>('radio', {
+			name: 'Serie ab heute beginnen'
+		});
+		expect(today.checked).toBe(true);
+		expect(noteOf(today)).toBe('Erstes Vorkommen: Di 29.09.');
+		await fireEvent.click(createButton());
+
+		await vi.waitFor(() => expect(mocks.rules.repeatCreated).toHaveBeenCalledOnce());
+		// The ticket is created with the typed date; the rule moves it (the hook, in one step).
+		expect(mocks.detail.create).toHaveBeenCalledWith(
+			expect.objectContaining({ due: '2024-03-12' }),
+			undefined
+		);
+		const joined = { ...OVERDUE, recurring: true, recurrenceId: RULE.id, due: '2026-09-29' };
+		expect(mocks.detail.upsert).toHaveBeenCalledWith(joined);
+		expect(mocks.tickets.upsert).toHaveBeenCalledWith(joined);
+	});
+
+	it('keeps the old date of an entry from Notion when the user chooses so', async () => {
+		prepare(notionEntry());
+		await fireEvent.click(await screen.findByRole('button', { name: 'Als Fälligkeit übernehmen' }));
+		expect(screen.getByLabelText<HTMLInputElement>('Fälligkeit').value).toBe('2024-03-12');
+		await fireEvent.click(screen.getByRole('button', { name: 'Wiederholen' }));
+		const keep = within(startQuestion()).getByRole<HTMLInputElement>('radio', {
+			name: 'Ursprüngliches Datum behalten'
+		});
+		expect(noteOf(keep)).toBe('Das Ticket bleibt „überfällig seit 12.03.2024“.');
+		await fireEvent.click(keep);
+		await fireEvent.click(createButton());
+
+		await vi.waitFor(() => expect(mocks.rules.repeatCreated).toHaveBeenCalledOnce());
+		expect(mocks.detail.create).toHaveBeenCalledWith(
+			expect.objectContaining({ due: '2024-03-12' }),
+			{ sourceItem: 'item00000000003' }
+		);
+		expect(mocks.rules.repeatCreated).toHaveBeenCalledWith(OVERDUE, {
+			values: expect.objectContaining({ start: 'keep', anchor: '2024-03-12' }),
+			initialStatus: null
+		});
+		expect(mocks.detail.upsert).toHaveBeenCalledWith(
+			expect.objectContaining({ recurring: true, due: '2024-03-12' })
+		);
+	});
+
+	it('asks the same for a calendar series taken over with its old date as due date', async () => {
+		prepare({
+			...notionEntry({ rrule: 'FREQ=WEEKLY;BYDAY=TU' }),
+			channel: 'ics',
+			kind: 'event'
+		});
+		await fireEvent.click(
+			await screen.findByRole('button', { name: 'Als Wiederholung übernehmen' })
+		);
+		// The suggestion begins on the first date from today (ADR-0024); the due date stays empty.
+		expect(within(section()).getByLabelText<HTMLInputElement>('Beginnt am').value).toBe(
+			'2026-09-29'
+		);
+		expect(within(section()).queryByRole('group', { name: /Vergangenheit/ })).toBeNull();
+		await fireEvent.click(screen.getByRole('button', { name: 'Als Fälligkeit übernehmen' }));
+		expect(
+			noteOf(within(startQuestion()).getByRole('radio', { name: 'Serie ab heute beginnen' }))
+		).toBe('Erstes Vorkommen: Di 29.09.');
+	});
+});

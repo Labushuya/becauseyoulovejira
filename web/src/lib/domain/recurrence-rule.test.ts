@@ -403,13 +403,19 @@ describe('a large backlog (ADR-0022 addendum 5)', () => {
 		const values = {
 			...defaultFormValues('2026-08-01', TODAY),
 			freq: 'daily' as const,
-			eachOccurrence: true
+			eachOccurrence: true,
+			// "Ursprüngliches Datum behalten" (WH-2): the series goes on from the date in the past.
+			start: 'keep' as const
 		};
 		// A ticket without due date gets 01.08.; the series goes on on 02.08.: 54 dates.
 		expect(formBacklog(values, TODAY, { kind: 'ticket', due: null })).toMatchObject({
 			count: 54,
 			first: '2026-08-02'
 		});
+		// "Serie ab heute beginnen" (chosen in advance) leaves no dates before today.
+		const fromToday = { ...values, start: 'today' as const };
+		expect(formBacklog(fromToday, TODAY, { kind: 'ticket', due: null })).toBeNull();
+		expect(formBacklog(fromToday, TODAY, { kind: 'ticket', due: '2026-09-03' })).toBeNull();
 		// With a due date, after it: from 05.09. on, 20 dates, not more than the limit.
 		expect(formBacklog(values, TODAY, { kind: 'ticket', due: '2026-09-04' })).toBeNull();
 		expect(formBacklog(values, TODAY, { kind: 'ticket', due: '2026-09-03' })).toMatchObject({
