@@ -1,6 +1,7 @@
 // Filter of the ticket list (E3 plan, T-6; ADR-0013 sections 1 and 3). Pure. The groups are
 // combined with AND, each with at most one value (OF-E3-3). The chosen filter cards (FI-1,
-// domain/filter-cards.ts) give their union (OR), which these groups narrow. The search is not part
+// domain/filter-cards.ts) give their union (OR), which these groups narrow; the status filter
+// "Erledigt" locks them (`appliedCards`, PL-1). The search is not part
 // of this predicate: the server answers it as a set of IDs (T-1, T-15). Project and tag compare the
 // stored relations (projectId, tagIds), the same fields the server expression of the done tickets
 // uses.
@@ -9,7 +10,7 @@
 // "Wiederkehrend" (plan OR-2) compares `recurring`, i.e. `recurrence != ""` on the server.
 
 import { addDays, type CalendarDate } from './berlin-date';
-import { matchesCards } from './filter-cards';
+import { appliedCards, matchesCards } from './filter-cards';
 import { NO_PROJECT, type ListQuery } from './list-query';
 import { SOON_DAYS } from './ordering';
 import { sourceFamily } from './source';
@@ -72,8 +73,8 @@ function matchesProject(
 
 /**
  * True if the ticket passes the cards and the filters of `query` at the given Berlin date: it
- * belongs to one of the chosen cards (any ticket without one) and to every filter group. The status
- * filter compares the status only; which section shows done tickets decides the list (T-6). A
+ * belongs to one of the applied cards (any ticket without one; none apply with the status filter
+ * "Erledigt", PL-1) and to every filter group. The status filter compares the status only; which section shows done tickets decides the list (T-6). A
  * project filter takes the sub projects `subProjectsOf` names in, unless the query switches them off.
  */
 export function matchesFilter(
@@ -83,7 +84,7 @@ export function matchesFilter(
 	subProjectsOf: SubProjectsOf = NO_SUB_PROJECTS
 ): boolean {
 	return (
-		matchesCards(ticket, query.cards, today) &&
+		matchesCards(ticket, appliedCards(query), today) &&
 		(query.status === null || ticket.status === query.status) &&
 		(query.priority === null || ticket.priority === query.priority) &&
 		matchesDue(ticket, query.due, today) &&

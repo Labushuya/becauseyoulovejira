@@ -328,6 +328,13 @@ describe('web filter parity: server expression and matchesFilter', () => {
 		// A done ticket is never in progress and never overdue.
 		expect(await serverIds({ ...EMPTY_LIST_QUERY, cards: ['in_progress', 'overdue'] })).toEqual([]);
 	});
+
+	it('applies no card with the status filter "Erledigt", on the server as in the client (PL-1)', async () => {
+		const allDone = await serverIds({ ...EMPTY_LIST_QUERY, status: 'done' });
+		for (const cards of [['in_progress', 'overdue'], ['urgent'], ['due_today', 'urgent']]) {
+			expect(await serverIds({ ...EMPTY_LIST_QUERY, status: 'done', cards })).toEqual(allDone);
+		}
+	});
 });
 
 describe('web filter parity with recurring tickets (plan OR-2)', () => {

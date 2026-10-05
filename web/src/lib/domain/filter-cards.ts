@@ -10,8 +10,13 @@
 // "Heute fällig" is the due date today, "Überfällig" a due date before today, never for a done ticket.
 // There is no card for done tickets: "Erledigte anzeigen" and the status "Erledigt" stay a switch and
 // a detail filter. A card added for them later is a normal member of the union.
+//
+// The status filter "Erledigt" leaves no open ticket, so the cards cannot apply (PL-1): they are
+// locked with the hint "Karten gelten für offene Tickets", "Alle offenen" is not chosen, and the
+// chosen cards stay in the address and apply again once the status filter goes (`appliedCards`).
 
 import type { CalendarDate } from './berlin-date';
+import { pinnedMoreText } from './pins';
 import type { TicketSummary } from './ticket';
 
 /** The cards besides "Alle offenen", in the order they stand. */
@@ -102,6 +107,32 @@ export function isAllOpen(cards: readonly FilterCard[]): boolean {
 	return cards.length === 0;
 }
 
+/** Hint and tooltip of the locked cards (PL-1). */
+export const CARDS_LOCKED_HINT = 'Karten gelten für offene Tickets';
+
+/** What decides which cards apply: the status filter and the chosen cards of a list query. */
+export interface CardQuery {
+	status: string | null;
+	cards: readonly FilterCard[];
+}
+
+/**
+ * True while a detail filter leaves no open ticket, so no card can apply: the status filter
+ * "Erledigt" (PL-1). The cards are locked then and "Alle offenen" is not chosen.
+ */
+export function cardsLocked(query: Pick<CardQuery, 'status'>): boolean {
+	return query.status === 'done';
+}
+
+/**
+ * The cards that apply under `query`: the chosen ones, none while they are locked. The chosen cards
+ * stay in the query (and the address) meanwhile and apply again once the status filter goes. The
+ * list (`matchesFilter`), the server expression of the done tickets and the summary use this.
+ */
+export function appliedCards(query: CardQuery): readonly FilterCard[] {
+	return cardsLocked(query) ? [] : query.cards;
+}
+
 /** A click on a card: it joins or leaves the selection, the other cards stay. */
 export function toggleCard(cards: readonly FilterCard[], card: FilterCard): FilterCard[] {
 	return cards.includes(card)
@@ -152,16 +183,30 @@ export interface SummaryCount {
 	more?: boolean;
 	/** A detail filter or the search narrows the cards as well. */
 	filtered?: boolean;
+	/**
+	 * Pinned tickets that pass the cards, the filters and the search (ADR-0064): they stand in the
+	 * section "Angeheftet" above the list, not in `count`, but the numbers of the cards hold them.
+	 */
+	pinned?: number;
 }
 
 /**
  * Summary above the list: "12 Tickets aus: In Arbeit, Heute fällig, Dringend", with "– weitere
- * Filter aktiv" while a detail filter or the search narrows it.
+ * Filter aktiv" while a detail filter or the search narrows it. Matching pinned tickets are named
+ * like in the number next to "Aufgaben", "4 + 1 angeheftet aus: Dringend" (PL-1), so the summary adds
+ * up to the number of the card ("Dringend: 5").
  */
 export function cardSummary(
 	cards: readonly FilterCard[],
-	{ count, more = false, filtered = false }: SummaryCount
+	{ count, more = false, filtered = false, pinned = 0 }: SummaryCount
 ): string {
-	const amount = more ? `Mehr als ${count} Tickets` : count === 1 ? '1 Ticket' : `${count} Tickets`;
+	const amount =
+		pinned > 0
+			? `${more ? `Mehr als ${count}` : count} ${pinnedMoreText(pinned)}`
+			: more
+				? `Mehr als ${count} Tickets`
+				: count === 1
+					? '1 Ticket'
+					: `${count} Tickets`;
 	return `${amount} aus: ${cardsLabel(cards)}${filtered ? ' – weitere Filter aktiv' : ''}`;
 }

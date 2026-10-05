@@ -12,6 +12,7 @@
 		writeCollapsedGroups,
 		type GroupNode
 	} from '$lib/domain/grouping';
+	import { appliedCards } from '$lib/domain/filter-cards';
 	import { NO_PROJECT } from '$lib/domain/list-query';
 	import {
 		MORE_COLUMNS_HINT,
@@ -115,8 +116,9 @@
 	// panel is open closes the panel. A right click on a row, Shift+F10 or the context menu key
 	// open the same menu at the pointer or the focused element (AM-3, rowMenus); the browser keeps
 	// its menu in fields, on selected text, on other links, with Ctrl and for touch.
-	// Filter cards (FI-1, ADR-0013 addendum C): while a card is chosen, a summary above the table
-	// names the cards the shown tickets come from; its "Zurücksetzen" works like "Filter
+	// Filter cards (FI-1, ADR-0013 addendum C): while a card applies, a summary above the table
+	// names the cards the shown tickets come from, with the matching pinned tickets like the number
+	// of the heading ("4 + 1 angeheftet aus: Dringend", PL-1); its "Zurücksetzen" works like "Filter
 	// zurücksetzen" of the empty result and moves the focus to "Aufgaben".
 	// Pinned tickets (ADR-0064): the first tbody is the section "Angeheftet" with the open pinned
 	// tickets of the area in the order of pinning, whatever the filters, the search and the sort; they
@@ -174,6 +176,8 @@
 		switchHint: `${uid}-switch-hint`
 	};
 	const query = $derived(store.query);
+	/** The cards of the summary: those that apply, none with the status filter "Erledigt" (PL-1). */
+	const summaryCards = $derived(appliedCards(query));
 	const filtered = $derived(hasFilters(query));
 	const showDone = $derived(store.showDone);
 	/** Only the section "Erledigt" is shown (status filter "Erledigt"). */
@@ -718,12 +722,13 @@
 
 	{@render tools?.()}
 
-	{#if countReady && query.cards.length > 0}
+	{#if countReady && summaryCards.length > 0}
 		<FilterSummary
-			cards={query.cards}
+			cards={summaryCards}
 			count={store.visibleCount}
 			more={store.visibleCountMore}
 			filtered={hasDetailFilters(query)}
+			pinned={store.pinnedInFilter.length}
 			onreset={clearFilters}
 		/>
 	{/if}

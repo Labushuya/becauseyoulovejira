@@ -318,6 +318,25 @@ describe('sub-tickets and comments', () => {
 		expect(await childrenOf(without.id)).toEqual([]);
 	});
 
+	it('takes the kind of the original and of each sub-ticket over, like the charm (ADR-0065, PL-1)', async () => {
+		const original = await owner.ticket({ title: 'Sprachkurs', kind: 'ongoing' });
+		await owner.ticket({ parent: original.id, title: 'Lektion 1' });
+		await owner.ticket({ parent: original.id, title: 'Vokabeln', kind: 'ongoing' });
+
+		const answer = await duplicate(owner.client, original.id, { subtasks: true });
+		expect((await ticketOf(answer.id)).kind).toBe('ongoing');
+		const children = await childrenOf(answer.id);
+		expect(children.map((child) => [child.title, child.kind])).toEqual([
+			['Lektion 1', 'task'],
+			['Vokabeln', 'ongoing']
+		]);
+		// No switch and no entry of its own in the history: the copy is created with its kind.
+		expect((await historyOf(superuser, answer.id)).filter((entry) => entry.field === 'kind')).toEqual([]);
+		// A task stays a task.
+		const task = await owner.ticket();
+		expect((await ticketOf((await duplicate(owner.client, task.id, {})).id)).kind).toBe('task');
+	});
+
 	it('copies the comments with a note, their author and time, and pins the copy of the pinned one', async () => {
 		const original = await owner.ticket();
 		const older = await owner.client.collection('comments').create({ ticket: original.id, author: owner.id, body: 'Erster' });

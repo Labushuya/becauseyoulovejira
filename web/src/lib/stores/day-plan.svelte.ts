@@ -3,8 +3,8 @@
 //
 // - The plan comes from GET /api/byl/dayplan (today and tomorrow lazily created, today with the
 //   automatic sources taken in), its entries through the Record API with their tickets; realtime keeps
-//   the entries and the plan (`dismissed`) current for every member of the area, the tickets come
-//   live from the subscription of the tickets of the area.
+//   the entries, the plan (`dismissed`) and the settings of the sources (PL-1) current for every
+//   member of the area, the tickets come live from the subscription of the tickets of the area.
 // - Suggestions and pool are computed here from the live open tickets of the list store, with the same
 //   rules as the server (domain/day-plan.ts): a ticket that becomes due, overdue or an ongoing project
 //   is suggested at once. When a ticket of an automatic source appears, the plan is asked for again, and
@@ -27,6 +27,7 @@ import {
 	saveDayPlanSettings,
 	subscribeDayPlan,
 	subscribeDayPlanItems,
+	subscribeDayPlanSettings,
 	uncheckDayPlanItem,
 	type AddAnswer,
 	type CheckedTicket,
@@ -34,6 +35,7 @@ import {
 	type DayPlanItem,
 	type DayPlanMeta,
 	type DayPlanResult,
+	type DayPlanSettingsRecord,
 	type OtherAreaPlan
 } from '$lib/data/day-plan';
 import { toDataError } from '$lib/data/errors';
@@ -42,6 +44,7 @@ import type { RecordChange, Unsubscribe } from '$lib/data/realtime';
 import { updateTicket } from '$lib/data/tickets';
 import { addDays, type CalendarDate } from '$lib/domain/berlin-date';
 import {
+	DAY_PLAN_SOURCES,
 	DEFAULT_SOURCES,
 	isDone,
 	kindOf,
@@ -123,19 +126,24 @@ export function dayPlanData(pb: PocketBase): DayPlanData {
 	};
 }
 
-/** Realtime of one plan: its entries and the plan itself. */
+/** Realtime of one plan: its entries, the plan itself and the settings of its area. */
 export interface DayPlanLive {
 	items(
 		planId: string,
 		onChange: (change: RecordChange<DayPlanItem>) => void
 	): Promise<Unsubscribe>;
 	plan(planId: string, onChange: (change: RecordChange<DayPlanMeta>) => void): Promise<Unsubscribe>;
+	settings(
+		scope: string,
+		onChange: (change: RecordChange<DayPlanSettingsRecord>) => void
+	): Promise<Unsubscribe>;
 }
 
 export function dayPlanLive(pb: PocketBase): DayPlanLive {
 	return {
 		items: (planId, onChange) => subscribeDayPlanItems(pb, planId, onChange),
-		plan: (planId, onChange) => subscribeDayPlan(pb, planId, onChange)
+		plan: (planId, onChange) => subscribeDayPlan(pb, planId, onChange),
+		settings: (scope, onChange) => subscribeDayPlanSettings(pb, scope, onChange)
 	};
 }
 
@@ -506,7 +514,10 @@ export class DayPlanStore {
 		};
 	}
 
-	/** Subscribes the entries and the plan of the shown plan; a new plan subscribes anew. */
+	/**
+	 * Subscribes the entries and the plan of the shown plan and the settings of its area; a new plan
+	 * subscribes anew.
+	 */
 	#follow(): void {
 		const live = this.#live;
 		const planId = this.#plan?.id ?? null;
@@ -515,6 +526,7 @@ export class DayPlanStore {
 		this.#stopPlan = null;
 		this.#followedPlan = planId;
 		if (planId === null) return;
+		const scope = this.#plan?.scope ?? '';
 		const reload = () => void this.reload();
 		const stops = [
 			hold(
@@ -539,11 +551,37 @@ export class DayPlanStore {
 						})
 					),
 				{ recovered: reload }
+			),
+			hold(
+				(guard) =>
+					live.settings(
+						scope,
+						guard((change) => {
+							if (change.action !== 'delete') this.#takeSettings(change.record);
+						})
+					),
+				{ recovered: reload }
 			)
 		];
 		this.#stopPlan = () => {
 			for (const stop of stops) stop();
 		};
+	}
+
+	/**
+	 * Settings of the area changed in another tab or by another member (PL-1): the suggestions follow
+	 * at once, and a source switched to "Automatisch übernehmen" asks the server to take its tickets in.
+	 */
+	#takeSettings(record: DayPlanSettingsRecord): void {
+		const answer = this.#answer;
+		if (answer === null || record.scope !== answer.scope) return;
+		const before = answer.settings;
+		this.#answer = { ...answer, settings: record.settings };
+		const toAuto = DAY_PLAN_SOURCES.some(
+			(source) => record.settings[source] === 'auto' && before[source] !== 'auto'
+		);
+		if (toAuto) this.#synced.clear();
+		this.syncAutomatic();
 	}
 
 	/**

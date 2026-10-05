@@ -859,7 +859,8 @@ function saveSettings(e) {
 
 /**
  * onRecordCreate of tickets: a new ticket without a kind is a task (the default of ADR-0065), also the
- * tickets of a series and duplicates. Before the migration the field does not exist.
+ * tickets of a series; a duplicate names the kind of its original (PL-1). Before the migration the
+ * field does not exist.
  */
 function defaultKind(record) {
   if (record.collection().fields.getByName('kind') === null) {
