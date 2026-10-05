@@ -358,6 +358,22 @@ describe('byl-control.ps1 on disposable copies (BS-1)', CASE_TIMEOUT, () => {
 		expect(await healthy(copies.b.port)).toBe(true);
 	});
 
+	it('start removes the leftovers of replaced helpers that no process holds, and logs each (AR-4)', () => {
+		const leftovers = ['byl-mail.exe.old-20261001080000', 'byl-backup.exe.old-20261002080000'];
+		for (const name of [...leftovers, 'byl-mail.exe.old-entwurf']) writeFileSync(join(copies.b.dir, name), 'leftover of control-script.test.mjs\n');
+		const [server] = serversOf(copies.b);
+		const result = control(copies.b, 'start');
+		expect(result.code, result.output).toBe(0);
+		for (const name of leftovers) {
+			expect(existsSync(join(copies.b.dir, name)), name).toBe(false);
+			expect(result.output).toContain(`Alte Datei eines ersetzten Hilfsprogramms entfernt: ${name}`);
+		}
+		// Only the exact names of the build go; the running server stays.
+		expect(existsSync(join(copies.b.dir, 'byl-mail.exe.old-entwurf'))).toBe(true);
+		expect(controlLog(copies.b)).toMatch(/ start exit=0 [^\r\n]* removed=byl-backup\.exe\.old-20261002080000,byl-mail\.exe\.old-20261001080000\r$/m);
+		expect(serversOf(copies.b)).toEqual([server]);
+	});
+
 	it('removes a stale state file of a process that ended', () => {
 		expect(control(copies.b, 'stop').code).toBe(0);
 		const gone = spawnSyncClean(process.execPath, ['-e', ''], { windowsHide: true });

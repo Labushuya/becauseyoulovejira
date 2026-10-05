@@ -186,6 +186,8 @@ $script:LogDetail = ''
 $script:BreakCodes = New-Object System.Collections.Generic.List[int]
 # What the last Start-MailHelper decided (Get-MailHelperDecision, or Failed); mail-restart logs it.
 $script:MailHelperDecision = 'None'
+# Leftovers of replaced helpers this command removed (Remove-OldHelper), for its line in the log.
+$script:RemovedOldHelpers = New-Object System.Collections.Generic.List[string]
 
 function Show-Message {
     # A result or a hint that is no problem (problems: Write-BylProblem). With -Hidden a message box.
@@ -230,7 +232,8 @@ function Write-JsonLine {
 function Write-ControlLog {
     # One line per command in logs\byl-control.log (Format-ControlLogLine: time, command, exit code
     # and $script:LogDetail, never values, passwords or e-mail addresses), with the codes of its
-    # problems (problem=, unless the detail names a reason already) and, after an unexpected error,
+    # problems (problem=, unless the detail names a reason already), the leftovers of replaced helpers
+    # it removed (removed=, Remove-OldHelper) and, after an unexpected error,
     # a second line with type, place and message (Format-ControlErrorLine). Never fails the command.
     param([Parameter(Mandatory = $true)][string]$Name, [Parameter(Mandatory = $true)][int]$ExitCode)
 
@@ -244,6 +247,7 @@ function Write-ControlLog {
         }
         if ($script:ProblemFixed) { $detail = "$detail fix=yes".Trim() }
         if ($script:BreakCodes.Count -gt 0) { $detail = ("$detail break=" + ($script:BreakCodes -join ',')).Trim() }
+        if ($script:RemovedOldHelpers.Count -gt 0) { $detail = ("$detail removed=" + ($script:RemovedOldHelpers -join ',')).Trim() }
         $now = [DateTime]::UtcNow
         $line = Format-ControlLogLine -TimeUtc $now -Command $Name -ExitCode $ExitCode -Detail $detail
         if ($null -ne $script:UnexpectedError) {
@@ -962,6 +966,27 @@ function Get-MailConnectionCount {
     }
 }
 
+function Remove-OldHelper {
+    # Removes byl-mail.exe.old-<time> and byl-backup.exe.old-<time> of this folder, which a build
+    # leaves when it replaces a running helper (AR-4), at start, restart and reload: only of a helper
+    # that does not run now ($Processes, Get-BylRunningHelper), each removal named in the console and
+    # in byl-control.log (removed=). A file still locked stays without an error; never breaks the
+    # command.
+    param([AllowNull()][object[]]$Processes)
+
+    try {
+        $running = @(Get-BylRunningHelper -Process $Processes -AppDir $AppDir)
+        foreach ($leftover in @(Remove-BylOldHelperFile -AppDir $AppDir -Running $running)) {
+            if ($leftover.Result -ne 'Removed') { continue }
+            $script:RemovedOldHelpers.Add($leftover.Name)
+            Write-Status "Alte Datei eines ersetzten Hilfsprogramms entfernt: $($leftover.Name)"
+        }
+    }
+    catch {
+        $null = $_
+    }
+}
+
 function Start-MailHelper {
     # Starts byl-mail.exe next to the running PocketBase when Get-MailHelperDecision says so: the
     # file exists, the token is set, no own helper runs and there is a switched-on mail connection.
@@ -1158,6 +1183,7 @@ function Invoke-Start {
     }
 
     $look = Get-Look -Port $Config.Port
+    Remove-OldHelper -Processes $look.Processes
     $action = Resolve-StartAction -ServerState $look.ServerState -PortState $look.PortState.State -Force $Force.IsPresent
     $processId = if ($look.Own.Count -gt 0) { [int]$look.Own[0].ProcessId } else { 0 }
     if ($null -ne $look.RunningPort) { Set-BylAddress -Port $look.RunningPort }
@@ -1615,8 +1641,10 @@ function Invoke-Reload {
     $action = Resolve-ReloadAction -ServerState $data.ServerState -Verdict $data.Comparison.Verdict -Force $Force.IsPresent
     $script:LogDetail = "action=$($action.ToLowerInvariant())"
     if ($action -eq 'Nothing' -or $action -eq 'ReloadOnly') {
-        # No restart, but the mail helper may be missing (a mailbox was switched on since the start).
+        # No restart, but the mail helper may be missing (a mailbox was switched on since the start),
+        # and leftovers of replaced helpers that no process holds any more go (AR-4).
         Set-BylAddress -Port $data.Port
+        Remove-OldHelper -Processes (Get-ProcessSnapshot)
         Start-MailHelper
         if ($action -eq 'Nothing') {
             Show-Message "Kein Neustart nötig: becauseyoulovejira ist aktuell (PID $($data.ProcessId), $BylAppUrl)."

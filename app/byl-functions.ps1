@@ -2247,6 +2247,87 @@ function ConvertFrom-MailConnectionAnswer {
     return @($answer.items).Count
 }
 
+# --- Leftovers of replaced helpers (AR-4) --------------------------------------------------------
+
+# A build that replaces a running byl-mail.exe or byl-backup.exe renames it to
+# <helper>.old-<yyyyMMddHHmmss> (UTC; scripts\build-mail-helper.ps1, build-backup-helper.ps1), because
+# Windows lets a running program be renamed but not deleted. Exactly these names of the own helpers
+# count, the same rule as isOldProgram in pb_hooks\lib\storage-rules.js (page "Speicher").
+$BylOldHelperPattern = '^(byl-mail|byl-backup)\.exe\.old-[0-9]{14}$'
+
+function Get-BylOldHelperOwner {
+    # The helper ('byl-mail.exe' or 'byl-backup.exe') whose leftover is named $Name; '' for any other
+    # name. Case matters, as in the name the build gives.
+    param([AllowNull()][AllowEmptyString()][string]$Name)
+
+    if ([string]::IsNullOrEmpty($Name)) { return '' }
+    $found = [regex]::Match($Name, $BylOldHelperPattern)
+    if (-not $found.Success) { return '' }
+    return $found.Groups[1].Value + '.exe'
+}
+
+function Get-BylRunningHelper {
+    # Names of the helpers of $AppDir that run now, from process objects shaped like Win32_Process: a
+    # process whose program lies directly in $AppDir and is the helper or one of its leftovers there
+    # (Windows may report either for a helper a build renamed). Any arguments count; a helper of
+    # another folder never does.
+    param([AllowNull()][object[]]$Process, [Parameter(Mandatory = $true)][string]$AppDir)
+
+    $running = New-Object System.Collections.Generic.List[string]
+    foreach ($candidate in @($Process)) {
+        if ($null -eq $candidate) { continue }
+        $path = [string]$candidate.ExecutablePath
+        if (-not (Test-FileInFolder -Path $path -Folder $AppDir)) { continue }
+        $name = [System.IO.Path]::GetFileName($path)
+        $helper = Get-BylOldHelperOwner -Name $name
+        foreach ($own in @($BylMailHelperName, $BylBackupHelperName)) {
+            if ([string]::Equals($name, $own, [System.StringComparison]::OrdinalIgnoreCase)) { $helper = $own }
+        }
+        if ($helper -ne '' -and -not $running.Contains($helper)) { $running.Add($helper) }
+    }
+    return $running.ToArray()
+}
+
+function Remove-BylOldHelperFile {
+    # Removes the leftovers of the helpers $Helper directly in $AppDir: only files (no folder, no link)
+    # named exactly <helper>.old-<14 digits>, and only of a helper that is not in $Running (the helpers
+    # that run now, Get-BylRunningHelper). A file that cannot be removed (its process still holds it,
+    # it is read-only) stays without an error. Returns one object per leftover in the order of the
+    # names: Name and Result 'Removed', 'Running' or 'Locked'.
+    param(
+        [Parameter(Mandatory = $true)][string]$AppDir,
+        [AllowNull()][AllowEmptyCollection()][string[]]$Running = @(),
+        [string[]]$Helper = @($BylMailHelperName, $BylBackupHelperName)
+    )
+
+    try {
+        $files = [System.IO.Directory]::GetFiles($AppDir)
+    }
+    catch {
+        return
+    }
+    [Array]::Sort($files, [System.StringComparer]::Ordinal)
+    foreach ($path in $files) {
+        $name = [System.IO.Path]::GetFileName($path)
+        $owner = Get-BylOldHelperOwner -Name $name
+        if ($owner -eq '' -or $Helper -notcontains $owner) { continue }
+        $result = 'Removed'
+        try {
+            if (([System.IO.File]::GetAttributes($path) -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { continue }
+            if (@($Running) -contains $owner) {
+                $result = 'Running'
+            }
+            else {
+                [System.IO.File]::Delete($path)
+            }
+        }
+        catch {
+            $result = 'Locked'
+        }
+        [pscustomobject]@{ Name = $name; Result = $result }
+    }
+}
+
 # --- Open app tabs before opening the browser (ADR-0035 sections 3, 4 and 7, plan start-fenster SF-4)
 
 $BylAttentionReasons = @('start', 'datei', 'stop')
