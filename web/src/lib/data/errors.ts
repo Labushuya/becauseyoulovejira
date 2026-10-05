@@ -20,6 +20,7 @@ import {
 } from '../domain/recurrence-rule';
 import { SUBTASK_MESSAGES, openChildrenMessage } from '../domain/subtasks';
 import { TARGET_MESSAGES } from '../domain/target-project';
+import { TICKET_SOURCE_MESSAGES, cycleMessage, cyclePathOf } from '../domain/ticket-origins';
 import { unreachableHint } from '../domain/context';
 import { TRASH_MESSAGES } from '../domain/trash';
 import { currentCapabilities } from './context';
@@ -123,7 +124,9 @@ const FIELD_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
 		'Kanäle mit Zugangsdaten und Ordner richtet nur der Verwalter der App ein.',
 	...ACCOUNT_MESSAGES,
 	// The day plan (ADR-0065), the same texts as the hook.
-	...DAY_PLAN_MESSAGES
+	...DAY_PLAN_MESSAGES,
+	// Tickets as sources (ADR-0067), the same texts as the hook; a circle names its chain below.
+	...TICKET_SOURCE_MESSAGES
 });
 
 /** Texts that depend on the field as well, keyed by `<field>:<code>`; they win over the above. */
@@ -198,7 +201,9 @@ function fieldErrorsOf(response: unknown): Record<string, FieldError> {
 		// Reopening with an edited follow-up or an older instance names the open ticket (ADR-0023
 		// section 3 and addendum 4); completing with open blocking sub-tasks names their number
 		// (ADR-0033 section 2).
+		// A refused circle of source tickets names its chain (ADR-0067 §3).
 		const key = typeof params?.key === 'string' ? params.key : null;
+		const path = code === 'validation_ticket_source_cycle' ? cyclePathOf(params) : null;
 		const message =
 			code === 'validation_recurrence_open_instance' && key !== null
 				? openInstanceMessage(key)
@@ -206,7 +211,9 @@ function fieldErrorsOf(response: unknown): Record<string, FieldError> {
 					? reopenOlderMessage(key)
 					: code === 'validation_parent_open_children' && typeof params?.count === 'number'
 						? openChildrenMessage(params.count)
-						: fieldMessage(field, code);
+						: path !== null
+							? cycleMessage(path)
+							: fieldMessage(field, code);
 		fields[field] = { code, message, ...(params && { params }) };
 	}
 	return fields;

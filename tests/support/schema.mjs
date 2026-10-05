@@ -372,6 +372,19 @@ export const EXPECTED_COLLECTIONS = {
 			'CREATE INDEX idx_ticket_pins_ticket ON ticket_pins (ticket)'
 		]
 	},
+	// Tickets as sources (ADR-0067, migration 1790204800): "ticket stems from source", once per pair.
+	ticket_sources: {
+		fields: {
+			ticket: relation('tickets', { required: true, cascadeDelete: true }),
+			source: relation('tickets', { required: true, cascadeDelete: true }),
+			created_by: relation('users'),
+			created: created()
+		},
+		indexes: [
+			'CREATE UNIQUE INDEX idx_ticket_sources_ticket_source ON ticket_sources (ticket, source)',
+			'CREATE INDEX idx_ticket_sources_source ON ticket_sources (source)'
+		]
+	},
 	ticket_counters: {
 		fields: {
 			key: text({ required: true }),
@@ -494,6 +507,15 @@ const HOUSEHOLD_MEMBER =
 	`${AUTH} && @collection.household_members.household ?= id && ` +
 	'@collection.household_members.user ?= @request.auth.id';
 
+const TICKET_SOURCES_READ =
+	`${AUTH} && ((ticket.owner = @request.auth.id && ticket.household = "") || (ticket.household != "" && ` +
+	'@collection.household_members:ticket_member.household ?= ticket.household && ' +
+	'@collection.household_members:ticket_member.user ?= @request.auth.id)) && ' +
+	'((source.owner = @request.auth.id && source.household = "") || (source.household != "" && ' +
+	'@collection.household_members:source_member.household ?= source.household && ' +
+	'@collection.household_members:source_member.user ?= @request.auth.id)) && ' +
+	'ticket.deleted_at = "" && source.deleted_at = ""';
+
 // Members of the own households see each other (ADR-0056 §4, migration 1790203700; before only the
 // own rows, 'user = @request.auth.id').
 const SAME_HOUSEHOLD = `${AUTH} && household.household_members_via_household.user ?= @request.auth.id`;
@@ -571,7 +593,10 @@ export const EXPECTED_RULES = {
 	// written only by the routes.
 	day_plans: { listRule: OWNED, viewRule: OWNED, ...READ_ONLY },
 	day_plan_items: { listRule: VIA_PLAN, viewRule: VIA_PLAN, ...READ_ONLY },
-	day_plan_settings: { listRule: OWNED, viewRule: OWNED, ...READ_ONLY }
+	day_plan_settings: { listRule: OWNED, viewRule: OWNED, ...READ_ONLY },
+	// Tickets as sources (ADR-0067): read while both tickets are visible (each with its own alias of
+	// the memberships) and alive, written only by the routes.
+	ticket_sources: { listRule: TICKET_SOURCES_READ, viewRule: TICKET_SOURCES_READ, ...READ_ONLY }
 };
 
 // The own record, every record for the administrator of the app and the accounts of the own

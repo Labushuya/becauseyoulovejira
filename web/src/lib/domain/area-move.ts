@@ -31,6 +31,8 @@ export const AREA_MOVE_PROBLEMS: Readonly<Record<string, string>> = {
 	project: 'Dieses Projekt gibt es im Ziel nicht, oder es ist archiviert.',
 	'dependencies-choice':
 		'Bitte wählen, ob die verknüpften Tickets mitkommen oder die Verknüpfung gelöst wird.',
+	'ticket-sources-choice':
+		'Bitte wählen, ob die Quell- und Folge-Tickets mitkommen oder die Verknüpfung gelöst wird.',
 	code: 'Bitte einen Code aus 2 bis 6 Großbuchstaben wählen, den es im Ziel noch nicht gibt (nicht TASK).',
 	'owner-only': 'Auflösen kann nur der Inhaber des Haushalts.',
 	mode: 'Bitte wählen: alles ins Private übernehmen oder alles endgültig löschen.',

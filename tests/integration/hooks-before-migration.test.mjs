@@ -1183,3 +1183,65 @@ describe('TP-1 hooks before the migration of the day plan (ADR-0065)', () => {
 		await expect(pb.collection('day_plans').getList(1, 1)).rejects.toMatchObject({ status: 404 });
 	});
 });
+
+describe('QT-1 hooks before the migration of tickets as sources (ADR-0067)', () => {
+	const TICKET_SOURCES_MIGRATION = '1790204800_ticket_sources.js';
+	let before;
+	let pb;
+	let userId;
+
+	beforeAll(async () => {
+		before = await startPocketBase({ migrationFilter: (name) => name < TICKET_SOURCES_MIGRATION });
+		const superuser = new PocketBase(before.url);
+		superuser.autoCancellation(false);
+		await superuser.collection('_superusers').authWithPassword(before.email, before.password);
+		const email = `user-${randomBytes(12).toString('hex')}@example.com`;
+		const password = randomBytes(24).toString('base64url');
+		userId = (await superuser.collection('users').create({ email, password, passwordConfirm: password })).id;
+		pb = new PocketBase(before.url);
+		pb.autoCancellation(false);
+		await pb.collection('users').authWithPassword(email, password);
+	});
+
+	afterAll(async () => {
+		await before?.stop();
+	});
+
+	it('answers the routes with the restart hint', async () => {
+		const ticket = await pb.collection('tickets').create({ owner: userId, title: 'Vor den Quellen' });
+		for (const [method, path] of [
+			['GET', `/api/byl/tickets/${ticket.id}/ticket-sources`],
+			['POST', `/api/byl/tickets/${ticket.id}/ticket-sources`],
+			['POST', `/api/byl/tickets/${ticket.id}/ticket-sources/abcdefghijklmno/remove`],
+			['POST', `/api/byl/tickets/${ticket.id}/follow-up`]
+		]) {
+			const response = await fetch(`${before.url}${path}`, {
+				method,
+				headers: { Authorization: pb.authStore.token, 'Content-Type': 'application/json' },
+				...(method === 'POST' ? { body: '{}' } : {})
+			});
+			expect(response.status, path).toBe(503);
+			expect((await response.json()).reason, path).toBe('missing');
+		}
+		await expect(pb.collection('ticket_sources').getList(1, 1)).rejects.toMatchObject({ status: 404 });
+	});
+
+	it('duplicates, moves to the trash and restores as before', async () => {
+		const ticket = await pb.collection('tickets').create({ owner: userId, title: 'Original' });
+		const copy = await pb.send(`/api/byl/tickets/${ticket.id}/duplicate`, {
+			method: 'POST',
+			body: { title: 'Kopie', status: 'open', source: 'none' }
+		});
+		expect(copy).toMatchObject({ title: 'Kopie', ticket_sources: 0 });
+		const refused = await pb
+			.send(`/api/byl/tickets/${ticket.id}/duplicate`, { method: 'POST', body: { title: 'Kopie', status: 'open', source: 'copy' } })
+			.then(
+				() => null,
+				(error) => error.response?.data?.source?.code
+			);
+		expect(refused).toBe('validation_duplicate_source_missing');
+		await pb.send(`/api/byl/tickets/${ticket.id}/delete`, { method: 'POST', body: { sources: 'inbox' } });
+		await pb.send(`/api/byl/trash/${ticket.id}/restore`, { method: 'POST', body: {} });
+		expect((await pb.collection('tickets').getOne(ticket.id)).title).toBe('Original');
+	});
+});

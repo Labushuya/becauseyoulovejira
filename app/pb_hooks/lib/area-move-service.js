@@ -20,6 +20,9 @@
 //   (inbox_moved_fingerprints, lib/inbox-service.js), so its channel does not bring it there again,
 //   and the targets of repositories and folders in the settings of GitHub and folder connections
 //   never point across the border either (ADR-0061, addendum E7-4b).
+// - Since QT-1 (ADR-0067) a link of a source or follow-up ticket to a ticket that stays behind is a
+//   conflict like a dependency, with its own choice (`ticket_sources`: take the other ticket along, or
+//   release the link with its history); links between moved tickets stay as they are.
 // - POST /api/byl/household/dissolve: only the owner; `adopt` moves everything of the household with
 //   the same rules into his private area (codes taken there get a suffix), `delete` deletes it for
 //   good after the name of the household is typed. Then the memberships, the codes and the household
@@ -127,6 +130,10 @@ function newPlan(actor, from, to, moveOut, dissolved) {
     sets: { tickets: {}, projects: {}, rules: {}, items: {}, dependencies: {}, connections: {} },
     order: { tickets: [], projects: [], rules: [], items: [], dependencies: [], connections: [] },
     crossing: [],
+    // Tickets as sources (QT-1, ADR-0067): links between moved tickets (they stay as they are) and
+    // links to a ticket that stays behind (`{ link, inside }`, the choice "mitnehmen" or "lösen").
+    linkCount: 0,
+    crossingLinks: [],
     analysis: null,
     finalCodes: {},
     targetProject: null
@@ -202,20 +209,65 @@ function otherEnd(dependency, ticketId) {
   return dependency.getString('blocker') === ticketId ? dependency.getString('blocked') : dependency.getString('blocker');
 }
 
-// "Mitnehmen": the other ticket of every dependency comes along with its sub-tasks, until no
-// dependency of a moved ticket leads outside (the list grows while it is read).
-function takeDependencies(txApp, plan) {
+// The links of tickets as sources (QT-1, ADR-0067); none before their migration.
+function ticketLinks() {
+  return require(__hooks + '/lib/ticket-source-service.js');
+}
+
+// "Mitnehmen": the other ticket of every dependency (`take.dependencies`) and of every link of a
+// source or follow-up ticket (`take.sources`, QT-1) comes along with its sub-tasks, until none of the
+// chosen kinds leads outside (the list grows while it is read, so both kinds close over each other).
+function takeLinked(txApp, plan, take) {
+  var links = ticketLinks();
+  var sources = take.sources && links.ready(txApp);
   for (var i = 0; i < plan.order.tickets.length; i++) {
     var id = plan.order.tickets[i];
-    var found = dependenciesOf(txApp, id);
-    for (var j = 0; j < found.length; j++) {
-      var other = otherEnd(found[j], id);
-      if (has(plan, 'tickets', other)) {
+    var others = [];
+    var j;
+    if (take.dependencies) {
+      var found = dependenciesOf(txApp, id);
+      for (j = 0; j < found.length; j++) {
+        others.push(otherEnd(found[j], id));
+      }
+    }
+    if (sources) {
+      var linked = links.linksOfTicket(txApp, id);
+      for (j = 0; j < linked.length; j++) {
+        others.push(links.otherEnd(linked[j], id));
+      }
+    }
+    for (j = 0; j < others.length; j++) {
+      if (has(plan, 'tickets', others[j])) {
         continue;
       }
-      var record = findById(txApp, TICKETS, other);
+      var record = findById(txApp, TICKETS, others[j]);
       if (record !== null && !isTrashed(record) && record.getString('scope') === plan.from.scope) {
         addTicket(txApp, plan, record);
+      }
+    }
+  }
+}
+
+// Links between moved tickets stay as they are (they have no area of their own); a link to a ticket
+// that stays behind, also one in the trash, crosses the border and needs the choice (QT-1).
+function classifyTicketLinks(txApp, plan) {
+  var links = ticketLinks();
+  if (!links.ready(txApp)) {
+    return;
+  }
+  var seen = {};
+  for (var i = 0; i < plan.order.tickets.length; i++) {
+    var id = plan.order.tickets[i];
+    var found = links.linksOfTicket(txApp, id);
+    for (var j = 0; j < found.length; j++) {
+      if (seen[found[j].id]) {
+        continue;
+      }
+      seen[found[j].id] = true;
+      if (has(plan, 'tickets', links.otherEnd(found[j], id))) {
+        plan.linkCount += 1;
+      } else {
+        plan.crossingLinks.push({ link: found[j], inside: id });
       }
     }
   }
@@ -292,17 +344,21 @@ function addRoots(txApp, plan, kind, ids) {
   return '';
 }
 
-/** Collects the cascade of a move (ADR-0061 §1). `take`: dependencies take their other ticket along. */
+/**
+ * Collects the cascade of a move (ADR-0061 §1). `take.dependencies`: dependencies take their other
+ * ticket along; `take.sources`: links of source and follow-up tickets do (QT-1, ADR-0067).
+ */
 function collect(txApp, plan, kind, ids, take) {
   var problem = addRoots(txApp, plan, kind, ids);
   if (problem !== '') {
     return problem;
   }
   addProjectTickets(txApp, plan);
-  if (take) {
-    takeDependencies(txApp, plan);
+  if (take.dependencies || take.sources) {
+    takeLinked(txApp, plan, take);
   }
   classifyDependencies(txApp, plan);
+  classifyTicketLinks(txApp, plan);
   addSources(txApp, plan);
   return '';
 }
@@ -685,6 +741,9 @@ function choiceProblem(txApp, plan, input) {
   if (plan.crossing.length > 0 && input.dependencies === undefined) {
     return { problem: 'dependencies-choice' };
   }
+  if (plan.crossingLinks.length > 0 && input.ticket_sources === undefined) {
+    return { problem: 'ticket-sources-choice' };
+  }
   return decideCodes(txApp, plan, input.codes);
 }
 
@@ -726,6 +785,18 @@ function summaryOf(txApp, plan, input) {
       other: ticketRef(findById(txApp, TICKETS, otherEnd(entry.dependency, entry.inside)))
     });
   }
+  // QT-1: `relation` from the moved ticket: `source` (it stems from the other) or `follow_up`.
+  var ticketSources = [];
+  for (i = 0; i < plan.crossingLinks.length; i++) {
+    var crossing = plan.crossingLinks[i];
+    var other = findById(txApp, TICKETS, ticketLinks().otherEnd(crossing.link, crossing.inside));
+    ticketSources.push({
+      ticket: ticketRef(plan.sets.tickets[crossing.inside] || null),
+      other: ticketRef(other),
+      relation: crossing.link.getString('ticket') === crossing.inside ? 'source' : 'follow_up',
+      trashed: other !== null && isTrashed(other)
+    });
+  }
   var parents = [];
   for (i = 0; i < analysis.parents.length; i++) {
     parents.push({ id: analysis.parents[i].ticket.id, key: analysis.parents[i].ticket.getString('key'), parent: analysis.parents[i].parentKey });
@@ -765,7 +836,8 @@ function summaryOf(txApp, plan, input) {
       rules: plan.order.rules.length,
       items: plan.order.items.length,
       comments: analysis.comments,
-      dependencies: plan.order.dependencies.length
+      dependencies: plan.order.dependencies.length,
+      ticket_sources: plan.linkCount
     },
     conflicts: {
       project:
@@ -774,6 +846,7 @@ function summaryOf(txApp, plan, input) {
           : { projects: staying, tickets: analysis.stayingTickets, rules: analysis.stayingRules, targets: targetProjects(txApp, plan) },
       tags: analysis.tags,
       dependencies: dependencies,
+      ticket_sources: ticketSources,
       parents: parents,
       project_parents: projectParents,
       codes: codes,
@@ -787,6 +860,7 @@ function summaryOf(txApp, plan, input) {
     needs: {
       project: staying.length > 0,
       dependencies: plan.crossing.length > 0 && input.dependencies === undefined,
+      ticket_sources: plan.crossingLinks.length > 0 && input.ticket_sources === undefined,
       codes: needCodes
     }
   };
@@ -1114,6 +1188,23 @@ function settleDependencies(txApp, plan) {
   }
 }
 
+// Links of source and follow-up tickets across the border go, with "Quelle entfernt" and "Folge-Ticket
+// entfernt" in the history of both tickets (QT-1, ADR-0067): all of them with "lösen", with
+// "mitnehmen" those whose other ticket could not come along (in the trash). Links between moved
+// tickets stay; they have no area of their own.
+function settleTicketLinks(txApp, plan) {
+  if (plan.crossingLinks.length === 0) {
+    return;
+  }
+  var links = ticketLinks();
+  for (var i = 0; i < plan.crossingLinks.length; i++) {
+    var record = findById(txApp, 'ticket_sources', plan.crossingLinks[i].link.id);
+    if (record !== null) {
+      links.unlink(txApp, record, plan.actor);
+    }
+  }
+}
+
 // Connections of a dissolved household (only the admin UI ever made one, ADR-0059 §5) go to the owner.
 function moveConnections(txApp, plan) {
   var connections = recordsOf(plan, 'connections');
@@ -1150,6 +1241,7 @@ function execute(txApp, plan, nowMs) {
   moveConnections(txApp, plan);
   clearOutsideReferences(txApp, plan);
   settleDependencies(txApp, plan);
+  settleTicketLinks(txApp, plan);
   // A pin stays while its account still sees the ticket (ADR-0064); the others go.
   require(__hooks + '/lib/pin-service.js').releaseUnseen(txApp, plan.order.tickets.slice());
 }
@@ -1308,7 +1400,10 @@ function move(e) {
       input.to === 'household'
         ? newPlan(actor, mine, shared, false, false)
         : newPlan(actor, shared, mine, householdRules.may({ role: household.role, rights: household.rights }, 'move_out'), false);
-    var problem = collect(txApp, plan, input.kind, input.ids, input.dependencies === 'take');
+    var problem = collect(txApp, plan, input.kind, input.ids, {
+      dependencies: input.dependencies === 'take',
+      sources: input.ticket_sources === 'take'
+    });
     if (problem !== '') {
       outcome.problem = problem;
       return;
