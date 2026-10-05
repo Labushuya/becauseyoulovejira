@@ -19,7 +19,7 @@
 		area: AreaStore;
 		household: HouseholdStore;
 		moves: AreaMoveStore;
-		ticket: { id: string; key: string; owner?: string };
+		ticket: { id: string; key: string; owner?: string; recurring?: boolean };
 		bulk?: MoveTarget | null;
 	} = $props();
 	// svelte-ignore state_referenced_locally

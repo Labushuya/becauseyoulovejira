@@ -1,7 +1,9 @@
 // The bulk action "In den Haushalt verschieben …" of the table "Aufgaben" (E7-4b, ADR-0061 §8): after a
 // move the selection of the table is empty, the bar is gone, and no ID of the other area stays chosen,
-// also when the tickets show up again (the tab switches into the area they went to). Real stores on
-// fake data; the moved tickets leave the list as the (app) layout lets them (dropMovedTickets).
+// also when the tickets show up again (the tab switches into the area they went to). Since MV-2 the
+// dialog offers "Bei wiederkehrenden Tickets die ganze Serie mitnehmen" with "Bisherige erledigte
+// Vorkommen mitnehmen (N)", both chosen, and counts series and occurrences apart. Real stores on fake
+// data; the moved tickets leave the list as the (app) layout lets them (dropMovedTickets).
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -77,8 +79,20 @@ const householdState: HouseholdState = {
 	invites: null
 };
 
-/** A preview of the server without conflicts: the move may run at once. */
-function preview(moved: MovePreview['moved'] = null): MovePreview {
+/** A series of the chosen tickets (MV-2): one rule with one open and four done occurrences. */
+const SERIES = { rules: 1, open: 1, done: 4 };
+
+/**
+ * A preview of the server without conflicts: the move may run at once. With `series` the chosen
+ * tickets belong to a series, and `body` says what the dialog chose.
+ */
+function preview(
+	moved: MovePreview['moved'] = null,
+	series = false,
+	body: Record<string, unknown> = {}
+): MovePreview {
+	const whole = series && body.series === true;
+	const done = whole && body.series_done === true;
 	return {
 		preview: moved === null,
 		kind: 'ticket',
@@ -87,15 +101,18 @@ function preview(moved: MovePreview['moved'] = null): MovePreview {
 		fromName: 'Privat',
 		toName: HOUSE.name,
 		counts: {
-			tickets: 2,
+			tickets: done ? 6 : 2,
 			subtasks: 0,
 			projects: 0,
-			rules: 0,
+			rules: whole ? 1 : 0,
 			items: 0,
 			comments: 0,
 			dependencies: 0,
-			ticketSources: 0
+			ticketSources: 0,
+			series: whole ? 1 : 0,
+			occurrences: { open: whole ? 1 : 0, done: done ? 4 : 0 }
 		},
+		seriesOffer: series ? SERIES : { rules: 0, open: 0, done: 0 },
 		conflicts: {
 			project: null,
 			tags: { reused: [], created: [] },
@@ -116,7 +133,7 @@ function preview(moved: MovePreview['moved'] = null): MovePreview {
 	};
 }
 
-async function setup() {
+async function setup(series = false) {
 	const household = new HouseholdStore(
 		{
 			fetch: async () => ({ kind: 'ok' as const, value: householdState })
@@ -163,17 +180,21 @@ async function setup() {
 		kind: 'ok',
 		value:
 			body.preview === true
-				? preview()
-				: preview({
-						tickets: (body.ids as string[]).map((id, index) => ({
-							id,
-							key: `TASK-${index + 1}`,
-							previous: open.find((entry) => entry.id === id)?.key ?? ''
-						})),
-						projects: [],
-						rules: [],
-						items: []
-					})
+				? preview(null, series, body)
+				: preview(
+						{
+							tickets: (body.ids as string[]).map((id, index) => ({
+								id,
+								key: `TASK-${index + 1}`,
+								previous: open.find((entry) => entry.id === id)?.key ?? ''
+							})),
+							projects: [],
+							rules: [],
+							items: []
+						},
+						series,
+						body
+					)
 	}));
 	const moves = new AreaMoveStore({ move }, SESSION, undefined, (result) =>
 		dropMovedTickets(store, result)
@@ -207,12 +228,20 @@ describe('the bulk action "In den Haushalt verschieben …" (E7-4b)', () => {
 			screen.getByRole('dialog', { name: '2 Tickets in den Haushalt verschieben' })
 		);
 		await vi.waitFor(() => expect(within(dialog).getByText('2 Tickets')).toBeTruthy());
+		expect(within(dialog).queryByRole('checkbox', { name: /ganze Serie/ })).toBeNull();
 		await fireEvent.click(
 			within(dialog).getByRole('button', { name: 'In den Haushalt verschieben' })
 		);
 		await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+		// Without a series in the preview the dialog asked nothing about one; the choice stays on (MV-2).
 		expect(move).toHaveBeenLastCalledWith(
-			{ kind: 'ticket', ids: ['t00000000000001', 't00000000000002'], to: 'household' },
+			{
+				kind: 'ticket',
+				ids: ['t00000000000001', 't00000000000002'],
+				to: 'household',
+				series: true,
+				series_done: true
+			},
 			expect.anything()
 		);
 
@@ -232,5 +261,77 @@ describe('the bulk action "In den Haushalt verschieben …" (E7-4b)', () => {
 			false
 		]);
 		expect(bar()).toBeNull();
+	});
+
+	it('takes whole series along by default, counts them apart and asks again without (MV-2)', async () => {
+		const { move } = await setup(true);
+		await choose('TASK-1');
+		await choose('TASK-2');
+		await fireEvent.click(screen.getByRole('button', { name: 'In den Haushalt verschieben …' }));
+		const dialog = await vi.waitFor(() =>
+			screen.getByRole('dialog', { name: '2 Tickets in den Haushalt verschieben' })
+		);
+		const whole = await vi.waitFor(() =>
+			within(dialog).getByRole<HTMLInputElement>('checkbox', {
+				name: 'Bei wiederkehrenden Tickets die ganze Serie mitnehmen'
+			})
+		);
+		const done = within(dialog).getByRole<HTMLInputElement>('checkbox', {
+			name: 'Bisherige erledigte Vorkommen mitnehmen (4)'
+		});
+		expect([whole.checked, done.checked]).toEqual([true, true]);
+		expect(move.mock.calls[0]?.[0]).toMatchObject({
+			preview: true,
+			series: true,
+			series_done: true
+		});
+		// Series, open and done occurrences apart, and the series runs on in the target.
+		for (const line of [
+			'6 Tickets',
+			'1 Serie mit Regel und Vorlage',
+			'1 offenes Vorkommen',
+			'4 erledigte Vorkommen',
+			'Die Serie läuft im Ziel weiter; ihr nächstes Ticket entsteht dort.'
+		]) {
+			expect(within(dialog).getByText(line)).toBeTruthy();
+		}
+
+		// Without the done ones the preview loads again; they stay.
+		await fireEvent.click(done);
+		await vi.waitFor(() => expect(within(dialog).getByText('2 Tickets')).toBeTruthy());
+		expect(move.mock.calls[1]?.[0]).toMatchObject({
+			preview: true,
+			series: true,
+			series_done: false
+		});
+		expect(within(dialog).queryByText('4 erledigte Vorkommen')).toBeNull();
+
+		// Without the series the choice of the done ones goes, and nothing of a series moves.
+		await fireEvent.click(whole);
+		await vi.waitFor(() => expect(move).toHaveBeenCalledTimes(3));
+		expect(move.mock.calls[2]?.[0]).toMatchObject({
+			preview: true,
+			series: false,
+			series_done: false
+		});
+		await vi.waitFor(() =>
+			expect(within(dialog).queryByText('1 Serie mit Regel und Vorlage')).toBeNull()
+		);
+		expect(within(dialog).queryByRole('checkbox', { name: /erledigte Vorkommen/ })).toBeNull();
+
+		await fireEvent.click(
+			within(dialog).getByRole('button', { name: 'In den Haushalt verschieben' })
+		);
+		await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+		expect(move).toHaveBeenLastCalledWith(
+			{
+				kind: 'ticket',
+				ids: ['t00000000000001', 't00000000000002'],
+				to: 'household',
+				series: false,
+				series_done: false
+			},
+			expect.anything()
+		);
 	});
 });

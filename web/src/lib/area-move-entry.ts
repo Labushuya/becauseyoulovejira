@@ -2,25 +2,43 @@
 // only for an account in a household and only with the right for every record (domain/area-move.ts
 // moveDirection); it opens the dialog of the layout with the preview of the server. Menus of tickets,
 // projects, rules and entries of the inbox and the bulk action of the table "Aufgaben" use it. Outside
-// the (app) layout (tests of single components) there is no entry.
+// the (app) layout (tests of single components) there is no entry. Since MV-2 the request of a rule
+// and of tickets offers whole series.
 
 import { auth } from '$lib/auth.svelte';
 import {
 	MOVE_TEXTS,
 	moveDirection,
+	offersSeries,
 	type MoveDirection,
 	type MoveKind
 } from '$lib/domain/area-move';
 import { meOf } from '$lib/domain/household';
-import { findAreaMoveStore } from '$lib/stores/area-move.svelte';
+import { findAreaMoveStore, type MoveRequest } from '$lib/stores/area-move.svelte';
 import { findAreaStore } from '$lib/stores/area.svelte';
 import { findHouseholdStore } from '$lib/stores/household.svelte';
 
-/** What a menu would move: records of one kind with their creator, and how the dialog names them. */
+/**
+ * What a menu would move: records of one kind with their creator (and, for tickets, whether they
+ * belong to a series), and how the dialog names them.
+ */
 export interface MoveTarget {
 	kind: MoveKind;
-	records: readonly { id: string; owner?: string }[];
+	records: readonly { id: string; owner?: string; recurring?: boolean }[];
 	label: string;
+}
+
+/**
+ * How the dialog names "Ganze Serie verschieben" (MV-2): for a rule and for one ticket of a series as
+ * that, for the bulk action and any other ticket as "Bei wiederkehrenden Tickets …" (a ticket taken
+ * along may belong to a series); nothing for projects and entries of the inbox.
+ */
+function seriesChoice(target: MoveTarget, bulk: boolean): MoveRequest['series'] {
+	if (!offersSeries(target.kind)) return undefined;
+	if (target.kind === 'rule') return 'whole';
+	return !bulk && target.records.length === 1 && target.records[0]?.recurring === true
+		? 'whole'
+		: 'each';
 }
 
 /** The entry of the menu: its text and what it does. */
@@ -30,8 +48,11 @@ export interface MoveEntry {
 }
 
 export interface AreaMover {
-	/** The entry for `target`, or null when the account may not move it. `inline`: the full view. */
-	entry(target: MoveTarget, options?: { inline?: boolean }): MoveEntry | null;
+	/**
+	 * The entry for `target`, or null when the account may not move it. `inline`: the full view;
+	 * `bulk`: the bulk action of the table "Aufgaben".
+	 */
+	entry(target: MoveTarget, options?: { inline?: boolean; bulk?: boolean }): MoveEntry | null;
 }
 
 /** The mover of the (app) layout; call it while a component starts (it reads the context). */
@@ -60,6 +81,7 @@ export function areaMover(): AreaMover {
 			}
 			if (to === null) return null;
 			const direction = to;
+			const series = seriesChoice(target, options.bulk === true);
 			return {
 				label: MOVE_TEXTS.action[direction],
 				run: () =>
@@ -68,7 +90,8 @@ export function areaMover(): AreaMover {
 						ids: target.records.map((record) => record.id),
 						to: direction,
 						label: target.label,
-						...(options.inline === true && { inline: true })
+						...(options.inline === true && { inline: true }),
+						...(series !== undefined && { series })
 					})
 			};
 		}

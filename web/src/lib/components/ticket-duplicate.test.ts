@@ -1,6 +1,8 @@
 // "Duplizieren …" (ADR-0045): the question as a modal M in the side panel and inline inside a
 // modal (the full view), the required status, what is taken over, the source, the series hint,
-// refusals at their field and opening the duplicate. The store runs for real on a fake data layer.
+// refusals at their field and opening the duplicate. Since MV-2 the "Ziel" of a member of a
+// household: the projects and tags of the other area, what does not come along, the request with the
+// area and the flag that leads to the duplicate. The store runs for real on a fake data layer.
 // The entry in the menu "•••" of the header is covered in ticket-actions.test.ts and
 // ticket-panel.test.ts (plan aktionsmenues).
 
@@ -8,7 +10,13 @@ import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
 import { DataError } from '$lib/data/errors';
-import type { DuplicateOutcome, DuplicateRequest } from '$lib/domain/duplicate';
+import {
+	DEFAULT_TAKE,
+	type DuplicateArea,
+	type DuplicateOutcome,
+	type DuplicateRequest,
+	type DuplicateTarget
+} from '$lib/domain/duplicate';
 import type { InboxItemSummary } from '$lib/domain/inbox';
 import type { ProjectRef, Ticket } from '$lib/domain/ticket';
 import type { FlagInput } from '$lib/stores/flags.svelte';
@@ -390,5 +398,200 @@ describe('the question "Wie soll das Duplikat entstehen?"', () => {
 		document.activeElement?.dispatchEvent(escape);
 		expect(escape.defaultPrevented).toBe(true);
 		expect(onclose).toHaveBeenCalledOnce();
+	});
+
+	it('asks for no "Ziel" without a household', () => {
+		renderDialog();
+		expect(screen.queryByRole('radiogroup', { name: 'Ziel' })).toBeNull();
+	});
+});
+
+describe('"Ziel": into the other area (MV-2)', () => {
+	const PRIVATE = ticket({
+		id: 'ticket000000004',
+		key: 'PRIV-4',
+		scope: 'u:user00000000001',
+		sourceItem: 'item00000000001',
+		parentId: 'parent000000001'
+	});
+	const TARGET: DuplicateTarget = {
+		to: 'household',
+		scope: 'h:house0000000001',
+		name: 'Haus Beispiel',
+		projects: [
+			{ id: 'hproj0000000001', name: 'Wohnung', code: 'WOHN', archived: false, parent: null }
+		],
+		tags: { reused: [], created: ['Garten'] }
+	};
+	const ELSEWHERE: DuplicateOutcome = {
+		...OUTCOME,
+		id: 'dupl00000000020',
+		key: 'WOHN-1',
+		original: { id: PRIVATE.id, key: 'PRIV-4' },
+		scope: 'h:house0000000001'
+	};
+
+	function renderElsewhere(
+		target: (id: string, to: DuplicateArea) => Promise<DuplicateTarget>,
+		original: Ticket = PRIVATE
+	) {
+		const flags: FlagInput[] = [];
+		const data = {
+			duplicate: vi.fn(async (): Promise<DuplicateOutcome> => ELSEWHERE),
+			target: vi.fn(target)
+		};
+		const store = new TicketDuplicateStore(
+			data,
+			{ ensureValid: () => true, logout: vi.fn() },
+			{
+				show: (input) => {
+					flags.push(input);
+					return 'flag';
+				},
+				dismiss: vi.fn()
+			}
+		);
+		const onopen = vi.fn();
+		const onclose = vi.fn();
+		render(DuplicateDialog, {
+			props: {
+				ticket: original,
+				projects: [HOUSE, GARDEN],
+				sources: [mailSource({ ticketId: original.id })],
+				parentKey: 'PRIV-1',
+				household: 'Haus Beispiel',
+				store,
+				onopen,
+				onclose
+			}
+		});
+		return { data, flags, onopen, onclose };
+	}
+
+	const areas = () => screen.getByRole('radiogroup', { name: 'Ziel' });
+
+	it('starts in the area of the original; the other one brings its projects, tags and hints', async () => {
+		const { data } = renderElsewhere(async () => TARGET);
+		const own = within(areas()).getByRole<HTMLInputElement>('radio', { name: 'Privat' });
+		const shared = within(areas()).getByRole<HTMLInputElement>('radio', { name: 'Haus Beispiel' });
+		expect([own.checked, shared.checked]).toEqual([true, false]);
+		expect(data.target).not.toHaveBeenCalled();
+
+		await fireEvent.click(shared);
+		const project = await vi.waitFor(() =>
+			screen.getByRole<HTMLSelectElement>('combobox', { name: 'Projekt im Ziel' })
+		);
+		expect(data.target).toHaveBeenCalledWith(PRIVATE.id, 'household');
+		expect([...project.options].map((option) => option.textContent?.trim())).toEqual([
+			'Kein Projekt',
+			'Wohnung (WOHN)'
+		]);
+		expect(project.value).toBe('');
+		const take = screen.getByRole('group', { name: 'Übernehmen' });
+		// No project of the original, no parent, no source in the other area.
+		expect(within(take).queryByRole('checkbox', { name: 'Projekt' })).toBeNull();
+		expect(within(take).queryByRole('checkbox', { name: /einordnen/ })).toBeNull();
+		expect(screen.queryByRole('radiogroup', { name: 'Quelle' })).toBeNull();
+		const tags = within(take).getByRole('checkbox', { name: 'Tags: Garten' });
+		expect(document.getElementById(tags.getAttribute('aria-describedby') ?? '')?.textContent).toBe(
+			'Im Ziel nach Namen zugeordnet – neu angelegt: Garten.'
+		);
+		expect(
+			screen.getByText(/Das Duplikat kommt in den Haushalt „Haus Beispiel“; das Original bleibt/)
+				.textContent
+		).toMatch(
+			/Quellen kommen nicht mit: .* Verbindungen privat .* Ticket-Quellen .* PRIV-1 bleibt zurück\./s
+		);
+
+		// Back to the area of the original: everything as before, the target is not asked again.
+		await fireEvent.click(within(areas()).getByRole('radio', { name: 'Privat' }));
+		expect(within(take).getByRole('checkbox', { name: 'Projekt' })).toBeTruthy();
+		expect(screen.getByRole('radiogroup', { name: 'Quelle' })).toBeTruthy();
+		await fireEvent.click(within(areas()).getByRole('radio', { name: 'Haus Beispiel' }));
+		expect(data.target).toHaveBeenCalledOnce();
+	});
+
+	it('sends the area, the project of the target and no source; the flag leads to the duplicate', async () => {
+		const { data, flags, onopen, onclose } = renderElsewhere(async () => TARGET);
+		await fireEvent.click(within(areas()).getByRole('radio', { name: 'Haus Beispiel' }));
+		const project = await vi.waitFor(() =>
+			screen.getByRole<HTMLSelectElement>('combobox', { name: 'Projekt im Ziel' })
+		);
+		await fireEvent.change(project, { target: { value: 'hproj0000000001' } });
+		await fireEvent.click(within(statusGroup()).getByRole('radio', { name: 'Offen' }));
+		await submit();
+
+		await vi.waitFor(() => expect(onclose).toHaveBeenCalledOnce());
+		expect(data.duplicate).toHaveBeenCalledWith(PRIVATE.id, {
+			title: 'Rasen mähen (Kopie)',
+			status: 'open',
+			project: 'hproj0000000001',
+			take: { ...DEFAULT_TAKE, parent: false },
+			source: 'none',
+			to: 'household'
+		});
+		// The tab stays with the original; the flag opens the duplicate in its area.
+		expect(onopen).not.toHaveBeenCalled();
+		expect(flags[0]).toMatchObject({
+			title: 'PRIV-4 in den Haushalt dupliziert.',
+			description: 'Das Duplikat ist WOHN-1; das Original bleibt hier.'
+		});
+		flags[0]?.action?.run();
+		expect(onopen).toHaveBeenCalledWith('dupl00000000020');
+	});
+
+	it('offers the private area for a ticket of the household', async () => {
+		const shared = ticket({ scope: 'h:house0000000001' });
+		const { data } = renderElsewhere(
+			async () => ({ ...TARGET, to: 'private', scope: 'u:user00000000001', name: '' }),
+			shared
+		);
+		expect(
+			within(areas()).getByRole<HTMLInputElement>('radio', { name: 'Haus Beispiel' }).checked
+		).toBe(true);
+		await fireEvent.click(within(areas()).getByRole('radio', { name: 'Privat' }));
+		await vi.waitFor(() => expect(data.target).toHaveBeenCalledWith(shared.id, 'private'));
+		await vi.waitFor(() =>
+			expect(screen.getByText(/Das Duplikat kommt in deinen Bereich Privat/)).toBeTruthy()
+		);
+	});
+
+	it('says when the target cannot be loaded and sends nothing', async () => {
+		const { data } = renderElsewhere(async () => {
+			throw new DataError('not_found', { status: 404 });
+		});
+		await fireEvent.click(within(areas()).getByRole('radio', { name: 'Haus Beispiel' }));
+		await vi.waitFor(() =>
+			expect(screen.getByRole('alert').textContent).toMatch(
+				/Das Duplizieren in einen anderen Bereich ist/
+			)
+		);
+		expect(screen.queryByRole('combobox', { name: 'Projekt im Ziel' })).toBeNull();
+		const button = screen.getByRole('button', { name: 'Duplizieren' });
+		expect(button.getAttribute('aria-disabled')).toBe('true');
+		await fireEvent.click(within(statusGroup()).getByRole('radio', { name: 'Offen' }));
+		await submit();
+		expect(data.duplicate).not.toHaveBeenCalled();
+	});
+
+	it('shows a refusal of the area at "Ziel"', async () => {
+		const { data } = renderElsewhere(async () => TARGET);
+		data.duplicate.mockImplementationOnce(async () => {
+			throw new DataError('validation', {
+				status: 400,
+				fields: {
+					to: {
+						code: 'validation_duplicate_no_household',
+						message: 'Du bist in keinem Haushalt.'
+					}
+				}
+			});
+		});
+		await fireEvent.click(within(areas()).getByRole('radio', { name: 'Haus Beispiel' }));
+		await vi.waitFor(() => screen.getByRole('combobox', { name: 'Projekt im Ziel' }));
+		await fireEvent.click(within(statusGroup()).getByRole('radio', { name: 'Offen' }));
+		await submit();
+		await vi.waitFor(() => expect(areas().getAttribute('aria-invalid')).toBe('true'));
+		expect(areas().textContent).toContain('Du bist in keinem Haushalt.');
 	});
 });

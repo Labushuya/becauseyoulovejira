@@ -44,9 +44,10 @@
 	}: {
 		/**
 		 * `owner`: who created it; moving it into the private area is offered to the creator. A done
-		 * ticket (`status`) is not offered for the day plan.
+		 * ticket (`status`) is not offered for the day plan. `recurring`: moving it offers "Ganze Serie
+		 * verschieben" by that name (MV-2).
 		 */
-		ticket: { id: string; key: string; owner?: string; status?: string };
+		ticket: { id: string; key: string; owner?: string; status?: string; recurring?: boolean };
 		/** "Link kopiert" and its failure. */
 		flags: FlagSink;
 		/** Full view: the entries unfold a question in the content instead of a dialog. */

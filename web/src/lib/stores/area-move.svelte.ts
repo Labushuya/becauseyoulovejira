@@ -2,7 +2,10 @@
 // (app) layout for every menu (ticket, project, rule, entry of the inbox) and the bulk action of the
 // table "Aufgaben". Opening a move loads the preview of the server (nothing changes yet); the dialog
 // shows what moves and asks the choices the preview needs; "Mitnehmen" of dependencies or of source
-// and follow-up tickets (ADR-0067) loads the preview again, because more tickets come along. The move itself is one request; a success goes out
+// and follow-up tickets (ADR-0067) loads the preview again, because more tickets come along. "Ganze
+// Serie verschieben" (MV-2) is chosen from the start for a rule, a ticket and the bulk action; changing
+// it, or "Bisherige erledigte Vorkommen mitnehmen", loads the preview anew as the first one, because
+// other tickets come along and other conflicts arise. The move itself is one request; a success goes out
 // as a flag, and the layout follows it (`moved`): the moved tickets leave the list at once, and a tab
 // that shows a moved record follows it into its area. One move at a time.
 
@@ -44,6 +47,26 @@ export interface MoveRequest {
 	label: string;
 	/** Inside a modal (the full view) the owner shows the dialog inline (ADR-0025 addendum 16). */
 	inline?: boolean;
+	/**
+	 * Whole series (MV-2), chosen from the start: `whole` for a rule or one ticket of a series ("Ganze
+	 * Serie verschieben"), `each` for several tickets or one that is no occurrence ("Bei wiederkehrenden
+	 * Tickets die ganze Serie mitnehmen"); missing for a move without the choice.
+	 */
+	series?: 'whole' | 'each';
+}
+
+const NO_CHOICES: MoveChoices = {
+	project: null,
+	dependencies: null,
+	ticketSources: null,
+	codes: {}
+};
+
+/** The choices a request starts with: whole series with their done occurrences when it offers them. */
+function startChoices(request: MoveRequest): MoveChoices {
+	return request.series === undefined
+		? NO_CHOICES
+		: { ...NO_CHOICES, series: true, seriesDone: true };
 }
 
 export type MoveState = 'idle' | 'loading' | 'ready' | 'running';
@@ -60,12 +83,7 @@ export class AreaMoveStore {
 
 	#request = $state.raw<MoveRequest | null>(null);
 	#preview = $state.raw<MovePreview | null>(null);
-	#choices = $state.raw<MoveChoices>({
-		project: null,
-		dependencies: null,
-		ticketSources: null,
-		codes: {}
-	});
+	#choices = $state.raw<MoveChoices>(NO_CHOICES);
 	#state = $state<MoveState>('idle');
 	#message = $state<string | null>(null);
 	/** The dependencies across the border of the first preview: the choice stays after "Mitnehmen". */
@@ -132,10 +150,22 @@ export class AreaMoveStore {
 				);
 	}
 
+	/**
+	 * What "Ganze Serie verschieben" covers (MV-2), as the preview names it; null while the request
+	 * does not offer the choice or no record of it belongs to a series.
+	 */
+	get seriesOffer(): MovePreview['seriesOffer'] | null {
+		const offer = this.#preview?.seriesOffer;
+		return this.#request?.series === undefined || offer === undefined || offer.rules === 0
+			? null
+			: offer;
+	}
+
 	/** Opens the dialog of a move and loads its preview. */
 	open(request: MoveRequest): void {
 		this.close();
 		this.#request = request;
+		this.#choices = startChoices(request);
 		void this.#load(true);
 	}
 
@@ -145,7 +175,7 @@ export class AreaMoveStore {
 		this.#controller = null;
 		this.#request = null;
 		this.#preview = null;
-		this.#choices = { project: null, dependencies: null, ticketSources: null, codes: {} };
+		this.#choices = NO_CHOICES;
 		this.#dependencies = [];
 		this.#ticketSources = [];
 		this.#message = null;
@@ -170,6 +200,23 @@ export class AreaMoveStore {
 
 	setCode(projectId: string, code: string): void {
 		this.#choices = { ...this.#choices, codes: { ...this.#choices.codes, [projectId]: code } };
+	}
+
+	/**
+	 * "Ganze Serie verschieben" (MV-2) on or off: other tickets come along, so the preview loads anew
+	 * like the first one, and the choices of linked tickets are asked again.
+	 */
+	chooseSeries(series: boolean): void {
+		if (this.#choices.series === undefined) return;
+		this.#choices = { ...this.#choices, series, dependencies: null, ticketSources: null };
+		void this.#load(true);
+	}
+
+	/** "Bisherige erledigte Vorkommen mitnehmen" on or off (MV-2), the same way. */
+	chooseSeriesDone(seriesDone: boolean): void {
+		if (this.#choices.series === undefined) return;
+		this.#choices = { ...this.#choices, seriesDone, dependencies: null, ticketSources: null };
+		void this.#load(true);
 	}
 
 	/** The move; true when it ran (the dialog closes then). */
@@ -200,7 +247,20 @@ export class AreaMoveStore {
 		if (answer === null || this.#request !== request) return;
 		this.#preview = answer;
 		if (first) {
-			this.#choices = { ...initialChoices(answer), dependencies: null, ticketSources: null };
+			// A project chosen before a new first preview stays while the preview still offers it.
+			const { project, series, seriesDone } = this.#choices;
+			const targets = answer.conflicts.project?.targets ?? null;
+			const keep =
+				project !== null &&
+				targets !== null &&
+				(project === '' || targets.some((target) => target.id === project));
+			this.#choices = {
+				...initialChoices(answer),
+				project: keep ? project : null,
+				dependencies: null,
+				ticketSources: null,
+				...(series !== undefined && { series, seriesDone })
+			};
 			this.#dependencies = answer.conflicts.dependencies;
 			this.#ticketSources = answer.conflicts.ticketSources;
 		}

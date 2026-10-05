@@ -262,6 +262,10 @@ describe('help page (EH-9)', () => {
 		// The menu "•••" of a ticket (plan aktionsmenues): entries, keyboard, copying the link.
 		expect(text(section)).toContain('„Link kopieren“, „Duplizieren …“ und „In den Papierkorb …“');
 		expect(text(section)).toContain('die Pfeiltasten wählen');
+		// "Duplizieren …" into the other area (MV-2, ADR-0045 addendum MV-2).
+		expect(text(section)).toMatch(/wählst du oben das „Ziel“: „Privat“ oder den Haushalt/);
+		expect(text(section)).toMatch(/Quellen kommen nicht mit: Einträge des Eingangs\s+bleiben/);
+		expect(text(section)).toMatch(/„Dupliziert\s+nach HAUS-13 \(Haushalt\)“/);
 		expect(text(section)).toContain('„Link kopiert“');
 		// The menu of a row of the table (AM-2): both ways to open, the row does not open.
 		expect(text(section)).toContain('„Im Seitenpanel öffnen“ und „In Vollansicht öffnen“');
@@ -955,6 +959,7 @@ describe('help page (EH-9)', () => {
 			'Kanäle',
 			'Papierkorb im Haushalt',
 			'Verschieben',
+			'Ganze Serien',
 			'Vorschau und Fragen'
 		]);
 		const content = text(section);
@@ -965,7 +970,15 @@ describe('help page (EH-9)', () => {
 		expect(content).toMatch(/Verbindungen bleiben immer privat/);
 		expect(content).toMatch(/Ohne Haushalt gibt es keinen Umschalter/);
 		expect(content).toMatch(/merkt sich dieses Gerät für dein Konto/);
-		expect(content).toMatch(/ein Duplikat bleibt im Bereich des Originals/);
+		expect(content).toMatch(
+			/ein Duplikat bleibt im Bereich des Originals, außer du wählst beim Duplizieren den anderen als „Ziel“/
+		);
+		// Whole series (MV-2, ADR-0061 addendum MV-2).
+		expect(content).toMatch(/„Ganze Serie verschieben“\s+vorgewählt/);
+		expect(content).toMatch(/„Bei wiederkehrenden Tickets die ganze\s+Serie mitnehmen“/);
+		expect(content).toMatch(/„Bisherige erledigte Vorkommen mitnehmen“/);
+		expect(content).toMatch(/nie für einen vergangenen Tag/);
+		expect(content).toMatch(/Serien, offene\s+und erledigte Vorkommen zählt die Vorschau getrennt/);
 		expect(content).toMatch(/@HAUS/);
 		expect(content).toMatch(/„Zum Bereich … gewechselt“/);
 		expect(content).toMatch(/„Nur im privaten Bereich“/);

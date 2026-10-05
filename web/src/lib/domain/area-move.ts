@@ -75,6 +75,15 @@ export const MOVE_TEXTS = Object.freeze({
 	releaseSources: 'Verknüpfung lösen: die Tickets bleiben, der Verlauf beider vermerkt es',
 	codeLegend: 'Neuer Code im Ziel',
 	codeHint: (code: string) => `Im Ziel gibt es schon ein Projekt mit dem Code ${code}.`,
+	/** Whole series (MV-2): the choice of a rule or a ticket of a series, and of the bulk action. */
+	seriesLegend: 'Wiederholung',
+	series: 'Ganze Serie verschieben',
+	seriesEach: 'Bei wiederkehrenden Tickets die ganze Serie mitnehmen',
+	seriesHint:
+		'Die Regel mit ihrer Vorlage und das offene Vorkommen mit Unteraufgaben, Kommentaren und Quellen kommen mit; die Serie läuft im Ziel weiter.',
+	seriesOffHint:
+		'Ohne: Nur die Auswahl wird verschoben; ein Ticket löst sich aus seiner Serie, eine Regel lässt ihre bisherigen Tickets zurück.',
+	seriesDone: (count: number) => `Bisherige erledigte Vorkommen mitnehmen (${count})`,
 	done: (label: string, to: MoveDirection) =>
 		`${label} ${to === 'household' ? 'in den Haushalt' : 'ins Private'} verschoben.`,
 	newKey: (key: string) => `Neuer Key: ${key}.`,
@@ -144,7 +153,16 @@ export interface MovePreview {
 		dependencies: number;
 		/** Links of source and follow-up tickets between moved tickets (ADR-0067). */
 		ticketSources: number;
+		/** Rules that move as whole series (MV-2); 0 without the choice. */
+		series: number;
+		/** Occurrences that move with their rule and stay in their series (MV-2). */
+		occurrences: { open: number; done: number };
 	};
+	/**
+	 * What "Ganze Serie verschieben" covers (MV-2): the rules of the records of a series and their open
+	 * and done occurrences; no rule means the choice is not offered. A server before MV-2 names none.
+	 */
+	seriesOffer: { rules: number; open: number; done: number };
 	conflicts: {
 		project: {
 			projects: NamedProject[];
@@ -294,6 +312,8 @@ export function parseMovePreview(value: unknown): MovePreview | null {
 	}
 	const items = isRecord(c.items) ? c.items : {};
 	const counts = value.counts;
+	const occurrences = isRecord(counts.occurrences) ? counts.occurrences : {};
+	const offer = isRecord(value.series_offer) ? value.series_offer : {};
 	return {
 		preview: value.preview === true,
 		kind,
@@ -309,8 +329,11 @@ export function parseMovePreview(value: unknown): MovePreview | null {
 			items: count(counts.items),
 			comments: count(counts.comments),
 			dependencies: count(counts.dependencies),
-			ticketSources: count(counts.ticket_sources)
+			ticketSources: count(counts.ticket_sources),
+			series: count(counts.series),
+			occurrences: { open: count(occurrences.open), done: count(occurrences.done) }
 		},
+		seriesOffer: { rules: count(offer.rules), open: count(offer.open), done: count(offer.done) },
 		conflicts: {
 			project,
 			tags: { reused: strings(tags.reused), created: strings(tags.created) },
@@ -342,7 +365,10 @@ export function parseMovePreview(value: unknown): MovePreview | null {
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
-/** What moves, one line per kind with at least one (ADR-0061 §1: "Anzahl der Einträge je Art"). */
+/**
+ * What moves, one line per kind with at least one (ADR-0061 §1: "Anzahl der Einträge je Art"). Whole
+ * series (MV-2) count apart: the series with their rule, the open and the done occurrences.
+ */
 export function countLines(preview: MovePreview): string[] {
 	const { counts } = preview;
 	const lines: string[] = [];
@@ -354,7 +380,19 @@ export function countLines(preview: MovePreview): string[] {
 		lines.push(`${plural(counts.tickets, 'Ticket', 'Tickets')}${subtasks}`);
 	}
 	if (counts.projects > 0) lines.push(plural(counts.projects, 'Projekt', 'Projekte'));
-	if (counts.rules > 0) lines.push(plural(counts.rules, 'Wiederholung', 'Wiederholungen'));
+	if (counts.series > 0) {
+		lines.push(
+			plural(counts.series, 'Serie mit Regel und Vorlage', 'Serien mit Regel und Vorlage')
+		);
+	} else if (counts.rules > 0) {
+		lines.push(plural(counts.rules, 'Wiederholung', 'Wiederholungen'));
+	}
+	if (counts.occurrences.open > 0) {
+		lines.push(plural(counts.occurrences.open, 'offenes Vorkommen', 'offene Vorkommen'));
+	}
+	if (counts.occurrences.done > 0) {
+		lines.push(plural(counts.occurrences.done, 'erledigtes Vorkommen', 'erledigte Vorkommen'));
+	}
 	if (counts.items > 0)
 		lines.push(plural(counts.items, 'Eintrag im Eingang', 'Einträge im Eingang'));
 	if (counts.comments > 0) lines.push(plural(counts.comments, 'Kommentar', 'Kommentare'));
@@ -408,6 +446,13 @@ export function noteLines(preview: MovePreview): string[] {
 			`${c.series.map((entry) => entry.key).join(', ')} ${c.series.length === 1 ? 'verlässt seine' : 'verlassen ihre'} Wiederholung.`
 		);
 	}
+	if (preview.counts.series > 0) {
+		lines.push(
+			preview.counts.series === 1
+				? 'Die Serie läuft im Ziel weiter; ihr nächstes Ticket entsteht dort.'
+				: 'Die Serien laufen im Ziel weiter; ihre nächsten Tickets entstehen dort.'
+		);
+	}
 	if (c.ruleTickets > 0) {
 		lines.push(
 			`${plural(c.ruleTickets, 'bisheriges Ticket', 'bisherige Tickets')} der Wiederholung ${c.ruleTickets === 1 ? 'bleibt' : 'bleiben'}, wo ${c.ruleTickets === 1 ? 'es ist' : 'sie sind'}, ohne Bezug zur Regel. Künftige Tickets entstehen im Ziel.`
@@ -451,6 +496,17 @@ export interface MoveChoices {
 	/** Links of source and follow-up tickets across the border (ADR-0067); missing = not chosen. */
 	ticketSources?: DependencyChoice | null;
 	codes: Record<string, string>;
+	/**
+	 * "Ganze Serie verschieben" (MV-2) and, with it, "Bisherige erledigte Vorkommen mitnehmen";
+	 * missing for a move that does not offer it (a project, an entry of the inbox), so nothing is sent.
+	 */
+	series?: boolean;
+	seriesDone?: boolean;
+}
+
+/** Whether a move of `kind` offers "Ganze Serie verschieben" (MV-2): a rule, tickets. */
+export function offersSeries(kind: MoveKind): boolean {
+	return kind === 'rule' || kind === 'ticket';
 }
 
 /** The choices to start with: nothing chosen, taken codes with the suggestion of the server. */
@@ -519,7 +575,11 @@ export function moveBody(
 		...(choices.project !== null && { project: choices.project }),
 		...(choices.dependencies !== null && { dependencies: choices.dependencies }),
 		...((choices.ticketSources ?? null) !== null && { ticket_sources: choices.ticketSources }),
-		...(Object.keys(codes).length > 0 && { codes })
+		...(Object.keys(codes).length > 0 && { codes }),
+		...(choices.series !== undefined && {
+			series: choices.series,
+			series_done: choices.series && choices.seriesDone === true
+		})
 	};
 }
 

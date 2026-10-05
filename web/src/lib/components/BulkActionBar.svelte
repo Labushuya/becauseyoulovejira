@@ -76,7 +76,7 @@
 	const count = $derived(tickets.length);
 	const chosenIds = $derived(tickets.map((ticket) => ticket.id));
 	const move = $derived(
-		mover.entry({ kind: 'ticket', records: tickets, label: ticketCount(count) })
+		mover.entry({ kind: 'ticket', records: tickets, label: ticketCount(count) }, { bulk: true })
 	);
 	const busy = $derived(store.busy);
 	/** Chosen open tickets whose open blocking sub-tasks are not chosen themselves. */
