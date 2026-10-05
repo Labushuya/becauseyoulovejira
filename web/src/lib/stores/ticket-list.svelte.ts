@@ -26,6 +26,7 @@ import {
 	type DescriptionGuard
 } from '$lib/data/tickets';
 import { householdOfScope } from '$lib/domain/area';
+import { assigneeName, type AssigneeContext } from '$lib/domain/assignee';
 import { berlinToday, msUntilNextBerlinMidnight, type CalendarDate } from '$lib/domain/berlin-date';
 import { SERIES_MOVE_HINT } from '$lib/domain/calendar';
 import { formatCalendarDate } from '$lib/domain/format';
@@ -58,7 +59,7 @@ import {
 	type TicketPatch,
 	type TicketSummary
 } from '$lib/domain/ticket';
-import { countNew, isNew, unreadSinceOf } from '$lib/domain/unread';
+import { countNew, isNew, unreadSinceOf, type UnreadTicket } from '$lib/domain/unread';
 import { pinnedTickets } from '$lib/domain/pins';
 import { SILENT_FLAGS, type FlagSink } from './flags.svelte';
 import type { PinnedSource } from './pins.svelte';
@@ -250,7 +251,15 @@ export interface TicketListOptions {
 	 * whatever the filters, and not again below; without them nothing is pinned.
 	 */
 	pins?: PinnedSource;
+	/**
+	 * Who is signed in and the names of the accounts (ADR-0068): the card "Mir zugewiesen", "neu"
+	 * after an assignment by someone else, the sort and the groups "Zuständig". Without it nobody is
+	 * "mir", and every account stays "Anderes Konto".
+	 */
+	assignees?: () => AssigneeContext;
 }
+
+const NO_ASSIGNEES: AssigneeContext = Object.freeze({ selfId: null, selfName: '', names: null });
 
 export class TicketListStore {
 	readonly #data: TicketListData;
@@ -258,6 +267,9 @@ export class TicketListStore {
 	readonly #now: () => number;
 	readonly #projectOf: ResolveProject<TicketSummary>;
 	readonly #subProjectsOf: SubProjectsOf;
+	readonly #assignees: () => AssigneeContext;
+	/** The signed-in account for "Mir zugewiesen" and "neu" after an assignment (ADR-0068). */
+	#selfId = $derived.by(() => this.#assignees().selfId);
 
 	readonly #open = new SvelteMap<string, TicketSummary>();
 	/**
@@ -319,13 +331,18 @@ export class TicketListStore {
 	#visibleList = $derived.by(() => {
 		const query = this.#query;
 		const today = this.#today;
-		const order = columnOrder(query.sort, today, this.#projectOf);
+		const context = this.#assignees();
+		const order = columnOrder(query.sort, today, this.#projectOf, (id) =>
+			assigneeName(id, context)
+		);
 		const ids = this.#search === null ? null : this.#searchIds;
 		const subProjectsOf = this.#subProjectsOf;
+		const self = context.selfId;
 		return this.#openList
 			.filter(
 				(ticket) =>
-					matchesFilter(ticket, query, today, subProjectsOf) && (ids === null || ids.has(ticket.id))
+					matchesFilter(ticket, query, today, subProjectsOf, self) &&
+					(ids === null || ids.has(ticket.id))
 			)
 			.sort(order);
 	});
@@ -347,7 +364,14 @@ export class TicketListStore {
 	#groupList = $derived.by((): GroupNode<TicketSummary>[] | null => {
 		const { grouping, subGrouping } = this.#query;
 		if (grouping === null) return null;
-		return groupTicketLevels(this.#listedList, grouping, subGrouping, this.#today, this.#projectOf);
+		return groupTicketLevels(
+			this.#listedList,
+			grouping,
+			subGrouping,
+			this.#today,
+			this.#projectOf,
+			this.#assignees()
+		);
 	});
 	/**
 	 * Numbers of the filter cards (FI-1): the open tickets that pass the detail filters and the
@@ -358,12 +382,15 @@ export class TicketListStore {
 		const today = this.#today;
 		const ids = this.#search === null ? null : this.#searchIds;
 		const subProjectsOf = this.#subProjectsOf;
+		const self = this.#selfId;
 		return countCards(
 			[...this.#open.values()].filter(
 				(ticket) =>
-					matchesFilter(ticket, query, today, subProjectsOf) && (ids === null || ids.has(ticket.id))
+					matchesFilter(ticket, query, today, subProjectsOf, self) &&
+					(ids === null || ids.has(ticket.id))
 			),
-			today
+			today,
+			self
 		);
 	});
 	/** Sub-tasks per parent in the order of the section: open ones first, then by creation. */
@@ -390,7 +417,12 @@ export class TicketListStore {
 	#readsReady = $state(false);
 	#readTickets = $derived(new SvelteSet(this.#readRows.values()));
 	#newCounts = $derived(
-		countNew(this.#open.values(), this.#readTickets, this.#readsReady ? this.#unreadSince : null)
+		countNew(
+			this.#open.values(),
+			this.#readTickets,
+			this.#readsReady ? this.#unreadSince : null,
+			this.#selfId
+		)
 	);
 
 	constructor(
@@ -403,7 +435,8 @@ export class TicketListStore {
 			reads,
 			flags = SILENT_FLAGS,
 			series = NO_SERIES,
-			pins
+			pins,
+			assignees = () => NO_ASSIGNEES
 		}: TicketListOptions = {}
 	) {
 		this.#data = data;
@@ -411,6 +444,7 @@ export class TicketListStore {
 		this.#now = now;
 		this.#projectOf = projectOf;
 		this.#subProjectsOf = subProjectsOf;
+		this.#assignees = assignees;
 		this.#today = berlinToday(now());
 		this.#pins = pins ?? null;
 		this.#reads = reads ?? null;
@@ -418,10 +452,18 @@ export class TicketListStore {
 		this.#series = series;
 	}
 
-	/** True if the ticket is new for the signed-in user (ADR-0015 section 2). */
-	isNew(ticket: Pick<TicketSummary, 'id' | 'created' | 'status'>): boolean {
+	/**
+	 * True if the ticket is new for the signed-in user (ADR-0015 section 2), since E7-5 also when
+	 * someone else gave it to him (ADR-0068 §4).
+	 */
+	isNew(ticket: UnreadTicket): boolean {
 		if (!this.#readsReady) return false;
-		return isNew(ticket, this.#readTickets, this.#unreadSince);
+		return isNew(ticket, this.#readTickets, this.#unreadSince, this.#selfId);
+	}
+
+	/** The signed-in account and the names of the accounts (ADR-0068), for rows and groups. */
+	get assigneeContext(): AssigneeContext {
+		return this.#assignees();
 	}
 
 	/** New tickets that are not done (button "Alle als gelesen markieren"). */
@@ -446,7 +488,7 @@ export class TicketListStore {
 	 * Costs a request only for a new ticket; a row that exists already counts as success, a failure
 	 * leaves the mark (the next opening tries again).
 	 */
-	async markRead(ticket: Pick<TicketSummary, 'id' | 'created' | 'status'>): Promise<void> {
+	async markRead(ticket: UnreadTicket): Promise<void> {
 		const id = ticket.id;
 		if (this.#reads === null || this.#marking.has(id) || !this.isNew(ticket)) return;
 		if (!this.#session.ensureValid()) return;
@@ -1118,7 +1160,7 @@ export class TicketListStore {
 						live.reads(
 							guard((change) => {
 								if (change.action === 'baseline') this.#unreadSince = change.unreadSince;
-								else if (change.action === 'delete') this.#readRows.delete(change.id);
+								else if (change.action === 'delete') this.#forgetRead(change.id, change.ticket);
 								else this.#readRows.set(change.read.id, change.read.ticket);
 							})
 						),
@@ -1220,6 +1262,18 @@ export class TicketListStore {
 		this.#marking.clear();
 		this.#readsReady = false;
 		this.#unreadSince = null;
+	}
+
+	/**
+	 * A read row went on the server: with its ticket, every mark of that ticket goes, also the local
+	 * one of a row another tab made (an assignment by someone else, ADR-0068 §4, makes it new again).
+	 */
+	#forgetRead(id: string, ticket?: string): void {
+		this.#readRows.delete(id);
+		if (ticket === undefined) return;
+		for (const [key, value] of [...this.#readRows]) {
+			if (value === ticket) this.#readRows.delete(key);
+		}
 	}
 
 	/**

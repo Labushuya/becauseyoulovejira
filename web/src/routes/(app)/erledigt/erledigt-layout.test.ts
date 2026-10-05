@@ -109,7 +109,14 @@ describe('layout of /erledigt', () => {
 			expect(data.list).toHaveBeenCalledWith(1, {
 				signal: expect.any(AbortSignal),
 				filter: {
-					query: { search: 'Miete', project: null, subProjects: true, tag: null, charm: 'auto' }
+					query: {
+						search: 'Miete',
+						project: null,
+						subProjects: true,
+						tag: null,
+						charm: 'auto',
+						assignee: null
+					}
 				}
 			})
 		);

@@ -4,8 +4,10 @@
 	import { colorOf, inheritLabel, projectColorOf } from '$lib/domain/colors';
 	import { overdueSinceText } from '$lib/domain/due-label';
 	import type { Ticket } from '$lib/domain/ticket';
+	import { findAssignees, type AssigneeSource } from '$lib/stores/assignees.svelte';
 	import type { CatalogStore } from '$lib/stores/catalog.svelte';
 	import type { TicketDetailStore } from '$lib/stores/ticket-detail.svelte';
+	import AssigneeField from './AssigneeField.svelte';
 	import CharmPicker from './CharmPicker.svelte';
 	import ColorChoice from './ColorChoice.svelte';
 	import DueInput from './DueInput.svelte';
@@ -28,14 +30,17 @@
 	// dialog and saved at once as well. The switch "Laufendes Vorhaben" (ADR-0065) after the charm:
 	// the kind decides what the check mark of the day plan means; it saves at once, a refusal sets the
 	// switch back and stands below it. Below the due date an open overdue ticket says since when, in
-	// the words of the list and the day plan, "überfällig seit 05.10." (WH-1).
+	// the words of the list and the day plan, "überfällig seit 05.10." (WH-1). "Zuständig" (ADR-0068)
+	// after the priority, only at a ticket of the household and only when the server knows the field:
+	// "Niemand" or a member, saved at once, with "Ich übernehme".
 	let {
 		store,
 		catalog,
 		ticket,
 		today,
 		recurrenceShown = false,
-		parentRow
+		parentRow,
+		assignees = findAssignees()
 	}: {
 		store: TicketDetailStore;
 		catalog: CatalogStore;
@@ -46,6 +51,8 @@
 		recurrenceShown?: boolean;
 		/** Row "Übergeordnet" (TicketParentField) after the tags. */
 		parentRow?: Snippet;
+		/** The members and names of the household (the directory of the layout). */
+		assignees?: AssigneeSource | null;
 	} = $props();
 
 	const uid = $props.id();
@@ -58,7 +65,8 @@
 		color: `${uid}-color`,
 		tags: `${uid}-tags`,
 		kindHint: `${uid}-kind-hint`,
-		overdue: `${uid}-overdue`
+		overdue: `${uid}-overdue`,
+		assignee: `${uid}-assignee`
 	};
 	const errorIdOf = (field: string) => `${uid}-${field}-error`;
 
@@ -71,6 +79,16 @@
 	const charmShown = $derived(ticket.charm !== undefined);
 	/** The kind (ADR-0065) likewise. */
 	const kindShown = $derived(ticket.kind !== undefined);
+	/**
+	 * "Zuständig" (ADR-0068): only at a ticket of the household, once the server knows the field and
+	 * the members are known; a private ticket has none.
+	 */
+	const assigneeShown = $derived(
+		ticket.assignee !== undefined &&
+			(ticket.scope ?? '').startsWith('h:') &&
+			assignees !== null &&
+			assignees.members.length > 0
+	);
 	const ongoing = $derived(store.value('kind') === 'ongoing');
 	/** "überfällig seit 05.10." for an open ticket due before today (the saved due date), else null. */
 	const overdueSince = $derived(
@@ -162,6 +180,22 @@
 		/>
 		{@render fieldError('priority')}
 	</div>
+
+	{#if assigneeShown && assignees}
+		<label for={ids.assignee}>Zuständig</label>
+		<div class="control">
+			<AssigneeField
+				id={ids.assignee}
+				value={store.value('assignee')}
+				members={assignees.members}
+				context={assignees.context}
+				busy={store.isSaving('assignee')}
+				error={store.fieldError('assignee')}
+				errorId={errorIdOf('assignee')}
+				onchoose={(value) => store.choose('assignee', value)}
+			/>
+		</div>
+	{/if}
 
 	<label for={ids.due}>Fälligkeit</label>
 	<div class="control">

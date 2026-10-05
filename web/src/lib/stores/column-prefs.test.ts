@@ -11,8 +11,8 @@ import {
 	type ColumnStorage
 } from './column-prefs.svelte';
 
-/** Defaults of the ticket table: nothing chosen, "Übergeordnet" and "Quelle" off. */
-const DEFAULTS = { widths: {}, hidden: ['parent', 'source'] };
+/** Defaults of the ticket table: nothing chosen, "Zuständig", "Übergeordnet" and "Quelle" off. */
+const DEFAULTS = { widths: {}, hidden: ['assignee', 'parent', 'source'] };
 
 type MemoryStorage = ColumnStorage & { data: Map<string, string> };
 
@@ -56,7 +56,7 @@ describe('ColumnPrefsStore', () => {
 		expect(JSON.parse(storage.data.get('byl-columns-tickets') ?? '')).toEqual({
 			v: 1,
 			widths: { tags: 200 },
-			hidden: ['parent', 'source']
+			hidden: ['assignee', 'parent', 'source']
 		});
 	});
 
@@ -90,11 +90,11 @@ describe('ColumnPrefsStore', () => {
 		store.setVisible('created', false);
 		store.setVisible('priority', false);
 		store.setVisible('key', false);
-		expect(store.prefs.hidden).toEqual(['priority', 'parent', 'source', 'created']);
+		expect(store.prefs.hidden).toEqual(['priority', 'assignee', 'parent', 'source', 'created']);
 		expect(store.isHidden('created')).toBe(true);
 
 		store.setVisible('created', true);
-		expect(store.prefs.hidden).toEqual(['priority', 'parent', 'source']);
+		expect(store.prefs.hidden).toEqual(['priority', 'assignee', 'parent', 'source']);
 		store.setVisible('priority', true);
 		// Back at the defaults the key goes away.
 		expect(storage.data.has('byl-columns-tickets')).toBe(false);
@@ -155,7 +155,7 @@ describe('ColumnPrefsStore', () => {
 		expect(JSON.parse(storage.data.get('byl-columns-tickets') ?? '')).toEqual({
 			v: 1,
 			widths: {},
-			hidden: ['parent', 'source'],
+			hidden: ['assignee', 'parent', 'source'],
 			options: { nest: false }
 		});
 		store.setWidths({ tags: 200 });
@@ -164,7 +164,10 @@ describe('ColumnPrefsStore', () => {
 
 		store.setOption('unknown', true);
 		store.setOption('nest', true);
-		expect(store.prefs).toEqual({ widths: { tags: 200 }, hidden: ['parent', 'source'] });
+		expect(store.prefs).toEqual({
+			widths: { tags: 200 },
+			hidden: ['assignee', 'parent', 'source']
+		});
 
 		store.setOption('nest', false);
 		store.reset();

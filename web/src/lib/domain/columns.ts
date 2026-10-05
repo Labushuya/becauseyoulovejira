@@ -139,6 +139,9 @@ export const NEST_SUBTASKS = 'nest';
  * both off by default, go before them. Prio and Status never give way on their own but can be
  * switched off, as in Jira. The switch "Unteraufgaben einrücken" is stored with the columns. The
  * selection (plan BI-2, ADR-0036 §2) comes first, fixed and always shown like in "Eingang".
+ * "Zuständig" (E7-5, ADR-0068 §2 and §3) after the status: off by default (`optIn`, the initials stand
+ * at the title then) and the first to give way; it exists only in a household (the table leaves it
+ * out in the private area). Shown, it sorts by the name and edits the assignee in its cell.
  */
 export const TICKET_TABLE: TableSpec = table(
 	'tickets',
@@ -148,6 +151,14 @@ export const TICKET_TABLE: TableSpec = table(
 		column('key', 'Key', { width: 6, min: 4, max: 12, required: true }),
 		column('priority', 'Prio', { width: 4, min: 3, max: 6 }),
 		column('status', 'Status', { width: 6.5, min: 4.5, max: 10 }),
+		column('assignee', 'Zuständig', {
+			width: 6.5,
+			min: 3.5,
+			max: 12,
+			hideRank: 0,
+			hiddenByDefault: true,
+			optIn: true
+		}),
 		flexible('title', 'Titel', 10),
 		column('parent', 'Übergeordnet', {
 			width: 7,

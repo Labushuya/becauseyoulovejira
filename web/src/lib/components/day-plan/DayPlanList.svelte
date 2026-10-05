@@ -20,7 +20,9 @@
 	import type { DayPlanStore, PlanRow } from '$lib/stores/day-plan.svelte';
 	import { ticketLinks } from '$lib/stores/open-mode.svelte';
 	import { findPeople } from '$lib/stores/people.svelte';
+	import { findAssignees } from '$lib/stores/assignees.svelte';
 	import ActionsMenu, { type MenuAction } from '../ActionsMenu.svelte';
+	import AssigneeBadge from '../AssigneeBadge.svelte';
 	import CharmIcon from '../CharmIcon.svelte';
 	import KindBadge from '../KindBadge.svelte';
 	import EmptyState from '../guidance/EmptyState.svelte';
@@ -32,7 +34,8 @@
 	// menu with the other way of checking, "Auf morgen schieben", the kind and "Entfernen". The order
 	// changes by dragging an entry at its handle, by "Nach oben" and "Nach unten" and by Alt+arrow
 	// anywhere in the entry; a ticket of the pool can be dropped at a place. Days before are read-only:
-	// no check mark to change, no handle, no menu.
+	// no check mark to change, no handle, no menu. In a household the initials of the assignee of the
+	// ticket follow its badge (ADR-0068 §8).
 	let {
 		store,
 		household = false,
@@ -47,6 +50,8 @@
 
 	const links = ticketLinks();
 	const people = findPeople();
+	/** The initials of the assignee of an entry (ADR-0068 §8). */
+	const assignees = findAssignees();
 
 	let list = $state<HTMLOListElement>();
 	/** The place a drag would drop at (before the entry with this index), null without a drag. */
@@ -287,6 +292,10 @@
 								data-ticket-link={ticket.id}>{ticket.title}</a
 							>
 							<KindBadge kind={row.kind} />
+							{#if household && assignees && ticket.assignee}
+								<!-- The initials of the assignee in the shared plan (ADR-0068 §8). -->
+								<AssigneeBadge assignee={ticket.assignee} context={assignees.context} />
+							{/if}
 						{:else}
 							<span class="missing">Ticket nicht sichtbar</span>
 						{/if}

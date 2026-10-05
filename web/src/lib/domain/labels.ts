@@ -58,7 +58,8 @@ export const SORT_COLUMN_LABELS: Readonly<Record<SortKey, string>> = Object.free
 	title: 'Titel',
 	project: 'Projekt',
 	due: 'Fälligkeit',
-	created: 'Erstellt'
+	created: 'Erstellt',
+	assignee: 'Zuständig'
 });
 
 /** Order of a column in words: natural direction (first click), then reversed (T-5). */
@@ -69,7 +70,8 @@ const SORT_ORDER_LABELS: Readonly<Record<SortKey, readonly [string, string]>> = 
 	title: ['A bis Z', 'Z bis A'],
 	project: ['A bis Z', 'Z bis A'],
 	due: ['früheste zuerst', 'späteste zuerst'],
-	created: ['neueste zuerst', 'älteste zuerst']
+	created: ['neueste zuerst', 'älteste zuerst'],
+	assignee: ['A bis Z', 'Z bis A']
 });
 
 /** The order of a column sort in words, e.g. "Dringend zuerst". */

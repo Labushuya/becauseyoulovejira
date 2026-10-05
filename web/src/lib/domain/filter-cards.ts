@@ -10,14 +10,21 @@
 // There is no card for done tickets: since ER-1 (ADR-0066) they have the view "Erledigte", and
 // "Aufgaben" shows only open work. Its filter bar offers no status "Erledigt" any more, so the lock
 // of the cards under that status (PL-1) has gone with it.
+// "Mir zugewiesen" (E7-5, ADR-0068 §3) is a card like the others, only in a household (the cards of
+// the private area leave it out, a private ticket has no assignee): the tickets whose assignee is the
+// signed-in account, the one card that depends on who looks.
 
+import { isAssignedTo } from './assignee';
 import type { CalendarDate } from './berlin-date';
 import { pinnedMoreText } from './pins';
 import type { TicketSummary } from './ticket';
 
 /** The cards besides "Alle offenen", in the order they stand. */
-export const FILTER_CARDS = ['in_progress', 'due_today', 'overdue', 'urgent'] as const;
+export const FILTER_CARDS = ['in_progress', 'due_today', 'overdue', 'urgent', 'mine'] as const;
 export type FilterCard = (typeof FILTER_CARDS)[number];
+
+/** Cards that exist only in a household (ADR-0068 §3). */
+export const HOUSEHOLD_CARDS: readonly FilterCard[] = Object.freeze(['mine']);
 
 /** Label of the base state, the card that stands for "no card". */
 export const ALL_OPEN_LABEL = 'Alle offenen';
@@ -26,7 +33,8 @@ export const CARD_LABELS: Readonly<Record<FilterCard, string>> = Object.freeze({
 	in_progress: 'In Arbeit',
 	due_today: 'Heute fällig',
 	overdue: 'Überfällig',
-	urgent: 'Dringend'
+	urgent: 'Dringend',
+	mine: 'Mir zugewiesen'
 });
 
 /** Values of the URL parameter `karte`, German like the other list parameters (ADR-0013 §4). */
@@ -34,14 +42,24 @@ export const CARD_URL_VALUES: Readonly<Record<FilterCard, string>> = Object.free
 	in_progress: 'in-arbeit',
 	due_today: 'heute',
 	overdue: 'ueberfaellig',
-	urgent: 'dringend'
+	urgent: 'dringend',
+	mine: 'mir'
 });
 
-/** What a card looks at. */
-export type CardTicket = Pick<TicketSummary, 'status' | 'priority' | 'due'>;
+/** What a card looks at; the assignee only for "Mir zugewiesen". */
+export type CardTicket = Pick<TicketSummary, 'status' | 'priority' | 'due'> &
+	Partial<Pick<TicketSummary, 'assignee'>>;
 
-/** True if the ticket belongs to the card at the given Berlin date. */
-export function matchesCard(ticket: CardTicket, card: FilterCard, today: CalendarDate): boolean {
+/**
+ * True if the ticket belongs to the card at the given Berlin date; "Mir zugewiesen" for the account
+ * `selfId` (none without one).
+ */
+export function matchesCard(
+	ticket: CardTicket,
+	card: FilterCard,
+	today: CalendarDate,
+	selfId: string | null = null
+): boolean {
 	switch (card) {
 		case 'in_progress':
 			return ticket.status === 'in_progress';
@@ -52,6 +70,8 @@ export function matchesCard(ticket: CardTicket, card: FilterCard, today: Calenda
 			return ticket.due !== null && ticket.due < today && ticket.status !== 'done';
 		case 'urgent':
 			return ticket.priority === 'urgent';
+		case 'mine':
+			return isAssignedTo(ticket, selfId);
 	}
 }
 
@@ -62,9 +82,10 @@ export function matchesCard(ticket: CardTicket, card: FilterCard, today: Calenda
 export function matchesCards(
 	ticket: CardTicket,
 	cards: readonly FilterCard[],
-	today: CalendarDate
+	today: CalendarDate,
+	selfId: string | null = null
 ): boolean {
-	return cards.length === 0 || cards.some((card) => matchesCard(ticket, card, today));
+	return cards.length === 0 || cards.some((card) => matchesCard(ticket, card, today, selfId));
 }
 
 function isFilterCard(value: string): value is FilterCard {
@@ -121,15 +142,26 @@ export type CardCounts = { allOpen: number } & Record<FilterCard, number>;
 /**
  * Numbers of the cards over the given tickets, which the list passes already narrowed by the area
  * and the detail filters: each card counts its own tickets, regardless of the other cards. Done
- * tickets never count.
+ * tickets never count. "Mir zugewiesen" counts those of `selfId`.
  */
-export function countCards(tickets: Iterable<CardTicket>, today: CalendarDate): CardCounts {
-	const counts: CardCounts = { allOpen: 0, in_progress: 0, due_today: 0, overdue: 0, urgent: 0 };
+export function countCards(
+	tickets: Iterable<CardTicket>,
+	today: CalendarDate,
+	selfId: string | null = null
+): CardCounts {
+	const counts: CardCounts = {
+		allOpen: 0,
+		in_progress: 0,
+		due_today: 0,
+		overdue: 0,
+		urgent: 0,
+		mine: 0
+	};
 	for (const ticket of tickets) {
 		if (ticket.status === 'done') continue;
 		counts.allOpen += 1;
 		for (const card of FILTER_CARDS) {
-			if (matchesCard(ticket, card, today)) counts[card] += 1;
+			if (matchesCard(ticket, card, today, selfId)) counts[card] += 1;
 		}
 	}
 	return counts;

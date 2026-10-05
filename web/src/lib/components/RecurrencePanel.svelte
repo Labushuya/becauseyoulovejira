@@ -4,6 +4,12 @@
 	import type { ResolvedPathname } from '$app/types';
 	import { areaMover } from '$lib/area-move-entry';
 	import type { RuleDraft } from '$lib/data/recurrence';
+	import {
+		assignmentBody,
+		type AssignmentBody,
+		type FormAssignment,
+		type RuleAssignment
+	} from '$lib/domain/assignee';
 	import type { CalendarDate } from '$lib/domain/berlin-date';
 	import {
 		INITIAL_STATUS_REQUIRED,
@@ -78,6 +84,7 @@
 		subtasksAvailable = false,
 		colorsAvailable = false,
 		charmsAvailable = false,
+		assignmentAvailable = false,
 		ticketHrefOf,
 		oncreatetag,
 		onsave,
@@ -110,6 +117,11 @@
 		colorsAvailable?: boolean;
 		/** Offer the charm of the template and send it (ADR-0062, RecurrenceStore.charmsReady). */
 		charmsAvailable?: boolean;
+		/**
+		 * Offer "Zuständigkeit" in a household and send it when it changed (ADR-0068 §5,
+		 * RecurrenceStore.assigneesReady).
+		 */
+		assignmentAvailable?: boolean;
 		ticketHrefOf: (ticketId: string) => ResolvedPathname;
 		/** Existing or new tag for a typed name (E3 plan, T-14). */
 		oncreatetag: (name: string) => Promise<EnsureTagResult>;
@@ -192,7 +204,24 @@
 	}
 
 	function copyValues(values: RecurrenceFormValues): RecurrenceFormValues {
-		return { ...values, weekdays: [...values.weekdays] };
+		return {
+			...values,
+			weekdays: [...values.weekdays],
+			...(values.assignment !== undefined && {
+				assignment: { ...values.assignment, assignees: [...values.assignment.assignees] }
+			})
+		};
+	}
+
+	/** The assignment as last saved, in the shape of the rule (the shown first person is next). */
+	function savedAssignment(form: FormAssignment | undefined): RuleAssignment | null {
+		return form === undefined ? null : { mode: form.mode, assignees: form.assignees, next: 0 };
+	}
+
+	/** The fields of the assignment to send: only after the migration and only when changed. */
+	function assignmentDraft(): AssignmentBody {
+		if (!assignmentAvailable) return {};
+		return assignmentBody(values.assignment, savedAssignment(saved.values.assignment));
 	}
 
 	// The route keys the panel by rule, so the values are read once; later changes of the rule
@@ -240,8 +269,13 @@
 		Object.keys(templateChanges(saved.template, template)).length > 0
 	);
 	const rhythmChanged = $derived(!sameRhythm(values, saved.values));
+	const assignmentChanged = $derived(Object.keys(assignmentDraft()).length > 0);
 	const dirty = $derived(
-		templateChanged || rhythmChanged || tagText.trim() !== '' || (askStatus && chosenStatus !== '')
+		templateChanged ||
+			rhythmChanged ||
+			assignmentChanged ||
+			tagText.trim() !== '' ||
+			(askStatus && chosenStatus !== '')
 	);
 
 	// Focus when the panel opens: the title for "Neue Regel", else the heading (ADR-0025 section 6),
@@ -329,7 +363,9 @@
 			// The color of the next tickets, only for a server after its migration (ADR-0052).
 			...(colorsAvailable && { color: template.color }),
 			// The charm of the next tickets, likewise (ADR-0062).
-			...(charmsAvailable && { charm: template.charm })
+			...(charmsAvailable && { charm: template.charm }),
+			// The assignment of the next tickets, only when it changed (ADR-0068 §5).
+			...assignmentDraft()
 		};
 		return withRhythm ? { ...draft, ...formParams(values) } : draft;
 	}
@@ -623,6 +659,7 @@
 					? undefined
 					: { kind: 'rule', nextDue: rule.nextDue, each: rule.eachOccurrence === true }}
 				openKeys={openTickets.map((open) => open.key)}
+				{assignmentAvailable}
 			/>
 			{#if creating}
 				<p class="hint">

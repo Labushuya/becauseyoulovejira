@@ -17,7 +17,14 @@ const mocks = vi.hoisted(() => ({
 vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
 vi.mock('$app/state', () => ({ page: mocks.page }));
 
-const COUNTS: CardCounts = { allOpen: 12, in_progress: 3, due_today: 2, overdue: 4, urgent: 1 };
+const COUNTS: CardCounts = {
+	allOpen: 12,
+	in_progress: 3,
+	due_today: 2,
+	overdue: 4,
+	urgent: 1,
+	mine: 5
+};
 const NAVIGATION = { keepFocus: true, noScroll: true };
 
 function show(path = '/', counts: CardCounts | null = COUNTS) {

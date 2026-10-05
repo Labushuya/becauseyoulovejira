@@ -245,10 +245,14 @@ export function subscribeTicketSources(
 		);
 }
 
-/** Change of the "new" mark: an own read row, or a new base line of the user (ADR-0015). */
+/**
+ * Change of the "new" mark: an own read row, or a new base line of the user (ADR-0015). A deleted
+ * row names its ticket when the event carries it: an assignment by someone else deletes the row on
+ * the server (ADR-0068 §4), and the ticket is new again.
+ */
 export type ReadChange =
 	| { action: 'create' | 'update'; read: TicketRead }
-	| { action: 'delete'; id: string }
+	| { action: 'delete'; id: string; ticket?: string }
 	| { action: 'baseline'; unreadSince: string };
 
 /**
@@ -264,8 +268,10 @@ export async function subscribeReads(
 	const reads = await pb.collection('ticket_reads').subscribe<{ id: string; ticket: string }>(
 		'*',
 		(event) => {
-			if (event.action === 'delete') onChange({ action: 'delete', id: event.record.id });
-			else if (event.action === 'create' || event.action === 'update') {
+			if (event.action === 'delete') {
+				const ticket = typeof event.record.ticket === 'string' ? event.record.ticket : '';
+				onChange({ action: 'delete', id: event.record.id, ...(ticket !== '' && { ticket }) });
+			} else if (event.action === 'create' || event.action === 'update') {
 				onChange({ action: event.action, read: toTicketRead(event.record) });
 			}
 		},

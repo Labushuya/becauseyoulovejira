@@ -13,7 +13,10 @@ import type { ProjectRef, TicketSummary } from './ticket';
 /** "Soon due" horizon in days after today (OF-E2-1, confirmed by the user as P-5 of E3). */
 export const SOON_DAYS = 7;
 
-/** Sortable columns of the table (E3 plan, T-5); tags and actions are not sortable. */
+/**
+ * Sortable columns of the table (E3 plan, T-5); tags and actions are not sortable. "Zuständig" since
+ * E7-5 (ADR-0068 §3), by the name of the assignee, tickets without one last.
+ */
 export const SORT_KEYS = [
 	'key',
 	'priority',
@@ -21,7 +24,8 @@ export const SORT_KEYS = [
 	'title',
 	'project',
 	'due',
-	'created'
+	'created',
+	'assignee'
 ] as const;
 export type SortKey = (typeof SORT_KEYS)[number];
 
@@ -116,7 +120,9 @@ export const NATURAL_DIRECTION: Readonly<Record<SortKey, 'ascending' | 'descendi
 		project: 'ascending',
 		due: 'ascending',
 		// Newest first.
-		created: 'descending'
+		created: 'descending',
+		// By name, A to Z.
+		assignee: 'ascending'
 	});
 
 /** Actual direction of a column sort, for `aria-sort` on the sorted column header. */
@@ -148,10 +154,14 @@ export function compareTitles(a: string, b: string): number {
 export type SortableTicket = Pick<
 	TicketSummary,
 	'id' | 'key' | 'title' | 'status' | 'priority' | 'due' | 'project' | 'created'
->;
+> &
+	Partial<Pick<TicketSummary, 'assignee'>>;
 
 /** Project shown for a ticket; the catalog resolves it, the expanded relation is the fallback. */
 export type ResolveProject<T> = (ticket: T) => ProjectRef | null;
+
+/** Name of an account for the sort "Zuständig" (ADR-0068); without one its ID. */
+export type AssigneeNameOf = (id: string) => string;
 
 type PathProject = Pick<ProjectRef, 'id' | 'name' | 'code' | 'parent'>;
 
@@ -216,7 +226,8 @@ interface Column<T> {
 
 function column<T extends SortableTicket>(
 	key: SortKey,
-	resolveProject: ResolveProject<T>
+	resolveProject: ResolveProject<T>,
+	assigneeName: AssigneeNameOf
 ): Column<T> {
 	switch (key) {
 		case 'key':
@@ -245,6 +256,13 @@ function column<T extends SortableTicket>(
 		case 'created':
 			// Newest first.
 			return { compare: (a, b) => compareText(b.created, a.created) };
+		case 'assignee':
+			// By the name of the assignee (ADR-0068); tickets without one last.
+			return {
+				compare: (a, b) =>
+					compareTitles(assigneeName(a.assignee ?? ''), assigneeName(b.assignee ?? '')),
+				isEmpty: (ticket) => !ticket.assignee
+			};
 	}
 }
 
@@ -257,11 +275,12 @@ function column<T extends SortableTicket>(
 export function columnOrder<T extends SortableTicket>(
 	spec: SortSpec | null,
 	today: CalendarDate,
-	resolveProject: ResolveProject<T> = (ticket) => ticket.project
+	resolveProject: ResolveProject<T> = (ticket) => ticket.project,
+	assigneeName: AssigneeNameOf = (id) => id
 ): (a: T, b: T) => number {
 	const fallback = ticketOrder(today);
 	if (spec === null) return fallback;
-	const { compare, isEmpty } = column(spec.key, resolveProject);
+	const { compare, isEmpty } = column(spec.key, resolveProject, assigneeName);
 	const sign = spec.reversed ? -1 : 1;
 	return (a, b) => {
 		if (isEmpty !== undefined) {

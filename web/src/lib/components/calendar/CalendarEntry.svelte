@@ -31,8 +31,10 @@
 	import { STATUS_LABELS } from '$lib/domain/labels';
 	import { projectPath } from '$lib/domain/project-tree';
 	import type { ProjectRef } from '$lib/domain/ticket';
+	import { findAssignees } from '$lib/stores/assignees.svelte';
 	import { findTicketFollowUpStore } from '$lib/stores/ticket-follow-up.svelte';
 	import type { TicketRowActionsStore } from '$lib/stores/ticket-row-actions.svelte';
+	import AssigneeBadge from '../AssigneeBadge.svelte';
 	import CharmIcon from '../CharmIcon.svelte';
 	import ColorMark from '../ColorMark.svelte';
 	import PriorityIcon from '../PriorityIcon.svelte';
@@ -111,6 +113,8 @@
 	const tabindex = $derived(tabbable ? undefined : -1);
 	/** "Folge-Ticket anlegen …" in the menu (ADR-0067), with the store of the (app) layout. */
 	const followUps = findTicketFollowUpStore();
+	/** The initials of the assignee in the agenda of the household (ADR-0068 §2). */
+	const assignees = findAssignees();
 
 	const project = $derived.by((): ProjectRef | null => {
 		if (entry.kind === 'ticket') return projectOf(entry.ticket.projectId) ?? entry.ticket.project;
@@ -226,6 +230,10 @@
 				{#if project !== null}<span class="project">{projectPath(project)}</span>{/if}
 				<span class="visually-hidden">Status:&nbsp;</span><StatusPill status={ticket.status} />
 				<PriorityIcon priority={ticket.priority} />
+				{#if assignees?.active && ticket.assignee}
+					<!-- The initials of the assignee in the calendar of the household (ADR-0068 §2). -->
+					<AssigneeBadge assignee={ticket.assignee} context={assignees.context} size="small" />
+				{/if}
 			</span>
 		{/if}
 		{#if rowActions}

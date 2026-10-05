@@ -41,10 +41,10 @@ import {
 } from './columns';
 
 /**
- * Nothing chosen for the tickets: default widths, "Übergeordnet" (ADR-0033 section 5) and "Quelle"
- * (ADR-0019 section 4) off.
+ * Nothing chosen for the tickets: default widths, "Zuständig" (ADR-0068), "Übergeordnet" (ADR-0033
+ * section 5) and "Quelle" (ADR-0019 section 4) off.
  */
-const NONE: ColumnPrefs = { widths: {}, hidden: ['parent', 'source'] };
+const NONE: ColumnPrefs = { widths: {}, hidden: ['assignee', 'parent', 'source'] };
 
 function spec(table: TableSpec, id: string): ColumnSpec {
 	const found = table.columns.find((entry) => entry.id === id);
@@ -97,6 +97,7 @@ describe('column specs', () => {
 		expect(menuColumns(TICKET_TABLE.columns).map((entry) => entry.id)).toEqual([
 			'priority',
 			'status',
+			'assignee',
 			'title',
 			'parent',
 			'source',
@@ -147,7 +148,7 @@ describe('parseColumnPrefs and serializeColumnPrefs', () => {
 			v: 1,
 			widths: { project: 160, key: 112 },
 			hidden: ['created'],
-			shown: ['parent']
+			shown: ['assignee', 'parent']
 		});
 		expect(parseColumnPrefs(raw, columns)).toEqual({
 			widths: { key: 112, project: 160 },
@@ -186,7 +187,7 @@ describe('parseColumnPrefs and serializeColumnPrefs', () => {
 		// The title has a width since Nachtrag 3; it is never hidden.
 		expect(parseColumnPrefs(raw, columns)).toEqual({
 			widths: { key: spec(TICKET_TABLE, 'key').max, title: 300 },
-			hidden: ['parent', 'tags']
+			hidden: ['assignee', 'parent', 'tags']
 		});
 		// JSON has no NaN: a text with NaN is broken JSON and means the defaults.
 		expect(parseColumnPrefs(`{"v":1,"widths":{"tags":NaN}}`, columns)).toEqual(
@@ -195,16 +196,20 @@ describe('parseColumnPrefs and serializeColumnPrefs', () => {
 	});
 
 	it('keeps the default hidden columns when the list is missing', () => {
-		expect(defaultColumnPrefs(columns).hidden).toEqual(['parent', 'source']);
+		expect(defaultColumnPrefs(columns).hidden).toEqual(['assignee', 'parent', 'source']);
 		const missing = JSON.stringify({ v: 1, widths: {} });
-		expect(parseColumnPrefs(missing, columns).hidden).toEqual(['parent', 'source']);
-		// A stored empty list means the user switched "Quelle" on; "Übergeordnet" came later and is
-		// on only when `shown` names it (ADR-0033), so older lists do not switch it on.
+		expect(parseColumnPrefs(missing, columns).hidden).toEqual(['assignee', 'parent', 'source']);
+		// A stored empty list means the user switched "Quelle" on; "Übergeordnet" (ADR-0033) and
+		// "Zuständig" (ADR-0068) came later and are on only when `shown` names them, so older lists do
+		// not switch them on.
 		const empty = JSON.stringify({ v: 1, widths: {}, hidden: [] });
-		expect(parseColumnPrefs(empty, columns).hidden).toEqual(['parent']);
+		expect(parseColumnPrefs(empty, columns).hidden).toEqual(['assignee', 'parent']);
 		const both = JSON.stringify({ v: 1, widths: {}, hidden: [], shown: ['parent', 'x', 3] });
-		expect(parseColumnPrefs(both, columns).hidden).toEqual([]);
+		expect(parseColumnPrefs(both, columns).hidden).toEqual(['assignee']);
+		const all = JSON.stringify({ v: 1, widths: {}, hidden: [], shown: ['assignee', 'parent'] });
+		expect(parseColumnPrefs(all, columns).hidden).toEqual([]);
 		expect(JSON.parse(serializeColumnPrefs({ widths: {}, hidden: [] }, columns)).shown).toEqual([
+			'assignee',
 			'parent'
 		]);
 		expect(JSON.parse(serializeColumnPrefs(NONE, columns))).not.toHaveProperty('shown');
@@ -234,7 +239,7 @@ describe('switches of a table (ADR-0033 section 5)', () => {
 	it('stores only a switch that differs from its default and reads it back', () => {
 		const prefs: ColumnPrefs = {
 			widths: {},
-			hidden: ['parent', 'source'],
+			hidden: ['assignee', 'parent', 'source'],
 			options: { nest: false }
 		};
 		const raw = serializeColumnPrefs(prefs);
@@ -242,7 +247,7 @@ describe('switches of a table (ADR-0033 section 5)', () => {
 		expect(JSON.parse(raw)).toEqual({
 			v: 1,
 			widths: {},
-			hidden: ['parent', 'source'],
+			hidden: ['assignee', 'parent', 'source'],
 			options: { nest: false }
 		});
 		expect(parseColumnPrefs(raw, columns, options)).toEqual(prefs);
@@ -260,15 +265,18 @@ describe('switches of a table (ADR-0033 section 5)', () => {
 		});
 		expect(parseColumnPrefs(raw, columns, options)).toEqual({
 			widths: {},
-			hidden: ['parent', 'source']
+			hidden: ['assignee', 'parent', 'source']
 		});
 		const wrong = JSON.stringify({ v: 1, widths: {}, hidden: [], options: { nest: 'false' } });
-		expect(parseColumnPrefs(wrong, columns, options)).toEqual({ widths: {}, hidden: ['parent'] });
+		expect(parseColumnPrefs(wrong, columns, options)).toEqual({
+			widths: {},
+			hidden: ['assignee', 'parent']
+		});
 		expect(changedOptions({ nest: false }, options)).toEqual({ nest: false });
 		expect(changedOptions({ nest: true }, options)).toBeUndefined();
 		// Without the switches of the table nothing is read.
 		const off = JSON.stringify({ v: 1, widths: {}, hidden: [], options: { nest: false } });
-		expect(parseColumnPrefs(off, columns)).toEqual({ widths: {}, hidden: ['parent'] });
+		expect(parseColumnPrefs(off, columns)).toEqual({ widths: {}, hidden: ['assignee', 'parent'] });
 	});
 });
 
@@ -276,7 +284,9 @@ describe('fitColumns', () => {
 	it('shows everything at the default widths without a measured frame', () => {
 		const fit = fitColumns(null, TICKET_TABLE.columns, NONE);
 		const all = TICKET_TABLE.columns.map((entry) => entry.id);
-		expect(fit.visible).toEqual(all.filter((id) => id !== 'source' && id !== 'parent'));
+		expect(fit.visible).toEqual(
+			all.filter((id) => id !== 'source' && id !== 'parent' && id !== 'assignee')
+		);
 		expect(fitColumns(null, TICKET_TABLE.columns, { widths: {}, hidden: [] }).visible).toEqual(all);
 		expect(fit.autoHidden).toEqual([]);
 		expect(fit.flexWidth).toBeNull();
@@ -358,7 +368,7 @@ describe('fitColumns', () => {
 	});
 
 	it('hides earlier when the user made columns wider, and keeps their widths', () => {
-		const wide: ColumnPrefs = { widths: { tags: 320 }, hidden: ['parent', 'source'] };
+		const wide: ColumnPrefs = { widths: { tags: 320 }, hidden: ['assignee', 'parent', 'source'] };
 		const before = threshold(TICKET_TABLE, 'created');
 		expect(threshold(TICKET_TABLE, 'created', wide)).toBeGreaterThan(before);
 		// All columns need 1224 px with the wide tags instead of 1032 px (selection included).
@@ -395,10 +405,18 @@ describe('fitColumns', () => {
 
 	it('shrinks the widths of the user towards their minimum before the title goes below its own', () => {
 		const big: ColumnPrefs = { widths: { key: 128, status: 160 }, hidden: [] };
-		// Everything that can give way is gone ("Übergeordnet" and "Quelle" first, they are switched on
-		// here); key, Prio, status, actions and 10rem of title stay.
+		// Everything that can give way is gone ("Zuständig", "Übergeordnet" and "Quelle" first, they are
+		// switched on here); key, Prio, status, actions and 10rem of title stay.
 		const fit = fitColumns(500, TICKET_TABLE.columns, big);
-		expect(fit.autoHidden).toEqual(['parent', 'source', 'created', 'tags', 'project', 'due']);
+		expect(fit.autoHidden).toEqual([
+			'assignee',
+			'parent',
+			'source',
+			'created',
+			'tags',
+			'project',
+			'due'
+		]);
 		expect(fit.widths.key).toBeLessThan(128);
 		expect(fit.widths.status).toBeLessThan(160);
 		expect(fit.flexWidth).toBeGreaterThanOrEqual(10 * REM);
@@ -469,7 +487,7 @@ describe('width of the title (ADR-0030 Nachtrag 3)', () => {
 	});
 
 	it('shares the rest only among the shown columns', () => {
-		const hidden = ['parent', 'source', 'tags'];
+		const hidden = ['assignee', 'parent', 'source', 'tags'];
 		const fit = fitColumns(1200, columns, withTitle(240, hidden));
 		expect(fit.widths).not.toHaveProperty('tags');
 		expect(sumOf(fit)).toBe(1200);

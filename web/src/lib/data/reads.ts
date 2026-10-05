@@ -28,10 +28,28 @@ const READS_FILTER = [
 	'ticket.created >= {:since}'
 ].join(' && ');
 
+/**
+ * The same since E7-5 (ADR-0068 §4), with the tickets another member gave the user at or after the
+ * base line: they are new again although they were created before it.
+ */
+const ASSIGNED_READS_FILTER = [
+	'user = {:user}',
+	'ticket.status != {:done}',
+	'(ticket.created >= {:since} || (ticket.assignee = {:user} && ticket.assigned_at >= {:since}))'
+].join(' && ');
+
 export function toTicketRead(record: { id: string; ticket: string }): TicketRead {
 	return { id: record.id, ticket: record.ticket };
 }
 
+function isBadRequest(error: unknown): boolean {
+	return (error as { status?: unknown } | null)?.status === 400;
+}
+
+/**
+ * The read rows of the signed-in user. A server without the assignees (before the restart after the
+ * migration 1790204900) does not know `ticket.assignee` and answers 400: then the rows of before.
+ */
 export function listReads(
 	pb: PocketBase,
 	since: string,
@@ -40,12 +58,21 @@ export function listReads(
 	return withDataErrors(signal, async () => {
 		const user = currentUserId(pb.authStore.record);
 		if (user === null) throw new DataError('session');
-		const records = await pb.collection(READS).getFullList<TicketRead>({
-			batch: 500,
-			filter: pb.filter(READS_FILTER, { user, done: 'done' satisfies Status, since }),
-			fields: READ_FIELDS,
-			signal
-		});
+		const params = { user, done: 'done' satisfies Status, since };
+		const options = { batch: 500, fields: READ_FIELDS, signal };
+		let records: TicketRead[];
+		try {
+			records = await pb.collection(READS).getFullList<TicketRead>({
+				...options,
+				filter: pb.filter(ASSIGNED_READS_FILTER, params)
+			});
+		} catch (error) {
+			if (!isBadRequest(error)) throw error;
+			records = await pb.collection(READS).getFullList<TicketRead>({
+				...options,
+				filter: pb.filter(READS_FILTER, params)
+			});
+		}
 		return records.map(toTicketRead);
 	});
 }

@@ -177,7 +177,18 @@ describe('state of the address', () => {
 					`q=Miete&projekt=${PROJECT}&unterprojekte=0&tag=${TAG}&charm=auto&prio=high&erledigte=1`
 				)
 			)
-		).toEqual({ search: 'Miete', project: PROJECT, subProjects: false, tag: TAG, charm: 'auto' });
+		).toEqual({
+			search: 'Miete',
+			project: PROJECT,
+			subProjects: false,
+			tag: TAG,
+			charm: 'auto',
+			assignee: null
+		});
+		// "Zuständig" (ADR-0068): an account or "niemand", like in "Aufgaben".
+		expect(parseDoneQuery(new URLSearchParams('zustaendig=niemand')).assignee).toBe('niemand');
+		expect(parseDoneQuery(new URLSearchParams(`zustaendig=${TAG}`)).assignee).toBe(TAG);
+		expect(parseDoneQuery(new URLSearchParams('zustaendig=x')).assignee).toBeNull();
 		expect(parseDoneQuery(new URLSearchParams('charm=unbekannt')).charm).toBeNull();
 		expect(parseDoneQuery(new URLSearchParams('charm=auto&charm=zug')).charm).toBeNull();
 		expect(parseDoneQuery(new URLSearchParams('projekt=ohne')).project).toBe(NO_PROJECT);
@@ -194,13 +205,22 @@ describe('state of the address', () => {
 		const written = serializeDoneQuery(full);
 		expect(written).toBe(`?projekt=${PROJECT}&unterprojekte=0&tag=${TAG}&q=Miete&charm=auto`);
 		expect(serializeDoneQuery(parseDoneQuery(new URLSearchParams(written.slice(1))))).toBe(written);
+		expect(serializeDoneQuery(query({ assignee: 'niemand', tag: TAG }))).toBe(
+			`?tag=${TAG}&zustaendig=niemand`
+		);
 		expect(serializeDoneQuery(EMPTY_DONE_QUERY)).toBe('');
 		expect(serializeDoneQuery(query({ charm: 'kein-charm' }))).toBe('');
 	});
 
 	it('knows whether a filter is set, resets them and applies the search from two characters', () => {
 		expect(hasDoneFilters(EMPTY_DONE_QUERY)).toBe(false);
-		for (const set of [{ search: 'x' }, { project: PROJECT }, { tag: TAG }, { charm: 'auto' }]) {
+		for (const set of [
+			{ search: 'x' },
+			{ project: PROJECT },
+			{ tag: TAG },
+			{ charm: 'auto' },
+			{ assignee: 'niemand' }
+		]) {
 			expect(hasDoneFilters(query(set)), JSON.stringify(set)).toBe(true);
 		}
 		expect(resetDoneFilters()).toEqual(EMPTY_DONE_QUERY);
@@ -217,6 +237,7 @@ describe('state of the address', () => {
 			project: PROJECT,
 			subProjects: false,
 			tag: TAG,
+			assignee: 'niemand',
 			search: 'Auto',
 			sort: { key: 'title', reversed: false }
 		};
@@ -225,7 +246,8 @@ describe('state of the address', () => {
 			project: PROJECT,
 			subProjects: false,
 			tag: TAG,
-			charm: null
+			charm: null,
+			assignee: 'niemand'
 		});
 	});
 });

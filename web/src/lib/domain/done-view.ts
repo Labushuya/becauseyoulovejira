@@ -5,7 +5,9 @@
 // `listCompletedTickets`, tests/integration/web-filter-parity.test.mjs keeps both forms equal).
 // Addresses of "Aufgaben" that asked for done tickets before ER-1 (the switch `erledigte=1`, the
 // status filter "Erledigt") lead here with the filters both views know (`doneQueryOf`).
+// "Zuständig" (E7-5, ADR-0068 §3) is one of them: an account or "Niemand", only in a household.
 
+import { matchesAssignee } from './assignee';
 import { addDays, type CalendarDate } from './berlin-date';
 import { mondayOf, monthStart } from './calendar';
 import { isCharmKey } from './charms';
@@ -32,6 +34,8 @@ export interface DoneQuery {
 	tag: string | null;
 	/** Key of the charm catalog (ADR-0062). */
 	charm: string | null;
+	/** "Zuständig" (ADR-0068): an account record ID or NOBODY. */
+	assignee: string | null;
 }
 
 export const EMPTY_DONE_QUERY: Readonly<DoneQuery> = Object.freeze({
@@ -39,7 +43,8 @@ export const EMPTY_DONE_QUERY: Readonly<DoneQuery> = Object.freeze({
 	project: null,
 	subProjects: true,
 	tag: null,
-	charm: null
+	charm: null,
+	assignee: null
 });
 
 /** Parameter of the charm; project, sub projects, tag and search are those of "Aufgaben". */
@@ -51,16 +56,18 @@ export const DONE_CHARM_PARAM = 'charm';
  */
 export const LEGACY_DONE_PARAM = 'erledigte';
 
-/** The filters "Aufgaben" and "Erledigte" share: project, sub projects, tag and search. */
+/** The filters "Aufgaben" and "Erledigte" share: project, sub projects, tag, assignee and search. */
 export function doneQueryOf(
-	query: Pick<ListQuery, 'project' | 'subProjects' | 'tag' | 'search'>
+	query: Pick<ListQuery, 'project' | 'subProjects' | 'tag' | 'search'> &
+		Partial<Pick<ListQuery, 'assignee'>>
 ): DoneQuery {
 	return {
 		search: query.search,
 		project: query.project,
 		subProjects: query.subProjects,
 		tag: query.tag,
-		charm: null
+		charm: null,
+		assignee: query.assignee ?? null
 	};
 }
 
@@ -102,6 +109,7 @@ export function serializeDoneQuery(query: DoneQuery): string {
 		project: query.project,
 		subProjects: query.subProjects,
 		tag: query.tag,
+		assignee: query.assignee,
 		search: query.search
 	});
 	const params = new URLSearchParams(list);
@@ -113,7 +121,11 @@ export function serializeDoneQuery(query: DoneQuery): string {
 /** True if a filter or the search is set (otherwise "Zurücksetzen" is locked). */
 export function hasDoneFilters(query: DoneQuery): boolean {
 	return (
-		query.search !== null || query.project !== null || query.tag !== null || query.charm !== null
+		query.search !== null ||
+		query.project !== null ||
+		query.tag !== null ||
+		query.charm !== null ||
+		query.assignee !== null
 	);
 }
 
@@ -127,10 +139,14 @@ export function activeDoneSearch(query: Pick<DoneQuery, 'search'>): string | nul
 	return activeSearch(query);
 }
 
-export type DoneFilterableTicket = Pick<TicketSummary, 'status' | 'projectId' | 'tagIds' | 'charm'>;
+export type DoneFilterableTicket = Pick<
+	TicketSummary,
+	'status' | 'projectId' | 'tagIds' | 'charm'
+> &
+	Partial<Pick<TicketSummary, 'assignee'>>;
 
 /**
- * True if a done ticket passes project, tag and charm of `query`; the search is the server's (see
+ * True if a done ticket passes project, tag, charm and assignee of `query`; the search is the server's (see
  * above). A ticket that is not done never passes. A project takes the sub projects `subProjectsOf`
  * names in, unless the query switches them off.
  */
@@ -143,7 +159,8 @@ export function matchesDoneQuery(
 		ticket.status === 'done' &&
 		matchesProject(ticket, query, subProjectsOf) &&
 		(query.tag === null || ticket.tagIds.includes(query.tag)) &&
-		(query.charm === null || ticket.charm === query.charm)
+		(query.charm === null || ticket.charm === query.charm) &&
+		matchesAssignee(ticket, query.assignee)
 	);
 }
 

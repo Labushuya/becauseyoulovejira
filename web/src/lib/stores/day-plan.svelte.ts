@@ -186,10 +186,15 @@ export function factsOf(ticket: TicketSummary): PlanTicketFacts {
 		kind: kindOf(ticket.kind),
 		recurring: ticket.recurring,
 		series: seriesKeyOf(ticket.recurrenceId, ticket.occurrence),
+		// "Mir zugewiesen" (ADR-0068 §8); none before the migration.
+		assignee: ticket.assignee ?? '',
 		priority: ticket.priority,
 		created: ticket.created
 	};
 }
+
+/** The account that looks at the plan, for "Mir zugewiesen"; null without one. */
+export type PlanViewer = () => string | null;
 
 /** The newer of two states of a ticket by `updated`. */
 function newer(a: TicketSummary | null, b: TicketSummary | null): TicketSummary | null {
@@ -269,21 +274,29 @@ export class DayPlanStore {
 			settings: answer.settings,
 			planned: this.#planned,
 			dismissed: plan.dismissed,
-			leftover: answer.leftover
+			leftover: answer.leftover,
+			viewer: this.#viewer() ?? ''
 		});
 	});
+
+	readonly #viewer: PlanViewer;
 
 	constructor(
 		data: DayPlanData,
 		tickets: DayPlanTickets,
 		session: SessionGuard,
-		{ flags = SILENT_FLAGS, scope = () => null }: { flags?: FlagSink; scope?: AreaScope } = {}
+		{
+			flags = SILENT_FLAGS,
+			scope = () => null,
+			viewer = () => null
+		}: { flags?: FlagSink; scope?: AreaScope; viewer?: PlanViewer } = {}
 	) {
 		this.#data = data;
 		this.#tickets = tickets;
 		this.#session = session;
 		this.#flags = flags;
 		this.#scope = scope;
+		this.#viewer = viewer;
 	}
 
 	// --- State -----------------------------------------------------------------------------------

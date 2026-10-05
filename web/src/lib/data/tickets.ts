@@ -3,6 +3,7 @@
 // always go through pb.filter().
 
 import type PocketBase from 'pocketbase';
+import { NOBODY } from '../domain/assignee';
 import type { CalendarDate } from '../domain/berlin-date';
 import { charmKeyOf } from '../domain/charms';
 import { colorOf } from '../domain/colors';
@@ -81,6 +82,9 @@ export const TICKET_LIST_FIELDS = [
 	'charm',
 	// Kind of the day plan (ADR-0065); unknown to the server before the migration 1790204600.
 	'kind',
+	// "Zuständig" (ADR-0068) and when someone else assigned it; unknown before the migration 1790204900.
+	'assignee',
+	'assigned_at',
 	'completed_at',
 	'created',
 	'updated',
@@ -132,6 +136,9 @@ export interface TicketRecord {
 	charm?: string;
 	/** Kind, `task` or `ongoing`; missing before the migration 1790204600 (ADR-0065). */
 	kind?: string;
+	/** Assignee, '' for nobody; missing before the migration 1790204900 (ADR-0068), like assigned_at. */
+	assignee?: string;
+	assigned_at?: string;
 	completed_at: string;
 	created: string;
 	updated: string;
@@ -176,6 +183,10 @@ export function toTicketSummary(record: TicketRecord): TicketSummary {
 		...(record.charm !== undefined ? { charm: charmKeyOf(record.charm) } : {}),
 		// The same for the kind (ADR-0065); an empty value is a task.
 		...(record.kind !== undefined ? { kind: kindOf(record.kind) } : {}),
+		// The same for the assignee (ADR-0068); '' is nobody.
+		...(record.assignee !== undefined
+			? { assignee: record.assignee || null, assignedAt: record.assigned_at || null }
+			: {}),
 		completedAt: record.completed_at || null,
 		created: record.created,
 		updated: record.updated
@@ -222,6 +233,8 @@ function patchBody(patch: TicketPatch): PatchBody {
 	if (patch.charm !== undefined) body.charm = patch.charm ?? '';
 	// "Laufendes Vorhaben" or "Aufgabe" (ADR-0065); PocketBase checks the value.
 	if (patch.kind !== undefined) body.kind = patch.kind;
+	// '' is nobody (ADR-0068); the hook checks the membership in the household of the ticket.
+	if (patch.assignee !== undefined) body.assignee = patch.assignee ?? '';
 	// The only change a client may make to the series: leaving it (ADR-0023 section 1).
 	if (patch.detachSeries === true) body.recurrence = '';
 	return body;
@@ -449,10 +462,19 @@ function takesSubProjects({ query, withSubProjects }: CompletedFilter): boolean 
 	);
 }
 
-/** COMPLETED_FILTER, with sub projects the clause of the project family. */
+/**
+ * "Zuständig" (ADR-0068 §3): the chosen account, or none for "Niemand". Only with the filter, because
+ * a server before the migration 1790204900 does not know the field.
+ */
+const DONE_ASSIGNEE_FILTER = [
+	'(({:assignee} = {:nobody} && assignee = "") || ({:assignee} != {:nobody} && assignee = {:assignee}))'
+].join(' && ');
+
+/** COMPLETED_FILTER, with sub projects the clause of the project family, with an assignee its clause. */
 function completedExpression(done: CompletedFilter): string {
 	const parts = [COMPLETED_FILTER];
 	if (takesSubProjects(done)) parts.push(DONE_FAMILY_FILTER);
+	if (done.query.assignee !== null) parts.push(DONE_ASSIGNEE_FILTER);
 	return parts.join(' && ');
 }
 
@@ -471,7 +493,8 @@ function completedParams(done: CompletedFilter, id = ''): Record<string, string>
 		noProject: NO_PROJECT,
 		tag: query.tag ?? '',
 		charm: query.charm ?? '',
-		...(family ? { family: query.project ?? '' } : {})
+		...(family ? { family: query.project ?? '' } : {}),
+		...(query.assignee !== null ? { assignee: query.assignee, nobody: NOBODY } : {})
 	};
 }
 
@@ -647,7 +670,9 @@ export function createTicket(
 				// An own color (ADR-0052); without one the ticket shows the color of its project.
 				...(draft.color ? { color: draft.color } : {}),
 				// A charm (ADR-0062); none sends no field, as before its migration.
-				...(draft.charm ? { charm: draft.charm } : {})
+				...(draft.charm ? { charm: draft.charm } : {}),
+				// An assignee (ADR-0068), only in a household; nobody sends no field.
+				...(draft.assignee ? { assignee: draft.assignee } : {})
 			},
 			{ fields: TICKET_DETAIL_FIELDS, expand: TICKET_EXPAND, signal }
 		);

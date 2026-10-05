@@ -14,12 +14,15 @@
 	// from the store, the focus stays in the popover.
 	let {
 		fit,
-		always
+		always,
+		omitted = []
 	}: {
 		/** Column state of the table: preferences, fitted widths and the steps. */
 		fit: ColumnFit;
 		/** Sentence on the columns that are always shown, e.g. "Key, Titel und Häkchen …". */
 		always: string;
+		/** Columns the table leaves out here, e.g. "Zuständig" outside a household (ADR-0068). */
+		omitted?: readonly string[];
 	} = $props();
 
 	const uid = $props.id();
@@ -28,7 +31,9 @@
 
 	const store = $derived(fit.store);
 	const autoHidden = $derived(fit.fit.autoHidden);
-	const columns = $derived(menuColumns(store.table.columns));
+	const columns = $derived(
+		menuColumns(store.table.columns).filter((column) => !omitted.includes(column.id))
+	);
 	const custom = $derived(
 		columns.some((column) => store.isHidden(column.id) !== column.hiddenByDefault) ||
 			Object.keys(store.prefs.widths).length > 0 ||

@@ -170,7 +170,8 @@ describe('links of the view "Erledigte" (ER-1, ADR-0066)', () => {
 				project: PROJECT,
 				subProjects: false,
 				tag: null,
-				charm: null
+				charm: null,
+				assignee: null
 			})
 		).toBe(`/erledigt/tickets/abc123def456ghi?projekt=${PROJECT}&unterprojekte=0`);
 	});

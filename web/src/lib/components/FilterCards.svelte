@@ -5,6 +5,7 @@
 		ALL_OPEN_LABEL,
 		CARD_LABELS,
 		FILTER_CARDS,
+		HOUSEHOLD_CARDS,
 		chooseAllOpen,
 		isAllOpen,
 		toggleCard,
@@ -12,6 +13,7 @@
 		type FilterCard
 	} from '$lib/domain/filter-cards';
 	import { parseListQuery } from '$lib/domain/list-query';
+	import { findAssignees } from '$lib/stores/assignees.svelte';
 	import { withListQuery } from '$lib/ticket-links';
 
 	// Filter cards above the list "Aufgaben" (FI-1, ADR-0013 addendum C; before FI-1 the KPI tiles of
@@ -23,17 +25,33 @@
 	// counts the open tickets of the area that pass those filters and the search, regardless of the
 	// other cards. Pressed: a checked box, accent surface, frame and a heavier number besides
 	// aria-pressed, so the state shows without colour and on a phone; nothing red (ADR-0009).
-	let { counts }: { counts: CardCounts | null } = $props();
+	// "Mir zugewiesen" (E7-5, ADR-0068 §3) stands only in a household: a private ticket has no assignee.
+	let {
+		counts,
+		household
+	}: {
+		counts: CardCounts | null;
+		/**
+		 * The area of the tab is the household: the cards of the household are offered. Without it the
+		 * directory of the layout decides.
+		 */
+		household?: boolean;
+	} = $props();
+
+	const assignees = findAssignees();
+	const inHousehold = $derived(household ?? assignees?.active ?? false);
 
 	interface Card {
 		key: 'allOpen' | FilterCard;
 		label: string;
 	}
 
-	const CARDS: readonly Card[] = [
+	const CARDS = $derived<readonly Card[]>([
 		{ key: 'allOpen', label: ALL_OPEN_LABEL },
-		...FILTER_CARDS.map((card) => ({ key: card, label: CARD_LABELS[card] }))
-	];
+		...FILTER_CARDS.filter((card) => inHousehold || !HOUSEHOLD_CARDS.includes(card)).map(
+			(card) => ({ key: card, label: CARD_LABELS[card] })
+		)
+	]);
 
 	const uid = $props.id();
 	const query = $derived(parseListQuery(page.url.searchParams));

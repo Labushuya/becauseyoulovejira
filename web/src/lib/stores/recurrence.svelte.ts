@@ -24,11 +24,13 @@ import {
 	eachOccurrenceReady,
 	initialStatusReady,
 	listRules,
+	ruleAssigneesReady,
 	setRuleActive,
 	templateSubtasksReady,
 	updateRule,
 	type RuleDraft
 } from '$lib/data/recurrence';
+import { assignmentBody } from '$lib/domain/assignee';
 import {
 	DEFAULT_TEMPLATE_STATUS,
 	OFFER_ACTION,
@@ -145,6 +147,11 @@ export interface RecurrenceData {
 	 * charm is offered in the forms.
 	 */
 	charmsReady?(options: RequestOptions): Promise<boolean>;
+	/**
+	 * Whether the server knows the assignment of rules (ADR-0068); without it (tests) no
+	 * "Zuständigkeit" is offered in the forms.
+	 */
+	assigneesReady?(options: RequestOptions): Promise<boolean>;
 }
 
 export function recurrenceData(pb: PocketBase): RecurrenceData {
@@ -154,6 +161,7 @@ export function recurrenceData(pb: PocketBase): RecurrenceData {
 		initialStatusReady: (options) => initialStatusReady(pb, options),
 		templateSubtasksReady: (options) => templateSubtasksReady(pb, options),
 		charmsReady: (options) => charmsReady(pb, options),
+		assigneesReady: (options) => ruleAssigneesReady(pb, options),
 		createRule: (draft, ticket, household) => createRule(pb, draft, ticket, { household }),
 		updateRule: (id, patch) => updateRule(pb, id, patch),
 		setActive: (id, active) => setRuleActive(pb, id, active),
@@ -202,7 +210,9 @@ const FORM_FIELDS = [
 	'initial_status',
 	'template_subtasks',
 	'charm',
-	'ticket'
+	'ticket',
+	// "Zuständigkeit" (ADR-0068).
+	'assignees'
 ];
 
 export class RecurrenceStore implements SeriesChangeSink {
@@ -227,6 +237,8 @@ export class RecurrenceStore implements SeriesChangeSink {
 	#subtasksReady = $state(false);
 	/** The server knows the charms of rules and tickets (after their migration, ADR-0062). */
 	#charmsReady = $state(false);
+	/** The server knows the assignment of rules (after its migration, ADR-0068). */
+	#assigneesReady = $state(false);
 	/** Draft of the template edited at a ticket, null while none is edited. */
 	#templateDraft = $state<TemplateDraft | null>(null);
 	/** The flag offering "Auch für künftige Tickets übernehmen", while it is shown. */
@@ -292,6 +304,14 @@ export class RecurrenceStore implements SeriesChangeSink {
 	 */
 	get charmsReady(): boolean {
 		return this.#state === 'ready' && this.#charmsReady;
+	}
+
+	/**
+	 * Whether "Zuständigkeit" is offered in the forms of a rule of a household (ADR-0068): only once the
+	 * server knows the fields; before the next start of the app the forms leave it out.
+	 */
+	get assigneesReady(): boolean {
+		return this.#state === 'ready' && this.#assigneesReady;
 	}
 
 	ruleById(id: string | null | undefined): RecurrenceRule | null {
@@ -386,7 +406,9 @@ export class RecurrenceStore implements SeriesChangeSink {
 				...template,
 				...(initialStatus !== null && { initial_status: chosen }),
 				...formParams(values),
-				start: values.start ?? DEFAULT_SERIES_START
+				start: values.start ?? DEFAULT_SERIES_START,
+				// "Zuständigkeit" of the next tickets (ADR-0068), only when the server knows it.
+				...(this.assigneesReady && assignmentBody(values.assignment, null))
 			},
 			ticket.id,
 			// The rule lies in the area of its ticket (E7-3).
@@ -442,9 +464,15 @@ export class RecurrenceStore implements SeriesChangeSink {
 		return offer;
 	}
 
-	/** Saves a new rhythm of a rule; the hook computes the next ticket again. */
+	/**
+	 * Saves a new rhythm of a rule; the hook computes the next ticket again. A changed "Zuständigkeit"
+	 * (ADR-0068) goes along; an unchanged one is not sent, so the pointer of the rotation stays.
+	 */
 	saveRhythm(id: string, values: RecurrenceFormValues): Promise<EditResult<RecurrenceRule>> {
-		return this.update(id, formParams(values));
+		return this.update(id, {
+			...formParams(values),
+			...(this.assigneesReady && assignmentBody(values.assignment, this.ruleById(id)?.assignment))
+		});
 	}
 
 	/**
@@ -753,6 +781,7 @@ export class RecurrenceStore implements SeriesChangeSink {
 		this.#statusReady = false;
 		this.#subtasksReady = false;
 		this.#charmsReady = false;
+		this.#assigneesReady = false;
 	}
 
 	/** Success flag of an action; the flag group announces it (role status). */
@@ -801,6 +830,8 @@ export class RecurrenceStore implements SeriesChangeSink {
 			if (controller.signal.aborted) return;
 			this.#charmsReady = await this.#probe('charmsReady', controller.signal);
 			if (controller.signal.aborted) return;
+			this.#assigneesReady = await this.#probe('assigneesReady', controller.signal);
+			if (controller.signal.aborted) return;
 			this.#state = 'ready';
 		} catch (error) {
 			if (controller.signal.aborted) return;
@@ -843,7 +874,12 @@ export class RecurrenceStore implements SeriesChangeSink {
 	 * it cannot tell (old schema, a failed probe, no probe in tests).
 	 */
 	async #probe(
-		name: 'eachOccurrenceReady' | 'initialStatusReady' | 'templateSubtasksReady' | 'charmsReady',
+		name:
+			| 'eachOccurrenceReady'
+			| 'initialStatusReady'
+			| 'templateSubtasksReady'
+			| 'charmsReady'
+			| 'assigneesReady',
 		signal: AbortSignal
 	): Promise<boolean> {
 		const probe = this.#data[name]?.bind(this.#data);

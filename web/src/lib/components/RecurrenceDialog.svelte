@@ -41,6 +41,7 @@
 		askStatus = false,
 		ticketStatus = null,
 		initialStatus = null,
+		assignmentAvailable = false,
 		submitLabel,
 		returnFocus,
 		onsave,
@@ -65,6 +66,11 @@
 		ticketStatus?: string | null;
 		/** An answer the user gave before (a prepared "Wiederholen…" after a failed rule). */
 		initialStatus?: TemplateStatus | null;
+		/**
+		 * Offer "Zuständigkeit" in a household (ADR-0068 §5, RecurrenceStore.assigneesReady), with the
+		 * preview of the next two occurrences.
+		 */
+		assignmentAvailable?: boolean;
 		submitLabel: string;
 		/** Inline only: where the focus goes on closing when the opener is gone. */
 		returnFocus?: () => HTMLElement | null | undefined;
@@ -150,6 +156,7 @@
 			{eachAvailable}
 			{context}
 			{openKeys}
+			{assignmentAvailable}
 		/>
 		{#if note}
 			<p class="hint">{note}</p>

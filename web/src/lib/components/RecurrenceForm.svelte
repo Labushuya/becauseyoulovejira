@@ -30,6 +30,8 @@
 	import SectionMessage from './guidance/SectionMessage.svelte';
 	import { WEEKDAY_NAMES, WEEKDAY_SHORT, dayLabel } from '$lib/domain/recurrence-text';
 	import ErrorIcon from './ErrorIcon.svelte';
+	import { findAssignees, type AssigneeSource } from '$lib/stores/assignees.svelte';
+	import RecurrenceAssignment from './RecurrenceAssignment.svelte';
 	import SeriesStartChoice from './SeriesStartChoice.svelte';
 
 	// Fields of a rhythm (E5 plan, package 4), shared by "Wiederholen…", the rule panel and the
@@ -46,6 +48,8 @@
 	// am" gives a ticket without one, or "Beginnt am" of a new rule) shows SeriesStartChoice (WH-2,
 	// ADR-0022 addendum 14): with a ticket "Serie ab heute beginnen" (chosen in advance) or
 	// "Ursprüngliches Datum behalten", kept in `values.start`.
+	// "Zuständigkeit" (E7-5, ADR-0068 §5) follows for a rule of the household once the server knows it
+	// (`assignmentAvailable`): none, one fixed person or a rotation, with the preview of the next two.
 	let {
 		values = $bindable(),
 		errors = {},
@@ -53,7 +57,9 @@
 		withoutDue = false,
 		eachAvailable = false,
 		context,
-		openKeys = []
+		openKeys = [],
+		assignmentAvailable = false,
+		assignees = findAssignees()
 	}: {
 		values: RecurrenceFormValues;
 		errors?: Partial<Record<RecurrenceFormField, string>>;
@@ -66,7 +72,16 @@
 		context?: RecurrenceFormContext;
 		/** Keys of the open tickets of the rule, oldest first. */
 		openKeys?: readonly string[];
+		/** The server knows the assignment of rules (RecurrenceStore.assigneesReady). */
+		assignmentAvailable?: boolean;
+		/** The members of the household (the directory of the layout); null without one. */
+		assignees?: AssigneeSource | null;
 	} = $props();
+
+	/** Only in the household, where a rule gives its tickets a person. */
+	const assignmentShown = $derived(
+		assignmentAvailable && assignees !== null && assignees.active && assignees.members.length > 0
+	);
 
 	const uid = $props.id();
 	const idOf = (field: string) => `${uid}-${field}`;
@@ -339,6 +354,17 @@
 				preview.firstDue
 			)}.
 		</p>
+	{/if}
+
+	{#if assignmentShown && assignees !== null}
+		<!-- "Zuständigkeit" of the next tickets (ADR-0068 §5), only for a rule of the household. -->
+		<RecurrenceAssignment
+			bind:value={values.assignment}
+			members={assignees.members}
+			context={assignees.context}
+			error={errors.assignees ?? null}
+			errorId={errorIdOf('assignees')}
+		/>
 	{/if}
 
 	<!-- "So funktioniert’s" (plan "Wiederholungen verständlich machen", part A): what the chosen kind

@@ -471,7 +471,7 @@ describe('filter cards (FI-1)', () => {
 		store.activate(query({ cards: ['urgent'] }));
 		await settle();
 
-		const all = { allOpen: 3, in_progress: 1, due_today: 1, overdue: 1, urgent: 1 };
+		const all = { allOpen: 3, in_progress: 1, due_today: 1, overdue: 1, urgent: 1, mine: 0 };
 		expect(store.cardCounts).toEqual(all);
 		expect(store.cardCounts.allOpen).toBe(store.openCount);
 		store.activate(query({ cards: ['in_progress', 'overdue'] }));
@@ -485,7 +485,8 @@ describe('filter cards (FI-1)', () => {
 			in_progress: 0,
 			due_today: 0,
 			overdue: 0,
-			urgent: 0
+			urgent: 0,
+			mine: 0
 		});
 
 		store.activate(EMPTY_LIST_QUERY);

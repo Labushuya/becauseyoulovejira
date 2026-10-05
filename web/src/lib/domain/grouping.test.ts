@@ -203,8 +203,60 @@ describe('groupTickets', () => {
 			project: 'Projekt',
 			due: 'Fälligkeit',
 			source: 'Quelle',
-			recurrence: 'Wiederholung'
+			recurrence: 'Wiederholung',
+			assignee: 'Zuständigkeit'
 		});
+	});
+
+	it('groups by assignee: the own account first, then by name, "Niemand" last (ADR-0068)', () => {
+		const SELF = 'anna00000000001';
+		const BERT = 'bert00000000002';
+		const CLARA = 'clar00000000003';
+		const names: Record<string, string> = { [BERT]: 'Bert Beispiel', [CLARA]: 'Clara Beispiel' };
+		const context = {
+			selfId: SELF,
+			selfName: 'Anna Beispiel',
+			names: { nameOf: (id: string) => names[id] ?? null }
+		};
+		const tickets = [
+			row('n1'),
+			row('c1', { assignee: CLARA }),
+			row('a1', { assignee: SELF }),
+			row('b1', { assignee: BERT }),
+			row('n2', { assignee: null }),
+			row('a2', { assignee: SELF })
+		];
+		expect(
+			shape(groupTickets(tickets, 'assignee', TODAY, (ticket) => ticket.project, context))
+		).toEqual([
+			[SELF, 'Anna Beispiel', ['a1', 'a2']],
+			[BERT, 'Bert Beispiel', ['b1']],
+			[CLARA, 'Clara Beispiel', ['c1']],
+			['niemand', 'Niemand', ['n1', 'n2']]
+		]);
+		// Two levels keep a path that folds (GROUP_PATH).
+		const levels = groupTicketLevels(
+			tickets,
+			'assignee',
+			'status',
+			TODAY,
+			(ticket) => ticket.project,
+			context
+		);
+		expect(levels.map((group) => group.path)).toEqual([
+			`assignee:${SELF}`,
+			`assignee:${BERT}`,
+			`assignee:${CLARA}`,
+			'assignee:niemand'
+		]);
+		const storage = { items: new Map<string, string>() } as const;
+		const fake = {
+			getItem: (key: string) => storage.items.get(key) ?? null,
+			setItem: (key: string, value: string) => void storage.items.set(key, value),
+			removeItem: (key: string) => void storage.items.delete(key)
+		};
+		writeCollapsedGroups(fake, ['assignee:niemand', `assignee:${SELF}/status:open`]);
+		expect(readCollapsedGroups(fake)).toEqual(['assignee:niemand', `assignee:${SELF}/status:open`]);
 	});
 
 	it.each(GROUPINGS)('%s keeps every ticket exactly once in a mixed set', (grouping) => {

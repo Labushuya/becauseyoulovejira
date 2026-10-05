@@ -57,6 +57,12 @@
 	} from '$lib/stores/area-move.svelte';
 	import type { MovePreview } from '$lib/domain/area-move';
 	import { PeopleStore, peopleData, setPeople } from '$lib/stores/people.svelte';
+	import { AssigneeDirectory, setAssignees } from '$lib/stores/assignees.svelte';
+	import {
+		AssignedNotices,
+		assignedLive,
+		type AssignedNotice
+	} from '$lib/stores/assigned-notices.svelte';
 	import { PinStore, pinData, setPinStore } from '$lib/stores/pins.svelte';
 	import { FolderViewer, folderViewData, setFolderViewer } from '$lib/stores/folder-view.svelte';
 	import { fetchContext } from '$lib/data/context';
@@ -193,6 +199,11 @@
 	// before the list, which shows them in the section "Angeheftet" instead of below.
 	const pins = setPinStore(new PinStore(pinData(pb), auth, flags));
 	$effect(() => untrack(() => pins.start()));
+	// "Zuständig" (E7-5, ADR-0068): the members of the household and the names of the accounts for the
+	// field, the initials, the card "Mir zugewiesen", the groups and the sort. It reads the area, the
+	// household and the people once they exist (connected below).
+	const assigneeDirectory = new AssigneeDirectory(auth);
+	setAssignees(assigneeDirectory);
 	// The column sort "Projekt" resolves projects through the catalog (E3 plan, package 9); the
 	// "new" mark follows the own read rows and base line (E4 plan, package 4).
 	const tickets = setTicketListStore(
@@ -203,7 +214,8 @@
 			reads: readsData(pb),
 			flags,
 			series: rules,
-			pins
+			pins,
+			assignees: () => assigneeDirectory.context
 		})
 	);
 	// Ticket picker (ADR-0042): every ticket choice lists the open tickets of the list store, the
@@ -285,6 +297,16 @@
 	);
 	$effect(() => untrack(() => household.start()));
 	$effect(() => untrack(() => household.connect(householdLive(pb))));
+	assigneeDirectory.connect({ area, household, people });
+	// "Anna hat dir HAUS-12 zugewiesen." (ADR-0068 §4): a live notice when another member gives this
+	// account a ticket, with the way to it.
+	const assignedNotices = new AssignedNotices(flags, (notice) => openAssigned(notice));
+	$effect(() => untrack(() => assignedNotices.connect(assignedLive(pb))));
+
+	/** The way to an assigned ticket: in the view of the tab; a link into the other area switches it (E7-3). */
+	function openAssigned(notice: AssignedNotice) {
+		void goto(ticketHrefIn(notice.ticket, page.route.id, page.url, openMode.effective));
+	}
 
 	// Moving between the areas (E7-4, ADR-0061): one dialog for every menu and the bulk action. The
 	// moved tickets leave the list at once (their realtime "delete" follows); a tab that shows a moved

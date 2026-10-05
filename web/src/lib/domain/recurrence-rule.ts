@@ -3,6 +3,12 @@
 // the texts of the panel line. Every date calculation goes through recurrence.ts (E5 plan,
 // section 2); the checks give the same codes as the hook (lib/recurrence.js).
 
+import {
+	assignmentProblem,
+	formAssignmentOf,
+	type FormAssignment,
+	type RuleAssignment
+} from './assignee';
 import { isCalendarDate, type CalendarDate } from './berlin-date';
 import type { ProjectColor } from './colors';
 import {
@@ -87,6 +93,12 @@ export interface RecurrenceRule {
 	 * absent before the migration. Optional so that rules built by hand stay valid.
 	 */
 	charm?: string | null;
+	/**
+	 * "Zuständigkeit" of the next tickets (ADR-0068 §5): none, one fixed person, or a rotation with the
+	 * pointer to the person of the next occurrence; only for a rule of a household. Absent before the
+	 * migration. Optional so that rules built by hand stay valid.
+	 */
+	assignment?: RuleAssignment;
 	/** The account that created the rule (`owner`); the data layer sets it (ADR-0061 §4). */
 	owner?: string;
 	created: string;
@@ -578,6 +590,12 @@ export interface RecurrenceFormValues {
 	 * DEFAULT_SERIES_START, the choice made in advance.
 	 */
 	start?: SeriesStart;
+	/**
+	 * "Zuständigkeit" of the next tickets (ADR-0068 §5), the people in the order of the coming
+	 * occurrences; only offered in a household and sent only when it changed (`assignmentBody`).
+	 * Absent: not offered.
+	 */
+	assignment?: FormAssignment;
 }
 
 /**
@@ -591,7 +609,15 @@ export interface RepeatRequest {
 }
 
 export type RecurrenceFormField =
-	'mode' | 'freq' | 'interval' | 'weekdays' | 'monthDay' | 'anchor' | 'leadDays' | 'eachOccurrence';
+	| 'mode'
+	| 'freq'
+	| 'interval'
+	| 'weekdays'
+	| 'monthDay'
+	| 'anchor'
+	| 'leadDays'
+	| 'eachOccurrence'
+	| 'assignees';
 
 /** Maps the codes of the fields of recurrence.ts to the fields of the form. */
 const FORM_FIELDS: Readonly<Record<string, RecurrenceFormField>> = {
@@ -613,7 +639,9 @@ export const SERVER_FIELDS: Readonly<Record<RecurrenceFormField, string>> = Obje
 	monthDay: 'month_day',
 	anchor: 'anchor',
 	leadDays: 'lead_days',
-	eachOccurrence: 'each_occurrence'
+	eachOccurrence: 'each_occurrence',
+	// "Zuständigkeit" (ADR-0068): the refusals of the hook stand at the field of the people.
+	assignees: 'assignees'
 });
 
 /**
@@ -652,7 +680,9 @@ export function formValuesOf(rule: RecurrenceRule, today: CalendarDate): Recurre
 		lastDay: rule.monthDay === LAST_DAY,
 		anchor,
 		leadDays: String(rule.leadDays),
-		eachOccurrence: rule.eachOccurrence === true
+		eachOccurrence: rule.eachOccurrence === true,
+		// The person of the next occurrence first (ADR-0068 §5); absent before the migration.
+		...(rule.assignment !== undefined && { assignment: formAssignmentOf(rule.assignment) })
 	};
 }
 
@@ -780,6 +810,9 @@ export function formErrors(
 	) {
 		errors.monthDay = RECURRENCE_MESSAGES[RECURRENCE_CODES.monthDay];
 	}
+	// "Zuständigkeit" (ADR-0068 §5): "fest" needs a person, "abwechselnd" at least one.
+	const assignment = values.assignment === undefined ? null : assignmentProblem(values.assignment);
+	if (assignment !== null) errors.assignees = assignment;
 	return errors;
 }
 

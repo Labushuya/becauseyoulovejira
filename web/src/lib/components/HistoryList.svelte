@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { describeHistoryEntry, withComments } from '$lib/domain/history-format';
+	import { findAssignees } from '$lib/stores/assignees.svelte';
 	import type { CatalogStore } from '$lib/stores/catalog.svelte';
 	import { findPeople } from '$lib/stores/people.svelte';
 	import type { TicketActivityStore } from '$lib/stores/ticket-activity.svelte';
@@ -11,11 +12,17 @@
 	// text, never as rendered Markdown. Project and tag names come from the catalog (E3 plan,
 	// T-16); until it is loaded the history waits, so nothing shows as "(gelöscht)" by mistake. A
 	// pinned comment is named by author and time while it is loaded (ADR-0044). Other accounts
-	// appear with their name where it is visible (ADR-0056 §4, names of the (app) layout).
+	// appear with their name where it is visible (ADR-0056 §4, names of the (app) layout); "Zuständig:"
+	// names the own account by its name too (ADR-0068).
 	let { store, catalog }: { store: TicketActivityStore; catalog: CatalogStore } = $props();
 
 	const people = findPeople();
-	const lookups = $derived({ ...withComments(catalog.lookups, store.comments), people });
+	const assignees = findAssignees();
+	const lookups = $derived({
+		...withComments(catalog.lookups, store.comments),
+		people,
+		selfName: assignees?.context.selfName ?? ''
+	});
 	const lines = $derived(
 		store.history.map((entry) => describeHistoryEntry(entry, lookups, store.userId))
 	);
