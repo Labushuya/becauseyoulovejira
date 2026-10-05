@@ -3,8 +3,10 @@
 	import { page } from '$app/state';
 	import {
 		ALL_OPEN_LABEL,
+		CARDS_LOCKED_HINT,
 		CARD_LABELS,
 		FILTER_CARDS,
+		cardsLocked,
 		chooseAllOpen,
 		isAllOpen,
 		toggleCard,
@@ -23,6 +25,10 @@
 	// counts the open tickets of the area that pass those filters and the search, regardless of the
 	// other cards. Pressed: a checked box, accent surface, frame and a heavier number besides
 	// aria-pressed, so the state shows without colour and on a phone; nothing red (ADR-0009).
+	// The status filter "Erledigt" leaves no open ticket (PL-1): the cards are locked (aria-disabled,
+	// so they stay in the tab order with their description) with the hint "Karten gelten für offene
+	// Tickets" below them and as tooltip, "Alle offenen" is not pressed, and chosen cards stay pressed
+	// and in the address, so they apply again once the status filter goes.
 	let { counts }: { counts: CardCounts | null } = $props();
 
 	interface Card {
@@ -36,10 +42,13 @@
 	];
 
 	const uid = $props.id();
+	const lockedHintId = `${uid}-locked-hint`;
 	const query = $derived(parseListQuery(page.url.searchParams));
+	const locked = $derived(cardsLocked(query));
 
 	function isPressed(card: Card): boolean {
-		return card.key === 'allOpen' ? isAllOpen(query.cards) : query.cards.includes(card.key);
+		if (card.key === 'allOpen') return !locked && isAllOpen(query.cards);
+		return query.cards.includes(card.key);
 	}
 
 	/** What a click does, as the visible line below the number and the description of the card. */
@@ -51,8 +60,9 @@
 	}
 
 	async function choose(card: Card, pressed: boolean) {
-		// "Alle offenen" without another card: nothing to drop, no history entry.
-		if (card.key === 'allOpen' && pressed) return;
+		// Locked cards change nothing; "Alle offenen" without another card: nothing to drop, no
+		// history entry.
+		if (locked || (card.key === 'allOpen' && pressed)) return;
 		const cards = card.key === 'allOpen' ? chooseAllOpen() : toggleCard(query.cards, card.key);
 		await goto(withListQuery(page.url, { ...query, cards }), { keepFocus: true, noScroll: true });
 	}
@@ -68,7 +78,9 @@
 			type="button"
 			data-card={card.key}
 			aria-pressed={pressed ? 'true' : 'false'}
-			aria-describedby={hintId}
+			aria-disabled={locked ? 'true' : undefined}
+			aria-describedby={locked ? lockedHintId : hintId}
+			title={locked ? CARDS_LOCKED_HINT : undefined}
 			onclick={() => choose(card, pressed)}
 		>
 			<span class="label" aria-hidden="true">
@@ -84,9 +96,14 @@
 			<span class="value" aria-hidden="true">{count ?? '–'}</span>
 			<span class="visually-hidden">{count === null ? card.label : `${card.label}: ${count}`}</span>
 			<!-- Description only (aria-describedby), not part of the name. -->
-			<span class="hint" id={hintId} aria-hidden="true">{hint(card, pressed)}</span>
+			{#if !locked}
+				<span class="hint" id={hintId} aria-hidden="true">{hint(card, pressed)}</span>
+			{/if}
 		</button>
 	{/each}
+	{#if locked}
+		<p class="locked-hint" id={lockedHintId}>{CARDS_LOCKED_HINT}</p>
+	{/if}
 </div>
 
 <style>
@@ -111,8 +128,21 @@
 		cursor: pointer;
 	}
 
-	.card:hover {
+	.card:hover:not([aria-disabled='true']) {
 		border-color: var(--color-brand);
+	}
+
+	/* Locked (PL-1), like the locked buttons of base.css. */
+	.card[aria-disabled='true'] {
+		cursor: not-allowed;
+		opacity: 0.75;
+	}
+
+	.locked-hint {
+		grid-column: 1 / -1;
+		margin: 0;
+		font-size: var(--font-size-small);
+		color: var(--color-text-muted);
 	}
 
 	.card[aria-pressed='true'] {

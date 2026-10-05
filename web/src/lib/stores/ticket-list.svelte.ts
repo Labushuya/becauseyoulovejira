@@ -32,6 +32,7 @@ import { SERIES_MOVE_HINT } from '$lib/domain/calendar';
 import { formatCalendarDate } from '$lib/domain/format';
 import { NO_SUB_PROJECTS, matchesFilter, type SubProjectsOf } from '$lib/domain/filter';
 import {
+	appliedCards,
 	cardsUseToday,
 	chooseAllOpen,
 	countCards,
@@ -1647,12 +1648,14 @@ export class TicketListStore {
 		// The done section follows the applied search, not every typed character.
 		const query = { ...this.#query, search: this.#search };
 		const show = showsDoneSection(query);
+		// The applied cards (FI-1; none with the status filter "Erledigt", PL-1); their due cards load
+		// again at midnight like the due filter.
+		const cards = appliedCards(query);
 		const key = show
 			? JSON.stringify([
 					...FILTER_KEYS.map((name) => query[name]),
-					// The chosen cards (FI-1); their due cards load again at midnight like the due filter.
-					query.cards,
-					query.due === null && !cardsUseToday(query.cards) ? '' : this.#today,
+					cards,
+					query.due === null && !cardsUseToday(cards) ? '' : this.#today,
 					// Sub projects taken in (ADR-0034): switching them off or a new one loads again.
 					query.subProjects,
 					this.#subProjectIds()

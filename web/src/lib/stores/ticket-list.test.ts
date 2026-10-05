@@ -772,6 +772,34 @@ describe('filter cards (FI-1)', () => {
 		expect(data.listDone.mock.calls[2]?.[1].filter?.today).toBe('2026-09-26');
 		stop();
 	});
+
+	it('applies no card with the status filter "Erledigt" and the chosen ones again without it (PL-1)', async () => {
+		const urgentDone = done({ priority: 'urgent' });
+		const lowDone = done({ priority: 'low' });
+		const urgentOpen = ticket({ priority: 'urgent' });
+		const data = fakeData([urgentOpen, ticket()], [[urgentDone, lowDone]]);
+		const store = new TicketListStore(data, session());
+
+		store.activate(query({ status: 'done', cards: ['urgent'] }));
+		await settle();
+		expect(ids(store.done)).toEqual(ids([urgentDone, lowDone]));
+		expect(store.visibleCount).toBe(2);
+		// The status filter alone: the same tickets, nothing to load again.
+		store.activate(query({ status: 'done' }));
+		await settle();
+		expect(data.listDone).toHaveBeenCalledOnce();
+
+		// The status filter taken back, the chosen card applies again, also to the done section.
+		const urgent = query({ showDone: true, cards: ['urgent'] });
+		store.activate(urgent);
+		await settle();
+		expect(ids(store.visible)).toEqual([urgentOpen.id]);
+		expect(ids(store.done)).toEqual([urgentDone.id]);
+		expect(data.listDone).toHaveBeenLastCalledWith(
+			1,
+			expect.objectContaining({ filter: { query: urgent, today: '2026-09-24' } })
+		);
+	});
 });
 
 describe('today', () => {

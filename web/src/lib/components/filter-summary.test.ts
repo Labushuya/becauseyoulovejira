@@ -1,5 +1,6 @@
 // Component tests for the summary above the list (FI-1, ADR-0013 addendum C): the chosen cards and
-// the number of shown tickets, the note about further filters and "Zurücksetzen".
+// the number of shown tickets, the matching pinned tickets (PL-1), the note about further filters and
+// "Zurücksetzen".
 
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -26,6 +27,14 @@ describe('filter summary', () => {
 		expect(
 			screen.getByText('Mehr als 50 Tickets aus: Dringend – weitere Filter aktiv')
 		).toBeTruthy();
+	});
+
+	it('names matching pinned tickets like the number next to "Aufgaben" (PL-1)', () => {
+		render(FilterSummary, {
+			props: { cards: ['urgent'], count: 4, pinned: 1, onreset: vi.fn() }
+		});
+
+		expect(screen.getByText('4 + 1 angeheftet aus: Dringend')).toBeTruthy();
 	});
 
 	it('resets with "Zurücksetzen"', async () => {
