@@ -341,7 +341,7 @@
   "meta": {
     "projekt": "becauseyoulovejira",
     "stand": "2026-10-05",
-    "commit": "adb40db"
+    "commit": "e5ac361"
   },
   "bereiche": [
     { "id": "betrieb", "titel": "Betrieb: Start, Stopp, Skripte und Daten" },
@@ -601,6 +601,8 @@
       "vermerk": "Keine Migration; die Hooks wirken nach einem Neustart der App (neu-starten.bat), die Oberfläche nach F5. Zwei manuelle Fälle (BYL-E6-1617, BYL-E6-1618). Nachgezogen: BYL-E6-346, -348, -816." },
     { "id": "MV-2", "vorhaben": "Haushalt: Serien verschieben und Duplikat in einen anderen Bereich", "titel": "„Ganze Serie verschieben“ mit Regel, Vorlage, offenem und erledigten Vorkommen, auch per Sammelaktion, die Serie läuft im Ziel weiter; „Duplizieren“ mit „Ziel: Privat | Haushalt“, Projekt im Ziel, Tags nach Namen, ohne Quellen", "bereich": "daten", "quelle": "Nutzerentscheidung", "datum": "2026-10-05", "adr": ["0061-verschieben-zwischen-bereichen-und-aufloesen.md, Nachtrag MV-2", "0045-ticket-duplizieren.md, Nachtrag MV-2"], "plan": "e7-haushalt.md", "faelle": ["BYL-E6-1620..BYL-E6-1633"],
       "vermerk": "Keine Migration; die Hooks und die neue Route GET /api/byl/tickets/{id}/duplicate-target wirken erst nach einem Neustart der App (neu-starten.bat), die Oberfläche nach F5. Vier manuelle Fälle (BYL-E6-1630 bis BYL-E6-1633)." },
+    { "id": "AR-4", "vorhaben": "Aufräumpaket", "titel": "Altdateien ersetzter Hilfsprogramme beim Start und Build entfernen; Tests ohne Build-Artefakte; Lizenzhinweise in der gebauten App; „In einen anderen Bereich verschoben.“ in Mail-Hilfsprozess und Erweiterung; Hilfe zum Menü „•••“; CLAUDE.md zu MV-2", "bereich": "entwicklung", "datum": "2026-10-05", "adr": ["0039-betriebsskripte.md, Nachtrag AR-4", "0062-charms.md, Nachtrag AR-4"], "faelle": ["BYL-E6-1634..BYL-E6-1640"],
+      "vermerk": "Keine Migration. Altdateien verschwinden beim nächsten start.bat bzw. neu-starten.bat; byl-mail.exe 0.9.1 nach dem nächsten Neustart, die Erweiterung 0.1.1 nach „Neu laden“ in Chrome, die Oberfläche nach F5. Paket-ID AR-4, weil AR-1 bis AR-3 belegt sind." },
     { "id": "querschnitt", "vorhaben": "Querschnitt", "titel": "Testumgebung, Regeln der Datenschicht, Hook-Module und dieses Manifest", "bereich": "entwicklung", "faelle": ["BYL-X-001..BYL-X-004"] }
   ],
   "zurueckgestellt": [
@@ -6452,6 +6454,39 @@
           "steps": ["„Wiederholen…“ an einem zweiten überfälligen Ticket, „Ursprüngliches Datum behalten“ wählen und anlegen; dann erledigen.", "„Neues Ticket“ mit einer Fälligkeit im letzten Jahr, „Wiederholen“ aufklappen, anlegen.", "„Wiederholungen“ → „Neue Regel“ mit „Beginnt am“ im letzten Monat.", "In der Vollansicht eines überfälligen Tickets „Wiederholen…“ aufklappen; mit NVDA durch den Hinweis gehen."],
           "expect": "Mit „behalten“ bleibt das Ticket „überfällig seit <altes Datum>“; nach dem Erledigen kommt das nächste für den ersten Termin nach heute, das erledigte nennt die übersprungenen Termine. „Neues Ticket“ fragt genauso und legt mit „ab heute“ das Ticket mit dem ersten Termin ab heute in der Serie an. „Neue Regel“ zeigt nur den Hinweis „… Die Serie beginnt ab heute. Erstes Vorkommen: …“ ohne Auswahl. Der Hinweis ist eine Warnung ohne Rot; NVDA liest die Gruppe mit ihrem Namen, beide Optionen und das Datum unter „Serie ab heute beginnen“.",
           "tests": [] }
+      ]
+    },
+    {
+      "tag": "E6", "name": "Aufräumen: Altdateien, Tests ohne Build, Lizenzen, Texte und Hilfe", "desc": "Aufräumpaket AR-4 vom 2026-10-05 (ADR-0039 Nachtrag AR-4, ADR-0062 Nachtrag AR-4): Altdateien ersetzter Hilfsprogramme verschwinden von selbst, Tests laufen in frischen Worktrees, die gebaute App liefert ihre Lizenzhinweise mit. IDs BYL-E6-1634 bis BYL-E6-1640.",
+      "items": [
+        { "id": "BYL-E6-1634", "title": "Altdateien ersetzter Hilfsprogramme: nur das genaue Muster, nicht bei laufendem Hilfsprogramm, gesperrte bleiben ohne Fehler (AR-4)", "art": ["unit"], "status": "bestanden",
+          "pre": "Gefälschter Ordner der App unter %TEMP%, gefälschte Prozesse; es läuft kein Programm.", "steps": ["npm run test:unit"],
+          "expect": "Nur byl-mail.exe.old-<14 Ziffern> und byl-backup.exe.old-<14 Ziffern> gelten, genau wie isOldProgram der Seite „Speicher“; andere Schreibweisen, Längen, Endungen und Namen nicht. Ein Hilfsprogramm dieses Ordners läuft auch unter seinem alten Namen, eines aus einem anderen Ordner oder Unterordner zählt nicht. Entfernt wird eine freie Altdatei; die eines laufenden Hilfsprogramms bleibt („Running“), eine von einem Prozess gehaltene ohne Fehler („Locked“), Ordner und andere Namen bleiben; mit -Helper nur die gewählten Hilfsprogramme; ein fehlender Ordner ergibt nichts.",
+          "tests": ["tests/unit/control-logic.test.mjs::takes only the exact names the build gives, like the page \"Speicher\"", "tests/unit/control-logic.test.mjs::knows which helper of the folder runs, also from its leftover, never one of another folder", "tests/unit/control-logic.test.mjs::removes leftovers no process holds, keeps those of a running helper and a held file without an error"] },
+        { "id": "BYL-E6-1635", "title": "start entfernt Altdateien einer Wegwerf-Kopie und protokolliert jede; der Build nutzt dieselbe Regel (AR-4)", "art": ["integration", "unit"], "status": "bestanden",
+          "pre": "Wegwerf-Kopie unter .tmp mit laufendem Server (wie die übrigen Fälle von control-script.test.mjs).", "steps": ["npm run test:integration", "npm run test:unit"],
+          "expect": "Nach start sind byl-mail.exe.old-20261001080000 und byl-backup.exe.old-20261002080000 weg, die Ausgabe nennt jede („Alte Datei eines ersetzten Hilfsprogramms entfernt: …“), byl-control.log endet mit removed=<beide Namen>; byl-mail.exe.old-entwurf bleibt, der Server läuft weiter. build.ps1 entfernt Altdateien vor den Hilfsprogrammen, auch mit -SkipTests, die Helfer-Builds je ihre eigenen, alle mit derselben Regel und ohne Platzhalter; build.ps1 -SkipTests in einer Kopie mit byl-functions.ps1 bricht wie bisher vor Node und npm ab.",
+          "tests": ["tests/integration/control-script.test.mjs::start removes the leftovers of replaced helpers that no process holds, and logs each (AR-4)", "tests/unit/build-skip-tests.test.mjs::removes them with the rule of the control script before the helpers, also with -SkipTests, never by a wildcard", "tests/unit/build-skip-tests.test.mjs::build.ps1 -SkipTests ends with the entry of the catalog before Node or npm run"] },
+        { "id": "BYL-E6-1636", "title": "Tests ohne Build-Artefakte: Grenzen der Postfach-Auswahl und Ordner der Erweiterung aus der Quelle (AR-4)", "art": ["unit"], "status": "bestanden",
+          "pre": "Frischer Worktree ohne helpers/mail/node_modules und ohne app/erweiterung-whatsapp-web.", "steps": ["npm run test:unit", "npm run test:web"],
+          "expect": "mailbox-rules.test.mjs vergleicht Port und Grenzen mit helpers/mail/src/mailbox-limits.ts (ohne postal-mime), der Server des Hilfsprozesses exportiert dieselben Werte weiter. backup.test.ts prüft den Ordner app\\erweiterung-whatsapp-web des Notfallplans am Build-Ziel in extensions/whatsapp-web/build.mjs statt am gebauten Ordner. Beide laufen ohne Build und ohne Überspringen.",
+          "tests": ["tests/unit/mailbox-rules.test.mjs::shares the limits and the port with the mail helper", "web/src/lib/domain/backup.test.ts::names only scripts that lie in the folder app"] },
+        { "id": "BYL-E6-1637", "title": "licenses.txt mit dem vollständigen Lizenztext der Symbole und dem Verweis auf die erzeugten Lizenzen (AR-4)", "art": ["unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web"],
+          "expect": "web/static/licenses.txt enthält den Lizenztext von Lucide 1.52.0 (ISC) samt Feather-Teil (MIT) Wort für Wort wie charm-icons.LICENSE.txt, nennt Inter und JetBrains Mono (SIL Open Font License 1.1) und verweist auf licenses-libraries.txt; vite.config.ts schreibt diese Datei mit build.license.",
+          "tests": ["web/src/lib/licenses.test.ts"] },
+        { "id": "BYL-E6-1638", "title": "Die gebaute App liefert licenses.txt und licenses-libraries.txt als Text aus; die Hilfe verlinkt beide unauffällig (AR-4)", "art": ["integration", "komponente"], "status": "bestanden",
+          "pre": "Web-Build in app/pb_public (npm run build), eigene Wegwerf-Instanz.", "steps": ["npm run test:integration", "npm run test:web"],
+          "expect": "/licenses.txt und /licenses-libraries.txt antworten 200 als text/plain; die erste mit ISC, beiden Copyright-Zeilen und dem Verweis, die zweite mit je einem Abschnitt für die Schriften (@fontsource-variable/inter, …/jetbrains-mono, SIL Open Font License) und die gebündelten Bibliotheken (svelte, @sveltejs/kit, pocketbase, driver.js, @tiptap/core, markdown-it, dompurify). Am Ende der Hilfe stehen vor der Übersicht der Eingabeelemente die Links „Symbole“ und „Schriften und Programmbibliotheken“, je in neuem Tab.",
+          "tests": ["tests/integration/web-app.test.mjs::ships the licenses of the symbols, the fonts and the bundled libraries as text", "web/src/routes/(app)/einstellungen/hilfe/help-page.test.ts::links quietly to the licenses of symbols, fonts and libraries in a new tab (AR-4)"] },
+        { "id": "BYL-E6-1639", "title": "„In einen anderen Bereich verschoben.“ statt „Schon im Eingang.“ in Postfach-Auswahl und WhatsApp-Erweiterung (E7-4b, AR-4)", "art": ["unit", "komponente"], "status": "bestanden",
+          "pre": "Fake-IMAP-Server und Ingest im Speicher; Seite von WhatsApp Web aus eigenen Fixtures.", "steps": ["npm run test:helper", "npm run test:extension", "npm run test:unit"],
+          "expect": "Der Mail-Hilfsprozess nennt beim Import aus der Postfach-Auswahl den Zustand des Duplikats mit den Texten der App: moved „In einen anderen Bereich verschoben.“, discarded „Schon verworfen.“, converted „Schon umgewandelt.“, sonst „Schon im Eingang.“. Die Erweiterung zeigt bei moved „In einen anderen Bereich verschoben.“, gleich dem Text des Hooks.",
+          "tests": ["helpers/mail/src/server.test.ts::names the state of a duplicate, also an entry moved into another area (E7-4b, AR-4)", "extensions/whatsapp-web/src/content-core.test.ts::names a message whose entry moved into another area of the app (E7-4b, AR-4)", "tests/unit/inbox-rules.test.mjs::says the same for a moved entry in the extension for WhatsApp Web (AR-4)"] },
+        { "id": "BYL-E6-1640", "title": "Hilfe „Was steht im Menü „•••“ eines Tickets?“ nennt jeden Eintrag von TicketActions in seiner Reihenfolge (AR-4)", "art": ["komponente"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web"],
+          "expect": "Die Antwort nennt „Zum Tagesplan“, „Link kopieren“, „Duplizieren …“, „Folge-Ticket anlegen …“, „In den Haushalt verschieben …“ bzw. „Ins Private verschieben …“ und „In den Papierkorb …“ in dieser Reihenfolge, „Wieder öffnen“ in „Erledigte“, „Fälligkeit verschieben …“ im Kalender und dass Anheften der Knopf neben „•••“ ist; jede Beschriftung aus TicketActions.svelte steht darin.",
+          "tests": ["web/src/routes/(app)/einstellungen/hilfe/help-page.test.ts::names every entry of the menu \"•••\" of a ticket that TicketActions has (AR-4)", "web/src/routes/(app)/einstellungen/hilfe/help-page.test.ts::answers the frequent questions in folded details"] }
       ]
     },
     {
