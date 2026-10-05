@@ -2001,7 +2001,9 @@
 				<dd>
 					Im Ticket steht nach „Priorität“ das Feld „Zuständig“ mit „Niemand“ und den Mitgliedern;
 					die Wahl gilt sofort. „Ich übernehme“ daneben macht dich mit einem Klick zuständig. Der
-					Verlauf nennt jede Änderung („Zuständig: Anna Beispiel“, „Zuständigkeit entfernt“).
+					Verlauf nennt jede Änderung („Zuständig: Anna Beispiel“, „Zuständigkeit entfernt“). Schon
+					beim Anlegen hat „Neues Ticket“ im Haushalt das Feld „Zuständig“, vorgewählt „Niemand“,
+					mit „Mir“ als einem Klick; wählst du dort jemand anderen, bekommt er denselben Hinweis.
 				</dd>
 			</div>
 			<div class="row">
@@ -2055,7 +2057,9 @@
 				<dd>
 					Tritt jemand aus oder wird entfernt, verliert er alle Zuständigkeiten im Haushalt, auch in
 					Wiederholungen; der Verlauf jedes Tickets nennt das. Ins Private verschobene Tickets und
-					Wiederholungen verlieren ihre Zuständigkeit. Ein Duplikat im selben Haushalt behält sie,
+					Wiederholungen verlieren ihre Zuständigkeit; der Dialog des Verschiebens und „Haushalt
+					auflösen“ mit „übernehmen“ sagen vorher, wie viele es trifft, etwa „Bei 3 Tickets und 1
+					Wiederholung fällt die Zuständigkeit weg.“ Ein Duplikat im selben Haushalt behält sie,
 					eines im anderen Bereich nicht; ein Folge-Ticket beginnt ohne.
 				</dd>
 			</div>
