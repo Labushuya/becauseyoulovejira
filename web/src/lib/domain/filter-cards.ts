@@ -3,13 +3,12 @@
 // matches several cards counts once. "Alle offenen" is the base state: it stands for "no card", is
 // chosen while no other card is, and choosing it drops the others. The detail filters of the filter
 // bar (status, priority, due date, project, tag, source, series, search) narrow the union (AND);
-// `matchesFilter` (domain/filter.ts) joins both, and the server expression of the done tickets has
-// the same union as one clause in parentheses (data/tickets.ts, parity test).
+// `matchesFilter` (domain/filter.ts) joins both.
 //
 // The due cards compare like the due filter (`dueBucket` in domain/filter.ts, kept equal by a test):
 // "Heute fällig" is the due date today, "Überfällig" a due date before today, never for a done ticket.
-// There is no card for done tickets: "Erledigte anzeigen" and the status "Erledigt" stay a switch and
-// a detail filter. A card added for them later is a normal member of the union.
+// There is no card for done tickets: since ER-1 (ADR-0066) they have the view "Erledigte", and
+// "Aufgaben" shows only open work.
 
 import type { CalendarDate } from './berlin-date';
 import type { TicketSummary } from './ticket';
@@ -148,8 +147,6 @@ export function cardsLabel(cards: readonly FilterCard[]): string {
 /** What the summary above the list counts. */
 export interface SummaryCount {
 	count: number;
-	/** More tickets match than `count` (further pages of done tickets). */
-	more?: boolean;
 	/** A detail filter or the search narrows the cards as well. */
 	filtered?: boolean;
 }
@@ -160,8 +157,8 @@ export interface SummaryCount {
  */
 export function cardSummary(
 	cards: readonly FilterCard[],
-	{ count, more = false, filtered = false }: SummaryCount
+	{ count, filtered = false }: SummaryCount
 ): string {
-	const amount = more ? `Mehr als ${count} Tickets` : count === 1 ? '1 Ticket' : `${count} Tickets`;
+	const amount = count === 1 ? '1 Ticket' : `${count} Tickets`;
 	return `${amount} aus: ${cardsLabel(cards)}${filtered ? ' – weitere Filter aktiv' : ''}`;
 }

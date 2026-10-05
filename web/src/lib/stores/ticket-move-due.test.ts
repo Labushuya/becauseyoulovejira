@@ -71,7 +71,6 @@ function setup(tickets: TicketSummary[] = [ticket()]) {
 	);
 	const data = {
 		listOpen: vi.fn(async () => tickets),
-		listDone: vi.fn(async (page: number) => ({ items: [], page, hasMore: false })),
 		searchOpen: vi.fn(async () => []),
 		setDone: vi.fn(),
 		update

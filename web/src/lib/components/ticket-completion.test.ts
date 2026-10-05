@@ -8,7 +8,6 @@ import { tick } from 'svelte';
 import { SvelteMap } from 'svelte/reactivity';
 import { describe, expect, it, vi } from 'vitest';
 import { DataError } from '$lib/data/errors';
-import type { DoneTicketPage } from '$lib/data/tickets';
 import type { Ticket, TicketPatch, TicketSummary } from '$lib/domain/ticket';
 import { CatalogStore } from '$lib/stores/catalog.svelte';
 import {
@@ -76,11 +75,6 @@ describe('check mark of a ticket with open blocking sub-tasks', () => {
 		const data = {
 			listOpen: vi.fn(async () => [parent, ...CHILDREN]),
 			listSubtasks: vi.fn(async () => CHILDREN),
-			listDone: vi.fn(async (page: number): Promise<DoneTicketPage> => ({
-				items: [],
-				page,
-				hasMore: false
-			})),
 			searchOpen: vi.fn(async () => []),
 			setDone: vi.fn(async (id: string, done: boolean) => ({
 				...([parent, ...CHILDREN].find((entry) => entry.id === id) ?? parent),

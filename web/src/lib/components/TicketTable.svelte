@@ -45,12 +45,12 @@
 	import type { DeleteResult, DeleteSources } from '$lib/stores/trash-move';
 	import {
 		NEW_TICKET_LINK_ID,
+		doneOfListHref,
 		fullViewHref,
 		listHref,
 		newTicketHref,
 		ticketHref,
-		withListQuery,
-		withShowDone
+		withListQuery
 	} from '$lib/ticket-links';
 	import { rowMenus } from '$lib/overlay/context-menu';
 	import { getQuickCaptureOpener } from '$lib/quick-capture-context';
@@ -85,12 +85,12 @@
 	import ViewSwitch from './ViewSwitch.svelte';
 
 	// Ticket table (E3 plan, T-4 and packages 5, 9, 10, 13 and 14; E2 plan, P-1 to P-5): section
-	// bar "Aufgaben" with the number of shown tickets, the switch "Aufgaben | Projekte", the switch
-	// "Erledigte anzeigen" (?erledigte=1) and the popover "Gruppieren"; the open tickets that pass
-	// the filters (the store holds the query of the URL) in the column sort of the URL or the
-	// default order, with a grouping in one tbody per group; and, in a section of their own below,
-	// the done tickets with "Weitere laden", always most recently completed first and never
-	// grouped. Sort buttons sit in the column headers (T-5). Project and tags come from the
+	// bar "Aufgaben" with the number of shown tickets, the navigation of the views, the link
+	// "Erledigte ansehen →" and the popover "Gruppieren"; the open tickets that pass the filters (the
+	// store holds the query of the URL) in the column sort of the URL or the default order, with a
+	// grouping in one tbody per group. Since ER-1 (ADR-0066) the table shows only open work: done
+	// tickets have the view "Erledigte", which the link opens with the filters both views know
+	// (project, tag, search). Sort buttons sit in the column headers (T-5). Project and tags come from the
 	// catalog. The table never scrolls sideways (package UI-6b): fitColumns (ADR-0030) fits the
 	// columns into the measured frame with the widths of the user; when the frame gets narrow (next
 	// to the panel, on a small window) columns give way in a fixed order, first "Erstellt", then
@@ -169,43 +169,25 @@
 	const ids = {
 		heading: `${uid}-heading`,
 		caption: `${uid}-caption`,
-		done: `${uid}-done`,
-		pinned: `${uid}-pinned`,
-		switchHint: `${uid}-switch-hint`
+		pinned: `${uid}-pinned`
 	};
 	const query = $derived(store.query);
 	const filtered = $derived(hasFilters(query));
-	const showDone = $derived(store.showDone);
-	/** Only the section "Erledigt" is shown (status filter "Erledigt"). */
-	const onlyDone = $derived(query.status === 'done');
 	const hasOpenRows = $derived(store.visible.length > 0);
 	/** The section "Angeheftet" (ADR-0064) stands above the list, whatever the filters. */
 	const pinnedCount = $derived(store.pinned.length);
 	const hasPinnedRows = $derived(pinnedCount > 0);
-	const countReady = $derived(
-		store.openState === 'ready' && (!onlyDone || store.doneState === 'ready')
-	);
+	const countReady = $derived(store.openState === 'ready');
 	const countLabel = $derived.by(() => {
 		const count = store.visibleCount;
 		const pinnedText = hasPinnedRows ? `, ${pinnedMoreText(pinnedCount)}` : '';
-		if (store.visibleCountMore) return `mehr als ${count} Tickets${pinnedText}`;
 		return `${count === 1 ? '1 Ticket' : `${count} Tickets`}${pinnedText}`;
 	});
 	const countText = $derived(
-		`${store.visibleCount}${store.visibleCountMore ? '+' : ''}${
-			hasPinnedRows ? ` ${pinnedMoreText(pinnedCount)}` : ''
-		}`
+		`${store.visibleCount}${hasPinnedRows ? ` ${pinnedMoreText(pinnedCount)}` : ''}`
 	);
-	/**
-	 * With a status filter the switch has no effect (T-6): "Erledigt" shows the done tickets
-	 * anyway, any other status hides them. The switch is locked with this hint.
-	 */
-	const switchHint = $derived.by(() => {
-		if (query.status === null) return null;
-		return onlyDone
-			? 'Der Statusfilter „Erledigt“ zeigt nur erledigte Tickets.'
-			: 'Bei einem anderen Statusfilter als „Erledigt“ sind erledigte Tickets ausgeblendet.';
-	});
+	/** "Erledigte ansehen →": the view "Erledigte" with the filters both views know (ADR-0066). */
+	const doneLink = $derived(doneOfListHref(page.url));
 
 	/** Quick entry of the (app) layout for the empty state; undefined outside it (plan EH-11). */
 	const openQuickCapture = getQuickCaptureOpener();
@@ -235,7 +217,7 @@
 
 	/** All chips of the widest row side by side, plus the padding of the cell. */
 	function tagsNaturalWidth(): number {
-		const tickets = [...store.pinned, ...store.visible, ...(showDone ? store.done : [])];
+		const tickets = [...store.pinned, ...store.visible];
 		const gap = CHIP_GAP_REM * rem;
 		const widest = Math.max(
 			0,
@@ -320,18 +302,6 @@
 	/** Row that last had the focus, to restore it when that row moves or disappears. */
 	let lastFocus: { id: string; section: string; index: number } | null = null;
 
-	async function toggleShowDone(event: Event & { currentTarget: HTMLInputElement }) {
-		await goto(withShowDone(page.url, event.currentTarget.checked), {
-			keepFocus: true,
-			noScroll: true
-		});
-	}
-
-	/** Locked switch (aria-disabled keeps it focusable for its hint): a click changes nothing. */
-	function keepSwitch(event: MouseEvent) {
-		if (switchHint !== null) event.preventDefault();
-	}
-
 	/** "Filter zurücksetzen" of the empty result; the focus goes to the heading "Aufgaben". */
 	async function clearFilters() {
 		await goto(withListQuery(page.url, resetFilters(query)), { keepFocus: true, noScroll: true });
@@ -406,27 +376,19 @@
 		void store.pinned;
 		void store.visible;
 		void store.groups;
-		void store.done;
 		restoreFocus();
 	});
 
 	/** Chosen rows for the bulk actions (plan BI-2). */
 	let selection = $state<Selection>(EMPTY_SELECTION);
-	/**
-	 * Rows a selection may hold: every ticket that passes the filters, open and shown done, and the
-	 * pinned ones above (ADR-0064).
-	 */
-	const selectable = $derived(
-		[...store.pinned, ...store.visible, ...(showDone ? store.done : [])].map((ticket) => ticket.id)
-	);
+	/** Rows a selection may hold: every ticket that passes the filters and the pinned ones above. */
+	const selectable = $derived([...store.pinned, ...store.visible].map((ticket) => ticket.id));
 	/**
 	 * Rows of the head checkbox: every ticket that passes the filters, as before the pins; a pinned
 	 * ticket the filters hide is chosen only by its own box.
 	 */
 	const filteredIds = $derived(
-		[...store.pinnedInFilter, ...store.visible, ...(showDone ? store.done : [])].map(
-			(ticket) => ticket.id
-		)
+		[...store.pinnedInFilter, ...store.visible].map((ticket) => ticket.id)
 	);
 	const head = $derived(headState(selection, filteredIds));
 	const chosenTickets = $derived(
@@ -693,21 +655,7 @@
 					>
 				</button>
 			{/if}
-			<label class="switch" class:locked={switchHint !== null}>
-				<input
-					type="checkbox"
-					role="switch"
-					checked={showDone}
-					aria-disabled={switchHint === null ? undefined : 'true'}
-					aria-describedby={switchHint === null ? undefined : ids.switchHint}
-					onclick={keepSwitch}
-					onchange={toggleShowDone}
-				/>
-				Erledigte anzeigen
-			</label>
-			{#if switchHint !== null}
-				<span class="switch-hint" id={ids.switchHint}>{switchHint}</span>
-			{/if}
+			<a class="done-link" href={doneLink}>Erledigte ansehen <span aria-hidden="true">→</span></a>
 			<GroupPopover />
 			<ColumnsPopover
 				fit={columnFit}
@@ -722,7 +670,6 @@
 		<FilterSummary
 			cards={query.cards}
 			count={store.visibleCount}
-			more={store.visibleCountMore}
 			filtered={hasDetailFilters(query)}
 			onreset={clearFilters}
 		/>
@@ -742,7 +689,7 @@
 
 	{#if store.openState === 'error' && store.openError}
 		{@render failure(store.openError, 'Erneut versuchen', () => store.reload())}
-	{:else if store.openState === 'ready' && !hasOpenRows && !onlyDone && !hasPinnedRows}
+	{:else if store.openState === 'ready' && !hasOpenRows && !hasPinnedRows}
 		{#if filtered}
 			<EmptyState
 				icon="search"
@@ -778,7 +725,7 @@
 		<p class="loading" role="status">Tickets werden geladen …</p>
 	{/if}
 
-	{#if hasOpenRows || showDone || hasPinnedRows}
+	{#if hasOpenRows || hasPinnedRows}
 		<div class="frame" bind:this={frame}>
 			<table {@attach rowMenus}>
 				<caption id={ids.caption}>
@@ -858,7 +805,7 @@
 							{@render rows(store.pinned, false)}
 						{/if}
 					</tbody>
-					{#if !hasOpenRows && !onlyDone && store.openState === 'ready'}
+					{#if !hasOpenRows && store.openState === 'ready'}
 						<!-- Everything else the filters let through is pinned, or nothing is. -->
 						<tbody data-section="open" aria-label="Offene Tickets">
 							<tr class="section-foot">
@@ -923,54 +870,6 @@
 						{@render rows(store.visible)}
 					</tbody>
 				{/if}
-				{#if showDone}
-					<tbody data-section="done" aria-labelledby={ids.done}>
-						<tr class="section-head">
-							<th scope="rowgroup" colspan={fit.visible.length} id={ids.done}>
-								Erledigt – zuletzt erledigte zuerst
-							</th>
-						</tr>
-						{@render rows(store.done)}
-						<tr class="section-foot">
-							<td colspan={fit.visible.length}>
-								{#if store.doneState === 'error' && store.doneError}
-									{@render failure(store.doneError, 'Erneut versuchen', () => store.reload())}
-								{:else if store.doneState === 'ready' && store.done.length === 0}
-									{#if !filtered}
-										<p class="muted">Noch keine erledigten Tickets.</p>
-									{:else if onlyDone}
-										<p class="muted">Keine Tickets für diese Filter.</p>
-										<button
-											class="button-secondary button-small reset"
-											type="button"
-											onclick={clearFilters}
-										>
-											Filter zurücksetzen
-										</button>
-									{:else}
-										<p class="muted">Keine erledigten Tickets für diese Filter.</p>
-									{/if}
-								{:else if store.done.length > 0}
-									{#if store.doneState === 'ready' && store.doneError}
-										{@render failure(store.doneError, 'Weitere laden', () => store.loadMoreDone())}
-									{:else if store.doneHasMore}
-										<button
-											class="button-secondary"
-											type="button"
-											disabled={store.loadingMoreDone}
-											aria-busy={store.loadingMoreDone ? 'true' : undefined}
-											onclick={() => store.loadMoreDone()}
-										>
-											{store.loadingMoreDone ? 'Wird geladen …' : 'Weitere laden'}
-										</button>
-									{/if}
-								{:else if store.doneState === 'loading'}
-									<p class="loading" role="status">Erledigte Tickets werden geladen …</p>
-								{/if}
-							</td>
-						</tr>
-					</tbody>
-				{/if}
 			</table>
 		</div>
 	{/if}
@@ -1012,22 +911,20 @@
 		color: var(--color-brand-text);
 	}
 
-	.switch {
+	/* A quiet link to the view "Erledigte" (ADR-0066 §5); a target of 44 px on touch (ADR-0060 §2). */
+	.done-link {
 		display: inline-flex;
-		gap: 0.375rem;
+		gap: 0.25rem;
 		align-items: center;
-		font-size: var(--font-size-body);
-		color: var(--color-text-muted);
-		cursor: pointer;
+		min-height: var(--control-height-s);
+		font-size: var(--font-size-control);
+		color: var(--color-brand-text);
 	}
 
-	.switch.locked {
-		cursor: not-allowed;
-	}
-
-	.switch-hint {
-		font-size: var(--font-size-small);
-		color: var(--color-text-muted);
+	@media (pointer: coarse) {
+		.done-link {
+			min-height: var(--control-height-touch);
+		}
 	}
 
 	/* The measured frame of fitColumns (ADR-0030); the table takes its width and never more. */
@@ -1219,10 +1116,6 @@
 	.failure {
 		align-items: center;
 		margin-bottom: 0.75rem;
-	}
-
-	.section-foot .failure {
-		margin-bottom: 0;
 	}
 
 	.failure-text {

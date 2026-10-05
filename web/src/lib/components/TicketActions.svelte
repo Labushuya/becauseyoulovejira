@@ -22,13 +22,16 @@
 	// "Duplizieren …", only for an account in a household with the right (lib/area-move-entry.ts); in
 	// the full view its dialog unfolds inline like the others. Since TP-1 (ADR-0065) "Zum Tagesplan"
 	// puts a ticket that is not done into the plan of today of its own area (only inside the (app)
-	// layout, which has the store).
+	// layout, which has the store). Since ER-1 (ADR-0066) the view "Erledigte" puts "Wieder öffnen" at
+	// the same place for a done ticket (`onreopen`); every other entry is the one of every row.
 	let {
 		ticket,
 		flags,
 		inline = false,
 		open = null,
 		onmovedue = null,
+		onreopen = null,
+		reopenBusy = false,
 		onduplicate = null,
 		ondelete,
 		buttonLabel = 'Weitere Aktionen',
@@ -49,6 +52,10 @@
 		open?: { panel: ResolvedPathname; full: ResolvedPathname } | null;
 		/** "Fälligkeit verschieben …" (calendar); null leaves the entry out. */
 		onmovedue?: (() => void) | null;
+		/** "Wieder öffnen" of a done ticket ("Erledigte"); null leaves the entry out. */
+		onreopen?: (() => void) | null;
+		/** The reopening runs: the entry waits. */
+		reopenBusy?: boolean;
 		/** "Duplizieren …"; null leaves the entry out. */
 		onduplicate?: (() => void) | null;
 		/** "In den Papierkorb …". */
@@ -78,6 +85,12 @@
 				}
 	);
 
+	const reopenEntry = $derived(
+		onreopen === null || ticket.status !== 'done'
+			? null
+			: { label: 'Wieder öffnen', busy: reopenBusy, onselect: onreopen }
+	);
+
 	const items = $derived.by((): MenuAction[] => [
 		...(open === null
 			? []
@@ -91,9 +104,12 @@
 		...(planEntry === null
 			? []
 			: [{ ...planEntry, separated: open !== null && onmovedue === null }]),
+		...(reopenEntry === null
+			? []
+			: [{ ...reopenEntry, separated: open !== null && onmovedue === null && planEntry === null }]),
 		{
 			label: 'Link kopieren',
-			separated: open !== null && onmovedue === null && planEntry === null,
+			separated: open !== null && onmovedue === null && planEntry === null && reopenEntry === null,
 			onselect: () =>
 				void copyTicketLink(ticket.key, ticketShareUrl(ticket.id, window.location.origin), flags)
 		},

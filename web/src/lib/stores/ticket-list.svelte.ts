@@ -1,8 +1,10 @@
 // State of the ticket list (ADR-0006 sections 1 to 5; E2 plan, package 5; E3 plan, packages 5,
 // 10, 11 and 13). Open tickets are loaded in full, filtered, sorted and grouped client side
-// (ADR-0013 section 1); the search comes from the server as a set of IDs (section 2); done
-// tickets are loaded page by page in the server order and filtered by the server (section 3). The store is created per app layout and handed out through a typed context, so a logout
-// leaves no data behind. Own answers and realtime events (ADR-0007) go through the same
+// (ADR-0013 section 1); the search comes from the server as a set of IDs (section 2). Since ER-1
+// (ADR-0066) "Aufgaben" shows only open work: done tickets have their own view with its own store
+// (stores/done-list.svelte.ts); this one knows done ones only as sub-tasks (ADR-0033) and while a
+// just checked row offers "Rückgängig". The store is created per app layout and handed out
+// through a typed context, so a logout leaves no data behind. Own answers and realtime events (ADR-0007) go through the same
 // idempotent `upsert` and `remove`; after a reconnection the store reconciles once with the
 // server. The "new" mark (ADR-0015, E4 plan package 4) is derived from the own read rows and the
 // base line of the user. Results of actions and failures of the check mark go out as flags
@@ -16,33 +18,23 @@ import type { RequestOptions } from '$lib/data/options';
 import { listReads, markAllRead, markRead, type TicketRead } from '$lib/data/reads';
 import {
 	createTicket,
-	listDoneTickets,
 	listOpenTickets,
 	listSubtaskTickets,
 	searchOpenTicketIds,
 	setTicketDone,
 	updateTicket,
-	type DescriptionGuard,
-	type DoneFilter,
-	type DoneTicketPage
+	type DescriptionGuard
 } from '$lib/data/tickets';
 import { householdOfScope } from '$lib/domain/area';
 import { berlinToday, msUntilNextBerlinMidnight, type CalendarDate } from '$lib/domain/berlin-date';
 import { SERIES_MOVE_HINT } from '$lib/domain/calendar';
 import { formatCalendarDate } from '$lib/domain/format';
 import { NO_SUB_PROJECTS, matchesFilter, type SubProjectsOf } from '$lib/domain/filter';
-import {
-	cardsUseToday,
-	chooseAllOpen,
-	countCards,
-	sameCards,
-	type CardCounts
-} from '$lib/domain/filter-cards';
+import { chooseAllOpen, countCards, sameCards, type CardCounts } from '$lib/domain/filter-cards';
 import { groupTicketLevels, type GroupNode } from '$lib/domain/grouping';
 import {
 	EMPTY_LIST_QUERY,
 	FILTER_KEYS,
-	NO_PROJECT,
 	activeSearch,
 	type ListQuery
 } from '$lib/domain/list-query';
@@ -97,8 +89,6 @@ export interface TicketListData {
 	 * "Privat") when given, else in the area of the client (E7-3).
 	 */
 	create?(draft: TicketDraft, household?: string): Promise<TicketSummary>;
-	/** One page of done tickets narrowed by `filter` (the list filters at the Berlin date). */
-	listDone(page: number, options: RequestOptions & { filter: DoneFilter }): Promise<DoneTicketPage>;
 	/** IDs of the open tickets whose title, description or key contain the search text. */
 	searchOpen(search: string, options: RequestOptions): Promise<string[]>;
 	/** `completion` answers the question about open blocking sub-tasks (ADR-0033 section 2). */
@@ -119,7 +109,6 @@ export function ticketListData(pb: PocketBase): TicketListData {
 		listOpen: (options) => listOpenTickets(pb, options),
 		listSubtasks: (options) => listSubtaskTickets(pb, options),
 		create: (draft, household) => createTicket(pb, draft, { household }),
-		listDone: (page, options) => listDoneTickets(pb, page, options),
 		searchOpen: (search, options) => searchOpenTicketIds(pb, search, options),
 		setDone: (id, done, completion) => setTicketDone(pb, id, done, { completion }),
 		update: (id, patch, options) => updateTicket(pb, id, patch, options)
@@ -217,14 +206,6 @@ export function reopenRefusalOf(error: unknown): string | null {
 	return status !== undefined && REOPEN_REFUSALS.includes(status.code) ? status.message : null;
 }
 
-/**
- * True if the section "Erledigt" is shown (T-6): the status filter "Erledigt" shows only this
- * section, another status hides it, without a status the switch "Erledigte anzeigen" decides.
- */
-export function showsDoneSection(query: ListQuery): boolean {
-	return query.status === null ? query.showDone : query.status === 'done';
-}
-
 /** The filters besides the search, which applies after a pause and announces on its own. */
 const FILTERS_BESIDES_SEARCH = FILTER_KEYS.filter((key) => key !== 'search');
 
@@ -237,23 +218,9 @@ function sameFiltersBesidesSearch(a: ListQuery, b: ListQuery): boolean {
 }
 
 /** Text of the live region after a filter change (E3 plan, package 10). */
-export function countMessage(count: number, more = false): string {
-	if (more) return `Mehr als ${count} Tickets.`;
+export function countMessage(count: number): string {
 	if (count === 0) return 'Keine Tickets für diese Filter.';
 	return count === 1 ? '1 Ticket.' : `${count} Tickets.`;
-}
-
-/** Server order of done tickets: `-completed_at,-created,-id`. */
-function compareDone(a: TicketSummary, b: TicketSummary): number {
-	const keys: [string, string][] = [
-		[b.completedAt ?? '', a.completedAt ?? ''],
-		[b.created, a.created],
-		[b.id, a.id]
-	];
-	for (const [left, right] of keys) {
-		if (left !== right) return left < right ? -1 : 1;
-	}
-	return 0;
 }
 
 export interface TicketListOptions {
@@ -293,7 +260,6 @@ export class TicketListStore {
 	readonly #subProjectsOf: SubProjectsOf;
 
 	readonly #open = new SvelteMap<string, TicketSummary>();
-	readonly #done = new SvelteMap<string, TicketSummary>();
 	/**
 	 * Every sub-task, open and done (ADR-0033), for the section "Unteraufgaben" and the progress of
 	 * the parents. Open ones stand in #open as well.
@@ -326,16 +292,7 @@ export class TicketListStore {
 	#touched: Set<string> | null = null;
 
 	#openController: AbortController | null = null;
-	#doneController: AbortController | null = null;
 	#reconcileController: AbortController | null = null;
-	#donePage = 0;
-	/**
-	 * Filter the loaded done pages belong to (filters and, with a due filter, the date as one key),
-	 * null while the section is hidden; a different key loads the section again.
-	 */
-	#doneKey: string | null = null;
-	/** Filters changed while the section "Erledigt" alone is shown: announce after loading. */
-	#announceDone = false;
 	/** Search the URL asks for (from SEARCH_MIN_LENGTH characters), applied or waiting for the pause. */
 	#wantedSearch: string | null = null;
 	#searchTimer: ReturnType<typeof setTimeout> | undefined;
@@ -346,13 +303,8 @@ export class TicketListStore {
 	#query = $state<ListQuery>(EMPTY_LIST_QUERY);
 	#openState = $state<LoadState>('idle');
 	#openError = $state<string | null>(null);
-	#showDone = $state(false);
-	#doneState = $state<LoadState>('idle');
-	#doneError = $state<string | null>(null);
-	#doneHasMore = $state(false);
-	#loadingMoreDone = $state(false);
 	#announcement = $state('');
-	/** Search that narrows the list and the done section (after the pause), null without one. */
+	/** Search that narrows the list (after the pause), null without one. */
 	#search = $state<string | null>(null);
 	/**
 	 * Open tickets that match the search. A newer search keeps the older IDs until its answer, so
@@ -366,7 +318,6 @@ export class TicketListStore {
 	/** Visible open rows: filtered, narrowed by the search and in the column sort. */
 	#visibleList = $derived.by(() => {
 		const query = this.#query;
-		if (query.status === 'done') return [];
 		const today = this.#today;
 		const order = columnOrder(query.sort, today, this.#projectOf);
 		const ids = this.#search === null ? null : this.#searchIds;
@@ -397,14 +348,6 @@ export class TicketListStore {
 		const { grouping, subGrouping } = this.#query;
 		if (grouping === null) return null;
 		return groupTicketLevels(this.#listedList, grouping, subGrouping, this.#today, this.#projectOf);
-	});
-	#doneList = $derived.by(() => {
-		const query = this.#query;
-		const today = this.#today;
-		const subProjectsOf = this.#subProjectsOf;
-		return [...this.#done.values()]
-			.filter((ticket) => matchesFilter(ticket, query, today, subProjectsOf))
-			.sort(compareDone);
 	});
 	/**
 	 * Numbers of the filter cards (FI-1): the open tickets that pass the detail filters and the
@@ -574,18 +517,11 @@ export class TicketListStore {
 	}
 
 	/**
-	 * Number of shown tickets for the heading "Aufgaben" (package 10): the visible rows that are
-	 * not done, or with the status filter "Erledigt" the loaded done rows (`visibleCountMore`). The
-	 * pinned ones above are not counted; the heading names them as "+ N angeheftet" (ADR-0064).
+	 * Number of shown tickets for the heading "Aufgaben" (package 10): the visible rows. The pinned
+	 * ones above are not counted; the heading names them as "+ N angeheftet" (ADR-0064).
 	 */
 	get visibleCount(): number {
-		if (this.#query.status === 'done') return this.#doneList.length;
 		return this.#listedList.length;
-	}
-
-	/** True if more tickets match than `visibleCount` says (further pages of done tickets). */
-	get visibleCountMore(): boolean {
-		return this.#query.status === 'done' && this.#doneHasMore;
 	}
 
 	/** Number of tickets that are not done (header counter, T-18). */
@@ -603,11 +539,6 @@ export class TicketListStore {
 		return this.#cardCounts;
 	}
 
-	/** Loaded done tickets that pass the filters, most recently completed first (OF-E2-4). */
-	get done(): readonly TicketSummary[] {
-		return this.#doneList;
-	}
-
 	/** Berlin calendar date the order is based on. */
 	get today(): CalendarDate {
 		return this.#today;
@@ -619,27 +550,6 @@ export class TicketListStore {
 
 	get openError(): string | null {
 		return this.#openError;
-	}
-
-	/** True if the section "Erledigt" is shown (`showsDoneSection` of the current query). */
-	get showDone(): boolean {
-		return this.#showDone;
-	}
-
-	get doneState(): LoadState {
-		return this.#doneState;
-	}
-
-	get doneError(): string | null {
-		return this.#doneError;
-	}
-
-	get doneHasMore(): boolean {
-		return this.#doneHasMore;
-	}
-
-	get loadingMoreDone(): boolean {
-		return this.#loadingMoreDone;
 	}
 
 	/** Search that narrows the list (ADR-0013 section 2), null without one or during the pause. */
@@ -670,9 +580,9 @@ export class TicketListStore {
 		return this.#announcement;
 	}
 
-	/** Ticket from the list (or a loaded sub-task), null if it is not loaded. */
+	/** Open ticket of the list (or a loaded sub-task, open or done), null if it is not loaded. */
 	find(id: string): TicketSummary | null {
-		return this.#open.get(id) ?? this.#done.get(id) ?? this.#subtasks.get(id) ?? null;
+		return this.#open.get(id) ?? this.#subtasks.get(id) ?? null;
 	}
 
 	/** Sub-tasks of a ticket, open ones first, then by creation (ADR-0033 section 4). */
@@ -812,8 +722,6 @@ export class TicketListStore {
 			timer = setTimeout(
 				() => {
 					this.#today = berlinToday(this.#now());
-					// Due filters of the done section refer to the date: load them for the new day.
-					this.#syncDone();
 					schedule();
 				},
 				msUntilNextBerlinMidnight(this.#now()) + MIDNIGHT_BUFFER_MS
@@ -828,11 +736,9 @@ export class TicketListStore {
 	}
 
 	/**
-	 * Shows the list for the state of the URL: filters, search and the switch "Erledigte anzeigen"
-	 * (E3 plan, packages 10 and 11). Loads the open tickets once; they are only filtered, never
-	 * loaded again. The section "Erledigt" is loaded, loaded again for other filters, or dropped; a
-	 * request that became stale is aborted. A filter change announces the new number of tickets, a
-	 * search announces it when its answer arrives.
+	 * Shows the list for the state of the URL: filters and search (E3 plan, packages 10 and 11).
+	 * Loads the open tickets once; they are only filtered, never loaded again. A filter change
+	 * announces the new number of tickets, a search announces it when its answer arrives.
 	 */
 	activate(query: ListQuery): void {
 		const first = this.#openState === 'idle';
@@ -841,19 +747,8 @@ export class TicketListStore {
 		this.#query = query;
 		// A search from the URL of a fresh page applies at once, typing waits for the pause.
 		this.#followSearch(activeSearch(query), first);
-		this.#syncDone();
 		if (!filtersChanged || this.#openState !== 'ready') return;
-		if (query.status === 'done') this.#announceDone = true;
-		else this.#announcement = countMessage(this.visibleCount);
-	}
-
-	/**
-	 * The sub projects of the chosen project changed (catalog loaded, one added or moved; ADR-0034):
-	 * the section "Erledigt" loads again if the server has to take other projects in.
-	 */
-	followSubProjects(): void {
-		if (this.#openState === 'idle') return;
-		this.#syncDone();
+		this.#announcement = countMessage(this.visibleCount);
 	}
 
 	/**
@@ -864,20 +759,15 @@ export class TicketListStore {
 		if (this.#openState === 'idle') void this.#loadOpen();
 	}
 
-	/** Loads everything shown again ("Erneut versuchen"). */
+	/** Loads the open tickets again ("Erneut versuchen"). */
 	async reload(): Promise<void> {
-		await Promise.all([this.#loadOpen(), this.#showDone ? this.#loadDone(1) : undefined]);
-	}
-
-	/** Next page of done tickets ("Weitere laden"). */
-	async loadMoreDone(): Promise<void> {
-		if (!this.#showDone || !this.#doneHasMore || this.#doneController !== null) return;
-		await this.#loadDone(this.#donePage + 1);
+		await this.#loadOpen();
 	}
 
 	/**
 	 * Inserts or replaces a ticket (own answer or realtime event). An older `updated` than the
-	 * one in the store is ignored, so a late event does not overwrite a newer answer.
+	 * one in the store is ignored, so a late event does not overwrite a newer answer. A done ticket
+	 * leaves the list; the view "Erledigte" shows it (ADR-0066).
 	 */
 	upsert(ticket: TicketSummary): void {
 		if (this.#deleted.has(ticket.id)) return;
@@ -890,13 +780,10 @@ export class TicketListStore {
 		if (ticket.status !== 'done') {
 			// Open again by another way: "Rückgängig" has nothing left to do.
 			this.#dropUndo(ticket.id);
-			this.#done.delete(ticket.id);
 			this.#open.set(ticket.id, ticket);
 			return;
 		}
 		this.#open.delete(ticket.id);
-		if (this.#belongsToLoadedDone(ticket)) this.#done.set(ticket.id, ticket);
-		else this.#done.delete(ticket.id);
 	}
 
 	/**
@@ -919,7 +806,6 @@ export class TicketListStore {
 		this.#touched?.add(id);
 		this.#deleted.add(id);
 		this.#open.delete(id);
-		this.#done.delete(id);
 		this.#subtasks.delete(id);
 		this.#dropUndo(id);
 		this.#pending.delete(id);
@@ -1249,8 +1135,8 @@ export class TicketListStore {
 
 	/**
 	 * Reconciles with the server after events may have been lost (ADR-0007 section 3): loads the
-	 * open tickets and the loaded pages of done tickets again and merges them into the store
-	 * (insert, replace, remove) without a loading state, so nothing flickers. Rows that stand
+	 * open tickets and the sub-tasks again and merges them into the store (insert, replace,
+	 * remove) without a loading state, so nothing flickers. Rows that stand
 	 * with "Rückgängig" stay. A second call aborts a running one. A list that failed to load is
 	 * simply loaded again.
 	 */
@@ -1267,25 +1153,15 @@ export class TicketListStore {
 		const touched = new SvelteSet<string>();
 		this.#touched = touched;
 		const options = { signal: controller.signal };
-		const doneLoaded = this.#showDone && this.#doneState === 'ready' ? this.#donePage : 0;
-		const doneKey = this.#doneKey;
-		const filter = this.#doneFilter();
 		try {
 			const [open, subtasks] = await Promise.all([
 				this.#data.listOpen(options),
 				this.#data.listSubtasks?.(options) ?? null
 			]);
-			const pages: DoneTicketPage[] = [];
-			for (let page = 1; page <= doneLoaded; page += 1) {
-				pages.push(await this.#data.listDone(page, { ...options, filter }));
-			}
 			if (controller.signal.aborted) return;
 			this.#touched = null;
 			this.#mergeOpen(open, touched);
 			if (subtasks !== null) this.#mergeSubtasks(subtasks, touched);
-			// The done pages only count if the section still shows the same filters and pages.
-			const sameDone = this.#donePage === doneLoaded && this.#doneKey === doneKey;
-			if (doneLoaded > 0 && this.#showDone && sameDone) this.#mergeDone(pages, touched);
 			this.#refreshSearch();
 			void this.#loadReads();
 		} catch (error) {
@@ -1313,10 +1189,8 @@ export class TicketListStore {
 	/** Aborts all requests and timers and empties the store. */
 	reset(): void {
 		this.#openController?.abort();
-		this.#doneController?.abort();
 		this.#reconcileController?.abort();
 		this.#openController = null;
-		this.#doneController = null;
 		this.#reconcileController = null;
 		this.#completion = null;
 		this.#completionError = null;
@@ -1325,12 +1199,8 @@ export class TicketListStore {
 		for (const id of [...this.#undoable.keys()]) this.#dropUndo(id);
 		for (const id of [...this.#movedDue.keys()]) this.#dropMovedDue(id);
 		this.#open.clear();
-		this.#done.clear();
 		this.#subtasks.clear();
 		this.#pending.clear();
-		this.#donePage = 0;
-		this.#doneKey = null;
-		this.#announceDone = false;
 		clearTimeout(this.#searchTimer);
 		clearTimeout(this.#searchRefreshTimer);
 		this.#searchController?.abort();
@@ -1343,11 +1213,6 @@ export class TicketListStore {
 		this.#query = EMPTY_LIST_QUERY;
 		this.#openState = 'idle';
 		this.#openError = null;
-		this.#showDone = false;
-		this.#doneState = 'idle';
-		this.#doneError = null;
-		this.#doneHasMore = false;
-		this.#loadingMoreDone = false;
 		this.#announcement = '';
 		this.#readsController?.abort();
 		this.#readsController = null;
@@ -1419,48 +1284,6 @@ export class TicketListStore {
 		}
 	}
 
-	async #loadDone(page: number): Promise<void> {
-		this.#doneController?.abort();
-		this.#doneController = null;
-		if (!this.#session.ensureValid()) return;
-		const controller = new AbortController();
-		this.#doneController = controller;
-		const first = page === 1;
-		if (first) this.#doneState = 'loading';
-		else this.#loadingMoreDone = true;
-		this.#doneError = null;
-		try {
-			const result = await this.#data.listDone(page, {
-				signal: controller.signal,
-				filter: this.#doneFilter()
-			});
-			if (controller.signal.aborted) return;
-			if (first) this.#done.clear();
-			for (const ticket of result.items) {
-				const existing = this.#done.get(ticket.id);
-				if (!existing || existing.updated <= ticket.updated) this.#done.set(ticket.id, ticket);
-			}
-			this.#donePage = result.page;
-			this.#doneHasMore = result.hasMore;
-			this.#doneState = 'ready';
-			if (first && this.#announceDone) {
-				this.#announceDone = false;
-				this.#announcement = countMessage(this.#doneList.length, result.hasMore);
-			}
-		} catch (error) {
-			if (controller.signal.aborted) return;
-			const message = this.#failureMessage(error);
-			if (message === null) return;
-			this.#doneError = message;
-			if (first) this.#doneState = 'error';
-		} finally {
-			if (this.#doneController === controller) {
-				this.#doneController = null;
-				this.#loadingMoreDone = false;
-			}
-		}
-	}
-
 	/**
 	 * A removed ticket in the snapshot of a reconciliation is visible again (restored from the
 	 * trash during a gap, ADR-0037), unless it was removed while the reconciliation ran: then the
@@ -1485,7 +1308,7 @@ export class TicketListStore {
 
 	/**
 	 * Sub-tasks of a reconciliation (ADR-0033): gone ones leave unless changed meanwhile; the others
-	 * replace older versions. A done one only updates the index, the list keeps its done pages.
+	 * replace older versions. A done one only updates the index of the sub-tasks.
 	 */
 	#mergeSubtasks(subtasks: readonly TicketSummary[], touched: ReadonlySet<string>): void {
 		const ids = new SvelteSet(subtasks.map((ticket) => ticket.id));
@@ -1500,60 +1323,6 @@ export class TicketListStore {
 				this.#subtasks.set(ticket.id, ticket);
 			}
 		}
-	}
-
-	#mergeDone(pages: readonly DoneTicketPage[], touched: ReadonlySet<string>): void {
-		const items = pages.flatMap((page) => page.items);
-		const ids = new SvelteSet(items.map((ticket) => ticket.id));
-		for (const id of [...this.#done.keys()]) {
-			if (!ids.has(id) && !touched.has(id)) this.#done.delete(id);
-		}
-		for (const ticket of items) {
-			this.#revive(ticket.id, touched);
-			if (this.#deleted.has(ticket.id) || touched.has(ticket.id)) continue;
-			const existing = this.#done.get(ticket.id);
-			if (existing === undefined || existing.updated <= ticket.updated) {
-				this.#open.delete(ticket.id);
-				this.#done.set(ticket.id, ticket);
-			}
-		}
-		this.#doneHasMore = pages.at(-1)?.hasMore ?? false;
-	}
-
-	/**
-	 * A done ticket joins the loaded done tickets only where the loaded pages cover it, so
-	 * "Weitere laden" keeps the server order.
-	 */
-	#belongsToLoadedDone(ticket: TicketSummary): boolean {
-		if (!this.#showDone || this.#doneState !== 'ready') return false;
-		if (!matchesFilter(ticket, this.#query, this.#today, this.#subProjectsOf)) return false;
-		// An active search knows only the loaded rows and the IDs it found while they were open.
-		if (this.#search !== null && !this.#done.has(ticket.id) && !this.#searchIds?.has(ticket.id)) {
-			return false;
-		}
-		if (this.#done.has(ticket.id) || !this.#doneHasMore) return true;
-		const last = this.#doneList.at(-1);
-		return last === undefined || compareDone(ticket, last) < 0;
-	}
-
-	/** Filter of the done section for the server: the query at the current Berlin date. */
-	#doneFilter(): DoneFilter {
-		const filter: DoneFilter = {
-			query: { ...this.#query, search: this.#search },
-			today: this.#today
-		};
-		if (this.#subProjectIds().length > 0) filter.withSubProjects = true;
-		return filter;
-	}
-
-	/**
-	 * Sub projects the project filter takes in (ADR-0034): none without a project, with "Ohne
-	 * Projekt" or with `unterprojekte=0`.
-	 */
-	#subProjectIds(): readonly string[] {
-		const { project, subProjects } = this.#query;
-		if (project === null || project === NO_PROJECT || !subProjects) return [];
-		return this.#subProjectsOf(project);
 	}
 
 	/**
@@ -1572,7 +1341,7 @@ export class TicketListStore {
 		this.#searchTimer = setTimeout(() => this.#applySearch(wanted), SEARCH_DEBOUNCE_MS);
 	}
 
-	/** Applies a search to the list and the done section; null shows both without search. */
+	/** Applies a search to the list; null shows it without search. */
 	#applySearch(search: string | null): void {
 		const changed = search !== this.#search;
 		this.#search = search;
@@ -1586,11 +1355,7 @@ export class TicketListStore {
 		} else {
 			void this.#loadSearch(true);
 		}
-		if (!changed) return;
-		const ready = this.#openState === 'ready';
-		if (ready && this.#query.status === 'done') this.#announceDone = true;
-		this.#syncDone();
-		if (search === null && ready && this.#query.status !== 'done') {
+		if (changed && search === null && this.#openState === 'ready') {
 			this.#announcement = countMessage(this.visibleCount);
 		}
 	}
@@ -1621,7 +1386,7 @@ export class TicketListStore {
 			if (controller.signal.aborted || search !== this.#search) return;
 			this.#searchIds = new SvelteSet(ids);
 			this.#searchError = null;
-			if (announce && this.#openState === 'ready' && this.#query.status !== 'done') {
+			if (announce && this.#openState === 'ready') {
 				this.#announcement = countMessage(this.visibleCount);
 			}
 		} catch (error) {
@@ -1636,44 +1401,6 @@ export class TicketListStore {
 				this.#searchBusy = false;
 			}
 		}
-	}
-
-	/**
-	 * Brings the section "Erledigt" in line with the query and the date: shows and loads it, loads
-	 * it again for other filters (old rows stay until the answer, as far as they still pass), or
-	 * drops it. The date only counts while a due filter is set.
-	 */
-	#syncDone(): void {
-		// The done section follows the applied search, not every typed character.
-		const query = { ...this.#query, search: this.#search };
-		const show = showsDoneSection(query);
-		const key = show
-			? JSON.stringify([
-					...FILTER_KEYS.map((name) => query[name]),
-					// The chosen cards (FI-1); their due cards load again at midnight like the due filter.
-					query.cards,
-					query.due === null && !cardsUseToday(query.cards) ? '' : this.#today,
-					// Sub projects taken in (ADR-0034): switching them off or a new one loads again.
-					query.subProjects,
-					this.#subProjectIds()
-				])
-			: null;
-		if (key === this.#doneKey) return;
-		this.#doneKey = key;
-		this.#showDone = show;
-		if (show) {
-			void this.#loadDone(1);
-			return;
-		}
-		this.#doneController?.abort();
-		this.#doneController = null;
-		this.#done.clear();
-		this.#donePage = 0;
-		this.#doneHasMore = false;
-		this.#loadingMoreDone = false;
-		this.#doneState = 'idle';
-		this.#doneError = null;
-		this.#announceDone = false;
 	}
 
 	/** Ends the chance of "Rückgängig" for a ticket and closes its flag. */

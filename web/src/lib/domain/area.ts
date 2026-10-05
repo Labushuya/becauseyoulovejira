@@ -127,6 +127,8 @@ const RECORD_ROUTES: Readonly<Record<string, AreaRecordKind>> = Object.freeze({
 	'/(app)/wiederholungen/tickets/[id]/voll': 'ticket',
 	'/(app)/tagesplan/tickets/[id]': 'ticket',
 	'/(app)/tagesplan/tickets/[id]/voll': 'ticket',
+	'/(app)/erledigt/tickets/[id]': 'ticket',
+	'/(app)/erledigt/tickets/[id]/voll': 'ticket',
 	'/(app)/projekte/[id]': 'project',
 	'/(app)/eingang/[id]': 'item',
 	'/(app)/kalender/eingang/[id]': 'item',
@@ -147,7 +149,7 @@ export function recordOfRoute(
 
 /** The views of the app a change of the area may lead to. */
 export type AreaView =
-	'tasks' | 'dayplan' | 'projects' | 'inbox' | 'recurrences' | 'calendar' | 'trash';
+	'tasks' | 'dayplan' | 'projects' | 'inbox' | 'recurrences' | 'calendar' | 'done' | 'trash';
 
 /** Views of the app by the start of their routes; the settings are not among them (they stay). */
 const VIEW_BASES: readonly (readonly [string, AreaView])[] = [
@@ -157,6 +159,7 @@ const VIEW_BASES: readonly (readonly [string, AreaView])[] = [
 	['/(app)/eingang', 'inbox'],
 	['/(app)/wiederholungen', 'recurrences'],
 	['/(app)/kalender', 'calendar'],
+	['/(app)/erledigt', 'done'],
 	['/(app)/papierkorb', 'trash']
 ];
 

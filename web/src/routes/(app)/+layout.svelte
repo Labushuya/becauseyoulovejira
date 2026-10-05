@@ -378,6 +378,7 @@
 		inbox: resolve('/eingang'),
 		recurrences: resolve('/wiederholungen'),
 		calendar: resolve('/kalender'),
+		done: resolve('/erledigt'),
 		trash: resolve('/papierkorb')
 	};
 

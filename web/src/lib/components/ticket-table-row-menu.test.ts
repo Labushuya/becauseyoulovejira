@@ -99,7 +99,6 @@ async function showTable(setup: Setup = {}) {
 	const open = [ticket(), ticket({ id: OTHER, key: 'TASK-2', title: 'Keller aufräumen' })];
 	const data: TicketListData = {
 		listOpen: vi.fn(async () => open),
-		listDone: vi.fn(async (page: number) => ({ items: [], page, hasMore: false })),
 		searchOpen: vi.fn(async (): Promise<string[]> => []),
 		setDone: vi.fn(),
 		update: vi.fn()

@@ -6,7 +6,6 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import { DataError } from '$lib/data/errors';
-import type { DoneTicketPage } from '$lib/data/tickets';
 import { EMPTY_LIST_QUERY } from '$lib/domain/list-query';
 import type { TicketSummary } from '$lib/domain/ticket';
 import { fakePins, pinOf } from '$lib/test/fake-pins';
@@ -43,11 +42,6 @@ function ticket(overrides: Partial<TicketSummary> = {}): TicketSummary {
 function listData(open: TicketSummary[]): TicketListData {
 	return {
 		listOpen: vi.fn(async () => open),
-		listDone: vi.fn(async (page: number): Promise<DoneTicketPage> => ({
-			items: [],
-			page,
-			hasMore: false
-		})),
 		searchOpen: vi.fn(async (): Promise<string[]> => []),
 		setDone: vi.fn(),
 		update: vi.fn()

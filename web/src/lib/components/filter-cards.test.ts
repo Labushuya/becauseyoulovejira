@@ -135,15 +135,13 @@ describe('filter cards', () => {
 	});
 
 	it('keeps the filters, the search, the view and the panel', async () => {
-		show(
-			'/tickets/abc123def456ghi?status=open&projekt=ohne&q=Miete&sort=titel&gruppe=prio&erledigte=1'
-		);
+		show('/tickets/abc123def456ghi?status=open&projekt=ohne&q=Miete&sort=titel&gruppe=prio');
 
 		await fireEvent.click(card('Überfällig: 4'));
 
 		expect(mocks.goto).toHaveBeenCalledExactlyOnceWith(
 			'/tickets/abc123def456ghi?karte=ueberfaellig&status=open&projekt=ohne&q=Miete&sort=titel' +
-				'&gruppe=prio&erledigte=1',
+				'&gruppe=prio',
 			NAVIGATION
 		);
 	});

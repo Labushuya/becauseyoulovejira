@@ -3,24 +3,22 @@
 // always go through pb.filter().
 
 import type PocketBase from 'pocketbase';
-import { addDays, type CalendarDate } from '../domain/berlin-date';
+import type { CalendarDate } from '../domain/berlin-date';
 import { charmKeyOf } from '../domain/charms';
 import { colorOf } from '../domain/colors';
 import { kindOf } from '../domain/day-plan';
+import { EMPTY_DONE_QUERY, activeDoneSearch, type DoneQuery } from '../domain/done-view';
 import {
 	duplicateRequestBody,
 	toDuplicateOutcome,
 	type DuplicateOutcome,
 	type DuplicateRequest
 } from '../domain/duplicate';
-import { cardsUseToday, type FilterCard } from '../domain/filter-cards';
 import { isInboxChannel } from '../domain/inbox';
-import { EMPTY_LIST_QUERY, NO_PROJECT, activeSearch, type ListQuery } from '../domain/list-query';
-import { SOON_DAYS } from '../domain/ordering';
-import { channelsOf, type SourceFamily } from '../domain/source';
+import { NO_PROJECT } from '../domain/list-query';
 import type { SourceHandling } from '../domain/sources';
 import type { CompletionChoice } from '../domain/subtasks';
-import { isPriority, isStatus, type Priority, type Status } from '../domain/status';
+import { isPriority, isStatus, type Status } from '../domain/status';
 import {
 	MANUAL_ORIGIN,
 	REOPEN_STATUS,
@@ -42,7 +40,7 @@ import { currentUserId, type RequestOptions } from './options';
 
 const TICKETS = 'tickets';
 
-/** Done tickets per page (ADR-0006 section 3). */
+/** Done tickets per page of the view "Erledigte" (ADR-0006 section 3, ADR-0066 §3). */
 export const DONE_PAGE_SIZE = 50;
 
 /**
@@ -259,17 +257,18 @@ export function listSubtaskTickets(
 	});
 }
 
-export interface DoneTicketPage {
+/** One page of the view "Erledigte" (ADR-0066 §3). */
+export interface CompletedTicketPage {
 	items: TicketSummary[];
 	page: number;
 	hasMore: boolean;
+	/** Done tickets of the area that pass the filters, on all pages. */
+	total: number;
 }
 
-/** List filters of the section "Erledigt" (E3 plan, T-6): the query of the URL at a Berlin date. */
-export interface DoneFilter {
-	query: ListQuery;
-	/** Berlin calendar date the due filters refer to. */
-	today: CalendarDate;
+/** Filters of the view "Erledigte": the query of its address. */
+export interface CompletedFilter {
+	query: DoneQuery;
 	/**
 	 * The chosen project has sub projects and the query takes them in (ADR-0034 section 6): the
 	 * expression then asks `project.parent` as well. Only set when the catalog knows sub projects,
@@ -399,99 +398,39 @@ export function listDoneTicketChoices(
 	});
 }
 
-/** Without list filters: every done ticket. */
-const NO_DONE_FILTER: DoneFilter = { query: EMPTY_LIST_QUERY, today: '' };
-
-/**
- * Server form of `matchesFilter` (domain/filter.ts) for the done tickets (ADR-0013 section 3).
- * One fixed expression of fixed conditions joined with AND; each condition only applies when its
- * parameter selects it, so every value reaches the server as a parameter of pb.filter(). The
- * rules are those of the client: a done ticket is never overdue, "Bald" is tomorrow up to
- * today + SOON_DAYS, project and tag compare the stored relations. The search (ADR-0013 section
- * 2) is part of the expression, because the list does not load the description. "Wiederkehrend"
- * (plan OR-2) compares `recurrence`: a ticket of a series has it set.
- * tests/integration/web-filter-parity.test.mjs keeps both forms equal.
- */
-const DONE_FILTER = [
-	'status = {:done}',
-	'({:q} = "" || title ~ {:q} || description ~ {:q} || key ~ {:q})',
-	'({:status} = "" || status = {:status})',
-	'({:priority} = "" || priority = {:priority})',
-	'({:due} != "overdue" || (due != "" && due < {:today} && status != {:done}))',
-	'({:due} != "today" || due = {:today})',
-	'({:due} != "soon" || (due >= {:tomorrow} && due <= {:horizon}))',
-	'({:due} != "none" || due = "")',
-	'({:project} = "" || {:project} = {:noProject} || project = {:project})',
-	'({:project} != {:noProject} || project = "")',
-	'({:tag} = "" || tags.id ?= {:tag})',
-	'({:recurring} != "recurring" || recurrence != "")',
-	'({:recurring} != "once" || recurrence = "")'
-].join(' && ');
-
-/**
- * Source family of the done tickets (ADR-0019 section 2): the channels of the family, and for
- * "manual" also an empty source (tickets before E4). A family has one to MAX_FAMILY_CHANNELS
- * channels; unused parameters repeat the first channel, since '' would match the tickets without
- * source, which only {:withEmpty} may take. The clause joins DONE_FILTER only when a source is
- * chosen: before the migration of E4 the server does not know the field, and the done list must
- * keep working until the next start.
- */
-const DONE_SOURCE_FILTER = [
-	'(source = {:s1} || source = {:s2} || source = {:s3} || source = {:s4} || ({:withEmpty} = "1" && source = ""))'
-].join(' && ');
-
-// Four since the own inbox (ADR-0038): "Manuell" holds manual, quick, clipboard and api.
-const MAX_FAMILY_CHANNELS = 4;
-
-function sourceParams(family: SourceFamily): Record<string, string> {
-	const channels = channelsOf(family);
-	const first = channels[0];
-	if (first === undefined || channels.length > MAX_FAMILY_CHANNELS) {
-		throw new RangeError(`No filter for the source family ${family}`);
-	}
-	return {
-		s1: first,
-		s2: channels[1] ?? first,
-		s3: channels[2] ?? first,
-		s4: channels[3] ?? first,
-		withEmpty: family === 'manual' ? '1' : ''
-	};
-}
-
 /**
  * A project with its sub projects (ADR-0034 section 6): the tickets of the project and of every
- * project whose parent it is. Joins DONE_FILTER only then (see DoneFilter.withSubProjects); the
- * project clause of DONE_FILTER is switched off meanwhile.
+ * project whose parent it is. Joins COMPLETED_FILTER and DONE_CHOICE_FILTER only then (see
+ * CompletedFilter.withSubProjects); their plain project clause is switched off meanwhile.
  */
 const DONE_FAMILY_FILTER = [
 	'({:family} != "" && (project = {:family} || project.parent = {:family}))'
 ].join(' && ');
 
+/** Without filters: every done ticket of the area. */
+const NO_COMPLETED_FILTER: CompletedFilter = { query: EMPTY_DONE_QUERY };
+
 /**
- * The filter cards (FI-1, ADR-0013 addendum C): the union (OR) of the chosen cards as one clause in
- * its own parentheses, so the rest of the expression narrows it as a whole (AND). Each card applies
- * only when its parameter is "1"; the rules are those of `matchesCard` (domain/filter-cards.ts): a
- * done ticket is never in progress and never overdue. Joins DONE_FILTER only with a chosen card.
+ * Server form of `matchesDoneQuery` (domain/done-view.ts) plus the search, for the view "Erledigte"
+ * (ADR-0066 §3). One fixed expression of fixed conditions joined with AND; each condition only
+ * applies when its parameter selects it, so every value reaches the server as a parameter of
+ * pb.filter(). The search (title, description or key, ADR-0013 section 2) is part of it, because
+ * the list does not load the description; so is one ticket (`{:id}`), which a realtime event with
+ * a search asks for (ADR-0066 §4). The charm (ADR-0062) is a field since the migration of CH-1.
+ * tests/integration/web-filter-parity.test.mjs keeps both forms equal.
  */
-const DONE_CARDS_FILTER = [
-	'(({:cardInProgress} = "1" && status = {:inProgress}) || ({:cardToday} = "1" && due != "" && due = {:today}) || ({:cardOverdue} = "1" && due != "" && due < {:today} && status != {:done}) || ({:cardUrgent} = "1" && priority = {:urgent}))'
+const COMPLETED_FILTER = [
+	'status = {:done}',
+	'({:id} = "" || id = {:id})',
+	'({:q} = "" || title ~ {:q} || description ~ {:q} || key ~ {:q})',
+	'({:project} = "" || {:project} = {:noProject} || project = {:project})',
+	'({:project} != {:noProject} || project = "")',
+	'({:tag} = "" || tags.id ?= {:tag})',
+	'({:charm} = "" || charm = {:charm})'
 ].join(' && ');
 
-/** Parameters of DONE_CARDS_FILTER: "1" for each chosen card, '' for the others. */
-function cardParams(cards: readonly FilterCard[]): Record<string, string> {
-	const chosen = (card: FilterCard) => (cards.includes(card) ? '1' : '');
-	return {
-		cardInProgress: chosen('in_progress'),
-		cardToday: chosen('due_today'),
-		cardOverdue: chosen('overdue'),
-		cardUrgent: chosen('urgent'),
-		inProgress: 'in_progress' satisfies Status,
-		urgent: 'urgent' satisfies Priority
-	};
-}
-
 /** Whether the expression takes the sub projects of the chosen project in. */
-function takesSubProjects({ query, withSubProjects }: DoneFilter): boolean {
+function takesSubProjects({ query, withSubProjects }: CompletedFilter): boolean {
 	return (
 		withSubProjects === true &&
 		query.subProjects &&
@@ -500,67 +439,48 @@ function takesSubProjects({ query, withSubProjects }: DoneFilter): boolean {
 	);
 }
 
-/**
- * Expression of the done tickets: DONE_FILTER, with a chosen source also its clause, with sub
- * projects the clause of the project family, and with chosen cards the clause of their union.
- */
-function doneFilterExpression(done: DoneFilter): string {
-	const parts = [DONE_FILTER];
-	if (done.query.source !== null) parts.push(DONE_SOURCE_FILTER);
+/** COMPLETED_FILTER, with sub projects the clause of the project family. */
+function completedExpression(done: CompletedFilter): string {
+	const parts = [COMPLETED_FILTER];
 	if (takesSubProjects(done)) parts.push(DONE_FAMILY_FILTER);
-	if (done.query.cards.length > 0) parts.push(DONE_CARDS_FILTER);
 	return parts.join(' && ');
 }
 
 /**
- * Parameters of DONE_FILTER; an unset filter is '', which switches its conditions off. With sub
- * projects the project goes to DONE_FAMILY_FILTER instead of the plain project clause. The dates
- * are set for a due filter and for a card that compares with today.
+ * Parameters of the expression; an unset filter is '', which switches its condition off. With
+ * sub projects the project goes to DONE_FAMILY_FILTER instead of the plain project clause.
  */
-function doneFilterParams(done: DoneFilter): Record<string, string> {
-	const { query, today } = done;
+function completedParams(done: CompletedFilter, id = ''): Record<string, string> {
+	const { query } = done;
 	const family = takesSubProjects(done);
-	const dates =
-		query.due === null && !cardsUseToday(query.cards)
-			? { today: '', tomorrow: '', horizon: '' }
-			: {
-					today: fromDueInput(today),
-					tomorrow: fromDueInput(addDays(today, 1)),
-					horizon: fromDueInput(addDays(today, SOON_DAYS))
-				};
 	return {
 		done: 'done' satisfies Status,
-		q: likeText(activeSearch(query) ?? ''),
-		status: query.status ?? '',
-		priority: query.priority ?? '',
-		due: query.due ?? '',
-		...dates,
+		id,
+		q: likeText(activeDoneSearch(query) ?? ''),
 		project: family ? '' : (query.project ?? ''),
 		noProject: NO_PROJECT,
 		tag: query.tag ?? '',
-		recurring: query.recurring ?? '',
-		...(query.source === null ? {} : sourceParams(query.source)),
-		...(family ? { family: query.project ?? '' } : {}),
-		...(query.cards.length === 0 ? {} : cardParams(query.cards))
+		charm: query.charm ?? '',
+		...(family ? { family: query.project ?? '' } : {})
 	};
 }
 
 /**
- * One page of done tickets, most recently completed first (ADR-0006 section 3), narrowed by the
- * list filters when given (E3 plan, package 10).
+ * One page of the view "Erledigte" (ADR-0066 §3): the done tickets of the area that pass the
+ * filters, most recently completed first, with their number on all pages.
  */
-export function listDoneTickets(
+export function listCompletedTickets(
 	pb: PocketBase,
 	page: number,
 	{
 		signal,
 		perPage = DONE_PAGE_SIZE,
-		filter = NO_DONE_FILTER
-	}: RequestOptions & { perPage?: number; filter?: DoneFilter } = {}
-): Promise<DoneTicketPage> {
+		filter = NO_COMPLETED_FILTER
+	}: RequestOptions & { perPage?: number; filter?: CompletedFilter } = {}
+): Promise<CompletedTicketPage> {
 	return withDataErrors(signal, async () => {
 		const result = await pb.collection(TICKETS).getList<TicketRecord>(page, perPage, {
-			filter: areaFilter(pb, doneFilterExpression(filter), doneFilterParams(filter)),
+			filter: areaFilter(pb, completedExpression(filter), completedParams(filter)),
 			sort: '-completed_at,-created,-id',
 			fields: TICKET_LIST_FIELDS,
 			expand: TICKET_EXPAND,
@@ -569,8 +489,47 @@ export function listDoneTickets(
 		return {
 			items: result.items.map(toTicketSummary),
 			page: result.page,
-			hasMore: result.page < result.totalPages
+			hasMore: result.page < result.totalPages,
+			total: result.totalItems
 		};
+	});
+}
+
+/** Number of the done tickets of the area that pass the filters (ADR-0066 §3). */
+export function countCompletedTickets(
+	pb: PocketBase,
+	done: CompletedFilter,
+	{ signal }: RequestOptions = {}
+): Promise<number> {
+	return withDataErrors(signal, async () => {
+		const result = await pb.collection(TICKETS).getList<{ id: string }>(1, 1, {
+			filter: areaFilter(pb, completedExpression(done), completedParams(done)),
+			fields: 'id',
+			signal
+		});
+		return result.totalItems;
+	});
+}
+
+/**
+ * Whether the done ticket `id` passes the filters with the search of the view (ADR-0066 §4): a
+ * ticket completed elsewhere joins a searched list only if the server finds it, since the list
+ * does not know its description.
+ */
+export function completedTicketMatches(
+	pb: PocketBase,
+	id: string,
+	done: CompletedFilter,
+	{ signal }: RequestOptions = {}
+): Promise<boolean> {
+	return withDataErrors(signal, async () => {
+		const result = await pb.collection(TICKETS).getList<{ id: string }>(1, 1, {
+			filter: areaFilter(pb, completedExpression(done), completedParams(done, id)),
+			fields: 'id',
+			skipTotal: true,
+			signal
+		});
+		return result.items.length > 0;
 	});
 }
 

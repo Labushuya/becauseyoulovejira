@@ -52,8 +52,9 @@ export type SubProjectsOf = (projectId: string) => readonly string[];
 /** Without a catalog no project has sub projects. */
 export const NO_SUB_PROJECTS: SubProjectsOf = () => [];
 
-function matchesProject(
-	ticket: FilterableTicket,
+/** The project filter of `query` (also of the view "Erledigte", ADR-0066). */
+export function matchesProject(
+	ticket: Pick<FilterableTicket, 'projectId'>,
 	query: Pick<ListQuery, 'project' | 'subProjects'>,
 	subProjectsOf: SubProjectsOf
 ): boolean {

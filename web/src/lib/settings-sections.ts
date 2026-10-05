@@ -217,6 +217,8 @@ export const HELP_SECTIONS = [
 	{ id: 'kalender', label: 'Kalender' },
 	// The day plan (ADR-0065): kinds, sources, the shared plan of a household.
 	{ id: 'tagesplan', label: 'Tagesplan' },
+	// The view "Erledigte" (ADR-0066): groups, loading more, filters, reopening.
+	{ id: 'erledigte', label: 'Erledigte' },
 	{ id: 'zugangsdaten', label: 'Kanäle und Zugangsdaten' },
 	// Own inbox (ADR-0038): linked from its card on "Kanäle".
 	{ id: 'eigener-eingang', label: 'Eigener Eingang (API)' },

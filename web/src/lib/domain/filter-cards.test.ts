@@ -342,12 +342,9 @@ describe('summary above the list', () => {
 		expect(cardSummary([], { count: 3 })).toBe('3 Tickets aus: Alle offenen');
 	});
 
-	it('says when filters narrow the cards and when more tickets match', () => {
+	it('says when filters narrow the cards', () => {
 		expect(cardSummary(['due_today', 'overdue'], { count: 4, filtered: true })).toBe(
 			'4 Tickets aus: Heute fällig, Überfällig – weitere Filter aktiv'
-		);
-		expect(cardSummary(['urgent'], { count: 50, more: true })).toBe(
-			'Mehr als 50 Tickets aus: Dringend'
 		);
 	});
 

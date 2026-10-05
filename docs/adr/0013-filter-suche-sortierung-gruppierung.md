@@ -1,6 +1,6 @@
 # ADR-0013: Filter, Suche, Sortierung und Gruppierung: was der Client und was der Server rechnet
 
-- **Status:** Angenommen
+- **Status:** Angenommen; §3 seit Nachtrag D (ER-1) für die Ansicht „Erledigte“ ([ADR-0066](0066-ansicht-erledigte.md))
 - **Datum:** 2026-09-25
 - **Entscheidung durch:** Advisor
 - **Ergänzt:** [ADR-0006](0006-frontend-zustand-und-datenzugriff.md) (dort §2 „Server-Sortierung wird in E3 je Variante neu bewertet“)
@@ -135,3 +135,13 @@ Produktentscheidung vom 2026-10-05 nach einem Fehlerbericht des Nutzers. Der Tex
 - Positiv: Mehrfachwahl tut, was sie verspricht; die Zahlen auf den Karten sagen vor dem Klick, wie viele Tickets kommen.
 - Negativ: Eine Karte kann einem Filter der Filterleiste widersprechen, etwa „In Arbeit“ mit Status „Offen“, und dann ist die Liste leer. Die Zahl 0 auf der Karte, die Zusammenfassung und „Filter zurücksetzen“ machen das sichtbar.
 - Negativ: „Alle offenen“ bleibt gewählt, wenn der Statusfilter „Erledigt“ nur erledigte Tickets zeigt; der Name meint „keine Karte“.
+
+## Nachtrag D (2026-10-05, Paket ER-1): Erledigte Tickets in einer eigenen Ansicht
+
+Nutzerentscheidung vom 2026-10-05, ausgeführt in [ADR-0066](0066-ansicht-erledigte.md). Der Text oben bleibt als Geschichte; dieser Nachtrag ersetzt §3 und die Teile von §4 und Nachtrag C, die erledigte Tickets in „Aufgaben“ betreffen.
+
+1. **„Aufgaben“ zeigt nur offene Arbeit.** Der Abschnitt „Erledigt“ und der Schalter „Erledigte anzeigen“ entfallen; der Parameter `erledigte` gehört nicht mehr zur `ListQuery`. An seiner Stelle führt der Link „Erledigte ansehen →“ in die Ansicht `/erledigt` und nimmt `projekt`, `unterprojekte`, `tag` und `q` mit.
+2. **Statusfilter:** „Erledigt“ ist kein Wert des Statusfilters von „Aufgaben“ mehr. Der Kalender (ADR-0053) behält ihn, deshalb bleibt `done` ein gültiger Wert der `ListQuery`, die die Filterleiste nur im Kalender anbietet.
+3. **Alte Adressen:** Mit `status=done` oder mit `erledigte=1` ohne Status verlangte eine Adresse erledigte Tickets; sie führt seit ER-1 an dieselbe Stelle unter `/erledigt`, mit den Filtern, die beide Ansichten kennen. `erledigte` neben einem anderen Status zeigte nichts Erledigtes und wird nur entfernt. Lesezeichen, Verlauf und die gemerkte letzte Ansicht bleiben so gültig; eine Migration gespeicherter Daten gibt es nicht.
+4. **§3 „Erledigte Tickets: Filter auf dem Server“** gilt jetzt für die Ansicht „Erledigte“ mit eigenem Filter (Suche, Projekt mit Unterprojekten, Tag, Charm): `COMPLETED_FILTER` in `data/tickets.ts`, Gegenstück `matchesDoneQuery` in `domain/done-view.ts`, Paritätstest `tests/integration/web-filter-parity.test.mjs`. Die feste Reihenfolge „zuletzt erledigte zuerst“ bleibt; statt Sortierung per Spaltenkopf gliedert die Ansicht nach dem Tag des Abschlusses. `listDoneTickets`, `DONE_FILTER`, `DONE_SOURCE_FILTER` und `DONE_CARDS_FILTER` entfallen.
+5. **Nachtrag C §5 und §10:** Die Filter-Karten gelten nur noch für offene Tickets; eine Karte für erledigte Tickets gibt es weiter nicht, denn diese haben ihre eigene Ansicht.

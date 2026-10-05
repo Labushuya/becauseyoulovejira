@@ -8,15 +8,12 @@
 	let {
 		cards,
 		count,
-		more = false,
 		filtered = false,
 		onreset
 	}: {
 		cards: readonly FilterCard[];
 		/** Shown tickets, as the number next to "Aufgaben". */
 		count: number;
-		/** More tickets match than `count` (further pages of done tickets). */
-		more?: boolean;
 		/** A filter of the filter bar or the search narrows the cards as well. */
 		filtered?: boolean;
 		onreset: () => void;
@@ -24,7 +21,7 @@
 </script>
 
 <div class="filter-summary">
-	<p class="text">{cardSummary(cards, { count, more, filtered })}</p>
+	<p class="text">{cardSummary(cards, { count, filtered })}</p>
 	<button class="button-secondary button-small" type="button" onclick={onreset}>
 		Zurücksetzen
 	</button>

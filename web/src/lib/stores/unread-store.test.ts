@@ -40,7 +40,6 @@ const LOOSE = ticket('tick00000000004');
 function setup(options: { unreadSince?: string | null; withReads?: boolean } = {}) {
 	const data: TicketListData = {
 		listOpen: vi.fn(async () => [OLD, READ, FRESH, LOOSE]),
-		listDone: vi.fn(async (page: number) => ({ items: [], page, hasMore: false })),
 		searchOpen: vi.fn(async () => []),
 		setDone: vi.fn(),
 		update: vi.fn()

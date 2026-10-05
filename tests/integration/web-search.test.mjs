@@ -1,15 +1,15 @@
 // Search of the web app against the disposable instance (E3 plan, T-15 and package 11; ADR-0013
 // section 2): hits in title, description and key, only own tickets, open tickets as IDs, done
-// tickets through the filter of the section "Erledigt", and the finding on "%", "_", "\" and
-// umlauts for the operator `~` of PocketBase 0.40.4.
+// tickets through the filter of the view "Erledigte" (ADR-0066), and the finding on "%", "_", "\"
+// and umlauts for the operator `~` of PocketBase 0.40.4.
 
 import { beforeAll, describe, expect, it } from 'vitest';
 import { superuserClient } from '../support/api.mjs';
 import { createOwner, uniqueCode } from '../support/scenario.mjs';
 import { DataError } from '../../web/src/lib/data/errors.ts';
 import { likeText } from '../../web/src/lib/data/like.ts';
-import { listDoneTickets, searchOpenTicketIds } from '../../web/src/lib/data/tickets.ts';
-import { EMPTY_LIST_QUERY } from '../../web/src/lib/domain/list-query.ts';
+import { listCompletedTickets, searchOpenTicketIds } from '../../web/src/lib/data/tickets.ts';
+import { EMPTY_DONE_QUERY } from '../../web/src/lib/domain/done-view.ts';
 
 const BS = '\\';
 
@@ -34,8 +34,8 @@ describe('web search', () => {
 			{ title: `back${BS}slash` },
 			{ title: 'Äpfel kaufen' },
 			{ title: 'äpfel waschen' },
-			{ title: 'Miete April', status: 'done', priority: 'high' },
-			{ title: 'Miete März', status: 'done', priority: 'low' }
+			{ title: 'Miete April', status: 'done', charm: 'geld' },
+			{ title: 'Miete März', status: 'done' }
 		];
 		for (const ticket of tickets) {
 			const record = await a.ticket(ticket);
@@ -104,15 +104,15 @@ describe('web search', () => {
 	it('narrows the done tickets with the search and the other filters', async () => {
 		const titles = async (overrides) =>
 			(
-				await listDoneTickets(a.client, 1, {
-					filter: { query: { ...EMPTY_LIST_QUERY, ...overrides }, today: '2026-09-25' }
+				await listCompletedTickets(a.client, 1, {
+					filter: { query: { ...EMPTY_DONE_QUERY, ...overrides } }
 				})
 			).items
 				.map((ticket) => ticket.title)
 				.sort();
 
 		expect(await titles({ search: 'miete' })).toEqual(['Miete April', 'Miete März']);
-		expect(await titles({ search: 'miete', priority: 'high' })).toEqual(['Miete April']);
+		expect(await titles({ search: 'miete', charm: 'geld' })).toEqual(['Miete April']);
 		expect(await titles({ search: 'zahlen' })).toEqual([]);
 		// Shorter than two characters: no search.
 		expect(await titles({ search: 'M' })).toEqual(['Miete April', 'Miete März']);

@@ -1,13 +1,12 @@
 // Component tests for the column sort of the ticket table (E3 plan, T-5 and package 9): sort
 // buttons in the column headers, the click cycle as URL change, aria-sort, the caption, the row
-// order per sort (projects through the catalog), realtime upserts during a sort, the fixed
-// order of the section "Erledigt" and back to the previous sort. List store and catalog run for
-// real on fake data layers; SvelteKit navigation and page state are mocked.
+// order per sort (projects through the catalog), realtime upserts during a sort and back to the
+// previous sort. List store and catalog run for real on fake data layers; SvelteKit navigation and
+// page state are mocked.
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { DoneTicketPage } from '$lib/data/tickets';
 import { parseListQuery } from '$lib/domain/list-query';
 import type { Project } from '$lib/domain/project';
 import type { TicketSummary } from '$lib/domain/ticket';
@@ -64,14 +63,9 @@ function ticket(overrides: Partial<TicketSummary> = {}): TicketSummary {
 	};
 }
 
-function fakeData(open: TicketSummary[], done: TicketSummary[] = []): TicketListData {
+function fakeData(open: TicketSummary[]): TicketListData {
 	return {
 		listOpen: vi.fn(async () => open),
-		listDone: vi.fn(async (page: number): Promise<DoneTicketPage> => ({
-			items: page === 1 ? done : [],
-			page,
-			hasMore: false
-		})),
 		searchOpen: vi.fn(async (): Promise<string[]> => []),
 		setDone: vi.fn(),
 		update: vi.fn()
@@ -160,9 +154,9 @@ describe('column sort (E3 plan, package 9)', () => {
 		['/?sort=-prio', /^Nach Priorität sortieren/, '/'],
 		['/?sort=prio', /^Nach Titel sortieren/, '/?sort=titel'],
 		[
-			'/?status=open&erledigte=1',
+			'/?status=open&gruppe=prio',
 			/^Nach Erstellt sortieren/,
-			'/?status=open&sort=erstellt&erledigte=1'
+			'/?status=open&sort=erstellt&gruppe=prio'
 		]
 	])('on %s, a click on %s navigates to %s', async (from, name, to) => {
 		await showTable(fakeData([ticket()]), from);
@@ -267,27 +261,6 @@ describe('column sort (E3 plan, package 9)', () => {
 		store.upsert({ ...bravo, title: 'Bravo', updated: '2026-09-24 10:00:00.000Z' });
 		await tick();
 		expect(openTitles()).toEqual(['Alpha', 'Bravo', 'Charlie', 'Delta']);
-	});
-
-	it('keeps the section "Erledigt" most recently completed first under any sort', async () => {
-		const older = ticket({
-			title: 'A alt',
-			status: 'done',
-			completedAt: '2026-09-20 10:00:00.000Z'
-		});
-		const newer = ticket({
-			title: 'Z neu',
-			status: 'done',
-			completedAt: '2026-09-22 10:00:00.000Z'
-		});
-		await showTable(fakeData([ticket()], [older, newer]), '/?sort=titel&erledigte=1');
-
-		const done = screen.getByRole('rowgroup', { name: 'Erledigt – zuletzt erledigte zuerst' });
-		expect(
-			[...done.querySelectorAll('tr[data-ticket-id]')].map(
-				(row) => within(row as HTMLElement).getByRole('link').textContent
-			)
-		).toEqual(['Z neu', 'A alt']);
 	});
 
 	it('keeps the keyboard focus on the sort button', async () => {

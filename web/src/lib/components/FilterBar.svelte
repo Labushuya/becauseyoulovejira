@@ -39,7 +39,8 @@
 	// project takes its sub projects in, and the checkbox "Unterprojekte einbeziehen" below the
 	// choices switches that off (`unterprojekte=0`). It is locked without sub projects.
 	// The calendar (ADR-0053 §3) uses the same bar with the same parameters, without "Fällig" (its
-	// grid is the axis of the due date) and without the search (the server answers it for the list).
+	// grid is the axis of the due date) and without the search (the server answers it for the list);
+	// only there the status "Erledigt" is a chip (ADR-0066 §5).
 	let {
 		catalog,
 		calendar = false,
@@ -73,7 +74,13 @@
 		none: 'Ohne Datum'
 	};
 
-	const statusOptions = STATUSES.map((value) => ({ value, label: STATUS_LABELS[value] }));
+	// "Erledigt" only in the calendar: "Aufgaben" shows only open work since ER-1 (ADR-0066 §5).
+	const statusOptions = $derived(
+		STATUSES.filter((value) => calendar || value !== 'done').map((value) => ({
+			value,
+			label: STATUS_LABELS[value]
+		}))
+	);
 	// Urgent first, like the priority order of the table.
 	const priorityOptions = [...PRIORITIES]
 		.reverse()

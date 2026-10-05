@@ -77,6 +77,47 @@ describe('menu "•••" of a ticket (AM-1)', () => {
 		expect(entries()).toEqual(['Link kopieren', 'In den Papierkorb …']);
 	});
 
+	it('offers "Wieder öffnen" for a done ticket of "Erledigte" after the ways to open (ADR-0066)', async () => {
+		const onreopen = vi.fn();
+		const { trigger, menu, entries, entry } = renderMenu({
+			ticket: { ...TICKET, status: 'done' },
+			onreopen,
+			open: {
+				panel: '/erledigt/tickets/ticket000000012',
+				full: '/erledigt/tickets/ticket000000012/voll'
+			}
+		});
+		expect(entries()).toEqual([
+			'Im Seitenpanel öffnen',
+			'In Vollansicht öffnen',
+			'Wieder öffnen',
+			'Link kopieren',
+			'Duplizieren …',
+			'In den Papierkorb …'
+		]);
+		const lines = within(menu).getAllByRole('separator', { hidden: true });
+		expect(lines[0]?.nextElementSibling).toBe(entry('Wieder öffnen'));
+		expect(entry('Wieder öffnen').getAttribute('aria-haspopup')).toBeNull();
+
+		await open(trigger);
+		await fireEvent.click(entry('Wieder öffnen'));
+		expect(onreopen).toHaveBeenCalledOnce();
+		expect(trigger.getAttribute('aria-expanded')).toBe('false');
+	});
+
+	it('shows "Wieder öffnen" as busy while it runs, and never for an open ticket', () => {
+		const busy = renderMenu({
+			ticket: { ...TICKET, status: 'done' },
+			onreopen: vi.fn(),
+			reopenBusy: true
+		});
+		expect(busy.entry('Wieder öffnen').getAttribute('aria-busy')).toBe('true');
+		document.body.innerHTML = '';
+
+		const { entries } = renderMenu({ ticket: { ...TICKET, status: 'open' }, onreopen: vi.fn() });
+		expect(entries()).toEqual(['Link kopieren', 'Duplizieren …', 'In den Papierkorb …']);
+	});
+
 	it('adds "Fälligkeit verschieben …" in the calendar, after the ways to open, and runs it', async () => {
 		const onmovedue = vi.fn();
 		const { trigger, menu, entries, entry } = renderMenu({

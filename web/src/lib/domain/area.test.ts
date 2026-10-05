@@ -86,6 +86,12 @@ describe('records of the routes (links into the other area)', () => {
 		expect(recordOfRoute('/(app)/kalender/eingang/[id]', ID)).toEqual({ kind: 'item', id: ID });
 		expect(recordOfRoute('/(app)/wiederholungen/[id]', ID)).toEqual({ kind: 'rule', id: ID });
 		expect(recordOfRoute('/(app)/papierkorb/[id]', ID)).toEqual({ kind: 'trash', id: ID });
+		// A ticket next to "Erledigte" (ADR-0066).
+		expect(recordOfRoute('/(app)/erledigt/tickets/[id]', ID)).toEqual({ kind: 'ticket', id: ID });
+		expect(recordOfRoute('/(app)/erledigt/tickets/[id]/voll', ID)).toEqual({
+			kind: 'ticket',
+			id: ID
+		});
 	});
 
 	it('names none for views, forms, the settings and malformed IDs', () => {
@@ -142,6 +148,16 @@ describe('address after switching the area', () => {
 			view: 'inbox',
 			search: ''
 		});
+		// "Erledigte" (ADR-0066) keeps search and charm, the catalog of charms has no area.
+		expect(
+			areaSwitchTarget(
+				at(`/erledigt?projekt=${ID}&tag=${ID}&q=Miete&charm=auto`),
+				'/(app)/erledigt'
+			)
+		).toEqual({ view: 'done', search: '?q=Miete&charm=auto' });
+		expect(
+			areaSwitchTarget(at(`/erledigt/tickets/${ID}?q=Miete`), '/(app)/erledigt/tickets/[id]')
+		).toEqual({ view: 'done', search: '?q=Miete' });
 	});
 
 	it('stays on a view without such filters and in the settings', () => {

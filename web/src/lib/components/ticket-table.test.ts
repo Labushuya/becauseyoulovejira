@@ -1,14 +1,14 @@
 // Component tests for the ticket table (E3 plan, T-4 and package 5; the list behaviour of E2
-// package 5 carried over): table structure, section bar, empty states, the switch "Erledigte
-// anzeigen" in the URL, check mark with undo and focus, loading errors, "Weitere laden", the
-// click on a row and project and tags from the catalog. List store and catalog run for real on
-// fake data layers; SvelteKit navigation and page state are mocked.
+// package 5 carried over): table structure, section bar, empty states, check mark with undo and
+// focus, loading errors, the click on a row and project and tags from the catalog. Since ER-1
+// (ADR-0066) only open work, with the link "Erledigte ansehen →" instead of the switch "Erledigte
+// anzeigen". List store and catalog run for real on fake data layers; SvelteKit navigation and
+// page state are mocked.
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { createRawSnippet, tick, type Snippet } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DataError } from '$lib/data/errors';
-import type { DoneTicketPage } from '$lib/data/tickets';
 import { parseListQuery } from '$lib/domain/list-query';
 import type { Project } from '$lib/domain/project';
 import type { Tag } from '$lib/domain/tag';
@@ -65,15 +65,10 @@ function ticket(overrides: Partial<TicketSummary> = {}): TicketSummary {
 	};
 }
 
-function fakeData(open: TicketSummary[], donePages: TicketSummary[][] = []) {
-	const all = () => [...open, ...donePages.flat()];
+function fakeData(open: TicketSummary[]) {
+	const all = () => open;
 	return {
 		listOpen: vi.fn(async () => open),
-		listDone: vi.fn(async (page: number): Promise<DoneTicketPage> => ({
-			items: donePages[page - 1] ?? [],
-			page,
-			hasMore: page < donePages.length
-		})),
 		searchOpen: vi.fn(async (): Promise<string[]> => []),
 		setDone: vi.fn(async (id: string, done: boolean): Promise<TicketSummary> => {
 			const current = all().find((entry) => entry.id === id);
@@ -135,10 +130,6 @@ function openRows() {
 
 function titleLink(row: HTMLElement) {
 	return within(row).getByRole('link');
-}
-
-function doneBody() {
-	return screen.getByRole('rowgroup', { name: 'Erledigt – zuletzt erledigte zuerst' });
 }
 
 beforeEach(() => {
@@ -276,17 +267,17 @@ describe('ticket table', () => {
 
 	it('keeps the query in the row links', async () => {
 		const item = ticket();
-		await showTable(fakeData([item], [[]]), '/?erledigte=1');
+		await showTable(fakeData([item]), '/?sort=titel');
 
-		expect(titleLink(openRows()[0]!).getAttribute('href')).toBe(`/tickets/${item.id}?erledigte=1`);
+		expect(titleLink(openRows()[0]!).getAttribute('href')).toBe(`/tickets/${item.id}?sort=titel`);
 	});
 
 	it('opens the panel on a click in the row, but not on a click on the check mark', async () => {
 		const item = ticket();
-		await showTable(fakeData([item]), '/?erledigte=1');
+		await showTable(fakeData([item]), '/?sort=titel');
 
 		await fireEvent.click(openRows()[0]!.querySelector('.key')!);
-		expect(mocks.goto).toHaveBeenCalledExactlyOnceWith(`/tickets/${item.id}?erledigte=1`);
+		expect(mocks.goto).toHaveBeenCalledExactlyOnceWith(`/tickets/${item.id}?sort=titel`);
 
 		mocks.goto.mockClear();
 		await fireEvent.click(screen.getByRole('checkbox', { name: `${item.key} erledigt` }));
@@ -297,8 +288,8 @@ describe('ticket table', () => {
 	// never mounts on the way.
 	it('opens the full view directly when it is the remembered way', async () => {
 		const item = ticket();
-		mocks.page.url = new URL('/?erledigte=1', 'http://localhost:3000');
-		const store = new TicketListStore(fakeData([item], [[]]), SESSION);
+		mocks.page.url = new URL('/?sort=titel', 'http://localhost:3000');
+		const store = new TicketListStore(fakeData([item]), SESSION);
 		const catalog = new CatalogStore(
 			{ listProjects: vi.fn(async () => []), listTags: vi.fn(async () => []), createTag: vi.fn() },
 			SESSION
@@ -309,7 +300,7 @@ describe('ticket table', () => {
 		render(TicketTableWithOpenMode, { props: { openMode, store, catalog } });
 		await vi.advanceTimersByTimeAsync(0);
 
-		const full = `/tickets/${item.id}/voll?erledigte=1`;
+		const full = `/tickets/${item.id}/voll?sort=titel`;
 		expect(titleLink(openRows()[0]!).getAttribute('href')).toBe(full);
 		await fireEvent.click(openRows()[0]!.querySelector('.key')!);
 		expect(mocks.goto).toHaveBeenCalledExactlyOnceWith(full);
@@ -317,21 +308,21 @@ describe('ticket table', () => {
 		mocks.goto.mockClear();
 		openMode.choose('panel');
 		await tick();
-		expect(titleLink(openRows()[0]!).getAttribute('href')).toBe(`/tickets/${item.id}?erledigte=1`);
+		expect(titleLink(openRows()[0]!).getAttribute('href')).toBe(`/tickets/${item.id}?sort=titel`);
 	});
 
 	it('shows the empty states', async () => {
-		await showTable(fakeData([], [[]]), '/?erledigte=1');
+		await showTable(fakeData([]), '/?sort=titel');
 
 		// Empty state since EH-11: heading, one sentence, the primary action as a verb.
 		expect(screen.getByRole('heading', { level: 3, name: 'Keine offenen Tickets' })).toBeTruthy();
 		expect(screen.getByRole('link', { name: 'Ticket anlegen' }).getAttribute('href')).toBe(
-			'/tickets/neu?erledigte=1'
+			'/tickets/neu?sort=titel'
 		);
 		// Without the (app) layout there is no quick entry to offer.
 		expect(screen.queryByRole('button', { name: /Schnellerfassung/ })).toBeNull();
 		expect(screen.getByText('0 Tickets')).toBeTruthy();
-		expect(within(doneBody()).getByText('Noch keine erledigten Tickets.')).toBeTruthy();
+		expect(screen.queryByRole('table')).toBeNull();
 	});
 
 	it('changes the due labels at the Berlin midnight without a reload (package 6)', async () => {
@@ -374,53 +365,28 @@ describe('ticket table', () => {
 		expect(screen.queryByText('Erste Schritte hier')).toBeNull();
 	});
 
-	it('shows no table without open tickets and without done tickets', async () => {
+	it('shows no table without open tickets', async () => {
 		await showTable(fakeData([]));
 
 		expect(screen.getByText('Keine offenen Tickets')).toBeTruthy();
 		expect(screen.queryByRole('table')).toBeNull();
 	});
 
-	it('turns the switch into the URL parameter and back', async () => {
-		await showTable(fakeData([]));
-		const toggle = screen.getByRole<HTMLInputElement>('switch', {
-			name: 'Erledigte anzeigen'
-		});
-		expect(toggle.checked).toBe(false);
+	it('links to "Erledigte" with project, tag and search instead of a switch (ADR-0066)', async () => {
+		await showTable(
+			fakeData([ticket()]),
+			`/?karte=dringend&prio=high&projekt=${HOUSE.id}&tag=${GARDEN.id}&q=Miete&gruppe=prio`
+		);
 
-		await fireEvent.click(toggle);
-		expect(mocks.goto).toHaveBeenLastCalledWith('/?erledigte=1', {
-			keepFocus: true,
-			noScroll: true
-		});
-	});
-
-	it('reads the switch from the URL', async () => {
-		await showTable(fakeData([], [[]]), '/?erledigte=1');
-		const toggle = screen.getByRole<HTMLInputElement>('switch', {
-			name: 'Erledigte anzeigen'
-		});
-		expect(toggle.checked).toBe(true);
-
-		await fireEvent.click(toggle);
-		expect(mocks.goto).toHaveBeenLastCalledWith('/', { keepFocus: true, noScroll: true });
-	});
-
-	it('shows done tickets in their own section with "Weitere laden"', async () => {
-		const first = ticket({ status: 'done', completedAt: '2026-09-22 10:00:00.000Z' });
-		const second = ticket({ status: 'done', completedAt: '2026-09-21 10:00:00.000Z' });
-		const data = fakeData([ticket()], [[first], [second]]);
-		await showTable(data, '/?erledigte=1');
-
-		const section = doneBody();
-		const header = within(section).getByRole('rowheader', { name: /^Erledigt/ });
-		expect(header.getAttribute('scope')).toBe('rowgroup');
-		expect(section.querySelectorAll('tr[data-ticket-id]')).toHaveLength(1);
-		await fireEvent.click(within(section).getByRole('button', { name: 'Weitere laden' }));
-		await vi.advanceTimersByTimeAsync(0);
-
-		expect(section.querySelectorAll('tr[data-ticket-id]')).toHaveLength(2);
-		expect(within(section).queryByRole('button', { name: 'Weitere laden' })).toBeNull();
+		expect(screen.queryByRole('switch', { name: 'Erledigte anzeigen' })).toBeNull();
+		// The arrow is only for the eye (aria-hidden), the name is the text.
+		const link = screen.getByRole('link', { name: 'Erledigte ansehen' });
+		expect(link.textContent?.replace(/\s+/g, ' ').trim()).toBe('Erledigte ansehen →');
+		expect(link.getAttribute('href')).toBe(
+			`/erledigt?projekt=${HOUSE.id}&tag=${GARDEN.id}&q=Miete`
+		);
+		expect(link.closest('.end')).not.toBeNull();
+		expect(screen.queryByRole('rowgroup', { name: /^Erledigt/ })).toBeNull();
 	});
 
 	it('checks a ticket, removes the row and restores the previous status from the flag (UI-5)', async () => {
@@ -525,20 +491,6 @@ describe('ticket table', () => {
 		expect(document.activeElement).toBe(link);
 	});
 
-	it('keeps the focus on the check mark when an unchecked ticket moves up', async () => {
-		const closed = ticket({ status: 'done', completedAt: '2026-09-20 10:00:00.000Z' });
-		await showTable(fakeData([], [[closed]]), '/?erledigte=1');
-
-		const toggle = screen.getByRole('checkbox', { name: `${closed.key} erledigt` });
-		toggle.focus();
-		await fireEvent.click(toggle);
-		await vi.advanceTimersByTimeAsync(0);
-		await tick();
-
-		const moved = within(openRows()[0]!).getByRole('checkbox', { name: `${closed.key} erledigt` });
-		expect(document.activeElement).toBe(moved);
-	});
-
 	it('springs back and shows an error flag when checking fails (UI-5)', async () => {
 		const item = ticket();
 		const data = fakeData([item]);
@@ -624,7 +576,7 @@ describe('ticket table: filters (E3 plan, package 10)', () => {
 	});
 
 	it('tells an empty filter result apart from an empty list and resets the filters', async () => {
-		await showTable(fakeData([ticket()]), '/?prio=urgent&sort=titel&erledigte=1');
+		await showTable(fakeData([ticket()]), '/?prio=urgent&sort=titel&gruppe=prio');
 
 		expect(screen.getByRole('heading', { name: 'Keine Tickets für diese Filter' })).toBeTruthy();
 		expect(screen.queryByText('Keine offenen Tickets')).toBeNull();
@@ -633,7 +585,7 @@ describe('ticket table: filters (E3 plan, package 10)', () => {
 		expect(reset.classList.contains('button-primary')).toBe(true);
 		await fireEvent.click(reset);
 
-		expect(mocks.goto).toHaveBeenCalledWith('/?sort=titel&erledigte=1', {
+		expect(mocks.goto).toHaveBeenCalledWith('/?sort=titel&gruppe=prio', {
 			keepFocus: true,
 			noScroll: true
 		});
@@ -646,44 +598,6 @@ describe('ticket table: filters (E3 plan, package 10)', () => {
 		expect(screen.queryByRole('table')).toBeNull();
 		expect(screen.getByRole('heading', { name: 'Keine Tickets für diese Filter' })).toBeTruthy();
 		expect(screen.getByRole('button', { name: 'Filter zurücksetzen' })).toBeTruthy();
-	});
-
-	it('shows only the section "Erledigt" with the status filter "Erledigt"', async () => {
-		const finished = ticket({ status: 'done', completedAt: '2026-09-20 10:00:00.000Z' });
-		await showTable(fakeData([ticket()], [[finished]]), '/?status=done');
-
-		expect(screen.queryByRole('rowgroup', { name: 'Offene Tickets' })).toBeNull();
-		expect(within(doneBody()).getByText(finished.title)).toBeTruthy();
-		expect(screen.getByText('1 Ticket')).toBeTruthy();
-		const toggle = screen.getByRole('switch', { name: 'Erledigte anzeigen' });
-		expect(toggle).toHaveProperty('checked', true);
-		expect(toggle.getAttribute('aria-disabled')).toBe('true');
-		expect(
-			document.getElementById(String(toggle.getAttribute('aria-describedby')))?.textContent
-		).toBe('Der Statusfilter „Erledigt“ zeigt nur erledigte Tickets.');
-	});
-
-	it('offers "Filter zurücksetzen" when no done ticket passes the filters', async () => {
-		await showTable(fakeData([ticket()], [[]]), '/?status=done&prio=low');
-
-		expect(within(doneBody()).getByText('Keine Tickets für diese Filter.')).toBeTruthy();
-		expect(within(doneBody()).getByRole('button', { name: 'Filter zurücksetzen' })).toBeTruthy();
-	});
-
-	it('locks the switch "Erledigte anzeigen" with another status filter', async () => {
-		await showTable(fakeData([ticket()], [[]]), '/?status=open&erledigte=1');
-
-		expect(screen.queryByRole('rowgroup', { name: /^Erledigt/ })).toBeNull();
-		const toggle = screen.getByRole('switch', { name: 'Erledigte anzeigen' });
-		expect(toggle).toHaveProperty('checked', false);
-		expect(toggle.getAttribute('aria-disabled')).toBe('true');
-		expect(
-			document.getElementById(String(toggle.getAttribute('aria-describedby')))?.textContent
-		).toMatch(/erledigte Tickets ausgeblendet/);
-
-		await fireEvent.click(toggle);
-		expect(toggle).toHaveProperty('checked', false);
-		expect(mocks.goto).not.toHaveBeenCalled();
 	});
 
 	it('announces the new number after a filter change', async () => {
@@ -817,22 +731,17 @@ describe('ticket table: grouping (E3 plan, package 13)', () => {
 		expect(without.querySelector('.color-mark')).toBeNull();
 	});
 
-	it('follows a change of the URL and leaves the section "Erledigt" ungrouped', async () => {
+	it('follows a change of the URL', async () => {
 		const open = ticket({ due: '2026-09-20' });
 		const later = ticket();
-		const doneItem = ticket({ status: 'done', completedAt: '2026-09-23 10:00:00.000Z' });
-		const { store } = await showTable(fakeData([open, later], [[doneItem]]), '/?erledigte=1');
+		const { store } = await showTable(fakeData([open, later]), '/?sort=titel');
 		expect(groupBodies()).toEqual([]);
 
-		mocks.page.url = new URL('/?gruppe=faellig&erledigte=1', 'http://localhost:3000');
+		mocks.page.url = new URL('/?gruppe=faellig&sort=titel', 'http://localhost:3000');
 		store.activate(parseListQuery(mocks.page.url.searchParams));
 		await tick();
 
 		expect(groupBodies().map((body) => body.dataset.group)).toEqual(['overdue', 'none']);
-		expect(doneBody().hasAttribute('data-group')).toBe(false);
-		expect(within(doneBody()).getAllByRole('rowheader')[0]?.textContent?.trim()).toBe(
-			'Erledigt – zuletzt erledigte zuerst'
-		);
 	});
 
 	it('removes a checked row from its group at once (UI-5)', async () => {
