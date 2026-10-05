@@ -19,9 +19,11 @@
 
 	// Filter cards, filter bar, table and panel area (E2 plan, T-4; E3 plan, T-3 and packages 5, 10
 	// and 12; FI-1): the table stays in place while the detail panel opens and closes, so scroll
-	// position and loaded pages survive. Section bar, cards, filter bar and table form the view left of
-	// the panel, which stands as a full column on the right from 64rem (ADR-0025 section 6, package
-	// UI-6b). The section bar with the switch comes first, as in the other views (package UI-8).
+	// position survives. Section bar, cards, filter bar and table form the view left of the panel,
+	// which stands as a full column on the right from 64rem (ADR-0025 section 6, package UI-6b). The
+	// section bar with the navigation comes first, as in the other views (package UI-8). Since ER-1
+	// (ADR-0066) only open work: +layout.ts leads old addresses that asked for done tickets to
+	// "Erledigte".
 	let { children } = $props();
 
 	const tickets = getTicketListStore();
@@ -50,21 +52,6 @@
 	$effect(() => {
 		const current = query;
 		untrack(() => tickets.activate(current));
-	});
-
-	// The section "Erledigt" follows the sub projects of the chosen project (ADR-0034), e.g. once
-	// the catalog has loaded or a sub project was added in another tab.
-	const subProjectKey = $derived(
-		query.project === null
-			? ''
-			: catalog
-					.subProjectsOf(query.project)
-					.map((project) => project.id)
-					.join(',')
-	);
-	$effect(() => {
-		void subProjectKey;
-		untrack(() => tickets.followSubProjects());
 	});
 </script>
 

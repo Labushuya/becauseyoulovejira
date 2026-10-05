@@ -10,7 +10,6 @@ import { SvelteMap } from 'svelte/reactivity';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DataError } from '$lib/data/errors';
 import type { RequestOptions } from '$lib/data/options';
-import type { DoneTicketPage } from '$lib/data/tickets';
 import type { InboxItemSummary } from '$lib/domain/inbox';
 import { EMPTY_LIST_QUERY } from '$lib/domain/list-query';
 import type { Project } from '$lib/domain/project';
@@ -329,19 +328,9 @@ describe('hold', () => {
 });
 
 describe('list store live', () => {
-	function setup(
-		open: TicketSummary[] = [summary()],
-		done: TicketSummary[][] = [],
-		reads?: ReadsData
-	) {
+	function setup(open: TicketSummary[] = [summary()], reads?: ReadsData) {
 		const data = {
 			listOpen: vi.fn((options: RequestOptions) => abortable(options, Promise.resolve(open))),
-			listDone: vi.fn((page: number, options: RequestOptions) =>
-				abortable<DoneTicketPage>(
-					options,
-					Promise.resolve({ items: done[page - 1] ?? [], page, hasMore: page < done.length })
-				)
-			),
 			searchOpen: vi.fn(async (): Promise<string[]> => []),
 			setDone: vi.fn(async (id: string, isDone: boolean): Promise<TicketSummary> =>
 				summary({
@@ -361,16 +350,10 @@ describe('list store live', () => {
 		return { store, data, live, disconnect };
 	}
 
-	async function ready(
-		open?: TicketSummary[],
-		done?: TicketSummary[][],
-		showDone = false,
-		reads?: ReadsData
-	) {
-		const context = setup(open, done, reads);
-		context.store.activate({ ...EMPTY_LIST_QUERY, showDone });
+	async function ready(open?: TicketSummary[], reads?: ReadsData) {
+		const context = setup(open, reads);
+		context.store.activate(EMPTY_LIST_QUERY);
 		await vi.waitFor(() => expect(context.store.openState).toBe('ready'));
-		if (showDone) await vi.waitFor(() => expect(context.store.doneState).toBe('ready'));
 		return context;
 	}
 
@@ -453,7 +436,7 @@ describe('list store live', () => {
 			markRead: vi.fn<ReadsData['markRead']>(async () => null),
 			markAllRead: vi.fn<ReadsData['markAllRead']>(async () => '2026-09-24 12:00:00.000Z')
 		} satisfies ReadsData;
-		const { store, live } = await ready([summary()], [], false, reads);
+		const { store, live } = await ready([summary()], reads);
 		await vi.waitFor(() => expect(reads.list).toHaveBeenCalledOnce());
 		reads.list.mockResolvedValue([row]);
 
@@ -471,7 +454,7 @@ describe('list store live', () => {
 			markRead: vi.fn<ReadsData['markRead']>(async () => null),
 			markAllRead: vi.fn<ReadsData['markAllRead']>(async () => '2026-09-24 12:00:00.000Z')
 		} satisfies ReadsData;
-		const { live } = await ready([summary()], [], false, reads);
+		const { live } = await ready([summary()], reads);
 		await vi.waitFor(() => expect(reads.list).toHaveBeenCalledOnce());
 
 		live.emit('tickets', '*', {
@@ -501,11 +484,6 @@ describe('list store live', () => {
 		try {
 			const data = {
 				listOpen: vi.fn(async (): Promise<TicketSummary[]> => [summary()]),
-				listDone: vi.fn(async (page: number): Promise<DoneTicketPage> => ({
-					items: [],
-					page,
-					hasMore: false
-				})),
 				searchOpen: vi.fn(async (): Promise<string[]> => []),
 				setDone: vi.fn(),
 				update: vi.fn()
@@ -582,29 +560,6 @@ describe('list store live', () => {
 
 		expect(store.canUndo(first.id)).toBe(true);
 		expect(store.open.map((ticket) => ticket.id)).toEqual([created.id]);
-	});
-
-	it('reconciles the loaded pages of done tickets', async () => {
-		const oldDone = summary({
-			id: 'done00000000001',
-			status: 'done',
-			completedAt: '2026-09-20 08:00:00.000Z'
-		});
-		const { store, data, live } = await ready([], [[oldDone]], true);
-		const newDone = summary({
-			id: 'done00000000002',
-			status: 'done',
-			completedAt: '2026-09-24 08:00:00.000Z'
-		});
-		data.listDone.mockImplementationOnce((page, options) =>
-			abortable(options, Promise.resolve({ items: [newDone], page, hasMore: false }))
-		);
-
-		live.reconnect();
-		await flush();
-
-		expect(store.done.map((ticket) => ticket.id)).toEqual(['done00000000002']);
-		expect(data.listDone).toHaveBeenCalledTimes(2);
 	});
 
 	it('aborts a running reconciliation on the next reconnection', async () => {

@@ -41,7 +41,6 @@ async function setup(subtasks: TicketSummary[] = []) {
 	const data = {
 		listOpen: vi.fn(async () => [parent, ...subtasks.filter((entry) => entry.status !== 'done')]),
 		listSubtasks: vi.fn(async () => subtasks),
-		listDone: vi.fn(async (page: number) => ({ items: [], page, hasMore: false })),
 		searchOpen: vi.fn(async () => []),
 		setDone: vi.fn(async (id: string, isDone: boolean) => ({
 			...(subtasks.find((entry) => entry.id === id) ?? parent),

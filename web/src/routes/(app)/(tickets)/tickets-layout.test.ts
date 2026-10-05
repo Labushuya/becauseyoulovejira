@@ -1,6 +1,10 @@
 // Component test for the tickets layout (E2 plan, T-4 and T-5; E3 plan, package 5): the table
-// follows the switch in the URL, and the panel area renders the child page next to it.
+// follows the list state in the URL, and the panel area renders the child page next to it. Since
+// ER-1 (ADR-0066) "Aufgaben" shows only open work: the link "Erledigte ansehen →" takes the
+// filters both views know along, and +layout.ts leads old addresses that asked for done tickets to
+// "Erledigte".
 
+import { isRedirect } from '@sveltejs/kit';
 import { render, screen } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
@@ -8,6 +12,7 @@ import { EMPTY_LIST_QUERY } from '$lib/domain/list-query';
 import { CatalogStore } from '$lib/stores/catalog.svelte';
 import { TicketListStore } from '$lib/stores/ticket-list.svelte';
 import Layout from './+layout.svelte';
+import { load } from './+layout';
 
 const mocks = vi.hoisted(() => ({
 	page: {
@@ -47,7 +52,6 @@ function renderLayout(path: string, id?: string, route = '/(app)/(tickets)/ticke
 	const store = new TicketListStore(
 		{
 			listOpen: vi.fn(async () => []),
-			listDone: vi.fn(async (page: number) => ({ items: [], page, hasMore: false })),
 			searchOpen: vi.fn(async (): Promise<string[]> => []),
 			setDone: vi.fn(),
 			update: vi.fn()
@@ -65,8 +69,22 @@ function renderLayout(path: string, id?: string, route = '/(app)/(tickets)/ticke
 	return { store, activate };
 }
 
+const PROJECT = 'proj00000000001';
+const TAG = 'tag000000000001';
+
+/** The address the load of the layout leads to, null where it lets the address be. */
+function redirectOf(path: string): string | null {
+	try {
+		void load({ url: new URL(path, 'http://localhost:3000') } as Parameters<typeof load>[0]);
+		return null;
+	} catch (error) {
+		if (isRedirect(error)) return error.location;
+		throw error;
+	}
+}
+
 describe('tickets layout', () => {
-	it('loads the list without done tickets by default', () => {
+	it('loads the list of open tickets by default', () => {
 		const { activate } = renderLayout('/');
 
 		expect(activate).toHaveBeenCalledExactlyOnceWith(EMPTY_LIST_QUERY);
@@ -106,14 +124,29 @@ describe('tickets layout', () => {
 		).toBe('false');
 	});
 
-	it('shows done tickets when the URL says so (reload, back and forward)', () => {
-		const { activate, store } = renderLayout(
-			'/tickets/abc123def456ghi?erledigte=1',
-			'abc123def456ghi'
-		);
+	it('shows only open work and links to "Erledigte" with the filters both views know', async () => {
+		renderLayout(`/?prio=high&projekt=${PROJECT}&tag=${TAG}&q=Miete&gruppe=prio`);
 
-		expect(activate).toHaveBeenCalledExactlyOnceWith({ ...EMPTY_LIST_QUERY, showDone: true });
-		expect(store.showDone).toBe(true);
+		expect(screen.queryByRole('switch', { name: 'Erledigte anzeigen' })).toBeNull();
+		const link = screen.getByRole('link', { name: 'Erledigte ansehen' });
+		expect(link.getAttribute('href')).toBe(`/erledigt?projekt=${PROJECT}&tag=${TAG}&q=Miete`);
+		// The status "Erledigt" is no filter of "Aufgaben" any more.
+		const status = screen.getByRole('group', { name: 'Status' });
+		expect(status.textContent).not.toContain('Erledigt');
+	});
+
+	it('leads old addresses that asked for done tickets to "Erledigte" (ADR-0066 §5)', () => {
+		expect(redirectOf(`/?erledigte=1&projekt=${PROJECT}&sort=titel`)).toBe(
+			`/erledigt?projekt=${PROJECT}`
+		);
+		expect(redirectOf(`/tickets/abc123def456ghi?status=done&tag=${TAG}`)).toBe(
+			`/erledigt/tickets/abc123def456ghi?tag=${TAG}`
+		);
+		expect(redirectOf('/tickets/abc123def456ghi/voll?erledigte=1')).toBe(
+			'/erledigt/tickets/abc123def456ghi/voll'
+		);
+		expect(redirectOf('/?status=open&erledigte=1')).toBe('/?status=open');
+		expect(redirectOf('/?status=open&gruppe=prio')).toBeNull();
 	});
 
 	// The full view replaces the panel (plan BI-1): the list keeps its full width behind the

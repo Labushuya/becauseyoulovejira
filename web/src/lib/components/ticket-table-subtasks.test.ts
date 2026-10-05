@@ -6,7 +6,6 @@
 import { cleanup, render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { DoneTicketPage } from '$lib/data/tickets';
 import { parseListQuery } from '$lib/domain/list-query';
 import type { TicketSummary } from '$lib/domain/ticket';
 import { CatalogStore } from '$lib/stores/catalog.svelte';
@@ -63,11 +62,6 @@ async function showTable(path = '/') {
 	const data = {
 		listOpen: vi.fn(async () => open),
 		listSubtasks: vi.fn(async () => [URGENT, MEDIUM, DONE]),
-		listDone: vi.fn(async (page: number): Promise<DoneTicketPage> => ({
-			items: [],
-			page,
-			hasMore: false
-		})),
 		searchOpen: vi.fn(async (): Promise<string[]> => []),
 		setDone: vi.fn(async () => PARENT),
 		update: vi.fn(async () => PARENT)

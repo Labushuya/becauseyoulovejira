@@ -1,10 +1,20 @@
 // URLs of the ticket views (E2 plan, T-4 and T-5; E3 plan, T-2). Tickets are addressed by record
 // ID, never by key (CLAUDE.md section 5). The list state lives in the query and travels with
-// every link, so opening or closing a ticket keeps filters, sort and the switch "Erledigte
-// anzeigen". Reading and writing the list parameters goes through domain/list-query.ts.
+// every link, so opening or closing a ticket keeps filters, sort and grouping. Reading and writing
+// the list parameters goes through domain/list-query.ts, those of "Erledigte" (ADR-0066) through
+// domain/done-view.ts.
 
 import { resolve } from '$app/paths';
 import type { ResolvedPathname } from '$app/types';
+import {
+	EMPTY_DONE_QUERY,
+	LEGACY_DONE_PARAM,
+	doneQueryOf,
+	legacyDoneTarget,
+	parseDoneQuery,
+	serializeDoneQuery,
+	type DoneQuery
+} from './domain/done-view';
 import {
 	EMPTY_LIST_QUERY,
 	LIST_PARAMS,
@@ -27,13 +37,6 @@ import {
 import { projectChoiceLabel } from './domain/project-tree';
 import { TEMPLATE_PARAM, TEMPLATE_VALUES, type CaptureTemplate } from './domain/templates';
 import type { ProjectRef } from './domain/ticket';
-
-/** Query parameter of the switch "Erledigte anzeigen" (CLAUDE.md section 7). */
-export const SHOW_DONE_PARAM = LIST_PARAMS.showDone;
-
-export function showDoneFrom(url: URL): boolean {
-	return parseListQuery(url.searchParams).showDone;
-}
 
 /** Path of the list with the query of `url`. */
 export function listHref(url: URL): ResolvedPathname {
@@ -429,9 +432,64 @@ export function withListQuery(url: URL, query: ListQuery): ResolvedPathname {
 	return `${url.pathname}${serializeListQuery(query, url.searchParams)}${url.hash}` as ResolvedPathname;
 }
 
-/** The current path with the switch "Erledigte anzeigen" set or removed; other parameters stay. */
-export function withShowDone(url: URL, show: boolean): ResolvedPathname {
-	return withListQuery(url, { ...parseListQuery(url.searchParams), showDone: show });
+/** View "Erledigte" (ADR-0066) with the filters of `query`. */
+export function doneHref(query: DoneQuery = EMPTY_DONE_QUERY): ResolvedPathname {
+	return `${resolve('/erledigt')}${serializeDoneQuery(query)}` as ResolvedPathname;
+}
+
+/** View "Erledigte" with the state of `url` (its filters, or those of "Aufgaben" it shares). */
+export function doneViewHref(url: URL): ResolvedPathname {
+	return doneHref(parseDoneQuery(url.searchParams));
+}
+
+/**
+ * "Erledigte ansehen →" of "Aufgaben" (ADR-0066 §5): the view with the filters of the list both
+ * know (project with or without sub projects, tag, search).
+ */
+export function doneOfListHref(url: URL): ResolvedPathname {
+	return doneHref(doneQueryOf(parseListQuery(url.searchParams)));
+}
+
+/** Panel of a ticket next to "Erledigte", with the filters of `url`. */
+export function doneTicketHref(id: string, url: URL): ResolvedPathname {
+	return `${resolve(`/erledigt/tickets/${encodeURIComponent(id)}`)}${serializeDoneQuery(parseDoneQuery(url.searchParams))}` as ResolvedPathname;
+}
+
+/** Full view of a ticket over "Erledigte", with the filters of `url`. */
+export function doneFullViewHref(id: string, url: URL): ResolvedPathname {
+	return `${resolve(`/erledigt/tickets/${encodeURIComponent(id)}/voll`)}${serializeDoneQuery(parseDoneQuery(url.searchParams))}` as ResolvedPathname;
+}
+
+/** The current path with the filters `query` of "Erledigte" (an open panel stays open). */
+export function withDoneQuery(url: URL, query: DoneQuery): ResolvedPathname {
+	return `${url.pathname}${serializeDoneQuery(query)}${url.hash}` as ResolvedPathname;
+}
+
+/**
+ * Where an address of "Aufgaben" from before ER-1 leads (ADR-0066 §5), null for any other: the
+ * list, a ticket next to it or its full view that asked for done tickets go to the same place next
+ * to "Erledigte" with the filters both views know; "Neues Ticket" and every address with the switch
+ * next to another status stay where they are without the old parameters.
+ */
+export function legacyDoneHref(url: URL): ResolvedPathname | null {
+	const target = legacyDoneTarget(url.searchParams);
+	if (target === null) return null;
+	const relative = url.pathname.slice(resolve('/').length);
+	const ticket = /^tickets\/([^/]+)(\/voll)?\/?$/.exec(relative);
+	const id = ticket?.[1] === undefined ? null : decodeURIComponent(ticket[1]);
+	if (target.kind === 'strip' || id === 'neu' || (id === null && relative !== '')) {
+		const rest = new URLSearchParams(url.search);
+		rest.delete(LEGACY_DONE_PARAM);
+		if (rest.get(LIST_PARAMS.status) === 'done') rest.delete(LIST_PARAMS.status);
+		const search = rest.toString();
+		return `${url.pathname}${search === '' ? '' : `?${search}`}` as ResolvedPathname;
+	}
+	if (id === null) return doneHref(target.query);
+	const path =
+		ticket?.[2] === undefined
+			? resolve(`/erledigt/tickets/${encodeURIComponent(id)}`)
+			: resolve(`/erledigt/tickets/${encodeURIComponent(id)}/voll`);
+	return `${path}${serializeDoneQuery(target.query)}` as ResolvedPathname;
 }
 
 /** Query parameter of "Neues Ticket" with the inbox entry to convert (E4 plan, T-3). */

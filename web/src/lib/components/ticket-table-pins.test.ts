@@ -7,7 +7,6 @@
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { DoneTicketPage } from '$lib/data/tickets';
 import { parseListQuery } from '$lib/domain/list-query';
 import { PINNED_FOLDED_KEY, type TicketPin } from '$lib/domain/pins';
 import type { TicketSummary } from '$lib/domain/ticket';
@@ -55,11 +54,6 @@ function ticket(overrides: Partial<TicketSummary> = {}): TicketSummary {
 function listData(open: TicketSummary[]): TicketListData {
 	return {
 		listOpen: vi.fn(async () => open),
-		listDone: vi.fn(async (page: number): Promise<DoneTicketPage> => ({
-			items: [],
-			page,
-			hasMore: false
-		})),
 		searchOpen: vi.fn(async (): Promise<string[]> => []),
 		setDone: vi.fn(async (id: string, done: boolean): Promise<TicketSummary> => {
 			const current = open.find((entry) => entry.id === id);
@@ -145,7 +139,7 @@ describe('section "Angeheftet" of the ticket table', () => {
 		expect(screen.getByText('2 + 2 angeheftet')).toBeTruthy();
 	});
 
-	it('keeps the pinned tickets while the filters or the status "Erledigt" would hide them', async () => {
+	it('keeps the pinned tickets while the filters would hide them', async () => {
 		const low = ticket({ priority: 'low', title: 'Steuererklärung' });
 		const high = ticket({ priority: 'high' });
 		const other = ticket({ priority: 'high' });
@@ -156,9 +150,9 @@ describe('section "Angeheftet" of the ticket table', () => {
 		unmount();
 		document.body.innerHTML = '';
 
-		await showTable([low, high], [pinOf(low.id, 10)], '/?status=done');
+		await showTable([low, high], [pinOf(low.id, 10)], '/?status=waiting');
 		expect(titlesOf(pinnedBody())).toEqual(['Steuererklärung']);
-		expect(screen.queryByRole('rowgroup', { name: 'Offene Tickets' })).toBeNull();
+		expect(within(openBody()).getByText('Keine weiteren Tickets für diese Filter.')).toBeTruthy();
 	});
 
 	it('names the pinned tickets of the chosen cards in the summary, so it adds up to the card (PL-1)', async () => {
@@ -166,18 +160,12 @@ describe('section "Angeheftet" of the ticket table', () => {
 		const pinnedLow = ticket({ priority: 'low' });
 		const open = [...urgent, pinnedLow, ticket()];
 		const pins = [pinOf(urgent[0]!.id, 10), pinOf(pinnedLow.id, 11)];
-		const { store, unmount } = await showTable(open, pins, '/?karte=dringend');
+		const { store } = await showTable(open, pins, '/?karte=dringend');
 
 		expect(store.cardCounts.urgent).toBe(5);
 		// The pinned ticket of another priority is in the section, but not of the card "Dringend".
 		expect(screen.getByText('4 + 2 angeheftet')).toBeTruthy();
 		expect(screen.getByText('4 + 1 angeheftet aus: Dringend')).toBeTruthy();
-		unmount();
-		document.body.innerHTML = '';
-
-		// The status filter "Erledigt" locks the cards: no summary of cards that do not apply.
-		await showTable(open, pins, '/?karte=dringend&status=done');
-		expect(screen.queryByText(/aus: Dringend/)).toBeNull();
 	});
 
 	it('says what is left below when every other ticket is pinned or filtered out', async () => {
