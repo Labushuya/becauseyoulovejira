@@ -68,7 +68,8 @@ vi.mock('$lib/stores/day-plan.svelte', async (importOriginal) => ({
 	dayPlanData: () => mocks.data,
 	dayPlanLive: () => ({
 		items: vi.fn(async () => async () => undefined),
-		plan: vi.fn(async () => async () => undefined)
+		plan: vi.fn(async () => async () => undefined),
+		settings: vi.fn(async () => async () => undefined)
 	})
 }));
 

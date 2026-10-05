@@ -11,7 +11,7 @@ Der Tagesplan ist die Brücke zwischen den klar sichtbaren Aufgaben eines Tages 
 | Bereich | Inhalt |
 |---|---|
 | A) Zwei Pläne | Privat ein Plan je Konto und Tag; im Haushalt ein gemeinsamer je Haushalt und Tag, alle Mitglieder gleichberechtigt, live, Initialen für „hinzugefügt“ und „abgehakt“. Der Plan des aktiven Bereichs; ein Hinweis nennt nur die Zahl der Einträge im anderen Bereich und bietet den Wechsel. |
-| B) Anker „Art“ | `tickets.kind`: „Aufgabe“ (Standard) oder „Laufendes Vorhaben“, gesetzt im Detail (Schalter) und im Menü eines Eintrags, sichtbar als Abzeichen „Vorhaben“. Haken bei einer Aufgabe: das Ticket ist erledigt (Weg der Liste, mit Wiederholung, Verlauf, Pins; „Rückgängig“ öffnet es wieder). Haken bei einem Vorhaben: „für heute erledigt“, das Ticket bleibt offen; Abschließen nur über „Vorhaben abschließen …“ mit Rückfrage. Pins sind keine Quelle. |
+| B) Anker „Art“ | `tickets.kind`: „Aufgabe“ (Standard) oder „Laufendes Vorhaben“, gesetzt im Detail (Schalter) und im Menü eines Eintrags, sichtbar als Abzeichen „Vorhaben“. Haken bei einer Aufgabe: das Ticket ist erledigt (Weg der Liste, mit Wiederholung, Verlauf, Pins; „Rückgängig“ öffnet es wieder). Haken bei einem Vorhaben: „für heute erledigt“, das Ticket bleibt offen; Abschließen nur über „Vorhaben abschließen …“ mit Rückfrage. Pins sind reine Anzeige, weder Quelle noch Ausschlussgrund (klargestellt in PL-1). |
 | C) Vorschläge | Sechs Quellen, je aus, vorschlagen oder automatisch übernehmen: Laufende Vorhaben (automatisch), Heute fällig, Überfällig, Wiederholung von heute, Übrig von gestern, In Arbeit (je vorschlagen). Grund je Vorschlag; „Übernehmen“ und „Alle übernehmen“; Automatisches steht beim ersten Öffnen des Tages im Plan (träge, idempotent, parallel sicher). |
 | D) Eingreifen | Seite `/tagesplan` mit Kopf, Vorschlägen, Plan und Pool (Suche, „+“, Ziehen); „Zum Tagesplan“ in jedem Menü eines Tickets; Reihenfolge per Ziehen und Tastatur; je Eintrag abhaken, „Auf morgen schieben“, „Entfernen“, Art umstellen; Pfeile über die Tage, vergangene schreibgeschützt, morgen planbar; Charm und Abzeichen im Plan. |
 
@@ -30,5 +30,7 @@ Diese Punkte hat der Nutzer zu TP-1 genannt und ausdrücklich zurückgestellt. J
 
 ## Offene Punkte aus TP-1
 
-- Duplizieren übernimmt die Art nicht; das Duplikat ist eine Aufgabe.
-- Die Einstellungen der Quellen erscheinen in einem anderen offenen Tab erst beim nächsten Abruf des Plans (Wechsel des Tages oder des Bereichs, Neuverbinden).
+Beide erledigt mit PL-1 ([ADR-0065](../adr/0065-tagesplan.md), Nachtrag PL-1):
+
+- ~~Duplizieren übernimmt die Art nicht.~~ Das Duplikat übernimmt die Art seines Originals wie den Charm.
+- ~~Die Einstellungen der Quellen erscheinen in einem anderen offenen Tab erst beim nächsten Abruf.~~ Sie erscheinen live in anderen Tabs und bei den anderen Mitgliedern des Haushalts.

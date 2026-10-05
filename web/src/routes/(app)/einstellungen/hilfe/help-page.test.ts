@@ -176,6 +176,10 @@ describe('help page (EH-9)', () => {
 		expect(content).toMatch(/änderst du ihn,\s+bekommen ihn erst die nächsten Tickets/);
 		expect(content).toMatch(/Unteraufgaben bekommen keinen/);
 		expect(content).toMatch(/„Kein Charm“ entfernt ihn wieder/);
+		// "Duplizieren …" takes charm and kind over (ADR-0045, PL-1).
+		expect(content).toMatch(
+			/Den Charm und die Art \(Aufgabe oder laufendes Vorhaben\) nimmt das Duplikat immer mit/
+		);
 	});
 
 	it('explains the filter cards: toggles, their union, "Alle offenen", filters and summary (FI-1)', () => {
@@ -191,6 +195,12 @@ describe('help page (EH-9)', () => {
 		);
 		expect(content).toMatch(/„12 Tickets aus: In Arbeit, Heute fällig,\s+Dringend“/);
 		expect(content).toMatch(/Ältere Lesezeichen mit Status,\s+Priorität oder Fälligkeit/);
+		// PL-1: pinned tickets in the summary, the cards locked by the status filter "Erledigt".
+		expect(content).toMatch(/„4 \+ 1 angeheftet aus: Dringend“/);
+		expect(content).toMatch(/„Karten gelten für offene Tickets“/);
+		expect(content).toMatch(
+			/Auswahl bleibt und gilt wieder, sobald du den Statusfilter zurücknimmst/
+		);
 	});
 
 	it('explains pinning: the toggle, the section above every filter, personal pins, releasing (ADR-0064)', () => {
@@ -411,7 +421,10 @@ describe('help page (EH-9)', () => {
 		expect(content).toMatch(/„Nur für heute abhaken“/);
 		expect(content).toMatch(/„Vorhaben abschließen …“ mit Rückfrage/);
 		expect(content).toMatch(/„Aus“, „Vorschlagen“ oder „Automatisch übernehmen“/);
-		expect(content).toMatch(/Angeheftete Tickets sind keine Quelle/);
+		// Pins are display only (PL-1): neither a source nor a reason to leave a ticket out.
+		expect(content).toMatch(/Anheften ändert an den Vorschlägen nichts/);
+		expect(content).toMatch(/angeheftetes Ticket, das heute fällig ist, schlägt der Plan vor wie/);
+		expect(content).toMatch(/im Haushalt alle Mitglieder sofort/);
 		expect(content).toMatch(/„Zum\s+Tagesplan“ im Menü/);
 		expect(content).toMatch(/Vergangene Tage sind nur zu lesen, morgen kannst du schon planen/);
 		expect(content).toMatch(/einen gemeinsamen für alle Mitglieder/);

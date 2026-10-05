@@ -18,6 +18,7 @@ var berlinTime = require(__hooks + '/lib/berlin-time.js');
 var ticketService = require(__hooks + '/lib/ticket-service.js');
 var inbox = require(__hooks + '/lib/inbox-service.js');
 var charms = require(__hooks + '/lib/charms.js');
+var dayPlanRules = require(__hooks + '/lib/day-plan-rules.js');
 
 var TICKETS = 'tickets';
 var INBOX = 'inbox_items';
@@ -80,6 +81,17 @@ function withCharm(fields, ticket) {
   var charm = ticket.getString('charm');
   if (charms.isCharmKey(charm)) {
     fields.charm = charm;
+  }
+  return fields;
+}
+
+// A copy keeps the kind of its ticket (ADR-0065, PL-1) like its charm: always, without a switch, an
+// ongoing project stays one, and every sub-ticket of the copy keeps its own. Before the migration of
+// the day plan the field reads as '' and nothing is set; the model hook makes the copy a task then.
+function withKind(fields, ticket) {
+  var kind = ticket.getString('kind');
+  if (dayPlanRules.KINDS.indexOf(kind) !== -1) {
+    fields.kind = kind;
   }
   return fields;
 }
@@ -167,7 +179,8 @@ function saveDuplicate(txApp, original, options, context) {
   } else {
     fields.source = 'manual';
   }
-  return saveTicket(txApp, withCharm(withColor(fields, taken.color), original), context.actor);
+  var copied = withKind(withCharm(withColor(fields, taken.color), original), original);
+  return saveTicket(txApp, copied, context.actor);
 }
 
 // New, open sub-tickets of the duplicate, one per sub-ticket of the original (also done ones), in
@@ -185,30 +198,22 @@ function saveSubtasks(txApp, original, duplicate, options, actor) {
       continue;
     }
     var taken = rules.takenValues(takeableValues(child), options);
-    var saved = saveTicket(
-      txApp,
-      withCharm(
-        withColor(
-          {
-            owner: duplicate.getString('owner'),
-            household: duplicate.getString('household'),
-            title: child.getString('title'),
-            description: taken.description,
-            status: 'open',
-            priority: taken.priority,
-            due: taken.due,
-            project: duplicate.getString('project'),
-            tags: taken.tags,
-            parent: duplicate.id,
-            blocks_parent: child.getBool('blocks_parent'),
-            source: 'manual'
-          },
-          taken.color
-        ),
-        child
-      ),
-      actor
-    );
+    var fields = {
+      owner: duplicate.getString('owner'),
+      household: duplicate.getString('household'),
+      title: child.getString('title'),
+      description: taken.description,
+      status: 'open',
+      priority: taken.priority,
+      due: taken.due,
+      project: duplicate.getString('project'),
+      tags: taken.tags,
+      parent: duplicate.id,
+      blocks_parent: child.getBool('blocks_parent'),
+      source: 'manual'
+    };
+    var copied = withKind(withCharm(withColor(fields, taken.color), child), child);
+    var saved = saveTicket(txApp, copied, actor);
     created.push({ id: saved.id, key: saved.getString('key') });
   }
   return created;

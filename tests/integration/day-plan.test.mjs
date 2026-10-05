@@ -6,7 +6,8 @@
 // heute abhaken", "Vorhaben abschließen" and the way back; "Auf morgen schieben", "Entfernen", the
 // order; the shared plan of the household live for A and B and closed to C; no ticket across the
 // border of an area; moving a ticket into the other area and the trash take its entries along; the
-// settings of the sources; the kind of a ticket. The day comes from the test clock of
+// settings of the sources, live for the members (PL-1); the kind of a ticket; pins neither a source nor
+// a reason to leave a ticket out (PL-1). The day comes from the test clock of
 // tests/fixtures/pb_hooks/day-plan-clock.pb.js, so no case depends on the time of the machine.
 
 import { randomBytes } from 'node:crypto';
@@ -26,6 +27,7 @@ import {
 	removeDayPlanItem,
 	saveDayPlanSettings,
 	subscribeDayPlanItems,
+	subscribeDayPlanSettings,
 	uncheckDayPlanItem
 } from '../../web/src/lib/data/day-plan.ts';
 import { setClientArea } from '../../web/src/lib/data/area.ts';
@@ -363,6 +365,21 @@ describe('suggestions and their sources', () => {
 		);
 	});
 
+	it('treats a pin as display only: neither a source nor a reason to leave a ticket out (PL-1)', async () => {
+		const person = await createAccount();
+		await useDay(DAY);
+		const pinnedDue = await person.ticket({ title: 'Angeheftet und heute fällig', due: due(DAY) });
+		const pinnedOnly = await person.ticket({ title: 'Nur angeheftet' });
+		for (const ticket of [pinnedDue, pinnedOnly]) {
+			await person.client.collection('ticket_pins').create({ user: person.id, ticket: ticket.id });
+		}
+		const answer = await person.fetch();
+		expect(answer.suggestions).toEqual([
+			{ id: pinnedDue.id, mode: 'suggest', origin: 'due_today', reasons: ['heute fällig'] }
+		]);
+		expect(await entriesOf(answer.plan.id)).toEqual([]);
+	});
+
 	it('suggests "Übrig von gestern" only for entries neither checked nor done whose ticket is still open', async () => {
 		const person = await createAccount();
 		await useDay('2031-02-20');
@@ -678,6 +695,28 @@ describe('the shared plan of the household', () => {
 		});
 		expect(stored).toHaveLength(1);
 		expect(stored[0].household).toBe(householdId);
+	});
+
+	it('brings a change of the settings live to the other members, through the data layer of the SPA (PL-1)', async () => {
+		const changesOfB = [];
+		const changesOfC = [];
+		stops.push(await subscribeDayPlanSettings(b.client, householdScope(), (change) => changesOfB.push(change)));
+		stops.push(await subscribeDayPlanSettings(c.client, householdScope(), (change) => changesOfC.push(change)));
+		await a.send(`${PLAN}/settings`, { scope: householdScope(), sources: { overdue: 'off' } });
+		const change = await waitFor(
+			changesOfB,
+			(entry) => entry.action === 'update' && entry.record.settings.overdue === 'off',
+			'settings for B'
+		);
+		expect(change.record).toMatchObject({ scope: householdScope(), settings: { overdue: 'off', in_progress: 'suggest' } });
+		await a.send(`${PLAN}/settings`, { scope: householdScope(), sources: { overdue: 'suggest' } });
+		await waitFor(
+			changesOfB,
+			(entry) => entry.action === 'update' && entry.record.settings.overdue === 'suggest',
+			'second settings for B'
+		);
+		// C is no member: nothing of the household arrives.
+		expect(changesOfC).toEqual([]);
 	});
 
 	it('names the plan of today of the other area of the account, never its content', async () => {

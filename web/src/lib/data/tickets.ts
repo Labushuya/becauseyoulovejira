@@ -13,7 +13,7 @@ import {
 	type DuplicateOutcome,
 	type DuplicateRequest
 } from '../domain/duplicate';
-import { cardsUseToday, type FilterCard } from '../domain/filter-cards';
+import { appliedCards, cardsUseToday, type FilterCard } from '../domain/filter-cards';
 import { isInboxChannel } from '../domain/inbox';
 import { EMPTY_LIST_QUERY, NO_PROJECT, activeSearch, type ListQuery } from '../domain/list-query';
 import { SOON_DAYS } from '../domain/ordering';
@@ -502,26 +502,28 @@ function takesSubProjects({ query, withSubProjects }: DoneFilter): boolean {
 
 /**
  * Expression of the done tickets: DONE_FILTER, with a chosen source also its clause, with sub
- * projects the clause of the project family, and with chosen cards the clause of their union.
+ * projects the clause of the project family, and with applied cards the clause of their union (none
+ * apply with the status filter "Erledigt", PL-1).
  */
 function doneFilterExpression(done: DoneFilter): string {
 	const parts = [DONE_FILTER];
 	if (done.query.source !== null) parts.push(DONE_SOURCE_FILTER);
 	if (takesSubProjects(done)) parts.push(DONE_FAMILY_FILTER);
-	if (done.query.cards.length > 0) parts.push(DONE_CARDS_FILTER);
+	if (appliedCards(done.query).length > 0) parts.push(DONE_CARDS_FILTER);
 	return parts.join(' && ');
 }
 
 /**
  * Parameters of DONE_FILTER; an unset filter is '', which switches its conditions off. With sub
  * projects the project goes to DONE_FAMILY_FILTER instead of the plain project clause. The dates
- * are set for a due filter and for a card that compares with today.
+ * are set for a due filter and for an applied card that compares with today.
  */
 function doneFilterParams(done: DoneFilter): Record<string, string> {
 	const { query, today } = done;
 	const family = takesSubProjects(done);
+	const cards = appliedCards(query);
 	const dates =
-		query.due === null && !cardsUseToday(query.cards)
+		query.due === null && !cardsUseToday(cards)
 			? { today: '', tomorrow: '', horizon: '' }
 			: {
 					today: fromDueInput(today),
@@ -541,7 +543,7 @@ function doneFilterParams(done: DoneFilter): Record<string, string> {
 		recurring: query.recurring ?? '',
 		...(query.source === null ? {} : sourceParams(query.source)),
 		...(family ? { family: query.project ?? '' } : {}),
-		...(query.cards.length === 0 ? {} : cardParams(query.cards))
+		...(cards.length === 0 ? {} : cardParams(cards))
 	};
 }
 

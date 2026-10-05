@@ -134,4 +134,18 @@ Produktentscheidung vom 2026-10-05 nach einem Fehlerbericht des Nutzers. Der Tex
 
 - Positiv: Mehrfachwahl tut, was sie verspricht; die Zahlen auf den Karten sagen vor dem Klick, wie viele Tickets kommen.
 - Negativ: Eine Karte kann einem Filter der Filterleiste widersprechen, etwa „In Arbeit“ mit Status „Offen“, und dann ist die Liste leer. Die Zahl 0 auf der Karte, die Zusammenfassung und „Filter zurücksetzen“ machen das sichtbar.
-- Negativ: „Alle offenen“ bleibt gewählt, wenn der Statusfilter „Erledigt“ nur erledigte Tickets zeigt; der Name meint „keine Karte“.
+- Negativ: „Alle offenen“ bleibt gewählt, wenn der Statusfilter „Erledigt“ nur erledigte Tickets zeigt; der Name meint „keine Karte“. (Aufgehoben durch Nachtrag D.)
+
+## Nachtrag D (2026-10-05, Paket PL-1): Angeheftete in der Zusammenfassung, Karten beim Statusfilter „Erledigt“
+
+Produktentscheidung zu PL-1. Der Text oben bleibt; dieser Nachtrag ändert Nachtrag C, Punkte 5 und 7, und hebt dessen letzte negative Konsequenz auf.
+
+1. **Zusammenfassung mit angehefteten Tickets (ändert C.7):** Passen angeheftete Tickets ([ADR-0064](0064-tickets-anpinnen.md)) zu den gewählten Karten, den Filtern und der Suche (`TicketListStore.pinnedInFilter`), nennt die Zusammenfassung sie wie die Zahl neben „Aufgaben“: „4 + 1 angeheftet aus: Dringend“ (`cardSummary` mit `pinned`, Text aus `pinnedMoreText`). So ergibt sie die Zahl der Karte („Dringend: 5“), die alle offenen Tickets zählt, angeheftet oder nicht. Ohne passende angeheftete bleibt der Text wie bisher („4 Tickets aus: Dringend“). Die Zahl neben „Aufgaben“ nennt weiter alle angehefteten des Bereichs, weil der Abschnitt „Angeheftet“ unabhängig von den Karten ist.
+2. **Gesperrte Karten beim Statusfilter „Erledigt“ (ändert C.5):** Schließt ein Filter der Filterleiste offene Tickets aus, kann keine Karte etwas zeigen; das ist heute nur der Statusfilter „Erledigt“ (`cardsLocked`). Dann
+   - sind alle fünf Karten gesperrt: `aria-disabled="true"` statt `disabled`, damit sie in der Tab-Reihenfolge bleiben und ihre Beschreibung vorlesen; ein Klick tut nichts; gedämpft wie gesperrte Knöpfe (`opacity: 0.75`, `cursor: not-allowed`),
+   - steht unter den Karten einmal der Hinweis „Karten gelten für offene Tickets“ (`CARDS_LOCKED_HINT`), den jede Karte per `aria-describedby` nennt, dazu derselbe Text als Tooltip (`title`); die Zeile „Auswählen“/„Abwählen“ entfällt,
+   - ist „Alle offenen“ nicht gedrückt,
+   - wirkt keine Karte: `appliedCards` gibt dann keine Karte zurück, und Liste (`matchesFilter`), Serverausdruck der erledigten Tickets (`DONE_CARDS_FILTER`) und Zusammenfassung nutzen nur diese Funktion; die Zusammenfassung entfällt,
+   - bleibt die gewählte Kartenwahl in der Adresse (`karte=…`) und als gedrückte, gesperrte Karte sichtbar; sobald der Statusfilter zurückgenommen ist, wirkt sie wieder, auch für „Erledigte anzeigen“.
+3. **Warum gedrückt und gesperrt statt abgewählt:** Die Karten zeigen so, was nach dem Statusfilter wieder gilt, ohne die Adresse zu ändern; der Hinweis erklärt, warum sie gerade nicht wirken. Würde der Statusfilter die Wahl löschen, ginge sie mit Zurück und Lesezeichen verloren.
+4. **Tests:** `domain/filter-cards.test.ts` (`cardsLocked`, `appliedCards`, `matchesFilter` mit allen 16 Kartenwahlen beim Statusfilter „Erledigt“, Zusammenfassung mit angehefteten), `components/filter-cards.test.ts` (gesperrt, Hinweis, Tooltip, „Alle offenen“ nicht gedrückt, Wahl bleibt), `components/filter-summary.test.ts`, `components/ticket-table-pins.test.ts` (echter Store mit Pins: „4 + 1 angeheftet aus: Dringend“ bei „Dringend: 5“, keine Zusammenfassung beim Statusfilter „Erledigt“), `stores/ticket-list.test.ts` (Abschnitt „Erledigt“ ohne Karten beim Statusfilter, mit ihnen danach) und `tests/integration/web-filter-parity.test.mjs` (der Server wendet beim Statusfilter „Erledigt“ keine Karte an).
