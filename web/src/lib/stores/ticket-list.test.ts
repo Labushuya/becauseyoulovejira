@@ -633,25 +633,85 @@ describe('column sort (E3 plan, package 9)', () => {
 	});
 });
 
-describe('KPI numbers (E3 plan, package 12)', () => {
-	it('count the tickets that are not done, independent of the filters, and follow changes', async () => {
-		const overdue = ticket({ due: '2026-09-23', priority: 'urgent' });
+describe('filter cards (FI-1)', () => {
+	const HOUSE = 'proj00000000001';
+	const query = (overrides: Partial<ListQuery>): ListQuery => ({
+		...EMPTY_LIST_QUERY,
+		...overrides
+	});
+	const ids = (tickets: readonly TicketSummary[]) => tickets.map((entry) => entry.id).sort();
+
+	it('shows the union of the chosen cards, each ticket once, and announces the number', async () => {
+		// Today is 2026-09-24 (NOON).
+		const lateUrgent = ticket({ due: '2026-09-23', priority: 'urgent' });
 		const working = ticket({ status: 'in_progress', due: '2026-09-24' });
-		const store = new TicketListStore(fakeData([overdue, working, ticket()]), session());
-		store.activate({ ...EMPTY_LIST_QUERY, priority: 'low' });
+		const all = ticket({ status: 'in_progress', due: '2026-09-24', priority: 'urgent' });
+		const plain = ticket();
+		const store = new TicketListStore(fakeData([lateUrgent, working, all, plain]), session());
+		store.activate(EMPTY_LIST_QUERY);
 		await settle();
 
-		expect(store.kpis).toEqual({ notDone: 3, inProgress: 1, dueToday: 1, overdue: 1, urgent: 1 });
-		expect(store.kpis.notDone).toBe(store.openCount);
+		store.activate(query({ cards: ['in_progress', 'due_today', 'urgent'] }));
+		expect(ids(store.visible)).toEqual(ids([lateUrgent, working, all]));
+		expect(store.visibleCount).toBe(3);
+		expect(store.announcement).toBe('3 Tickets.');
 
+		store.activate(query({ cards: ['due_today', 'overdue'] }));
+		expect(ids(store.visible)).toEqual(ids([lateUrgent, working, all]));
+
+		// The detail filters narrow the union.
+		store.activate(query({ cards: ['in_progress', 'urgent'], priority: 'urgent' }));
+		expect(ids(store.visible)).toEqual(ids([lateUrgent, all]));
+		expect(store.announcement).toBe('2 Tickets.');
+
+		store.activate(EMPTY_LIST_QUERY);
+		expect(store.visibleCount).toBe(4);
+	});
+
+	it('counts each card over the detail filters, not the other cards, and follows changes', async () => {
+		const lateUrgent = ticket({ due: '2026-09-23', priority: 'urgent', projectId: HOUSE });
+		const working = ticket({ status: 'in_progress', due: '2026-09-24', projectId: HOUSE });
+		const store = new TicketListStore(fakeData([lateUrgent, working, ticket()]), session());
+		store.activate(query({ cards: ['urgent'] }));
+		await settle();
+
+		const all = { allOpen: 3, in_progress: 1, due_today: 1, overdue: 1, urgent: 1 };
+		expect(store.cardCounts).toEqual(all);
+		expect(store.cardCounts.allOpen).toBe(store.openCount);
+		store.activate(query({ cards: ['in_progress', 'overdue'] }));
+		expect(store.cardCounts).toEqual(all);
+
+		store.activate(query({ project: HOUSE }));
+		expect(store.cardCounts).toEqual({ ...all, allOpen: 2 });
+		store.activate(query({ priority: 'low' }));
+		expect(store.cardCounts).toEqual({
+			allOpen: 0,
+			in_progress: 0,
+			due_today: 0,
+			overdue: 0,
+			urgent: 0
+		});
+
+		store.activate(EMPTY_LIST_QUERY);
 		// A just checked row counts as done, like the header counter.
-		await store.setDone(overdue.id, true);
-		expect(store.kpis).toMatchObject({ notDone: 2, overdue: 0, urgent: 0 });
-
+		await store.setDone(lateUrgent.id, true);
+		expect(store.cardCounts).toMatchObject({ allOpen: 2, overdue: 0, urgent: 0 });
 		store.upsert(ticket({ priority: 'urgent' }));
-		expect(store.kpis).toMatchObject({ notDone: 3, urgent: 1 });
+		expect(store.cardCounts).toMatchObject({ allOpen: 3, urgent: 1 });
 		store.remove(working.id);
-		expect(store.kpis).toMatchObject({ notDone: 2, inProgress: 0, dueToday: 0 });
+		expect(store.cardCounts).toMatchObject({ allOpen: 2, in_progress: 0, due_today: 0 });
+	});
+
+	it('counts only the hits of the search', async () => {
+		const hit = ticket({ priority: 'urgent' });
+		const data = fakeData([hit, ticket({ priority: 'urgent' }), ticket()]);
+		data.searchOpen.mockResolvedValue([hit.id]);
+		const store = new TicketListStore(data, session());
+
+		store.activate(query({ search: 'Miete' }));
+		await settle();
+
+		expect(store.cardCounts).toMatchObject({ allOpen: 1, urgent: 1 });
 	});
 
 	it('move the due numbers at the Berlin midnight', async () => {
@@ -661,10 +721,55 @@ describe('KPI numbers (E3 plan, package 12)', () => {
 		const stop = store.start();
 		store.activate(EMPTY_LIST_QUERY);
 		await settle();
-		expect(store.kpis).toMatchObject({ dueToday: 1, overdue: 0 });
+		expect(store.cardCounts).toMatchObject({ due_today: 1, overdue: 0 });
 
 		await vi.advanceTimersByTimeAsync(61_000);
-		expect(store.kpis).toMatchObject({ dueToday: 0, overdue: 1 });
+		expect(store.cardCounts).toMatchObject({ due_today: 0, overdue: 1 });
+		stop();
+	});
+
+	it('loads the done tickets with the chosen cards, again when they change', async () => {
+		const data = fakeData([ticket()], [[done({ priority: 'urgent' })]]);
+		const store = new TicketListStore(data, session());
+		const urgent = query({ showDone: true, cards: ['urgent'] });
+		store.activate(urgent);
+		await settle();
+		expect(data.listDone).toHaveBeenLastCalledWith(
+			1,
+			expect.objectContaining({ filter: { query: urgent, today: '2026-09-24' } })
+		);
+
+		store.activate(query({ showDone: true, cards: ['urgent'] }));
+		await settle();
+		expect(data.listDone).toHaveBeenCalledOnce();
+
+		const more = query({ showDone: true, cards: ['due_today', 'urgent'] });
+		store.activate(more);
+		await settle();
+		expect(data.listDone).toHaveBeenCalledTimes(2);
+		expect(data.listDone).toHaveBeenLastCalledWith(
+			1,
+			expect.objectContaining({ filter: { query: more, today: '2026-09-24' } })
+		);
+	});
+
+	it('loads the done tickets again at midnight only with a card that compares with today', async () => {
+		// 2026-09-24 23:59 in Berlin.
+		vi.setSystemTime(Date.UTC(2026, 8, 24, 21, 59, 0));
+		const data = fakeData([], [[done({ due: '2026-09-25' })]]);
+		const store = new TicketListStore(data, session());
+		const stop = store.start();
+		store.activate(query({ showDone: true, cards: ['urgent'] }));
+		await settle();
+		await vi.advanceTimersByTimeAsync(61_000);
+		expect(data.listDone).toHaveBeenCalledOnce();
+
+		store.activate(query({ showDone: true, cards: ['urgent', 'due_today'] }));
+		await settle();
+		expect(data.listDone).toHaveBeenCalledTimes(2);
+		await vi.advanceTimersByTimeAsync(24 * 60 * 60 * 1000 + 1000);
+		expect(data.listDone).toHaveBeenCalledTimes(3);
+		expect(data.listDone.mock.calls[2]?.[1].filter?.today).toBe('2026-09-26');
 		stop();
 	});
 });

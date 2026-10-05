@@ -99,3 +99,39 @@ Nutzerentscheidung vom 2026-09-28. Der Text oben bleibt; dieser Nachtrag erweite
 - **Tabelle:** Eine erste Ebene mit zweiter hat einen eigenen `tbody` nur mit ihrem Kopf, jede Gruppe der zweiten Ebene einen eigenen `tbody` (benannt über `aria-labelledby` beider Köpfe, etwa „Haushalt, 3 Tickets Offen, 2 Tickets“). Jeder Gruppenkopf ist ein Disclosure-Knopf mit `aria-expanded`, Bezeichnung und Zahl der offenen Tickets, auch bei einer Ebene. Zugeklappt wird je Tab (`sessionStorage` `byl-groups-collapsed`, höchstens 200 Pfade, standardmäßig offen), wie die Unterprojekte der Projektansicht. Der Abschnitt „Erledigt“ bleibt ungruppiert.
 - **Unteraufgaben (ADR-0033 §5):** `arrangeRows` läuft je Blattgruppe. Eingerückt wird nur, wenn übergeordnetes Ticket und Unteraufgabe in derselben Blattgruppe stehen; sonst steht die Unteraufgabe an ihrem Platz mit dem Pfad „HAUS-12 ›“.
 - **Spalten (ADR-0030):** Gruppenköpfe beider Ebenen überspannen `fit.visible.length` Spalten; die zweite Ebene ist nur im Kopf eingerückt (2rem), die Spalten und ihre Breiten ändern sich nicht.
+
+## Nachtrag C (2026-10-05, Paket FI-1): Filter-Karten als Umschalter mit Vereinigung
+
+Produktentscheidung vom 2026-10-05 nach einem Fehlerbericht des Nutzers. Der Text oben bleibt; dieser Nachtrag ersetzt die Kennzahlen-Kacheln aus E3 (Plan E3, T-10 und Paket 12; [ADR-0010](0010-layout-nach-task-board.md) §1) und ergänzt §1, §3 und §4.
+
+**Befund vor FI-1.** Die fünf Kacheln schrieben in die Filtergruppen der Filterleiste: „In Arbeit“ `status=in_progress`, „Heute fällig“ `faellig=heute`, „Überfällig“ `faellig=ueberfaellig`, „Dringend“ `prio=urgent`. Die Gruppen sind nach §1 mit UND verknüpft, je Gruppe ein Wert. Daraus folgte:
+
+- „In Arbeit“, „Heute fällig“ und „Dringend“ zusammen zeigten nur Tickets, die alle drei Bedingungen zugleich erfüllen, meist keines.
+- „Heute fällig“ und „Überfällig“ teilten sich `faellig` und setzten sich gegenseitig zurück.
+- „Nicht erledigt“ war kein Umschalter. Es setzte alle Filter und die Suche zurück und galt als gedrückt, solange gar kein Filter gesetzt war.
+
+**Entscheidung.**
+
+1. **Bedienung:** Fünf gleich bedienbare Umschalter (`aria-pressed`) in der Gruppe „Filter-Karten“: „Alle offenen“, „In Arbeit“, „Heute fällig“, „Überfällig“, „Dringend“. Jede Karte zeigt ein Kästchen, das gewählt ein Häkchen trägt. Dazu kommen Akzentfläche, Rahmen und eine fettere Zahl, kein Rot (ADR-0009). Name „In Arbeit: 3“, die Zeile darunter („Auswählen“, „Abwählen“) hängt per `aria-describedby` daran. Am Handy ist jede Karte mindestens 44 px hoch.
+2. **Verknüpfung:** Mehrere gewählte Karten ergeben die Vereinigung (ODER). Jedes Ticket erscheint einmal, und keine Karte setzt eine andere zurück. Die Regeln stehen rein in `web/src/lib/domain/filter-cards.ts` (`matchesCard`, `matchesCards`, `toggleCard`, `countCards`, `cardSummary`). „Heute fällig“ und „Überfällig“ vergleichen wie `dueBucket`, ein erledigtes Ticket ist nie überfällig.
+3. **„Alle offenen“** ersetzt „Nicht erledigt“. Es steht für „keine Karte“: gewählt, solange keine andere Karte gewählt ist. Ein Klick darauf hebt die übrigen Karten auf und lässt Filter und Suche stehen.
+4. **Filter der Filterleiste** (Status, Priorität, Fällig, Quelle, Wiederkehrend, Projekt, Tag) und die Suche schränken die Vereinigung weiter ein (UND). `matchesFilter` prüft zuerst die Karten, dann die Gruppen wie bisher.
+5. **Erledigte Tickets:** Eine Karte für sie gibt es nicht und kommt mit FI-1 auch nicht dazu. „Erledigte anzeigen“ bleibt ein Schalter der Ansicht, „Erledigt“ ein Wert des Statusfilters. Die Karten gelten wie jeder Filter auch für den Abschnitt „Erledigt“. Ein erledigtes Ticket ist nie „In Arbeit“ oder „Überfällig“; mit diesen Karten allein bleibt der Abschnitt leer. Käme später eine Karte für erledigte Tickets, wäre sie ein normales Mitglied der Vereinigung.
+6. **Zähler:** Jede Karte zählt die offenen Tickets des aktiven Bereichs, die Filter und Suche passieren, ohne die anderen Karten (`TicketListStore.cardCounts`). Die Zahl der Kopfzeile zählt weiter alle offenen.
+7. **Zusammenfassung:** Solange eine Karte gewählt ist, steht über der Tabelle etwa „12 Tickets aus: In Arbeit, Heute fällig, Dringend“. Schränken Filter oder Suche ein, folgt „– weitere Filter aktiv“. Die Zahl ist die neben „Aufgaben“; angeheftete Tickets ([ADR-0064](0064-tickets-anpinnen.md)) stehen unabhängig von den Karten im Abschnitt darüber und zählen dort nicht mit. „Zurücksetzen“ dort wirkt wie „Filter zurücksetzen“: Karten, Filter und Suche fallen weg, der Fokus geht auf „Aufgaben“. Das „Zurücksetzen“ der Filterleiste leert seit FI-1 ebenfalls auch die Karten.
+8. **URL (§4):** Neuer Parameter `karte`, einmal je gewählte Karte, mit den Werten `in-arbeit`, `heute`, `ueberfaellig` und `dringend`. Er steht in der festen Reihenfolge vorn, etwa `?karte=heute&karte=dringend&prio=high`. Gelesen werden auch Listen mit Komma; unbekannte, leere und doppelte Werte fallen still weg. Ohne `karte` gilt „Alle offenen“.
+9. **Alte Adressen:** Lesezeichen, Verlauf und die gemerkte letzte Ansicht (`sessionStorage` `byl-last-view`) behalten ihre Bedeutung. `status`, `prio` und `faellig` bleiben Filter der Filterleiste und zeigen dieselben Tickets wie vor FI-1, jetzt unter „Alle offenen“. Umgedeutet wird nichts: Aus der Adresse lässt sich nicht erkennen, ob eine Kachel oder ein Chip den Wert gesetzt hat. Eine Umdeutung in Karten würde außerdem den Chip „In Arbeit“ des Statusfilters unwählbar machen. Eine Migration gespeicherter Daten gibt es nicht, der Zustand lebt nur in der Adresse.
+10. **Server (§3):** Der Ausdruck der erledigten Tickets bekommt bei gewählten Karten die Klausel `DONE_CARDS_FILTER`. Sie umfasst die Vereinigung als eine Klammer, je Karte geschaltet über einen eigenen Parameter (`{:cardToday} = "1" && due = {:today}` …). Mit UND hängt sie am übrigen Ausdruck. Alle Werte gehen als Parameter über `pb.filter()`. Der Paritätstest prüft alle 16 Kombinationen der Karten, allein und mit Projekt, Tag, Priorität, Fälligkeit, Suche, Quelle und Unterprojekten.
+11. **Kalender:** `calendarListQuery` lässt die Karten weg wie „Fällig“ und die Suche, weil der Kalender keine Karten zeigt.
+
+**Alternativen.**
+
+- **Karten weiter als Werte der Filtergruppen, nur mit Mehrfachwahl je Gruppe** (`status=in_progress,open`): Das löst „Heute fällig“ + „Überfällig“, aber nicht „In Arbeit“ + „Dringend“, weil verschiedene Gruppen mit UND verknüpft bleiben. Verworfen.
+- **Alte Adressen in Karten umdeuten:** Das ist nicht eindeutig (siehe 9.) und würde Adressen mit zwei solchen Werten von UND auf ODER umstellen. Verworfen.
+- **Karten nur für die offenen Tickets, nicht für den Abschnitt „Erledigt“:** Mit „Dringend“ und „Erledigte anzeigen“ stünden dann alle erledigten Tickets darunter, vor FI-1 nur die dringenden. Verworfen.
+
+**Konsequenzen.**
+
+- Positiv: Mehrfachwahl tut, was sie verspricht; die Zahlen auf den Karten sagen vor dem Klick, wie viele Tickets kommen.
+- Negativ: Eine Karte kann einem Filter der Filterleiste widersprechen, etwa „In Arbeit“ mit Status „Offen“, und dann ist die Liste leer. Die Zahl 0 auf der Karte, die Zusammenfassung und „Filter zurücksetzen“ machen das sichtbar.
+- Negativ: „Alle offenen“ bleibt gewählt, wenn der Statusfilter „Erledigt“ nur erledigte Tickets zeigt; der Name meint „keine Karte“.

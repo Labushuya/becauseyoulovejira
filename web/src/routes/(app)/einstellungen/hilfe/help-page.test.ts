@@ -178,6 +178,21 @@ describe('help page (EH-9)', () => {
 		expect(content).toMatch(/„Kein Charm“ entfernt ihn wieder/);
 	});
 
+	it('explains the filter cards: toggles, their union, "Alle offenen", filters and summary (FI-1)', () => {
+		render(Page);
+		const content = text(screen.getByRole('region', { name: 'Häufige Fragen' }));
+		expect(content).toMatch(
+			/sind Schalter: Ein Klick wählt\s+eine Karte, ein zweiter wählt sie wieder ab/
+		);
+		expect(content).toMatch(/zu mindestens einer gewählten Karte passt, und zwar nur einmal/);
+		expect(content).toMatch(/„Alle offenen“ ist gewählt, solange keine andere Karte gewählt ist/);
+		expect(content).toMatch(
+			/Die Filter der Filterleiste und die Suche schränken die gewählten Karten/
+		);
+		expect(content).toMatch(/„12 Tickets aus: In Arbeit, Heute fällig,\s+Dringend“/);
+		expect(content).toMatch(/Ältere Lesezeichen mit Status,\s+Priorität oder Fälligkeit/);
+	});
+
 	it('explains pinning: the toggle, the section above every filter, personal pins, releasing (ADR-0064)', () => {
 		render(Page);
 		const content = text(screen.getByRole('region', { name: 'Häufige Fragen' }));
@@ -205,6 +220,7 @@ describe('help page (EH-9)', () => {
 			'Wie widerrufe ich einen Zugang?',
 			'Warum sehe ich im Admin-Bereich andere Konten?',
 			'Wie ändere ich Spalten und ihre Breite?',
+			'Wie wirken die Karten über der Liste?',
 			'Wie arbeite ich mit Unteraufgaben?',
 			'Wie hole ich ein gelöschtes Ticket zurück?',
 			'Warum lässt sich ein Ticket im Papierkorb nicht endgültig löschen?',

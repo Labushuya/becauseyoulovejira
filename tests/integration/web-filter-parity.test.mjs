@@ -6,6 +6,8 @@
 // text, ASCII letters regardless of case), because the list does not load the description.
 // Since E4 package 9 the matrix has done tickets of every source (converted from inbox entries of
 // every channel, and direct ones with manual, quick and without source) for the chip "Quelle".
+// Since FI-1 every choice of filter cards: their union is one clause in parentheses of the server
+// expression, narrowed by the other filters (ADR-0013 addendum C).
 //
 // Own disposable instance (ST-1): with about 150 writes in its setup and many lists per case this
 // file is by far the heaviest of the shared instance. Under load its setup ran past the 30 s of a
@@ -24,6 +26,7 @@ import { INBOX_CHANNELS } from '../../web/src/lib/domain/inbox.ts';
 import { SOURCE_FAMILIES } from '../../web/src/lib/domain/source.ts';
 import { addDays } from '../../web/src/lib/domain/berlin-date.ts';
 import { matchesFilter } from '../../web/src/lib/domain/filter.ts';
+import { FILTER_CARDS } from '../../web/src/lib/domain/filter-cards.ts';
 import {
 	DUE_FILTERS,
 	EMPTY_LIST_QUERY,
@@ -304,6 +307,27 @@ describe('web filter parity: server expression and matchesFilter', () => {
 			showDone: true
 		});
 	});
+
+	it('agrees for every choice of filter cards, alone and with other filters (FI-1)', async () => {
+		// Every subset of the cards, "Alle offenen" (none) included.
+		const selections = Array.from({ length: 2 ** FILTER_CARDS.length }, (_, mask) =>
+			FILTER_CARDS.filter((_card, index) => (mask & (2 ** index)) !== 0)
+		);
+		for (const cards of selections) {
+			await expectParity({ cards });
+			await expectParity({ cards, project: projects[0].id });
+			await expectParity({ cards, priority: 'urgent', tag: tags[0].id });
+			await expectParity({ cards, due: 'today', search: 'miete' });
+			await expectParity({ cards, source: 'manual', status: 'done', project: NO_PROJECT });
+		}
+		// "Heute fällig" and "Dringend": the done tickets due today (every priority in every
+		// project) or urgent (every due date in every project), each once although three are both.
+		const union = await serverIds({ ...EMPTY_LIST_QUERY, cards: ['due_today', 'urgent'] });
+		expect(union).toHaveLength(PRIORITIES.length * 3 + DUE_OFFSETS.length * 3 - 3);
+		expect(new Set(union).size).toBe(union.length);
+		// A done ticket is never in progress and never overdue.
+		expect(await serverIds({ ...EMPTY_LIST_QUERY, cards: ['in_progress', 'overdue'] })).toEqual([]);
+	});
 });
 
 describe('web filter parity with recurring tickets (plan OR-2)', () => {
@@ -448,7 +472,10 @@ describe('web filter parity with sub projects (ADR-0034)', () => {
 			{ project: cellar.id },
 			{ project: NO_PROJECT },
 			{ project: UNKNOWN_ID },
-			{}
+			{},
+			// The clause of the cards joins the one of the sub projects (FI-1).
+			{ project: house.id, cards: ['urgent', 'in_progress'] },
+			{ project: house.id, cards: ['due_today'], priority: 'high' }
 		];
 		for (const overrides of cases) {
 			const query = { ...EMPTY_LIST_QUERY, ...overrides };

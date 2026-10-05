@@ -75,19 +75,21 @@ describe('tickets layout', () => {
 	});
 
 	// Since UI-8 the section bar with the switch comes first, as in the projects and the inbox; the
-	// KPI tiles and the filter bar follow it (ADR-0025 section 10).
-	it('shows the section bar, the KPI tiles, the filter bar and the table, in this order', async () => {
-		renderLayout('/?faellig=heute');
+	// filter cards (FI-1, before the KPI tiles), the filter bar and with a chosen card the summary
+	// follow it (ADR-0025 section 10).
+	it('shows the section bar, the filter cards, the filter bar, the summary and the table, in this order', async () => {
+		renderLayout('/?karte=heute&faellig=heute');
 		await vi.waitFor(() =>
-			expect(screen.getByRole('button', { name: '0 nicht erledigt' })).toBeTruthy()
+			expect(screen.getByRole('button', { name: 'Alle offenen: 0' })).toBeTruthy()
 		);
 
 		const heading = screen.getByRole('heading', { name: 'Aufgaben' });
 		const views = screen.getByRole('navigation', { name: 'Ansicht' });
-		const tiles = screen.getByRole('group', { name: 'Kennzahlen' });
+		const cards = screen.getByRole('group', { name: 'Filter-Karten' });
 		const filters = screen.getByRole('region', { name: 'Filter' });
+		const summary = screen.getByText('0 Tickets aus: Heute fällig – weitere Filter aktiv');
 		const section = screen.getByRole('region', { name: 'Aufgaben' });
-		const order = [heading, views, tiles, filters];
+		const order = [heading, views, cards, filters, summary];
 		for (const [index, element] of order.slice(1).entries()) {
 			expect(
 				(order[index] as HTMLElement).compareDocumentPosition(element) &
@@ -97,8 +99,11 @@ describe('tickets layout', () => {
 		expect(section.firstElementChild?.classList.contains('section-bar')).toBe(true);
 		expect(section.firstElementChild?.contains(views)).toBe(true);
 		expect(
-			screen.getByRole('button', { name: '0 heute fällig' }).getAttribute('aria-pressed')
+			screen.getByRole('button', { name: 'Heute fällig: 0' }).getAttribute('aria-pressed')
 		).toBe('true');
+		expect(
+			screen.getByRole('button', { name: 'Alle offenen: 0' }).getAttribute('aria-pressed')
+		).toBe('false');
 	});
 
 	it('shows done tickets when the URL says so (reload, back and forward)', () => {

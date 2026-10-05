@@ -302,6 +302,24 @@ describe('filter bar', () => {
 		expect(lastTarget()).toBe('/?sort=-titel&gruppe=prio&erledigte=1');
 	});
 
+	it('resets the filter cards as well, back to "Alle offenen" (FI-1)', async () => {
+		await showBar('/?karte=heute&karte=dringend&gruppe=prio');
+
+		const reset = screen.getByRole('button', { name: 'Zurücksetzen' });
+		expect(reset.getAttribute('aria-disabled')).toBeNull();
+		await fireEvent.click(reset);
+
+		expect(lastTarget()).toBe('/?gruppe=prio');
+	});
+
+	it('keeps the chosen cards while a chip changes (FI-1)', async () => {
+		await showBar('/?karte=in-arbeit&karte=dringend');
+
+		await fireEvent.click(within(group('Priorität')).getByRole('radio', { name: 'Hoch' }));
+
+		expect(lastTarget()).toBe('/?karte=in-arbeit&karte=dringend&prio=high');
+	});
+
 	it('locks "Zurücksetzen" without a filter', async () => {
 		await showBar('/?sort=titel');
 

@@ -2,8 +2,8 @@
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import FilterBar from '$lib/components/FilterBar.svelte';
+	import FilterCards from '$lib/components/FilterCards.svelte';
 	import FirstSteps from '$lib/components/FirstSteps.svelte';
-	import KpiTiles from '$lib/components/KpiTiles.svelte';
 	import TicketTable from '$lib/components/TicketTable.svelte';
 	import ViewWithPanel from '$lib/components/ViewWithPanel.svelte';
 	import { parseListQuery } from '$lib/domain/list-query';
@@ -17,9 +17,9 @@
 	import { findTicketRowActions } from '$lib/stores/ticket-row-actions.svelte';
 	import { getTourStarter } from '$lib/tour/tour-context';
 
-	// KPI tiles, filter bar, table and panel area (E2 plan, T-4; E3 plan, T-3 and packages 5, 10
-	// and 12): the table stays in place while the detail panel opens and closes, so scroll position
-	// and loaded pages survive. Section bar, KPI tiles, filter bar and table form the view left of
+	// Filter cards, filter bar, table and panel area (E2 plan, T-4; E3 plan, T-3 and packages 5, 10
+	// and 12; FI-1): the table stays in place while the detail panel opens and closes, so scroll
+	// position and loaded pages survive. Section bar, cards, filter bar and table form the view left of
 	// the panel, which stands as a full column on the right from 64rem (ADR-0025 section 6, package
 	// UI-6b). The section bar with the switch comes first, as in the other views (package UI-8).
 	let { children } = $props();
@@ -82,7 +82,7 @@
 			recurrenceTextOf={(ticket) => rules.textOf(ticket.recurrenceId)}
 		>
 			{#snippet tools()}
-				<KpiTiles kpis={tickets.openState === 'ready' ? tickets.kpis : null} />
+				<FilterCards counts={tickets.openState === 'ready' ? tickets.cardCounts : null} />
 				<FilterBar
 					{catalog}
 					searchBusy={tickets.searchBusy}
