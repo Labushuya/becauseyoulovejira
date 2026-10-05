@@ -849,6 +849,40 @@
 				</ul>
 			</details>
 			<details>
+				<summary>Wie wirken die Karten über der Liste?</summary>
+				<ul>
+					<li>
+						„In Arbeit“, „Heute fällig“, „Überfällig“ und „Dringend“ sind Schalter: Ein Klick wählt
+						eine Karte, ein zweiter wählt sie wieder ab. Du kannst mehrere wählen; die Liste zeigt
+						dann jedes Ticket, das zu mindestens einer gewählten Karte passt, und zwar nur einmal.
+						„Heute fällig“ und „Überfällig“ zusammen zeigen also alles, was heute oder früher fällig
+						ist.
+					</li>
+					<li>
+						„Alle offenen“ ist gewählt, solange keine andere Karte gewählt ist. Ein Klick darauf
+						hebt die anderen Karten auf.
+					</li>
+					<li>
+						Die Filter der Filterleiste und die Suche schränken die gewählten Karten weiter ein.
+						Jede Karte zählt die offenen Tickets, die zu diesen Filtern passen, unabhängig von den
+						anderen Karten.
+					</li>
+					<li>
+						Über der Liste steht, woraus sie besteht, etwa „12 Tickets aus: In Arbeit, Heute fällig,
+						Dringend“. „Zurücksetzen“ dort oder in der Filterleiste setzt Karten, Filter und Suche
+						zurück; Sortierung, Gruppierung und „Erledigte anzeigen“ bleiben. Mit „Erledigte
+						anzeigen“ gelten die Karten auch für den Abschnitt „Erledigt“; ein erledigtes Ticket ist
+						nie „In Arbeit“ oder „Überfällig“.
+					</li>
+					<li>
+						Die Auswahl steht in der Adresse (<code>?karte=heute&amp;karte=dringend</code>) und
+						bleibt beim Neuladen, mit Zurück und in Lesezeichen erhalten. Ältere Lesezeichen mit
+						Status, Priorität oder Fälligkeit zeigen dieselben Tickets wie vorher; diese Werte
+						stehen dann als Filter in der Filterleiste.
+					</li>
+				</ul>
+			</details>
+			<details>
 				<summary>Wie arbeite ich mit Unteraufgaben?</summary>
 				<ul>
 					<li>

@@ -390,6 +390,17 @@ describe('entries of the days', () => {
 		expect(calendarListQuery(EMPTY_LIST_QUERY)).toBe(EMPTY_LIST_QUERY);
 	});
 
+	it('leaves the filter cards out, which only "Aufgaben" shows (FI-1)', () => {
+		const house = ticket(TODAY, { priority: 'high' });
+		const working = ticket(TODAY, { status: 'in_progress' });
+		const sources = { open: [house, working], done: [], planned: [], inbox: [] };
+		const keysOf = (query: Partial<ListQuery>) =>
+			(entriesByDay(OCTOBER, sources, filter(query)).get(TODAY) ?? []).map((entry) => entry.key);
+		expect(keysOf({ cards: ['in_progress'] })).toHaveLength(2);
+		expect(keysOf({ cards: ['urgent'], priority: 'high' })).toEqual([`ticket:${house.id}`]);
+		expect(calendarListQuery({ ...EMPTY_LIST_QUERY, cards: ['overdue'] }).cards).toEqual([]);
+	});
+
 	it('filters planned dates as the tickets they will become', () => {
 		const query = (values: Partial<ListQuery>) => ({ ...EMPTY_LIST_QUERY, ...values });
 		const date = planned(TODAY, { priority: 'high', tagIds: [TAG], status: 'waiting' });

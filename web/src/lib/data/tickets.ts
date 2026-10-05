@@ -12,13 +12,14 @@ import {
 	type DuplicateOutcome,
 	type DuplicateRequest
 } from '../domain/duplicate';
+import { cardsUseToday, type FilterCard } from '../domain/filter-cards';
 import { isInboxChannel } from '../domain/inbox';
 import { EMPTY_LIST_QUERY, NO_PROJECT, activeSearch, type ListQuery } from '../domain/list-query';
 import { SOON_DAYS } from '../domain/ordering';
 import { channelsOf, type SourceFamily } from '../domain/source';
 import type { SourceHandling } from '../domain/sources';
 import type { CompletionChoice } from '../domain/subtasks';
-import { isPriority, isStatus, type Status } from '../domain/status';
+import { isPriority, isStatus, type Priority, type Status } from '../domain/status';
 import {
 	MANUAL_ORIGIN,
 	REOPEN_STATUS,
@@ -457,6 +458,29 @@ const DONE_FAMILY_FILTER = [
 	'({:family} != "" && (project = {:family} || project.parent = {:family}))'
 ].join(' && ');
 
+/**
+ * The filter cards (FI-1, ADR-0013 addendum C): the union (OR) of the chosen cards as one clause in
+ * its own parentheses, so the rest of the expression narrows it as a whole (AND). Each card applies
+ * only when its parameter is "1"; the rules are those of `matchesCard` (domain/filter-cards.ts): a
+ * done ticket is never in progress and never overdue. Joins DONE_FILTER only with a chosen card.
+ */
+const DONE_CARDS_FILTER = [
+	'(({:cardInProgress} = "1" && status = {:inProgress}) || ({:cardToday} = "1" && due != "" && due = {:today}) || ({:cardOverdue} = "1" && due != "" && due < {:today} && status != {:done}) || ({:cardUrgent} = "1" && priority = {:urgent}))'
+].join(' && ');
+
+/** Parameters of DONE_CARDS_FILTER: "1" for each chosen card, '' for the others. */
+function cardParams(cards: readonly FilterCard[]): Record<string, string> {
+	const chosen = (card: FilterCard) => (cards.includes(card) ? '1' : '');
+	return {
+		cardInProgress: chosen('in_progress'),
+		cardToday: chosen('due_today'),
+		cardOverdue: chosen('overdue'),
+		cardUrgent: chosen('urgent'),
+		inProgress: 'in_progress' satisfies Status,
+		urgent: 'urgent' satisfies Priority
+	};
+}
+
 /** Whether the expression takes the sub projects of the chosen project in. */
 function takesSubProjects({ query, withSubProjects }: DoneFilter): boolean {
 	return (
@@ -468,25 +492,27 @@ function takesSubProjects({ query, withSubProjects }: DoneFilter): boolean {
 }
 
 /**
- * Expression of the done tickets: DONE_FILTER, with a chosen source also its clause, and with sub
- * projects the clause of the project family.
+ * Expression of the done tickets: DONE_FILTER, with a chosen source also its clause, with sub
+ * projects the clause of the project family, and with chosen cards the clause of their union.
  */
 function doneFilterExpression(done: DoneFilter): string {
 	const parts = [DONE_FILTER];
 	if (done.query.source !== null) parts.push(DONE_SOURCE_FILTER);
 	if (takesSubProjects(done)) parts.push(DONE_FAMILY_FILTER);
+	if (done.query.cards.length > 0) parts.push(DONE_CARDS_FILTER);
 	return parts.join(' && ');
 }
 
 /**
  * Parameters of DONE_FILTER; an unset filter is '', which switches its conditions off. With sub
- * projects the project goes to DONE_FAMILY_FILTER instead of the plain project clause.
+ * projects the project goes to DONE_FAMILY_FILTER instead of the plain project clause. The dates
+ * are set for a due filter and for a card that compares with today.
  */
 function doneFilterParams(done: DoneFilter): Record<string, string> {
 	const { query, today } = done;
 	const family = takesSubProjects(done);
 	const dates =
-		query.due === null
+		query.due === null && !cardsUseToday(query.cards)
 			? { today: '', tomorrow: '', horizon: '' }
 			: {
 					today: fromDueInput(today),
@@ -505,7 +531,8 @@ function doneFilterParams(done: DoneFilter): Record<string, string> {
 		tag: query.tag ?? '',
 		recurring: query.recurring ?? '',
 		...(query.source === null ? {} : sourceParams(query.source)),
-		...(family ? { family: query.project ?? '' } : {})
+		...(family ? { family: query.project ?? '' } : {}),
+		...(query.cards.length === 0 ? {} : cardParams(query.cards))
 	};
 }
 

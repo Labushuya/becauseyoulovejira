@@ -19,7 +19,12 @@
 		sortLabel,
 		sortOrderLabel
 	} from '$lib/domain/labels';
-	import { hasFilters, parseListQuery, resetFilters } from '$lib/domain/list-query';
+	import {
+		hasDetailFilters,
+		hasFilters,
+		parseListQuery,
+		resetFilters
+	} from '$lib/domain/list-query';
 	import { nextSort, sortDirection, type SortKey } from '$lib/domain/ordering';
 	import {
 		PINNED_SECTION,
@@ -65,6 +70,7 @@
 	import CompletionDialog from './CompletionDialog.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import EmptyState from './guidance/EmptyState.svelte';
+	import FilterSummary from './FilterSummary.svelte';
 	import GroupPopover from './GroupPopover.svelte';
 	import PinIcon from './PinIcon.svelte';
 	import SectionBar from './SectionBar.svelte';
@@ -109,6 +115,9 @@
 	// panel is open closes the panel. A right click on a row, Shift+F10 or the context menu key
 	// open the same menu at the pointer or the focused element (AM-3, rowMenus); the browser keeps
 	// its menu in fields, on selected text, on other links, with Ctrl and for touch.
+	// Filter cards (FI-1, ADR-0013 addendum C): while a card is chosen, a summary above the table
+	// names the cards the shown tickets come from; its "Zurücksetzen" works like "Filter
+	// zurücksetzen" of the empty result and moves the focus to "Aufgaben".
 	// Pinned tickets (ADR-0064): the first tbody is the section "Angeheftet" with the open pinned
 	// tickets of the area in the order of pinning, whatever the filters, the search and the sort; they
 	// do not stand again below, and the number of the heading says "+ N angeheftet". Its head folds
@@ -146,7 +155,7 @@
 		/** The own pins (ADR-0064) for the toggle of a row; null: no toggle (the section follows the store). */
 		pins?: PinStore | null;
 		/**
-		 * KPI tiles and filter bar, below the section bar: the switch "Aufgaben | Projekte |
+		 * Filter cards and filter bar, below the section bar: the switch "Aufgaben | Projekte |
 		 * Eingang" stands at the same place in every view (ADR-0025 section 10, package UI-8).
 		 */
 		tools?: Snippet;
@@ -708,6 +717,16 @@
 	</SectionBar>
 
 	{@render tools?.()}
+
+	{#if countReady && query.cards.length > 0}
+		<FilterSummary
+			cards={query.cards}
+			count={store.visibleCount}
+			more={store.visibleCountMore}
+			filtered={hasDetailFilters(query)}
+			onreset={clearFilters}
+		/>
+	{/if}
 
 	<p class="visually-hidden" aria-live="polite">{store.announcement}</p>
 

@@ -37,8 +37,9 @@ describe('web/src/lib/domain', () => {
 				'berlin-date.ts',
 				'due-label.ts',
 				'filter.ts',
+				// Since FI-1 the counting of kpis.ts is part of the filter cards.
+				'filter-cards.ts',
 				'grouping.ts',
-				'kpis.ts',
 				'labels.ts',
 				'list-query.ts',
 				'ordering.ts',
