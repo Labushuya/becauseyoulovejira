@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { tick } from 'svelte';
+	import { tick, untrack } from 'svelte';
 	import { toDataError } from '$lib/data/errors';
 	import { colorText, ticketColorOf } from '$lib/domain/colors';
 	import { NO_PROJECT } from '$lib/domain/list-query';
@@ -45,6 +45,7 @@
 		error = null,
 		hint = '',
 		delay = 200,
+		openOnly = true,
 		onchoose = () => undefined
 	}: {
 		label: string;
@@ -59,6 +60,11 @@
 		hint?: string;
 		/** Pause after typing before the server is asked for done tickets, in milliseconds. */
 		delay?: number;
+		/**
+		 * The chip "Nur offene" at the start; false where done tickets are as likely as open ones (a
+		 * source ticket, ADR-0067).
+		 */
+		openOnly?: boolean;
 		/** Called after a ticket was chosen. */
 		onchoose?: (ticket: TicketSummary) => void;
 	} = $props();
@@ -86,7 +92,7 @@
 	let text = $state(value === null ? '' : choiceText(value));
 	/** What the list is narrowed by; empty right after a choice, so the whole list shows again. */
 	let query = $state('');
-	let onlyOpen = $state(true);
+	let onlyOpen = $state(untrack(() => openOnly));
 	let project = $state('');
 	let limit = $state(PICKER_PAGE);
 	let expanded = $state(false);

@@ -1,8 +1,8 @@
 // "In den Haushalt verschieben …" and "Ins Private verschieben …" (E7-4, ADR-0061): one store in the
 // (app) layout for every menu (ticket, project, rule, entry of the inbox) and the bulk action of the
 // table "Aufgaben". Opening a move loads the preview of the server (nothing changes yet); the dialog
-// shows what moves and asks the choices the preview needs; "Mitnehmen" of dependencies loads the
-// preview again, because more tickets come along. The move itself is one request; a success goes out
+// shows what moves and asks the choices the preview needs; "Mitnehmen" of dependencies or of source
+// and follow-up tickets (ADR-0067) loads the preview again, because more tickets come along. The move itself is one request; a success goes out
 // as a flag, and the layout follows it (`moved`): the moved tickets leave the list at once, and a tab
 // that shows a moved record follows it into its area. One move at a time.
 
@@ -49,6 +49,7 @@ export interface MoveRequest {
 export type MoveState = 'idle' | 'loading' | 'ready' | 'running';
 
 type Dependencies = MovePreview['conflicts']['dependencies'];
+type TicketSources = MovePreview['conflicts']['ticketSources'];
 
 export class AreaMoveStore {
 	readonly #data: AreaMoveData;
@@ -59,11 +60,18 @@ export class AreaMoveStore {
 
 	#request = $state.raw<MoveRequest | null>(null);
 	#preview = $state.raw<MovePreview | null>(null);
-	#choices = $state.raw<MoveChoices>({ project: null, dependencies: null, codes: {} });
+	#choices = $state.raw<MoveChoices>({
+		project: null,
+		dependencies: null,
+		ticketSources: null,
+		codes: {}
+	});
 	#state = $state<MoveState>('idle');
 	#message = $state<string | null>(null);
 	/** The dependencies across the border of the first preview: the choice stays after "Mitnehmen". */
 	#dependencies = $state.raw<Dependencies>([]);
+	/** The links of source and follow-up tickets across the border of the first preview (ADR-0067). */
+	#ticketSources = $state.raw<TicketSources>([]);
 
 	constructor(
 		data: AreaMoveData,
@@ -103,12 +111,25 @@ export class AreaMoveStore {
 		return this.#dependencies;
 	}
 
+	/**
+	 * Links of source and follow-up tickets with tickets that stay behind (ADR-0067), as the first
+	 * preview named them.
+	 */
+	get ticketSources(): TicketSources {
+		return this.#ticketSources;
+	}
+
 	/** What the choices still lack, by field; empty when the move may run. */
 	get errors(): Record<string, string> {
 		const preview = this.#preview;
 		return preview === null
 			? {}
-			: choiceErrors(preview, this.#choices, this.#dependencies.length > 0);
+			: choiceErrors(
+					preview,
+					this.#choices,
+					this.#dependencies.length > 0,
+					this.#ticketSources.length > 0
+				);
 	}
 
 	/** Opens the dialog of a move and loads its preview. */
@@ -124,8 +145,9 @@ export class AreaMoveStore {
 		this.#controller = null;
 		this.#request = null;
 		this.#preview = null;
-		this.#choices = { project: null, dependencies: null, codes: {} };
+		this.#choices = { project: null, dependencies: null, ticketSources: null, codes: {} };
 		this.#dependencies = [];
+		this.#ticketSources = [];
 		this.#message = null;
 		this.#state = 'idle';
 	}
@@ -137,6 +159,12 @@ export class AreaMoveStore {
 	/** "Mitnehmen" or "Verknüpfung lösen": the preview follows, with the tickets that come along. */
 	chooseDependencies(choice: DependencyChoice): void {
 		this.#choices = { ...this.#choices, dependencies: choice };
+		void this.#load(false);
+	}
+
+	/** The same for the links of source and follow-up tickets (ADR-0067). */
+	chooseTicketSources(choice: DependencyChoice): void {
+		this.#choices = { ...this.#choices, ticketSources: choice };
 		void this.#load(false);
 	}
 
@@ -172,8 +200,9 @@ export class AreaMoveStore {
 		if (answer === null || this.#request !== request) return;
 		this.#preview = answer;
 		if (first) {
-			this.#choices = { ...initialChoices(answer), dependencies: null };
+			this.#choices = { ...initialChoices(answer), dependencies: null, ticketSources: null };
 			this.#dependencies = answer.conflicts.dependencies;
+			this.#ticketSources = answer.conflicts.ticketSources;
 		}
 	}
 

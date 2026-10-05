@@ -129,7 +129,9 @@ export function cycleMessage(keys: readonly string[]): string {
 }
 
 /** The chain of a refusal `validation_ticket_source_cycle` (`params.path`), or null. */
-export function cyclePathOf(params: Readonly<Record<string, unknown>> | undefined): string[] | null {
+export function cyclePathOf(
+	params: Readonly<Record<string, unknown>> | undefined
+): string[] | null {
 	const path = params?.path;
 	if (!Array.isArray(path) || !path.every((key) => typeof key === 'string')) return null;
 	return path as string[];

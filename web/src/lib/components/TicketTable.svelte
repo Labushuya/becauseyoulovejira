@@ -40,6 +40,10 @@
 	import { SILENT_FLAGS } from '$lib/stores/flags.svelte';
 	import { findPinStore, type PinStore } from '$lib/stores/pins.svelte';
 	import type { TicketDuplicateStore } from '$lib/stores/ticket-duplicate.svelte';
+	import {
+		findTicketFollowUpStore,
+		type TicketFollowUpStore
+	} from '$lib/stores/ticket-follow-up.svelte';
 	import type { TicketListStore } from '$lib/stores/ticket-list.svelte';
 	import type { TicketRowActionsStore } from '$lib/stores/ticket-row-actions.svelte';
 	import type { DeleteResult, DeleteSources } from '$lib/stores/trash-move';
@@ -109,8 +113,8 @@
 	// table clears the selection. With `bulk` the bar of the bulk actions stands above the table.
 	// Menu of a row (plan aktionsmenues, AM-2): with `rowActions` every row ends with "•••" after
 	// "Öffnen": the ticket in the panel or the full view (links, whatever way is remembered, which
-	// they do not change), "Link kopieren", "Duplizieren …" (with `duplicates`) and "In den
-	// Papierkorb …". The table is no modal, so their questions open as the dialogs of the panel;
+	// they do not change), "Link kopieren", "Duplizieren …" (with `duplicates`), "Folge-Ticket
+	// anlegen …" (with `followUps`, ADR-0067) and "In den Papierkorb …". The table is no modal, so their questions open as the dialogs of the panel;
 	// a click on "•••" or in the menu never opens the row. A ticket moved to the trash while its
 	// panel is open closes the panel. A right click on a row, Shift+F10 or the context menu key
 	// open the same menu at the pointer or the focused element (AM-3, rowMenus); the browser keeps
@@ -132,6 +136,7 @@
 		bulk,
 		rowActions,
 		duplicates = null,
+		followUps = findTicketFollowUpStore(),
 		pins = findPinStore(),
 		tools,
 		emptyExtra
@@ -152,6 +157,8 @@
 		rowActions?: TicketRowActionsStore;
 		/** "Duplizieren …" in the menu of a row (ADR-0045); null leaves the entry out. */
 		duplicates?: TicketDuplicateStore | null;
+		/** "Folge-Ticket anlegen …" in the menu of a row (ADR-0067); null leaves the entry out. */
+		followUps?: TicketFollowUpStore | null;
 		/** The own pins (ADR-0064) for the toggle of a row; null: no toggle (the section follows the store). */
 		pins?: PinStore | null;
 		/**
@@ -569,6 +576,7 @@
 		buttonLabel={`Weitere Aktionen für ${ticket.key}`}
 		buttonClass="button-icon row-menu"
 		onduplicate={duplicates === null ? null : () => void rowActions?.choose('duplicate', ticket)}
+		onfollowup={followUps === null ? null : () => void rowActions?.choose('followup', ticket)}
 		ondelete={() => void rowActions?.choose('delete', ticket)}
 	/>
 {/snippet}
@@ -982,6 +990,7 @@
 	<TicketRowDialogs
 		{rowActions}
 		{duplicates}
+		{followUps}
 		projects={catalog.activeProjects}
 		subtaskCountOf={(id) => store.progressOf(id).total}
 		parentKeyOf={(ticket) => parentOf(ticket, (id) => store.find(id))?.key ?? null}

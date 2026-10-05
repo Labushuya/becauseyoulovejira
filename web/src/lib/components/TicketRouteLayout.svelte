@@ -14,15 +14,19 @@
 	import { findTicketDuplicateStore } from '$lib/stores/ticket-duplicate.svelte';
 	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
 	import { getTicketSourcesStore } from '$lib/stores/ticket-sources.svelte';
+	import { findTicketFollowUpStore } from '$lib/stores/ticket-follow-up.svelte';
+	import { findTicketOriginsStore } from '$lib/stores/ticket-origins.svelte';
 	import { findTicketOpenMode, ticketLinks } from '$lib/stores/open-mode.svelte';
 	import { findRecentTickets } from '$lib/stores/ticket-picker.svelte';
 	import { findTicketHost } from '$lib/ticket-host';
 	import { appHref } from '$lib/ticket-links';
 	import { setTicketRoute } from '$lib/ticket-route';
 	import DuplicateDialog from './DuplicateDialog.svelte';
+	import FollowUpDialog from './FollowUpDialog.svelte';
 	import ConfirmDialog from './overlay/ConfirmDialog.svelte';
 	import RecurrenceSummary from './RecurrenceSummary.svelte';
 	import TicketActivity from './TicketActivity.svelte';
+	import TicketFollowUps from './TicketFollowUps.svelte';
 	import TicketPanel from './TicketPanel.svelte';
 	import TicketParentField from './TicketParentField.svelte';
 	import TicketSources from './TicketSources.svelte';
@@ -55,6 +59,10 @@
 	const modeStore = findTicketOpenMode();
 	const recentTickets = findRecentTickets();
 	const duplicates = findTicketDuplicateStore();
+	// Tickets as sources (ADR-0067): the sections "Quellen" and "Folge-Tickets" and "Folge-Ticket
+	// anlegen …"; outside the (app) layout (tests of single parts) none.
+	const origins = findTicketOriginsStore();
+	const followUps = findTicketFollowUpStore();
 	// "Link kopiert" of the menu "•••" (plan aktionsmenues).
 	const flags = findFlagStore() ?? SILENT_FLAGS;
 	// The parent of a sub-task for its path (ADR-0033), as the list knows it.
@@ -101,7 +109,10 @@
 		if (ticket === null) return;
 		const ticketId = ticket.id;
 		const mainSource = ticket.sourceItem;
-		untrack(() => sourceStore.open(ticketId, mainSource));
+		untrack(() => {
+			sourceStore.open(ticketId, mainSource);
+			origins?.open(ticketId);
+		});
 	});
 
 	// Leaving the panel drops the ticket, its comments, its sources and all drafts.
@@ -109,6 +120,7 @@
 		detail.reset();
 		comments.reset();
 		sourceStore.reset();
+		origins?.reset();
 		rules.cancelTemplate();
 	});
 
@@ -194,9 +206,22 @@
 			store={duplicates}
 			projects={catalog.activeProjects}
 			sources={sourceStore.ticketId === ticket.id ? sourceStore.items : []}
+			ticketSources={origins?.ticketId === ticket.id ? origins.sources : []}
 			commentCount={comments.ticketId === ticket.id ? comments.comments.length : 0}
 			subtaskCount={tickets.progressOf(ticket.id).total}
 			parentKey={ticket.parentId ? (parent?.key ?? null) : null}
+			onopen={openTicket}
+			onclose={close}
+		/>
+	{/if}
+{/snippet}
+
+{#snippet followUpQuestion(ticket: Ticket, close: () => void)}
+	{#if followUps !== null}
+		<FollowUpDialog
+			{ticket}
+			project={catalog.projectOf(ticket)}
+			store={followUps}
 			onopen={openTicket}
 			onclose={close}
 		/>
@@ -218,6 +243,7 @@
 		parentHref={parent ? links.href(parent.id, page.url) : null}
 		subtaskCount={tickets.progressOf(id).total}
 		duplicate={duplicates === null ? undefined : duplicateQuestion}
+		followUp={followUps === null ? undefined : followUpQuestion}
 		{flags}
 	>
 		{#snippet parentField(ticket: Ticket)}
@@ -254,7 +280,20 @@
 			/>
 		{/snippet}
 		{#snippet sources(ticket: Ticket)}
-			<TicketSources {ticket} store={sourceStore} candidates={inbox.newItems} />
+			<TicketSources
+				{ticket}
+				store={sourceStore}
+				candidates={inbox.newItems}
+				{origins}
+				hrefOf={(otherId) => links.href(otherId, page.url)}
+			/>
+			{#if origins !== null}
+				<TicketFollowUps
+					{ticket}
+					store={origins}
+					hrefOf={(otherId) => links.href(otherId, page.url)}
+				/>
+			{/if}
 		{/snippet}
 		{#snippet activity()}
 			<TicketActivity store={comments} {catalog} pin={detail} />

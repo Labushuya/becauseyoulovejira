@@ -323,6 +323,53 @@ describe('the question "Wie soll das Duplikat entstehen?"', () => {
 		);
 	});
 
+	it('takes the source tickets over with the copy, also without a main source (ADR-0067)', async () => {
+		const ticketSources = [
+			{ id: 'ticket000000003', key: 'HAUS-3', trashed: false },
+			{ id: 'ticket000000005', key: 'HAUS-5', trashed: false },
+			{ id: 'ticket000000007', key: 'HAUS-7', trashed: true }
+		];
+		const { store } = storeOf();
+		render(DuplicateDialog, {
+			props: {
+				ticket: ticket(),
+				projects: [HOUSE],
+				ticketSources,
+				store,
+				onopen: vi.fn(),
+				onclose: vi.fn()
+			}
+		});
+		const copy = screen.getByRole<HTMLInputElement>('radio', {
+			name: 'Kopie der Herkunft übernehmen'
+		});
+		expect(copy.disabled).toBe(false);
+		expect(
+			document.getElementById(copy.getAttribute('aria-describedby') ?? '')?.textContent?.trim()
+		).toBe('Das Duplikat stammt wie das Original aus HAUS-3 und HAUS-5.');
+	});
+
+	it('names the source tickets after the copy of the main source', () => {
+		const { store } = storeOf();
+		render(DuplicateDialog, {
+			props: {
+				ticket: ticket({ sourceItem: 'item00000000001' }),
+				projects: [HOUSE],
+				sources: [mailSource()],
+				ticketSources: [{ id: 'ticket000000003', key: 'HAUS-3', trashed: false }],
+				store,
+				onopen: vi.fn(),
+				onclose: vi.fn()
+			}
+		});
+		const copy = screen.getByRole<HTMLInputElement>('radio', {
+			name: 'Kopie der Herkunft übernehmen'
+		});
+		expect(
+			document.getElementById(copy.getAttribute('aria-describedby') ?? '')?.textContent
+		).toContain('Außerdem stammt es wie das Original aus HAUS-3.');
+	});
+
 	it('says that a series never comes along', () => {
 		renderDialog({ ticket: ticket({ recurring: true, recurrenceId: 'rule00000000001' }) });
 		expect(

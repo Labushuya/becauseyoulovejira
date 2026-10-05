@@ -21,11 +21,7 @@ import { PROJECT_FIELDS, toProject, type ProjectRecord } from './projects';
 import { READ_FIELDS, toTicketRead, type TicketRead } from './reads';
 import { RULE_FIELDS, toRecurrenceRule, type RuleRecord } from './recurrence';
 import { TAG_FIELDS, toTag, type TagRecord } from './tags';
-import {
-	TICKET_SOURCE_FIELDS,
-	toTicketSourceLink,
-	type TicketSourceLink
-} from './ticket-origins';
+import { TICKET_SOURCE_FIELDS, toTicketSourceLink, type TicketSourceLink } from './ticket-origins';
 import {
 	TICKET_DETAIL_FIELDS,
 	TICKET_EXPAND,

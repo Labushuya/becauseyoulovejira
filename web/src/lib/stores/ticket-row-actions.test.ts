@@ -1,6 +1,7 @@
-// "Duplizieren …" and "In den Papierkorb …" from the menu of a row (plan aktionsmenues, AM-2):
-// a choice loads what its question needs, one row at a time, failures as error flags, and moving
-// to the trash runs like in the panel (the row leaves the list, "Rückgängig" in the flag).
+// "Duplizieren …", "Folge-Ticket anlegen …" (ADR-0067) and "In den Papierkorb …" from the menu of a
+// row (plan aktionsmenues, AM-2): a choice loads what its question needs, one row at a time, failures
+// as error flags, and moving to the trash runs like in the panel (the row leaves the list,
+// "Rückgängig" in the flag).
 
 import { describe, expect, it, vi } from 'vitest';
 import { DataError } from '$lib/data/errors';
@@ -91,15 +92,38 @@ describe('menu of a row: preparing a question (AM-2)', () => {
 		expect(await choosing).toBe(true);
 		expect(store.isPreparing(ID)).toBe(false);
 		expect(data.get).toHaveBeenCalledWith(ID);
+		// A data access without source tickets (before ADR-0067) gives none.
 		expect(store.dialog).toEqual({
 			kind: 'duplicate',
 			ticket: FULL,
 			sources: [SOURCE],
+			ticketSources: [],
 			commentCount: 3
 		});
 
 		store.close();
 		expect(store.dialog).toBeNull();
+	});
+
+	it('loads the source tickets for "Duplizieren …" and the whole ticket for "Folge-Ticket anlegen …" (ADR-0067)', async () => {
+		const origin = {
+			link: 'link00000000001',
+			id: 'tick00000000009',
+			key: 'HAUS-9',
+			title: 'Quelle',
+			status: 'done' as const,
+			trashed: false,
+			created: '2026-09-01 10:00:00.000Z',
+			createdBy: ''
+		};
+		const { store, data } = setup({ ticketSources: vi.fn(async () => [origin]) });
+		expect(await store.choose('duplicate', summary())).toBe(true);
+		expect(store.dialog).toMatchObject({ kind: 'duplicate', ticketSources: [origin] });
+		store.close();
+
+		expect(await store.choose('followup', summary())).toBe(true);
+		expect(store.dialog).toEqual({ kind: 'followup', ticket: FULL });
+		expect(data.sources).toHaveBeenCalledTimes(1);
 	});
 
 	it('counts the sources for "In den Papierkorb …" and loads nothing else', async () => {
