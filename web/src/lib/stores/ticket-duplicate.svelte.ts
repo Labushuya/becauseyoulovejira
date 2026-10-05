@@ -2,27 +2,38 @@
 // which creates the duplicate with everything chosen in one transaction, and shows the result as a
 // flag "HAUS-12 dupliziert." with the way back to the original. Opening the duplicate is the
 // caller's part (it knows the remembered way to open a ticket, ADR-0036 §1). The new tickets reach
-// the lists by realtime like any other.
+// the lists by realtime like any other. Since MV-2 (ADR-0045, addendum MV-2) the duplicate may go
+// into the other area: the store loads its projects and tags first, and the flag of a duplicate there
+// leads to it instead of back to the original.
 
 import type PocketBase from 'pocketbase';
 import { createContext } from 'svelte';
 import { toDataError } from '$lib/data/errors';
-import { duplicateTicket } from '$lib/data/tickets';
+import { duplicateTicket, fetchDuplicateTarget } from '$lib/data/tickets';
 import {
+	duplicatedElsewhereFlag,
 	duplicatedFlag,
+	type DuplicateArea,
 	type DuplicateField,
 	type DuplicateOutcome,
-	type DuplicateRequest
+	type DuplicateRequest,
+	type DuplicateTarget
 } from '$lib/domain/duplicate';
+import { restartNeeded } from '$lib/guidance/texts';
 import { SILENT_FLAGS, type FlagSink } from './flags.svelte';
 import type { SessionGuard } from './ticket-list.svelte';
 
 export interface TicketDuplicateData {
 	duplicate(id: string, request: DuplicateRequest): Promise<DuplicateOutcome>;
+	/** Projects and tags of the other area (MV-2); a store without it offers no other area. */
+	target?(id: string, to: DuplicateArea): Promise<DuplicateTarget>;
 }
 
 export function ticketDuplicateData(pb: PocketBase): TicketDuplicateData {
-	return { duplicate: (id, request) => duplicateTicket(pb, id, request) };
+	return {
+		duplicate: (id, request) => duplicateTicket(pb, id, request),
+		target: (id, to) => fetchDuplicateTarget(pb, id, to)
+	};
 }
 
 /** Outcome of a duplication; a refusal carries errors per field and/or a message. */
@@ -30,7 +41,11 @@ export type DuplicateResult =
 	| { ok: true; outcome: DuplicateOutcome }
 	| { ok: false; message: string | null; fields: Partial<Record<DuplicateField, string>> };
 
-const FIELDS: readonly DuplicateField[] = ['title', 'status', 'project', 'source'];
+/** The projects and tags of the other area, or why they could not be loaded (MV-2). */
+export type DuplicateTargetResult =
+	{ ok: true; target: DuplicateTarget } | { ok: false; message: string | null };
+
+const FIELDS: readonly DuplicateField[] = ['title', 'status', 'project', 'source', 'to'];
 
 /** The original is gone or in the trash meanwhile (404). */
 export const DUPLICATE_GONE = 'Das Ticket gibt es nicht mehr, oder es liegt im Papierkorb.';
@@ -46,10 +61,42 @@ export class TicketDuplicateStore {
 		this.#flags = flags;
 	}
 
+	/** Whether the question may offer the other area (MV-2): the data layer can load it. */
+	get offersAreas(): boolean {
+		return this.#data.target !== undefined;
+	}
+
+	/**
+	 * The projects and tags of the other area for the question (MV-2); a refusal or a failure as a
+	 * message (before the restart: the hint to restart), nothing without a session.
+	 */
+	async target(id: string, to: DuplicateArea): Promise<DuplicateTargetResult> {
+		const load = this.#data.target;
+		if (load === undefined || !this.#session.ensureValid()) return { ok: false, message: null };
+		try {
+			return { ok: true, target: await load(id, to) };
+		} catch (error) {
+			const failure = toDataError(error);
+			if (failure.kind === 'session') this.#session.logout();
+			if (failure.kind === 'session' || failure.kind === 'aborted') {
+				return { ok: false, message: null };
+			}
+			if (failure.kind === 'not_found') {
+				return {
+					ok: false,
+					message: restartNeeded('Das Duplizieren in einen anderen Bereich ist')
+				};
+			}
+			const field = Object.values(failure.fields)[0];
+			return { ok: false, message: field?.message ?? failure.message };
+		}
+	}
+
 	/**
 	 * Duplicates `original` as asked. On success the flag names both keys and offers to open the
-	 * original again (`open`); a refusal of the server comes back per field (title, status, project,
-	 * source), anything else as a message. Without a session nothing is sent.
+	 * original again (`open`), after a duplicate into the other area (MV-2) the duplicate; a refusal
+	 * of the server comes back per field (title, status, project, source, to), anything else as a
+	 * message. Without a session nothing is sent.
 	 */
 	async duplicate(
 		original: { id: string; key: string },
@@ -59,12 +106,17 @@ export class TicketDuplicateStore {
 		if (!this.#session.ensureValid()) return { ok: false, message: null, fields: {} };
 		try {
 			const outcome = await this.#data.duplicate(original.id, request);
-			const flag = duplicatedFlag(original.key, outcome.key);
+			const to = request.to;
+			const flag =
+				to === undefined
+					? duplicatedFlag(original.key, outcome.key)
+					: duplicatedElsewhereFlag(original.key, outcome.key, to);
+			const target = to === undefined ? original.id : outcome.id;
 			this.#flags.show({
 				tone: 'success',
 				title: flag.title,
 				description: flag.description,
-				action: { label: flag.action, run: () => open(original.id) }
+				action: { label: flag.action, run: () => open(target) }
 			});
 			return { ok: true, outcome };
 		} catch (error) {

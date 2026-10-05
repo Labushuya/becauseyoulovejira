@@ -32,8 +32,11 @@ describe('texts of the codes of "Ticket duplizieren" (web/src/lib/domain/duplica
 describe('request and answer', () => {
 	it('sends a body the hook reads as the same choice', () => {
 		const body = duplicateRequestBody({ title: 'Kopie', status: 'waiting', project: null, take, source: 'copy' });
-		expect(rules.parseRequest(body).options).toEqual({ title: 'Kopie', status: 'waiting', project: '', source: 'copy', ...take });
+		expect(rules.parseRequest(body).options).toEqual({ title: 'Kopie', status: 'waiting', project: '', source: 'copy', to: '', ...take });
 		expect(duplicateRequestBody({ title: 'K', status: 'open', project: 'p1', take, source: 'none' }).project).toBe('p1');
+		// Into the other area (MV-2): the hook reads the same area.
+		const elsewhere = duplicateRequestBody({ title: 'K', status: 'open', project: null, take, source: 'none', to: 'household' });
+		expect(rules.parseRequest(elsewhere).options.to).toBe('household');
 	});
 
 	it('reads the answer of the route and refuses anything else', () => {
@@ -46,7 +49,9 @@ describe('request and answer', () => {
 			comments: 2,
 			source: ''
 		};
-		expect(toDuplicateOutcome(answer)).toEqual({ ...answer, source: null });
+		// A server before MV-2 names no area.
+		expect(toDuplicateOutcome(answer)).toEqual({ ...answer, source: null, scope: '' });
+		expect(toDuplicateOutcome({ ...answer, scope: 'h:house0000000001' })?.scope).toBe('h:house0000000001');
 		expect(toDuplicateOutcome({ ...answer, source: 'i1' })?.source).toBe('i1');
 		for (const broken of [null, [], { ...answer, id: '' }, { ...answer, original: null }, { ...answer, subtasks: [{}] }, { ...answer, comments: '2' }]) {
 			expect(toDuplicateOutcome(broken)).toBeNull();

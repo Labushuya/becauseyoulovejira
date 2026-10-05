@@ -1125,6 +1125,17 @@
 						Vollansicht). Der Verlauf nennt an beiden Tickets „Dupliziert aus …“ bzw. „Dupliziert
 						nach …“, und die Meldung unten links führt mit „HAUS-12 öffnen“ zurück zum Original.
 					</li>
+					<li>
+						Bist du in einem Haushalt, wählst du oben das „Ziel“: „Privat“ oder den Haushalt;
+						vorgewählt ist der Bereich des Originals. In den Haushalt kopierst du deine privaten
+						Tickets, ins Private jedes Ticket des Haushalts. Im anderen Bereich wählst du ein
+						Projekt dort oder „Kein Projekt“, Tags werden nach Namen zugeordnet (fehlende dort
+						angelegt), und Unteraufgaben, Charm und Art kommen mit. Quellen kommen nicht mit:
+						Einträge des Eingangs bleiben beim Original, weil Verbindungen privat sind, und
+						Ticket-Quellen verweisen nie über die Grenze eines Bereichs. Das Original bleibt
+						unverändert, wo es ist; die Meldung führt mit „… öffnen“ zum Duplikat, und der Verlauf
+						nennt den anderen Bereich, etwa „Dupliziert nach HAUS-13 (Haushalt)“.
+					</li>
 				</ul>
 			</details>
 			<details>
@@ -1881,7 +1892,8 @@
 					Was du anlegst, landet im gewählten Bereich: Tickets, Schnellerfassung, Projekte, Tags,
 					Wiederholungen und Einträge im Eingang. Kommentare und Verlauf gehören zu ihrem Ticket,
 					Unteraufgaben zum übergeordneten Ticket, Tickets einer Wiederholung zu deren Bereich, und
-					ein Duplikat bleibt im Bereich des Originals.
+					ein Duplikat bleibt im Bereich des Originals, außer du wählst beim Duplizieren den anderen
+					als „Ziel“.
 				</dd>
 			</div>
 			<div class="row">
@@ -1936,16 +1948,30 @@
 				</dd>
 			</div>
 			<div class="row">
+				<dt>Ganze Serien</dt>
+				<dd>
+					Bei einer Wiederholung und einem Ticket einer Serie ist „Ganze Serie verschieben“
+					vorgewählt, in der Leiste für ausgewählte Tickets „Bei wiederkehrenden Tickets die ganze
+					Serie mitnehmen“: Die Regel mit ihrer Vorlage (Unteraufgaben, Charm) und das offene Ticket
+					der Serie kommen mit, mit „Bisherige erledigte Vorkommen mitnehmen“ auch die erledigten.
+					Die Serie läuft im Ziel weiter: Das offene Ticket bleibt in ihr, und das nächste entsteht
+					beim Erledigen dort, nie für einen vergangenen Tag. Ohne die Wahl kommt nur die Auswahl
+					mit, wie bisher. Rechte und Fragen gelten für jeden Eintrag der Serie; was fehlt, nennt
+					der Dialog.
+				</dd>
+			</div>
+			<div class="row">
 				<dt>Vorschau und Fragen</dt>
 				<dd>
 					Vor dem Verschieben zeigt die App, was mitkommt und was sich ändert, und fragt nur, was
 					sie wissen muss: das Projekt im Ziel (oder „Ohne Projekt“), ob verknüpfte Tickets
 					mitkommen oder die Verknüpfung gelöst wird, und einen neuen Code, wenn es das Kürzel im
 					Ziel schon gibt. Tags werden nach Namen zugeordnet, eine Unteraufgabe ohne ihr Ticket wird
-					ein eigenes, und ein Ticket ohne seine Wiederholung löst sich aus der Serie. Verschobene
-					Tickets bekommen neue Nummern im Ziel; der Verlauf nennt die alte („vorher PRIV-12“), und
-					Links funktionieren weiter. Alles geschieht in einem Schritt oder gar nicht; offene Tabs
-					folgen ohne Neuladen.
+					ein eigenes, und ein Ticket ohne seine Wiederholung löst sich aus der Serie. Serien,
+					offene und erledigte Vorkommen zählt die Vorschau getrennt. Verschobene Tickets bekommen
+					neue Nummern im Ziel; der Verlauf nennt die alte („vorher PRIV-12“), und Links
+					funktionieren weiter. Alles geschieht in einem Schritt oder gar nicht; offene Tabs folgen
+					ohne Neuladen.
 				</dd>
 			</div>
 		</dl>

@@ -3,7 +3,9 @@
 // the household; records of the household into the private area for the creator, "move_out" and the
 // owner), the entry of the bulk action only when every chosen ticket may move, and the dialog with the
 // preview of the server: what moves, the hint for the household, the choices it needs, "Mitnehmen"
-// with a new preview, the move with the choices, a refusal in the dialog. Real stores on fake data.
+// with a new preview, the move with the choices, a refusal in the dialog. Since MV-2 "Ganze Serie
+// verschieben" for a ticket of a series and a rule, with "Bisherige erledigte Vorkommen mitnehmen".
+// Real stores on fake data.
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
@@ -64,8 +66,11 @@ function preview(overrides: Partial<MovePreview> = {}): MovePreview {
 			items: 0,
 			comments: 3,
 			dependencies: 0,
-			ticketSources: 0
+			ticketSources: 0,
+			series: 0,
+			occurrences: { open: 0, done: 0 }
 		},
+		seriesOffer: { rules: 0, open: 0, done: 0 },
 		conflicts: {
 			project: {
 				projects: [{ id: 'proj00000000001', code: 'PRIV', name: 'Privates' }],
@@ -103,6 +108,8 @@ interface Setup {
 	rights?: HouseholdRight[];
 	inHousehold?: boolean;
 	owner?: string;
+	/** The ticket of the menu belongs to a series (MV-2). */
+	recurring?: boolean;
 	bulkOwners?: string[];
 	move?: AreaMoveData['move'];
 }
@@ -157,7 +164,9 @@ async function setup(options: Setup = {}) {
 												items: 0,
 												comments: 3,
 												dependencies: 1,
-												ticketSources: 0
+												ticketSources: 0,
+												series: 0,
+												occurrences: { open: 0, done: 0 }
 											}
 										}
 									: {}
@@ -175,7 +184,12 @@ async function setup(options: Setup = {}) {
 	);
 	const moved = vi.fn();
 	const moves = new AreaMoveStore({ move }, SESSION, flags, moved);
-	const ticket = { id: 'tick00000000001', key: 'PRIV-1', owner: options.owner ?? ME };
+	const ticket = {
+		id: 'tick00000000001',
+		key: 'PRIV-1',
+		owner: options.owner ?? ME,
+		recurring: options.recurring === true
+	};
 	const bulk =
 		options.bulkOwners === undefined
 			? null
@@ -274,12 +288,16 @@ describe('the dialog of a move (ADR-0061 §1, §2)', () => {
 		expect(within(dialog).getByText('3 Kommentare')).toBeTruthy();
 		expect(within(dialog).getByText('Tags im Ziel neu angelegt: garten')).toBeTruthy();
 		expect(move).toHaveBeenCalledTimes(1);
+		// A ticket always asks with whole series (MV-2); without one the server takes nothing more.
 		expect(move.mock.calls[0]?.[0]).toEqual({
 			kind: 'ticket',
 			ids: ['tick00000000001'],
 			to: 'household',
-			preview: true
+			preview: true,
+			series: true,
+			series_done: true
 		});
+		expect(within(dialog).queryByRole('checkbox', { name: /Serie/ })).toBeNull();
 
 		// Without the choices nothing moves; the fields say what is missing.
 		await fireEvent.click(
@@ -312,7 +330,9 @@ describe('the dialog of a move (ADR-0061 §1, §2)', () => {
 			ids: ['tick00000000001'],
 			to: 'household',
 			project: '',
-			dependencies: 'take'
+			dependencies: 'take',
+			series: true,
+			series_done: true
 		});
 		await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
 		expect(flags).toEqual([
@@ -387,7 +407,9 @@ describe('the dialog of a move (ADR-0061 §1, §2)', () => {
 			kind: 'ticket',
 			ids: ['tick00000000001'],
 			to: 'household',
-			ticket_sources: 'release'
+			ticket_sources: 'release',
+			series: true,
+			series_done: true
 		});
 	});
 
@@ -430,5 +452,175 @@ describe('the dialog of a move (ADR-0061 §1, §2)', () => {
 		).toBe('true');
 		await fireEvent.click(within(dialog).getByRole('button', { name: 'Abbrechen' }));
 		expect(moves.request).toBeNull();
+	});
+});
+
+describe('whole series (MV-2)', () => {
+	const RULE = 'rule00000000001';
+
+	/** The preview of a series with one open and twelve done occurrences, as the body chose. */
+	function seriesPreview(body: Record<string, unknown>): MovePreview {
+		const rule = body.kind === 'rule';
+		const whole = body.series === true;
+		const done = whole && body.series_done === true;
+		const tickets = whole ? (done ? 13 : 1) : rule ? 0 : 1;
+		return preview({
+			kind: rule ? 'rule' : 'ticket',
+			preview: body.preview === true,
+			counts: {
+				tickets,
+				subtasks: 0,
+				projects: 0,
+				rules: whole || rule ? 1 : 0,
+				items: 0,
+				comments: 0,
+				dependencies: 0,
+				ticketSources: 0,
+				series: whole ? 1 : 0,
+				occurrences: { open: whole ? 1 : 0, done: done ? 12 : 0 }
+			},
+			seriesOffer: { rules: 1, open: 1, done: 12 },
+			conflicts: {
+				...preview().conflicts,
+				project: null,
+				dependencies: [],
+				tags: { reused: [], created: [] },
+				series: whole || rule ? [] : [{ id: 'tick00000000001', key: 'PRIV-1' }],
+				ruleTickets: whole ? (done ? 0 : 12) : rule ? 13 : 0
+			},
+			needs: { project: false, dependencies: false, ticketSources: false, codes: [] },
+			moved:
+				body.preview === true
+					? null
+					: { tickets: [], projects: [], rules: whole || rule ? [RULE] : [], items: [] }
+		});
+	}
+
+	const answer = async (body: Record<string, unknown>): Promise<MoveAnswer<MovePreview>> => ({
+		kind: 'ok',
+		value: seriesPreview(body)
+	});
+
+	it('offers "Ganze Serie verschieben" for a ticket of a series, both chosen, counted apart', async () => {
+		const { move } = await setup({ area: 'private', recurring: true, move: answer });
+		await choose('In den Haushalt verschieben …');
+		const dialog = await vi.waitFor(() =>
+			screen.getByRole('dialog', { name: 'PRIV-1 in den Haushalt verschieben' })
+		);
+		const whole = await vi.waitFor(() =>
+			within(dialog).getByRole<HTMLInputElement>('checkbox', { name: 'Ganze Serie verschieben' })
+		);
+		const done = within(dialog).getByRole<HTMLInputElement>('checkbox', {
+			name: 'Bisherige erledigte Vorkommen mitnehmen (12)'
+		});
+		expect([whole.checked, done.checked]).toEqual([true, true]);
+		expect(whole.getAttribute('aria-describedby')).toBeTruthy();
+		expect(
+			document.getElementById(whole.getAttribute('aria-describedby') ?? '')?.textContent
+		).toMatch(/Die Regel mit ihrer Vorlage und das offene Vorkommen/);
+		for (const line of [
+			'13 Tickets',
+			'1 Serie mit Regel und Vorlage',
+			'1 offenes Vorkommen',
+			'12 erledigte Vorkommen',
+			'Die Serie läuft im Ziel weiter; ihr nächstes Ticket entsteht dort.'
+		]) {
+			expect(within(dialog).getByText(line)).toBeTruthy();
+		}
+
+		// Without the done ones they stay where they are, without the rule.
+		await fireEvent.click(done);
+		await vi.waitFor(() =>
+			expect(
+				within(dialog).getByText(
+					'12 bisherige Tickets der Wiederholung bleiben, wo sie sind, ohne Bezug zur Regel. Künftige Tickets entstehen im Ziel.'
+				)
+			).toBeTruthy()
+		);
+		expect(move.mock.calls[1]?.[0]).toMatchObject({
+			preview: true,
+			series: true,
+			series_done: false
+		});
+
+		await fireEvent.click(
+			within(dialog).getByRole('button', { name: 'In den Haushalt verschieben' })
+		);
+		await vi.waitFor(() => expect(move).toHaveBeenCalledTimes(3));
+		expect(move.mock.calls[2]?.[0]).toEqual({
+			kind: 'ticket',
+			ids: ['tick00000000001'],
+			to: 'household',
+			series: true,
+			series_done: false
+		});
+	});
+
+	it('moves only the ticket without the choice: it leaves its series', async () => {
+		const { move } = await setup({ area: 'private', recurring: true, move: answer });
+		await choose('In den Haushalt verschieben …');
+		const dialog = await vi.waitFor(() => screen.getByRole('dialog'));
+		const whole = await vi.waitFor(() =>
+			within(dialog).getByRole<HTMLInputElement>('checkbox', { name: 'Ganze Serie verschieben' })
+		);
+		await fireEvent.click(whole);
+		await vi.waitFor(() =>
+			expect(within(dialog).getByText('PRIV-1 verlässt seine Wiederholung.')).toBeTruthy()
+		);
+		expect(whole.checked).toBe(false);
+		expect(within(dialog).queryByRole('checkbox', { name: /erledigte Vorkommen/ })).toBeNull();
+		expect(within(dialog).queryByText('1 Serie mit Regel und Vorlage')).toBeNull();
+		expect(move.mock.calls[1]?.[0]).toMatchObject({
+			preview: true,
+			series: false,
+			series_done: false
+		});
+	});
+
+	it('offers it for a rule; without it the rule moves alone', async () => {
+		const { move, moves } = await setup({ area: 'private', move: answer });
+		moves.open({
+			kind: 'rule',
+			ids: [RULE],
+			to: 'household',
+			label: 'Wiederholung „Müll“',
+			series: 'whole'
+		});
+		const dialog = await vi.waitFor(() =>
+			screen.getByRole('dialog', { name: 'Wiederholung „Müll“ in den Haushalt verschieben' })
+		);
+		const whole = await vi.waitFor(() =>
+			within(dialog).getByRole<HTMLInputElement>('checkbox', { name: 'Ganze Serie verschieben' })
+		);
+		expect(whole.checked).toBe(true);
+		expect(move.mock.calls[0]?.[0]).toEqual({
+			kind: 'rule',
+			ids: [RULE],
+			to: 'household',
+			preview: true,
+			series: true,
+			series_done: true
+		});
+		await fireEvent.click(whole);
+		await vi.waitFor(() => expect(within(dialog).getByText('1 Wiederholung')).toBeTruthy());
+		expect(
+			within(dialog).getByText(
+				'13 bisherige Tickets der Wiederholung bleiben, wo sie sind, ohne Bezug zur Regel. Künftige Tickets entstehen im Ziel.'
+			)
+		).toBeTruthy();
+	});
+
+	it('asks nothing about series for a project', async () => {
+		const { move, moves } = await setup({ area: 'private', move: answer });
+		moves.open({
+			kind: 'project',
+			ids: ['proj00000000001'],
+			to: 'household',
+			label: 'Projekt „Haus“'
+		});
+		const dialog = await vi.waitFor(() => screen.getByRole('dialog'));
+		await vi.waitFor(() => expect(move).toHaveBeenCalledTimes(1));
+		expect(move.mock.calls[0]?.[0]).not.toHaveProperty('series');
+		expect(within(dialog).queryByRole('checkbox', { name: /Serie/ })).toBeNull();
 	});
 });

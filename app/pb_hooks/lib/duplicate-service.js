@@ -9,6 +9,13 @@
 // ticket. All checks of the request run before the first write; a failure of any write rolls back
 // everything. Realtime events of the new records go out after the commit, as for saves of the
 // Record API.
+//
+// Since MV-2 (ADR-0045, addendum MV-2) the duplicate may go into the other area of the account (`to`):
+// into the household only an own private ticket, into the private area every member who sees the
+// ticket of the household. Its project is one of the target or none, its tags are mapped by name (a
+// missing one is created there), it is a top-level ticket, and no source comes along (entries of the
+// inbox stay with the original, source tickets never cross the border). The original stays as it is.
+// GET /api/byl/tickets/{id}/duplicate-target names the projects and the tags of the target first.
 'use strict';
 
 var rules = require(__hooks + '/lib/duplicate-rules.js');
@@ -19,10 +26,13 @@ var ticketService = require(__hooks + '/lib/ticket-service.js');
 var inbox = require(__hooks + '/lib/inbox-service.js');
 var charms = require(__hooks + '/lib/charms.js');
 var dayPlanRules = require(__hooks + '/lib/day-plan-rules.js');
+var ticketKey = require(__hooks + '/lib/ticket-key.js');
 
 var TICKETS = 'tickets';
 var INBOX = 'inbox_items';
 var COMMENTS = 'comments';
+var PROJECTS = 'projects';
+var PRIVATE_NAME = 'Privat';
 
 // Order of creation: equal timestamps keep the order of the rows (like the comments of the SPA).
 var CREATION_ORDER = 'created,@rowid';
@@ -156,11 +166,27 @@ function saveHistory(txApp, ticketId, value, actor) {
   txApp.save(entry);
 }
 
-// The duplicate itself. Its parent stays only with "Übergeordnetes Ticket" for a sub-ticket; the
-// series never comes along (ADR-0045), nor a pin (the hook allows none on create).
+// The tags of a copy in another area: mapped by name, each once (MV-2); in the same area as they are.
+function tagsFor(tags, mapTag) {
+  if (mapTag === null) {
+    return tags;
+  }
+  var mapped = [];
+  for (var i = 0; i < tags.length; i++) {
+    var id = mapTag(tags[i]);
+    if (id !== '' && mapped.indexOf(id) === -1) {
+      mapped.push(id);
+    }
+  }
+  return mapped;
+}
+
+// The duplicate itself. Its parent stays only with "Übergeordnetes Ticket" for a sub-ticket, never in
+// another area (MV-2: the parent stays behind); the series never comes along (ADR-0045), nor a pin
+// (the hook allows none on create).
 function saveDuplicate(txApp, original, options, context) {
   var taken = rules.takenValues(takeableValues(original), options);
-  var parent = options.parent ? original.getString('parent') : '';
+  var parent = options.parent && !context.crossing ? original.getString('parent') : '';
   var fields = {
     owner: context.actor,
     household: context.household,
@@ -170,7 +196,7 @@ function saveDuplicate(txApp, original, options, context) {
     priority: taken.priority,
     due: taken.due,
     project: options.project,
-    tags: taken.tags,
+    tags: tagsFor(taken.tags, context.mapTag),
     parent: parent,
     blocks_parent: parent === '' ? true : original.getBool('blocks_parent')
   };
@@ -185,8 +211,9 @@ function saveDuplicate(txApp, original, options, context) {
 
 // New, open sub-tickets of the duplicate, one per sub-ticket of the original (also done ones), in
 // the order they were created, with the same choice of fields; their project is the one of the
-// duplicate, like for every new sub-ticket (ADR-0033 section 4, ADR-0034 section 6).
-function saveSubtasks(txApp, original, duplicate, options, actor) {
+// duplicate, like for every new sub-ticket (ADR-0033 section 4, ADR-0034 section 6). In another area
+// their tags are mapped like those of the duplicate (`mapTag`, MV-2).
+function saveSubtasks(txApp, original, duplicate, options, actor, mapTag) {
   var created = [];
   if (!options.subtasks || original.getString('parent') !== '') {
     return created;
@@ -207,7 +234,7 @@ function saveSubtasks(txApp, original, duplicate, options, actor) {
       priority: taken.priority,
       due: taken.due,
       project: duplicate.getString('project'),
-      tags: taken.tags,
+      tags: tagsFor(taken.tags, mapTag),
       parent: duplicate.id,
       blocks_parent: child.getBool('blocks_parent'),
       source: 'manual'
@@ -259,13 +286,98 @@ function pinCopy(txApp, duplicate, commentId, actor) {
   txApp.save(ticket);
 }
 
+// The area of the original as the history and the answer name it.
+function areaOf(household) {
+  return household === '' ? 'private' : 'household';
+}
+
+/**
+ * The area of the duplicate (ADR-0045, addendum MV-2): that of the original without `to` (or with its
+ * own), else the other one of the account: { crossing, household, scope, to, name }. Into the
+ * household only an own private ticket of a member, into the private area every member who sees the
+ * ticket; refusals at the field `to`.
+ */
+function targetArea(app, original, to, actor) {
+  var household = original.getString('household');
+  if (!rules.crossesArea(household, to)) {
+    return { crossing: false, household: household, scope: original.getString('scope'), to: areaOf(household), name: '' };
+  }
+  var code = rules.areaViolation(to, { owner: original.getString('owner'), household: household }, actor);
+  if (code !== '') {
+    throw fail('to', code);
+  }
+  if (to === 'private') {
+    return { crossing: true, household: '', scope: ticketKey.scopeOf(actor, ''), to: 'private', name: PRIVATE_NAME };
+  }
+  var mine = require(__hooks + '/lib/area-move-service.js').householdOf(app, actor);
+  if (mine === null) {
+    throw fail('to', 'validation_duplicate_no_household');
+  }
+  return { crossing: true, household: mine.id, scope: ticketKey.scopeOf('', mine.id), to: 'household', name: mine.name };
+}
+
+// The project of a duplicate in another area (MV-2): '' or an active project of the target, checked
+// before the first write (the ticket hook would refuse it as well, but only while writing).
+function assertTargetProject(app, projectId, area) {
+  if (projectId === '') {
+    return;
+  }
+  var project = findById(app, PROJECTS, projectId);
+  if (project === null || project.getString('scope') !== area.scope || project.getBool('archived')) {
+    throw fail('project', 'validation_duplicate_project_area');
+  }
+}
+
+// The active projects of an area with their parent ID (sub projects, ADR-0034), by name; the tab
+// knows only those of its own area.
+function projectsIn(app, scope) {
+  var found = app.findRecordsByFilter(PROJECTS, 'scope = {:scope} && archived = false', 'name,id', 0, 0, { scope: scope });
+  var list = [];
+  for (var i = 0; i < found.length; i++) {
+    list.push({
+      id: found[i].id,
+      code: found[i].getString('code'),
+      name: found[i].getString('name'),
+      parent: found[i].getString('parent')
+    });
+  }
+  return list;
+}
+
+/**
+ * GET /api/byl/tickets/{id}/duplicate-target?to=household|private (ADR-0045, addendum MV-2): what the
+ * question "Duplizieren" needs for the other area before anything is written. Only for a ticket the
+ * request may see (else 404) and with the same checks as the duplicate itself (`to` at the field).
+ * Answers { to, scope, name, projects: [{ id, code, name, parent }], tags: { reused, created } }: the
+ * active projects of the target and the tags of the original by name there.
+ */
+function target(e, id) {
+  var original = visibleOriginal(e, id);
+  var to = String(e.request.url.query().get('to') || '');
+  if (rules.AREAS.indexOf(to) === -1) {
+    throw fail('to', 'validation_duplicate_area');
+  }
+  var actor = actorOf(e);
+  var area = targetArea(e.app, original, to, actor);
+  assertMayCreate(e.app, actor, area.household);
+  var tags = stringList(original.getStringSlice('tags'));
+  return {
+    to: area.to,
+    scope: area.scope,
+    name: area.crossing ? area.name : '',
+    projects: projectsIn(e.app, area.scope),
+    tags: area.crossing ? require(__hooks + '/lib/area-move-service.js').tagPreviewIn(e.app, tags, area.scope) : { reused: [], created: [] }
+  };
+}
+
 /**
  * Route "Ticket duplizieren" (ADR-0045): the request body as described in
  * lib/duplicate-rules.js parseRequest. Only a ticket the request may see (else 404; the trash is
  * never visible), only in an area where the user may create tickets (else 403). Answers { id, key,
- * title, original: { id, key }, subtasks: [{ id, key }], comments, source, ticket_sources } with the
- * ID of the copied source ('' without one) and the number of source tickets the duplicate stems from
- * like the original (QT-1, ADR-0067; only with "Kopie der Herkunft übernehmen").
+ * title, original: { id, key }, subtasks: [{ id, key }], comments, source, ticket_sources, scope } with
+ * the ID of the copied source ('' without one), the number of source tickets the duplicate stems from
+ * like the original (QT-1, ADR-0067; only with "Kopie der Herkunft übernehmen") and the area of the
+ * duplicate (MV-2: with `to` the other area of the account, see targetArea).
  */
 function duplicate(e, id) {
   var original = visibleOriginal(e, id);
@@ -275,8 +387,15 @@ function duplicate(e, id) {
   }
   var options = parsed.options;
   var actor = actorOf(e);
-  var household = original.getString('household');
+  var area = targetArea(e.app, original, options.to, actor);
+  var household = area.household;
   assertMayCreate(e.app, actor, household);
+  if (area.crossing) {
+    if (options.source === 'copy') {
+      throw fail('source', 'validation_duplicate_source_area');
+    }
+    assertTargetProject(e.app, options.project, area);
+  }
   // "Kopie der Herkunft übernehmen" copies the main source and, since QT-1 (ADR-0067), takes the
   // source tickets of the original over as well; it needs at least one of them.
   var ticketSources = require(__hooks + '/lib/ticket-source-service.js');
@@ -314,12 +433,21 @@ function duplicate(e, id) {
         })
       });
     }
-    var duplicated = saveDuplicate(txApp, current, options, { actor: actor, household: household, copy: copy });
-    var subtasks = saveSubtasks(txApp, current, duplicated, options, actor);
+    // Tags of another area by name, a missing one created there by the actor (MV-2).
+    var mapTag = area.crossing ? require(__hooks + '/lib/area-move-service.js').tagMapperIn(txApp, area.scope, household, actor) : null;
+    var duplicated = saveDuplicate(txApp, current, options, {
+      actor: actor,
+      household: household,
+      copy: copy,
+      crossing: area.crossing,
+      mapTag: mapTag
+    });
+    var subtasks = saveSubtasks(txApp, current, duplicated, options, actor, mapTag);
     var comments = options.comments ? saveComments(txApp, current, duplicated) : { count: 0, pinned: '' };
     pinCopy(txApp, duplicated, comments.pinned, actor);
-    saveHistory(txApp, duplicated.id, rules.historyValue('from', current.id, key), actor);
-    saveHistory(txApp, current.id, rules.historyValue('to', duplicated.id, duplicated.getString('key')), actor);
+    // Across the border both entries name the area of the other ticket and only its key.
+    saveHistory(txApp, duplicated.id, rules.historyValue('from', current.id, key, area.crossing ? areaOf(current.getString('household')) : ''), actor);
+    saveHistory(txApp, current.id, rules.historyValue('to', duplicated.id, duplicated.getString('key'), area.crossing ? area.to : ''), actor);
     var linked = options.source === 'copy' ? ticketSources.copySources(txApp, current, duplicated, actor) : 0;
     result = {
       id: duplicated.id,
@@ -329,12 +457,14 @@ function duplicate(e, id) {
       subtasks: subtasks,
       comments: comments.count,
       source: copy ? copy.id : '',
-      ticket_sources: linked
+      ticket_sources: linked,
+      scope: duplicated.getString('scope')
     };
   });
   return result;
 }
 
 module.exports = {
-  duplicate: duplicate
+  duplicate: duplicate,
+  target: target
 };

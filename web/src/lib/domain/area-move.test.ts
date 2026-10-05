@@ -14,6 +14,7 @@ import {
 	moveProblemText,
 	nameConfirmed,
 	noteLines,
+	offersSeries,
 	parseDissolvePreview,
 	parseMovePreview,
 	ticketSourceLine,
@@ -338,6 +339,79 @@ describe('links of source and follow-up tickets across the border (QT-1, ADR-006
 			preview: true
 		});
 		expect(moveBody(request, chosen, true)).not.toHaveProperty('ticket_sources');
+	});
+});
+
+describe('whole series (MV-2)', () => {
+	const series = {
+		counts: {
+			...(answer().counts as object),
+			tickets: 14,
+			subtasks: 1,
+			items: 0,
+			comments: 0,
+			rules: 1,
+			series: 1,
+			occurrences: { open: 1, done: 12 }
+		},
+		series_offer: { rules: 1, open: 1, done: 12 },
+		conflicts: { ...(answer().conflicts as object), series: [], rule_tickets: 0 }
+	};
+
+	it('reads the series, their occurrences and the offer; a server before MV-2 names none', () => {
+		const old = preview();
+		expect(old.counts.series).toBe(0);
+		expect(old.counts.occurrences).toEqual({ open: 0, done: 0 });
+		expect(old.seriesOffer).toEqual({ rules: 0, open: 0, done: 0 });
+		const shown = preview(series);
+		expect(shown.counts.series).toBe(1);
+		expect(shown.counts.occurrences).toEqual({ open: 1, done: 12 });
+		expect(shown.seriesOffer).toEqual({ rules: 1, open: 1, done: 12 });
+	});
+
+	it('counts series, open and done occurrences apart and says the series runs on', () => {
+		const shown = preview(series);
+		expect(countLines(shown)).toEqual([
+			'14 Tickets (davon 1 Unteraufgabe)',
+			'1 Serie mit Regel und Vorlage',
+			'1 offenes Vorkommen',
+			'12 erledigte Vorkommen'
+		]);
+		expect(noteLines(shown)).toContain(
+			'Die Serie läuft im Ziel weiter; ihr nächstes Ticket entsteht dort.'
+		);
+		const two = preview({
+			...series,
+			counts: { ...series.counts, rules: 2, series: 2, occurrences: { open: 2, done: 1 } }
+		});
+		expect(countLines(two).slice(1)).toEqual([
+			'2 Serien mit Regel und Vorlage',
+			'2 offene Vorkommen',
+			'1 erledigtes Vorkommen'
+		]);
+		expect(noteLines(two)).toContain(
+			'Die Serien laufen im Ziel weiter; ihre nächsten Tickets entstehen dort.'
+		);
+	});
+
+	it('sends the choice only for a move that offers it, the done ones only with the series', () => {
+		const request = { kind: 'rule' as const, ids: ['rule00000000001'], to: 'household' as const };
+		const start = { project: null, dependencies: null, codes: {} };
+		expect(moveBody(request, start, true)).not.toHaveProperty('series');
+		expect(moveBody(request, { ...start, series: true, seriesDone: true }, true)).toMatchObject({
+			series: true,
+			series_done: true
+		});
+		expect(moveBody(request, { ...start, series: true, seriesDone: false }, false)).toMatchObject({
+			series: true,
+			series_done: false
+		});
+		expect(moveBody(request, { ...start, series: false, seriesDone: true }, false)).toMatchObject({
+			series: false,
+			series_done: false
+		});
+		expect([offersSeries('rule'), offersSeries('ticket')]).toEqual([true, true]);
+		expect([offersSeries('project'), offersSeries('item')]).toEqual([false, false]);
 	});
 });
 

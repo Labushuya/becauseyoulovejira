@@ -2,12 +2,16 @@
 	import { tick, untrack } from 'svelte';
 	import { COLOR_LABELS } from '$lib/domain/colors';
 	import {
+		DUPLICATE_AREA_TEXTS,
 		copySourceHint,
+		duplicateAreaOf,
 		duplicateFormErrors,
 		duplicateRequestOf,
 		initialDuplicateForm,
+		type DuplicateArea,
 		type DuplicateField,
-		type DuplicateForm
+		type DuplicateForm,
+		type DuplicateTarget
 	} from '$lib/domain/duplicate';
 	import { formatCalendarDate } from '$lib/domain/format';
 	import type { InboxItemSummary } from '$lib/domain/inbox';
@@ -16,6 +20,7 @@
 	import type { ProjectRef, Ticket } from '$lib/domain/ticket';
 	import type { TicketOrigin } from '$lib/domain/ticket-origins';
 	import { insideModal } from '$lib/overlay/modal-context';
+	import { findAreaStore } from '$lib/stores/area.svelte';
 	import type { TicketDuplicateStore } from '$lib/stores/ticket-duplicate.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
@@ -33,7 +38,11 @@
 	// well. A series never comes along; the dialog says so. In the side
 	// panel a modal M; inside a modal (the full view) the same form stands inline (InlineDialog,
 	// ADR-0025 addendum 16). Errors of the server stand at their field, anything else as a message;
-	// after the duplicate exists the dialog closes and the owner opens it.
+	// after the duplicate exists the dialog closes and the owner opens it. Since MV-2 (ADR-0045,
+	// addendum MV-2) a member of a household chooses the "Ziel": the area of the original (the
+	// default) or the other one. There the project is one of the target (loaded with its tags from
+	// the server), the tags are mapped by name, the parent stays behind and no source comes along; the
+	// dialog says so, and afterwards the flag leads to the duplicate while the tab stays.
 	let {
 		ticket,
 		projects,
@@ -42,6 +51,7 @@
 		commentCount = 0,
 		subtaskCount = 0,
 		parentKey = null,
+		household,
 		store,
 		onopen,
 		onclose,
@@ -59,6 +69,11 @@
 		subtaskCount?: number;
 		/** Key of the parent of a sub-task, null for a top-level ticket. */
 		parentKey?: string | null;
+		/**
+		 * Name of the household of the account (MV-2); null without one (no "Ziel"). Read from the area
+		 * of the (app) layout when left out.
+		 */
+		household?: string | null;
 		store: TicketDuplicateStore;
 		/** Opens a ticket in the remembered way (the duplicate, or the original from the flag). */
 		onopen: (ticketId: string) => void;
@@ -80,16 +95,37 @@
 		comments: `${uid}-comments-hint`,
 		copy: `${uid}-copy-hint`,
 		none: `${uid}-none-hint`,
-		sourceError: `${uid}-source-error`
+		sourceError: `${uid}-source-error`,
+		toError: `${uid}-to-error`,
+		targetProject: `${uid}-target-project`,
+		targetProjectHint: `${uid}-target-project-hint`,
+		targetProjectError: `${uid}-target-project-error`,
+		targetTags: `${uid}-target-tags`
 	};
 	/** In the full view (a modal) the form stands inline instead of in a dialog of its own. */
 	const inline = insideModal();
+	const area = findAreaStore();
+
+	/** The area of the original: by its scope, else the area of the tab (MV-2). */
+	const origin: DuplicateArea = untrack(() =>
+		ticket.scope !== undefined
+			? duplicateAreaOf(ticket.scope)
+			: area?.active === 'household'
+				? 'household'
+				: 'private'
+	);
+	/** The household of the account; with it (and a store that loads the target) the "Ziel". */
+	const householdName = $derived(
+		household !== undefined ? household : (area?.household?.name ?? null)
+	);
+	const offersAreas = $derived(householdName !== null && store.offersAreas);
 
 	let answers = $state<DuplicateForm>(
 		untrack(() =>
 			initialDuplicateForm(
 				ticket,
-				projects.map((project) => project.id)
+				projects.map((project) => project.id),
+				origin
 			)
 		)
 	);
@@ -97,6 +133,16 @@
 	let message = $state<string | null>(null);
 	let busy = $state(false);
 	let formElement = $state<HTMLFormElement>();
+	/** Projects and tags of the other area (MV-2): loaded when it is chosen. */
+	let target = $state.raw<DuplicateTarget | null>(null);
+	let targetLoading = $state(false);
+	let targetMessage = $state<string | null>(null);
+
+	const crossing = $derived(answers.to !== origin);
+	/** How the tags of the original arrive in the other area (MV-2), '' in the same area. */
+	const targetTags = $derived(
+		crossing && target !== null ? DUPLICATE_AREA_TEXTS.tags(target.tags) : ''
+	);
 
 	const mainSource = $derived(sources.find((item) => item.id === ticket.sourceItem) ?? null);
 	const tagNames = $derived(ticket.tags.map((tag) => tag.name).join(', '));
@@ -123,9 +169,25 @@
 		formElement?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
 	}
 
+	/** "Ziel" (MV-2): the other area loads its projects and tags once; the original's needs nothing. */
+	async function chooseArea(to: DuplicateArea) {
+		answers.to = to;
+		errors = { ...errors, to: undefined, project: undefined };
+		if (to === origin || (target !== null && target.to === to) || targetLoading) return;
+		targetLoading = true;
+		targetMessage = null;
+		try {
+			const result = await store.target(ticket.id, to);
+			if (result.ok) target = result.target;
+			else targetMessage = result.message;
+		} finally {
+			targetLoading = false;
+		}
+	}
+
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
-		if (busy) return;
+		if (busy || (crossing && target === null)) return;
 		message = null;
 		errors = duplicateFormErrors(answers);
 		const status = answers.status;
@@ -134,26 +196,29 @@
 			return;
 		}
 		busy = true;
+		const elsewhere = crossing;
 		try {
 			const result = await store.duplicate(
 				{ id: ticket.id, key: ticket.key },
-				duplicateRequestOf({ ...answers, status }),
+				duplicateRequestOf({ ...answers, status }, origin),
 				onopen
 			);
 			if (result.ok) {
 				onclose();
-				onopen(result.outcome.id);
+				// Into the other area the tab stays with the original; the flag leads to the duplicate.
+				if (!elsewhere) onopen(result.outcome.id);
 				return;
 			}
 			const { source, project, ...others } = result.fields;
+			const projectShown = elsewhere || answers.takeProject;
 			errors = {
 				...others,
-				...(source !== undefined && sourceShown ? { source } : {}),
-				...(project !== undefined && answers.takeProject ? { project } : {})
+				...(source !== undefined && sourceShown && !elsewhere ? { source } : {}),
+				...(project !== undefined && projectShown ? { project } : {})
 			};
 			const hidden = [
-				source !== undefined && !sourceShown ? source : null,
-				project !== undefined && !answers.takeProject ? project : null
+				source !== undefined && (!sourceShown || elsewhere) ? source : null,
+				project !== undefined && !projectShown ? project : null
 			].find((text) => text !== null);
 			message = result.message ?? hidden ?? null;
 		} finally {
@@ -182,6 +247,43 @@
 			{/if}
 		</div>
 
+		{#if offersAreas}
+			<fieldset
+				class="group"
+				role="radiogroup"
+				aria-invalid={errors.to ? 'true' : undefined}
+				aria-describedby={errors.to ? ids.toError : undefined}
+				tabindex="-1"
+			>
+				<legend>{DUPLICATE_AREA_TEXTS.legend}</legend>
+				<div class="areas">
+					<label class="choice">
+						<input
+							type="radio"
+							name={`${uid}-to`}
+							value="private"
+							checked={answers.to === 'private'}
+							onchange={() => void chooseArea('private')}
+						/>
+						{DUPLICATE_AREA_TEXTS.private}
+					</label>
+					<label class="choice">
+						<input
+							type="radio"
+							name={`${uid}-to`}
+							value="household"
+							checked={answers.to === 'household'}
+							onchange={() => void chooseArea('household')}
+						/>
+						{householdName}
+					</label>
+				</div>
+				{#if errors.to}
+					<p class="field-error" id={ids.toError}><ErrorIcon /><span>{errors.to}</span></p>
+				{/if}
+			</fieldset>
+		{/if}
+
 		<fieldset class="group">
 			<legend>Übernehmen</legend>
 			<label class="choice">
@@ -192,11 +294,39 @@
 				<input type="checkbox" bind:checked={answers.take.priority} />
 				Priorität: {PRIORITY_LABELS[ticket.priority]}
 			</label>
-			<label class="choice">
-				<input type="checkbox" bind:checked={answers.takeProject} />
-				Projekt
-			</label>
-			{#if answers.takeProject}
+			{#if crossing}
+				<div class="field">
+					{#if target !== null}
+						<label for={ids.targetProject}>{DUPLICATE_AREA_TEXTS.projectLabel}</label>
+						<ProjectSelect
+							id={ids.targetProject}
+							value={answers.targetProject}
+							projects={target.projects}
+							error={errors.project ?? null}
+							errorId={ids.targetProjectError}
+							hintId={ids.targetProjectHint}
+							hint={DUPLICATE_AREA_TEXTS.projectHint}
+							onchoose={(value) => {
+								answers.targetProject = value;
+								errors = { ...errors, project: undefined };
+							}}
+						/>
+						{#if errors.project}
+							<p class="field-error" id={ids.targetProjectError}>
+								<ErrorIcon /><span>{errors.project}</span>
+							</p>
+						{/if}
+					{:else if targetLoading}
+						<p class="hint" role="status">{DUPLICATE_AREA_TEXTS.loading}</p>
+					{/if}
+				</div>
+			{:else}
+				<label class="choice">
+					<input type="checkbox" bind:checked={answers.takeProject} />
+					Projekt
+				</label>
+			{/if}
+			{#if answers.takeProject && !crossing}
 				<div class="nested">
 					<label class="visually-hidden" for={ids.project}>Projekt des Duplikats</label>
 					<ProjectSelect
@@ -220,9 +350,16 @@
 				</div>
 			{/if}
 			<label class="choice">
-				<input type="checkbox" bind:checked={answers.take.tags} />
+				<input
+					type="checkbox"
+					bind:checked={answers.take.tags}
+					aria-describedby={targetTags !== '' ? ids.targetTags : undefined}
+				/>
 				Tags: {tagNames === '' ? 'keine' : tagNames}
 			</label>
+			{#if targetTags !== ''}
+				<p class="hint nested" id={ids.targetTags}>{targetTags}</p>
+			{/if}
 			<label class="choice">
 				<input type="checkbox" bind:checked={answers.take.due} />
 				Fälligkeit: {ticket.due === null ? 'keine' : formatCalendarDate(ticket.due)}
@@ -233,7 +370,7 @@
 					Farbe: {ticket.color === null ? 'wie Projekt' : COLOR_LABELS[ticket.color]}
 				</label>
 			{/if}
-			{#if parentKey !== null}
+			{#if parentKey !== null && !crossing}
 				<label class="choice">
 					<input type="checkbox" bind:checked={answers.take.parent} />
 					Unter {parentKey} einordnen
@@ -284,7 +421,13 @@
 			like="das Original"
 		/>
 
-		{#if sourceShown}
+		{#if crossing}
+			<SectionMessage tone="info" compact>
+				{DUPLICATE_AREA_TEXTS.note(answers.to, householdName ?? '')}
+				{DUPLICATE_AREA_TEXTS.sources}
+				{parentKey === null ? '' : DUPLICATE_AREA_TEXTS.parent(parentKey)}
+			</SectionMessage>
+		{:else if sourceShown}
 			<fieldset
 				class="group"
 				role="radiogroup"
@@ -333,6 +476,9 @@
 			</SectionMessage>
 		{/if}
 
+		{#if crossing && targetMessage}
+			<div class="alert-error" role="alert"><ErrorIcon /><span>{targetMessage}</span></div>
+		{/if}
 		{#if message}
 			<div class="alert-error" role="alert"><ErrorIcon /><span>{message}</span></div>
 		{/if}
@@ -347,7 +493,7 @@
 		class="button-primary"
 		type="submit"
 		form={formId}
-		aria-disabled={busy}
+		aria-disabled={busy || (crossing && target === null)}
 		aria-busy={busy ? 'true' : undefined}
 	>
 		{busy ? 'Wird dupliziert …' : 'Duplizieren'}
@@ -424,6 +570,13 @@
 		gap: 0.25rem;
 		min-width: 0;
 		margin-left: 1.375rem;
+	}
+
+	/* "Ziel" (MV-2): both areas side by side, one below the other when there is no room. */
+	.areas {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.375rem 1.25rem;
 	}
 
 	.hint {

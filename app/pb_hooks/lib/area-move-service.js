@@ -23,6 +23,12 @@
 // - Since QT-1 (ADR-0067) a link of a source or follow-up ticket to a ticket that stays behind is a
 //   conflict like a dependency, with its own choice (`ticket_sources`: take the other ticket along, or
 //   release the link with its history); links between moved tickets stay as they are.
+// - Since MV-2 (ADR-0061, addendum MV-2) `series` moves a series as a whole: the rule of every moved
+//   ticket of a series comes along, and every moved rule brings its open occurrences and, with
+//   `series_done`, its done ones, each with its cascade, until nothing more joins (also across the
+//   choice "mitnehmen"). An occurrence that moves with its rule stays in the series; one that stays
+//   behind leaves it as before. The preview counts series, open and done occurrences apart and offers
+//   the choice whenever a record of the plan belongs to a series (`series_offer`).
 // - POST /api/byl/household/dissolve: only the owner; `adopt` moves everything of the household with
 //   the same rules into his private area (codes taken there get a suffix), `delete` deletes it for
 //   good after the name of the household is typed. Then the memberships, the codes and the household
@@ -134,6 +140,11 @@ function newPlan(actor, from, to, moveOut, dissolved) {
     // links to a ticket that stays behind (`{ link, inside }`, the choice "mitnehmen" or "lösen").
     linkCount: 0,
     crossingLinks: [],
+    // "Ganze Serie verschieben" (MV-2): rules take their occurrences along (`series`), the done ones
+    // only with `seriesDone`; `offer` is what the whole series of the plan would hold.
+    series: false,
+    seriesDone: false,
+    offer: { rules: 0, open: 0, done: 0 },
     analysis: null,
     finalCodes: {},
     targetProject: null
@@ -217,11 +228,12 @@ function ticketLinks() {
 // "Mitnehmen": the other ticket of every dependency (`take.dependencies`) and of every link of a
 // source or follow-up ticket (`take.sources`, QT-1) comes along with its sub-tasks, until none of the
 // chosen kinds leads outside (the list grows while it is read, so both kinds close over each other).
-function takeLinked(txApp, plan, take) {
+// `cursor.links` is the first ticket not looked at yet (closeOver calls it again for new tickets).
+function takeLinked(txApp, plan, take, cursor) {
   var links = ticketLinks();
   var sources = take.sources && links.ready(txApp);
-  for (var i = 0; i < plan.order.tickets.length; i++) {
-    var id = plan.order.tickets[i];
+  for (; cursor.links < plan.order.tickets.length; cursor.links++) {
+    var id = plan.order.tickets[cursor.links];
     var others = [];
     var j;
     if (take.dependencies) {
@@ -246,6 +258,96 @@ function takeLinked(txApp, plan, take) {
       }
     }
   }
+}
+
+// The live occurrences of a rule, oldest first: the open ones, with `done` also the done ones. The
+// trash holds none (it clears `recurrence`, ADR-0037).
+function occurrencesOf(txApp, ruleId, done) {
+  var filter = "recurrence = {:rule} && deleted_at = ''" + (done ? '' : " && status != 'done'");
+  return txApp.findRecordsByFilter(TICKETS, filter, 'created,id', 0, 0, { rule: ruleId });
+}
+
+// "Ganze Serie verschieben" (MV-2): the rule of every moved ticket of a series joins the plan, and
+// every rule of the plan brings its open occurrences and, with `plan.seriesDone`, its done ones, each
+// with its sub-tasks; only records of the area the move leaves. `cursor.tickets` and `cursor.rules`
+// are the first ticket and rule not looked at yet.
+function addSeries(txApp, plan, cursor) {
+  for (; cursor.tickets < plan.order.tickets.length; cursor.tickets++) {
+    var ruleId = plan.sets.tickets[plan.order.tickets[cursor.tickets]].getString('recurrence');
+    if (ruleId === '' || has(plan, 'rules', ruleId)) {
+      continue;
+    }
+    var rule = findById(txApp, RULES, ruleId);
+    if (rule !== null && rule.getString('scope') === plan.from.scope) {
+      put(plan, 'rules', rule);
+    }
+  }
+  for (; cursor.rules < plan.order.rules.length; cursor.rules++) {
+    var found = occurrencesOf(txApp, plan.order.rules[cursor.rules], plan.seriesDone);
+    for (var i = 0; i < found.length; i++) {
+      if (found[i].getString('scope') === plan.from.scope) {
+        addTicket(txApp, plan, found[i]);
+      }
+    }
+  }
+}
+
+// The cascade beyond the roots: whole series (MV-2) and "mitnehmen" of linked tickets (E7-4, QT-1),
+// again and again until neither adds a ticket or a rule. Each looks only at what is new to it.
+function closeOver(txApp, plan, take) {
+  var cursor = { tickets: 0, rules: 0, links: 0 };
+  var size = -1;
+  while (size !== plan.order.tickets.length + plan.order.rules.length) {
+    size = plan.order.tickets.length + plan.order.rules.length;
+    if (plan.series) {
+      addSeries(txApp, plan, cursor);
+    }
+    if (take.dependencies || take.sources) {
+      takeLinked(txApp, plan, take, cursor);
+    }
+  }
+}
+
+/**
+ * What "Ganze Serie verschieben" covers for the plan (MV-2), for the choice and its number in the
+ * dialog: the rules of its records of a series (the moved rules and the rules of the moved tickets)
+ * and their open and done occurrences in the area the move leaves. The same with and without the
+ * choice, as far as the plan is the same.
+ */
+function seriesOffer(txApp, plan) {
+  var offer = { rules: 0, open: 0, done: 0 };
+  var ids = plan.order.rules.slice();
+  var seen = {};
+  var i;
+  for (i = 0; i < ids.length; i++) {
+    seen[ids[i]] = true;
+  }
+  for (i = 0; i < plan.order.tickets.length; i++) {
+    var ruleId = plan.sets.tickets[plan.order.tickets[i]].getString('recurrence');
+    if (ruleId !== '' && !seen[ruleId]) {
+      seen[ruleId] = true;
+      ids.push(ruleId);
+    }
+  }
+  for (i = 0; i < ids.length; i++) {
+    var rule = has(plan, 'rules', ids[i]) ? plan.sets.rules[ids[i]] : findById(txApp, RULES, ids[i]);
+    if (rule === null || rule.getString('scope') !== plan.from.scope) {
+      continue;
+    }
+    offer.rules += 1;
+    var found = occurrencesOf(txApp, ids[i], true);
+    for (var j = 0; j < found.length; j++) {
+      if (found[j].getString('scope') !== plan.from.scope) {
+        continue;
+      }
+      if (found[j].getString('status') === 'done') {
+        offer.done += 1;
+      } else {
+        offer.open += 1;
+      }
+    }
+  }
+  return offer;
 }
 
 // Links between moved tickets stay as they are (they have no area of their own); a link to a ticket
@@ -346,7 +448,8 @@ function addRoots(txApp, plan, kind, ids) {
 
 /**
  * Collects the cascade of a move (ADR-0061 §1). `take.dependencies`: dependencies take their other
- * ticket along; `take.sources`: links of source and follow-up tickets do (QT-1, ADR-0067).
+ * ticket along; `take.sources`: links of source and follow-up tickets do (QT-1, ADR-0067);
+ * `plan.series`: whole series (MV-2).
  */
 function collect(txApp, plan, kind, ids, take) {
   var problem = addRoots(txApp, plan, kind, ids);
@@ -354,12 +457,11 @@ function collect(txApp, plan, kind, ids, take) {
     return problem;
   }
   addProjectTickets(txApp, plan);
-  if (take.dependencies || take.sources) {
-    takeLinked(txApp, plan, take);
-  }
+  closeOver(txApp, plan, take);
   classifyDependencies(txApp, plan);
   classifyTicketLinks(txApp, plan);
   addSources(txApp, plan);
+  plan.offer = seriesOffer(txApp, plan);
   return '';
 }
 
@@ -766,10 +868,15 @@ function summaryOf(txApp, plan, input) {
   var analysis = plan.analysis;
   var tickets = recordsOf(plan, 'tickets');
   var subtasks = 0;
+  // Occurrences that move with their rule and stay in their series (MV-2), open and done apart.
+  var occurrences = { open: 0, done: 0 };
   var i;
   for (i = 0; i < tickets.length; i++) {
     if (tickets[i].getString('parent') !== '' && has(plan, 'tickets', tickets[i].getString('parent'))) {
       subtasks += 1;
+    }
+    if (tickets[i].getString('recurrence') !== '' && has(plan, 'rules', tickets[i].getString('recurrence'))) {
+      occurrences[tickets[i].getString('status') === 'done' ? 'done' : 'open'] += 1;
     }
   }
   var staying = [];
@@ -837,8 +944,12 @@ function summaryOf(txApp, plan, input) {
       items: plan.order.items.length,
       comments: analysis.comments,
       dependencies: plan.order.dependencies.length,
-      ticket_sources: plan.linkCount
+      ticket_sources: plan.linkCount,
+      // Rules that move as whole series (MV-2), and their occurrences.
+      series: plan.series ? plan.order.rules.length : 0,
+      occurrences: occurrences
     },
+    series_offer: plan.offer,
     conflicts: {
       project:
         staying.length === 0
@@ -905,7 +1016,16 @@ function assignKey(txApp, ticket, scope, project, code) {
 
 // The tags of the target by name, created on demand (owner the actor, in the area of the target).
 function tagMapper(txApp, plan) {
-  var byName = tagNamesIn(txApp, plan.to.scope);
+  return tagMapperIn(txApp, plan.to.scope, plan.to.household, plan.actor);
+}
+
+/**
+ * Maps a tag ID to the tag of the same name (case aside) in the area `scope`, creating a missing one
+ * there with `owner` and `household` on first use; '' for a tag that no longer exists. Moving
+ * (ADR-0061 §2) and duplicating into another area (ADR-0045, addendum MV-2) map tags this way.
+ */
+function tagMapperIn(txApp, scope, household, owner) {
+  var byName = tagNamesIn(txApp, scope);
   var byId = {};
   return function (tagId) {
     if (Object.prototype.hasOwnProperty.call(byId, tagId)) {
@@ -919,8 +1039,8 @@ function tagMapper(txApp, plan) {
     var lower = tag.getString('name').toLowerCase();
     if (!Object.prototype.hasOwnProperty.call(byName, lower)) {
       var created = new Record(txApp.findCollectionByNameOrId(TAGS));
-      created.set('owner', plan.actor);
-      created.set('household', plan.to.household);
+      created.set('owner', owner);
+      created.set('household', household);
       created.set('name', tag.getString('name'));
       txApp.save(created);
       byName[lower] = created.id;
@@ -1400,6 +1520,8 @@ function move(e) {
       input.to === 'household'
         ? newPlan(actor, mine, shared, false, false)
         : newPlan(actor, shared, mine, householdRules.may({ role: household.role, rights: household.rights }, 'move_out'), false);
+    plan.series = input.series;
+    plan.seriesDone = input.series_done;
     var problem = collect(txApp, plan, input.kind, input.ids, {
       dependencies: input.dependencies === 'take',
       sources: input.ticket_sources === 'take'
@@ -1617,10 +1739,34 @@ function dissolve(e) {
   return e.json(200, outcome.body);
 }
 
+/**
+ * The tags of `ids` by name against the area `scope` (MV-2, duplicating into another area), as the
+ * preview names them: { reused, created }.
+ */
+function tagPreviewIn(txApp, ids, scope) {
+  var names = [];
+  for (var i = 0; i < ids.length; i++) {
+    var tag = findById(txApp, TAGS, ids[i]);
+    if (tag !== null) {
+      names.push(tag.getString('name'));
+    }
+  }
+  var known = tagNamesIn(txApp, scope);
+  var targetNames = [];
+  for (var lower in known) {
+    if (Object.prototype.hasOwnProperty.call(known, lower)) {
+      targetNames.push(lower);
+    }
+  }
+  return rules.tagMapping(names, targetNames);
+}
+
 module.exports = {
   move: move,
   dissolve: dissolve,
   householdOf: householdOf,
   householdCounts: householdCounts,
-  deleteHousehold: deleteHousehold
+  deleteHousehold: deleteHousehold,
+  tagMapperIn: tagMapperIn,
+  tagPreviewIn: tagPreviewIn
 };

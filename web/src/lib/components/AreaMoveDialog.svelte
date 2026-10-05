@@ -14,7 +14,10 @@
 	// follow-up tickets with tickets that stay behind, new codes of projects whose code the target
 	// has), and the hint for the people of the household. In the layout a modal
 	// M; inside a modal (the full view) the same form stands inline (InlineDialog, ADR-0025 addendum
-	// 16). Nothing moves before the button; a refusal of the server stands in the dialog.
+	// 16). Nothing moves before the button; a refusal of the server stands in the dialog. Since MV-2 a
+	// rule, a ticket of a series and the bulk action offer "Ganze Serie verschieben" (or "Bei
+	// wiederkehrenden Tickets die ganze Serie mitnehmen") with "Bisherige erledigte Vorkommen
+	// mitnehmen (N)", both chosen; each change loads the preview anew.
 	let {
 		store,
 		returnFocus
@@ -31,7 +34,8 @@
 		dependencies: `${uid}-dependencies`,
 		dependenciesError: `${uid}-dependencies-error`,
 		ticketSources: `${uid}-ticket-sources`,
-		ticketSourcesError: `${uid}-ticket-sources-error`
+		ticketSourcesError: `${uid}-ticket-sources-error`,
+		series: `${uid}-series`
 	};
 	const inline = insideModal();
 	/** Value of the first option of the project while nothing is chosen (no record ID has a dash). */
@@ -53,6 +57,9 @@
 		project === null ? '' : project.projects.map((entry) => entry.code).join(', ')
 	);
 	const ready = $derived(preview !== null && store.state === 'ready');
+	/** "Ganze Serie verschieben" (MV-2), when a record of the request belongs to a series. */
+	const offer = $derived(store.seriesOffer);
+	const seriesOn = $derived(store.choices.series === true);
 
 	async function focusFirstError() {
 		await tick();
@@ -94,6 +101,34 @@
 					{preview.fromName} → {preview.toName}
 				</p>
 			</section>
+
+			{#if offer !== null && request !== null}
+				<fieldset class="group">
+					<legend>{MOVE_TEXTS.seriesLegend}</legend>
+					<label class="choice">
+						<input
+							type="checkbox"
+							checked={seriesOn}
+							aria-describedby={ids.series}
+							onchange={(event) => store.chooseSeries(event.currentTarget.checked)}
+						/>
+						{request.series === 'whole' ? MOVE_TEXTS.series : MOVE_TEXTS.seriesEach}
+					</label>
+					<p class="note nested" id={ids.series}>
+						{seriesOn ? MOVE_TEXTS.seriesHint : MOVE_TEXTS.seriesOffHint}
+					</p>
+					{#if seriesOn && offer.done > 0}
+						<label class="choice nested">
+							<input
+								type="checkbox"
+								checked={store.choices.seriesDone === true}
+								onchange={(event) => store.chooseSeriesDone(event.currentTarget.checked)}
+							/>
+							{MOVE_TEXTS.seriesDone(offer.done)}
+						</label>
+					{/if}
+				</fieldset>
+			{/if}
 
 			{#if project !== null}
 				<Field
@@ -345,6 +380,11 @@
 	.note {
 		font-size: var(--font-size-small);
 		color: var(--color-text-muted);
+	}
+
+	/* Below its checkbox, like the hints of the question "Duplizieren". */
+	.nested {
+		margin-left: 1.375rem;
 	}
 
 	/* Codes are capitals (domain/project.ts); the field shows them so, the store normalizes them. */

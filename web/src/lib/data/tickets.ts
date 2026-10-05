@@ -11,8 +11,11 @@ import { EMPTY_DONE_QUERY, activeDoneSearch, type DoneQuery } from '../domain/do
 import {
 	duplicateRequestBody,
 	toDuplicateOutcome,
+	toDuplicateTarget,
+	type DuplicateArea,
 	type DuplicateOutcome,
-	type DuplicateRequest
+	type DuplicateRequest,
+	type DuplicateTarget
 } from '../domain/duplicate';
 import { isInboxChannel } from '../domain/inbox';
 import { NO_PROJECT } from '../domain/list-query';
@@ -781,5 +784,27 @@ export function duplicateTicket(
 		const outcome = toDuplicateOutcome(answer);
 		if (outcome === null) throw new DataError('server');
 		return outcome;
+	});
+}
+
+/**
+ * "Duplizieren" into the other area (ADR-0045, addendum MV-2): the active projects of the target and
+ * the tags of the original by name there; nothing is written. A refusal comes at the field `to`, a
+ * server before the restart answers 404 (not_found).
+ */
+export function fetchDuplicateTarget(
+	pb: PocketBase,
+	id: string,
+	to: DuplicateArea,
+	{ signal }: RequestOptions = {}
+): Promise<DuplicateTarget> {
+	return withDataErrors(signal, async () => {
+		const answer: unknown = await pb.send(
+			`/api/byl/tickets/${encodeURIComponent(id)}/duplicate-target`,
+			{ method: 'GET', query: { to }, requestKey: null, signal }
+		);
+		const target = toDuplicateTarget(answer);
+		if (target === null) throw new DataError('server');
+		return target;
 	});
 }

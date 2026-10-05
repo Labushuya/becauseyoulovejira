@@ -137,11 +137,26 @@ routerAdd(
 // main source is copied ({ source: 'none' | 'copy' }). Creates the duplicate with everything
 // chosen in one transaction, or nothing; only for a ticket the request may see (else 404, the
 // trash included) in an area where the user may create tickets (else 403).
+// Since MV-2 (ADR-0045, addendum MV-2) also `to` ('household' | 'private'): the duplicate goes into
+// the other area of the account, with a project of the target, tags by name and without sources.
 routerAdd(
   'POST',
   '/api/byl/tickets/{id}/duplicate',
   function (e) {
     var result = require(`${__hooks}/lib/duplicate-service.js`).duplicate(e, e.request.pathValue('id'));
+    return e.json(200, result);
+  },
+  $apis.requireAuth('users')
+);
+
+// What "Duplizieren" into the other area needs first (MV-2): ?to=household|private answers the
+// active projects of the target and the tags of the original by name there. Nothing is written.
+routerAdd(
+  'GET',
+  '/api/byl/tickets/{id}/duplicate-target',
+  function (e) {
+    var result = require(`${__hooks}/lib/duplicate-service.js`).target(e, e.request.pathValue('id'));
+    e.response.header().set('Cache-Control', 'no-store');
     return e.json(200, result);
   },
   $apis.requireAuth('users')

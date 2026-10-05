@@ -32,7 +32,9 @@ describe('the input of POST /api/byl/area/move', () => {
 			preview: true,
 			project: '',
 			dependencies: 'take',
-			codes: { [ID]: 'HAUS' }
+			codes: { [ID]: 'HAUS' },
+			series: false,
+			series_done: false
 		});
 		expect(rules.moveInput({ kind: 'item', ids: [ID], to: 'private' })).toEqual({
 			kind: 'item',
@@ -41,8 +43,20 @@ describe('the input of POST /api/byl/area/move', () => {
 			preview: false,
 			project: undefined,
 			dependencies: undefined,
-			codes: {}
+			codes: {},
+			series: false,
+			series_done: false
 		});
+	});
+
+	it('reads whole series and their done occurrences as switches, off when not sent (MV-2)', () => {
+		const base = { kind: 'rule', ids: [ID], to: 'household' };
+		expect(rules.moveInput({ ...base, series: true, series_done: true })).toMatchObject({ series: true, series_done: true });
+		expect(rules.moveInput({ ...base, series: true, series_done: false })).toMatchObject({ series: true, series_done: false });
+		expect(rules.moveInput({ ...base, series: null })).toMatchObject({ series: false, series_done: false });
+		for (const flags of [{ series: 'true' }, { series: 1 }, { series_done: 'ja' }]) {
+			expect(rules.moveInput({ ...base, ...flags }), JSON.stringify(flags)).toEqual({ problem: 'format' });
+		}
 	});
 
 	it('refuses anything else', () => {
