@@ -237,6 +237,7 @@ describe('help page (EH-9)', () => {
 			'Wo öffnet sich ein Ticket?',
 			'Was steht im Menü „•••“ eines Tickets?',
 			'Wie dupliziere ich ein Ticket?',
+			'Wie lege ich ein Folge-Ticket an, und wie wird ein Ticket zur Quelle?',
 			'Wie gliedere ich ein Projekt in Unterprojekte?',
 			'Wie sehe ich die offenen Tickets eines Projekts?',
 			'Wie färbe ich Projekte und Tickets?',
@@ -288,6 +289,12 @@ describe('help page (EH-9)', () => {
 		expect(text(section)).toContain('„Kopiert aus HAUS-12“');
 		expect(text(section)).toContain('„Kopie der Herkunft übernehmen“');
 		expect(text(section)).toContain('„Dupliziert aus …“');
+		// Tickets as sources (ADR-0067): follow-ups, the picker without circles, both sections.
+		expect(text(section)).toContain('„Folge-Ticket anlegen …“ im Menü „•••“');
+		expect(text(section)).toContain('„Quelle hinzufügen“ → „Ticket …“');
+		expect(text(section)).toContain('„HAUS-20 stammt bereits (über HAUS-12) von HAUS-3 ab.“');
+		expect(text(section)).toContain('im Abschnitt „Folge-Tickets“');
+		expect(text(section)).toContain('Tickets einer Wiederholung erben keine Ticket-Quellen');
 		// Sub projects (ADR-0034): creating, own code, filter, numbers, archive.
 		expect(text(section)).toContain('„Unterprojekt anlegen“');
 		expect(text(section)).toContain('GART-3');
