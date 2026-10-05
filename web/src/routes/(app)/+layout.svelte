@@ -57,6 +57,7 @@
 	} from '$lib/stores/area-move.svelte';
 	import type { MovePreview } from '$lib/domain/area-move';
 	import { PeopleStore, peopleData, setPeople } from '$lib/stores/people.svelte';
+	import { PinStore, pinData, setPinStore } from '$lib/stores/pins.svelte';
 	import { FolderViewer, folderViewData, setFolderViewer } from '$lib/stores/folder-view.svelte';
 	import { fetchContext } from '$lib/data/context';
 	import { fetchHostPlatform } from '$lib/data/host';
@@ -173,6 +174,10 @@
 	// ticket of a series in the panel, a cell or a bulk action offers the same for the template of
 	// its rule (plan WV).
 	const rules = setRecurrenceStore(new RecurrenceStore(recurrenceData(pb), auth, flags));
+	// The own pinned tickets (ADR-0064) of every area, live in every tab of the account; they come
+	// before the list, which shows them in the section "Angeheftet" instead of below.
+	const pins = setPinStore(new PinStore(pinData(pb), auth, flags));
+	$effect(() => untrack(() => pins.start()));
 	// The column sort "Projekt" resolves projects through the catalog (E3 plan, package 9); the
 	// "new" mark follows the own read rows and base line (E4 plan, package 4).
 	const tickets = setTicketListStore(
@@ -182,7 +187,8 @@
 			subProjectsOf: (projectId) => catalog.subProjectsOf(projectId).map((project) => project.id),
 			reads: readsData(pb),
 			flags,
-			series: rules
+			series: rules,
+			pins
 		})
 	);
 	// Ticket picker (ADR-0042): every ticket choice lists the open tickets of the list store, the

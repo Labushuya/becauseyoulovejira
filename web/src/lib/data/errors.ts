@@ -10,6 +10,7 @@ import { DUPLICATE_MESSAGES } from '../domain/duplicate';
 import { FOLDER_MESSAGES } from '../domain/folders';
 import { GITHUB_MESSAGES } from '../domain/github';
 import { INBOX_KEY_MESSAGES } from '../domain/inbox-keys';
+import { TICKET_PIN_MESSAGES } from '../domain/pins';
 import { PROJECT_PARENT_MESSAGES } from '../domain/project-tree';
 import {
 	RECURRENCE_MESSAGES,
@@ -106,6 +107,8 @@ const FIELD_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
 	...INBOX_KEY_MESSAGES,
 	// The pinned comment (ADR-0044), the same texts as the hook.
 	...PIN_MESSAGES,
+	// Pinned tickets (ADR-0064), the same texts as the hook.
+	...TICKET_PIN_MESSAGES,
 	// "Ticket duplizieren" (ADR-0045), the same texts as the hook.
 	...DUPLICATE_MESSAGES,
 	// Target projects (ADR-0049), the GitHub channel (ADR-0050) and the folders (ADR-0051), the same

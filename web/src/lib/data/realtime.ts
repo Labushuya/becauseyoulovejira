@@ -14,7 +14,9 @@ import type { Tag } from '../domain/tag';
 import type { Comment, HistoryEntry, Ticket, TicketSummary } from '../domain/ticket';
 import { COMMENT_FIELDS, toComment, type CommentRecord } from './comments';
 import { HISTORY_FIELDS, toHistoryEntry, type HistoryRecord } from './history';
+import type { TicketPin } from '../domain/pins';
 import { INBOX_EXPAND, INBOX_LIST_FIELDS, toInboxItemSummary, type InboxRecord } from './inbox';
+import { PIN_FIELDS, toTicketPin } from './pins';
 import { PROJECT_FIELDS, toProject, type ProjectRecord } from './projects';
 import { READ_FIELDS, toTicketRead, type TicketRead } from './reads';
 import { RULE_FIELDS, toRecurrenceRule, type RuleRecord } from './recurrence';
@@ -200,6 +202,24 @@ export async function onReconnect(pb: PocketBase, callback: () => void): Promise
 		stopArea();
 		await stop();
 	};
+}
+
+/**
+ * The own pins of every area (ADR-0064): the rules deliver only the own rows on tickets the account
+ * sees, so another tab of the account pins and releases here as well, and a pin the server released
+ * (completed, trash, household left) comes as "delete".
+ */
+export function subscribePins(
+	pb: PocketBase,
+	onChange: (change: RecordChange<TicketPin>) => void
+): Promise<Unsubscribe> {
+	return pb
+		.collection('ticket_pins')
+		.subscribe<{ id: string; ticket?: unknown; created?: unknown }>(
+			'*',
+			changes(toTicketPin, onChange),
+			{ fields: PIN_FIELDS }
+		);
 }
 
 /** Change of the "new" mark: an own read row, or a new base line of the user (ADR-0015). */

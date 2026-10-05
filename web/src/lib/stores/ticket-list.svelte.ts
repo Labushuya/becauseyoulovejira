@@ -67,7 +67,9 @@ import {
 	type TicketSummary
 } from '$lib/domain/ticket';
 import { countNew, isNew, unreadSinceOf } from '$lib/domain/unread';
+import { pinnedTickets } from '$lib/domain/pins';
 import { SILENT_FLAGS, type FlagSink } from './flags.svelte';
+import type { PinnedSource } from './pins.svelte';
 import { hold, type LiveSource } from './realtime';
 
 /** Delay after the Berlin midnight before "today" is computed again (E2 plan, T-3). */
@@ -276,6 +278,11 @@ export interface TicketListOptions {
 	 * (plan WV); without them nothing is offered.
 	 */
 	series?: SeriesChangeSink;
+	/**
+	 * The own pins (ADR-0064): their open tickets stand in the section "Angeheftet" above the list,
+	 * whatever the filters, and not again below; without them nothing is pinned.
+	 */
+	pins?: PinnedSource;
 }
 
 export class TicketListStore {
@@ -298,6 +305,8 @@ export class TicketListStore {
 	readonly #movedDue = new SvelteMap<string, string>();
 	readonly #flags: FlagSink;
 	readonly #series: SeriesChangeSink;
+	/** The own pins (ADR-0064), null without them. */
+	readonly #pins: PinnedSource | null;
 	/** Target state of running check mark requests, keyed by ticket ID. */
 	readonly #pending = new SvelteMap<string, boolean>();
 	/** Question before completing a ticket with open blocking sub-tasks (ADR-0033 section 2). */
@@ -369,16 +378,25 @@ export class TicketListStore {
 			)
 			.sort(order);
 	});
+	/**
+	 * Open pinned tickets of the area in the order of pinning (ADR-0064), whatever the filters and
+	 * the search: the section "Angeheftet".
+	 */
+	#pinnedList = $derived.by(() => {
+		const pins = this.#pins;
+		return pins === null ? [] : pinnedTickets(pins.ticketIds, (id) => this.#open.get(id));
+	});
+	#pinnedIds = $derived(new SvelteSet(this.#pinnedList.map((ticket) => ticket.id)));
+	/** The visible rows without the pinned ones, which stand in their own section above them. */
+	#listedList = $derived.by(() => {
+		const pinned = this.#pinnedIds;
+		if (pinned.size === 0) return this.#visibleList;
+		return this.#visibleList.filter((ticket) => !pinned.has(ticket.id));
+	});
 	#groupList = $derived.by((): GroupNode<TicketSummary>[] | null => {
 		const { grouping, subGrouping } = this.#query;
 		if (grouping === null) return null;
-		return groupTicketLevels(
-			this.#visibleList,
-			grouping,
-			subGrouping,
-			this.#today,
-			this.#projectOf
-		);
+		return groupTicketLevels(this.#listedList, grouping, subGrouping, this.#today, this.#projectOf);
 	});
 	#doneList = $derived.by(() => {
 		const query = this.#query;
@@ -441,7 +459,8 @@ export class TicketListStore {
 			subProjectsOf = NO_SUB_PROJECTS,
 			reads,
 			flags = SILENT_FLAGS,
-			series = NO_SERIES
+			series = NO_SERIES,
+			pins
 		}: TicketListOptions = {}
 	) {
 		this.#data = data;
@@ -450,6 +469,7 @@ export class TicketListStore {
 		this.#projectOf = projectOf;
 		this.#subProjectsOf = subProjectsOf;
 		this.#today = berlinToday(now());
+		this.#pins = pins ?? null;
 		this.#reads = reads ?? null;
 		this.#flags = flags;
 		this.#series = series;
@@ -517,10 +537,26 @@ export class TicketListStore {
 	/**
 	 * Rows of the table above the section "Erledigt" (E3 plan, packages 5, 9 and 10): the open
 	 * tickets that pass the filters of the URL, in its column sort (T-5; ties and no sort: the
-	 * default order); none with the status filter "Erledigt".
+	 * default order); none with the status filter "Erledigt". Pinned tickets stand in the section
+	 * "Angeheftet" instead (ADR-0064), never twice.
 	 */
 	get visible(): readonly TicketSummary[] {
-		return this.#visibleList;
+		return this.#listedList;
+	}
+
+	/**
+	 * The section "Angeheftet" (ADR-0064): the open pinned tickets of the area in the order of
+	 * pinning, oldest first, independent of filters, search and sort.
+	 */
+	get pinned(): readonly TicketSummary[] {
+		return this.#pinnedList;
+	}
+
+	/** The pinned tickets that pass the filters and the search (the head checkbox takes them too). */
+	get pinnedInFilter(): readonly TicketSummary[] {
+		return this.#pinnedIds.size === 0
+			? []
+			: this.#visibleList.filter((ticket) => this.#pinnedIds.has(ticket.id));
 	}
 
 	/**
@@ -539,11 +575,12 @@ export class TicketListStore {
 
 	/**
 	 * Number of shown tickets for the heading "Aufgaben" (package 10): the visible rows that are
-	 * not done, or with the status filter "Erledigt" the loaded done rows (`visibleCountMore`).
+	 * not done, or with the status filter "Erledigt" the loaded done rows (`visibleCountMore`). The
+	 * pinned ones above are not counted; the heading names them as "+ N angeheftet" (ADR-0064).
 	 */
 	get visibleCount(): number {
 		if (this.#query.status === 'done') return this.#doneList.length;
-		return this.#visibleList.length;
+		return this.#listedList.length;
 	}
 
 	/** True if more tickets match than `visibleCount` says (further pages of done tickets). */

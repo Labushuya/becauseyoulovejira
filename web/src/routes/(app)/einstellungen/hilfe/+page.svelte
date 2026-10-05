@@ -1146,6 +1146,34 @@
 				</ul>
 			</details>
 			<details>
+				<summary>Wie hefte ich ein Ticket an?</summary>
+				<ul>
+					<li>
+						Mit dem Knopf „Anheften“ (eine Nadel) am Ende des Titels in „Aufgaben“, bei den offenen
+						Tickets eines Projekts und im Kopf eines Tickets heftest du es an; ein zweiter Klick
+						(„Lösen“) löst es wieder. Am PC erscheint die Nadel beim Zeigen auf die Zeile und mit
+						der Tastatur, am Handy steht sie immer da, bei angehefteten Tickets immer und
+						ausgefüllt.
+					</li>
+					<li>
+						Angeheftete Tickets stehen in „Aufgaben“ ganz oben im Abschnitt „Angeheftet“, das zuerst
+						angeheftete zuoberst, auch wenn die Filter sie sonst ausblenden würden, und nicht noch
+						einmal in der Liste darunter; die Zahl neben „Aufgaben“ nennt sie als „+ 2 angeheftet“.
+						Der Abschnitt lässt sich zuklappen, das merkt sich dieses Gerät. Unter „Projekte“ stehen
+						die angehefteten Tickets eines Projekts zuerst.
+					</li>
+					<li>
+						Deine Pins siehst nur du, auch im Haushalt; jedes Mitglied heftet für sich an. Du siehst
+						die angehefteten Tickets des Bereichs, in dem du gerade bist.
+					</li>
+					<li>
+						Wird ein Ticket erledigt oder kommt es in den Papierkorb, ist es für alle gelöst;
+						Wiedereröffnen oder Wiederherstellen heftet es nicht neu an. Wer den Haushalt verlässt,
+						verliert seine Pins auf dessen Tickets.
+					</li>
+				</ul>
+			</details>
+			<details>
 				<summary>Wie formatiere ich Beschreibungen und Kommentare?</summary>
 				<ul>
 					<li>

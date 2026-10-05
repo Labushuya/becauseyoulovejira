@@ -6,6 +6,7 @@
 	import type { ParentRef, Ticket } from '$lib/domain/ticket';
 	import type { CatalogStore } from '$lib/stores/catalog.svelte';
 	import { SILENT_FLAGS, type FlagSink } from '$lib/stores/flags.svelte';
+	import { findPinStore } from '$lib/stores/pins.svelte';
 	import type { TicketDetailStore } from '$lib/stores/ticket-detail.svelte';
 	import { ticketPathSteps } from '$lib/ticket-links';
 	import Breadcrumbs from './Breadcrumbs.svelte';
@@ -18,11 +19,12 @@
 	import TicketDescription from './TicketDescription.svelte';
 	import TicketFields from './TicketFields.svelte';
 	import TicketMeta from './TicketMeta.svelte';
+	import TicketPinToggle from './TicketPinToggle.svelte';
 	import TrashNotice from './TrashNotice.svelte';
 
 	// Detail panel (E2 plan, package 7; E3 plan, T-13 and T-14) on the side panel building block
-	// (ADR-0025 section 6): header with the key, the menu "•••" (plan aktionsmenues: "Link
-	// kopieren", "Duplizieren …", "In den Papierkorb …"), "Vollansicht" and ×; title, fields,
+	// (ADR-0025 section 6): header with the key, the pin toggle (ADR-0064), the menu "•••" (plan
+	// aktionsmenues: "Link kopieren", "Duplizieren …", "In den Papierkorb …"), "Vollansicht" and ×; title, fields,
 	// description, source and dates, comments and history. The parts (TicketFields,
 	// TicketDescription, TicketMeta, TicketActions) are the same as in the full view, which only
 	// arranges them differently (section 7). Escape closes the panel unless a form field has the
@@ -96,6 +98,8 @@
 
 	const uid = $props.id();
 	const headingId = `${uid}-title`;
+	/** The own pins (ADR-0064): the toggle before "•••"; none outside the app layout. */
+	const pins = findPinStore();
 
 	let heading = $state<HTMLElement>();
 	let messageHeading = $state<HTMLElement>();
@@ -149,6 +153,7 @@
 	{/snippet}
 	{#snippet actions()}
 		{#if store.state === 'ready' && ticket}
+			<TicketPinToggle {ticket} {pins} variant="head" />
 			<TicketActions
 				{ticket}
 				{flags}

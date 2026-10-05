@@ -51,6 +51,8 @@ onRecordCreate(function (e) {
 // `force` or `complete_children`; the latter completes them in the same transaction.
 // Writes of the trash and internal saves of a ticket in the trash (ADR-0037) skip all of this, and so
 // do the writes of a move between the areas (ADR-0061), which set scope, key and history themselves.
+// A ticket that becomes done loses the pins of every account (ADR-0064); completed sub-tickets lose
+// theirs through their own save.
 onRecordUpdate(function (e) {
   if (
     require(`${__hooks}/lib/trash-service.js`).skipsTicketHooks(e.record) ||
@@ -61,14 +63,19 @@ onRecordUpdate(function (e) {
   }
   var service = require(`${__hooks}/lib/ticket-service.js`);
   var recurrence = require(`${__hooks}/lib/recurrence-service.js`);
+  var pins = require(`${__hooks}/lib/pin-service.js`);
   require(`${__hooks}/lib/transaction.js`).inTransaction(e, function (txApp) {
     service.checkExpectedUpdated(txApp, e.record);
     var before = service.prepareUpdate(txApp, e.record);
     var children = service.prepareCompletion(txApp, e.record);
+    var completes = pins.completes(e.record);
     recurrence.prepareTicketUpdate(txApp, e.record, Date.now());
     e.next();
     service.recordChanges(txApp, e.record, before);
     service.completeChildren(txApp, e.record, children);
+    if (completes) {
+      pins.releaseTicket(txApp, e.record.id);
+    }
   });
 }, 'tickets');
 

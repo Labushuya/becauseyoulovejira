@@ -1150,6 +1150,8 @@ function execute(txApp, plan, nowMs) {
   moveConnections(txApp, plan);
   clearOutsideReferences(txApp, plan);
   settleDependencies(txApp, plan);
+  // A pin stays while its account still sees the ticket (ADR-0064); the others go.
+  require(__hooks + '/lib/pin-service.js').releaseUnseen(txApp, plan.order.tickets.slice());
 }
 
 // --- Realtime ---------------------------------------------------------------------------------------
