@@ -19,7 +19,12 @@
 		sortLabel,
 		sortOrderLabel
 	} from '$lib/domain/labels';
-	import { hasFilters, parseListQuery, resetFilters } from '$lib/domain/list-query';
+	import {
+		hasDetailFilters,
+		hasFilters,
+		parseListQuery,
+		resetFilters
+	} from '$lib/domain/list-query';
 	import { nextSort, sortDirection, type SortKey } from '$lib/domain/ordering';
 	import { parentOf } from '$lib/domain/subtasks';
 	import type { TicketSummary } from '$lib/domain/ticket';
@@ -57,6 +62,7 @@
 	import CompletionDialog from './CompletionDialog.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import EmptyState from './guidance/EmptyState.svelte';
+	import FilterSummary from './FilterSummary.svelte';
 	import GroupPopover from './GroupPopover.svelte';
 	import SectionBar from './SectionBar.svelte';
 	import { CELL_PADDING_REM, CHIP_GAP_REM, createChipMeasure, remPx } from './table/chip-measure';
@@ -99,6 +105,9 @@
 	// panel is open closes the panel. A right click on a row, Shift+F10 or the context menu key
 	// open the same menu at the pointer or the focused element (AM-3, rowMenus); the browser keeps
 	// its menu in fields, on selected text, on other links, with Ctrl and for touch.
+	// Filter cards (FI-1, ADR-0013 addendum C): while a card is chosen, a summary above the table
+	// names the cards the shown tickets come from; its "Zurücksetzen" works like "Filter
+	// zurücksetzen" of the empty result and moves the focus to "Aufgaben".
 	let {
 		store,
 		catalog,
@@ -129,7 +138,7 @@
 		/** "Duplizieren …" in the menu of a row (ADR-0045); null leaves the entry out. */
 		duplicates?: TicketDuplicateStore | null;
 		/**
-		 * KPI tiles and filter bar, below the section bar: the switch "Aufgaben | Projekte |
+		 * Filter cards and filter bar, below the section bar: the switch "Aufgaben | Projekte |
 		 * Eingang" stands at the same place in every view (ADR-0025 section 10, package UI-8).
 		 */
 		tools?: Snippet;
@@ -631,6 +640,16 @@
 	</SectionBar>
 
 	{@render tools?.()}
+
+	{#if countReady && query.cards.length > 0}
+		<FilterSummary
+			cards={query.cards}
+			count={store.visibleCount}
+			more={store.visibleCountMore}
+			filtered={hasDetailFilters(query)}
+			onreset={clearFilters}
+		/>
+	{/if}
 
 	<p class="visually-hidden" aria-live="polite">{store.announcement}</p>
 

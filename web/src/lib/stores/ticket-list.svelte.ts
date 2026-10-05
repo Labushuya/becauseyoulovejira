@@ -31,8 +31,14 @@ import { berlinToday, msUntilNextBerlinMidnight, type CalendarDate } from '$lib/
 import { SERIES_MOVE_HINT } from '$lib/domain/calendar';
 import { formatCalendarDate } from '$lib/domain/format';
 import { NO_SUB_PROJECTS, matchesFilter, type SubProjectsOf } from '$lib/domain/filter';
+import {
+	cardsUseToday,
+	chooseAllOpen,
+	countCards,
+	sameCards,
+	type CardCounts
+} from '$lib/domain/filter-cards';
 import { groupTicketLevels, type GroupNode } from '$lib/domain/grouping';
-import { countKpis, type Kpis } from '$lib/domain/kpis';
 import {
 	EMPTY_LIST_QUERY,
 	FILTER_KEYS,
@@ -222,7 +228,9 @@ const FILTERS_BESIDES_SEARCH = FILTER_KEYS.filter((key) => key !== 'search');
 
 function sameFiltersBesidesSearch(a: ListQuery, b: ListQuery): boolean {
 	return (
-		FILTERS_BESIDES_SEARCH.every((key) => a[key] === b[key]) && a.subProjects === b.subProjects
+		FILTERS_BESIDES_SEARCH.every((key) => a[key] === b[key]) &&
+		a.subProjects === b.subProjects &&
+		sameCards(a.cards, b.cards)
 	);
 }
 
@@ -380,7 +388,23 @@ export class TicketListStore {
 			.filter((ticket) => matchesFilter(ticket, query, today, subProjectsOf))
 			.sort(compareDone);
 	});
-	#kpis = $derived(countKpis(this.#open.values(), this.#today));
+	/**
+	 * Numbers of the filter cards (FI-1): the open tickets that pass the detail filters and the
+	 * search, without the cards, so each card counts its own tickets.
+	 */
+	#cardCounts = $derived.by(() => {
+		const query = { ...this.#query, cards: chooseAllOpen() };
+		const today = this.#today;
+		const ids = this.#search === null ? null : this.#searchIds;
+		const subProjectsOf = this.#subProjectsOf;
+		return countCards(
+			[...this.#open.values()].filter(
+				(ticket) =>
+					matchesFilter(ticket, query, today, subProjectsOf) && (ids === null || ids.has(ticket.id))
+			),
+			today
+		);
+	});
 	/** Sub-tasks per parent in the order of the section: open ones first, then by creation. */
 	#subtasksByParent = $derived.by(() => {
 		const byParent: Record<string, TicketSummary[]> = {};
@@ -533,12 +557,13 @@ export class TicketListStore {
 	}
 
 	/**
-	 * Numbers of the KPI tiles (E3 plan, T-10 and package 12): every ticket that is not done,
-	 * independent of filters and search, with the same boundary as `openCount`. They follow
-	 * realtime and the Berlin midnight.
+	 * Numbers of the filter cards (FI-1, ADR-0013 addendum C): each card counts the tickets that
+	 * are not done in the area and pass the detail filters and the search, regardless of the other
+	 * cards; "Alle offenen" counts all of them. A just checked row counts as done already, like in
+	 * `openCount`. They follow realtime and the Berlin midnight.
 	 */
-	get kpis(): Kpis {
-		return this.#kpis;
+	get cardCounts(): CardCounts {
+		return this.#cardCounts;
 	}
 
 	/** Loaded done tickets that pass the filters, most recently completed first (OF-E2-4). */
@@ -1588,7 +1613,9 @@ export class TicketListStore {
 		const key = show
 			? JSON.stringify([
 					...FILTER_KEYS.map((name) => query[name]),
-					query.due === null ? '' : this.#today,
+					// The chosen cards (FI-1); their due cards load again at midnight like the due filter.
+					query.cards,
+					query.due === null && !cardsUseToday(query.cards) ? '' : this.#today,
 					// Sub projects taken in (ADR-0034): switching them off or a new one loads again.
 					query.subProjects,
 					this.#subProjectIds()

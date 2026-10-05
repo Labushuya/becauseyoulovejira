@@ -13,7 +13,7 @@ const SRC_DIR = resolve(import.meta.dirname, '..');
 const TOKENS_CSS = join('lib', 'styles', 'tokens.css');
 
 /** Numbers left from before G-6 in all listed files together; lower it when one goes. */
-const LEGACY_COUNT = 130;
+const LEGACY_COUNT = 128;
 
 /** Files that still carry font sizes as numbers (as of G-6). */
 const LEGACY_FILES = [
@@ -26,11 +26,12 @@ const LEGACY_FILES = [
 	'lib/components/DueLabel.svelte',
 	'lib/components/EditableTitle.svelte',
 	'lib/components/FileImportDialog.svelte',
+	// The KPI tiles, since FI-1 the filter cards: only the big number is left, there is no token for it.
+	'lib/components/FilterCards.svelte',
 	'lib/components/FirstSteps.svelte',
 	'lib/components/HistoryList.svelte',
 	'lib/components/ImportKeywordsSection.svelte',
 	'lib/components/InboxPanel.svelte',
-	'lib/components/KpiTiles.svelte',
 	'lib/components/MailboxPicker.svelte',
 	'lib/components/MarkdownEditor.svelte',
 	'lib/components/QuickCapture.svelte',

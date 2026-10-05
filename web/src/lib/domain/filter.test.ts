@@ -265,3 +265,32 @@ describe('matchesFilter: recurring (plan OR-2)', () => {
 		);
 	});
 });
+
+describe('matchesFilter: filter cards (FI-1)', () => {
+	const working = ticket({ status: 'in_progress', projectId: HOUSE.id });
+	const urgentDue = ticket({ priority: 'urgent', due: TODAY });
+	const late = ticket({ due: addDays(TODAY, -2), tagIds: [SHOP.id] });
+	const quiet = ticket({ projectId: HOUSE.id });
+	const tickets = [working, urgentDue, late, quiet];
+	const shown = (overrides: Partial<ListQuery>) =>
+		tickets.filter((entry) => matchesFilter(entry, query(overrides), TODAY));
+
+	it('shows the union of the chosen cards, each ticket once', () => {
+		expect(shown({ cards: ['in_progress', 'due_today', 'urgent'] })).toEqual([working, urgentDue]);
+		expect(shown({ cards: ['due_today', 'overdue'] })).toEqual([urgentDue, late]);
+		expect(shown({ cards: [] })).toEqual(tickets);
+	});
+
+	it('narrows the union with the filter groups (AND)', () => {
+		expect(shown({ cards: ['in_progress', 'overdue'], project: HOUSE.id })).toEqual([working]);
+		expect(shown({ cards: ['in_progress', 'overdue'], tag: SHOP.id })).toEqual([late]);
+		expect(shown({ cards: ['urgent'], due: 'overdue' })).toEqual([]);
+		expect(shown({ project: HOUSE.id })).toEqual([working, quiet]);
+	});
+
+	it('never shows a done ticket for "Überfällig" or "In Arbeit"', () => {
+		const done = ticket({ status: 'done', due: addDays(TODAY, -1), priority: 'urgent' });
+		expect(matchesFilter(done, query({ cards: ['overdue', 'in_progress'] }), TODAY)).toBe(false);
+		expect(matchesFilter(done, query({ cards: ['overdue', 'urgent'] }), TODAY)).toBe(true);
+	});
+});

@@ -696,6 +696,56 @@ describe('ticket table: filters (E3 plan, package 10)', () => {
 	});
 });
 
+describe('ticket table: filter cards (FI-1)', () => {
+	it('shows the union of the cards with a summary above the list, each ticket once', async () => {
+		const all = ticket({ status: 'in_progress', priority: 'urgent', due: '2026-09-24' });
+		const working = ticket({ status: 'in_progress' });
+		const urgent = ticket({ priority: 'urgent' });
+		await showTable(
+			fakeData([all, working, urgent, ticket()]),
+			'/?karte=in-arbeit&karte=heute&karte=dringend'
+		);
+
+		expect(
+			openRows()
+				.map((row) => row.dataset.ticketId)
+				.sort()
+		).toEqual([all.id, working.id, urgent.id].sort());
+		expect(screen.getByText('3 Tickets aus: In Arbeit, Heute fällig, Dringend')).toBeTruthy();
+	});
+
+	it('notes further filters and resets cards, filters and search, the focus on "Aufgaben"', async () => {
+		const inHouse = ticket({ priority: 'urgent', projectId: HOUSE.id });
+		const data = fakeData([
+			ticket({ priority: 'urgent' }),
+			inHouse,
+			ticket({ projectId: HOUSE.id })
+		]);
+		data.searchOpen.mockResolvedValue([inHouse.id]);
+		await showTable(data, `/?karte=dringend&projekt=${HOUSE.id}&q=Miete&sort=titel`);
+
+		expect(screen.getByText(/^1 Ticket aus: Dringend – weitere Filter aktiv$/)).toBeTruthy();
+		await fireEvent.click(screen.getByRole('button', { name: 'Zurücksetzen' }));
+
+		expect(mocks.goto).toHaveBeenCalledWith('/?sort=titel', { keepFocus: true, noScroll: true });
+		expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Aufgaben' }));
+	});
+
+	it('shows no summary with "Alle offenen"', async () => {
+		await showTable(fakeData([ticket()]), '/?prio=medium');
+
+		expect(screen.queryByText(/Tickets? aus:/)).toBeNull();
+		expect(screen.queryByRole('button', { name: 'Zurücksetzen' })).toBeNull();
+	});
+
+	it('offers "Filter zurücksetzen" when no ticket belongs to the chosen cards', async () => {
+		await showTable(fakeData([ticket()]), '/?karte=ueberfaellig');
+
+		expect(screen.getByRole('heading', { name: 'Keine Tickets für diese Filter' })).toBeTruthy();
+		expect(screen.getByText('0 Tickets aus: Überfällig')).toBeTruthy();
+	});
+});
+
 describe('ticket table: grouping (E3 plan, package 13)', () => {
 	/** Group bodies of the open tickets with their heading. */
 	function groupBodies() {

@@ -1,4 +1,4 @@
-// List state in the URL (E3 plan, T-2 and package 1; ADR-0013 section 4).
+// List state in the URL (E3 plan, T-2 and package 1; ADR-0013 section 4; filter cards since FI-1).
 
 import { describe, expect, it } from 'vitest';
 import {
@@ -8,6 +8,7 @@ import {
 	FILTER_KEYS,
 	NO_PROJECT,
 	SEARCH_MAX_LENGTH,
+	hasDetailFilters,
 	hasFilters,
 	parseListQuery,
 	resetFilters,
@@ -92,9 +93,10 @@ describe('parseListQuery', () => {
 		expect(
 			parse(
 				`status=waiting&prio=high&faellig=bald&quelle=chat&projekt=${PROJECT_ID}&tag=${TAG_ID}` +
-					'&q=Auto&sort=-faellig&gruppe=projekt&erledigte=1&unterprojekte=0'
+					'&q=Auto&sort=-faellig&gruppe=projekt&erledigte=1&unterprojekte=0&karte=dringend'
 			)
 		).toEqual({
+			cards: ['urgent'],
 			status: 'waiting',
 			priority: 'high',
 			due: 'soon',
@@ -170,15 +172,18 @@ describe('serializeListQuery', () => {
 			source: 'calendar',
 			due: 'overdue',
 			priority: 'urgent',
-			status: 'backlog'
+			status: 'backlog',
+			cards: ['urgent', 'in_progress']
 		};
 		expect(serializeListQuery(full)).toBe(
-			'?status=backlog&prio=urgent&faellig=ueberfaellig&quelle=kalender&wiederholung=einmalig' +
+			'?karte=in-arbeit&karte=dringend' +
+				'&status=backlog&prio=urgent&faellig=ueberfaellig&quelle=kalender&wiederholung=einmalig' +
 				`&projekt=ohne&tag=${TAG_ID}&q=%C3%96l+wechseln&sort=erstellt&gruppe=faellig` +
 				'&untergruppe=prio&erledigte=1'
 		);
 		expect(serializeListQuery({ ...full, project: PROJECT_ID, subProjects: false })).toBe(
-			'?status=backlog&prio=urgent&faellig=ueberfaellig&quelle=kalender&wiederholung=einmalig' +
+			'?karte=in-arbeit&karte=dringend' +
+				'&status=backlog&prio=urgent&faellig=ueberfaellig&quelle=kalender&wiederholung=einmalig' +
 				`&projekt=${PROJECT_ID}&unterprojekte=0&tag=${TAG_ID}&q=%C3%96l+wechseln&sort=erstellt` +
 				'&gruppe=faellig&untergruppe=prio&erledigte=1'
 		);
@@ -241,6 +246,7 @@ describe('serializeListQuery', () => {
 		'erledigte=1',
 		'quelle=manuell',
 		'faellig=heute&quelle=chat&gruppe=quelle',
+		'karte=in-arbeit&karte=heute&karte=dringend&prio=urgent',
 		`status=done&prio=low&faellig=bald&quelle=mail&projekt=${PROJECT_ID}&tag=${TAG_ID}&q=a%2Bb&sort=faellig&gruppe=status&erledigte=1`
 	])('round trip of "%s" is stable', (search) => {
 		const once = normalize(search);
@@ -252,6 +258,7 @@ describe('serializeListQuery', () => {
 
 describe('withFilter, resetFilters, hasFilters', () => {
 	const full: ListQuery = {
+		cards: ['due_today', 'urgent'],
 		status: 'open',
 		priority: 'high',
 		due: 'today',
@@ -280,7 +287,7 @@ describe('withFilter, resetFilters, hasFilters', () => {
 		expect(full).toEqual(before);
 	});
 
-	it('resets filters and search, keeps sort, grouping and the switch', () => {
+	it('resets cards, filters and search, keeps sort, grouping and the switch', () => {
 		expect(resetFilters(full)).toEqual(
 			query({
 				sort: { key: 'title', reversed: false },
@@ -301,6 +308,55 @@ describe('withFilter, resetFilters, hasFilters', () => {
 			expect(hasFilters({ ...EMPTY_LIST_QUERY, [key]: full[key] }), key).toBe(true);
 		}
 		expect(hasFilters(resetFilters(full))).toBe(false);
+	});
+});
+
+describe('list query: filter cards (FI-1)', () => {
+	it('reads one "karte" per card, in any order, also as a list with commas', () => {
+		expect(parse('karte=dringend&karte=in-arbeit').cards).toEqual(['in_progress', 'urgent']);
+		expect(parse('karte=heute%2Cueberfaellig').cards).toEqual(['due_today', 'overdue']);
+		expect(parse('karte=heute,ueberfaellig').cards).toEqual(['due_today', 'overdue']);
+		expect(parse('karte=heute&karte=ueberfaellig').cards).toEqual(['due_today', 'overdue']);
+	});
+
+	it('leaves out unknown, empty and repeated cards; no card is "Alle offenen"', () => {
+		expect(parse('karte=heute&karte=heute&karte=morgen&karte=').cards).toEqual(['due_today']);
+		expect(parse('karte=alle').cards).toEqual([]);
+		expect(parse('').cards).toEqual([]);
+	});
+
+	it('writes every chosen card once and first, in the fixed order', () => {
+		expect(serializeListQuery(query({ cards: ['urgent', 'due_today'], tag: TAG_ID }))).toBe(
+			`?karte=heute&karte=dringend&tag=${TAG_ID}`
+		);
+		expect(normalize('prio=high&karte=dringend&karte=in-arbeit&karte=dringend')).toBe(
+			'?karte=in-arbeit&karte=dringend&prio=high'
+		);
+		expect(serializeListQuery(query({ cards: [] }))).toBe('');
+	});
+
+	it('keeps old addresses as they were: their status, priority and due date stay detail filters', () => {
+		// Before FI-1 the cards wrote these parameters; such an address shows the same tickets as
+		// before, with "Alle offenen" and the filters of the filter bar.
+		expect(parse('status=in_progress&faellig=heute&prio=urgent&sort=titel')).toEqual(
+			query({
+				status: 'in_progress',
+				due: 'today',
+				priority: 'urgent',
+				sort: { key: 'title', reversed: false }
+			})
+		);
+		expect(normalize('faellig=ueberfaellig&erledigte=1')).toBe('?faellig=ueberfaellig&erledigte=1');
+	});
+
+	it('counts the cards as a filter that "Zurücksetzen" clears, but not as a detail filter', () => {
+		const chosen = query({ cards: ['overdue'] });
+		expect(hasFilters(chosen)).toBe(true);
+		expect(hasDetailFilters(chosen)).toBe(false);
+		expect(hasDetailFilters(query({ cards: ['overdue'], search: 'Miete' }))).toBe(true);
+		expect(resetFilters(query({ cards: ['overdue'], grouping: 'due' }))).toEqual(
+			query({ grouping: 'due' })
+		);
 	});
 });
 

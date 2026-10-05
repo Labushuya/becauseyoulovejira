@@ -187,7 +187,7 @@ describe('project view', () => {
 		const section = screen.getByRole('region', { name: 'Projekte' });
 		expect(section.firstElementChild?.classList.contains('section-bar')).toBe(true);
 		expect(section.firstElementChild?.contains(nav)).toBe(true);
-		expect(screen.queryByRole('group', { name: 'Kennzahlen' })).toBeNull();
+		expect(screen.queryByRole('group', { name: 'Filter-Karten' })).toBeNull();
 		expect(screen.queryByRole('region', { name: 'Filter' })).toBeNull();
 	});
 

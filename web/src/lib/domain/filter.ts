@@ -1,12 +1,15 @@
 // Filter of the ticket list (E3 plan, T-6; ADR-0013 sections 1 and 3). Pure. The groups are
-// combined with AND, each with at most one value (OF-E3-3). The search is not part of this
-// predicate: the server answers it as a set of IDs (T-1, T-15). Project and tag compare the stored
-// relations (projectId, tagIds), the same fields the server expression of the done tickets uses.
+// combined with AND, each with at most one value (OF-E3-3). The chosen filter cards (FI-1,
+// domain/filter-cards.ts) give their union (OR), which these groups narrow. The search is not part
+// of this predicate: the server answers it as a set of IDs (T-1, T-15). Project and tag compare the
+// stored relations (projectId, tagIds), the same fields the server expression of the done tickets
+// uses.
 // The source compares the family of `source` (ADR-0019 section 2); no source counts as "manual".
 // A project takes its sub projects in (ADR-0034 section 6) unless the query switches them off.
 // "Wiederkehrend" (plan OR-2) compares `recurring`, i.e. `recurrence != ""` on the server.
 
 import { addDays, type CalendarDate } from './berlin-date';
+import { matchesCards } from './filter-cards';
 import { NO_PROJECT, type ListQuery } from './list-query';
 import { SOON_DAYS } from './ordering';
 import { sourceFamily } from './source';
@@ -68,9 +71,10 @@ function matchesProject(
 }
 
 /**
- * True if the ticket passes the filters of `query` at the given Berlin date. The status filter
- * compares the status only; which section shows done tickets decides the list (T-6). A project
- * filter takes the sub projects `subProjectsOf` names in, unless the query switches them off.
+ * True if the ticket passes the cards and the filters of `query` at the given Berlin date: it
+ * belongs to one of the chosen cards (any ticket without one) and to every filter group. The status
+ * filter compares the status only; which section shows done tickets decides the list (T-6). A
+ * project filter takes the sub projects `subProjectsOf` names in, unless the query switches them off.
  */
 export function matchesFilter(
 	ticket: FilterableTicket,
@@ -79,6 +83,7 @@ export function matchesFilter(
 	subProjectsOf: SubProjectsOf = NO_SUB_PROJECTS
 ): boolean {
 	return (
+		matchesCards(ticket, query.cards, today) &&
 		(query.status === null || ticket.status === query.status) &&
 		(query.priority === null || ticket.priority === query.priority) &&
 		matchesDue(ticket, query.due, today) &&

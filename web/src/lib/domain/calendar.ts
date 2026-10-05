@@ -396,11 +396,12 @@ export interface CalendarFilter {
 
 /**
  * The filters of "Aufgaben" as the calendar applies them: without "Fällig" (the calendar is the axis
- * of the due date) and without the search (the server answers it for open tickets of the list only).
+ * of the due date), without the search (the server answers it for open tickets of the list only) and
+ * without the filter cards (FI-1), which only "Aufgaben" shows.
  */
 export function calendarListQuery(query: ListQuery): ListQuery {
-	if (query.due === null && query.search === null) return query;
-	return { ...query, due: null, search: null };
+	if (query.due === null && query.search === null && query.cards.length === 0) return query;
+	return { ...query, due: null, search: null, cards: [] };
 }
 
 /** Open tickets are shown: their layer is on and the status filter is not "Erledigt". */

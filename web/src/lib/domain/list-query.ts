@@ -2,6 +2,7 @@
 // that reads and writes the list parameters. Invalid values count as not set; parameters this
 // module does not know stay untouched when writing.
 
+import { cardsFromUrl, cardsToUrl, type FilterCard } from './filter-cards';
 import { SORT_KEYS, type SortKey, type SortSpec } from './ordering';
 import { SOURCE_FAMILIES, SOURCE_FAMILY_VALUES, type SourceFamily } from './source';
 import { PRIORITIES, STATUSES, type Priority, type Status } from './status';
@@ -37,6 +38,11 @@ export const SEARCH_MIN_LENGTH = 2;
 const RECORD_ID = /^[a-z0-9]{15}$/;
 
 export interface ListQuery {
+	/**
+	 * Chosen filter cards (FI-1, ADR-0013 addendum C), their union narrowed by the filters below;
+	 * empty is "Alle offenen". Kept in the order of FILTER_CARDS, each once.
+	 */
+	cards: readonly FilterCard[];
 	/** One status (OF-E3-3); null: every status that is not done. */
 	status: Status | null;
 	priority: Priority | null;
@@ -68,7 +74,10 @@ export interface ListQuery {
 	showDone: boolean;
 }
 
-/** The filters "Zurücksetzen" clears (T-6); sort, grouping and the switch are view settings. */
+/**
+ * The detail filters of the filter bar and the search (T-6); "Zurücksetzen" clears them and the
+ * cards. Sort, grouping and the switch are view settings.
+ */
 export const FILTER_KEYS = [
 	'status',
 	'priority',
@@ -82,6 +91,7 @@ export const FILTER_KEYS = [
 export type FilterKey = (typeof FILTER_KEYS)[number];
 
 export const EMPTY_LIST_QUERY: Readonly<ListQuery> = Object.freeze({
+	cards: Object.freeze([]),
 	status: null,
 	priority: null,
 	due: null,
@@ -97,8 +107,12 @@ export const EMPTY_LIST_QUERY: Readonly<ListQuery> = Object.freeze({
 	showDone: false
 });
 
-/** URL parameter names in their fixed order (same filters, same URL). */
+/**
+ * URL parameter names in their fixed order (same filters, same URL). `karte` stands once per chosen
+ * card (FI-1); the older parameters keep their meaning as detail filters.
+ */
 export const LIST_PARAMS = Object.freeze({
+	cards: 'karte',
 	status: 'status',
 	priority: 'prio',
 	due: 'faellig',
@@ -192,6 +206,8 @@ export function parseListQuery(params: URLSearchParams): ListQuery {
 	const project = single(params, LIST_PARAMS.project);
 	const grouping = keyOf(GROUPINGS, GROUPING_VALUES, single(params, LIST_PARAMS.grouping));
 	return {
+		// Repeated on purpose, one value per card; unknown values are left out.
+		cards: cardsFromUrl(params.getAll(LIST_PARAMS.cards)),
 		status: oneOf(STATUSES, single(params, LIST_PARAMS.status)),
 		priority: oneOf(PRIORITIES, single(params, LIST_PARAMS.priority)),
 		due: keyOf(DUE_FILTERS, DUE_VALUES, single(params, LIST_PARAMS.due)),
@@ -231,6 +247,7 @@ function subGroupingValue(query: Pick<ListQuery, 'grouping' | 'subGrouping'>): s
 function queryEntries(query: ListQuery): [string, string][] {
 	const search = parseSearch(query.search);
 	const entries: [string, string | null][] = [
+		...cardsToUrl(query.cards).map((value): [string, string] => [LIST_PARAMS.cards, value]),
 		[LIST_PARAMS.status, query.status],
 		[LIST_PARAMS.priority, query.priority],
 		[LIST_PARAMS.due, query.due === null ? null : DUE_VALUES[query.due]],
@@ -283,10 +300,14 @@ export function withFilter<K extends FilterKey>(
 	return { ...query, [key]: value };
 }
 
-/** "Zurücksetzen" (T-6): clears every filter and the search, keeps sort, grouping and switch. */
+/**
+ * "Zurücksetzen" (T-6): clears the cards (back to "Alle offenen"), every filter and the search,
+ * keeps sort, grouping and switch.
+ */
 export function resetFilters(query: ListQuery): ListQuery {
 	return {
 		...query,
+		cards: [],
 		status: null,
 		priority: null,
 		due: null,
@@ -299,9 +320,14 @@ export function resetFilters(query: ListQuery): ListQuery {
 	};
 }
 
-/** True if a filter or the search is set (otherwise "Zurücksetzen" is locked). */
-export function hasFilters(query: ListQuery): boolean {
+/** True if a detail filter or the search is set; the cards are not counted. */
+export function hasDetailFilters(query: ListQuery): boolean {
 	return FILTER_KEYS.some((key) => query[key] !== null);
+}
+
+/** True if a card, a filter or the search is set (otherwise "Zurücksetzen" is locked). */
+export function hasFilters(query: ListQuery): boolean {
+	return query.cards.length > 0 || hasDetailFilters(query);
 }
 
 /**
