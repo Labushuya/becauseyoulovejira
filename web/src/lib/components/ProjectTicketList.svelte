@@ -20,6 +20,7 @@
 	import DueLabel from './DueLabel.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import EmptyState from './guidance/EmptyState.svelte';
+	import KindBadge from './KindBadge.svelte';
 	import PriorityIcon from './PriorityIcon.svelte';
 	import StatusPill from './StatusPill.svelte';
 	import TicketActions from './TicketActions.svelte';
@@ -145,6 +146,7 @@
 					{#if charm}<span class="visually-hidden">, {charmText(charm)}</span>{/if}
 				</a>
 				<span class="details">
+					<KindBadge kind={ticket.kind} />
 					<span class="status-cell"
 						><span class="visually-hidden">Status:&nbsp;</span><StatusPill
 							status={ticket.status}

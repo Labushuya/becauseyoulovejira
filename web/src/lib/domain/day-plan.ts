@@ -305,7 +305,11 @@ export function dateViolation(
 }
 
 /** Whether the plan of `date` can change: today and tomorrow; days before are read-only. */
-export function isEditable(date: CalendarDate, today: CalendarDate, tomorrow: CalendarDate): boolean {
+export function isEditable(
+	date: CalendarDate,
+	today: CalendarDate,
+	tomorrow: CalendarDate
+): boolean {
 	return date >= today && date <= tomorrow;
 }
 
@@ -350,7 +354,8 @@ export const ADOPT_MAX = 200;
 export function progressText(done: number, total: number): { text: string; spoken: string } {
 	return {
 		text: `${done}/${total} erledigt`,
-		spoken: total === 1 ? `${done} von 1 Eintrag erledigt` : `${done} von ${total} Einträgen erledigt`
+		spoken:
+			total === 1 ? `${done} von 1 Eintrag erledigt` : `${done} von ${total} Einträgen erledigt`
 	};
 }
 
@@ -388,7 +393,10 @@ export function otherAreaText(name: string, count: number): string {
 
 /** Initials of a name for the hint who added or checked an entry ("Anna Beispiel" → "AB"). */
 export function initialsOf(name: string): string {
-	const words = name.trim().split(/\s+/).filter((word) => word !== '');
+	const words = name
+		.trim()
+		.split(/\s+/)
+		.filter((word) => word !== '');
 	if (words.length === 0) return '';
 	const first = words[0]?.[0] ?? '';
 	const last = words.length > 1 ? (words.at(-1)?.[0] ?? '') : '';

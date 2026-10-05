@@ -6,6 +6,7 @@
 import { areaMoveHistoryText } from './area-move';
 import { charmName } from './charms';
 import { COLOR_LABELS, isProjectColor } from './colors';
+import { KIND_LABELS, kindOf } from './day-plan';
 import { duplicateHistoryText } from './duplicate';
 import { formatCalendarDate, formatBerlinDateTime } from './format';
 import { CHANNEL_LABELS, isInboxChannel } from './inbox';
@@ -287,6 +288,9 @@ function describe(entry: HistoryEntry, lookups: HistoryLookups, selfId: string |
 		case 'charm':
 			// ADR-0062: the name of the charm, none as "kein".
 			return change('Charm', charmName(oldValue) || 'kein', charmName(newValue) || 'kein');
+		case 'kind':
+			// ADR-0065: "Art: Aufgabe → Laufendes Vorhaben".
+			return change('Art', KIND_LABELS[kindOf(oldValue)], KIND_LABELS[kindOf(newValue)]);
 		case 'duplicate':
 			// ADR-0045 §6: the duplicate names its original, the original its duplicate.
 			return duplicateHistoryText(newValue);

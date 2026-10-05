@@ -4,6 +4,7 @@
 	import { findTrashStore } from '$lib/stores/trash.svelte';
 	import {
 		calendarHref,
+		dayPlanHref,
 		inboxHref,
 		listHref,
 		projectsHref,
@@ -23,13 +24,15 @@
 	// After the segments stands the quiet link "Papierkorb" (ADR-0037 §9) with the number of tickets
 	// in it, from the store of the (app) layout; it is no segment, so it does not compete with the
 	// views. "Kalender" (ADR-0053) comes last among the views and keeps its view, date and filters
-	// while the calendar is shown.
+	// while the calendar is shown. "Tagesplan" (ADR-0065) stands right after "Aufgaben", the place used
+	// most, and keeps its day while the plan is shown.
 	let {
 		current,
 		inboxCount = null,
 		projectsNewCount = 0
 	}: {
-		current: 'tasks' | 'projects' | 'inbox' | 'recurrences' | 'calendar' | 'trash' | null;
+		current:
+			'tasks' | 'dayplan' | 'projects' | 'inbox' | 'recurrences' | 'calendar' | 'trash' | null;
 		/** New inbox entries; null while not loaded (no number is shown). */
 		inboxCount?: number | null;
 		/** New tickets in projects (ADR-0015 section 5); 0 shows no number. */
@@ -41,6 +44,7 @@
 	const tasksHref = $derived(current === 'tasks' ? listHref(page.url) : resolve('/'));
 	const inboxLink = $derived(current === 'inbox' ? inboxHref(page.url) : inboxHref());
 	const calendarLink = $derived(current === 'calendar' ? calendarHref(page.url) : calendarHref());
+	const dayPlanLink = $derived(current === 'dayplan' ? dayPlanHref(page.url) : dayPlanHref());
 </script>
 
 <nav class="view-switch" aria-label="Ansicht">
@@ -50,6 +54,12 @@
 				<path d="M3 4h10M3 8h10M3 12h6" />
 			</svg>
 			Aufgaben
+		</a>
+		<a href={dayPlanLink} aria-current={current === 'dayplan' ? 'page' : undefined}>
+			<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+				<path d="M3 3.5h10v10H3zM3 6.5h10M5.5 9.25l1.5 1.5 3-3" />
+			</svg>
+			Tagesplan
 		</a>
 		<a href={projectsHref()} aria-current={current === 'projects' ? 'page' : undefined}>
 			<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">

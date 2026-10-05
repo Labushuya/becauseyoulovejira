@@ -15,6 +15,21 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startPocketBase } from '../support/pocketbase-harness.mjs';
 import { uniqueCode, uniqueSuffix } from '../support/scenario.mjs';
 import { scaled } from '../support/timing.mjs';
+import {
+	addToDayPlan,
+	adoptIntoDayPlan,
+	checkDayPlanItem,
+	fetchDayPlan,
+	listDayPlanItems,
+	moveDayPlanItem,
+	moveDayPlanItemToTomorrow,
+	removeDayPlanItem,
+	saveDayPlanSettings,
+	subscribeDayPlanItems,
+	uncheckDayPlanItem
+} from '../../web/src/lib/data/day-plan.ts';
+import { setClientArea } from '../../web/src/lib/data/area.ts';
+import { getTicket, updateTicket } from '../../web/src/lib/data/tickets.ts';
 
 const PLAN = '/api/byl/dayplan';
 const HOUSEHOLD = '/api/byl/household';
@@ -750,5 +765,68 @@ describe('the border of an area', () => {
 		expect(await superuser.collection('tickets').getFullList({ filter: superuser.filter('id = {:id}', { id: gone.id }) })).toEqual(
 			[]
 		);
+	});
+});
+
+describe('the data layer of the SPA (web/src/lib/data/day-plan.ts)', () => {
+	it('reads the plan of the area of the client with its entries and their tickets, and changes it', async () => {
+		await useDay('2031-05-14');
+		const person = await createAccount();
+		const project = await person.ticket({ title: 'Sprachkurs', kind: 'ongoing' });
+		const task = await person.ticket({ title: 'Steuer', due: due('2031-05-14') });
+		const other = await person.ticket({ title: 'Fenster' });
+		setClientArea(person.client, person.scope);
+		const result = await fetchDayPlan(person.client);
+		expect(result.kind).toBe('ok');
+		const answer = result.value;
+		expect(answer).toMatchObject({ date: '2031-05-14', scope: person.scope, editable: true, adopted: 1 });
+		expect(answer.suggestions).toEqual([{ id: task.id, mode: 'suggest', origin: 'due_today', reasons: ['heute fällig'] }]);
+		const [entry] = await listDayPlanItems(person.client, answer.plan.id);
+		expect(entry).toMatchObject({ ticketId: project.id, origin: 'ongoing', addedBy: '', doneToday: false });
+		// The ticket comes with the fields of the list, the kind included, and without its description.
+		expect(entry.ticket).toMatchObject({ id: project.id, key: project.key, title: 'Sprachkurs', kind: 'ongoing' });
+		expect(entry.ticket).not.toHaveProperty('description');
+
+		const events = [];
+		const stop = await subscribeDayPlanItems(person.client, answer.plan.id, (change) => events.push(change));
+		stops.push(stop);
+		const adopted = await adoptIntoDayPlan(person.client, person.scope, [task.id]);
+		expect(adopted.items.map((item) => [item.ticketId, item.origin])).toEqual([[task.id, 'due_today']]);
+		const added = await addToDayPlan(person.client, { ticket: other.id, index: 0 });
+		expect(added).toMatchObject({ already: false, plan: { id: answer.plan.id } });
+		await waitFor(events, (change) => change.action === 'create' && change.record.ticketId === other.id, 'create');
+		const created = events.find((change) => change.action === 'create' && change.record.ticketId === other.id);
+		expect(created.record.ticket).toMatchObject({ id: other.id, title: 'Fenster', kind: 'task' });
+
+		const checked = await checkDayPlanItem(person.client, adopted.items[0].id, 'check');
+		expect(checked).toMatchObject({ action: 'complete', ticket: { status: 'done', previousStatus: 'open' } });
+		const undone = await uncheckDayPlanItem(person.client, adopted.items[0].id, { action: 'complete', status: 'open' });
+		expect(undone.ticket.status).toBe('open');
+		const today = await checkDayPlanItem(person.client, entry.id, 'check');
+		expect(today).toMatchObject({ action: 'today', item: { doneToday: true } });
+		expect(await moveDayPlanItem(person.client, entry.id, 2)).toHaveLength(3);
+		const tomorrow = await moveDayPlanItemToTomorrow(person.client, added.item.id);
+		expect(tomorrow.plan.date).toBe('2031-05-15');
+		const removed = await removeDayPlanItem(person.client, adopted.items[0].id);
+		expect(removed.plan.dismissed).toEqual(expect.arrayContaining([other.id, task.id]));
+		const settings = await saveDayPlanSettings(person.client, person.scope, { overdue: 'auto' });
+		expect(settings.overdue).toBe('auto');
+
+		await updateTicket(person.client, task.id, { kind: 'ongoing' });
+		expect((await getTicket(person.client, task.id)).kind).toBe('ongoing');
+		await expect(checkDayPlanItem(person.client, entry.id, 'halb')).rejects.toMatchObject({
+			kind: 'validation',
+			fields: { mode: { code: 'validation_dayplan_mode', message: 'Unbekannte Art des Abhakens.' } }
+		});
+	});
+
+	it('reads a day before without a plan and refuses a day after tomorrow with the text of the hook', async () => {
+		await useDay('2031-05-14');
+		const person = await createAccount();
+		const before = await fetchDayPlan(person.client, { date: '2031-05-01' });
+		expect(before.value).toMatchObject({ editable: false, plan: null, suggestions: [] });
+		await expect(fetchDayPlan(person.client, { date: '2031-05-16' })).rejects.toMatchObject({
+			fields: { date: { code: 'validation_dayplan_future', message: 'Planen geht für heute und morgen.' } }
+		});
 	});
 });

@@ -2,6 +2,7 @@
 	import type { ResolvedPathname } from '$app/types';
 	import { areaMover } from '$lib/area-move-entry';
 	import { copyTicketLink } from '$lib/copy-link';
+	import { findDayPlanEntryStore } from '$lib/stores/day-plan.svelte';
 	import type { FlagSink } from '$lib/stores/flags.svelte';
 	import { ticketShareUrl } from '$lib/ticket-links';
 	import ActionsMenu, { type MenuAction } from './ActionsMenu.svelte';
@@ -19,7 +20,9 @@
 	// ticket adds "Fälligkeit verschieben …" (`onmovedue`, ADR-0053 §12), which then asks for the day.
 	// Since E7-4 (ADR-0061) "In den Haushalt verschieben …" or "Ins Private verschieben …" follows
 	// "Duplizieren …", only for an account in a household with the right (lib/area-move-entry.ts); in
-	// the full view its dialog unfolds inline like the others.
+	// the full view its dialog unfolds inline like the others. Since TP-1 (ADR-0065) "Zum Tagesplan"
+	// puts a ticket that is not done into the plan of today of its own area (only inside the (app)
+	// layout, which has the store).
 	let {
 		ticket,
 		flags,
@@ -33,8 +36,11 @@
 		buttonTabindex,
 		trigger = $bindable()
 	}: {
-		/** `owner`: who created it; moving it into the private area is offered to the creator. */
-		ticket: { id: string; key: string; owner?: string };
+		/**
+		 * `owner`: who created it; moving it into the private area is offered to the creator. A done
+		 * ticket (`status`) is not offered for the day plan.
+		 */
+		ticket: { id: string; key: string; owner?: string; status?: string };
 		/** "Link kopiert" and its failure. */
 		flags: FlagSink;
 		/** Full view: the entries unfold a question in the content instead of a dialog. */
@@ -61,6 +67,16 @@
 	const move = $derived(
 		mover.entry({ kind: 'ticket', records: [ticket], label: ticket.key }, { inline })
 	);
+	const dayPlan = findDayPlanEntryStore();
+	const planEntry = $derived(
+		dayPlan === null || ticket.status === 'done'
+			? null
+			: {
+					label: 'Zum Tagesplan',
+					busy: dayPlan.isPending(ticket.id),
+					onselect: () => void dayPlan.add(ticket)
+				}
+	);
 
 	const items = $derived.by((): MenuAction[] => [
 		...(open === null
@@ -72,9 +88,12 @@
 		...(onmovedue === null
 			? []
 			: [{ label: 'Fälligkeit verschieben …', separated: open !== null, onselect: onmovedue }]),
+		...(planEntry === null
+			? []
+			: [{ ...planEntry, separated: open !== null && onmovedue === null }]),
 		{
 			label: 'Link kopieren',
-			separated: open !== null && onmovedue === null,
+			separated: open !== null && onmovedue === null && planEntry === null,
 			onselect: () =>
 				void copyTicketLink(ticket.key, ticketShareUrl(ticket.id, window.location.origin), flags)
 		},

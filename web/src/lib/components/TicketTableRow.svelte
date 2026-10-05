@@ -38,6 +38,7 @@
 	import { PRIORITIES, STATUSES } from '$lib/domain/status';
 	import CharmIcon from './CharmIcon.svelte';
 	import ColorMark from './ColorMark.svelte';
+	import KindBadge from './KindBadge.svelte';
 	import DoneToggle from './DoneToggle.svelte';
 	import DueLabel from './DueLabel.svelte';
 	import PriorityIcon from './PriorityIcon.svelte';
@@ -401,6 +402,7 @@
 					<span class="visually-hidden">{recurringLabel}</span>
 				</span>
 			{/if}
+			<KindBadge kind={ticket.kind} />
 			{#if progress && progress.total > 0}
 				<span class="progress-chip" title={progressLabel(progress)}>
 					<span aria-hidden="true">{progress.done}/{progress.total}</span>

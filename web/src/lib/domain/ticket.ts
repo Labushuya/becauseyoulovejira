@@ -3,6 +3,7 @@
 
 import { isCalendarDate, type CalendarDate } from './berlin-date';
 import type { ProjectColor } from './colors';
+import type { TicketKind } from './day-plan';
 import type { InboxChannel } from './inbox';
 import type { Priority, Status } from './status';
 
@@ -103,6 +104,12 @@ export interface TicketSummary {
 	 * server does not know the field (before the restart after the migration): no charm is offered.
 	 */
 	charm?: string | null;
+	/**
+	 * Kind (ADR-0065): "Aufgabe" or "Laufendes Vorhaben"; it alone decides what the check mark of the
+	 * day plan means. Left out while the server does not know the field (before the restart after the
+	 * migration): the switch is not offered then.
+	 */
+	kind?: TicketKind;
 	/** UTC timestamp of PocketBase (`YYYY-MM-DD HH:MM:SS.sssZ`), null unless done. */
 	completedAt: string | null;
 	/** UTC timestamps of PocketBase; they sort as text. */
@@ -175,6 +182,8 @@ export type TicketPatch = Partial<TicketDraft> & {
 	blocksParent?: boolean;
 	detachSeries?: boolean;
 	pinnedComment?: string | null;
+	/** "Laufendes Vorhaben" or back to "Aufgabe" (ADR-0065). */
+	kind?: TicketKind;
 };
 
 export interface Comment {

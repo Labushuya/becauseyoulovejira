@@ -17,7 +17,7 @@ const mocks = vi.hoisted(() => ({ page: { url: new URL('http://localhost:3000/')
 vi.mock('$app/state', () => ({ page: mocks.page }));
 
 function show(
-	current: 'tasks' | 'projects' | 'inbox' | 'recurrences' | 'calendar' | 'trash',
+	current: 'tasks' | 'dayplan' | 'projects' | 'inbox' | 'recurrences' | 'calendar' | 'trash',
 	path: string,
 	inboxCount: number | null = null
 ) {
@@ -27,12 +27,13 @@ function show(
 }
 
 describe('view switch', () => {
-	it('is a navigation with five views and the trash, and marks the list as current', () => {
+	it('is a navigation with six views and the trash, and marks the list as current', () => {
 		const nav = show('tasks', '/tickets/abc123def456ghi?status=open&sort=titel');
 
 		const links = nav.getAllByRole('link');
 		expect(links.map((link) => link.textContent?.trim())).toEqual([
 			'Aufgaben',
+			'Tagesplan',
 			'Projekte',
 			'Eingang',
 			'Wiederholungen',
@@ -59,10 +60,12 @@ describe('view switch', () => {
 			false,
 			false,
 			false,
+			false,
 			false
 		]);
 		expect(links.map((link) => link.getAttribute('href'))).toEqual([
 			'/',
+			'/tagesplan',
 			'/projekte',
 			'/eingang',
 			'/wiederholungen',
@@ -70,6 +73,15 @@ describe('view switch', () => {
 			'/papierkorb'
 		]);
 		expect(nav.getByRole('link', { name: 'Eingang (2 neu)' })).toBeTruthy();
+	});
+
+	it('stands the day plan right after the list and keeps its day while it is shown (ADR-0065)', () => {
+		const nav = show('dayplan', '/tagesplan/tickets/abc123def456ghi?tag=2031-05-13');
+
+		const plan = nav.getByRole('link', { name: 'Tagesplan' });
+		expect(plan.getAttribute('aria-current')).toBe('page');
+		expect(plan.getAttribute('href')).toBe('/tagesplan?tag=2031-05-13');
+		expect(nav.getByRole('link', { name: 'Aufgaben' }).hasAttribute('aria-current')).toBe(false);
 	});
 
 	it('marks the project view as current and leads to the plain list', () => {

@@ -6,6 +6,7 @@ import { ACCOUNT_MESSAGES } from '../domain/accounts';
 import { SCOPE_FIELD_MESSAGES, SCOPE_MESSAGE } from '../domain/area';
 import { PIN_MESSAGES } from '../domain/comments';
 import { CONNECTION_LABEL_MESSAGES } from '../domain/connections';
+import { DAY_PLAN_MESSAGES, DAY_PLAN_SCOPE_TEXT } from '../domain/day-plan';
 import { DUPLICATE_MESSAGES } from '../domain/duplicate';
 import { FOLDER_MESSAGES } from '../domain/folders';
 import { GITHUB_MESSAGES } from '../domain/github';
@@ -117,7 +118,9 @@ const FIELD_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
 	// Accounts and the administrator of the app (ADR-0056), the same texts as the hooks.
 	validation_connection_admin_only:
 		'Kanäle mit Zugangsdaten und Ordner richtet nur der Verwalter der App ein.',
-	...ACCOUNT_MESSAGES
+	...ACCOUNT_MESSAGES,
+	// The day plan (ADR-0065), the same texts as the hook.
+	...DAY_PLAN_MESSAGES
 });
 
 /** Texts that depend on the field as well, keyed by `<field>:<code>`; they win over the above. */
@@ -128,6 +131,8 @@ const FIELD_CODE_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
 		'Ein Projekt mit Tickets lässt sich nicht löschen. Bitte archivieren.',
 	'ticket:validation_scope_mismatch': 'Das Ticket ist nicht verfügbar.',
 	'source_item:validation_scope_mismatch': 'Der Eintrag ist nicht verfügbar.',
+	// Taking suggestions of another area into a day plan (ADR-0065).
+	'tickets:validation_scope_mismatch': DAY_PLAN_SCOPE_TEXT,
 	// Per field (E7-3, ADR-0059 §4): what lies in another area.
 	...Object.fromEntries(
 		Object.entries(SCOPE_FIELD_MESSAGES).map(([field, text]) => [
