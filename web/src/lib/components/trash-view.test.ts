@@ -175,6 +175,34 @@ describe('view "Papierkorb"', () => {
 		);
 	});
 
+	it('fits the column "Key" to the longest key and names a key a narrow column cuts off (KN-1)', async () => {
+		const keyCol = () => document.querySelector('col[data-column="key"]') as HTMLElement;
+		const keyCell = (id: string) =>
+			document.querySelector(`tr[data-trash-row="${id}"] td[data-col="key"]`) as HTMLElement;
+		const long = [item(A, { key: 'ABCDEF-1000000' }), item(B)];
+
+		await showView({}, long);
+		// "ABCDEF-1000000" needs 136 px (no dot "neu" in the trash) instead of 6rem.
+		expect(keyCol().style.width).toBe('136px');
+		expect(keyCell(A).textContent).toBe('ABCDEF-1000000');
+		expect(keyCell(A).hasAttribute('title')).toBe(false);
+		document.body.innerHTML = '';
+
+		// A width of the user wins; the key it cuts off names itself, the short one does not.
+		localStorage.setItem(
+			'byl-columns-trash',
+			JSON.stringify({ v: 1, widths: { key: 80 }, hidden: [] })
+		);
+		try {
+			await showView({}, long);
+			expect(keyCol().style.width).toBe('80px');
+			expect(keyCell(A).getAttribute('title')).toBe('ABCDEF-1000000');
+			expect(keyCell(B).hasAttribute('title')).toBe(false);
+		} finally {
+			localStorage.removeItem('byl-columns-trash');
+		}
+	});
+
 	it('shows the empty state and the hint before the migration', async () => {
 		await showView({}, []);
 		expect(screen.getByRole('heading', { name: 'Der Papierkorb ist leer' })).toBeTruthy();

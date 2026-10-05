@@ -46,6 +46,15 @@ describe('formatKey', () => {
 		expect(formatKey('ABCDEF', 1000)).toBe('ABCDEF-1000');
 	});
 
+	it('writes numbers of any length without padding or a limit (KN-1)', () => {
+		for (const number of [9, 10, 999, 1000, 9999, 10000, 999999, 1000000, 123456789]) {
+			expect(formatKey(TASK, number)).toBe(`TASK-${number}`);
+		}
+		expect(formatKey('ABCDEF', 1000000)).toBe('ABCDEF-1000000');
+		expect(formatKey('AB', 1)).toBe('AB-1');
+		expect(formatKey('ABC', Number.MAX_SAFE_INTEGER)).toBe(`ABC-${Number.MAX_SAFE_INTEGER}`);
+	});
+
 	it('rejects invalid codes', () => {
 		for (const code of ['', 'A', 'abc', 'ABCDEFG', 'AB1', 'A-B', null, undefined]) {
 			expect(() => formatKey(code, 1)).toThrow(/invalid code/);

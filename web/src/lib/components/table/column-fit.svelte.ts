@@ -8,6 +8,7 @@
 import { SvelteSet } from 'svelte/reactivity';
 import {
 	WIDTH_STEP,
+	columnWidth,
 	fitColumns,
 	flexibleBounds,
 	flexibleTarget,
@@ -28,7 +29,10 @@ export class ColumnFit {
 	readonly store: ColumnPrefsStore;
 	readonly #columns: () => readonly ColumnSpec[];
 
-	/** `columns`: the columns of the table right now (e.g. without the selection of the inbox). */
+	/**
+	 * `columns`: the columns of the table right now (e.g. without the selection of the inbox, or with
+	 * the default widths of the columns of keys fitted to the shown keys, `withKeyDefaults`).
+	 */
 	constructor(
 		store: ColumnPrefsStore,
 		columns: () => readonly ColumnSpec[] = () => store.table.columns
@@ -61,9 +65,18 @@ export class ColumnFit {
 		return this.columns.find((column) => column.id === id);
 	}
 
+	/**
+	 * Width of a column of its own: the stored one, else its default here. The default may follow
+	 * the shown keys (`withKeyDefaults`, KN-1), so it comes from `columns`, not from the store.
+	 */
+	#ownWidth(id: string): number {
+		const spec = this.#spec(id);
+		return spec === undefined ? 0 : columnWidth(spec, this.store.prefs);
+	}
+
 	/** Shown width of a column; for the flexible one its rest (its own width while not measured). */
 	widthOf(id: string): number {
-		if (this.#spec(id)?.flexible) return this.fit.flexWidth ?? this.store.widthOf(id);
+		if (this.#spec(id)?.flexible) return this.fit.flexWidth ?? this.#ownWidth(id);
 		return this.fit.widths[id] ?? 0;
 	}
 
@@ -75,11 +88,11 @@ export class ColumnFit {
 	menuWidth(id: string): number {
 		const spec = this.#spec(id);
 		if (spec === undefined || this.frameWidth === null || !this.shown.has(id)) {
-			return this.store.widthOf(id);
+			return this.#ownWidth(id);
 		}
-		if (spec.flexible) return this.fit.flexWidth ?? this.store.widthOf(id);
-		if (flexibleTarget(this.columns, this.prefs) === null) return this.store.widthOf(id);
-		return this.fit.widths[id] ?? this.store.widthOf(id);
+		if (spec.flexible) return this.fit.flexWidth ?? this.#ownWidth(id);
+		if (flexibleTarget(this.columns, this.prefs) === null) return this.#ownWidth(id);
+		return this.fit.widths[id] ?? this.#ownWidth(id);
 	}
 
 	/** Bounds of a step in the menu: for the title `flexibleBounds`, else those of the column. */
@@ -143,7 +156,7 @@ export class ColumnFit {
 
 	/** Sets the width of a double click: `natural`, at most the current width plus the budget. */
 	autofit(id: string, natural: number): void {
-		const current = this.fit.widths[id] ?? this.store.widthOf(id);
+		const current = this.fit.widths[id] ?? this.#ownWidth(id);
 		this.commit(id, Math.min(natural, current + this.budget));
 	}
 

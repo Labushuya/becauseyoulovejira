@@ -12,13 +12,14 @@
 		type TrashItem
 	} from '$lib/domain/trash';
 	import { blockedLabel, blockedName } from '$lib/domain/trash-dependencies';
-	import { TRASH_TABLE } from '$lib/domain/columns';
+	import { TRASH_TABLE, isKeyCut } from '$lib/domain/columns';
 	import { rowMenus } from '$lib/overlay/context-menu';
 	import { getColumnPrefs } from '$lib/stores/column-prefs.svelte';
 	import { findPeople } from '$lib/stores/people.svelte';
 	import ActionsMenu, { type MenuAction } from './ActionsMenu.svelte';
 	import Lozenge from './guidance/Lozenge.svelte';
 	import StatusPill from './StatusPill.svelte';
+	import { remPx } from './table/chip-measure';
 	import { ColumnFit } from './table/column-fit.svelte';
 	import ResizableHeader from './table/ResizableHeader.svelte';
 	import TrashNeedQuestion from './TrashNeedQuestion.svelte';
@@ -80,6 +81,9 @@
 	const people = findPeople();
 
 	const shown = $derived(columnFit.shown);
+	// A key cut off by a narrow column names itself in a title (KN-1).
+	const rem = remPx();
+	const keyWidth = $derived(columnFit.widthOf('key'));
 	const order = $derived(items.map((item) => item.id));
 	const head = $derived(headState(selection, order));
 	const selectColumn = TRASH_TABLE.columns.find((column) => column.id === 'select');
@@ -203,7 +207,11 @@
 							/>
 						</label>
 					</td>
-					<td class="key" data-col="key">{item.key}</td>
+					<td
+						class="key"
+						data-col="key"
+						title={isKeyCut(item.key, keyWidth, false, rem) ? item.key : undefined}>{item.key}</td
+					>
 					<th class="title" scope="row" data-col="title">
 						<div class="title-clamp">
 							<a

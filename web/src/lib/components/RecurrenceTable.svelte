@@ -29,7 +29,8 @@
 	// Ticket (the due date and, below it, when it appears or which open ticket it waits for, the whole
 	// sentence as title; recommendation 2), Offene Tickets (every key with a link to its panel, the
 	// number in front when there are several; plan "Wiederholungen verständlich machen",
-	// recommendation 7), Projekt, Zustand ("Aktiv", "Pausiert" or "Wartet" as text with an icon)
+	// recommendation 7; the link names key and title on hover, so a key a narrow column cuts off
+	// stays readable, KN-1), Projekt, Zustand ("Aktiv", "Pausiert" or "Wartet" as text with an icon)
 	// and the menu "•••" of the row (plan aktionsmenues, AM-4): "Regel öffnen", the oldest open
 	// ticket, "Pausieren" or "Fortsetzen" (before AM-4 a symbol of its own in the row, now only
 	// here: pausing is rare, and the menu names it in words) and "Löschen …"; a right click on the
@@ -224,7 +225,7 @@
 										class="key-link"
 										href={ticketHrefOf(ticket.id)}
 										data-ticket-link={ticket.id}
-										title={ticket.title}>{ticket.key}</a
+										title={`${ticket.key} · ${ticket.title}`}>{ticket.key}</a
 									>
 								{/each}
 							{/if}

@@ -144,14 +144,15 @@ export const TICKET_TABLE: TableSpec = table(
 	'tickets',
 	[
 		fixed('select', 'Auswahl', 2.5),
-		column('key', 'Key', { width: 6, min: 4, max: 8, required: true }),
+		// Up to 12rem, so "ABCDEF-1000000" with the dot "neu" fits (KN-1, ADR-0030 Nachtrag 7).
+		column('key', 'Key', { width: 6, min: 4, max: 12, required: true }),
 		column('priority', 'Prio', { width: 4, min: 3, max: 6 }),
 		column('status', 'Status', { width: 6.5, min: 4.5, max: 10 }),
 		flexible('title', 'Titel', 10),
 		column('parent', 'Übergeordnet', {
 			width: 7,
 			min: 5,
-			max: 10,
+			max: 12,
 			hideRank: 0,
 			hiddenByDefault: true,
 			optIn: true
@@ -230,7 +231,7 @@ export const RECURRENCE_TABLE: TableSpec = table('recurrences', [
  */
 export const TRASH_TABLE: TableSpec = table('trash', [
 	fixed('select', 'Auswahl', 2.5),
-	column('key', 'Key', { width: 6, min: 4, max: 8, required: true }),
+	column('key', 'Key', { width: 6, min: 4, max: 12, required: true }),
 	flexible('title', 'Titel', 10),
 	// Status and "Blockiert (N)" (ADR-0047): gives way last.
 	column('status', 'Status', { width: 9, min: 6, max: 14, hideRank: 5 }),
@@ -412,6 +413,80 @@ export function isDefaultColumnPrefs(prefs: ColumnPrefs, columns: readonly Colum
 /** Width of a column from the preferences, else its default; always within its bounds. */
 export function columnWidth(column: ColumnSpec, prefs: ColumnPrefs): number {
 	return clampWidth(column, prefs.widths[column.id] ?? column.width);
+}
+
+// Columns of keys (KN-1, ADR-0030 Nachtrag 7). Numbers of tickets have no upper bound, so a key
+// grows with its number ("HAUS-9", "HAUS-1000000"). Keys stand in JetBrains Mono at
+// --font-size-control (0.8125rem); every glyph of the font advances 0.6em, one `ch`, so a key needs
+// its length in `ch`.
+
+/** Font size of the keys in the tables in rem (--font-size-control). */
+const KEY_FONT_REM = 0.8125;
+/** Advance of every glyph of the mono font in em: 1ch. */
+const MONO_CH_EM = 0.6;
+/** Padding of a cell, left plus right (0.75rem each). */
+const KEY_CELL_PADDING_REM = 1.5;
+/** The dot "neu" before a key (0.5rem) and its gap (0.375rem), ADR-0015 section 5. */
+const NEW_DOT_REM = 0.875;
+/** Room for rounding and the smoothing of the font. */
+const KEY_SLACK_PX = 2;
+
+/** The widest default a column of keys takes on its own: 12rem; wider only by the user. */
+export const KEY_AUTO_MAX = 12 * REM;
+
+/**
+ * Width of a cell that shows `key` uncut, in CSS pixels: the key in `ch`, the padding and, with
+ * `dot`, the dot "neu". `rem`: pixels of 1rem on the page.
+ */
+export function keyCellWidth(key: string, dot = false, rem = REM): number {
+	const text = key.length * KEY_FONT_REM * MONO_CH_EM * rem;
+	const extra = KEY_CELL_PADDING_REM * rem + (dot ? NEW_DOT_REM * rem : 0);
+	return Math.ceil(text + extra + KEY_SLACK_PX);
+}
+
+/**
+ * Whether `key` (with the dot "neu" for `dot`) is cut off in a cell of `width` CSS pixels, e.g.
+ * after the user dragged the column narrow; then the cell names the whole key in its `title`.
+ */
+export function isKeyCut(key: string, width: number, dot = false, rem = REM): boolean {
+	return keyCellWidth(key, dot, rem) > width;
+}
+
+/** A column of keys and the keys of the list it shows right now. */
+export interface KeyColumn {
+	readonly id: string;
+	readonly keys: Iterable<string>;
+	/** Room for the dot "neu" before the key, so a ticket that becomes new never cuts its key. */
+	readonly dot?: boolean;
+}
+
+/**
+ * The columns with the default width of each column of keys fitted to the longest key it shows
+ * (`keyCellWidth`): never narrower than the default of the column (short keys look as before and
+ * the thresholds of ADR-0030 stay), never wider than `KEY_AUTO_MAX` and its maximum. A width the
+ * user chose still wins (`columnWidth`), and "Standard wiederherstellen" brings this default back.
+ * Without a change the very same `columns` come back.
+ */
+export function withKeyDefaults(
+	columns: readonly ColumnSpec[],
+	keyColumns: readonly KeyColumn[],
+	rem = REM
+): readonly ColumnSpec[] {
+	const needs = new Map<string, number>();
+	for (const entry of keyColumns) {
+		let longest = '';
+		for (const key of entry.keys) if (key.length > longest.length) longest = key;
+		if (longest !== '') needs.set(entry.id, keyCellWidth(longest, entry.dot ?? false, rem));
+	}
+	let changed = false;
+	const fitted = columns.map((column) => {
+		const need = needs.get(column.id);
+		if (need === undefined || need <= column.width) return column;
+		changed = true;
+		const width = Math.max(column.width, Math.min(need, column.max, KEY_AUTO_MAX));
+		return Object.freeze({ ...column, width });
+	});
+	return changed ? fitted : columns;
 }
 
 /**

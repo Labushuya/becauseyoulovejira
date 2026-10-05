@@ -355,6 +355,52 @@ describe('ticket table row: new (E4 plan, package 4)', () => {
 	});
 });
 
+describe('ticket table row: long keys (KN-1, ADR-0030 Nachtrag 7)', () => {
+	it('names a key in a title only when its column cuts it off', () => {
+		// The default of 6rem holds "TASK-3"; the cell needs no title.
+		expect(cell(renderRow().row, 'key').hasAttribute('title')).toBe(false);
+		document.body.innerHTML = '';
+		// "ABCDEF-1000000" needs 136 px, with the dot "neu" 150 px.
+		const long = { key: 'ABCDEF-1000000' };
+		expect(cell(renderRow(long).row, 'key').getAttribute('title')).toBe('ABCDEF-1000000');
+		document.body.innerHTML = '';
+		expect(
+			cell(renderRow(long, { columnWidths: { key: 136 } }).row, 'key').hasAttribute('title')
+		).toBe(false);
+		document.body.innerHTML = '';
+		// The dot takes room as well: the same width cuts the key of a new ticket.
+		const fresh = renderRow(long, { columnWidths: { key: 136 }, isNew: true }).row;
+		expect(cell(fresh, 'key').getAttribute('title')).toBe('ABCDEF-1000000');
+		document.body.innerHTML = '';
+		const wide = renderRow(long, { columnWidths: { key: 150 }, isNew: true }).row;
+		expect(cell(wide, 'key').hasAttribute('title')).toBe(false);
+		// The text stays the whole key; only the stylesheet shortens it.
+		expect(cell(wide, 'key').textContent?.replace(/\s+/g, ' ').trim()).toBe('neu,ABCDEF-1000000');
+	});
+
+	it('puts the key of the parent before its title when "Übergeordnet" cuts it off', () => {
+		const columns = new Set(['key', 'priority', 'status', 'title', 'parent', 'actions']);
+		const parent = { id: 'p00000000000001', key: 'ABCDEF-1000000', title: 'Dach decken' };
+		const parentCell = (props: Record<string, unknown>) =>
+			cell(renderRow({}, { columns, parent, ...props }).row, 'parent').querySelector('span');
+
+		// Default 7rem (112 px): the key is cut off, the title names it first.
+		expect(parentCell({})?.getAttribute('title')).toBe('ABCDEF-1000000 · Dach decken');
+		document.body.innerHTML = '';
+		// Wide enough: the title of the parent alone, as before.
+		expect(parentCell({ columnWidths: { parent: 136 } })?.getAttribute('title')).toBe(
+			'Dach decken'
+		);
+		document.body.innerHTML = '';
+		// A short key of the parent fits the default.
+		const short = cell(
+			renderRow({}, { columns, parent: { ...parent, key: 'HAUS-12' } }).row,
+			'parent'
+		).querySelector('span');
+		expect(short?.getAttribute('title')).toBe('Dach decken');
+	});
+});
+
 describe('ticket table row: source (E4 plan, package 9; ADR-0019 section 4)', () => {
 	it.each([
 		['eml', 'Mail', 'aus Mail'],
