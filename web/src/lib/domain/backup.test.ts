@@ -366,7 +366,12 @@ describe('emergency plan (BK-4)', () => {
 			'wiederherstellen.bat'
 		]);
 		for (const script of scripts) expect(existsSync(join(ROOT, 'app', script)), script).toBe(true);
-		expect(existsSync(join(ROOT, 'app', 'erweiterung-whatsapp-web'))).toBe(true);
+		// The folder of the extension exists only after its build: the plan names the build target of
+		// the extension, checked in its source instead of a built folder (AR-4).
+		expect(all).toContain('app\\erweiterung-whatsapp-web');
+		expect(readFileSync(join(ROOT, 'extensions', 'whatsapp-web', 'build.mjs'), 'utf8')).toContain(
+			"export const OUT = join(ROOT, 'app', 'erweiterung-whatsapp-web');"
+		);
 	});
 
 	it('opens a backup without the app and names the files of the helper', () => {

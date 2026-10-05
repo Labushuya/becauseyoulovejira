@@ -29,6 +29,7 @@
 import { timingSafeEqual } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import PostalMime, { decodeWords } from 'postal-mime';
+import { duplicateMessage, isDuplicateState } from '../../../web/src/lib/domain/inbox';
 import {
 	mailMatchTexts,
 	mailToDraft,
@@ -47,15 +48,12 @@ import {
 import { PollGate, ScanControl } from './gate';
 import { errorText, redact, type Logger } from './log';
 import { MAIL_MAX_BYTES, ingestDraft, keywordOf, largeMailDraft, parseMail } from './mail';
+import { DEFAULT_PORT, IMPORT_MAX, LIST_DEFAULT, LIST_MAX, PORT_ENV } from './mailbox-limits';
 import { pollConnection, type PollDeps, type PollOptions } from './poll';
 import { providerOf } from './providers';
 import { searchCriteria, searchTerms } from './scan';
 
-export const DEFAULT_PORT = 8091;
-export const PORT_ENV = 'BYL_MAIL_HELPER_PORT';
-export const LIST_DEFAULT = 50;
-export const LIST_MAX = 200;
-export const IMPORT_MAX = 50;
+export { DEFAULT_PORT, IMPORT_MAX, LIST_DEFAULT, LIST_MAX, PORT_ENV };
 /** Time the scan gets within "Jetzt abrufen"; the hook waits 90 s for the answer. */
 export const POLL_SCAN_BUDGET_MS = 45_000;
 const BODY_MAX_BYTES = 64 * 1024;
@@ -355,7 +353,13 @@ async function importOne(
 		case 'created':
 			return { uid, status: 'created', message: '' };
 		case 'duplicate':
-			return { uid, status: 'duplicate', message: 'Schon im Eingang.' };
+			// The text of the state, without the key of a ticket the answer does not name; an entry that
+			// moved into another area says so (E7-4b, AR-4).
+			return {
+				uid,
+				status: 'duplicate',
+				message: duplicateMessage(isDuplicateState(result.state) ? result.state : 'new', '')
+			};
 		case 'gone':
 			return { uid, status: 'failed', message: 'Die Verbindung wurde gelöscht oder ausgeschaltet.' };
 		case 'rejected':
