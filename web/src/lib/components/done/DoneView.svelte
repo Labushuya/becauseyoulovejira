@@ -98,6 +98,13 @@
 	const total = $derived(store.total);
 	const countReady = $derived(store.state === 'ready' && total !== null);
 	const shownTickets = $derived(store.tickets.length);
+	/**
+	 * Length of the longest loaded key: its place is that many `ch` of the mono font wide in every
+	 * group (at least 5.5rem), so keys of every length line up and are never cut off (KN-1).
+	 */
+	const keyChars = $derived(
+		store.tickets.reduce((longest, ticket) => Math.max(longest, ticket.key.length), 0)
+	);
 
 	async function clearFilters() {
 		await goto(withDoneQuery(page.url, resetDoneFilters()), { keepFocus: true, noScroll: true });
@@ -287,7 +294,13 @@
 	{/if}
 
 	{#if store.tickets.length > 0}
-		<div class="groups" bind:this={list} aria-busy={store.state === 'loading'} {@attach rowMenus}>
+		<div
+			class="groups"
+			bind:this={list}
+			aria-busy={store.state === 'loading'}
+			style:--key-chars={keyChars}
+			{@attach rowMenus}
+		>
 			{#each store.groups as group (group.key)}
 				{@const groupHeading = `${uid}-group-${group.key}`}
 				<section class="group" aria-labelledby={groupHeading}>
@@ -447,14 +460,16 @@
 		text-decoration: underline;
 	}
 
+	/*
+	 * As wide as the longest loaded key in `ch` of the mono font (--key-chars), at least 5.5rem: the
+	 * keys line up in every group and grow with their number instead of being cut off (KN-1).
+	 */
 	.key {
 		flex: none;
-		width: 5.5rem;
-		overflow: hidden;
+		min-width: max(5.5rem, calc(var(--key-chars, 0) * 1ch));
 		font-family: var(--font-mono);
 		font-size: var(--font-size-control);
 		white-space: nowrap;
-		text-overflow: ellipsis;
 		color: var(--color-text-muted);
 	}
 

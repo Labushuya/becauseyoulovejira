@@ -21,6 +21,7 @@ import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import TicketHostHarness from '$lib/test/TicketHostHarness.svelte';
 import { DONE_HOST } from '$lib/ticket-host';
 import DoneView from './DoneView.svelte';
+import source from './DoneView.svelte?raw';
 
 const mocks = vi.hoisted(() => ({
 	goto: vi.fn(async () => undefined),
@@ -206,6 +207,24 @@ describe('view "Erledigte"', () => {
 		const entry = link.closest('li') as HTMLElement;
 		expect(within(entry).getByText('Vorhaben')).toBeTruthy();
 		expect(within(entry).getByText('Haus')).toBeTruthy();
+	});
+
+	it('gives every key the room of the longest loaded key in every group, never cut off (KN-1)', async () => {
+		const today = doneTicket('2026-10-07 08:00:00.000Z', { key: 'HAUS-9' });
+		const older = doneTicket('2026-09-02 08:00:00.000Z', { key: 'ABCDEF-1000000' });
+		await showView(fakeDoneData([[today, older]]));
+
+		expect(groupNames()).toHaveLength(2);
+		const groups = document.querySelector<HTMLElement>('.groups');
+		expect(groups?.style.getPropertyValue('--key-chars')).toBe('14');
+		expect(entryLinks().map((link) => link.querySelector('.key')?.textContent)).toEqual([
+			'HAUS-9',
+			'ABCDEF-1000000'
+		]);
+		const style = /<style>([\s\S]*?)<\/style>/.exec(source)?.[1] ?? '';
+		const rule = /\n\t\.key \{([^}]*)\}/.exec(style)?.[1] ?? '';
+		expect(rule).toContain('min-width: max(5.5rem, calc(var(--key-chars, 0) * 1ch));');
+		expect(rule).not.toMatch(/overflow|text-overflow|(^|[^-])width:/);
 	});
 
 	it('offers the menu of every ticket row with "Wieder öffnen" and lets the reopened ticket leave', async () => {
