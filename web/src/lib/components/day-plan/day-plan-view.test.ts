@@ -54,6 +54,18 @@ vi.mock('$lib/stores/people.svelte', async (importOriginal) => ({
 			({ user00000000001: 'Anna Beispiel', user00000000002: 'Bert Beispiel' })[id] ?? null
 	})
 }));
+// The members of the household as the directory of the layout gives them (E7-5, ADR-0068).
+vi.mock('$lib/stores/assignees.svelte', async (importOriginal) => {
+	const original = await importOriginal<typeof import('$lib/stores/assignees.svelte')>();
+	const members = [
+		{ id: 'user00000000001', name: 'Anna Beispiel', self: true },
+		{ id: 'user00000000002', name: 'Bert Beispiel', self: false }
+	];
+	return {
+		...original,
+		findAssignees: () => original.fixedAssignees(members, 'user00000000001')
+	};
+});
 
 const A1 = 't000000000000a1';
 const A2 = 't000000000000a2';
@@ -84,6 +96,8 @@ interface Setup {
 	date?: string | null;
 	area?: AreaStore | null;
 	ongoing?: string[];
+	/** The account that looks at the plan (source "Mir zugewiesen", ADR-0068 §8). */
+	viewer?: string | null;
 }
 
 async function renderPlan({
@@ -92,7 +106,8 @@ async function renderPlan({
 	answer = planAnswer(),
 	date = null,
 	area = null,
-	ongoing = [A2]
+	ongoing = [A2],
+	viewer = null
 }: Setup = {}) {
 	mocks.page.url = new URL(
 		date === null ? '/tagesplan' : `/tagesplan?tag=${date}`,
@@ -101,7 +116,11 @@ async function renderPlan({
 	const list = fakeTickets(tickets);
 	const data = fakeDayPlanData(items, answer, ongoing);
 	const { flags, last } = fakeFlags();
-	const store = new DayPlanStore(data, list, fakeSession(), { flags, scope: () => answer.scope });
+	const store = new DayPlanStore(data, list, fakeSession(), {
+		flags,
+		scope: () => answer.scope,
+		viewer: () => viewer
+	});
 	store.show(date);
 	await vi.waitFor(() => expect(store.state).toBe('ready'));
 	render(TicketHostHarness, {
@@ -448,6 +467,67 @@ describe('entries of the plan', () => {
 		const people = entry('TASK-a1').querySelector('.people') as HTMLElement;
 		expect(people.getAttribute('title')).toBe('Hinzugefügt von Du, abgehakt von Bert Beispiel');
 		expect(people.textContent).toContain('✓ BB');
+	});
+});
+
+describe('"Zuständig" in the day plan (E7-5, ADR-0068 §8)', () => {
+	const HOUSE = 'h:house0000000001';
+	const shared = () =>
+		planAnswer({
+			scope: HOUSE,
+			plan: { id: 'plan00000000001', date: TODAY, scope: HOUSE, dismissed: [] }
+		});
+
+	it('shows the initials of the assignee at the entries of the shared plan', async () => {
+		await renderPlan({
+			answer: shared(),
+			tickets: [
+				planTicket(A1, { title: 'Steuer abgeben', assignee: 'user00000000002' }),
+				planTicket(A3, { title: 'Müll rausbringen' })
+			],
+			items: [planItem('item00000000001', A1, 0), planItem('item00000000003', A3, 1)]
+		});
+		const badge = entry('TASK-a1').querySelector('.assignee-badge');
+		expect(badge?.getAttribute('title')).toBe('Zuständig: Bert Beispiel');
+		expect(badge?.querySelector('.initials')?.textContent).toBe('BB');
+		expect(entry('TASK-a3').querySelector('.assignee-badge')).toBeNull();
+	});
+
+	it('shows no initials in the private plan', async () => {
+		await renderPlan({
+			tickets: [planTicket(A1, { title: 'Steuer abgeben', assignee: 'user00000000002' })],
+			items: [planItem('item00000000001', A1, 0)]
+		});
+		expect(entry('TASK-a1').querySelector('.assignee-badge')).toBeNull();
+	});
+
+	it('suggests what is given to the account that looks at the plan, with its reason', async () => {
+		await renderPlan({
+			answer: shared(),
+			viewer: SELF,
+			items: [],
+			tickets: [
+				planTicket(A1, { title: 'Steuer abgeben', assignee: SELF }),
+				planTicket(A4, { title: 'Fenster putzen', assignee: 'user00000000002' })
+			]
+		});
+		const toggle = screen.getByRole('button', { name: /^Vorschläge/ });
+		expect(toggle.textContent).toContain('(1 Vorschlag)');
+		expect(screen.getByText('– dir zugewiesen')).toBeTruthy();
+		expect(screen.getByRole('checkbox', { name: /Steuer abgeben/ })).toBeTruthy();
+		expect(screen.queryByRole('checkbox', { name: /Fenster putzen/ })).toBeNull();
+	});
+
+	it('offers the source "Mir zugewiesen" only in the household', async () => {
+		await renderPlan({ answer: shared(), viewer: SELF });
+		expect(
+			screen.getByRole<HTMLSelectElement>('combobox', { name: 'Mir zugewiesen', hidden: true })
+				.value
+		).toBe('suggest');
+
+		document.body.innerHTML = '';
+		await renderPlan({ viewer: SELF });
+		expect(screen.queryByRole('combobox', { name: 'Mir zugewiesen', hidden: true })).toBeNull();
 	});
 });
 

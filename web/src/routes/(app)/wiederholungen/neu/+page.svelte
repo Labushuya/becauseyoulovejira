@@ -40,6 +40,7 @@
 		subtasksAvailable={store.subtasksReady}
 		colorsAvailable={catalog.colorsReady}
 		charmsAvailable={store.charmsReady}
+		assignmentAvailable={store.assigneesReady}
 		projects={catalog.activeProjects}
 		tags={catalog.tags}
 		projectById={(id) => catalog.projectById(id)}

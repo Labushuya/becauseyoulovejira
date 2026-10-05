@@ -47,6 +47,8 @@ const DATES = ['', '', '2031-06-01', '2031-06-08', '2031-06-09', TODAY, TODAY, '
 const STATUSES = ['backlog', 'open', 'open', 'in_progress', 'waiting', 'done'];
 const PRIORITIES = ['low', 'medium', 'medium', 'high', 'urgent'];
 const MODES = ['off', 'suggest', 'auto'];
+const ASSIGNEES = ['', '', 'anna0000000000a', 'bert0000000000b'];
+const VIEWERS = ['anna0000000000a', 'bert0000000000b', '', undefined];
 
 function randomPlan(next, index) {
 	const tickets = [];
@@ -62,13 +64,16 @@ function randomPlan(next, index) {
 			// Several open tickets of one series (WH-1): only possible with data from before, so the
 			// rules must agree on which one counts.
 			series: recurring && next(3) !== 0 ? `r${next(2)}` : '',
+			// "Mir zugewiesen" (ADR-0068 §8): none, the account that looks at the plan or another one.
+			assignee: ASSIGNEES[next(ASSIGNEES.length)],
 			priority: PRIORITIES[next(PRIORITIES.length)],
 			created: `2031-0${1 + next(5)}-1${next(9)} 10:00:00.000Z`
 		});
 	}
 	const pick = () => tickets.filter(() => next(4) === 0).map((ticket) => ticket.id);
 	const settings = next(3) === 0 ? null : Object.fromEntries(hook.SOURCES.map((source) => [source, MODES[next(3)]]));
-	return { tickets, context: { today: TODAY, settings, planned: pick(), dismissed: pick(), leftover: pick() } };
+	const viewer = VIEWERS[next(VIEWERS.length)];
+	return { tickets, context: { today: TODAY, settings, planned: pick(), dismissed: pick(), leftover: pick(), viewer } };
 }
 
 describe('suggestions of the SPA and of the hook', () => {
@@ -96,8 +101,8 @@ describe('suggestions of the SPA and of the hook', () => {
 		for (let index = 0; index < 100; index++) {
 			const { tickets, context } = randomPlan(next, index);
 			for (const ticket of tickets) {
-				const sources = hook.matchingSources(ticket, TODAY, context.leftover);
-				expect(web.matchingSources(ticket, TODAY, context.leftover)).toEqual(sources);
+				const sources = hook.matchingSources(ticket, TODAY, context.leftover, context.viewer);
+				expect(web.matchingSources(ticket, TODAY, context.leftover, context.viewer)).toEqual(sources);
 				for (const source of sources) expect(web.reasonText(source, ticket, TODAY)).toBe(hook.reasonText(source, ticket, TODAY));
 			}
 		}

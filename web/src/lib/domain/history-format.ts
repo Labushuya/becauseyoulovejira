@@ -4,6 +4,7 @@
 // never rendered as Markdown.
 
 import { areaMoveHistoryText } from './area-move';
+import { assigneeHistoryText } from './assignee';
 import { charmName } from './charms';
 import { COLOR_LABELS, isProjectColor } from './colors';
 import { KIND_LABELS, kindOf } from './day-plan';
@@ -42,6 +43,8 @@ export interface HistoryLookups {
 	tags: ReadonlyMap<string, TagRef>;
 	comments?: ReadonlyMap<string, Pick<Comment, 'author' | 'created'>>;
 	people?: PersonNames | null;
+	/** Display name of the signed-in account, for "Zuständig: …" (ADR-0068); "Du" without one. */
+	selfName?: string;
 }
 
 /** Lookups from the visible projects and tags (read-only after creation). */
@@ -292,6 +295,13 @@ function describe(entry: HistoryEntry, lookups: HistoryLookups, selfId: string |
 		case 'kind':
 			// ADR-0065: "Art: Aufgabe → Laufendes Vorhaben".
 			return change('Art', KIND_LABELS[kindOf(oldValue)], KIND_LABELS[kindOf(newValue)]);
+		case 'assignee':
+			// ADR-0068: "Zuständig: Anna Beispiel" or "Zuständigkeit entfernt"; the own account by name.
+			return assigneeHistoryText(newValue, {
+				selfId,
+				selfName: lookups.selfName ?? '',
+				names: lookups.people ?? null
+			});
 		case 'duplicate':
 			// ADR-0045 §6: the duplicate names its original, the original its duplicate.
 			return duplicateHistoryText(newValue);

@@ -3,6 +3,7 @@
 	import { page } from '$app/state';
 	import { GROUPINGS, GROUPING_LABELS, type Grouping } from '$lib/domain/grouping';
 	import { parseListQuery, type ListQuery } from '$lib/domain/list-query';
+	import { findAssignees } from '$lib/stores/assignees.svelte';
 	import { withListQuery } from '$lib/ticket-links';
 	import Popover from './overlay/Popover.svelte';
 
@@ -15,19 +16,36 @@
 	// Two levels (plan OR-3, ADR-0013 addendum B): a second fieldset "Danach gruppieren" below the
 	// first (`untergruppe`), with "Keine" and every grouping except the first level. It is locked
 	// (disabled) with a hint while there is no first level; choosing the second level as first
-	// clears the second.
+	// clears the second. "Nach Zuständigkeit" (ADR-0068 §3) only in a household, or while the address
+	// asks for it.
+	let {
+		household
+	}: {
+		/** The area of the tab is the household; without it the directory of the layout decides. */
+		household?: boolean;
+	} = $props();
+
 	const uid = $props.id();
 	const legendId = `${uid}-legend`;
 	const secondHintId = `${uid}-second-hint`;
+	const assignees = findAssignees();
 
 	const NONE = '';
 	type Choice = { value: Grouping | typeof NONE; label: string };
-	const choices: readonly Choice[] = [
-		{ value: NONE, label: 'Keine' },
-		...GROUPINGS.map((value) => ({ value, label: `Nach ${GROUPING_LABELS[value]}` }))
-	];
 
 	const query = $derived(parseListQuery(page.url.searchParams));
+	const inHousehold = $derived(
+		(household ?? assignees?.active ?? false) ||
+			query.grouping === 'assignee' ||
+			query.subGrouping === 'assignee'
+	);
+	const choices = $derived<readonly Choice[]>([
+		{ value: NONE, label: 'Keine' },
+		...GROUPINGS.filter((value) => value !== 'assignee' || inHousehold).map((value) => ({
+			value,
+			label: `Nach ${GROUPING_LABELS[value]}`
+		}))
+	]);
 	const grouping = $derived(query.grouping);
 	const subGrouping = $derived(query.subGrouping);
 	/** The second level offers every grouping except the first. */

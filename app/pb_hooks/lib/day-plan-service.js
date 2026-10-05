@@ -294,6 +294,8 @@ function factsOf(ticket) {
     // Only the current occurrence of a series is proposed (WH-1); `occurrence` reads '' before its
     // migration, like for every ticket without "Verpasste Termine nachholen".
     series: rules.seriesKeyOf(ticket.getString('recurrence'), ticket.getString('occurrence')),
+    // "Mir zugewiesen" (ADR-0068 §8); '' before the migration 1790204900, so it never matches then.
+    assignee: ticket.getString('assignee'),
     priority: ticket.getString('priority'),
     created: ticket.getString('created')
   };
@@ -342,8 +344,12 @@ function settingsFor(app, scope) {
   return rules.settingsOf(record === null ? null : parsed(record.getString('sources'), null));
 }
 
-/** The suggestions of the plan of today by the rules, with every mode that is not off. */
-function suggestionsFor(app, plan, scope, days) {
+/**
+ * The suggestions of the plan of today by the rules, with every mode that is not off. "Mir zugewiesen"
+ * looks at the tickets of `viewer`, the account of the request (ADR-0068 §8): in the shared plan of a
+ * household each member gets his own.
+ */
+function suggestionsFor(app, plan, scope, days, viewer) {
   var items = itemsOf(app, plan.id);
   var planned = [];
   for (var i = 0; i < items.length; i++) {
@@ -359,13 +365,14 @@ function suggestionsFor(app, plan, scope, days) {
     settings: settingsFor(app, scope),
     planned: planned,
     dismissed: dismissedOf(plan),
-    leftover: leftoverOf(app, scope, days.yesterday)
+    leftover: leftoverOf(app, scope, days.yesterday),
+    viewer: viewer || ''
   });
 }
 
 /** Takes the tickets of the automatic sources into the plan of today; returns how many. */
-function adoptAutomatic(txApp, plan, scope, days) {
-  var suggestions = suggestionsFor(txApp, plan, scope, days);
+function adoptAutomatic(txApp, plan, scope, days, viewer) {
+  var suggestions = suggestionsFor(txApp, plan, scope, days, viewer);
   var position = nextPosition(itemsOf(txApp, plan.id));
   var count = 0;
   for (var i = 0; i < suggestions.length; i++) {
@@ -497,7 +504,7 @@ function fetch(e) {
     e.app.runInTransaction(function (txApp) {
       var plan = ensurePlan(txApp, area, date, actor);
       if (date === days.today) {
-        outcome.adopted = adoptAutomatic(txApp, plan, area.scope, days);
+        outcome.adopted = adoptAutomatic(txApp, plan, area.scope, days, actor);
       }
       outcome.plan = plan;
     });
@@ -512,7 +519,7 @@ function fetch(e) {
     scope: area.scope,
     editable: editable,
     plan: outcome.plan === null ? null : planJson(outcome.plan),
-    suggestions: isToday ? suggestionsFor(e.app, outcome.plan, area.scope, days) : [],
+    suggestions: isToday ? suggestionsFor(e.app, outcome.plan, area.scope, days, actor) : [],
     leftover: isToday ? leftoverOf(e.app, area.scope, days.yesterday) : [],
     settings: settingsFor(e.app, area.scope),
     other: otherOf(e.app, area, days.today),
@@ -589,7 +596,7 @@ function adopt(e) {
   e.app.runInTransaction(function (txApp) {
     var plan = ensurePlan(txApp, area, days.today, actor);
     var origins = {};
-    var suggestions = suggestionsFor(txApp, plan, area.scope, days);
+    var suggestions = suggestionsFor(txApp, plan, area.scope, days, actor);
     for (var i = 0; i < suggestions.length; i++) {
       origins[suggestions[i].id] = suggestions[i].origin;
     }

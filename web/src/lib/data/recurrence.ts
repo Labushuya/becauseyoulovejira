@@ -4,6 +4,7 @@
 // the template and the rhythm.
 
 import type PocketBase from 'pocketbase';
+import { assigneeModeOf, type AssigneeMode } from '../domain/assignee';
 import { charmKeyOf } from '../domain/charms';
 import { colorOf, type ProjectColor } from '../domain/colors';
 import { toDueInput } from '../domain/ticket';
@@ -56,6 +57,10 @@ export const RULE_FIELDS = [
 	'color',
 	// Charm of the template (ADR-0062); unknown to the server before the migration 1790204400.
 	'charm',
+	// "Zuständigkeit" of the next tickets (ADR-0068); unknown before the migration 1790204900.
+	'assignee_mode',
+	'assignees',
+	'assignee_next',
 	// Who created it: moving it into the private area is offered to the creator (ADR-0061 §4).
 	'owner',
 	'created',
@@ -90,6 +95,10 @@ export interface RuleRecord {
 	color?: string;
 	/** Charm of the template (ADR-0062), '' for none; absent before its migration. */
 	charm?: string;
+	/** "Zuständigkeit" (ADR-0068): mode, people and pointer; absent before its migration. */
+	assignee_mode?: string;
+	assignees?: string[];
+	assignee_next?: number;
 	owner?: string;
 	created: string;
 	updated: string;
@@ -125,6 +134,16 @@ export function toRecurrenceRule(record: RuleRecord): RecurrenceRule {
 		...(record.color !== undefined ? { color: colorOf(record.color) } : {}),
 		// The same for the charm (ADR-0062); a key the catalog does not know reads as none.
 		...(record.charm !== undefined ? { charm: charmKeyOf(record.charm) } : {}),
+		// The same for the assignment of the next tickets (ADR-0068).
+		...(record.assignee_mode !== undefined
+			? {
+					assignment: {
+						mode: assigneeModeOf(record.assignee_mode),
+						assignees: [...(record.assignees ?? [])],
+						next: record.assignee_next ?? 0
+					}
+				}
+			: {}),
 		...(record.owner ? { owner: record.owner } : {}),
 		created: record.created,
 		updated: record.updated
@@ -172,6 +191,13 @@ export interface RuleDraft {
 	color?: ProjectColor | null;
 	/** Charm of the template (ADR-0062), null for none; a server before its migration ignores it. */
 	charm?: string | null;
+	/**
+	 * "Zuständigkeit" of the next tickets (ADR-0068 §5): mode ('' none), the people in order and the
+	 * pointer of a rotation; sent only when it changed (`assignmentBody`), only in a household.
+	 */
+	assignee_mode?: AssigneeMode | '';
+	assignees?: string[];
+	assignee_next?: number;
 }
 
 function draftBody(draft: Partial<RuleDraft>): Record<string, unknown> {
@@ -274,6 +300,24 @@ export function charmsReady(pb: PocketBase, { signal }: RequestOptions = {}): Pr
 	return answeredWithout400(signal, () =>
 		pb.collection(RULES).getList(1, 1, {
 			filter: pb.filter('charm != {:none}', { none: '' }),
+			fields: 'id',
+			skipTotal: true,
+			signal
+		})
+	);
+}
+
+/**
+ * Whether the server knows the assignment of rules (ADR-0068): a filter on `assignee_mode` answers 400
+ * before its migration 1790204900. The SPA offers "Zuständigkeit" in the forms only then.
+ */
+export function ruleAssigneesReady(
+	pb: PocketBase,
+	{ signal }: RequestOptions = {}
+): Promise<boolean> {
+	return answeredWithout400(signal, () =>
+		pb.collection(RULES).getList(1, 1, {
+			filter: pb.filter('assignee_mode != {:none}', { none: '' }),
 			fields: 'id',
 			skipTotal: true,
 			signal

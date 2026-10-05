@@ -96,6 +96,41 @@ export async function createScenario() {
 	};
 }
 
+/**
+ * The scenario of the areas on an own disposable instance (`startPocketBase` of the harness): A and B
+ * share a household through the routes of E7-2 (A founds it and is its owner, B joins with a code), C
+ * is alone without one. Every account has a display name (`names`), so realtime notices and history
+ * can name it. An account of its own takes the right "Verwalter der App" first (ADR-0056 §2), so A, B
+ * and C are normal accounts. Each person: { id, name, client, send(path, body, method), ticket(data) }.
+ * @param {{ url: string, email: string, password: string }} instance
+ * @param {[string, string, string]} [names]
+ */
+export async function createAreaScenario(instance, names = ['Anna Beispiel', 'Bert Beispiel', 'Clara Beispiel']) {
+	const superuser = createClient(instance.url);
+	await superuser.collection('_superusers').authWithPassword(instance.email, instance.password);
+	await createAppUser(superuser);
+	const person = async (name) => {
+		const user = await createAppUser(superuser);
+		await superuser.collection('users').update(user.record.id, { name });
+		const client = await userClient(user, instance.url);
+		const id = user.record.id;
+		return {
+			id,
+			name,
+			client,
+			send: (path, body, method = 'POST') => client.send(path, { method, body, requestKey: null }),
+			ticket: (data = {}) => client.collection('tickets').create({ owner: id, title: `Ticket ${uniqueSuffix()}`, ...data })
+		};
+	};
+	const a = await person(names[0]);
+	const b = await person(names[1]);
+	const c = await person(names[2]);
+	const founded = await a.send('/api/byl/household', { name: `Haus ${uniqueSuffix()}` });
+	const { code } = await a.send('/api/byl/household/invites', {});
+	await b.send('/api/byl/household/join', { code });
+	return { superuser, a, b, c, householdId: founded.household.id };
+}
+
 /** Marker titles of tests/fixtures/pb_hooks/fault-injection.pb.js (OF-15). */
 export const FAIL_TICKET_INSERT = '__byl_fail_ticket_insert__';
 export const FAIL_HISTORY = '__byl_fail_history__';

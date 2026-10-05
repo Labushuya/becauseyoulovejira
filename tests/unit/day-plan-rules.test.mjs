@@ -33,7 +33,9 @@ describe('modes of the sources', () => {
 			overdue: 'suggest',
 			recurrence: 'suggest',
 			leftover: 'suggest',
-			in_progress: 'suggest'
+			in_progress: 'suggest',
+			// "Mir zugewiesen" (ADR-0068 §8).
+			assigned: 'suggest'
 		});
 	});
 

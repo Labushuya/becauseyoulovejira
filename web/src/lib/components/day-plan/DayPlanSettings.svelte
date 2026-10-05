@@ -1,6 +1,7 @@
 <script lang="ts">
 	import {
 		DAY_PLAN_SOURCES,
+		HOUSEHOLD_SOURCES,
 		MODE_LABELS,
 		SOURCE_LABELS,
 		SOURCE_MODES,
@@ -15,10 +16,14 @@
 	// "Automatisch übernehmen", in a popover of the kind "panel" next to "Vorschläge". A choice saves at
 	// once and the plan of today follows; the private area belongs to the account, the household to
 	// every member alike, which the text below says. Native selects in fields (UI-1, ADR-0060).
+	// "Mir zugewiesen" (ADR-0068 §8) only in the household, for the account that looks at the plan.
 	let { store, household = false }: { store: DayPlanStore; household?: boolean } = $props();
 
 	const uid = $props.id();
 	const legendId = `${uid}-legend`;
+	const sources = $derived(
+		DAY_PLAN_SOURCES.filter((source) => household || !HOUSEHOLD_SOURCES.includes(source))
+	);
 
 	function choose(source: DayPlanSource, event: Event & { currentTarget: HTMLSelectElement }) {
 		const value = event.currentTarget.value as SourceMode;
@@ -54,8 +59,12 @@
 				„Automatisch übernehmen“ setzt die Tickets beim ersten Öffnen des Tages ohne Rückfrage in den
 				Plan.
 			</p>
-			{#each DAY_PLAN_SOURCES as source (source)}
-				<Field label={SOURCE_LABELS[source]} width="auto">
+			{#each sources as source (source)}
+				<Field
+					label={SOURCE_LABELS[source]}
+					width="auto"
+					hint={source === 'assigned' ? 'Tickets, für die du zuständig bist.' : undefined}
+				>
 					{#snippet control(field)}
 						<select
 							{...field}

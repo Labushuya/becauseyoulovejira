@@ -13,12 +13,14 @@
 	import { charmOf, charmText } from '$lib/domain/charms';
 	import { colorText, ticketColorOf } from '$lib/domain/colors';
 	import type { ProjectRef, TicketSummary } from '$lib/domain/ticket';
+	import { findAssignees } from '$lib/stores/assignees.svelte';
 	import { ticketLinks } from '$lib/stores/open-mode.svelte';
 	import { findPinStore, type PinStore } from '$lib/stores/pins.svelte';
 	import { findTicketFollowUpStore } from '$lib/stores/ticket-follow-up.svelte';
 	import type { TicketRowActionsStore } from '$lib/stores/ticket-row-actions.svelte';
 	import { findTicketHost } from '$lib/ticket-host';
 	import { projectTicketsHref } from '$lib/ticket-links';
+	import AssigneeBadge from './AssigneeBadge.svelte';
 	import CharmIcon from './CharmIcon.svelte';
 	import ColorMark from './ColorMark.svelte';
 	import DueLabel from './DueLabel.svelte';
@@ -91,6 +93,8 @@
 
 	const links = ticketLinks();
 	const host = findTicketHost();
+	/** "Zuständig" of the household (ADR-0068): the initials of every entry with an assignee. */
+	const assignees = findAssignees();
 	/** "Folge-Ticket anlegen …" in the menu (ADR-0067), with the store of the (app) layout. */
 	const followUps = findTicketFollowUpStore();
 	/** Titles from this length name themselves on hover; the line clamp may cut them (ADR-0030). */
@@ -194,6 +198,10 @@
 		</a>
 		<span class="details">
 			<KindBadge kind={ticket.kind} />
+			{#if assignees?.active && ticket.assignee}
+				<!-- The initials of the assignee (ADR-0068 §2). -->
+				<AssigneeBadge assignee={ticket.assignee} context={assignees.context} />
+			{/if}
 			<span class="status-cell"
 				><span class="visually-hidden">Status:&nbsp;</span><StatusPill
 					status={ticket.status}

@@ -457,9 +457,9 @@ export function plannedMatches(
 }
 
 /**
- * An entry of the inbox has no status, priority, tags or series: any of these filters hides it. The
- * project filter compares its target project (ADR-0049, sub projects included), the source filter
- * the family of its channel.
+ * An entry of the inbox has no status, priority, tags, series or assignee (ADR-0068): any of these
+ * filters hides it. The project filter compares its target project (ADR-0049, sub projects
+ * included), the source filter the family of its channel.
  */
 export function inboxMatches(
 	item: Pick<InboxItemSummary, 'channel' | 'targetProjectId'>,
@@ -468,6 +468,7 @@ export function inboxMatches(
 ): boolean {
 	if (query.status !== null || query.priority !== null) return false;
 	if (query.tag !== null || query.recurring !== null) return false;
+	if (query.assignee !== null) return false;
 	if (query.source !== null && sourceFamily(item.channel) !== query.source) return false;
 	return matchesTarget(item.targetProjectId ?? null, query, subProjectsOf);
 }

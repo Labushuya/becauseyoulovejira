@@ -35,6 +35,7 @@
 	} from '$lib/domain/pins';
 	import { parentOf } from '$lib/domain/subtasks';
 	import type { TicketSummary } from '$lib/domain/ticket';
+	import { findAssignees, type AssigneeSource } from '$lib/stores/assignees.svelte';
 	import type { CatalogStore } from '$lib/stores/catalog.svelte';
 	import { getColumnPrefs } from '$lib/stores/column-prefs.svelte';
 	import { SILENT_FLAGS } from '$lib/stores/flags.svelte';
@@ -139,6 +140,7 @@
 		duplicates = null,
 		followUps = findTicketFollowUpStore(),
 		pins = findPinStore(),
+		assignees = findAssignees(),
 		tools,
 		emptyExtra
 	}: {
@@ -162,6 +164,11 @@
 		followUps?: TicketFollowUpStore | null;
 		/** The own pins (ADR-0064) for the toggle of a row; null: no toggle (the section follows the store). */
 		pins?: PinStore | null;
+		/**
+		 * "Zuständig" (ADR-0068): in a household the initials at the title or the column with the
+		 * assignee; null or outside a household neither.
+		 */
+		assignees?: AssigneeSource | null;
 		/**
 		 * Filter cards and filter bar, below the section bar: the switch "Aufgaben | Projekte |
 		 * Eingang" stands at the same place in every view (ADR-0025 section 10, package UI-8).
@@ -211,9 +218,11 @@
 	// Columns (ADR-0030): the preferences of this device and the measured frame decide which
 	// columns are shown and how wide they are. Key and "Übergeordnet" take the longest key of the
 	// shown tickets as their default, Key with room for the dot "neu" (KN-1, Nachtrag 7).
+	// The column "Zuständig" exists only in a household (ADR-0068).
+	const assigneesShown = $derived(assignees?.active === true);
 	const columnFit = new ColumnFit(getColumnPrefs('tickets'), () =>
 		withKeyDefaults(
-			TICKET_TABLE.columns,
+			TICKET_TABLE.columns.filter((column) => column.id !== 'assignee' || assigneesShown),
 			[
 				{ id: 'key', keys: shownTickets.map((ticket) => ticket.key), dot: true },
 				{
@@ -536,6 +545,7 @@
 				save: (patch) => store.changeField(ticket.id, patch),
 				createTag: (name) => catalog.ensureTag(name)
 			}}
+			assignees={assigneesShown ? assignees : null}
 			menu={rowActions ? rowMenu : undefined}
 			menuBusy={rowActions?.isPreparing(ticket.id) ?? false}
 			pin={pins?.available && (ticket.status !== 'done' || pins.isPinned(ticket.id))
@@ -690,6 +700,7 @@
 			<ColumnsPopover
 				fit={columnFit}
 				always="Auswahl, Key, Titel und das Häkchen sind immer sichtbar."
+				omitted={assigneesShown ? [] : ['assignee']}
 			/>
 		{/snippet}
 	</SectionBar>
@@ -798,6 +809,7 @@
 						{@render header('key', 'Key', 'key')}
 						{@render header('priority', 'Prio', 'priority')}
 						{@render header('status', 'Status', 'status')}
+						{@render header('assignee', 'Zuständig', 'assignee')}
 						{@render header('title', 'Titel', 'title')}
 						{@render header('parent', 'Übergeordnet')}
 						{@render header('source', 'Quelle')}

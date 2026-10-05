@@ -79,6 +79,7 @@
 		subtasksAvailable = false,
 		colorsAvailable = false,
 		charmsAvailable = false,
+		assignmentAvailable = false,
 		today = null,
 		tags = [],
 		oncreatetag = async () => ({ ok: false, message: null }),
@@ -110,6 +111,8 @@
 		colorsAvailable?: boolean;
 		/** Offer the charm of the ticket (ADR-0062, RecurrenceStore.charmsReady). */
 		charmsAvailable?: boolean;
+		/** Offer "Zuständigkeit" of the next tickets in a household (ADR-0068, RecurrenceStore.assigneesReady). */
+		assignmentAvailable?: boolean;
 		/** Berlin date of today, for the preview of the section "Wiederholung". */
 		today?: CalendarDate | null;
 		/** Tags that can be chosen (the catalog). */
@@ -539,6 +542,7 @@
 							withoutDue={due === ''}
 							{eachAvailable}
 							context={{ kind: 'ticket', due: dueOrNull(due) }}
+							{assignmentAvailable}
 						/>
 						<p class="hint">
 							Künftige Tickets bekommen Titel, Beschreibung, Priorität, Projekt und Tags aus diesem

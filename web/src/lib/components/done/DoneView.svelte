@@ -16,6 +16,7 @@
 	import { projectChoiceLabel, projectPath } from '$lib/domain/project-tree';
 	import type { TicketSummary } from '$lib/domain/ticket';
 	import { rowMenus } from '$lib/overlay/context-menu';
+	import { findAssignees } from '$lib/stores/assignees.svelte';
 	import type { CatalogStore } from '$lib/stores/catalog.svelte';
 	import type { DoneListStore } from '$lib/stores/done-list.svelte';
 	import { ticketLinks } from '$lib/stores/open-mode.svelte';
@@ -28,6 +29,7 @@
 	import type { DeleteResult, DeleteSources } from '$lib/stores/trash-move';
 	import { findTicketHost } from '$lib/ticket-host';
 	import { withDoneQuery } from '$lib/ticket-links';
+	import AssigneeBadge from '../AssigneeBadge.svelte';
 	import CharmIcon from '../CharmIcon.svelte';
 	import ColorMark from '../ColorMark.svelte';
 	import ErrorIcon from '../ErrorIcon.svelte';
@@ -84,6 +86,8 @@
 	const headingId = `${uid}-heading`;
 	const links = ticketLinks();
 	const host = findTicketHost();
+	/** "Zuständig" of the household (ADR-0068): the initials of every entry with an assignee. */
+	const assignees = findAssignees();
 	/** Titles from this length name themselves on hover; the line clamp may cut them (ADR-0030). */
 	const LONG_TITLE = 60;
 
@@ -205,6 +209,10 @@
 		</a>
 		<span class="details">
 			<KindBadge kind={ticket.kind} />
+			{#if assignees?.active && ticket.assignee}
+				<!-- The initials of the assignee (ADR-0068 §2). -->
+				<AssigneeBadge assignee={ticket.assignee} context={assignees.context} />
+			{/if}
 			<span class="project-cell">
 				{#if project !== null}
 					<span class="visually-hidden">Projekt:&nbsp;</span><span

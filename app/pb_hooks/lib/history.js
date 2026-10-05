@@ -10,7 +10,8 @@
 // (pinned, released, replaced; the values are comment IDs), the own color since ADR-0052 (keys of
 // the palette, '' for "wie Projekt"; before its migration the field reads as '' and changes nothing),
 // the charm since ADR-0062 (keys of the catalog, '' for none; the same before its migration), the kind
-// since ADR-0065 (`task` or `ongoing`; before its migration '' and no change).
+// since ADR-0065 (`task` or `ongoing`; before its migration '' and no change), the assignee since
+// ADR-0068 (account IDs, '' for none; the same before its migration).
 var TRACKED_FIELDS = Object.freeze([
   'title',
   'description',
@@ -27,7 +28,8 @@ var TRACKED_FIELDS = Object.freeze([
   'pinned_comment',
   'color',
   'charm',
-  'kind'
+  'kind',
+  'assignee'
 ]);
 
 // Multi-value fields: order does not matter, stored as sorted JSON array.

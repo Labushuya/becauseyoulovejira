@@ -116,6 +116,17 @@ export interface TicketSummary {
 	 * migration): the switch is not offered then.
 	 */
 	kind?: TicketKind;
+	/**
+	 * The account that takes care of the ticket (ADR-0068), only in a household; null for nobody. Left
+	 * out while the server does not know the field (before the restart after the migration): no field
+	 * "Zuständig" then.
+	 */
+	assignee?: string | null;
+	/**
+	 * When another account gave the ticket to its assignee (ADR-0068 §4), null otherwise: the ticket is
+	 * "neu" for him again from then on (ADR-0015).
+	 */
+	assignedAt?: string | null;
 	/** UTC timestamp of PocketBase (`YYYY-MM-DD HH:MM:SS.sssZ`), null unless done. */
 	completedAt: string | null;
 	/** UTC timestamps of PocketBase; they sort as text. */
@@ -153,6 +164,8 @@ export interface TicketDraft {
 	color?: ProjectColor | null;
 	/** Charm (ADR-0062), a key of the catalog; left out or null for none. */
 	charm?: string | null;
+	/** The assignee (ADR-0068), a member of the household; left out or null for nobody. */
+	assignee?: string | null;
 }
 
 /**

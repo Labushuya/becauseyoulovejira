@@ -476,6 +476,7 @@
 		askStatus={store.statusReady}
 		ticketStatus={ticket.status}
 		initialStatus={prepared?.initialStatus ?? null}
+		assignmentAvailable={store.assigneesReady}
 		submitLabel="Wiederholung anlegen"
 		returnFocus={() => ruleButton}
 		onsave={repeat}
@@ -491,6 +492,7 @@
 		eachAvailable={store.eachReady}
 		context={{ kind: 'rule', nextDue: current.nextDue, each: current.eachOccurrence === true }}
 		openKeys={openTickets.map((open) => open.key)}
+		assignmentAvailable={store.assigneesReady}
 		submitLabel="Speichern"
 		onsave={(values) => store.saveRhythm(current.id, values)}
 		onclose={closeDialog}

@@ -58,10 +58,19 @@ export type { DeleteResult, DeleteSources, TrashUndo };
 
 /**
  * Fields editable in the panel (E2 plan, section 2; E3 plan, T-13), the color since ADR-0052, the
- * charm since ADR-0062, the kind since ADR-0065.
+ * charm since ADR-0062, the kind since ADR-0065, the assignee since ADR-0068.
  */
 export type EditableField =
-	'title' | 'description' | 'status' | 'priority' | 'due' | 'project' | 'color' | 'charm' | 'kind';
+	| 'title'
+	| 'description'
+	| 'status'
+	| 'priority'
+	| 'due'
+	| 'project'
+	| 'color'
+	| 'charm'
+	| 'kind'
+	| 'assignee';
 
 /**
  * Fields with their own saving state and error: the editable ones plus the tags (T-14), the parent
@@ -71,9 +80,10 @@ export type FieldKey = EditableField | 'tags' | 'parent' | 'blocksParent';
 
 /**
  * Fields that save at once when chosen (T-7, T-13; the color since ADR-0052, the charm since
- * ADR-0062, the switch "Laufendes Vorhaben" since ADR-0065).
+ * ADR-0062, the switch "Laufendes Vorhaben" since ADR-0065, "Zuständig" since ADR-0068).
  */
-export type ChoiceField = 'status' | 'priority' | 'project' | 'color' | 'charm' | 'kind';
+export type ChoiceField =
+	'status' | 'priority' | 'project' | 'color' | 'charm' | 'kind' | 'assignee';
 
 /**
  * idle: no ticket; loading; ready; not_found: unknown or foreign ID; error: loading failed;
@@ -175,6 +185,7 @@ function fieldText(ticket: Ticket, field: EditableField): string {
 	if (field === 'color') return ticket.color ?? '';
 	if (field === 'charm') return ticket.charm ?? '';
 	if (field === 'kind') return kindOf(ticket.kind);
+	if (field === 'assignee') return ticket.assignee ?? '';
 	return ticket[field];
 }
 
@@ -212,6 +223,12 @@ function patchFor(field: EditableField, draft: string): PatchResult {
 		case 'kind':
 			// "Laufendes Vorhaben" or "Aufgabe" (ADR-0065).
 			return isTicketKind(draft) ? { patch: { kind: draft } } : { error: INVALID_VALUE_MESSAGE };
+		case 'assignee':
+			// '' is "Niemand" (ADR-0068); the hook checks the membership.
+			if (draft === '') return { patch: { assignee: null } };
+			return RECORD_ID.test(draft)
+				? { patch: { assignee: draft } }
+				: { error: INVALID_VALUE_MESSAGE };
 	}
 }
 

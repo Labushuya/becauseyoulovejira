@@ -106,6 +106,18 @@ function withKind(fields, ticket) {
   return fields;
 }
 
+// A copy in the same household keeps the assignee of its ticket (ADR-0068 §7), always, without a
+// switch; every sub-ticket of the copy keeps its own. Into another area the copy has none (the hook
+// would refuse it in the private area and in another household). Before the migration the field reads
+// as '', so nothing is set.
+function withAssignee(fields, ticket, sameArea) {
+  var assignee = ticket.getString('assignee');
+  if (sameArea && assignee !== '') {
+    fields.assignee = assignee;
+  }
+  return fields;
+}
+
 // The signed-in app user of the request (the route requires one).
 function actorOf(e) {
   return e.auth && e.auth.collection().name === 'users' ? e.auth.id : '';
@@ -205,7 +217,7 @@ function saveDuplicate(txApp, original, options, context) {
   } else {
     fields.source = 'manual';
   }
-  var copied = withKind(withCharm(withColor(fields, taken.color), original), original);
+  var copied = withAssignee(withKind(withCharm(withColor(fields, taken.color), original), original), original, !context.crossing);
   return saveTicket(txApp, copied, context.actor);
 }
 
@@ -239,7 +251,7 @@ function saveSubtasks(txApp, original, duplicate, options, actor, mapTag) {
       blocks_parent: child.getBool('blocks_parent'),
       source: 'manual'
     };
-    var copied = withKind(withCharm(withColor(fields, taken.color), child), child);
+    var copied = withAssignee(withKind(withCharm(withColor(fields, taken.color), child), child), child, mapTag === null);
     var saved = saveTicket(txApp, copied, actor);
     created.push({ id: saved.id, key: saved.getString('key') });
   }

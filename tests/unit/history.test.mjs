@@ -23,7 +23,7 @@ const BASE = {
 };
 
 describe('TRACKED_FIELDS', () => {
-	it('matches the whitelist of the E1 plan (OF-12) plus the pinned comment (ADR-0044) and the color (ADR-0052), since ADR-0062 the charm, since ADR-0065 the kind', () => {
+	it('matches the whitelist of the E1 plan (OF-12) plus the pinned comment (ADR-0044) and the color (ADR-0052), since ADR-0062 the charm, since ADR-0065 the kind, since ADR-0068 the assignee', () => {
 		expect([...TRACKED_FIELDS]).toEqual([
 			'title',
 			'description',
@@ -40,9 +40,19 @@ describe('TRACKED_FIELDS', () => {
 			'pinned_comment',
 			'color',
 			'charm',
-			'kind'
+			'kind',
+			'assignee'
 		]);
 		expect(Object.isFrozen(TRACKED_FIELDS)).toBe(true);
+	});
+
+	it('records a new and a removed assignee with the account IDs (ADR-0068)', () => {
+		expect(diff(BASE, { ...BASE, assignee: 'anna00000000001' })).toEqual([
+			{ field: 'assignee', old_value: '', new_value: 'anna00000000001' }
+		]);
+		expect(diff({ ...BASE, assignee: 'anna00000000001' }, BASE)).toEqual([
+			{ field: 'assignee', old_value: 'anna00000000001', new_value: '' }
+		]);
 	});
 
 	it('records a change of the kind of a ticket both ways (ADR-0065)', () => {

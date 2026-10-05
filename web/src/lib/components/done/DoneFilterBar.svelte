@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import { NOBODY, NOBODY_LABEL, assigneeName } from '$lib/domain/assignee';
 	import { CHARMS, CHARM_GROUP_LABELS } from '$lib/domain/charms';
 	import {
 		hasDoneFilters,
@@ -10,6 +11,7 @@
 	} from '$lib/domain/done-view';
 	import { NO_PROJECT, SEARCH_MAX_LENGTH, SEARCH_MIN_LENGTH } from '$lib/domain/list-query';
 	import { projectChoiceLabel, treeOrder } from '$lib/domain/project-tree';
+	import { findAssignees, type AssigneeSource } from '$lib/stores/assignees.svelte';
 	import type { CatalogStore } from '$lib/stores/catalog.svelte';
 	import { withDoneQuery } from '$lib/ticket-links';
 	import FilterPopover from '../FilterPopover.svelte';
@@ -21,13 +23,17 @@
 	// navigates with a history entry, typing replaces the entry, so back does not go through every
 	// letter; the store applies the search after a pause. Project, tag and search keep their names of
 	// "Aufgaben", so the link from there takes them along.
+	// "Zuständig" (E7-5, ADR-0068 §3) only in a household: "Niemand" and the members.
 	let {
 		catalog,
-		searchBusy = false
+		searchBusy = false,
+		assignees = findAssignees()
 	}: {
 		catalog: CatalogStore;
 		/** The list loads for a changed search (aria-busy of the field). */
 		searchBusy?: boolean;
+		/** The members of the household (the directory of the layout); null without one. */
+		assignees?: AssigneeSource | null;
 	} = $props();
 
 	const uid = $props.id();
@@ -76,6 +82,25 @@
 		label: charm.name,
 		section: CHARM_GROUP_LABELS[charm.group]
 	}));
+	/** "Zuständig" (ADR-0068 §3) only in a household, or while the address names one. */
+	const assigneeShown = $derived(
+		assignees !== null && (assignees.active || query.assignee !== null)
+	);
+	const assigneeOptions = $derived.by(() => {
+		if (assignees === null) return [];
+		const members = assignees.members.map((member) => ({
+			value: member.id,
+			label: member.self ? `${member.name} (ich)` : member.name
+		}));
+		const chosen = query.assignee;
+		const unknown =
+			chosen !== null && chosen !== NOBODY && !members.some((member) => member.value === chosen);
+		return [
+			{ value: NOBODY, label: NOBODY_LABEL },
+			...members,
+			...(unknown ? [{ value: chosen, label: assigneeName(chosen, assignees.context) }] : [])
+		];
+	});
 
 	async function navigate(next: DoneQuery) {
 		await goto(withDoneQuery(page.url, next), { keepFocus: true, noScroll: true });
@@ -201,6 +226,16 @@
 		value={query.charm}
 		onchange={(value) => void navigate({ ...query, charm: value })}
 	/>
+
+	{#if assigneeShown}
+		<FilterPopover
+			legend="Zuständig"
+			name={`${uid}-assignee`}
+			options={assigneeOptions}
+			value={query.assignee}
+			onchange={(value) => void navigate({ ...query, assignee: value })}
+		/>
+	{/if}
 
 	<button
 		class="button-secondary button-small reset"

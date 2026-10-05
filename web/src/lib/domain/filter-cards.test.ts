@@ -9,6 +9,7 @@ import {
 	ALL_OPEN_LABEL,
 	CARD_LABELS,
 	FILTER_CARDS,
+	HOUSEHOLD_CARDS,
 	cardSummary,
 	cardsFromUrl,
 	cardsLabel,
@@ -28,6 +29,9 @@ import { STATUSES } from './status';
 
 const TODAY = '2026-09-25';
 const HOUSE = 'p00000000000001';
+/** Accounts of "Mir zugewiesen" (ADR-0068). */
+const SELF = 'anna00000000001';
+const OTHER = 'bert00000000002';
 
 interface Row extends FilterableTicket {
 	id: string;
@@ -278,18 +282,20 @@ describe('countCards', () => {
 			in_progress: 0,
 			due_today: 0,
 			overdue: 0,
-			urgent: 0
+			urgent: 0,
+			mine: 0
 		});
 	});
 
 	it('never counts done tickets', () => {
-		const done = ticket({ status: 'done', priority: 'urgent', due: TODAY });
-		expect(countCards([done, { ...done, due: addDays(TODAY, -3) }], TODAY)).toEqual({
+		const done = ticket({ status: 'done', priority: 'urgent', due: TODAY, assignee: SELF });
+		expect(countCards([done, { ...done, due: addDays(TODAY, -3) }], TODAY, SELF)).toEqual({
 			allOpen: 0,
 			in_progress: 0,
 			due_today: 0,
 			overdue: 0,
-			urgent: 0
+			urgent: 0,
+			mine: 0
 		});
 	});
 
@@ -299,8 +305,32 @@ describe('countCards', () => {
 			in_progress: 4,
 			due_today: 3,
 			overdue: 2,
-			urgent: 4
+			urgent: 4,
+			mine: 0
 		});
+	});
+
+	it('counts "Mir zugewiesen" for the signed-in account only (ADR-0068)', () => {
+		const tickets = [
+			ticket({ assignee: SELF }),
+			ticket({ assignee: SELF, priority: 'urgent' }),
+			ticket({ assignee: OTHER }),
+			ticket({ assignee: null }),
+			ticket({})
+		];
+		expect(countCards(tickets, TODAY, SELF)).toMatchObject({ allOpen: 5, mine: 2, urgent: 1 });
+		expect(countCards(tickets, TODAY, OTHER).mine).toBe(1);
+		// Without a signed-in account nothing is "mir".
+		expect(countCards(tickets, TODAY).mine).toBe(0);
+		expect(matchesCard(ticket({ assignee: SELF }), 'mine', TODAY, SELF)).toBe(true);
+		expect(matchesCard(ticket({ assignee: OTHER }), 'mine', TODAY, SELF)).toBe(false);
+		// The union with another card counts every ticket once.
+		expect(
+			tickets.filter((entry) => matchesCards(entry, ['mine', 'urgent'], TODAY, SELF))
+		).toHaveLength(2);
+		expect(cardsFromUrl(['mir'])).toEqual(['mine']);
+		expect(cardsToUrl(['mine', 'urgent'])).toEqual(['dringend', 'mir']);
+		expect(HOUSEHOLD_CARDS).toEqual(['mine']);
 	});
 
 	it('counts exactly the tickets each card shows alone', () => {
@@ -358,7 +388,8 @@ describe('summary above the list', () => {
 			'In Arbeit',
 			'Heute fällig',
 			'Überfällig',
-			'Dringend'
+			'Dringend',
+			'Mir zugewiesen'
 		]);
 	});
 });

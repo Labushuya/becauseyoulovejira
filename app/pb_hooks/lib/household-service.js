@@ -23,6 +23,9 @@ var INVITES = 'household_invites';
 var USERS = 'users';
 var TOPIC = 'byl/household';
 var AREA = 'byl-household';
+// Transient key of the account behind a membership that ends (the same as in lib/ticket-service.js);
+// the hook of assignees.pb.js names it in the history of the tickets it clears (ADR-0068 §6).
+var ACTOR_KEY = '@actor';
 var UNAVAILABLE = 'Der Haushalt steht nach dem nächsten Neustart der App bereit (neu-starten.bat).';
 // Attempts at a fresh code whose hash is taken (31^8 codes: practically never more than one).
 var CODE_ATTEMPTS = 5;
@@ -546,6 +549,8 @@ function removeMember(e) {
       return;
     }
     var everyone = userIdsOf(membersOf(txApp, outcome.household));
+    // The account behind the change, for "Zuständigkeit entfernt" (ADR-0068 §6).
+    target.set(ACTOR_KEY, userOf(e));
     txApp.delete(target);
     outcome.notify = everyone;
   });
@@ -664,6 +669,7 @@ function leave(e) {
     }
     outcome.member = own.id;
     var everyone = withUser(userIdsOf(membersOf(txApp, outcome.household)), userOf(e));
+    own.set(ACTOR_KEY, userOf(e));
     txApp.delete(own);
     outcome.notify = everyone;
   });

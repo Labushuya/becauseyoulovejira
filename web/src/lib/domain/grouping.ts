@@ -1,8 +1,16 @@
 // Grouping of the open tickets (E3 plan, T-7; ADR-0013 section 1). Pure. Groups follow the
 // order of the domain, not the alphabet; empty groups do not appear. Within a group the tickets
 // keep the order they come in (the current sort). Since plan OR-3 on up to two levels, with the
-// folded groups of a tab in sessionStorage.
+// folded groups of a tab in sessionStorage. "Nach Zuständigkeit" (E7-5, ADR-0068 §3): the own account
+// first, then the other members by name, "Niemand" last.
 
+import {
+	NOBODY,
+	assigneeGroupLabel,
+	assigneeGroupOrder,
+	assigneeOf,
+	type AssigneeContext
+} from './assignee';
 import type { CalendarDate } from './berlin-date';
 import { dueBucket, type DueBucket } from './filter';
 import { PRIORITY_LABELS, STATUS_LABELS } from './labels';
@@ -23,7 +31,15 @@ export const GROUPING_LABELS: Readonly<Record<Grouping, string>> = Object.freeze
 	project: 'Projekt',
 	due: 'Fälligkeit',
 	source: 'Quelle',
-	recurrence: 'Wiederholung'
+	recurrence: 'Wiederholung',
+	assignee: 'Zuständigkeit'
+});
+
+/** Without names every account stays "Anderes Konto" and nobody is "self". */
+const NO_ASSIGNEE_CONTEXT: AssigneeContext = Object.freeze({
+	selfId: null,
+	selfName: '',
+	names: null
 });
 
 /** Groups of "Nach Wiederholung" (plan OR-2): the tickets of a series first. */
@@ -60,7 +76,8 @@ export interface TicketGroup<T> {
 export type GroupableTicket = Pick<
 	TicketSummary,
 	'status' | 'priority' | 'due' | 'project' | 'source' | 'recurring'
->;
+> &
+	Partial<Pick<TicketSummary, 'assignee'>>;
 
 /** Tickets per key in the input order. */
 function collect<T>(tickets: readonly T[], keyOf: (ticket: T) => string): Map<string, T[]> {
@@ -106,17 +123,32 @@ function projectGroups<T>(
 	});
 }
 
+/** Groups "Nach Zuständigkeit": keyed by the account, NOBODY for none (the key of a folded group). */
+function assigneeGroups<T extends GroupableTicket>(
+	tickets: readonly T[],
+	context: AssigneeContext
+): TicketGroup<T>[] {
+	const groups = collect(tickets, (ticket) => assigneeOf(ticket) || NOBODY);
+	const order = assigneeGroupOrder(
+		[...groups.keys()].filter((key) => key !== NOBODY),
+		context
+	).map((key) => (key === '' ? NOBODY : key));
+	return inOrder(groups, order, (key) => assigneeGroupLabel(key === NOBODY ? '' : key, context));
+}
+
 /**
  * Splits already sorted tickets into groups (T-7): status in the order of work, priority urgent
  * first, project by name with "Ohne Projekt" last, due date overdue · today · next 7 days ·
  * later · without date, source in the order of the families (ADR-0019 section 3), recurrence
- * "Wiederkehrend" before "Einmalig" (plan OR-2). `today` is the Berlin calendar date.
+ * "Wiederkehrend" before "Einmalig" (plan OR-2), assignee with the own account first and "Niemand"
+ * last (ADR-0068). `today` is the Berlin calendar date.
  */
 export function groupTickets<T extends GroupableTicket>(
 	tickets: readonly T[],
 	grouping: Grouping,
 	today: CalendarDate,
-	resolveProject: ResolveProject<T> = (ticket) => ticket.project
+	resolveProject: ResolveProject<T> = (ticket) => ticket.project,
+	assignees: AssigneeContext = NO_ASSIGNEE_CONTEXT
 ): TicketGroup<T>[] {
 	switch (grouping) {
 		case 'status':
@@ -151,6 +183,8 @@ export function groupTickets<T extends GroupableTicket>(
 				RECURRING_FILTERS,
 				(key) => RECURRENCE_GROUP_LABELS[key as RecurringFilter]
 			);
+		case 'assignee':
+			return assigneeGroups(tickets, assignees);
 	}
 }
 
@@ -177,10 +211,11 @@ export function groupTicketLevels<T extends GroupableTicket>(
 	grouping: Grouping,
 	subGrouping: Grouping | null,
 	today: CalendarDate,
-	resolveProject: ResolveProject<T> = (ticket) => ticket.project
+	resolveProject: ResolveProject<T> = (ticket) => ticket.project,
+	assignees: AssigneeContext = NO_ASSIGNEE_CONTEXT
 ): GroupNode<T>[] {
 	const second = subGrouping === grouping ? null : subGrouping;
-	return groupTickets(tickets, grouping, today, resolveProject).map((group) => {
+	return groupTickets(tickets, grouping, today, resolveProject, assignees).map((group) => {
 		const path = `${grouping}:${group.key}`;
 		return {
 			...group,
@@ -188,7 +223,7 @@ export function groupTicketLevels<T extends GroupableTicket>(
 			subgroups:
 				second === null
 					? null
-					: groupTickets(group.tickets, second, today, resolveProject).map((sub) => ({
+					: groupTickets(group.tickets, second, today, resolveProject, assignees).map((sub) => ({
 							...sub,
 							path: `${path}/${second}:${sub.key}`,
 							subgroups: null

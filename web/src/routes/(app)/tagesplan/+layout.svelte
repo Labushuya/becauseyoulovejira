@@ -34,7 +34,9 @@
 	const area = findAreaStore();
 	const store = new DayPlanStore(dayPlanData(pb), tickets, auth, {
 		flags,
-		scope: () => clientArea(pb)
+		scope: () => clientArea(pb),
+		// "Mir zugewiesen" (ADR-0068 §8): the tickets of the account that looks at the plan.
+		viewer: () => auth.userId
 	});
 
 	const withPanel = $derived(page.route.id === DAY_PLAN_HOST.panelRoute);

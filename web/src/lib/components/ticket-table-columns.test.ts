@@ -193,7 +193,7 @@ describe('columns of the ticket table (ADR-0030)', () => {
 		expect(stored()).toEqual({
 			v: 1,
 			widths: { project: 178 },
-			hidden: ['parent', 'source']
+			hidden: ['assignee', 'parent', 'source']
 		});
 	});
 
@@ -270,7 +270,7 @@ describe('columns of the ticket table (ADR-0030)', () => {
 			expect(stored()).toEqual({
 				v: 1,
 				widths: { created: 80, project: 256 },
-				hidden: ['parent', 'source']
+				hidden: ['assignee', 'parent', 'source']
 			});
 		} finally {
 			delete (Range.prototype as { getBoundingClientRect?: unknown }).getBoundingClientRect;
@@ -344,7 +344,11 @@ describe('columns of the ticket table (ADR-0030)', () => {
 
 			await fireEvent.pointerUp(grip('title'), { pointerId: 1, clientX: 450 });
 
-			expect(stored()).toEqual({ v: 1, widths: { title: 302 }, hidden: ['parent', 'source'] });
+			expect(stored()).toEqual({
+				v: 1,
+				widths: { title: 302 },
+				hidden: ['assignee', 'parent', 'source']
+			});
 			expect(titleWidth(1224)).toBe(302);
 		});
 
@@ -414,7 +418,11 @@ describe('columns of the ticket table (ADR-0030)', () => {
 			await fireEvent.dblClick(grip('title'));
 
 			expect(mocks.goto).not.toHaveBeenCalled();
-			expect(stored()).toEqual({ v: 1, widths: { tags: 200 }, hidden: ['parent', 'source'] });
+			expect(stored()).toEqual({
+				v: 1,
+				widths: { tags: 200 },
+				hidden: ['assignee', 'parent', 'source']
+			});
 			expect(titleWidth(1224)).toBe(1224 - 872 - 72);
 		});
 

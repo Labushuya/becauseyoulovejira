@@ -4,6 +4,7 @@
 
 import { ACCOUNT_MESSAGES } from '../domain/accounts';
 import { SCOPE_FIELD_MESSAGES, SCOPE_MESSAGE } from '../domain/area';
+import { ASSIGNEE_MESSAGES } from '../domain/assignee';
 import { PIN_MESSAGES } from '../domain/comments';
 import { CONNECTION_LABEL_MESSAGES } from '../domain/connections';
 import { DAY_PLAN_MESSAGES, DAY_PLAN_SCOPE_TEXT } from '../domain/day-plan';
@@ -126,7 +127,9 @@ const FIELD_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
 	// The day plan (ADR-0065), the same texts as the hook.
 	...DAY_PLAN_MESSAGES,
 	// Tickets as sources (ADR-0067), the same texts as the hook; a circle names its chain below.
-	...TICKET_SOURCE_MESSAGES
+	...TICKET_SOURCE_MESSAGES,
+	// "Zuständig" (ADR-0068), the same texts as the hook.
+	...ASSIGNEE_MESSAGES
 });
 
 /** Texts that depend on the field as well, keyed by `<field>:<code>`; they win over the above. */

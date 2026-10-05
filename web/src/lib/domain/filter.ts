@@ -7,7 +7,10 @@
 // The source compares the family of `source` (ADR-0019 section 2); no source counts as "manual".
 // A project takes its sub projects in (ADR-0034 section 6) unless the query switches them off.
 // "Wiederkehrend" (plan OR-2) compares `recurring`, i.e. `recurrence != ""` on the server.
+// "Zuständig" (E7-5, ADR-0068 §3) compares `assignee` with the chosen account, "Niemand" an empty one;
+// the card "Mir zugewiesen" needs the signed-in account (`selfId`).
 
+import { matchesAssignee } from './assignee';
 import { addDays, type CalendarDate } from './berlin-date';
 import { matchesCards } from './filter-cards';
 import { NO_PROJECT, type ListQuery } from './list-query';
@@ -31,7 +34,8 @@ export function dueBucket(due: CalendarDate | null, today: CalendarDate): DueBuc
 export type FilterableTicket = Pick<
 	TicketSummary,
 	'status' | 'priority' | 'due' | 'projectId' | 'tagIds' | 'source' | 'recurring'
->;
+> &
+	Partial<Pick<TicketSummary, 'assignee'>>;
 
 function matchesRecurring(ticket: FilterableTicket, filter: ListQuery['recurring']): boolean {
 	if (filter === null) return true;
@@ -76,21 +80,24 @@ export function matchesProject(
  * belongs to one of the chosen cards (any ticket without one) and to every filter group. The status
  * filter compares the status only; which section shows done tickets decides the list (T-6). A
  * project filter takes the sub projects `subProjectsOf` names in, unless the query switches them off.
+ * The card "Mir zugewiesen" looks at the assignee `selfId` (ADR-0068).
  */
 export function matchesFilter(
 	ticket: FilterableTicket,
 	query: ListQuery,
 	today: CalendarDate,
-	subProjectsOf: SubProjectsOf = NO_SUB_PROJECTS
+	subProjectsOf: SubProjectsOf = NO_SUB_PROJECTS,
+	selfId: string | null = null
 ): boolean {
 	return (
-		matchesCards(ticket, query.cards, today) &&
+		matchesCards(ticket, query.cards, today, selfId) &&
 		(query.status === null || ticket.status === query.status) &&
 		(query.priority === null || ticket.priority === query.priority) &&
 		matchesDue(ticket, query.due, today) &&
 		(query.source === null || sourceFamily(ticket.source) === query.source) &&
 		matchesRecurring(ticket, query.recurring) &&
 		matchesProject(ticket, query, subProjectsOf) &&
-		(query.tag === null || ticket.tagIds.includes(query.tag))
+		(query.tag === null || ticket.tagIds.includes(query.tag)) &&
+		matchesAssignee(ticket, query.assignee)
 	);
 }

@@ -203,3 +203,59 @@ describe('new tickets in the list store', () => {
 		expect(store.isNew(FRESH)).toBe(false);
 	});
 });
+
+describe('tickets given to the account by another member (E7-5, ADR-0068 §4)', () => {
+	const SELF = 'anna00000000001';
+	const GIVEN = '2026-09-25 11:00:00.000Z';
+
+	it('are new again, also older and read ones, once the server drops the read row', async () => {
+		const given = ticket('tick00000000005', {
+			created: '2026-09-01 09:00:00.000Z',
+			assignee: SELF,
+			assignedAt: GIVEN
+		});
+		const data: TicketListData = {
+			listOpen: vi.fn(async () => [OLD, READ, given]),
+			searchOpen: vi.fn(async () => []),
+			setDone: vi.fn(),
+			update: vi.fn()
+		};
+		const reads = {
+			unreadSince: vi.fn(() => BASE),
+			list: vi.fn<ReadsData['list']>(async () => [{ id: 'read00000000001', ticket: READ.id }]),
+			markRead: vi.fn<ReadsData['markRead']>(async (ticketId) => ({
+				id: 'read00000000009',
+				ticket: ticketId
+			})),
+			markAllRead: vi.fn<ReadsData['markAllRead']>(async () => BASE)
+		} satisfies ReadsData;
+		const store = new TicketListStore(
+			data,
+			{ ensureValid: () => true, logout: vi.fn() },
+			{
+				reads,
+				flags: new FlagStore(),
+				assignees: () => ({ selfId: SELF, selfName: 'Anna Beispiel', names: null })
+			}
+		);
+		store.loadOpen();
+		await vi.waitFor(() => expect(store.newCount).toBe(1));
+		expect(store.isNew(given)).toBe(true);
+		expect(store.isNew(OLD)).toBe(false);
+
+		// Another member gives READ to the account: the ticket changes, the server drops the row.
+		const live = fakeLive();
+		store.connect(live.source);
+		await vi.waitFor(() => expect(live.reads).toHaveLength(1));
+		const reassigned = { ...READ, assignee: SELF, assignedAt: GIVEN };
+		store.upsert(reassigned);
+		live.send({ action: 'delete', id: 'read00000000001', ticket: READ.id });
+		expect(store.isNew(reassigned)).toBe(true);
+		expect(store.newCount).toBe(2);
+
+		// Opening it reads it again.
+		await store.markRead(reassigned);
+		expect(reads.markRead).toHaveBeenCalledWith(READ.id);
+		expect(store.isNew(reassigned)).toBe(false);
+	});
+});

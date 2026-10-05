@@ -2,6 +2,7 @@
 // that reads and writes the list parameters. Invalid values count as not set; parameters this
 // module does not know stay untouched when writing.
 
+import { NOBODY } from './assignee';
 import { cardsFromUrl, cardsToUrl, type FilterCard } from './filter-cards';
 import { SORT_KEYS, type SortKey, type SortSpec } from './ordering';
 import { SOURCE_FAMILIES, SOURCE_FAMILY_VALUES, type SourceFamily } from './source';
@@ -18,8 +19,19 @@ export type DueFilter = (typeof DUE_FILTERS)[number];
 export const RECURRING_FILTERS = ['recurring', 'once'] as const;
 export type RecurringFilter = (typeof RECURRING_FILTERS)[number];
 
-/** Groupings of the table (T-7); domain/grouping.ts groups by them. */
-export const GROUPINGS = ['status', 'priority', 'project', 'due', 'source', 'recurrence'] as const;
+/**
+ * Groupings of the table (T-7); domain/grouping.ts groups by them. "Nach Zuständigkeit" since E7-5
+ * (ADR-0068 §3), offered only in a household.
+ */
+export const GROUPINGS = [
+	'status',
+	'priority',
+	'project',
+	'due',
+	'source',
+	'recurrence',
+	'assignee'
+] as const;
 export type Grouping = (typeof GROUPINGS)[number];
 
 /** Value of the project filter for tickets without a project. */
@@ -63,6 +75,11 @@ export interface ListQuery {
 	subProjects: boolean;
 	/** Tag record ID. */
 	tag: string | null;
+	/**
+	 * "Zuständig" (E7-5, ADR-0068 §3): an account record ID or NOBODY ("niemand"); only the household
+	 * offers it, a private ticket has no assignee.
+	 */
+	assignee: string | null;
 	/** Trimmed search text, 1 to SEARCH_MAX_LENGTH characters. */
 	search: string | null;
 	/** Column sort; null: default order. */
@@ -89,6 +106,7 @@ export const FILTER_KEYS = [
 	'recurring',
 	'project',
 	'tag',
+	'assignee',
 	'search'
 ] as const;
 export type FilterKey = (typeof FILTER_KEYS)[number];
@@ -103,6 +121,7 @@ export const EMPTY_LIST_QUERY: Readonly<ListQuery> = Object.freeze({
 	project: null,
 	subProjects: true,
 	tag: null,
+	assignee: null,
 	search: null,
 	sort: null,
 	grouping: null,
@@ -123,6 +142,7 @@ export const LIST_PARAMS = Object.freeze({
 	project: 'projekt',
 	subProjects: 'unterprojekte',
 	tag: 'tag',
+	assignee: 'zustaendig',
 	search: 'q',
 	sort: 'sort',
 	grouping: 'gruppe',
@@ -146,7 +166,8 @@ const SORT_VALUES: Readonly<Record<SortKey, string>> = Object.freeze({
 	title: 'titel',
 	project: 'projekt',
 	due: 'faellig',
-	created: 'erstellt'
+	created: 'erstellt',
+	assignee: 'zustaendig'
 });
 
 const RECURRING_VALUES: Readonly<Record<RecurringFilter, string>> = Object.freeze({
@@ -160,7 +181,8 @@ const GROUPING_VALUES: Readonly<Record<Grouping, string>> = Object.freeze({
 	project: 'projekt',
 	due: 'faellig',
 	source: 'quelle',
-	recurrence: 'wiederholung'
+	recurrence: 'wiederholung',
+	assignee: 'zustaendig'
 });
 
 /** Prefix of a sort value for the opposite of the natural direction. */
@@ -202,6 +224,11 @@ function parseRecordId(value: string | null): string | null {
 	return value !== null && RECORD_ID.test(value) ? value : null;
 }
 
+/** "Zuständig": an account record ID or NOBODY; anything else counts as not set. */
+export function parseAssigneeFilter(value: string | null): string | null {
+	return value === NOBODY ? NOBODY : parseRecordId(value);
+}
+
 /** Reads the list state from URL parameters; every input gives a valid query. */
 export function parseListQuery(params: URLSearchParams): ListQuery {
 	const project = single(params, LIST_PARAMS.project);
@@ -217,6 +244,7 @@ export function parseListQuery(params: URLSearchParams): ListQuery {
 		project: project === NO_PROJECT ? NO_PROJECT : parseRecordId(project),
 		subProjects: single(params, LIST_PARAMS.subProjects) !== '0',
 		tag: parseRecordId(single(params, LIST_PARAMS.tag)),
+		assignee: parseAssigneeFilter(single(params, LIST_PARAMS.assignee)),
 		search: parseSearch(single(params, LIST_PARAMS.search)),
 		sort: parseSort(single(params, LIST_PARAMS.sort)),
 		grouping,
@@ -260,6 +288,7 @@ function queryEntries(query: ListQuery): [string, string][] {
 			!query.subProjects && query.project !== null && query.project !== NO_PROJECT ? '0' : null
 		],
 		[LIST_PARAMS.tag, query.tag],
+		[LIST_PARAMS.assignee, parseAssigneeFilter(query.assignee)],
 		[LIST_PARAMS.search, search],
 		[
 			LIST_PARAMS.sort,
@@ -315,6 +344,7 @@ export function resetFilters(query: ListQuery): ListQuery {
 		project: null,
 		subProjects: true,
 		tag: null,
+		assignee: null,
 		search: null
 	};
 }

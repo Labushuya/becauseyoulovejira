@@ -4,7 +4,8 @@ import type { RecurrenceRule } from '$lib/domain/recurrence-rule';
 import {
 	CATCH_UP_ALL_HINT,
 	CATCH_UP_ASK_HINT,
-	defaultFormValues
+	defaultFormValues,
+	formValuesOf
 } from '$lib/domain/recurrence-rule';
 import type { Ticket } from '$lib/domain/ticket';
 import type { FlagInput, FlagSink } from './flags.svelte';
@@ -905,6 +906,50 @@ describe('RecurrenceStore: the sub-tasks of the template (plan WV-3)', () => {
 		}
 		after.reset();
 		expect(after.charmsReady).toBe(false);
+	});
+
+	it('sends a changed "Zuständigkeit" with the rhythm only after its migration (ADR-0068 §5)', async () => {
+		const SELF = 'anna00000000001';
+		const BERT = 'bert00000000002';
+		const stored = rule({ assignment: { mode: 'rotate', assignees: [SELF, BERT], next: 1 } });
+		const data = fakeData([stored]);
+		const after = new RecurrenceStore(
+			{ ...data, assigneesReady: vi.fn(async () => true) },
+			session()
+		);
+		expect(after.assigneesReady).toBe(false);
+		await after.load();
+		expect(after.assigneesReady).toBe(true);
+
+		const shown = formValuesOf(stored, '2026-09-25');
+		expect(shown.assignment).toEqual({ mode: 'rotate', assignees: [BERT, SELF] });
+		const sent = (source: typeof data) => vi.mocked(source.updateRule).mock.calls.at(-1)?.[1];
+		await after.saveRhythm('rule00000000001', shown);
+		expect(sent(data)).not.toHaveProperty('assignees');
+
+		await after.saveRhythm('rule00000000001', {
+			...shown,
+			assignment: { mode: 'fixed', assignees: [BERT] }
+		});
+		expect(sent(data)).toMatchObject({
+			assignee_mode: 'fixed',
+			assignees: [BERT],
+			assignee_next: 0
+		});
+
+		const beforeData = fakeData([stored]);
+		const before = new RecurrenceStore(
+			{ ...beforeData, assigneesReady: vi.fn(async () => false) },
+			session()
+		);
+		await before.load();
+		await before.saveRhythm('rule00000000001', {
+			...shown,
+			assignment: { mode: 'fixed', assignees: [BERT] }
+		});
+		expect(sent(beforeData)).not.toHaveProperty('assignee_mode');
+		after.reset();
+		expect(after.assigneesReady).toBe(false);
 	});
 
 	it('saves the list of the draft trimmed, and only once the server knows it', async () => {

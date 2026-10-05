@@ -20,6 +20,8 @@
 	} from '$lib/domain/list-query';
 	import { SOURCE_FAMILY_CHIPS, SOURCE_FAMILY_LABELS, type SourceFamily } from '$lib/domain/source';
 	import { PRIORITIES, STATUSES, type Priority, type Status } from '$lib/domain/status';
+	import { NOBODY, NOBODY_LABEL, assigneeName } from '$lib/domain/assignee';
+	import { findAssignees, type AssigneeSource } from '$lib/stores/assignees.svelte';
 	import type { CatalogStore } from '$lib/stores/catalog.svelte';
 	import { withListQuery } from '$lib/ticket-links';
 	import ChipGroup from './ChipGroup.svelte';
@@ -41,12 +43,15 @@
 	// The calendar (ADR-0053 §3) uses the same bar with the same parameters, without "Fällig" (its
 	// grid is the axis of the due date) and without the search (the server answers it for the list);
 	// only there the status "Erledigt" is a chip (ADR-0066 §5).
+	// "Zuständig" (E7-5, ADR-0068 §3) is a popover like "Tag", only in a household: "Niemand" and the
+	// members, the own account first.
 	let {
 		catalog,
 		calendar = false,
 		searchBusy = false,
 		searchError = null,
-		onretrysearch = () => undefined
+		onretrysearch = () => undefined,
+		assignees = findAssignees()
 	}: {
 		catalog: CatalogStore;
 		/** The bar of the calendar: without "Fällig" and the search. */
@@ -56,6 +61,8 @@
 		/** Failure of the search; the table then shows the tickets without search. */
 		searchError?: string | null;
 		onretrysearch?: () => void;
+		/** The members of the household (the directory of the layout); null without one. */
+		assignees?: AssigneeSource | null;
 	} = $props();
 
 	const uid = $props.id();
@@ -136,6 +143,25 @@
 		...catalog.tags.map((tag) => ({ value: tag.id, label: tag.name })),
 		...(unknownTag && query.tag !== null ? [{ value: query.tag, label: unknownLabel }] : [])
 	]);
+	/** "Zuständig" only in a household (ADR-0068), or while the address names one. */
+	const assigneeShown = $derived(
+		assignees !== null && (assignees.active || query.assignee !== null)
+	);
+	const assigneeOptions = $derived.by(() => {
+		if (assignees === null) return [];
+		const members = assignees.members.map((member) => ({
+			value: member.id,
+			label: member.self ? `${member.name} (ich)` : member.name
+		}));
+		const chosen = query.assignee;
+		const unknown =
+			chosen !== null && chosen !== NOBODY && !members.some((member) => member.value === chosen);
+		return [
+			{ value: NOBODY, label: NOBODY_LABEL },
+			...members,
+			...(unknown ? [{ value: chosen, label: assigneeName(chosen, assignees.context) }] : [])
+		];
+	});
 
 	async function navigate(next: ListQuery) {
 		await goto(withListQuery(page.url, next), { keepFocus: true, noScroll: true });
@@ -299,6 +325,16 @@
 			value={query.tag}
 			onchange={(value) => setFilter('tag', value)}
 		/>
+
+		{#if assigneeShown}
+			<FilterPopover
+				legend="Zuständig"
+				name={`${uid}-assignee`}
+				options={assigneeOptions}
+				value={query.assignee}
+				onchange={(value) => setFilter('assignee', value)}
+			/>
+		{/if}
 
 		<button
 			class="button-secondary button-small reset"

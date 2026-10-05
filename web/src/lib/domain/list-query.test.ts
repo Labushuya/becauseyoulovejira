@@ -104,6 +104,7 @@ describe('parseListQuery', () => {
 			project: PROJECT_ID,
 			subProjects: false,
 			tag: TAG_ID,
+			assignee: null,
 			search: 'Auto',
 			sort: { key: 'due', reversed: true },
 			grouping: 'project',
@@ -158,6 +159,7 @@ describe('serializeListQuery', () => {
 			grouping: 'due',
 			sort: { key: 'created', reversed: false },
 			search: 'Öl wechseln',
+			assignee: null,
 			tag: TAG_ID,
 			subProjects: true,
 			project: NO_PROJECT,
@@ -180,6 +182,24 @@ describe('serializeListQuery', () => {
 				`&projekt=${PROJECT_ID}&unterprojekte=0&tag=${TAG_ID}&q=%C3%96l+wechseln&sort=erstellt` +
 				'&gruppe=faellig&untergruppe=prio'
 		);
+	});
+
+	it('reads and writes "zustaendig" with an account or "niemand" and groups and sorts by it (ADR-0068)', () => {
+		const ACCOUNT = 'abc123def456ghi';
+		expect(parse(`zustaendig=${ACCOUNT}`).assignee).toBe(ACCOUNT);
+		expect(parse('zustaendig=niemand').assignee).toBe('niemand');
+		expect(parse('zustaendig=jemand').assignee).toBeNull();
+		expect(parse('zustaendig=niemand&zustaendig=niemand').assignee).toBeNull();
+		expect(
+			normalize(`gruppe=zustaendig&zustaendig=${ACCOUNT}&tag=${TAG_ID}&sort=-zustaendig`)
+		).toBe(`?tag=${TAG_ID}&zustaendig=${ACCOUNT}&sort=-zustaendig&gruppe=zustaendig`);
+		expect(parse('gruppe=zustaendig&sort=zustaendig')).toEqual(
+			query({ grouping: 'assignee', sort: { key: 'assignee', reversed: false } })
+		);
+		expect(resetFilters(query({ assignee: ACCOUNT, grouping: 'assignee' }))).toEqual(
+			query({ grouping: 'assignee' })
+		);
+		expect(hasFilters(query({ assignee: 'niemand' }))).toBe(true);
 	});
 
 	it('reads and writes "unterprojekte=0" only with a project (ADR-0034)', () => {
@@ -259,6 +279,7 @@ describe('withFilter, resetFilters, hasFilters', () => {
 		project: PROJECT_ID,
 		subProjects: false,
 		tag: TAG_ID,
+		assignee: 'niemand',
 		search: 'Auto',
 		sort: { key: 'title', reversed: false },
 		grouping: 'priority',

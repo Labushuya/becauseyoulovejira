@@ -10,6 +10,7 @@ var history = require(__hooks + '/lib/history.js');
 var errors = require(__hooks + '/lib/errors.js');
 var inbox = require(__hooks + '/lib/inbox-service.js');
 var trashRules = require(__hooks + '/lib/trash-rules.js');
+var assignees = require(__hooks + '/lib/assignee-service.js');
 
 // Transient record key for the acting user (E1 plan OF-4, variant A). Field names cannot contain
 // "@", PocketBase neither stores nor exports unknown keys, and the Record API does not load
@@ -409,6 +410,8 @@ function prepareCreate(txApp, record) {
   checkCharm(record, null);
   var project = checkRelations(txApp, record, scope, '');
   checkPinnedComment(txApp, record, null);
+  // The assignee (ADR-0068): a member of the household, never at a private ticket.
+  assignees.prepareTicket(txApp, record, null, actorOf(record));
   var item = inbox.prepareConversion(txApp, record, scope);
   applyCompletedAt(record, null);
   assignKey(txApp, record, scope, project);
@@ -467,6 +470,7 @@ function prepareUpdate(txApp, record) {
   checkCharm(record, original);
   var project = checkRelations(txApp, record, scope, original.getString('project'));
   checkPinnedComment(txApp, record, original);
+  assignees.prepareTicket(txApp, record, original, actorOf(record));
   applyCompletedAt(record, original);
 
   var before = {

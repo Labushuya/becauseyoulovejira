@@ -184,7 +184,7 @@ describe('menu "Spalten" (ADR-0030)', () => {
 		expect(JSON.parse(localStorage.getItem('byl-columns-tickets') ?? '')).toEqual({
 			v: 1,
 			widths: {},
-			hidden: ['parent', 'source', 'created']
+			hidden: ['assignee', 'parent', 'source', 'created']
 		});
 		await vi.advanceTimersByTimeAsync(0);
 		expect(live(menu)).toBe('Erstellt ausgeblendet.');
@@ -231,7 +231,7 @@ describe('menu "Spalten" (ADR-0030)', () => {
 		expect(JSON.parse(localStorage.getItem('byl-columns-tickets') ?? '')).toEqual({
 			v: 1,
 			widths: {},
-			hidden: ['source'],
+			hidden: ['assignee', 'source'],
 			shown: ['parent'],
 			options: { nest: false }
 		});

@@ -1,6 +1,6 @@
 # ADR-0013: Filter, Suche, Sortierung und Gruppierung: was der Client und was der Server rechnet
 
-- **Status:** Angenommen; §3 seit Nachtrag E (ER-1) für die Ansicht „Erledigte“ ([ADR-0066](0066-ansicht-erledigte.md))
+- **Status:** Angenommen; §3 seit Nachtrag E (ER-1) für die Ansicht „Erledigte“ ([ADR-0066](0066-ansicht-erledigte.md)); Nachtrag F (E7-5): „Zuständig“ im Haushalt ([ADR-0068](0068-zustaendigkeit.md))
 - **Datum:** 2026-09-25
 - **Entscheidung durch:** Advisor
 - **Ergänzt:** [ADR-0006](0006-frontend-zustand-und-datenzugriff.md) (dort §2 „Server-Sortierung wird in E3 je Variante neu bewertet“)
@@ -160,3 +160,11 @@ Nutzerentscheidung vom 2026-10-05, ausgeführt in [ADR-0066](0066-ansicht-erledi
 4. **§3 „Erledigte Tickets: Filter auf dem Server“** gilt jetzt für die Ansicht „Erledigte“ mit eigenem Filter (Suche, Projekt mit Unterprojekten, Tag, Charm): `COMPLETED_FILTER` in `data/tickets.ts`, Gegenstück `matchesDoneQuery` in `domain/done-view.ts`, Paritätstest `tests/integration/web-filter-parity.test.mjs`. Die feste Reihenfolge „zuletzt erledigte zuerst“ bleibt; statt Sortierung per Spaltenkopf gliedert die Ansicht nach dem Tag des Abschlusses. `listDoneTickets`, `DONE_FILTER`, `DONE_SOURCE_FILTER` und `DONE_CARDS_FILTER` entfallen.
 5. **Nachtrag C §5 und §10:** Die Filter-Karten gelten nur noch für offene Tickets; eine Karte für erledigte Tickets gibt es weiter nicht, denn diese haben ihre eigene Ansicht.
 6. **Nachtrag D §2 bis §4 (gesperrte Karten):** Gegenstandslos, weil „Aufgaben“ den Statusfilter „Erledigt“ nicht mehr kennt und eine solche Adresse nach `/erledigt` führt. `cardsLocked`, `appliedCards`, `CARDS_LOCKED_HINT` und die Sperre in `FilterCards` entfallen samt ihren Tests; die Karten wirken immer mit der gewählten Kartenwahl. Nachtrag D §1 (angeheftete Tickets in der Zusammenfassung) gilt weiter.
+
+## Nachtrag F (2026-10-05, Paket E7-5): „Zuständig“ im Haushalt
+
+Ausgeführt in [ADR-0068](0068-zustaendigkeit.md) §3; der Text oben und die Nachträge bleiben.
+
+1. **Sechste Karte „Mir zugewiesen“** (`mine`, Adresse `karte=mir`): Tickets, deren Zuständigkeit das ansehende Konto ist. Nur im Haushalt angeboten (`HOUSEHOLD_CARDS`), weil private Tickets keine Zuständigkeit haben; dieselbe Vereinigung wie die übrigen Karten (Nachtrag C), dieselbe Zählung über die Detailfilter. `matchesCard`, `matchesCards`, `countCards` und `matchesFilter` nehmen dafür das Konto (`selfId`) mit.
+2. **Filter „Zuständig“** (`zustaendig=<Konto-ID>` oder `zustaendig=niemand`): in „Aufgaben“ und im Kalender im Client wie die übrigen Filter (§2), in „Erledigte“ auf dem Server (`DONE_ASSIGNEE_FILTER`, nur mit gesetztem Filter) mit `matchesDoneQuery` als Gegenstück; Paritätstest in `tests/integration/web-filter-parity.test.mjs`, dort auch die Karte und der Filter der offenen Liste gegen dieselbe Frage an den Server, je Mitglied.
+3. **Gruppieren und Sortieren:** Gruppe „Nach Zuständigkeit“ (`gruppe=zustaendig`, auch zweite Ebene; eigenes Konto zuerst, die anderen nach Namen, „Niemand“ zuletzt) und Sortierung „Zuständig“ (`sort=zustaendig`, nach Namen, ohne Zuständigkeit immer zuletzt). Im Privaten bietet das Menü „Gruppieren“ die Gruppe nicht an, eine Adresse mit ihr wirkt trotzdem.

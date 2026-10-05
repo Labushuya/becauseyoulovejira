@@ -17,12 +17,19 @@ const mocks = vi.hoisted(() => ({
 vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
 vi.mock('$app/state', () => ({ page: mocks.page }));
 
-const COUNTS: CardCounts = { allOpen: 12, in_progress: 3, due_today: 2, overdue: 4, urgent: 1 };
+const COUNTS: CardCounts = {
+	allOpen: 12,
+	in_progress: 3,
+	due_today: 2,
+	overdue: 4,
+	urgent: 1,
+	mine: 5
+};
 const NAVIGATION = { keepFocus: true, noScroll: true };
 
-function show(path = '/', counts: CardCounts | null = COUNTS) {
+function show(path = '/', counts: CardCounts | null = COUNTS, household?: boolean) {
 	mocks.page.url = new URL(path, 'http://localhost:3000');
-	return render(FilterCards, { props: { counts } });
+	return render(FilterCards, { props: { counts, household } });
 }
 
 function card(name: string) {
@@ -189,6 +196,26 @@ describe('filter cards', () => {
 
 		expect(card('Dringend: 1').getAttribute('aria-pressed')).toBe('true');
 		expect(card('Alle offenen: 12').getAttribute('aria-pressed')).toBe('false');
+	});
+
+	it('offers "Mir zugewiesen" only in a household, joined with the other cards (ADR-0068 §3)', async () => {
+		show('/?karte=dringend', COUNTS, true);
+
+		const group = screen.getByRole('group', { name: 'Filter-Karten' });
+		expect(within(group).getAllByRole('button')).toHaveLength(6);
+		const mine = card('Mir zugewiesen: 5');
+		expect(mine.getAttribute('aria-pressed')).toBe('false');
+		await fireEvent.click(mine);
+		expect(mocks.goto).toHaveBeenCalledExactlyOnceWith('/?karte=dringend&karte=mir', NAVIGATION);
+
+		document.body.innerHTML = '';
+		show('/?karte=mir', COUNTS, true);
+		expect(card('Mir zugewiesen: 5').getAttribute('aria-pressed')).toBe('true');
+		expect(card('Alle offenen: 12').getAttribute('aria-pressed')).toBe('false');
+
+		document.body.innerHTML = '';
+		show('/', COUNTS, false);
+		expect(screen.queryByRole('button', { name: /Mir zugewiesen/ })).toBeNull();
 	});
 
 	it('uses no error colour, not even for "Überfällig" (ADR-0009)', () => {

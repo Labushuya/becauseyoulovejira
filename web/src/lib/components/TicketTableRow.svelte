@@ -42,6 +42,9 @@
 	import type { ParentRef, ProjectRef, TagRef, TicketSummary } from '$lib/domain/ticket';
 	import { PRIORITY_LABELS, STATUS_LABELS } from '$lib/domain/labels';
 	import { PRIORITIES, STATUSES } from '$lib/domain/status';
+	import { NOBODY_LABEL, assigneeName } from '$lib/domain/assignee';
+	import type { AssigneeSource } from '$lib/stores/assignees.svelte';
+	import AssigneeBadge from './AssigneeBadge.svelte';
 	import CharmIcon from './CharmIcon.svelte';
 	import ColorMark from './ColorMark.svelte';
 	import KindBadge from './KindBadge.svelte';
@@ -100,6 +103,7 @@
 		menu,
 		menuBusy = false,
 		pin,
+		assignees = null,
 		ontoggle
 	}: {
 		ticket: TicketSummary;
@@ -154,6 +158,11 @@
 		 * before the title; the row marks itself for its "show on pointing" (data-pin-row).
 		 */
 		pin?: Snippet<[TicketSummary]>;
+		/**
+		 * "Zuständig" of the household (ADR-0068): the initials at the title, or the cell of the column
+		 * when it is shown; null in the private area.
+		 */
+		assignees?: AssigneeSource | null;
 		ontoggle: (done: boolean) => void;
 	} = $props();
 
@@ -384,6 +393,39 @@
 			{/if}
 		</td>
 	{/if}
+	{#if assignees && shows('assignee')}
+		<!-- "Zuständig" (ADR-0068 §3): the initials, and with `edit` a menu with "Niemand" and the
+		     members, the own account first. -->
+		<td class="assignee" class:editable={edit} data-col="assignee">
+			{#if edit}
+				<EditableCell
+					kind="menu"
+					label={`Zuständig für ${ticket.key}`}
+					buttonLabel={`Zuständig für ${ticket.key}: ${ticket.assignee ? assigneeName(ticket.assignee, assignees.context) : NOBODY_LABEL}, ändern`}
+					busy={edit.busy}
+				>
+					{#snippet value()}<AssigneeBadge
+							assignee={ticket.assignee}
+							context={assignees.context}
+						/>{/snippet}
+					{#snippet editor({ close })}
+						{@render menuChoice(!ticket.assignee, NOBODY_LABEL, () =>
+							choose(close, { assignee: null })
+						)}
+						{#each assignees.members as member (member.id)}
+							{@render menuChoice(
+								member.id === ticket.assignee,
+								member.self ? `${member.name} (ich)` : member.name,
+								() => choose(close, { assignee: member.id })
+							)}
+						{/each}
+					{/snippet}
+				</EditableCell>
+			{:else}
+				<AssigneeBadge assignee={ticket.assignee} context={assignees.context} />
+			{/if}
+		</td>
+	{/if}
 	<th class="title" class:has-pin={pin} scope="row" data-col="title">
 		<!-- At most two lines, cut off only visually; screen readers read the whole title. -->
 		<div class="title-clamp">
@@ -442,6 +484,10 @@
 				</span>
 			{/if}
 			<KindBadge kind={ticket.kind} />
+			{#if assignees && ticket.assignee && !shows('assignee')}
+				<!-- The initials of the assignee (ADR-0068 §2), while the column "Zuständig" is off. -->
+				<AssigneeBadge assignee={ticket.assignee} context={assignees.context} />
+			{/if}
 			{#if progress && progress.total > 0}
 				<span class="progress-chip" title={progressLabel(progress)}>
 					<span aria-hidden="true">{progress.done}/{progress.total}</span>
