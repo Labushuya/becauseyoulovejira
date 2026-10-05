@@ -61,7 +61,9 @@ const mocks = vi.hoisted(() => {
 			// Changes of the household and of the memberships (ADR-0058).
 			household: vi.fn(subscribe('byl/household')),
 			// The own pinned tickets (ADR-0064).
-			pins: vi.fn(subscribe('ticket_pins'))
+			pins: vi.fn(subscribe('ticket_pins')),
+			// Assignments by someone else (ADR-0068 §4).
+			assigned: vi.fn(subscribe('byl/assigned'))
 		},
 		goto: vi.fn(async () => {
 			calls.push('goto');
@@ -300,6 +302,10 @@ vi.mock('$lib/stores/household.svelte', async (importOriginal) => ({
 	}),
 	householdLive: () => ({ changes: mocks.live.household, reconnected: mocks.live.reconnected })
 }));
+vi.mock('$lib/stores/assigned-notices.svelte', async (importOriginal) => ({
+	...(await importOriginal<object>()),
+	assignedLive: () => ({ notices: mocks.live.assigned })
+}));
 // The area of a record a link opens (E7-3, ADR-0059 §7): what the server would answer.
 const areaMocks = vi.hoisted(() => ({
 	recordScope: vi.fn<(pb: unknown, kind: string, id: string) => Promise<string | null>>(
@@ -398,7 +404,7 @@ describe('app layout', () => {
 
 	it('subscribes to tickets, the catalog, the inbox, the rules, the attention messages and reconnections while shown and ends them when it goes away', async () => {
 		const { unmount } = await renderLayout();
-		await vi.waitFor(() => expect(mocks.subscribed).toHaveLength(26));
+		await vi.waitFor(() => expect(mocks.subscribed).toHaveLength(27));
 
 		// The list follows all tickets, the catalog all projects and tags (E3 plan, T-16), the
 		// inbox all entries (E4 plan, T-4) and so do the sources of the open ticket (ADR-0031), the
@@ -409,7 +415,8 @@ describe('app layout', () => {
 		// renames and load again after a reconnect (ADR-0026, addendum KK-3), and so do the names of
 		// the visible accounts (ADR-0056 §4) and the household (byl/household, ADR-0058). The context
 		// of the tab asks again after a reconnect (KOB-1, ADR-0057). The own pins follow their changes
-		// and load again after a reconnect (ADR-0064).
+		// and load again after a reconnect (ADR-0064). Assignments by someone else come on
+		// byl/assigned (ADR-0068 §4).
 		expect([...mocks.subscribed].sort()).toEqual([
 			'PB_CONNECT',
 			'PB_CONNECT',
@@ -425,6 +432,7 @@ describe('app layout', () => {
 			'PB_CONNECT',
 			'PB_CONNECT',
 			'PB_CONNECT',
+			'byl/assigned',
 			'byl/attention',
 			'byl/household',
 			'byl/trash',
@@ -448,6 +456,7 @@ describe('app layout', () => {
 		expect(mocks.live.people).toHaveBeenCalledOnce();
 		expect(mocks.live.household).toHaveBeenCalledOnce();
 		expect(mocks.live.pins).toHaveBeenCalledOnce();
+		expect(mocks.live.assigned).toHaveBeenCalledOnce();
 		// The catalog tries to load once when the layout is shown.
 		expect(mocks.auth.ensureValid).toHaveBeenCalled();
 
@@ -1005,7 +1014,7 @@ describe('app layout: context of the tab (KOB-1, ADR-0057)', () => {
 		pb.authStore.save('token', { id: 'u0000000000000a', collectionName: 'users' } as never);
 		await renderLayout();
 		await vi.waitFor(() => expect(appContext.capabilities.mode).toBe('outdated'));
-		await vi.waitFor(() => expect(mocks.subscribed).toHaveLength(26));
+		await vi.waitFor(() => expect(mocks.subscribed).toHaveLength(27));
 
 		for (const [reconnected] of mocks.live.reconnected.mock.calls) reconnected(undefined);
 		await vi.waitFor(() => expect(appContext.capabilities.mode).toBe('pc'));
