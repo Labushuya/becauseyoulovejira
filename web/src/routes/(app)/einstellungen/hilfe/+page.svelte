@@ -1810,7 +1810,8 @@
 			<a href={resolve('/einstellungen/haushalt')}>Einstellungen → Haushalt</a>, auf jedem Gerät,
 			auch am Handy im Heimnetz. Zwischen deinen privaten Einträgen und denen des Haushalts
 			wechselst du oben mit dem Umschalter (siehe
-			<a href="#bereiche">Bereiche Privat und Haushalt</a>).
+			<a href="#bereiche">Bereiche Privat und Haushalt</a>). Wer sich um ein Ticket kümmert, legst
+			du mit der <a href="#zustaendigkeit">Zuständigkeit</a> fest.
 		</p>
 		<dl class="tokens">
 			<div class="row">
@@ -1982,6 +1983,80 @@
 					neue Nummern im Ziel; der Verlauf nennt die alte („vorher PRIV-12“), und Links
 					funktionieren weiter. Alles geschieht in einem Schritt oder gar nicht; offene Tabs folgen
 					ohne Neuladen.
+				</dd>
+			</div>
+		</dl>
+	</section>
+
+	<section id="zustaendigkeit" aria-labelledby="zustaendigkeit-title">
+		<h3 id="zustaendigkeit-title">Zuständigkeit</h3>
+		<p>
+			Im Haushalt kann jedes Ticket genau eine zuständige Person haben, ein Mitglied des Haushalts,
+			oder niemanden. Private Tickets haben keine Zuständigkeit; dort gibt es das Feld nicht. Jedes
+			Mitglied darf zuweisen, ändern und entfernen, ein Sonderrecht gibt es dafür nicht.
+		</p>
+		<dl class="tokens">
+			<div class="row">
+				<dt>Zuweisen</dt>
+				<dd>
+					Im Ticket steht nach „Priorität“ das Feld „Zuständig“ mit „Niemand“ und den Mitgliedern;
+					die Wahl gilt sofort. „Ich übernehme“ daneben macht dich mit einem Klick zuständig. Der
+					Verlauf nennt jede Änderung („Zuständig: Anna Beispiel“, „Zuständigkeit entfernt“).
+				</dd>
+			</div>
+			<div class="row">
+				<dt>Initialen</dt>
+				<dd>
+					Wer zuständig ist, steht als rundes Kürzel wie „AB“ am Ticket: in „Aufgaben“, in den
+					offenen Tickets eines Projekts, in „Erledigte“, im Tagesplan, in der Agenda des Kalenders
+					und im Ticket selbst. Die Farbe des Rings bleibt für eine Person überall gleich; den
+					vollen Namen zeigt der Tooltip, und Screenreader lesen ihn vor. In „Aufgaben“ gibt es im
+					Menü „Spalten“ zusätzlich die Spalte „Zuständig“, in der du die Person direkt änderst.
+				</dd>
+			</div>
+			<div class="row">
+				<dt>Mir zugewiesen</dt>
+				<dd>
+					Die Karte „Mir zugewiesen“ über der Liste zeigt die Tickets, für die du zuständig bist;
+					wie die anderen Karten lässt sie sich mit ihnen kombinieren. Der Filter „Zuständig“ wählt
+					eine Person oder „Niemand“, auch in „Erledigte“. Unter „Gruppieren“ gibt es „Nach
+					Zuständigkeit“, und die Liste lässt sich nach „Zuständig“ sortieren.
+				</dd>
+			</div>
+			<div class="row">
+				<dt>Hinweis</dt>
+				<dd>
+					Weist dir jemand anderes ein Ticket zu, erscheint sofort „Anna hat dir HAUS-12
+					zugewiesen.“ mit „Öffnen“, und das Ticket ist für dich wieder neu (Punkt „neu“), auch wenn
+					du es schon gelesen hattest. Was du dir selbst zuweist, meldet nichts.
+				</dd>
+			</div>
+			<div class="row">
+				<dt>Wiederholungen</dt>
+				<dd>
+					Unter „Zuständigkeit“ einer Wiederholung im Haushalt wählst du „Keine“, „Fest“ (immer
+					dieselbe Person) oder „Abwechselnd“ (eine Reihenfolge, etwa für „Müll rausbringen“). Jedes
+					neue Ticket der Serie bekommt die nächste Person, reihum, auch beim Nachholen verpasster
+					Termine. Die Vorschau sagt „Nächstes Vorkommen: Bert, danach: Anna“. Öffnest du ein Ticket
+					wieder und verschwindet dadurch sein noch unberührtes Folgeticket, ist dieselbe Person
+					wieder als Nächste dran.
+				</dd>
+			</div>
+			<div class="row">
+				<dt>Tagesplan</dt>
+				<dd>
+					Die Quelle „Mir zugewiesen“ schlägt im Haushalt deine Tickets vor („dir zugewiesen“), für
+					jedes Mitglied seine eigenen. Im gemeinsamen Plan steht an jedem Eintrag, wer zuständig
+					ist.
+				</dd>
+			</div>
+			<div class="row">
+				<dt>Austreten, Verschieben, Duplizieren</dt>
+				<dd>
+					Tritt jemand aus oder wird entfernt, verliert er alle Zuständigkeiten im Haushalt, auch in
+					Wiederholungen; der Verlauf jedes Tickets nennt das. Ins Private verschobene Tickets und
+					Wiederholungen verlieren ihre Zuständigkeit. Ein Duplikat im selben Haushalt behält sie,
+					eines im anderen Bereich nicht; ein Folge-Ticket beginnt ohne.
 				</dd>
 			</div>
 		</dl>

@@ -1,6 +1,6 @@
 # ADR-0058: Haushalt – Mitgliedschaft, Einladungen, Rechte (E7-2)
 
-- **Status:** Angenommen und umgesetzt (E7-2, [Plan E7 „Haushalt“](../plan/e7-haushalt.md) §3)
+- **Status:** Angenommen und umgesetzt (E7-2, [Plan E7 „Haushalt“](../plan/e7-haushalt.md) §3); Nachtrag E7-5: Zuständigkeit endet mit der Mitgliedschaft ([ADR-0068](0068-zustaendigkeit.md))
 - **Datum:** 2026-10-04
 - **Entscheidung durch:** Nutzer (Haushalt als „Shared Space“ mit seiner Frau, Privat und Haushalt isoliert, Beitritt per Code, aktiv austreten, Rechte weitergeben, später erweiterbar; 2026-10-04), Advisor (Akzeptanzkriterien, Rechtekatalog, Nummerierung E7-1 bis E7-7), Executor (Datenmodell, Regeln, Routen, Oberfläche, Einzelheiten)
 - **Bezug:** [ADR-0001](0001-betriebsmodell-lokal-mehrgeraete-spaeter.md) §2 und §4, [ADR-0011](0011-roadmap-e3-bis-e7.md) (Nachtrag), [ADR-0037](0037-papierkorb.md) §3 (Nachtrag), [ADR-0055](0055-sicherheits-haertung.md) §1 (Nachtrag), [ADR-0056](0056-konten-und-verwalter.md) §4 (Nachtrag), [ADR-0057](0057-kontextabhaengige-oberflaeche.md) §5 (Nachtrag)
@@ -140,3 +140,8 @@ Zwei Lücken zeigte die Prüfung der Regeln:
 - **§4 „Austreten“ und §1:** Der Inhaber kann den Haushalt jetzt auflösen (`POST /api/byl/household/dissolve`, alles ins Private übernehmen oder alles löschen); der Text von `owner-leave` nennt das statt „mit einer späteren Version“.
 - **Ohne aktiven Inhaber:** Ist der Inhaber deaktiviert oder in der Verwaltung gelöscht, bestimmt der Verwalter der App auf der Seite „Konten verwalten“ ein aktives Mitglied als Inhaber (wie Übertragen: der bisherige bleibt Mitglied mit allen Rechten).
 - **§5 „Offene Tabs“:** Das Thema `byl/household` trägt beim Auflösen `{ dissolved: true }`; sonst bleibt es ohne Daten.
+
+## Nachtrag E7-5 (2026-10-05, [ADR-0068](0068-zustaendigkeit.md)): Zuständigkeit endet mit der Mitgliedschaft
+
+- **Kein neues Recht:** Jedes Mitglied darf jedes Ticket des Haushalts einem Mitglied zuweisen, die Zuständigkeit ändern oder entfernen und die Zuständigkeit von Wiederholungen festlegen; die Rechte von §3 bleiben unverändert.
+- **§4 „Austreten“ und „Entfernen“:** Endet eine Mitgliedschaft (Austreten, Entfernen, Auflösen, Löschen eines verwaisten Haushalts), räumt `onRecordDelete` von `household_members` in derselben Transaktion auf: Die Person verlässt die Zuständigkeit jedes Tickets dieses Haushalts, auch im Papierkorb, je Ticket mit „Zuständigkeit entfernt“ im Verlauf durch das auslösende Konto, und jede Rotation; eine leere Rotation wird „Keine“. Die Einträge selbst bleiben im Haushalt wie bisher.

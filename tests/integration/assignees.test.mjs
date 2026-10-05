@@ -307,6 +307,35 @@ describe('a membership that ends', () => {
 		expect((await ticketOf(ticket.id)).assignee).toBe('');
 		expect(await assigneeHistory(ticket.id)).toEqual([[member.id, '', owner.id]]);
 	});
+
+	it('leaves no assignee and no rotation in the private area after dissolving with "adopt"', async () => {
+		const { a: owner, b: member, householdId: home } = await createAreaScenario(instance, ['Anna Vier', 'Bert Vier', 'Clara Vier']);
+		const mine = await owner.client.collection('tickets').create({ owner: owner.id, household: home, title: 'Dach', assignee: owner.id });
+		const theirs = await owner.client.collection('tickets').create({ owner: owner.id, household: home, title: 'Zaun', assignee: member.id });
+		const rotation = await owner.client.collection('recurrence_rules').create({
+			owner: owner.id,
+			household: home,
+			title: 'Müll',
+			mode: 'calendar',
+			freq: 'weekly',
+			initial_status: 'open',
+			active: false,
+			assignee_mode: 'rotate',
+			assignees: [owner.id, member.id]
+		});
+
+		await owner.send('/api/byl/household/dissolve', { mode: 'adopt' });
+
+		for (const id of [mine.id, theirs.id]) {
+			const ticket = await ticketOf(id);
+			expect(ticket.household).toBe('');
+			expect(ticket.assignee).toBe('');
+			expect(ticket.assigned_at).toBe('');
+		}
+		expect(await assigneeHistory(mine.id)).toEqual([[owner.id, '', owner.id]]);
+		expect(await assigneeHistory(theirs.id)).toEqual([[member.id, '', owner.id]]);
+		expect(await ruleOf(rotation.id)).toMatchObject({ household: '', assignee_mode: '', assignees: [], assignee_next: 0 });
+	});
 });
 
 describe('rules with an assignment', () => {

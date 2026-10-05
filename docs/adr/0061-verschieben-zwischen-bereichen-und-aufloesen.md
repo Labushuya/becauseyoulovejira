@@ -1,6 +1,6 @@
 # ADR-0061: Verschieben zwischen Bereichen und Auflösen (E7-4)
 
-- **Status:** Angenommen und umgesetzt (E7-4, [Plan E7 „Haushalt“](../plan/e7-haushalt.md) §3b)
+- **Status:** Angenommen und umgesetzt (E7-4, [Plan E7 „Haushalt“](../plan/e7-haushalt.md) §3b); Nachtrag E7-5: Zuständigkeit beim Verschieben ([ADR-0068](0068-zustaendigkeit.md))
 - **Datum:** 2026-10-04
 - **Entscheidung durch:** Nutzer (Freigabe der Etappe E7 und des Pakets E7-4 „Verschieben und Auflösen“), Advisor (Akzeptanzkriterien: Vorschau, Transaktion, Kaskaden, Konflikte, Nummern, Rechte, Realtime, Auflösen, Inhaber ohne Konto, Altbestand), Executor (Route, Kaskaden im Einzelnen, Eingangseinträge, Abhängigkeiten, Realtime, Oberfläche, Altbestand)
 - **Bezug:** [ADR-0058](0058-haushalt-mitgliedschaft-einladungen-rechte.md) (Rechte, `move_out`, Nachtrag „Bereich eines Eintrags“), [ADR-0059](0059-bereiche-privat-und-haushalt.md) (Bereiche, keine Verweise über die Grenze), [ADR-0037](0037-papierkorb.md) (Papierkorb, Realtime-Muster `broadcastRemoved`), [ADR-0033](0033-unteraufgaben.md), [ADR-0034](0034-unterprojekte.md), [ADR-0023](0023-lebenszyklus-von-regeln-und-instanzen.md) §6 („Aus der Serie lösen“), [ADR-0049](0049-zielprojekt-je-eingangsweg.md) (Zielprojekt), [ADR-0054](0054-tickets-im-kontext-oeffnen.md), [ADR-0056](0056-konten-und-verwalter.md) (Verwalter, Seite „Konten verwalten“)
@@ -202,3 +202,10 @@ Ein Ticket kann seit QT-1 aus anderen Tickets stammen (`ticket_sources`). Eine s
 | Serien je Regel einzeln wählen | Ein Dialog mit einer Liste je Serie; für den Umzug „in einem Rutsch“ zu viel. Die Vorschau nennt die Zahl, und ohne die Wahl geht es wie bisher. |
 
 **Folgen.** Keine Migration. **Neustart nötig** (`neu-starten.bat`) für die Hooks, die Oberfläche nach dem Build und F5. Vor dem Neustart übergeht der Server die beiden Felder und verschiebt wie in E7-4; seine Vorschau nennt kein `series_offer`, also zeigt der Dialog die Wahl nicht. **Tests:** `household-series.test.mjs` (eigene Instanz: A und B im Haushalt, C allein; ganze Serie in beide Richtungen mit und ohne erledigte Vorkommen, Verhalten ohne Wahl, Erledigen danach im Ziel mit Tagesplan, Sammelaktion mit gemischten Tickets, Projekt, `@CODE`, Abhängigkeiten, Ticket-Quellen, Rechte je Datensatz, eine Transaktion), `area-move-rules.test.mjs`, `area-move.test.ts` (Domain), `area-move.test.ts` und `area-move-bulk.test.ts` (Dialog).
+
+## Nachtrag E7-5 (2026-10-05, [ADR-0068](0068-zustaendigkeit.md)): Zuständigkeit beim Verschieben
+
+- **Haushalt → privat:** Jedes verschobene Ticket (auch Unteraufgaben, Tickets im Papierkorb und die Vorkommen einer mitgenommenen Serie nach MV-2) verliert seine Zuständigkeit in derselben Transaktion, mit „Zuständigkeit entfernt“ im Verlauf durch das verschiebende Konto nach dem Eintrag des Verschiebens; jede verschobene Regel verliert Zuständigkeit und Rotation („Keine“, Zeiger 0). Im Privaten gibt es niemanden, dem ein Ticket gehören könnte.
+- **Privat → Haushalt:** Nichts zu tun; private Tickets und Regeln haben keine Zuständigkeit. Wer zuständig ist, legt danach ein Mitglied fest.
+- **Auflösen** mit „alles ins Private übernehmen“ verschiebt auf demselben Weg; die Mitgliedschaften enden danach und räumen ohnehin auf ([ADR-0058](0058-haushalt-mitgliedschaft-einladungen-rechte.md) Nachtrag E7-5).
+- **Belegt in** `tests/integration/assignees.test.mjs` (Ticket und ganze Serie ins Private).

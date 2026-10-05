@@ -243,7 +243,9 @@ export const HELP_SECTIONS = [
 	// The household (ADR-0058): linked from the page "Haushalt".
 	{ id: 'haushalt', label: 'Haushalt' },
 	// The areas "Privat" and "Haushalt" (ADR-0059): linked from the catalog of the channels.
-	{ id: 'bereiche', label: 'Bereiche Privat und Haushalt' }
+	{ id: 'bereiche', label: 'Bereiche Privat und Haushalt' },
+	// Who takes care of a ticket of the household (ADR-0068): linked from the help of the household.
+	{ id: 'zustaendigkeit', label: 'Zuständigkeit' }
 ] as const;
 
 export type HelpSection = (typeof HELP_SECTIONS)[number]['id'];

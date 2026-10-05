@@ -45,7 +45,7 @@ describe('help page (EH-9)', () => {
 		}
 	});
 
-	it('jumps to the sections that exist on the page, twenty since the view "Erledigte"', () => {
+	it('jumps to the sections that exist on the page, twenty-one since "Zuständigkeit"', () => {
 		const { container } = render(Page);
 
 		const jump = within(screen.getByRole('navigation', { name: 'Auf dieser Seite' }));
@@ -70,7 +70,8 @@ describe('help page (EH-9)', () => {
 			'Sicherheit',
 			'Konten und Verwalter',
 			'Haushalt',
-			'Bereiche Privat und Haushalt'
+			'Bereiche Privat und Haushalt',
+			'Zuständigkeit'
 		]);
 		for (const link of links) {
 			const id = link.getAttribute('href')?.slice(1) ?? '';
@@ -1018,6 +1019,33 @@ describe('help page (EH-9)', () => {
 				.getByRole('link', { name: 'Bereiche Privat und Haushalt' })
 				.getAttribute('href')
 		).toBe('#bereiche');
+	});
+
+	it('explains the assignee: field, initials, card, notice, rotations, day plan and leaving (ADR-0068)', () => {
+		render(Page);
+		const section = screen.getByRole('region', { name: 'Zuständigkeit' });
+		const terms = [...section.querySelectorAll('dt')].map((term) => term.textContent?.trim());
+		expect(terms).toEqual([
+			'Zuweisen',
+			'Initialen',
+			'Mir zugewiesen',
+			'Hinweis',
+			'Wiederholungen',
+			'Tagesplan',
+			'Austreten, Verschieben, Duplizieren'
+		]);
+		const content = text(section);
+		expect(content).toMatch(/Private Tickets haben keine Zuständigkeit/);
+		expect(content).toMatch(/„Ich übernehme“/);
+		expect(content).toMatch(/„Keine“, „Fest“ \(immer dieselbe Person\) oder „Abwechselnd“/);
+		expect(content).toMatch(/„Nächstes Vorkommen: Bert, danach: Anna“/);
+		expect(content).toMatch(/„Anna hat dir HAUS-12 zugewiesen\.“/);
+		expect(content).toMatch(/Was du dir selbst zuweist, meldet nichts/);
+		// The section "Haushalt" points here.
+		const household = screen.getByRole('region', { name: 'Haushalt' });
+		expect(
+			within(household).getByRole('link', { name: 'Zuständigkeit' }).getAttribute('href')
+		).toBe('#zustaendigkeit');
 	});
 
 	it('explains accounts, the administrator, the channels per account and a second person (ADR-0056)', () => {

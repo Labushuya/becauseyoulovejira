@@ -6,7 +6,9 @@
 // the text, ASCII letters regardless of case), because the list does not load the description.
 // Besides: the number on all pages, the check of one ticket for a realtime event with a search
 // (completedTicketMatches) and the area of the client (ADR-0059): "Privat" and the household each
-// see only their own done tickets.
+// see only their own done tickets. Since E7-5 (ADR-0068 §3) also "Zuständig" in the household: the
+// filter of the done view on the server and in matchesDoneQuery, and the card "Mir zugewiesen" and the
+// filter "Zuständig" of the open list against the same question to the server, for each member.
 //
 // Own disposable instance (ST-1): many writes in the setup and many lists per case; on an own
 // instance it does not wait for the writes of other files.
@@ -15,8 +17,17 @@ import PocketBase from 'pocketbase';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createAppUser } from '../support/api.mjs';
 import { startPocketBase } from '../support/pocketbase-harness.mjs';
-import { createOwner, uniqueCode, uniqueSuffix } from '../support/scenario.mjs';
+import {
+	createAreaScenario,
+	createOwner,
+	uniqueCode,
+	uniqueSuffix
+} from '../support/scenario.mjs';
 import { setClientArea } from '../../web/src/lib/data/area.ts';
+import { NOBODY } from '../../web/src/lib/domain/assignee.ts';
+import { matchesCard } from '../../web/src/lib/domain/filter-cards.ts';
+import { matchesFilter } from '../../web/src/lib/domain/filter.ts';
+import { EMPTY_LIST_QUERY } from '../../web/src/lib/domain/list-query.ts';
 import {
 	completedTicketMatches,
 	countCompletedTickets,
@@ -255,6 +266,107 @@ describe('the area of the client (ADR-0059): only the done tickets of "Privat" o
 			).toBe(true);
 		} finally {
 			setClientArea(owner.client, null);
+		}
+	});
+});
+
+describe('"Zuständig" in the household (E7-5, ADR-0068 §3): server and SPA agree', () => {
+	const TODAY = '2026-10-05';
+	let scenario;
+	let scope;
+	/** Done and open tickets of the household, as the list of each member loads them. */
+	let done;
+
+	beforeAll(async () => {
+		scenario = await createAreaScenario(instance);
+		const { a, b, householdId } = scenario;
+		scope = `h:${householdId}`;
+		for (const assignee of ['', a.id, b.id]) {
+			for (const status of ['done', 'done', 'open', 'in_progress']) {
+				await (assignee === b.id ? b : a).ticket({
+					household: householdId,
+					status,
+					assignee,
+					title: `Müll ${status} ${assignee === '' ? 'niemand' : assignee}`
+				});
+			}
+		}
+		// A private ticket of A: never in the lists of the household.
+		await a.ticket({ status: 'done', title: 'Privat erledigt' });
+		setClientArea(a.client, scope);
+		done = (await listCompletedTickets(a.client, 1, { perPage: 500 })).items;
+		setClientArea(a.client, null);
+		expect(done).toHaveLength(6);
+	});
+
+	it('filters the done view by a person or "Niemand" like matchesDoneQuery', async () => {
+		const { a, b } = scenario;
+		setClientArea(a.client, scope);
+		try {
+			for (const assignee of [null, NOBODY, a.id, b.id, UNKNOWN_ID]) {
+				const query = { ...EMPTY_DONE_QUERY, assignee };
+				const page = await listCompletedTickets(a.client, 1, { perPage: 500, filter: { query } });
+				const expected = done.filter((ticket) => matchesDoneQuery(ticket, query, () => []));
+				expect(sorted(page.items.map((ticket) => ticket.id)), String(assignee)).toEqual(
+					sorted(expected.map((ticket) => ticket.id))
+				);
+				expect(await countCompletedTickets(a.client, { query })).toBe(expected.length);
+			}
+			const mine = await listCompletedTickets(a.client, 1, {
+				perPage: 500,
+				filter: { query: { ...EMPTY_DONE_QUERY, assignee: a.id } }
+			});
+			expect(mine.items).toHaveLength(2);
+			expect(mine.items.every((ticket) => ticket.assignee === a.id)).toBe(true);
+		} finally {
+			setClientArea(a.client, null);
+		}
+	});
+
+	it('shows each member under "Mir zugewiesen" and "Zuständig" what the server names', async () => {
+		for (const member of [scenario.a, scenario.b]) {
+			setClientArea(member.client, scope);
+			try {
+				const open = await listOpenTickets(member.client);
+				expect(open).toHaveLength(6);
+				const server = async (filter, params) =>
+					sorted(
+						(
+							await member.client.collection('tickets').getFullList({
+								filter: member.client.filter(
+									`household = {:household} && status != "done" && ${filter}`,
+									{ household: scenario.householdId, ...params }
+								),
+								fields: 'id'
+							})
+						).map((ticket) => ticket.id)
+					);
+				const client = (predicate) =>
+					sorted(open.filter(predicate).map((ticket) => ticket.id));
+
+				expect(client((ticket) => matchesCard(ticket, 'mine', TODAY, member.id))).toEqual(
+					await server('assignee = {:self}', { self: member.id })
+				);
+				expect(
+					client((ticket) =>
+						matchesFilter(ticket, { ...EMPTY_LIST_QUERY, cards: ['mine'] }, TODAY, undefined, member.id)
+					)
+				).toHaveLength(2);
+				for (const [value, filter, params] of [
+					[NOBODY, 'assignee = ""', {}],
+					[scenario.a.id, 'assignee = {:who}', { who: scenario.a.id }],
+					[scenario.b.id, 'assignee = {:who}', { who: scenario.b.id }]
+				]) {
+					expect(
+						client((ticket) =>
+							matchesFilter(ticket, { ...EMPTY_LIST_QUERY, assignee: value }, TODAY)
+						),
+						value
+					).toEqual(await server(filter, params));
+				}
+			} finally {
+				setClientArea(member.client, null);
+			}
 		}
 	});
 });
