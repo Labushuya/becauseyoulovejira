@@ -31,7 +31,8 @@
 	// focus (the rule is the Drawer's). Comments and history (E2 plan, packages 9 and 10) come in
 	// through `activity`, the series (E5 plan, package 4) through `recurrence`, the section
 	// "Unteraufgaben" (ADR-0033) through `subtasks`, the question of "Duplizieren …" (ADR-0045)
-	// through `duplicate`. A sub-task shows its path "HAUS-12 › HAUS-15" with a link to the parent
+	// through `duplicate`, the one of "Folge-Ticket anlegen …" (ADR-0067) through `followUp`. The
+	// snippet `sources` carries the sections "Quellen" and "Folge-Tickets". A sub-task shows its path "HAUS-12 › HAUS-15" with a link to the parent
 	// in the header instead of the key alone; a ticket in a sub project starts it with "Haus ›
 	// Garten" (ADR-0034), linking to the list filtered by the project. A dot in front shows the
 	// color of the ticket with its name (ADR-0052).
@@ -50,6 +51,7 @@
 		subtasks,
 		parentField,
 		duplicate,
+		followUp,
 		flags = SILENT_FLAGS,
 		sourceCount = 0,
 		subtaskCount = 0,
@@ -86,6 +88,11 @@
 		 * drops it. Without it the menu has no "Duplizieren …".
 		 */
 		duplicate?: Snippet<[Ticket, () => void]>;
+		/**
+		 * The question of "Folge-Ticket anlegen …" (ADR-0067 §4), shown after the choice in the menu;
+		 * `close` drops it. Without it the menu has no "Folge-Ticket anlegen …".
+		 */
+		followUp?: Snippet<[Ticket, () => void]>;
 		/** "Link kopiert" of the menu (plan aktionsmenues). */
 		flags?: FlagSink;
 		/** Number of sub-tasks, for the question of "In den Papierkorb …". */
@@ -104,7 +111,7 @@
 	let heading = $state<HTMLElement>();
 	let messageHeading = $state<HTMLElement>();
 	/** The dialog chosen in the menu "•••", for the ticket it was chosen for. */
-	let dialog = $state<{ kind: 'duplicate' | 'delete'; ticketId: string } | null>(null);
+	let dialog = $state<{ kind: 'duplicate' | 'followup' | 'delete'; ticketId: string } | null>(null);
 	const chosen = $derived(dialog !== null && dialog.ticketId === store.id ? dialog.kind : null);
 	/** Ticket the focus was last moved to, so it moves only once per opened ticket. */
 	let focusedFor: string | null = null;
@@ -160,10 +167,15 @@
 				onduplicate={duplicate === undefined
 					? null
 					: () => (dialog = { kind: 'duplicate', ticketId: ticket.id })}
+				onfollowup={followUp === undefined
+					? null
+					: () => (dialog = { kind: 'followup', ticketId: ticket.id })}
 				ondelete={() => (dialog = { kind: 'delete', ticketId: ticket.id })}
 			/>
 			{#if chosen === 'duplicate'}
 				{@render duplicate?.(ticket, () => (dialog = null))}
+			{:else if chosen === 'followup'}
+				{@render followUp?.(ticket, () => (dialog = null))}
 			{:else if chosen === 'delete'}
 				<TicketDelete
 					{ticket}

@@ -1,6 +1,13 @@
 <script lang="ts">
+	import type { ResolvedPathname } from '$app/types';
 	import { withConnectionName } from '$lib/domain/connections';
+	import { formatBerlinDateTime } from '$lib/domain/format';
 	import type { InboxItemSummary } from '$lib/domain/inbox';
+	import type { TicketOrigin } from '$lib/domain/ticket-origins';
+	import type { TicketOriginsStore } from '$lib/stores/ticket-origins.svelte';
+	import ActionsMenu, { type MenuAction } from './ActionsMenu.svelte';
+	import AddTicketSourceDialog from './AddTicketSourceDialog.svelte';
+	import StatusPill from './StatusPill.svelte';
 	import {
 		COPY_LABELS,
 		canLeaveTicket,
@@ -42,18 +49,29 @@
 	// second lozenge: whether the file changed since, or where the pull request stands. A file of a
 	// watched folder (ADR-0051 §6) is a reference: its icon button opens the current file, and why
 	// it did not open (gone, moved out of the folders) stands neutral above the list.
+	// Since QT-1 (ADR-0067) other tickets are sources as well ("B stammt aus A"): with `origins` the
+	// section lists the source tickets after the entries (key as a link, title, status, "(im
+	// Papierkorb)" without a link), each with "… als Quelle entfernen", and "Quelle hinzufügen" is a
+	// menu with "Eintrag aus dem Eingang …" and "Ticket …". Before the migration (or without the store)
+	// it stays the button for entries of the inbox.
 	let {
 		ticket,
 		store,
 		candidates,
-		picker
+		picker,
+		origins = null,
+		hrefOf
 	}: {
-		ticket: Pick<Ticket, 'id' | 'key' | 'sourceItem'>;
+		ticket: Pick<Ticket, 'id' | 'key' | 'sourceItem' | 'scope'>;
 		store: TicketSourcesStore;
 		/** New entries of the inbox for "Quelle hinzufügen …". */
 		candidates: readonly InboxItemSummary[];
-		/** Tickets of the picker of "Anderem Ticket zuordnen …"; the (app) layout provides them. */
+		/** Tickets of the pickers ("Anderem Ticket zuordnen …", "Ticket …"); the (app) layout provides them. */
 		picker?: TicketPickerSource;
+		/** Tickets as sources of the open ticket (ADR-0067); null leaves them out. */
+		origins?: TicketOriginsStore | null;
+		/** Address of a source ticket in the remembered way; without it the key is no link. */
+		hrefOf?: (id: string) => ResolvedPathname;
 	} = $props();
 
 	const uid = $props.id();
@@ -64,7 +82,38 @@
 	const connectionNames = findConnectionNames();
 
 	let adding = $state(false);
+	let addingTicket = $state(false);
 	let addButton = $state<HTMLButtonElement>();
+
+	/** Tickets as sources are known on the server (ADR-0067). */
+	const ticketsOn = $derived(origins !== null && origins.available);
+	const ticketSources = $derived(
+		origins !== null && origins.available && origins.ticketId === ticket.id ? origins.sources : []
+	);
+	/** "Quelle hinzufügen" with tickets: a menu with both ways. */
+	const addItems = $derived.by((): MenuAction[] => [
+		{
+			label: 'Eintrag aus dem Eingang …',
+			dialog: !inline,
+			onselect: () => {
+				addingTicket = false;
+				adding = true;
+			}
+		},
+		{
+			label: 'Ticket …',
+			dialog: !inline,
+			onselect: () => {
+				adding = false;
+				addingTicket = true;
+			}
+		}
+	]);
+
+	async function removeSource(origin: TicketOrigin) {
+		message = null;
+		await origins?.remove({ id: ticket.id, key: ticket.key }, origin);
+	}
 	/** Entry of the dialog "Anderem Ticket zuordnen …", null while it is closed. */
 	let moving = $state<Pick<InboxItemSummary, 'id' | 'title' | 'scope'> | null>(null);
 	let message = $state<string | null>(null);
@@ -109,19 +158,33 @@
 <section class="sources" aria-labelledby={headingId}>
 	<div class="head">
 		<h3 id={headingId}>Quellen</h3>
-		<button
-			class="button-subtle"
-			type="button"
-			aria-haspopup={inline ? undefined : 'dialog'}
-			aria-expanded={inline ? adding : undefined}
-			bind:this={addButton}
-			onclick={() => (adding = inline ? !adding : true)}
-		>
-			Quelle hinzufügen …
-		</button>
+		{#if ticketsOn}
+			<ActionsMenu
+				label="Quelle hinzufügen"
+				buttonLabel="Quelle hinzufügen"
+				buttonText="Quelle hinzufügen"
+				buttonClass="button-subtle"
+				items={addItems}
+				bind:trigger={addButton}
+			/>
+		{:else}
+			<button
+				class="button-subtle"
+				type="button"
+				aria-haspopup={inline ? undefined : 'dialog'}
+				aria-expanded={inline ? adding : undefined}
+				bind:this={addButton}
+				onclick={() => (adding = inline ? !adding : true)}
+			>
+				Quelle hinzufügen …
+			</button>
+		{/if}
 	</div>
 	{#if inline && adding}
 		{@render addDialog()}
+	{/if}
+	{#if inline && addingTicket}
+		{@render ticketDialog()}
 	{/if}
 
 	<div aria-live="polite">
@@ -142,13 +205,15 @@
 				</button>
 			{/snippet}
 		</SectionMessage>
-	{:else if items.length === 0 && store.state !== 'ready'}
+	{:else if items.length === 0 && ticketSources.length === 0 && store.state !== 'ready'}
 		<p class="hint" role="status">Quellen werden geladen …</p>
-	{:else if items.length === 0}
+	{:else if items.length === 0 && ticketSources.length === 0}
 		<EmptyState
 			size="compact"
 			title="Noch keine Quellen"
-			description="Mails, Nachrichten oder Links aus dem Eingang lassen sich mit diesem Ticket verknüpfen."
+			description={ticketsOn
+				? 'Mails, Nachrichten oder Links aus dem Eingang und andere Tickets lassen sich mit diesem Ticket verknüpfen.'
+				: 'Mails, Nachrichten oder Links aus dem Eingang lassen sich mit diesem Ticket verknüpfen.'}
 		/>
 	{:else}
 		<ul class="list">
@@ -304,9 +369,69 @@
 					{/if}
 				</li>
 			{/each}
+			{#each ticketSources as origin (origin.link)}
+				<li
+					class="source"
+					data-ticket-source={origin.id}
+					aria-busy={origins?.isPending(origin.id) ? 'true' : undefined}
+				>
+					<div class="text">
+						<p class="line">
+							<span class="channel">Ticket</span>
+							<span class="when">seit {formatBerlinDateTime(origin.created)}</span>
+						</p>
+						<p class="title">
+							{#if origin.trashed || hrefOf === undefined}
+								<span class="key">{origin.key}</span>
+							{:else}
+								<a class="key" href={hrefOf(origin.id)} data-ticket-link>{origin.key}</a>
+							{/if}
+							{origin.title}
+							{#if origin.trashed}
+								<span class="origin">(im Papierkorb)</span>
+							{/if}
+						</p>
+						<StatusPill status={origin.status} />
+					</div>
+					<div class="actions">
+						<button
+							class="button-icon"
+							type="button"
+							aria-label={`${origin.key} als Quelle entfernen`}
+							title="Als Quelle entfernen"
+							aria-disabled={origins?.isPending(origin.id) ? 'true' : undefined}
+							onclick={() => {
+								if (!origins?.isPending(origin.id)) void removeSource(origin);
+							}}
+						>
+							<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
+								<path
+									d="M6.5 9.5 9.5 6.5M7 4.5l1-1a2.5 2.5 0 0 1 3.5 3.5l-1 1M9 11.5l-1 1a2.5 2.5 0 0 1-3.5-3.5l1-1M2.5 2.5l2 2M11.5 11.5l2 2"
+								/>
+							</svg>
+						</button>
+					</div>
+				</li>
+			{/each}
 		</ul>
 	{/if}
 </section>
+
+{#if !inline && addingTicket}
+	{@render ticketDialog()}
+{/if}
+
+{#snippet ticketDialog()}
+	{#if origins !== null}
+		<AddTicketSourceDialog
+			{ticket}
+			store={origins}
+			{picker}
+			returnFocus={() => addButton}
+			onclose={() => (addingTicket = false)}
+		/>
+	{/if}
+{/snippet}
 
 {#if !inline && moving !== null}
 	{@render moveDialog(moving)}
@@ -439,6 +564,16 @@
 
 	.view {
 		font-size: var(--font-size-control);
+		color: var(--color-brand-text);
+	}
+
+	/* The key of a source ticket, in mono like every key (CLAUDE.md §8). */
+	.key {
+		font-family: var(--font-mono);
+		color: var(--color-text-muted);
+	}
+
+	a.key {
 		color: var(--color-brand-text);
 	}
 

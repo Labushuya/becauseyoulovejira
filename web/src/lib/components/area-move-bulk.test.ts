@@ -93,12 +93,14 @@ function preview(moved: MovePreview['moved'] = null): MovePreview {
 			rules: 0,
 			items: 0,
 			comments: 0,
-			dependencies: 0
+			dependencies: 0,
+			ticketSources: 0
 		},
 		conflicts: {
 			project: null,
 			tags: { reused: [], created: [] },
 			dependencies: [],
+			ticketSources: [],
 			parents: [],
 			projectParents: [],
 			codes: [],
@@ -109,7 +111,7 @@ function preview(moved: MovePreview['moved'] = null): MovePreview {
 			targets: 0,
 			unitTargets: 0
 		},
-		needs: { project: false, dependencies: false, codes: [] },
+		needs: { project: false, dependencies: false, ticketSources: false, codes: [] },
 		moved
 	};
 }

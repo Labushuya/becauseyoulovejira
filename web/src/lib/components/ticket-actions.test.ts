@@ -77,6 +77,29 @@ describe('menu "•••" of a ticket (AM-1)', () => {
 		expect(entries()).toEqual(['Link kopieren', 'In den Papierkorb …']);
 	});
 
+	it('puts "Folge-Ticket anlegen …" after "Duplizieren …", also for a done ticket, and runs it (ADR-0067)', async () => {
+		const onfollowup = vi.fn();
+		const { trigger, entries, entry } = renderMenu({
+			ticket: { ...TICKET, status: 'done' },
+			onfollowup
+		});
+		expect(entries()).toEqual([
+			'Link kopieren',
+			'Duplizieren …',
+			'Folge-Ticket anlegen …',
+			'In den Papierkorb …'
+		]);
+		expect(entry('Folge-Ticket anlegen …').getAttribute('aria-haspopup')).toBe('dialog');
+		await open(trigger);
+		await fireEvent.click(entry('Folge-Ticket anlegen …'));
+		expect(onfollowup).toHaveBeenCalledOnce();
+	});
+
+	it('unfolds "Folge-Ticket anlegen …" in the content of the full view, no dialog (ADR-0067)', () => {
+		const { entry } = renderMenu({ onfollowup: vi.fn(), inline: true });
+		expect(entry('Folge-Ticket anlegen …').getAttribute('aria-haspopup')).toBeNull();
+	});
+
 	it('adds "Fälligkeit verschieben …" in the calendar, after the ways to open, and runs it', async () => {
 		const onmovedue = vi.fn();
 		const { trigger, menu, entries, entry } = renderMenu({

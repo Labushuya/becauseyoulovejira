@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import { MOVE_TEXTS, countLines, noteLines } from '$lib/domain/area-move';
+	import { MOVE_TEXTS, countLines, noteLines, ticketSourceLine } from '$lib/domain/area-move';
 	import { insideModal } from '$lib/overlay/modal-context';
 	import type { AreaMoveStore } from '$lib/stores/area-move.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
@@ -10,8 +10,9 @@
 
 	// "In den Haushalt verschieben …" / "Ins Private verschieben …" (E7-4, ADR-0061): the preview of the
 	// server with what moves (count per kind) and what changes, the choices it needs (the project in
-	// the target, what happens to dependencies with tickets that stay behind, new codes of projects
-	// whose code the target has), and the hint for the people of the household. In the layout a modal
+	// the target, what happens to dependencies and, since QT-1 (ADR-0067), to links of source and
+	// follow-up tickets with tickets that stay behind, new codes of projects whose code the target
+	// has), and the hint for the people of the household. In the layout a modal
 	// M; inside a modal (the full view) the same form stands inline (InlineDialog, ADR-0025 addendum
 	// 16). Nothing moves before the button; a refusal of the server stands in the dialog.
 	let {
@@ -28,7 +29,9 @@
 	const ids = {
 		hint: `${uid}-hint`,
 		dependencies: `${uid}-dependencies`,
-		dependenciesError: `${uid}-dependencies-error`
+		dependenciesError: `${uid}-dependencies-error`,
+		ticketSources: `${uid}-ticket-sources`,
+		ticketSourcesError: `${uid}-ticket-sources-error`
 	};
 	const inline = insideModal();
 	/** Value of the first option of the project while nothing is chosen (no record ID has a dash). */
@@ -158,6 +161,46 @@
 					{#if errors.dependencies}
 						<p class="field-error" id={ids.dependenciesError}>
 							<ErrorIcon /><span>{errors.dependencies}</span>
+						</p>
+					{/if}
+				</fieldset>
+			{/if}
+
+			{#if store.ticketSources.length > 0}
+				<fieldset
+					class="group"
+					role="radiogroup"
+					aria-invalid={errors.ticketSources ? 'true' : undefined}
+					aria-describedby={errors.ticketSources ? ids.ticketSourcesError : ids.ticketSources}
+					tabindex="-1"
+				>
+					<legend>{MOVE_TEXTS.ticketSourceLegend}</legend>
+					<ul class="lines" id={ids.ticketSources}>
+						{#each store.ticketSources as entry, index (index)}
+							<li>{ticketSourceLine(entry)}</li>
+						{/each}
+					</ul>
+					<label class="choice">
+						<input
+							type="radio"
+							name={`${uid}-ticket-sources`}
+							checked={store.choices.ticketSources === 'take'}
+							onchange={() => store.chooseTicketSources('take')}
+						/>
+						{MOVE_TEXTS.takeSources}
+					</label>
+					<label class="choice">
+						<input
+							type="radio"
+							name={`${uid}-ticket-sources`}
+							checked={store.choices.ticketSources === 'release'}
+							onchange={() => store.chooseTicketSources('release')}
+						/>
+						{MOVE_TEXTS.releaseSources}
+					</label>
+					{#if errors.ticketSources}
+						<p class="field-error" id={ids.ticketSourcesError}>
+							<ErrorIcon /><span>{errors.ticketSources}</span>
 						</p>
 					{/if}
 				</fieldset>

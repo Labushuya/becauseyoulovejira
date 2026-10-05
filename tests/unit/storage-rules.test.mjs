@@ -13,8 +13,10 @@ const cleanup = loadHookLib('inbox-cleanup.js');
 describe('database', () => {
 	it('groups the pages of tables and their indexes', () => {
 		expect(
-			['tickets', 'comments', 'ticket_reads', 'ticket_pins', 'ticket_counters', 'dependencies'].map(rules.groupOfTable)
-		).toEqual(Array(6).fill('tickets'));
+			['tickets', 'comments', 'ticket_reads', 'ticket_pins', 'ticket_sources', 'ticket_counters', 'dependencies'].map(
+				rules.groupOfTable
+			)
+		).toEqual(Array(7).fill('tickets'));
 		expect(rules.groupOfTable('ticket_history')).toBe('history');
 		expect(rules.groupOfTable('inbox_items')).toBe('inbox');
 		expect(['users', '_collections', 'sqlite_master', '', 'constructor'].map(rules.groupOfTable)).toEqual(Array(5).fill('other'));

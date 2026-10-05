@@ -48,13 +48,22 @@
 		buttonClass = 'button-icon',
 		buttonTabindex,
 		placement = 'bottom-end',
+		buttonText,
 		items,
 		trigger = $bindable()
 	}: {
 		/** Name of the menu, e.g. "Weitere Aktionen für HAUS-12". */
 		label: string;
-		/** Name of the button (its content is only the symbol). */
+		/**
+		 * Name of the button (its content is only the symbol); with `buttonText` the visible text is
+		 * the name, so this one should start with it.
+		 */
 		buttonLabel: string;
+		/**
+		 * A text instead of the three dots, e.g. "Quelle hinzufügen" in the section "Quellen" of a
+		 * ticket (ADR-0067); then with `buttonClass` "button-subtle".
+		 */
+		buttonText?: string;
 		/** Tooltip of the button. */
 		buttonTitle?: string;
 		/** Classes of the button: `.button-icon`, plus one the owner sizes (a row of a table). */
@@ -108,18 +117,22 @@
 	bind:this={menu}
 >
 	{#snippet button()}
-		<svg
-			class="dots"
-			viewBox="0 0 16 16"
-			width="16"
-			height="16"
-			aria-hidden="true"
-			focusable="false"
-		>
-			<circle cx="3.5" cy="8" r="1.1" />
-			<circle cx="8" cy="8" r="1.1" />
-			<circle cx="12.5" cy="8" r="1.1" />
-		</svg>
+		{#if buttonText !== undefined}
+			{buttonText}
+		{:else}
+			<svg
+				class="dots"
+				viewBox="0 0 16 16"
+				width="16"
+				height="16"
+				aria-hidden="true"
+				focusable="false"
+			>
+				<circle cx="3.5" cy="8" r="1.1" />
+				<circle cx="8" cy="8" r="1.1" />
+				<circle cx="12.5" cy="8" r="1.1" />
+			</svg>
+		{/if}
 	{/snippet}
 	{#snippet children({ close })}
 		{#each shown as item (item.label)}

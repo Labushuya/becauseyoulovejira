@@ -54,7 +54,9 @@ var SCOPE_MESSAGES = {
   parent: 'Das übergeordnete Ticket gehört zu einem anderen Bereich (Privat oder Haushalt) oder wurde gelöscht.',
   recurrence: 'Die Wiederholung gehört zu einem anderen Bereich (Privat oder Haushalt) oder wurde gelöscht.',
   blocker: 'Abhängigkeiten gibt es nur zwischen Tickets desselben Bereichs (Privat oder Haushalt).',
-  blocked: 'Abhängigkeiten gibt es nur zwischen Tickets desselben Bereichs (Privat oder Haushalt).'
+  blocked: 'Abhängigkeiten gibt es nur zwischen Tickets desselben Bereichs (Privat oder Haushalt).',
+  // A ticket as the source of another one (QT-1, ADR-0067).
+  source: 'Tickets als Quelle gibt es nur im selben Bereich (Privat oder Haushalt).'
 };
 var SCOPE_MESSAGE = 'Liegt in einem anderen Bereich (Privat oder Haushalt) oder wurde gelöscht.';
 

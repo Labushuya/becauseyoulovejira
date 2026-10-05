@@ -79,7 +79,7 @@ describe('scopeViolations', () => {
 	});
 
 	it('names the area in the text of every field, the same in the web app (E7-3, ADR-0059 §4)', () => {
-		for (const field of ['project', 'tags', 'parent', 'recurrence', 'blocker', 'blocked']) {
+		for (const field of ['project', 'tags', 'parent', 'recurrence', 'blocker', 'blocked', 'source']) {
 			expect(rules.scopeMessage(field), field).toMatch(/Bereich/);
 			expect(SCOPE_FIELD_MESSAGES[field], field).toBe(rules.scopeMessage(field));
 		}

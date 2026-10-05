@@ -11,6 +11,7 @@ var TABLE_GROUPS = {
   comments: 'tickets',
   ticket_reads: 'tickets',
   ticket_pins: 'tickets',
+  ticket_sources: 'tickets',
   ticket_counters: 'tickets',
   dependencies: 'tickets',
   ticket_history: 'history',
