@@ -358,6 +358,24 @@ describe('kind in the history (ADR-0065)', () => {
 	});
 });
 
+describe('assignee in the history (ADR-0068)', () => {
+	const BERT = 'bert00000000002';
+	const named: HistoryLookups = {
+		...lookups,
+		selfName: 'Anna Beispiel',
+		people: { nameOf: (id: string) => (id === BERT ? 'Bert Beispiel' : null) }
+	};
+	const assigneeText = (oldValue: string, newValue: string) =>
+		describeHistoryEntry(entry({ field: 'assignee', oldValue, newValue }), named, ME).text;
+
+	it('names the new assignee, the own account by its name, and a removed one', () => {
+		expect(assigneeText('', BERT)).toBe('Zuständig: Bert Beispiel');
+		expect(assigneeText(BERT, ME)).toBe('Zuständig: Anna Beispiel');
+		expect(assigneeText(BERT, '')).toBe('Zuständigkeit entfernt');
+		expect(assigneeText('', 'gone00000000009')).toBe('Zuständig: Anderes Konto');
+	});
+});
+
 describe('duplicate in the history (ADR-0045)', () => {
 	const duplicateText = (newValue: string) => text({ field: 'duplicate', newValue });
 
