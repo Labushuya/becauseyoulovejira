@@ -8,9 +8,11 @@
 // The due cards compare like the due filter (`dueBucket` in domain/filter.ts, kept equal by a test):
 // "Heute fällig" is the due date today, "Überfällig" a due date before today, never for a done ticket.
 // There is no card for done tickets: since ER-1 (ADR-0066) they have the view "Erledigte", and
-// "Aufgaben" shows only open work.
+// "Aufgaben" shows only open work. Its filter bar offers no status "Erledigt" any more, so the lock
+// of the cards under that status (PL-1) has gone with it.
 
 import type { CalendarDate } from './berlin-date';
+import { pinnedMoreText } from './pins';
 import type { TicketSummary } from './ticket';
 
 /** The cards besides "Alle offenen", in the order they stand. */
@@ -113,11 +115,6 @@ export function chooseAllOpen(): FilterCard[] {
 	return [];
 }
 
-/** True if a chosen card compares the due date with today (the done section loads again at midnight). */
-export function cardsUseToday(cards: readonly FilterCard[]): boolean {
-	return cards.includes('due_today') || cards.includes('overdue');
-}
-
 /** Number of each card; `allOpen` is the number of "Alle offenen". */
 export type CardCounts = { allOpen: number } & Record<FilterCard, number>;
 
@@ -149,16 +146,28 @@ export interface SummaryCount {
 	count: number;
 	/** A detail filter or the search narrows the cards as well. */
 	filtered?: boolean;
+	/**
+	 * Pinned tickets that pass the cards, the filters and the search (ADR-0064): they stand in the
+	 * section "Angeheftet" above the list, not in `count`, but the numbers of the cards hold them.
+	 */
+	pinned?: number;
 }
 
 /**
  * Summary above the list: "12 Tickets aus: In Arbeit, Heute fällig, Dringend", with "– weitere
- * Filter aktiv" while a detail filter or the search narrows it.
+ * Filter aktiv" while a detail filter or the search narrows it. Matching pinned tickets are named
+ * like in the number next to "Aufgaben", "4 + 1 angeheftet aus: Dringend" (PL-1), so the summary adds
+ * up to the number of the card ("Dringend: 5").
  */
 export function cardSummary(
 	cards: readonly FilterCard[],
-	{ count, filtered = false }: SummaryCount
+	{ count, filtered = false, pinned = 0 }: SummaryCount
 ): string {
-	const amount = count === 1 ? '1 Ticket' : `${count} Tickets`;
+	const amount =
+		pinned > 0
+			? `${count} ${pinnedMoreText(pinned)}`
+			: count === 1
+				? '1 Ticket'
+				: `${count} Tickets`;
 	return `${amount} aus: ${cardsLabel(cards)}${filtered ? ' – weitere Filter aktiv' : ''}`;
 }

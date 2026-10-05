@@ -1,6 +1,6 @@
 // Filter cards of "Aufgaben" (FI-1, ADR-0013 addendum C): the union of the chosen cards without
 // duplicates, "Alle offenen", toggling without resetting each other, the URL values, the numbers
-// per card and the summary above the list.
+// per card and the summary above the list; since PL-1 the matching pinned tickets in the summary.
 
 import { describe, expect, it } from 'vitest';
 import { addDays } from './berlin-date';
@@ -13,7 +13,6 @@ import {
 	cardsFromUrl,
 	cardsLabel,
 	cardsToUrl,
-	cardsUseToday,
 	chooseAllOpen,
 	countCards,
 	isAllOpen,
@@ -245,12 +244,6 @@ describe('choosing cards', () => {
 		expect(sameCards(['urgent'], ['urgent', 'overdue'])).toBe(false);
 		expect(sameCards([], [])).toBe(true);
 	});
-
-	it('knows which cards compare with today', () => {
-		expect(cardsUseToday(['in_progress', 'urgent'])).toBe(false);
-		expect(cardsUseToday(['due_today'])).toBe(true);
-		expect(cardsUseToday(['overdue', 'urgent'])).toBe(true);
-	});
 });
 
 describe('URL values of the cards', () => {
@@ -346,6 +339,18 @@ describe('summary above the list', () => {
 		expect(cardSummary(['due_today', 'overdue'], { count: 4, filtered: true })).toBe(
 			'4 Tickets aus: Heute fällig, Überfällig – weitere Filter aktiv'
 		);
+	});
+
+	it('names matching pinned tickets like the number next to "Aufgaben" (PL-1)', () => {
+		// "Dringend: 5" on the card: 4 in the list, 1 in the section "Angeheftet" above it.
+		expect(cardSummary(['urgent'], { count: 4, pinned: 1 })).toBe('4 + 1 angeheftet aus: Dringend');
+		expect(cardSummary(['urgent'], { count: 1, pinned: 2, filtered: true })).toBe(
+			'1 + 2 angeheftet aus: Dringend – weitere Filter aktiv'
+		);
+		expect(cardSummary(['overdue'], { count: 0, pinned: 1 })).toBe(
+			'0 + 1 angeheftet aus: Überfällig'
+		);
+		expect(cardSummary(['urgent'], { count: 4, pinned: 0 })).toBe('4 Tickets aus: Dringend');
 	});
 
 	it('has a label for every card', () => {

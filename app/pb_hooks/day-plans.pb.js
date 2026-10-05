@@ -6,7 +6,7 @@
 // plans are read through the Record API (rules of the area), written only here.
 
 // The kind of a new ticket (ADR-0065 §1): "Aufgabe" unless it names "Laufendes Vorhaben", also for
-// the tickets of a series and duplicates, which the server creates.
+// the tickets of a series, which the server creates; a duplicate names the kind of its original.
 onRecordCreate(function (e) {
   require(`${__hooks}/lib/day-plan-service.js`).defaultKind(e.record);
   e.next();

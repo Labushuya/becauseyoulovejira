@@ -224,10 +224,12 @@
 			Plan von gestern, weder erledigt noch abgehakt), überfällig seit einigen Tagen, heute fällig,
 			in Arbeit. Haken setzen und „Übernehmen“ oder gleich „Alle übernehmen“. Mit „Einstellen“
 			stellst du jede Quelle auf „Aus“, „Vorschlagen“ oder „Automatisch übernehmen“; laufende
-			Vorhaben kommen von Anfang an automatisch beim ersten Öffnen des Tages in den Plan. Was im
-			Plan steht oder heute daraus entfernt wurde, schlägt der Plan nicht noch einmal vor. „Heute“
-			ist derselbe Tag wie bei „Heute fällig“. Angeheftete Tickets sind keine Quelle; das Anheften
-			bleibt deine Ansicht in „Aufgaben“.
+			Vorhaben kommen von Anfang an automatisch beim ersten Öffnen des Tages in den Plan. Eine
+			geänderte Einstellung sehen deine anderen offenen Tabs und im Haushalt alle Mitglieder sofort.
+			Was im Plan steht oder heute daraus entfernt wurde, schlägt der Plan nicht noch einmal vor.
+			„Heute“ ist derselbe Tag wie bei „Heute fällig“. Anheften ändert an den Vorschlägen nichts:
+			Ein angeheftetes Ticket, das heute fällig ist, schlägt der Plan vor wie jedes andere;
+			angeheftet allein ist kein Grund. Das Anheften bleibt deine Ansicht in „Aufgaben“.
 		</p>
 		<h4 id="tagesplan-eingreifen">Plan und Pool</h4>
 		<p>
@@ -945,9 +947,11 @@
 					</li>
 					<li>
 						Über der Liste steht, woraus sie besteht, etwa „12 Tickets aus: In Arbeit, Heute fällig,
-						Dringend“. „Zurücksetzen“ dort oder in der Filterleiste setzt Karten, Filter und Suche
-						zurück; Sortierung und Gruppierung bleiben. Die Karten gelten nur für offene Tickets;
-						erledigte stehen unter „Erledigte“.
+						Dringend“. Passen angeheftete Tickets dazu, nennt sie sie wie die Zahl neben „Aufgaben“,
+						etwa „4 + 1 angeheftet aus: Dringend“; zusammen ergibt das die Zahl der Karte.
+						„Zurücksetzen“ dort oder in der Filterleiste setzt Karten, Filter und Suche zurück;
+						Sortierung und Gruppierung bleiben. Die Karten gelten nur für offene Tickets; erledigte
+						stehen unter „Erledigte“.
 					</li>
 					<li>
 						Die Auswahl steht in der Adresse (<code>?karte=heute&amp;karte=dringend</code>) und
@@ -1102,7 +1106,9 @@
 					<li>
 						Unteraufgaben kommen als neue, offene Unteraufgaben mit. Kopierte Kommentare beginnen
 						mit „Kopiert aus HAUS-12“ und behalten Autor und Zeit; ein angepinnter bleibt angepinnt.
-						Eine Wiederholung kommt nie mit: Das Duplikat ist ein normales Ticket.
+						Den Charm und die Art (Aufgabe oder laufendes Vorhaben) nimmt das Duplikat immer mit,
+						jede Unteraufgabe die ihrer eigenen. Eine Wiederholung kommt nie mit: Das Duplikat ist
+						ein normales Ticket.
 					</li>
 					<li>
 						Hat das Ticket Quellen, wählst du „Keine Quelle“ (Standard) oder „Kopie der Herkunft

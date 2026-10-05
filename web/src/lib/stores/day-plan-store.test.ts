@@ -2,12 +2,14 @@
 // its entries, the suggestions and the pool computed live from the open tickets, the check mark of a
 // task and of an ongoing project with "Rückgängig", "Nur für heute abhaken", "Vorhaben abschließen",
 // the question about open sub-tasks, "Auf morgen schieben", "Entfernen", the order, the kind, the
-// settings, the automatic sources, realtime, the area and the entry "Zum Tagesplan" of the menus.
+// settings, the automatic sources, realtime, the area and the entry "Zum Tagesplan" of the menus;
+// since PL-1 pins as display only and the settings live from other tabs and members.
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { DayPlanItem, DayPlanMeta } from '$lib/data/day-plan';
+import type { DayPlanItem, DayPlanMeta, DayPlanSettingsRecord } from '$lib/data/day-plan';
 import { DataError } from '$lib/data/errors';
 import type { RecordChange } from '$lib/data/realtime';
+import { DEFAULT_SOURCES, type SourceMode } from '$lib/domain/day-plan';
 import type { TicketSummary } from '$lib/domain/ticket';
 import {
 	PLAN,
@@ -21,18 +23,22 @@ import {
 	planItem as item,
 	planTicket as ticket
 } from '$lib/test/day-plan-fake';
+import { fakePins, pinOf } from '$lib/test/fake-pins';
 import {
 	AUTO_SYNC_DELAY_MS,
 	DayPlanEntryStore,
 	DayPlanStore,
-	type DayPlanLive
+	type DayPlanLive,
+	type DayPlanTickets
 } from './day-plan.svelte';
 import type { FlagSink } from './flags.svelte';
+import { PinStore } from './pins.svelte';
 import type { LiveSource } from './realtime';
+import { TicketListStore } from './ticket-list.svelte';
 
 async function loaded(
 	data: ReturnType<typeof fakeData>,
-	tickets: ReturnType<typeof fakeTickets>,
+	tickets: DayPlanTickets,
 	flags: FlagSink = fakeFlags().flags
 ) {
 	const store = new DayPlanStore(data, tickets, session(), { flags, scope: () => SCOPE });
@@ -127,6 +133,40 @@ describe('suggestions and pool, live from the open tickets', () => {
 		expect(store.suggestions[0]?.suggestion.reasons).toEqual(['überfällig seit 3 Tagen']);
 		tickets.map.set(due.id, { ...due, due: null, updated: '2031-05-14 09:00:01.000Z' });
 		expect(store.suggestions.map((row) => row.ticket.id)).toEqual(['t000000000000a2']);
+	});
+
+	it('treats pins as display only: a pinned ticket due today is suggested, one without a source is not (PL-1)', async () => {
+		// The real list store with real pins, as the layout of /tagesplan gets them: the section
+		// "Angeheftet" of "Aufgaben" must not take its tickets out of the open ones of the plan.
+		const pinnedDue = ticket('t000000000000a1', { due: TODAY });
+		const pinnedOnly = ticket('t000000000000a2');
+		const plain = ticket('t000000000000a3', { status: 'in_progress' });
+		const open = [pinnedDue, pinnedOnly, plain];
+		const pins = new PinStore(
+			fakePins([pinOf(pinnedDue.id, 1), pinOf(pinnedOnly.id, 2)]).data,
+			session()
+		);
+		const stopPins = pins.start();
+		const list = new TicketListStore(
+			{
+				listOpen: vi.fn(async () => open),
+				searchOpen: vi.fn(async () => []),
+				setDone: vi.fn(),
+				update: vi.fn()
+			},
+			session(),
+			{ now: () => Date.parse(`${TODAY}T10:00:00.000Z`), pins }
+		);
+		list.loadOpen();
+		await vi.waitFor(() => expect(list.pinned).toHaveLength(2));
+		const store = await loaded(fakeData(), list);
+		expect(store.suggestions.map((row) => [row.ticket.id, row.suggestion.reasons])).toEqual([
+			['t000000000000a1', ['heute fällig']],
+			['t000000000000a3', ['in Arbeit']]
+		]);
+		// The pool, too, holds every open ticket of the area, pinned or not.
+		expect(store.pool.map((entry) => entry.id).sort()).toEqual(open.map((entry) => entry.id));
+		stopPins();
 	});
 
 	it('leaves the tickets in the plan out of suggestions and pool', async () => {
@@ -395,6 +435,7 @@ describe('realtime', () => {
 		let onItem: ((change: RecordChange<DayPlanItem>) => void) | null = null;
 		let onPlan: ((change: RecordChange<DayPlanMeta>) => void) | null = null;
 		let onTicket: ((change: RecordChange<TicketSummary>) => void) | null = null;
+		let onSettings: ((change: RecordChange<DayPlanSettingsRecord>) => void) | null = null;
 		const live = {
 			items: vi.fn(async (_id: string, callback: (change: RecordChange<DayPlanItem>) => void) => {
 				onItem = callback;
@@ -403,7 +444,13 @@ describe('realtime', () => {
 			plan: vi.fn(async (_id: string, callback: (change: RecordChange<DayPlanMeta>) => void) => {
 				onPlan = callback;
 				return async () => undefined;
-			})
+			}),
+			settings: vi.fn(
+				async (_scope: string, callback: (change: RecordChange<DayPlanSettingsRecord>) => void) => {
+					onSettings = callback;
+					return async () => undefined;
+				}
+			)
 		} satisfies DayPlanLive;
 		const tickets = {
 			tickets: vi.fn(async (callback: (change: RecordChange<TicketSummary>) => void) => {
@@ -417,9 +464,47 @@ describe('realtime', () => {
 			tickets,
 			item: (change: RecordChange<DayPlanItem>) => onItem?.(change),
 			plan: (change: RecordChange<DayPlanMeta>) => onPlan?.(change),
-			ticket: (change: RecordChange<TicketSummary>) => onTicket?.(change)
+			ticket: (change: RecordChange<TicketSummary>) => onTicket?.(change),
+			settings: (change: RecordChange<DayPlanSettingsRecord>) => onSettings?.(change)
 		};
 	}
+
+	it('follows the settings of the area changed in another tab or by another member (PL-1)', async () => {
+		vi.useFakeTimers();
+		const working = ticket('t000000000000a1', { status: 'in_progress' });
+		const data = fakeData();
+		const store = await loaded(data, fakeTickets([working]));
+		const sources = fakeLiveSources();
+		const stop = store.connect(sources.tickets, sources.live);
+		await vi.waitFor(() =>
+			expect(sources.live.settings).toHaveBeenCalledWith(SCOPE, expect.any(Function))
+		);
+		expect(store.suggestions.map((row) => row.ticket.id)).toEqual([working.id]);
+		const settings = (mode: SourceMode) => ({ ...DEFAULT_SOURCES, in_progress: mode });
+
+		sources.settings({
+			action: 'update',
+			record: { id: 'sett00000000001', scope: SCOPE, settings: settings('off') }
+		});
+		expect(store.settings.in_progress).toBe('off');
+		expect(store.suggestions).toEqual([]);
+		// The settings of another area are not those of this plan.
+		sources.settings({
+			action: 'update',
+			record: { id: 'sett00000000002', scope: 'h:house0000000001', settings: settings('auto') }
+		});
+		expect(store.settings.in_progress).toBe('off');
+
+		// Switched to "Automatisch übernehmen": the server is asked to take the ticket in.
+		sources.settings({
+			action: 'update',
+			record: { id: 'sett00000000001', scope: SCOPE, settings: settings('auto') }
+		});
+		expect(store.automatic).toEqual([working.id]);
+		await vi.advanceTimersByTimeAsync(AUTO_SYNC_DELAY_MS);
+		expect(data.fetch).toHaveBeenCalledTimes(2);
+		stop();
+	});
 
 	it('follows the entries and the plan of the shown day, and the tickets of its entries', async () => {
 		const tickets = fakeTickets([ticket('t000000000000a1'), ticket('t000000000000a2')]);

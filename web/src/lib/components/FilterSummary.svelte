@@ -3,12 +3,15 @@
 
 	// Summary above the list (FI-1, ADR-0013 addendum C): which cards the shown tickets come from,
 	// e.g. "12 Tickets aus: In Arbeit, Heute fällig, Dringend", and whether filters of the filter bar
-	// narrow them further. "Zurücksetzen" goes back to "Alle offenen" without filters and search; the
-	// table decides where the focus goes then. No live region: the table announces the number already.
+	// narrow them further. Matching pinned tickets stand in the section "Angeheftet" above and are
+	// named like in the number next to "Aufgaben": "4 + 1 angeheftet aus: Dringend" (PL-1).
+	// "Zurücksetzen" goes back to "Alle offenen" without filters and search; the table decides where
+	// the focus goes then. No live region: the table announces the number already.
 	let {
 		cards,
 		count,
 		filtered = false,
+		pinned = 0,
 		onreset
 	}: {
 		cards: readonly FilterCard[];
@@ -16,12 +19,14 @@
 		count: number;
 		/** A filter of the filter bar or the search narrows the cards as well. */
 		filtered?: boolean;
+		/** Pinned tickets that pass the cards, the filters and the search (ADR-0064). */
+		pinned?: number;
 		onreset: () => void;
 	} = $props();
 </script>
 
 <div class="filter-summary">
-	<p class="text">{cardSummary(cards, { count, filtered })}</p>
+	<p class="text">{cardSummary(cards, { count, filtered, pinned })}</p>
 	<button class="button-secondary button-small" type="button" onclick={onreset}>
 		Zurücksetzen
 	</button>

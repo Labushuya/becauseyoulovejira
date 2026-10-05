@@ -31,6 +31,7 @@ import { TICKET_LIST_FIELDS, toTicketSummary, type TicketRecord } from './ticket
 const ROUTE = '/api/byl/dayplan';
 const ITEMS = 'day_plan_items';
 const PLANS = 'day_plans';
+const SETTINGS = 'day_plan_settings';
 
 /** The plan of an area and day as the routes name it. */
 export interface DayPlanMeta {
@@ -332,6 +333,36 @@ export function subscribeDayPlan(
 		planId,
 		changes((record) => metaOf(record), onChange),
 		{ fields: 'id,date,scope,dismissed' }
+	);
+}
+
+/** The modes of the sources of an area as realtime brings them. */
+export interface DayPlanSettingsRecord {
+	id: string;
+	scope: string;
+	settings: DayPlanSettings;
+}
+
+/**
+ * The modes of the sources of an area, live for every account that sees it (the rule of the area
+ * decides, PL-1): a change in another tab or by another member of the household arrives at once.
+ */
+export function subscribeDayPlanSettings(
+	pb: PocketBase,
+	scope: string,
+	onChange: (change: RecordChange<DayPlanSettingsRecord>) => void
+): Promise<Unsubscribe> {
+	return pb.collection(SETTINGS).subscribe<{ id: string; scope?: unknown; sources?: unknown }>(
+		'*',
+		changes(
+			(record) => ({
+				id: record.id,
+				scope: text(record.scope),
+				settings: settingsOf(record.sources)
+			}),
+			onChange
+		),
+		{ filter: pb.filter('scope = {:scope}', { scope }), fields: 'id,scope,sources' }
 	);
 }
 

@@ -1,6 +1,6 @@
 # ADR-0045: Ticket duplizieren: Abfrage im Dialog, eine Route in einer Transaktion, Kopie der Herkunft als eigener Eingangseintrag
 
-- **Status:** Angenommen und umgesetzt: Server und Datenschicht in DU-1 (#192), Oberfläche in DU-2 (#193) nach [docs/plan/duplizieren.md](../plan/duplizieren.md); die manuelle Browser-Prüfung steht im Test-Manifest. §1 (Einstieg) geändert durch den Nachtrag „Aktionsmenüs“ (2026-10-01); Nachtrag 2026-10-02: Farbe im Duplikat ([ADR-0052](0052-farben-fuer-projekte-und-tickets.md)); Nachtrag 2026-10-04: Charm im Duplikat ([ADR-0062](0062-charms.md))
+- **Status:** Angenommen und umgesetzt: Server und Datenschicht in DU-1 (#192), Oberfläche in DU-2 (#193) nach [docs/plan/duplizieren.md](../plan/duplizieren.md); die manuelle Browser-Prüfung steht im Test-Manifest. §1 (Einstieg) geändert durch den Nachtrag „Aktionsmenüs“ (2026-10-01); Nachtrag 2026-10-02: Farbe im Duplikat ([ADR-0052](0052-farben-fuer-projekte-und-tickets.md)); Nachtrag 2026-10-04: Charm im Duplikat ([ADR-0062](0062-charms.md)); Nachtrag 2026-10-05: Art im Duplikat ([ADR-0065](0065-tagesplan.md), PL-1)
 - **Datum:** 2026-10-01
 - **Entscheidung durch:** Nutzer (Wunsch vom 2026-10-01, wörtlich: „Ich möchte die Möglichkeit haben, jedes Ticket zu duplizieren – nicht zwangsläufig mit Quelle (manuell abfragen wie Duplikat erstellt werden soll).“), Advisor (Einstieg, Felder der Abfrage und ihre Vorbelegung, Pflicht-Status, Quelle mit Fallback, Atomarität, Verlauf, Rechte, Papierkorb), Executor (Machbarkeit der Kopie, Serverweg, Kommentare, Einzelheiten)
 - **Ergänzt:** [ADR-0031](0031-herkunft-sichern.md) (Nachtrag F: Kopie der Herkunft), [ADR-0033](0033-unteraufgaben.md) (Nachtrag: Unteraufgaben beim Duplizieren)
@@ -111,3 +111,11 @@ Mit den Charms hat ein Ticket ein Symbol vor dem Titel. §2 bis §6 bleiben, erg
 - **Immer übernommen:** Das Duplikat bekommt den Charm des Originals, jede neue Unteraufgabe den Charm ihrer eigenen Unteraufgabe (`withCharm` in `lib/duplicate-service.js`), ohne Schalter in der Abfrage (Wunsch des Nutzers: „Duplizieren übernimmt den Charm“) und ohne Eintrag im Verlauf. Ohne Charm bleibt das Feld leer.
 - Ein Schlüssel, den der Katalog nicht mehr kennt, wird ausgelassen; vor der Migration liest der Dienst leer und setzt nichts.
 - **Tests:** `charms.test.mjs` („"Duplizieren" takes the charm of the original and of each sub-task over“).
+
+## Nachtrag (2026-10-05, [ADR-0065](0065-tagesplan.md), PL-1): Art im Duplikat
+
+Mit dem Tagesplan hat ein Ticket eine Art: „Aufgabe“ oder „Laufendes Vorhaben“. §2 bis §6 bleiben, ergänzt um:
+
+- **Immer übernommen, wie der Charm:** Das Duplikat bekommt die Art des Originals, jede neue Unteraufgabe die Art ihrer eigenen Unteraufgabe (`withKind` in `lib/duplicate-service.js`), ohne Schalter in der Abfrage (Produktentscheidung zu PL-1) und ohne eigenen Eintrag im Verlauf. Ein laufendes Vorhaben bleibt also eines, eine Aufgabe eine Aufgabe.
+- Vor der Migration des Tagesplans liest der Dienst die Art leer und setzt nichts; den Standard `task` setzt dann der Modell-Hook, sobald es das Feld gibt.
+- **Tests:** `ticket-duplicate.test.mjs` („takes the kind of the original and of each sub-ticket over, like the charm“).
