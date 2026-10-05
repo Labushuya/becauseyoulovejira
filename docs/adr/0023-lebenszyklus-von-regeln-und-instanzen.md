@@ -1,6 +1,6 @@
 # ADR-0023: Lebenszyklus von Regeln und Instanzen: Anlegen, Erledigen, Rückgängig, Pausieren, Bearbeiten, Löschen
 
-- **Status:** Angenommen (2026-09-26: Der Nutzer hat die Empfehlungen zu OF-E5-1 bis OF-E5-5 bestätigt; umgesetzt in E5, siehe Nachtrag am Ende)
+- **Status:** Angenommen (2026-09-26: Der Nutzer hat die Empfehlungen zu OF-E5-1 bis OF-E5-5 bestätigt; umgesetzt in E5, siehe Nachtrag am Ende); Nachtrag 9 (2026-10-05): Nur das aktuelle Vorkommen zählt (WH-1)
 - **Datum:** 2026-09-25
 - **Entscheidung durch:** Advisor
 - **Ergänzt:** [ADR-0021](0021-regelmodell-wiederkehrende-aufgaben.md) (Regelmodell), [ADR-0022](0022-erzeugung-von-instanzen.md) (Erzeugung)
@@ -33,7 +33,7 @@ Die Invariante „höchstens eine offene Instanz pro Regel“ ([ADR-0022](0022-e
 
 ### 2. Erledigen
 
-Nach [ADR-0022](0022-erzeugung-von-instanzen.md) §4: Bei `after_completion` wird der Folgetermin atomar mit dem Erledigen gespeichert. Das Folgeticket entsteht danach, sobald der Vorlauf erreicht ist, also direkt oder später per Cron.
+Nach [ADR-0022](0022-erzeugung-von-instanzen.md) §4: Bei `after_completion` wird der Folgetermin atomar mit dem Erledigen gespeichert. Das Folgeticket entsteht danach, sobald der Vorlauf erreicht ist, also direkt oder später per Cron. *(Seit Nachtrag 9 auch bei festem Rhythmus ohne Schalter: der erste Termin nach dem Erledigungstag.)*
 
 ### 3. Rückgängig bzw. Wiedereröffnen einer Instanz
 
@@ -72,7 +72,7 @@ Verlässt eine Instanz `done` (Häkchen „Rückgängig“ oder Statuswechsel im
 ### 6. Instanz löschen oder aus der Serie lösen
 
 - **Löschen der offenen Instanz** (Sicherheitsabfrage wie bisher, mit dem Zusatz „Die Regel läuft weiter.“):
-  - `calendar`: `next_due` bleibt, und der gelöschte Termin gilt als übersprungen.
+  - `calendar`: `next_due` bleibt, und der gelöschte Termin gilt als übersprungen. *(Seit Nachtrag 9 ohne Schalter `max(next_due, after(rule, heute))`: Ein überfälliges Vorkommen überspringt alle Termine bis heute.)*
   - `after_completion`: `next_due = afterCompletion(rule, heute)`, als wäre die Instanz heute erledigt worden. So erscheint nicht sofort ein neues Ticket. *(Genauer: nicht im selben Schritt; liegt der neue Termin schon im Vorlauf, entsteht er beim nächsten stündlichen Lauf, siehe Nachtrag 5 und ADR-0022 Nachtrag 7. Seit dem Papierkorb verschiebt Löschen die Instanz dorthin, Nachtrag 3.)*
 - **„Aus der Serie lösen“** (Ticket-Panel, leert `tickets.recurrence`): Es gilt dasselbe wie beim Löschen, das Ticket bleibt als normales Ticket.
 - Erledigte Instanzen zu löschen oder zu lösen ändert an der Regel nichts.
@@ -170,3 +170,14 @@ Seit [ADR-0022](0022-erzeugung-von-instanzen.md) Nachtrag 10 hat die Vorlage ein
 - **„Auch für künftige Tickets übernehmen“ (Nachtrag 6) beim Hinzufügen:** Legt der Nutzer an einem **offenen** Ticket einer Serie über „Unteraufgabe hinzufügen“ eine Unteraufgabe an, erscheint dasselbe Info-Flag „Nur dieses Ticket geändert.“ mit „Künftige Tickets von „Kaffeemaschine“ bekommen die Unteraufgabe „Entkalken“ nicht.“ und der Aktion „Auch für künftige Tickets übernehmen“, die sie mit Titel und Priorität an die Liste der Vorlage anhängt (`RecurrenceStore.offerSubtask`, rein `subtaskOffer`). Weitere Unteraufgaben derselben Serie, solange das Flag steht, kommen in dasselbe Angebot („… die Unteraufgaben „A“ und „B“ nicht.“), denn das Feld bleibt für die nächste offen; ein anderes Angebot ersetzt es. Kein Angebot, wenn die Vorlage den Titel schon hat, voll ist, das Ticket erledigt ist oder in keiner Serie, und vor der Migration. **Entfernen oder Umbenennen** einer Unteraufgabe am Ticket bietet nichts an: Das sind Korrekturen an diesem einen Ticket (ein erledigtes oder unnötiges Häkchen dieses Termins), und eine Zuordnung „diese Unteraufgabe ist jener Eintrag der Vorlage“ gibt es nicht verlässlich (Titel lassen sich ändern, Einträge doppeln). Die Vorlage bearbeitet der Nutzer dafür direkt (Editor am Ticket oder Regel-Panel). Andere Wege, die eine Unteraufgabe entstehen lassen („Übergeordnet: Festlegen …“, Duplizieren mit „Unter HAUS-12 einordnen“), bieten ebenfalls nichts an: Sie hängen ein vorhandenes oder kopiertes Ticket an, keine neue Aufgabe der Routine.
 - **Duplizieren ([ADR-0045](0045-ticket-duplizieren.md))** bleibt unverändert: Die Serie kommt nie mit; die Unteraufgaben eines Folgetickets kopiert es nur nach Wahl als normale Unteraufgaben.
 - Belegt in `recurrence-subtasks.test.mjs` („removes an untouched follow-up together with its sub-tasks; looking at them changes nothing“, „keeps a follow-up whose sub-tasks the user changed, commented, completed, removed, moved out or added to“), `recurrence-rules.test.mjs`, `template-subtask-list.test.ts`, `recurrence-summary.test.ts` (auch in der Vollansicht ohne Dialog aus dem Dialog), `recurrence-panel.test.ts`, `series-template-offer.test.ts`, `recurrence-store.test.ts` und `series-template.test.ts`.
+
+## Nachtrag 9 (2026-10-05, WH-1): Erledigen, Rückgängig, Löschen und Lösen, wenn nur das aktuelle Vorkommen zählt
+
+Nutzerentscheidung vom 2026-10-05 ([ADR-0022](0022-erzeugung-von-instanzen.md) Nachtrag 13). Der Rest dieses ADR und der Nachträge bleibt; mit „Verpasste Termine nachholen“ (bisher „Jeden Termin einzeln anlegen“, Nachtrag 2) ändert sich nichts.
+
+- **§2 Erledigen:** Bei festem Rhythmus ohne Schalter setzt der Update-Hook in der Transaktion des Erledigens `next_due = max(next_due, after(rule, heute))` (`nextDueOnCompletion`, `nextDueAfterDay`) und schreibt die dabei übersprungenen Termine (vor dem Erledigungstag) als `recurrence_skipped` an das erledigte Ticket. Das Folgeticket fällt damit nie auf heute oder in die Vergangenheit; es entsteht wie bisher nach dem Commit, sobald sein Vorlauf erreicht ist.
+- **§3 Rückgängig bleibt intakt:** Nur der direkte Vorgänger entfernt ein unberührtes Folgeticket samt Unteraufgaben (Nachtrag 4 und 8), `next_due` wird wie bisher die Fälligkeit des entfernten Folgetickets. Weil diese jetzt nach dem Erledigungstag liegt, bleiben die beim Erledigen übersprungenen Termine übersprungen: Die Serie holt sie auch nach dem Rückgängigmachen nicht nach. Der Eintrag `recurrence_skipped` am wieder geöffneten Ticket bleibt stehen (der Verlauf wird nie gelöscht) und stimmt weiter. Erledigt der Nutzer es am selben Tag erneut, entsteht dasselbe Folgeticket ohne zweiten Eintrag; an einem späteren Tag nennt ein zweiter Eintrag nur die neu verstrichenen Termine. Ohne Folgeticket (Vorlauf noch nicht erreicht) bleibt `next_due` wie bei §3.
+- **§6 Löschen, Papierkorb und „Aus der Serie lösen“:** Bei festem Rhythmus ohne Schalter springt `next_due` ebenso hinter heute (`nextDueOnRelease`): Wer ein überfälliges Vorkommen löscht oder löst, überspringt alle Termine bis heute; der Ersatz kommt für den ersten Termin nach heute und wie bisher nicht im selben Schritt (Nachtrag 5). Ein Vorkommen mit künftigem Termin überspringt wie bisher nur seinen eigenen. Bisher blieb `next_due` stehen, und der nächste stündliche Lauf legte das Ticket des jüngsten verpassten Termins an, unter Umständen eines in der Vergangenheit. „Nach Erledigung“ unverändert.
+- **Wiederherstellen (Nachtrag 3)** unverändert: Ohne anderes offenes Vorkommen kommt das Ticket mit seiner alten Fälligkeit als das eine offene Vorkommen zurück (also wieder „überfällig seit …“), `next_due` bleibt; sonst `validation_trash_series_conflict` mit dem Ausweg „aus der Serie lösen“.
+- **Keine Migration**, die Hooks wirken nach dem nächsten Neustart. Bestehende Tickets bleiben, wie sie sind.
+- Belegt in `recurrence-current.test.mjs` („sub-tasks of the template: … reopening takes it back with them“, „"Aus der Serie lösen" of an overdue occurrence …“, „trash and restore: …“) und `recurrence-rules.test.mjs` („fixes the next date at completion and release …“).

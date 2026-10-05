@@ -574,7 +574,7 @@ describe('RecurrenceStore: "Jeden Termin einzeln anlegen" (plan OR-5)', () => {
 				fields: {
 					each_occurrence: {
 						code: 'validation_recurrence_each_mode',
-						message: '„Jeden Termin einzeln anlegen“ gibt es nur bei einem festen Rhythmus.'
+						message: '„Verpasste Termine nachholen“ gibt es nur bei einem festen Rhythmus.'
 					}
 				}
 			})
@@ -589,7 +589,7 @@ describe('RecurrenceStore: "Jeden Termin einzeln anlegen" (plan OR-5)', () => {
 			ok: false,
 			message: null,
 			fields: {
-				each_occurrence: '„Jeden Termin einzeln anlegen“ gibt es nur bei einem festen Rhythmus.'
+				each_occurrence: '„Verpasste Termine nachholen“ gibt es nur bei einem festen Rhythmus.'
 			}
 		});
 	});

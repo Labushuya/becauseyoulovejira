@@ -7,7 +7,6 @@
 // lib/berlin-time.js computes it, the same function and zone as "Heute fällig" of the list.
 'use strict';
 
-var DAY_MS = 24 * 60 * 60 * 1000;
 var CALENDAR_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 // --- Kind of a ticket --------------------------------------------------------------------------
@@ -82,6 +81,14 @@ function sourcesViolation(input) {
 
 // --- Suggestions -------------------------------------------------------------------------------
 
+/**
+ * The series a ticket stands for alone (WH-1): its rule, unless it was made with "Verpasste Termine
+ * nachholen" (`occurrence` set, every date its own ticket that counts on its own); '' without a rule.
+ */
+function seriesKeyOf(recurrence, occurrence) {
+  return recurrence && !occurrence ? String(recurrence) : '';
+}
+
 function utcOf(date) {
   var match = CALENDAR_DATE.exec(String(date));
   return match ? Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])) : NaN;
@@ -99,18 +106,14 @@ function isCalendarDate(value) {
   return text === value;
 }
 
-/** Whole days from `from` to `to` (both calendar dates). */
-function daysBetween(from, to) {
-  return Math.round((utcOf(to) - utcOf(from)) / DAY_MS);
-}
-
 function contains(list, value) {
   return list !== null && list !== undefined && list.indexOf(value) !== -1;
 }
 
 /**
  * The sources a ticket matches on `today`, in the order of PRECEDENCE, whatever their modes. Only an
- * open ticket matches. `ticket`: { id, status, due ('' or a calendar date), kind, recurring }.
+ * open ticket matches. `ticket`: { id, status, due ('' or a calendar date), kind, recurring, series
+ * (see seriesKeyOf; suggestionsOf reads it) }.
  * `leftover`: IDs of the entries of yesterday that were neither done nor checked for the day.
  * - ongoing: the kind is "Laufendes Vorhaben".
  * - recurrence: a ticket of a series that is due today.
@@ -141,7 +144,26 @@ function matchingSources(ticket, today, leftover) {
   return result;
 }
 
-/** Text of a reason, e.g. "überfällig seit 3 Tagen". */
+/**
+ * "05.10." in the year of `today`, else "05.10.2025": the short date of the SPA (shortDate in
+ * domain/recurrence-text.ts).
+ */
+function shortDate(date, today) {
+  var parts = String(date).split('-');
+  var year = String(today).split('-')[0];
+  return parts[2] + '.' + parts[1] + '.' + (parts[0] === year ? '' : parts[0]);
+}
+
+/**
+ * "überfällig seit 05.10.": an overdue ticket names the day it is overdue since, its due date, the
+ * same text as the list and the detail (WH-1; domain/due-label.ts overdueSinceText). A carried
+ * occurrence of a series keeps the date of its oldest missed date as its due date.
+ */
+function overdueSinceText(due, today) {
+  return 'überfällig seit ' + shortDate(due, today);
+}
+
+/** Text of a reason, e.g. "überfällig seit 05.10.". */
 function reasonText(source, ticket, today) {
   switch (source) {
     case 'ongoing':
@@ -150,10 +172,8 @@ function reasonText(source, ticket, today) {
       return 'Wiederholung';
     case 'leftover':
       return 'übrig von gestern';
-    case 'overdue': {
-      var days = daysBetween(ticket.due, today);
-      return days === 1 ? 'überfällig seit 1 Tag' : 'überfällig seit ' + days + ' Tagen';
-    }
+    case 'overdue':
+      return overdueSinceText(ticket.due, today);
     case 'due_today':
       return 'heute fällig';
     case 'in_progress':
@@ -192,21 +212,68 @@ function compareSuggestions(a, b) {
   return a.ticket.id < b.ticket.id ? -1 : a.ticket.id > b.ticket.id ? 1 : 0;
 }
 
+// Whether `a` is a later occurrence of its series than `b`: the later due date (one without a due
+// date counts as the earliest), then the later creation, then the greater ID.
+function isLater(a, b) {
+  var dueA = a.due || '';
+  var dueB = b.due || '';
+  if (dueA !== dueB) {
+    return dueA > dueB;
+  }
+  var createdA = a.created || '';
+  var createdB = b.created || '';
+  if (createdA !== createdB) {
+    return createdA > createdB;
+  }
+  return a.id > b.id;
+}
+
+/**
+ * Only the current occurrence of a series counts (WH-1, ADR-0065 addendum WH-1): for every series
+ * (`series` of the facts, the rule of a ticket that stands for its series alone, '' otherwise) the
+ * ID of its latest open ticket, and whether one of its tickets is in the plan already. Tickets of
+ * "Verpasste Termine nachholen" have no series here: each date counts on its own.
+ */
+function seriesOf(tickets, planned) {
+  var current = {};
+  var inPlan = {};
+  for (var i = 0; i < tickets.length; i++) {
+    var ticket = tickets[i];
+    var series = ticket.series || '';
+    if (series === '' || ticket.status === 'done') {
+      continue;
+    }
+    if (!has(current, series) || isLater(ticket, current[series])) {
+      current[series] = ticket;
+    }
+    if (contains(planned, ticket.id)) {
+      inPlan[series] = true;
+    }
+  }
+  return { current: current, inPlan: inPlan };
+}
+
 /**
  * The suggestions of the plan of `today`: every open ticket of the area that is neither in the plan
- * nor removed from it today and matches a source that is not off. `context`: { today, settings (as
- * settingsOf gives them), planned (ticket IDs in the plan), dismissed (ticket IDs removed from it),
- * leftover (see matchingSources) }. Each suggestion: { id, mode ('suggest' or 'auto', the strongest
- * of its sources), origin (the first source of that mode by PRECEDENCE), reasons (the texts of every
- * source that is not off, in that order) }. Sorted by origin, due date (none last), priority,
- * creation and ID.
+ * nor removed from it today and matches a source that is not off; of a series only its current
+ * occurrence, and nothing while one of its tickets is in the plan (WH-1). `context`: { today,
+ * settings (as settingsOf gives them), planned (ticket IDs in the plan), dismissed (ticket IDs
+ * removed from it), leftover (see matchingSources) }. Each suggestion: { id, mode ('suggest' or
+ * 'auto', the strongest of its sources), origin (the first source of that mode by PRECEDENCE),
+ * reasons (the texts of every source that is not off, in that order) }. Sorted by origin, due date
+ * (none last), priority, creation and ID.
  */
 function suggestionsOf(tickets, context) {
   var settings = settingsOf(context.settings);
+  var series = seriesOf(tickets, context.planned);
   var found = [];
   for (var i = 0; i < tickets.length; i++) {
     var ticket = tickets[i];
     if (contains(context.planned, ticket.id) || contains(context.dismissed, ticket.id)) {
+      continue;
+    }
+    var key = ticket.series || '';
+    if (key !== '' && (series.inPlan[key] || !has(series.current, key) || series.current[key].id !== ticket.id)) {
       continue;
     }
     var sources = matchingSources(ticket, context.today, context.leftover);
@@ -340,8 +407,10 @@ module.exports = {
   settingsOf: settingsOf,
   sourcesViolation: sourcesViolation,
   isCalendarDate: isCalendarDate,
-  daysBetween: daysBetween,
+  seriesKeyOf: seriesKeyOf,
   matchingSources: matchingSources,
+  shortDate: shortDate,
+  overdueSinceText: overdueSinceText,
   reasonText: reasonText,
   suggestionsOf: suggestionsOf,
   CHECK_MODES: CHECK_MODES,

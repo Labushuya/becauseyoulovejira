@@ -22,7 +22,7 @@ const hook = loadHookLib('recurrence.js');
 const hookRules = loadHookLib('recurrence-rules.js');
 
 /** A rule of the simulation as the hook reads it: normalized, with its state. */
-const hookRule = (rule) => ({ ...hook.normalize(rule), active: rule.active, next_due: rule.next_due });
+const hookRule = (rule) => ({ ...hook.normalize(rule), active: rule.active, next_due: rule.next_due, each: rule.each === true });
 
 const HOOK_ENGINE = {
 	generation: (input) => hookRules.generation({ ...input, rule: hookRule(input.rule) }, hook),
@@ -34,7 +34,7 @@ const HOOK_ENGINE = {
 	onOrAfter: (rule, date) => hook.onOrAfter(rule, date)
 };
 
-const ticket = (due, appeared, skipped = null) => ({ due, appeared, done: null, skipped });
+const ticket = (due, appeared, skipped = null) => ({ due, appeared, done: null, skipped, passed: null });
 
 describe('examples of the help (plan "Wiederholungen verständlich machen")', () => {
 	const examples = helpExamples(SPA_ENGINE);
@@ -60,11 +60,16 @@ describe('examples of the help (plan "Wiederholungen verständlich machen")', ()
 		expect(fixed.lateWithinLead).toMatchObject({ done: '2026-10-07', next: { due: '2026-10-12', appeared: '2026-10-09' } });
 		// Done after the day the next one would appear: it appears only now, still due on Monday.
 		expect(fixed.late).toMatchObject({ done: '2026-10-10', next: { due: '2026-10-12', appeared: '2026-10-10' } });
-		// Three weeks: one ticket for 26.10., one day overdue; 12.10. and 19.10. skipped; then 02.11.
+		// Three weeks (WH-1): the ticket of 05.10. is carried along; done on Tuesday 27.10., the Mondays
+		// 12.10., 19.10. and 26.10. count as skipped, and the next one is 02.11., appearing on 30.10.
 		expect(fixed.leftLong).toEqual({
 			done: '2026-10-27',
-			next: { ...ticket('2026-10-26', '2026-10-27', { count: 2, dates: ['2026-10-12', '2026-10-19'], more: false }), done: '2026-10-27' },
-			after: ticket('2026-11-02', '2026-10-30')
+			carried: {
+				...ticket('2026-10-05', '2026-10-02'),
+				done: '2026-10-27',
+				passed: { count: 3, dates: ['2026-10-12', '2026-10-19', '2026-10-26'], more: false }
+			},
+			next: ticket('2026-11-02', '2026-10-30')
 		});
 		expect(fixed.leadZero).toMatchObject({ due: '2026-10-05', appeared: '2026-10-05' });
 		// The day-by-day reference of ADR-0021 section 2 agrees.
@@ -90,7 +95,12 @@ describe('examples of the help (plan "Wiederholungen verständlich machen")', ()
 	it('the switch: five days, the open ticket done, the app off for 26 days with the batch and the decision', () => {
 		const { switch: each } = examples;
 		expect(each).toMatchObject({ days: 5, openWithout: 1, openWith: 5, madeWith: 0, offDays: 26 });
-		expect(each.doneWithout).toMatchObject({ due: '2026-10-09', appeared: '2026-10-09', skipped: { count: 3 } });
+		// Without the switch (WH-1): done on Friday 09.10., the next one is due on Saturday 10.10.
+		expect(each.doneWithout).toEqual({
+			done: '2026-10-09',
+			nextDue: '2026-10-10',
+			passed: { count: 3, dates: ['2026-10-06', '2026-10-07', '2026-10-08'], more: false }
+		});
 		expect(each.offWithout).toMatchObject({ due: '2026-10-31', appeared: '2026-10-31', skipped: { count: 25 } });
 		expect(each).toMatchObject({ offWaiting: true, offAllFirst: 20, offAllSecond: 6, offTodaySkipped: 25, limit: 20 });
 		expect(each.offToday).toEqual([ticket('2026-10-31', '2026-10-31')]);
@@ -142,6 +152,14 @@ describe('mirror of the generation in the SPA (recurrence-generation.ts)', () =>
 					expect(mirror.backlogDecision({ rule, choice, today }), label).toEqual(HOOK_ENGINE.backlogDecision({ rule, choice, today }));
 				}
 				expect(mirror.skippedDates(rule, nextDue, today), label).toEqual(HOOK_ENGINE.skippedDates(rule, nextDue, today));
+				// WH-1: completing on `today` with and without "Verpasste Termine nachholen".
+				for (const each of [false, true]) {
+					const withSwitch = { ...rule, each };
+					expect(mirror.nextDueOnCompletion(withSwitch, today), label).toEqual(HOOK_ENGINE.nextDueOnCompletion(withSwitch, today));
+					expect(mirror.nextDueAfterDay(withSwitch, today), label).toEqual(
+						hookRules.nextDueAfterDay(hookRule(withSwitch), today, hook)
+					);
+				}
 			} else {
 				expect(mirror.nextDueOnCompletion(rule, today), label).toEqual(HOOK_ENGINE.nextDueOnCompletion(rule, today));
 			}

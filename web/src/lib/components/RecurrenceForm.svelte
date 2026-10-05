@@ -248,7 +248,7 @@
 	{#if calendar && eachAvailable}
 		<div class="field">
 			<label class="switch-row" for={idOf('each')}>
-				<span>Jeden Termin einzeln anlegen</span>
+				<span>Verpasste Termine nachholen</span>
 				<input
 					id={idOf('each')}
 					type="checkbox"
@@ -261,12 +261,14 @@
 			</label>
 			<p class="hint" id={idOf('each-hint')}>
 				{#if values.eachOccurrence === true}
-					Jeder Termin bekommt ein eigenes Ticket, auch wenn frühere noch offen sind. Fehlen mehr
-					als
+					Jeder Termin bekommt ein eigenes Ticket, auch wenn frühere noch offen sind, und jedes
+					zählt (etwa für Miete). Fehlen mehr als
 					{EACH_MAX_PER_RUN} Termine (etwa weil die App aus war), fragt die Regel vorher, ob sie alle
 					nachholt.
 				{:else}
-					Höchstens ein offenes Ticket; verpasste Termine werden zum jüngsten zusammengefasst.
+					Nur das aktuelle Ticket zählt: Bleibt es liegen, zeigt es „überfällig seit …“, und das
+					nächste entsteht erst beim Erledigen, für den nächsten Termin danach. Verpasste Termine
+					gelten als übersprungen.
 				{/if}
 			</p>
 			{@render fieldError('eachOccurrence')}

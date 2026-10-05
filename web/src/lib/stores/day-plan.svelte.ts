@@ -49,6 +49,7 @@ import {
 	isDone,
 	kindOf,
 	moved,
+	seriesKeyOf,
 	suggestionsOf,
 	type CheckAction,
 	type CheckMode,
@@ -184,6 +185,7 @@ export function factsOf(ticket: TicketSummary): PlanTicketFacts {
 		due: ticket.due ?? '',
 		kind: kindOf(ticket.kind),
 		recurring: ticket.recurring,
+		series: seriesKeyOf(ticket.recurrenceId, ticket.occurrence),
 		priority: ticket.priority,
 		created: ticket.created
 	};

@@ -97,10 +97,19 @@ describe('rules', () => {
 		expect(
 			nextTicketText(rule({ nextDue: '2026-10-31', eachOccurrence: true }), TODAY, ['HAUS-12'])
 		).toBe('Nächstes Ticket fällig 31.10., erscheint am 26.10.');
-		// Missed dates: the ticket made today gets the latest of them (ADR-0022 section 3).
-		expect(nextTicketText(rule({ nextDue: '2026-07-31' }), TODAY, ['HAUS-12'])).toBe(
-			'Nächstes Ticket fällig 31.08., erscheint, sobald HAUS-12 erledigt ist'
+		// Missed dates without an open ticket (the app was off): the ticket made today gets the
+		// latest of them (ADR-0022 section 3).
+		expect(nextTicketText(rule({ nextDue: '2026-07-31' }), TODAY)).toBe(
+			'Nächstes Ticket fällig 31.08., erscheint in Kürze'
 		);
+		// Held back by an open ticket (WH-1): completed today at the earliest, so the first date
+		// after today, never one in the past.
+		expect(nextTicketText(rule({ nextDue: '2026-07-31' }), TODAY, ['HAUS-12'])).toBe(
+			'Nächstes Ticket fällig 30.09., erscheint, sobald HAUS-12 erledigt ist'
+		);
+		expect(nextTicketOf(rule({ nextDue: '2026-08-31' }), '2026-09-30', ['HAUS-12'])).toMatchObject({
+			due: '2026-10-31'
+		});
 		expect(
 			nextTicketText(
 				rule({ mode: 'after_completion', freq: 'daily', monthDay: null, nextDue: null }),

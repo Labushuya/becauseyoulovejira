@@ -75,10 +75,11 @@ describe('matching sources', () => {
 		expect(rules.matchingSources(ticket('a', { status: 'done', kind: 'ongoing', due: TODAY }), TODAY, ['a'])).toEqual([]);
 	});
 
-	it('names the reasons in German, overdue with its days', () => {
-		expect(rules.reasonText('overdue', { due: '2031-05-13' }, TODAY)).toBe('überfällig seit 1 Tag');
-		expect(rules.reasonText('overdue', { due: '2031-05-11' }, TODAY)).toBe('überfällig seit 3 Tagen');
-		expect(rules.reasonText('overdue', { due: '2030-05-14' }, TODAY)).toBe('überfällig seit 365 Tagen');
+	it('names the reasons in German, overdue with the day it is overdue since (WH-1)', () => {
+		expect(rules.reasonText('overdue', { due: '2031-05-13' }, TODAY)).toBe('überfällig seit 13.05.');
+		expect(rules.reasonText('overdue', { due: '2031-05-01' }, TODAY)).toBe('überfällig seit 01.05.');
+		expect(rules.reasonText('overdue', { due: '2030-05-14' }, TODAY)).toBe('überfällig seit 14.05.2030');
+		expect(rules.overdueSinceText('2030-12-31', '2031-01-01')).toBe('überfällig seit 31.12.2030');
 		expect(['ongoing', 'recurrence', 'leftover', 'due_today', 'in_progress'].map((source) => rules.reasonText(source, {}, TODAY))).toEqual([
 			'laufendes Vorhaben',
 			'Wiederholung',
@@ -88,10 +89,10 @@ describe('matching sources', () => {
 		]);
 	});
 
-	it('counts the days across a change of the clocks and a leap day', () => {
-		expect(rules.daysBetween('2031-03-29', '2031-03-31')).toBe(2);
-		expect(rules.daysBetween('2032-02-28', '2032-03-01')).toBe(2);
-		expect(rules.daysBetween('2031-10-25', '2031-10-27')).toBe(2);
+	it('names the overdue day across a leap day and the turn of the year', () => {
+		expect(rules.shortDate('2032-02-29', '2032-03-01')).toBe('29.02.');
+		expect(rules.shortDate('2031-12-31', '2032-01-01')).toBe('31.12.2031');
+		expect(rules.reasonText('overdue', { due: '2031-03-29' }, '2031-03-31')).toBe('überfällig seit 29.03.');
 	});
 });
 
@@ -131,6 +132,37 @@ describe('suggestions', () => {
 			ticket('first', { kind: 'ongoing' })
 		];
 		expect(rules.suggestionsOf(tickets, context()).map((s) => s.id)).toEqual(['first', 'old', 'new', 'top', 'mid', 'low', 'late']);
+	});
+
+	it('proposes a series at most once: only its current occurrence, nothing while one is planned (WH-1)', () => {
+		expect(rules.seriesKeyOf('rule1', '')).toBe('rule1');
+		expect(rules.seriesKeyOf('rule1', '2031-05-12 00:00:00.000Z')).toBe('');
+		expect(rules.seriesKeyOf('', '')).toBe('');
+		// Two open tickets of one series (only possible with data from before): the later one counts,
+		// the older one is never proposed, also when the later one is removed for the day.
+		const older = ticket('old', { due: '2031-05-10', recurring: true, series: 'rule1' });
+		const current = ticket('cur', { due: '2031-05-12', recurring: true, series: 'rule1' });
+		const other = ticket('one', { due: '2031-05-11' });
+		expect(rules.suggestionsOf([older, current, other], context())).toEqual([
+			{ id: 'one', mode: 'suggest', origin: 'overdue', reasons: ['überfällig seit 11.05.'] },
+			{ id: 'cur', mode: 'suggest', origin: 'overdue', reasons: ['überfällig seit 12.05.'] }
+		]);
+		expect(rules.suggestionsOf([older, current], context({ dismissed: ['cur'] }))).toEqual([]);
+		expect(rules.suggestionsOf([older, current], context({ planned: ['old'] }))).toEqual([]);
+		// Without a due date it counts as the earliest; then the later creation, then the ID.
+		const undated = ticket('none', { recurring: true, series: 'rule1', created: '2031-05-13 00:00:00.000Z' });
+		expect(rules.suggestionsOf([undated, current], context()).map((s) => s.id)).toEqual(['cur']);
+		const twin = ticket('cux', { due: '2031-05-12', recurring: true, series: 'rule1', created: current.created });
+		expect(rules.suggestionsOf([current, twin], context()).map((s) => s.id)).toEqual(['cux']);
+		// A done ticket never stands for its series.
+		expect(rules.suggestionsOf([older, { ...current, status: 'done' }], context()).map((s) => s.id)).toEqual(['old']);
+	});
+
+	it('proposes every date of "Verpasste Termine nachholen" on its own (no series key)', () => {
+		const dates = ['2031-05-12', '2031-05-13', TODAY].map((due, index) =>
+			ticket(`d${index}`, { due, recurring: true, series: '' })
+		);
+		expect(rules.suggestionsOf(dates, context()).map((s) => s.id)).toEqual(['d2', 'd0', 'd1']);
 	});
 
 	it('suggests the leftovers of yesterday', () => {

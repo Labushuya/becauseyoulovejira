@@ -272,6 +272,29 @@ describe('RecurrenceSummary', () => {
 		expect(screen.getAllByText(/Termine übersprungen/)).toHaveLength(1);
 	});
 
+	// WH-1: the carried ticket holds the series back; its next date lies after today.
+	it('names the date after today as the next one while the overdue ticket is open (WH-1)', async () => {
+		await setup(
+			ticket({ recurring: true, recurrenceId: 'rule00000000001', due: '2026-09-07' }),
+			[rule({ nextDue: '2026-09-14' })],
+			{},
+			() => undefined,
+			[],
+			[{ id: 'ticket000000001', key: 'TASK-3', title: 'Müll rausbringen' }]
+		);
+		expect(
+			screen.getByText('Nächstes Ticket fällig 28.09., erscheint, sobald TASK-3 erledigt ist')
+		).toBeTruthy();
+	});
+
+	it('names the switch "Verpasste Termine nachholen" in the line (WH-1)', async () => {
+		await setup(ticket({ recurring: true, recurrenceId: 'rule00000000001' }), [
+			rule({ eachOccurrence: true })
+		]);
+		expect(screen.getByText('holt verpasste Termine nach')).toBeTruthy();
+		expect(screen.queryByText('jeder Termin einzeln')).toBeNull();
+	});
+
 	// Recommendations 5 and 6 (ADR-0022 addendum 5).
 	it('asks about a large backlog and sends the choice', async () => {
 		const waiting = rule({

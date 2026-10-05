@@ -426,6 +426,13 @@ describe('help page (EH-9)', () => {
 		expect(content).toMatch(/„Nur für heute abhaken“/);
 		expect(content).toMatch(/„Vorhaben abschließen …“ mit Rückfrage/);
 		expect(content).toMatch(/„Aus“, „Vorschlagen“ oder „Automatisch übernehmen“/);
+		// WH-1: the reason names the day, a series stands there at most once.
+		expect(content).toMatch(
+			/überfällig seit 05\.10\. \(mit dem Termin des\s+Tickets, wie in der Liste\)/
+		);
+		expect(content).toMatch(
+			/Eine Wiederholung steht höchstens einmal\s+darin, mit ihrem aktuellen Ticket/
+		);
 		// Pins are display only (PL-1): neither a source nor a reason to leave a ticket out.
 		expect(content).toMatch(/Anheften ändert an den Vorschlägen nichts/);
 		expect(content).toMatch(/angeheftetes Ticket, das heute fällig ist, schlägt der Plan vor wie/);
@@ -485,7 +492,7 @@ describe('help page (EH-9)', () => {
 		).toEqual([
 			'Beispiel 1: Fester Rhythmus, jeden Montag, Vorlauf 3',
 			'Beispiel 2: Nach Erledigung, alle 2 Wochen, Vorlauf 3',
-			'Beispiel 3: „Jeden Termin einzeln anlegen“, täglich, Vorlauf 0',
+			'Beispiel 3: „Verpasste Termine nachholen“, täglich, Vorlauf 0',
 			'Besondere Kalendertage',
 			'Gut zu wissen'
 		]);
@@ -493,7 +500,7 @@ describe('help page (EH-9)', () => {
 			'Fester Rhythmus',
 			'Nach Erledigung',
 			'Vorlauf (Tage)',
-			'Jeden Termin einzeln anlegen'
+			'Verpasste Termine nachholen'
 		]) {
 			expect(within(section).getByText(term, { selector: 'dt' })).toBeTruthy();
 		}
@@ -503,8 +510,13 @@ describe('help page (EH-9)', () => {
 			'Zu früh erledigt (Sa 03.10.): Nichts ändert sich',
 			'Etwas später erledigt (Mi 07.10.): Auch dann erscheint das nächste wie geplant am Fr 09.10.',
 			'Das Ticket für Mo 12.10. erscheint erst jetzt, am Sa 10.10.; fällig bleibt Mo 12.10.',
-			'Es entsteht ein Ticket, fällig Mo 26.10. (schon 1 Tag überfällig); 12.10. und 19.10. gelten als übersprungen',
-			'Das Ticket für Mo 02.11. erscheint am Fr 30.10.',
+			// WH-1: only the current occurrence counts, the next one is never in the past.
+			'Drei Wochen liegen gelassen: Es bleibt bei dem einen Ticket, es zeigt „überfällig seit 05.10.“.',
+			'Erledigt am Di 27.10.: Die Montage 12.10., 19.10. und 26.10. gelten als übersprungen, das Ticket sagt es.',
+			'Das nächste ist Mo 02.11. fällig, der erste Montag nach dem Erledigen, und erscheint am Fr 30.10.',
+			'Es zählt nur das aktuelle Ticket der Serie. Bleibt es liegen, entsteht kein weiteres; es zeigt „überfällig seit“ mit seinem Termin',
+			'Erst wenn du es erledigst, entsteht das nächste, für den nächsten Termin nach dem Erledigen.',
+			'An (nur fester Rhythmus, etwa für Miete): Jeder Termin bekommt sein eigenes Ticket, auch wenn frühere noch offen sind, und jedes zählt.',
 			'Mit Vorlauf 0 erscheint das Ticket am Montag selbst (Mo 05.10.)',
 			'Erledigt am Mo 05.10.: Das nächste ist Mo 19.10. fällig und erscheint am Fr 16.10.',
 			'Früher erledigt (Mi 30.09.): fällig Mi 14.10.',
@@ -512,7 +524,7 @@ describe('help page (EH-9)', () => {
 			'Das nächste Ticket erscheint sofort beim Erledigen am Mo 05.10. und ist Mi 07.10. fällig',
 			'31.01. → 28.02. → 28.03. → 28.04.',
 			'5 Tage nichts erledigt: ohne Schalter 1 offenes Ticket, mit Schalter 5',
-			'ohne Schalter entsteht ein neues für heute (Fr 09.10.), 3 Termine gelten als übersprungen; mit Schalter entsteht nichts Neues',
+			'Danach am Fr 09.10. das älteste offene erledigt: ohne Schalter entsteht das nächste erst für den Tag danach (Sa 10.10.), 3 Termine gelten als übersprungen; mit Schalter entsteht nichts Neues',
 			'„Alle nachholen“ legt 20 sofort und 6 in der nächsten Stunde an, „Nur ab heute“ nur das Ticket von heute (25 Termine übersprungen)',
 			'Monatlich am 31.: 31.01., 28.02., 31.03., 30.04., im Schaltjahr 29.02.',
 			'in Schaltjahren am 29.02., sonst am 28.02.',
@@ -553,7 +565,7 @@ describe('help page (EH-9)', () => {
 		for (const phrase of [
 			'Kommentare und Quellen gehen nicht mit.',
 			'Unteraufgaben legst du in der Vorlage fest (Liste „Unteraufgaben“, höchstens 20, je mit Titel und Priorität, sortierbar).',
-			'Jedes neue Ticket der Serie bekommt sie als neue, offene Unteraufgaben ohne Fälligkeit, auch beim Nachholen und mit „Jeden Termin einzeln anlegen“.',
+			'Jedes neue Ticket der Serie bekommt sie als neue, offene Unteraufgaben ohne Fälligkeit, auch beim Nachholen und mit „Verpasste Termine nachholen“.',
 			'„Unteraufgaben dieses Tickets übernehmen“',
 			'„Ergänzen“ oder „Ersetzen“',
 			'Nimmt das Wiedereröffnen des zuletzt erledigten Tickets ein unberührtes Folgeticket zurück, gehen seine Unteraufgaben mit',

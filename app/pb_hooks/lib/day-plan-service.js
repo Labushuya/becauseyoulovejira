@@ -291,6 +291,9 @@ function factsOf(ticket) {
     due: dueOf(ticket),
     kind: rules.kindOf(ticket.getString('kind')),
     recurring: ticket.getString('recurrence') !== '',
+    // Only the current occurrence of a series is proposed (WH-1); `occurrence` reads '' before its
+    // migration, like for every ticket without "Verpasste Termine nachholen".
+    series: rules.seriesKeyOf(ticket.getString('recurrence'), ticket.getString('occurrence')),
     priority: ticket.getString('priority'),
     created: ticket.getString('created')
   };

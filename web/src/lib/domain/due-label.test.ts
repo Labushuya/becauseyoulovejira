@@ -1,17 +1,30 @@
-// Relative due labels (E3 plan, T-9 and package 1).
+// Relative due labels (E3 plan, T-9 and package 1; WH-1: "überfällig seit …").
 
 import { describe, expect, it } from 'vitest';
 import { addDays } from './berlin-date';
-import { NO_DUE_SPOKEN, NO_DUE_TEXT, relativeDue } from './due-label';
+import { NO_DUE_SPOKEN, NO_DUE_TEXT, overdueSinceText, relativeDue } from './due-label';
 import { SOON_DAYS } from './ordering';
 
 const TODAY = '2026-09-25';
 
 describe('relativeDue', () => {
 	it.each<[number, string, string]>([
-		[-30, 'seit 30 Tagen überfällig', '26.08.2026'],
-		[-2, 'seit 2 Tagen überfällig', '23.09.2026'],
-		[-1, 'gestern', '24.09.2026'],
+		[-30, 'überfällig seit 26.08.', '26.08.2026'],
+		[-2, 'überfällig seit 23.09.', '23.09.2026'],
+		[-1, 'überfällig seit 24.09.', '24.09.2026']
+	])('%i days: %s, the day it is overdue since (WH-1)', (days, text, date) => {
+		const due = addDays(TODAY, days);
+		expect(relativeDue(due, TODAY)).toEqual({
+			text,
+			date,
+			datetime: due,
+			spoken: `überfällig seit ${date}`,
+			overdue: true
+		});
+		expect(overdueSinceText(due, TODAY)).toBe(text);
+	});
+
+	it.each<[number, string, string]>([
 		[0, 'heute', '25.09.2026'],
 		[1, 'morgen', '26.09.2026'],
 		[2, 'in 2 Tagen', '27.09.2026'],
@@ -23,7 +36,7 @@ describe('relativeDue', () => {
 			date,
 			datetime: due,
 			spoken: `${text}, ${date}`,
-			overdue: days < 0
+			overdue: false
 		});
 	});
 
@@ -52,13 +65,14 @@ describe('relativeDue', () => {
 
 	it.each<[string, string, string]>([
 		['2027-01-01', '2026-12-31', 'morgen'],
-		['2026-12-31', '2027-01-01', 'gestern'],
+		['2026-12-31', '2027-01-01', 'überfällig seit 31.12.2026'],
 		['2027-01-03', '2026-12-29', 'in 5 Tagen'],
-		['2026-12-20', '2027-01-02', 'seit 13 Tagen überfällig'],
+		['2026-12-20', '2027-01-02', 'überfällig seit 20.12.2026'],
 		['2027-01-08', '2026-12-31', '08.01.2027'],
 		['2028-03-01', '2028-02-28', 'in 2 Tagen'],
+		['2028-02-29', '2028-03-02', 'überfällig seit 29.02.'],
 		['2026-03-30', '2026-03-28', 'in 2 Tagen'],
-		['2026-10-24', '2026-10-26', 'seit 2 Tagen überfällig']
+		['2026-10-24', '2026-10-26', 'überfällig seit 24.10.']
 	])('%s at %s across year, leap day and clock change: %s', (due, today, text) => {
 		expect(relativeDue(due, today).text).toBe(text);
 	});

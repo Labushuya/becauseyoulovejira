@@ -221,15 +221,17 @@
 		<h4 id="tagesplan-vorschlaege">Vorschläge</h4>
 		<p>
 			Die Vorschläge nennen ihren Grund: laufendes Vorhaben, Wiederholung, übrig von gestern (im
-			Plan von gestern, weder erledigt noch abgehakt), überfällig seit einigen Tagen, heute fällig,
-			in Arbeit. Haken setzen und „Übernehmen“ oder gleich „Alle übernehmen“. Mit „Einstellen“
-			stellst du jede Quelle auf „Aus“, „Vorschlagen“ oder „Automatisch übernehmen“; laufende
-			Vorhaben kommen von Anfang an automatisch beim ersten Öffnen des Tages in den Plan. Eine
-			geänderte Einstellung sehen deine anderen offenen Tabs und im Haushalt alle Mitglieder sofort.
-			Was im Plan steht oder heute daraus entfernt wurde, schlägt der Plan nicht noch einmal vor.
-			„Heute“ ist derselbe Tag wie bei „Heute fällig“. Anheften ändert an den Vorschlägen nichts:
-			Ein angeheftetes Ticket, das heute fällig ist, schlägt der Plan vor wie jedes andere;
-			angeheftet allein ist kein Grund. Das Anheften bleibt deine Ansicht in „Aufgaben“.
+			Plan von gestern, weder erledigt noch abgehakt), überfällig seit 05.10. (mit dem Termin des
+			Tickets, wie in der Liste), heute fällig, in Arbeit. Eine Wiederholung steht höchstens einmal
+			darin, mit ihrem aktuellen Ticket; mit „Verpasste Termine nachholen“ zählt jeder Termin für
+			sich. Haken setzen und „Übernehmen“ oder gleich „Alle übernehmen“. Mit „Einstellen“ stellst du
+			jede Quelle auf „Aus“, „Vorschlagen“ oder „Automatisch übernehmen“; laufende Vorhaben kommen
+			von Anfang an automatisch beim ersten Öffnen des Tages in den Plan. Eine geänderte Einstellung
+			sehen deine anderen offenen Tabs und im Haushalt alle Mitglieder sofort. Was im Plan steht
+			oder heute daraus entfernt wurde, schlägt der Plan nicht noch einmal vor. „Heute“ ist derselbe
+			Tag wie bei „Heute fällig“. Anheften ändert an den Vorschlägen nichts: Ein angeheftetes
+			Ticket, das heute fällig ist, schlägt der Plan vor wie jedes andere; angeheftet allein ist
+			kein Grund. Das Anheften bleibt deine Ansicht in „Aufgaben“.
 		</p>
 		<h4 id="tagesplan-eingreifen">Plan und Pool</h4>
 		<p>

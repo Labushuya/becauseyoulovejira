@@ -108,6 +108,23 @@ describe('planned dates of a rule', () => {
 		]);
 	});
 
+	it('shows no missed date of a series held back by its overdue ticket, only dates after today (WH-1)', () => {
+		// The ticket of 14.09. is carried along (next_due 21.09.). Done today (Fri 02.10.) at the
+		// earliest, the next one is Monday 05.10.; 21.09. and 28.09. are no open entries.
+		const carried = instance('2026-09-14');
+		const list = plannedOccurrences(
+			[rule({ nextDue: '2026-09-21' })],
+			[carried],
+			TODAY,
+			OCTOBER.from,
+			OCTOBER.to
+		);
+		expect(OCTOBER.from <= '2026-09-28').toBe(true);
+		expect(dates(list)).toEqual(['2026-10-05', '2026-10-12', '2026-10-19', '2026-10-26']);
+		expect(list[0]?.blockedBy).toEqual([carried.key]);
+		expect(list.every((entry) => entry.date > TODAY)).toBe(true);
+	});
+
 	it('with "Jeden Termin einzeln anlegen" waits for no open ticket', () => {
 		const each = rule({ eachOccurrence: true, nextDue: '2026-09-28' });
 		const open = [instance('2026-09-21')];

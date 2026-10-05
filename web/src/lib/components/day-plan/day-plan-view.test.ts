@@ -283,7 +283,7 @@ describe('suggestions', () => {
 		expect(toggle.getAttribute('aria-expanded')).toBe('true');
 		expect(toggle.textContent).toContain('(2 Vorschläge)');
 		expect(screen.getByText('– heute fällig')).toBeTruthy();
-		expect(screen.getByText('– überfällig seit 3 Tagen')).toBeTruthy();
+		expect(screen.getByText('– überfällig seit 11.05.')).toBeTruthy();
 		// A ticket in the plan is no suggestion, though it is "in Arbeit".
 		expect(screen.queryByText('– in Arbeit')).toBeNull();
 		const adopt = screen.getByRole('button', { name: 'Übernehmen' });

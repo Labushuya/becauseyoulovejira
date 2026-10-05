@@ -60,6 +60,9 @@ export const TICKET_LIST_FIELDS = [
 	'project',
 	'tags',
 	'recurrence',
+	// Date of the series, only with "Verpasste Termine nachholen" (plan OR-5): such a ticket counts
+	// on its own in the day plan, every other one stands for its series (WH-1).
+	'occurrence',
 	// Sub-tasks (ADR-0033): the parent and whether the sub-task blocks completing it.
 	'parent',
 	'blocks_parent',
@@ -108,6 +111,8 @@ export interface TicketRecord {
 	project: string;
 	tags: string[];
 	recurrence: string;
+	/** Date of the series with "Verpasste Termine nachholen", '' otherwise (plan OR-5). */
+	occurrence?: string;
 	/** Parent of a sub-task, '' for a top-level ticket (ADR-0033). */
 	parent?: string;
 	blocks_parent?: boolean;
@@ -147,6 +152,8 @@ export function toTicketSummary(record: TicketRecord): TicketSummary {
 		tags: (record.expand?.tags ?? []).map(toTagRef),
 		recurring: record.recurrence !== '',
 		recurrenceId: record.recurrence || null,
+		// Only with "Verpasste Termine nachholen" (plan OR-5); left out otherwise.
+		...(record.occurrence ? { occurrence: toDueInput(record.occurrence) || null } : {}),
 		parentId: record.parent || null,
 		// The schema default is true (set by the create hook), so a missing value blocks.
 		blocksParent: record.blocks_parent ?? true,

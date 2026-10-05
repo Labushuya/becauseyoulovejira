@@ -6,6 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import { loadHookLib } from '../support/hook-lib.mjs';
 import * as web from '../../web/src/lib/domain/day-plan.ts';
+import * as dueLabel from '../../web/src/lib/domain/due-label.ts';
 
 const hook = loadHookLib('day-plan-rules.js');
 
@@ -51,12 +52,16 @@ function randomPlan(next, index) {
 	const tickets = [];
 	const count = 1 + next(12);
 	for (let i = 0; i < count; i++) {
+		const recurring = next(3) === 0;
 		tickets.push({
 			id: `t${index}x${i}`,
 			status: STATUSES[next(STATUSES.length)],
 			due: DATES[next(DATES.length)],
 			kind: next(4) === 0 ? 'ongoing' : next(2) === 0 ? 'task' : '',
-			recurring: next(3) === 0,
+			recurring,
+			// Several open tickets of one series (WH-1): only possible with data from before, so the
+			// rules must agree on which one counts.
+			series: recurring && next(3) !== 0 ? `r${next(2)}` : '',
 			priority: PRIORITIES[next(PRIORITIES.length)],
 			created: `2031-0${1 + next(5)}-1${next(9)} 10:00:00.000Z`
 		});
@@ -72,6 +77,17 @@ describe('suggestions of the SPA and of the hook', () => {
 		for (let index = 0; index < 400; index++) {
 			const { tickets, context } = randomPlan(next, index);
 			expect(web.suggestionsOf(tickets, context), `plan ${index}`).toEqual(hook.suggestionsOf(tickets, context));
+		}
+	});
+
+	it('name the same series and the same day an overdue ticket is overdue since (WH-1)', () => {
+		for (const [recurrence, occurrence] of [['r1', ''], ['r1', '2031-06-01 00:00:00.000Z'], ['', ''], ['', '2031-06-01']]) {
+			expect(web.seriesKeyOf(recurrence, occurrence)).toBe(hook.seriesKeyOf(recurrence, occurrence));
+		}
+		for (const due of ['2031-06-09', '2031-01-01', '2030-12-31', '2028-02-29']) {
+			expect(web.reasonText('overdue', { due }, TODAY)).toBe(hook.reasonText('overdue', { due }, TODAY));
+			expect(dueLabel.overdueSinceText(due, TODAY)).toBe(hook.overdueSinceText(due, TODAY));
+			expect(dueLabel.relativeDue(due, TODAY).text).toBe(hook.overdueSinceText(due, TODAY));
 		}
 	});
 

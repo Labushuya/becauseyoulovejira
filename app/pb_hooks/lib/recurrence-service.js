@@ -643,7 +643,10 @@ function newSubtasks(txApp, collection, rule, ticket, nowMs) {
 
 // Missed dates of a fixed rhythm made into one ticket (ADR-0022 section 3, addendum 4): the new
 // ticket gets a neutral history entry naming how many dates it stands for and which, in the
-// transaction of its creation, without a user (like its "created" entry). Nothing without a gap.
+// transaction of its creation, without a user (like its "created" entry). Since WH-1 (addendum 13)
+// an occurrence that was carried along gets the same entry when it is completed, for the dates
+// before the day of the completion (`due` is that day); the entry is written from a fresh copy of
+// the ticket, so it has no user either ("Wiederholung"). Nothing without a gap.
 function noteSkipped(txApp, rule, state, due, ticketId) {
   var skipped = rules.skippedDates(state, state.next_due, due, recurrence);
   if (skipped === null) {
@@ -829,8 +832,9 @@ function runStartup(app, nowMs) {
 
 /**
  * onRecordUpdate of tickets, inside its transaction and before e.next() (completed_at is set):
- * - completing an instance fixes next_due of an after-completion rule and marks the ticket for
- *   the generation after the commit;
+ * - completing an instance fixes next_due of an after-completion rule, moves next_due of a fixed
+ *   rhythm without "Verpasste Termine nachholen" past the day of the completion (WH-1) and marks
+ *   the ticket for the generation after the commit;
  * - reopening an instance removes an untouched follow-up or refuses when it was edited;
  * - releasing an open instance ("Aus der Serie lösen") works like deleting it.
  */
@@ -857,8 +861,15 @@ function prepareTicketUpdate(txApp, record, nowMs) {
     return;
   }
   if (!wasDone && isDone) {
-    // The completion is now; its Berlin date is today (ADR-0022 section 6).
-    setNextDue(txApp, rule, rules.nextDueOnCompletion(ruleState(rule), today, recurrence));
+    // The completion is now; its Berlin date is today (ADR-0022 section 6). A fixed rhythm without
+    // "Verpasste Termine nachholen" goes on after today, and the dates the occurrence was carried
+    // through count as skipped, noted at it (WH-1, ADR-0022 addendum 13).
+    var state = ruleState(rule);
+    var next = rules.nextDueOnCompletion(state, today, recurrence);
+    if (next !== null && state.mode === 'calendar') {
+      noteSkipped(txApp, rule, state, today, record.id);
+    }
+    setNextDue(txApp, rule, next);
     record.set(COMPLETED_KEY, ruleId);
   } else if (wasDone && !isDone) {
     reopen(txApp, record, rule);

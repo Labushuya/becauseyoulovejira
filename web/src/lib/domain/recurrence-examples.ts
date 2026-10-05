@@ -61,14 +61,20 @@ export interface SimTicket {
 	/** The day it was made. */
 	appeared: CalendarDate;
 	done: CalendarDate | null;
-	/** The missed dates it stands for (without "Jeden Termin einzeln anlegen"). */
+	/** The missed dates it stands for when it was made (without "Verpasste Termine nachholen"). */
 	skipped: SkippedPlan | null;
+	/**
+	 * The dates that passed while it was open, skipped when it was completed (WH-1, without the
+	 * switch; the note of the hook at the completed ticket).
+	 */
+	passed: SkippedPlan | null;
 }
 
 /**
  * A series played by the day. `run` is one run of the generation (materialize of the hook: cron,
- * start, or right after a completion); `complete` fixes the next date of an after-completion rule
- * and runs; `decide` answers the question about a large backlog and runs.
+ * start, or right after a completion); `complete` fixes the next date (after completion, and a
+ * fixed rhythm without the switch after the day of the completion) and runs; `decide` answers the
+ * question about a large backlog and runs.
  */
 export class SeriesSimulation {
 	readonly tickets: SimTicket[] = [];
@@ -112,7 +118,7 @@ export class SeriesSimulation {
 			}
 			for (const due of plan.dues) {
 				if (this.open().some((ticket) => ticket.due === due)) continue;
-				made.push({ due, appeared: day, done: null, skipped: null });
+				made.push({ due, appeared: day, done: null, skipped: null, passed: null });
 			}
 			this.tickets.push(...made);
 			this.#rule = { ...this.#rule, next_due: plan.nextDue };
@@ -126,7 +132,7 @@ export class SeriesSimulation {
 		});
 		if (plan === null) return made;
 		const skipped = this.#engine.skippedDates(this.#rule, this.#rule.next_due, plan.due);
-		made.push({ due: plan.due, appeared: day, done: null, skipped });
+		made.push({ due: plan.due, appeared: day, done: null, skipped, passed: null });
 		this.tickets.push(...made);
 		this.#rule = { ...this.#rule, next_due: plan.nextDue };
 		this.#hint = '';
@@ -142,8 +148,13 @@ export class SeriesSimulation {
 
 	complete(ticket: SimTicket, day: CalendarDate): SimTicket[] {
 		ticket.done = day;
-		const next = this.#engine.nextDueOnCompletion(this.#rule, day);
-		if (next !== null) this.#rule = { ...this.#rule, next_due: next };
+		const rule = { ...this.#rule, each: this.#each };
+		const next = this.#engine.nextDueOnCompletion(rule, day);
+		if (next !== null) {
+			// The note of the hook: the dates before the day of the completion (none after completion).
+			ticket.passed = this.#engine.skippedDates(rule, this.#rule.next_due, day);
+			this.#rule = { ...this.#rule, next_due: next };
+		}
 		return this.run(day);
 	}
 
@@ -176,8 +187,12 @@ export interface FixedExample {
 	lateWithinLead: CompletionStep;
 	/** Later than that: the next ticket appears only now, its due date stays. */
 	late: CompletionStep;
-	/** Left for three weeks: one ticket for the latest Monday, then as usual. */
-	leftLong: CompletionStep & { after: SimTicket };
+	/**
+	 * Left for three weeks (WH-1): the one ticket is carried along, overdue since its Monday; done,
+	 * the Mondays passed meanwhile count as skipped (`carried.passed`) and the next one is the Monday
+	 * after the day of the completion.
+	 */
+	leftLong: CompletionStep & { carried: SimTicket };
 	/** The first ticket with lead time 0. */
 	leadZero: SimTicket;
 }
@@ -200,8 +215,11 @@ export interface SwitchExample {
 	days: number;
 	openWithout: number;
 	openWith: number;
-	/** The open ticket done after those days: without the switch one new one for today. */
-	doneWithout: SimTicket;
+	/**
+	 * The open ticket done after those days, without the switch (WH-1): the day of the completion,
+	 * the due date of the next ticket (the day after) and the dates that passed meanwhile.
+	 */
+	doneWithout: { done: CalendarDate; nextDue: CalendarDate | ''; passed: SkippedPlan | null };
 	madeWith: number;
 	/** The app off for this many days. */
 	offDays: number;
@@ -269,16 +287,10 @@ function fixedExample(engine: GenerationEngine): FixedExample {
 		return { done: doneOn, next: nth(series.tickets, 1) };
 	};
 	const onTime = played(engine, weekly, start, MONDAY, addDays(MONDAY, 7));
-	// Left for three weeks and done on Tuesday; the catch-up ticket is done the same day.
+	// Left for three weeks and done on Tuesday (WH-1): no ticket in between, the next one for the
+	// Monday after that Tuesday.
 	const leftDone = addDays(MONDAY, 22);
-	const left = new SeriesSimulation(engine, weekly, start);
-	for (let day = start.from; day <= addDays(MONDAY, 28); day = addDays(day, 1)) {
-		left.run(day);
-		if (day === leftDone) {
-			left.complete(nth(left.open(), 0), day);
-			left.complete(nth(left.open(), 0), day);
-		}
-	}
+	const left = played(engine, weekly, start, leftDone, addDays(MONDAY, 28));
 	const zero = new SeriesSimulation(engine, { ...weekly, lead_days: 0 }, start);
 	zero.days(start.from, MONDAY);
 	return {
@@ -290,8 +302,8 @@ function fixedExample(engine: GenerationEngine): FixedExample {
 		late: step(addDays(MONDAY, 5), addDays(MONDAY, 7)),
 		leftLong: {
 			done: leftDone,
-			next: nth(left.tickets, 1),
-			after: nth(left.tickets, 2)
+			carried: nth(left.tickets, 0),
+			next: nth(left.tickets, 1)
 		},
 		leadZero: nth(zero.tickets, 0)
 	};
@@ -311,7 +323,8 @@ function completionExample(engine: GenerationEngine): CompletionExample {
 		due: MONDAY,
 		appeared: addDays(MONDAY, -lead),
 		done: null,
-		skipped: null
+		skipped: null,
+		passed: null
 	};
 	const start = { nextDue: '' as const, open: [first], from: addDays(MONDAY, -7) };
 	const step = (
@@ -338,7 +351,7 @@ function completionExample(engine: GenerationEngine): CompletionExample {
 		{ mode: 'after_completion', freq: 'monthly', interval: 1, anchor: monthlyStart, lead_days: 0 },
 		{
 			nextDue: '',
-			open: [{ due: monthlyStart, appeared: monthlyStart, done: null, skipped: null }]
+			open: [{ due: monthlyStart, appeared: monthlyStart, done: null, skipped: null, passed: null }]
 		}
 	);
 	for (let round = 0; round < 3; round++) {
@@ -375,7 +388,10 @@ function switchExample(engine: GenerationEngine): SwitchExample {
 	const without = series(false);
 	without.days(MONDAY, lastDay);
 	const openWithout = without.open().length;
-	const doneWithout = nth(without.complete(nth(without.open(), 0), lastDay), 0);
+	// Done on the last day (WH-1): nothing new at once, the next one is due the day after.
+	const carried = nth(without.open(), 0);
+	without.complete(carried, lastDay);
+	const doneWithout = { done: lastDay, nextDue: without.nextDue, passed: carried.passed };
 
 	const withSwitch = series(true);
 	withSwitch.days(MONDAY, lastDay);
@@ -500,11 +516,14 @@ export function liveExample(values: RecurrenceFormValues, today: CalendarDate): 
 		'Mit diesen Einstellungen:',
 		`Das Ticket für ${dayLabel(first.due, today)} ${sentence(appearsPhrase(first.appears, today))}`,
 		`Das nächste ist ${dayLabel(second.due, today)} fällig und`,
-		`${appearsPhrase(second.appears, today)}, egal wann du das erste erledigst.`
+		appearsPhrase(second.appears, today)
 	].join(' ');
+	// With "Verpasste Termine nachholen" every date comes on its own; without it the next ticket
+	// waits for the open one and then takes the first date after the completion (WH-1).
 	return values.eachOccurrence === true
-		? `${start} Es kommt auch, wenn das erste dann noch offen ist.`
-		: `${start} Ist das erste dann noch offen, erscheint es erst, wenn du es erledigst.`;
+		? `${start}, egal wann du das erste erledigst. Es kommt auch, wenn das erste dann noch offen ist.`
+		: `${start}, wenn das erste bis dahin erledigt ist. Bleibt es länger offen, kommt das nächste ` +
+				'erst mit dem Erledigen, für den ersten Termin danach; verpasste Termine gelten als übersprungen.';
 }
 
 /** Every example of the help, played with `engine` (the SPA mirror by default). */

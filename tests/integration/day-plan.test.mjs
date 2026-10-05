@@ -316,7 +316,7 @@ describe('suggestions and their sources', () => {
 		expect(answer.suggestions).toEqual([
 			{ id: tickets.recurrence.id, mode: 'suggest', origin: 'recurrence', reasons: ['Wiederholung', 'heute fällig'] },
 			{ id: tickets.leftover.id, mode: 'suggest', origin: 'leftover', reasons: ['übrig von gestern'] },
-			{ id: tickets.overdue.id, mode: 'suggest', origin: 'overdue', reasons: ['überfällig seit 3 Tagen'] },
+			{ id: tickets.overdue.id, mode: 'suggest', origin: 'overdue', reasons: ['überfällig seit 09.02.'] },
 			{ id: tickets.due_today.id, mode: 'suggest', origin: 'due_today', reasons: ['heute fällig'] },
 			{ id: tickets.in_progress.id, mode: 'suggest', origin: 'in_progress', reasons: ['in Arbeit'] }
 		]);
