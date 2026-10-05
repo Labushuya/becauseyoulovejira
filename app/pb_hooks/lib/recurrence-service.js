@@ -34,6 +34,9 @@ var SYSTEM_KEY = '@recurrence_system';
 // BACKLOG_KEY carries the body field `backlog` ('all' | 'today', no schema field): the choice of
 // the user about a backlog of "Jeden Termin einzeln anlegen" (ADR-0022 addendum 5).
 var BACKLOG_KEY = '@recurrence_backlog';
+// START_KEY carries the body field `start` of a create request ('today' | 'keep', no schema field):
+// where a series begins whose first date lies in the past (WH-2, ADR-0022 addendum 14).
+var START_KEY = '@recurrence_start';
 // On tickets: COMPLETED_KEY carries the rule of an instance that was just completed to the
 // after-success hook; DETACH_KEY marks a client request that clears `recurrence`; UNDO_KEY marks
 // the untouched follow-up that reopening an instance removes (no release logic for it).
@@ -196,6 +199,7 @@ function prepareCreateRequest(e) {
   }
   checkAnchorBody(e);
   checkBacklogBody(e);
+  checkStartBody(e);
   ticketService.rememberActor(e);
 }
 
@@ -238,6 +242,20 @@ function checkBacklogBody(e) {
     throw fail('backlog', 'validation_recurrence_backlog');
   }
   e.record.set(BACKLOG_KEY, choice);
+}
+
+// The body field `start` of a create request (WH-2, ADR-0022 addendum 14): 'today' or 'keep',
+// anything else is refused; an empty value keeps the date as before (clients from before WH-2).
+// It only matters with a ticket whose first date lies before today (createDates).
+function checkStartBody(e) {
+  var choice = e.requestInfo().body['start'];
+  if (choice === undefined || choice === null || choice === '') {
+    return;
+  }
+  if (rules.START_CHOICES.indexOf(choice) === -1) {
+    throw fail('start', 'validation_recurrence_start');
+  }
+  e.record.set(START_KEY, choice);
 }
 
 // Applies the choice about a backlog to a rule with "Jeden Termin einzeln anlegen" (ADR-0022
@@ -411,8 +429,9 @@ function prepareCreate(txApp, record, nowMs) {
   ticketService.checkCharm(record, null);
   ticketService.checkRelations(txApp, record, scope, '');
 
+  var start = record.get(START_KEY) ? String(record.get(START_KEY)) : '';
   var dates = rules.createDates(
-    { rule: values, withTicket: ticket !== null, ticketDue: ticketDue, today: today },
+    { rule: values, withTicket: ticket !== null, ticketDue: ticketDue, today: today, start: start },
     recurrence
   );
   record.set('next_due', rules.storedDateOf(dates.nextDue));

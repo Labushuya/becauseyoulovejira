@@ -16,6 +16,7 @@ import {
 	type Weekday
 } from '../domain/recurrence';
 import type { RecurrenceRule } from '../domain/recurrence-rule';
+import type { SeriesStart } from '../domain/series-start';
 import {
 	templateStatusOf,
 	templateSubtasksOf,
@@ -151,6 +152,12 @@ export interface RuleDraft {
 	 * catches up in batches, "today" goes on from today.
 	 */
 	backlog?: 'all' | 'today';
+	/**
+	 * Where a series with a ticket begins whose first date lies in the past (WH-2, ADR-0022
+	 * addendum 14), no schema field and only on create: "today" moves the ticket to the first date
+	 * from today, "keep" leaves it overdue. A server with hooks from before WH-2 ignores it (keep).
+	 */
+	start?: SeriesStart;
 	/**
 	 * "Status beim Anlegen" of the template (plan WV); a server before its migration ignores it and
 	 * starts every ticket "open".

@@ -164,24 +164,133 @@ describe('RecurrenceForm', () => {
 		).toBeTruthy();
 		expect(screen.queryByText(/schon überfällig/)).toBeNull();
 	});
+});
 
-	// Recommendation 4 of the plan "Wiederholungen verständlich machen".
-	it('warns without red when a start in the past makes the ticket overdue at once', () => {
-		render(RecurrenceForm, {
+// WH-2 (ADR-0022 addendum 14): a series whose first date lies in the past asks where it begins, the
+// same on every way (the form is in "Wiederholen…", "Neues Ticket" and the rule panel). Today is
+// Friday 25.09.2026.
+describe('RecurrenceForm: a start in the past (WH-2)', () => {
+	const startGroup = () =>
+		screen.queryByRole('group', { name: /liegt in der Vergangenheit/ }) as HTMLElement | null;
+	const choice = (name: string) => screen.getByRole<HTMLInputElement>('radio', { name });
+	const noteOf = (radio: HTMLElement) =>
+		document.getElementById(radio.getAttribute('aria-describedby') ?? '')?.textContent?.trim();
+
+	it('asks for a ticket overdue since long ago, "Serie ab heute beginnen" chosen, with the first date', async () => {
+		// Imported from Notion: due Tuesday 12.03.2024; "Wiederholen…" starts weekly on Tuesday.
+		const { component } = render(RecurrenceFormHarness, {
 			props: {
-				values: defaultFormValues('2026-09-07', TODAY),
+				initial: defaultFormValues('2024-03-12', TODAY),
 				today: TODAY,
-				withoutDue: true
+				context: { kind: 'ticket', due: '2024-03-12' }
 			}
 		});
-		const warning = screen.getByText(
-			/„Beginnt am“ liegt in der Vergangenheit: Das Ticket bekommt den ersten Termin 07\.09\.2026 und ist damit schon überfällig\./
+		const group = startGroup();
+		expect(group).not.toBeNull();
+		expect(group?.querySelector('legend')?.textContent).toBe(
+			'Die Fälligkeit liegt in der Vergangenheit (12.03.2024).'
 		);
-		const box = warning.closest('.section-message');
-		expect(box?.getAttribute('data-tone')).toBe('warning');
-		expect(warning.closest('.alert-error')).toBeNull();
-		// A ticket with a due date or after completion keeps its date: no warning.
+		// A warning without red, like the question about a backlog.
+		expect(group?.closest('.section-message')?.getAttribute('data-tone')).toBe('warning');
+		expect(group?.closest('.alert-error')).toBeNull();
+		const today = choice('Serie ab heute beginnen');
+		const keep = choice('Ursprüngliches Datum behalten');
+		expect(today.checked).toBe(true);
+		expect(keep.checked).toBe(false);
+		// The first Tuesday from Friday 25.09. on.
+		expect(noteOf(today)).toBe('Erstes Vorkommen: Di 29.09.');
+		expect(noteOf(keep)).toBe('Das Ticket bleibt „überfällig seit 12.03.2024“.');
+		expect(component.current().start).toBeUndefined();
+
+		await fireEvent.click(keep);
+		expect(component.current().start).toBe('keep');
+		expect(keep.checked).toBe(true);
+		await fireEvent.click(today);
+		expect(component.current().start).toBe('today');
+
+		// The first date follows the rhythm: every Monday is Monday 28.09.
+		const days = screen.getByRole('group', { name: 'Wochentage' });
+		await fireEvent.click(within(days).getByRole('checkbox', { name: 'Montag' }));
+		await fireEvent.click(within(days).getByRole('checkbox', { name: 'Dienstag' }));
+		expect(noteOf(choice('Serie ab heute beginnen'))).toBe('Erstes Vorkommen: Mo 28.09.');
+	});
+
+	it('names today for a daily rhythm, the end of the month and the day after completion', () => {
+		const cases: [Partial<RecurrenceFormValues>, string][] = [
+			[{ freq: 'daily' }, 'Erstes Vorkommen: Fr 25.09. (heute)'],
+			// The 31st in September: clamped to Wednesday 30.09.
+			[{ freq: 'monthly', monthDay: '31' }, 'Erstes Vorkommen: Mi 30.09.'],
+			[{ freq: 'monthly', lastDay: true }, 'Erstes Vorkommen: Mi 30.09.'],
+			// Every two weeks from the week of 12.03.2024: the week of 05.10. is in the rhythm.
+			[{ interval: '2' }, 'Erstes Vorkommen: Di 06.10.'],
+			// After completion the series begins today.
+			[{ mode: 'after_completion', freq: 'weekly' }, 'Erstes Vorkommen: Fr 25.09. (heute)']
+		];
+		for (const [overrides, first] of cases) {
+			const { unmount } = render(RecurrenceForm, {
+				props: {
+					values: { ...defaultFormValues('2024-03-12', TODAY), ...overrides },
+					today: TODAY,
+					context: { kind: 'ticket', due: '2024-03-12' }
+				}
+			});
+			expect(noteOf(choice('Serie ab heute beginnen')), JSON.stringify(overrides)).toBe(first);
+			unmount();
+		}
+	});
+
+	it('asks for a ticket without due date whose first date lies in the past ("Beginnt am")', () => {
+		render(RecurrenceForm, {
+			props: { values: defaultFormValues('2026-09-07', TODAY), today: TODAY, withoutDue: true }
+		});
+		expect(startGroup()?.querySelector('legend')?.textContent).toBe(
+			'Der erste Termin liegt in der Vergangenheit (07.09.2026).'
+		);
+		expect(noteOf(choice('Serie ab heute beginnen'))).toBe('Erstes Vorkommen: Mo 28.09.');
+		expect(noteOf(choice('Ursprüngliches Datum behalten'))).toBe(
+			'Das Ticket bleibt „überfällig seit 07.09.“.'
+		);
+		// The note about a first date in the future gives way to the question.
 		expect(screen.queryByText(/bekommt den ersten Termin: /)).toBeNull();
+	});
+
+	it('only says so for a new rule, which begins from today anyway', () => {
+		render(RecurrenceForm, {
+			props: { values: defaultFormValues('2026-09-01', TODAY), today: TODAY }
+		});
+		expect(startGroup()).toBeNull();
+		expect(screen.queryByRole('radio', { name: 'Serie ab heute beginnen' })).toBeNull();
+		const hint = screen.getByText(/„Beginnt am“ liegt in der Vergangenheit \(01\.09\.2026\)\./);
+		expect(hint.textContent?.replace(/\s+/g, ' ').trim()).toContain(
+			'Die Serie beginnt ab heute. Erstes Vorkommen: Di 29.09.'
+		);
+		expect(hint.closest('.section-message')?.getAttribute('data-tone')).toBe('info');
+	});
+
+	it('asks nothing for a date from today on, while a rule is edited or the values are invalid', () => {
+		const ticket = (due: string | null) => ({ kind: 'ticket' as const, due });
+		const variants = [
+			{ values: defaultFormValues(TODAY, TODAY), context: ticket(TODAY) },
+			{ values: defaultFormValues('2026-10-12', TODAY), context: ticket('2026-10-12') },
+			{
+				values: defaultFormValues('2024-03-12', TODAY),
+				context: { kind: 'rule' as const, nextDue: '2026-09-29', each: false }
+			},
+			{
+				values: { ...defaultFormValues('2024-03-12', TODAY), interval: '0' },
+				context: ticket('2024-03-12')
+			},
+			// After completion a ticket without due date keeps none: nothing lies in the past.
+			{
+				values: { ...defaultFormValues('2024-03-12', TODAY), mode: 'after_completion' as const },
+				context: ticket(null)
+			}
+		];
+		for (const props of variants) {
+			const { unmount } = render(RecurrenceForm, { props: { ...props, today: TODAY } });
+			expect(screen.queryByText(/liegt in der Vergangenheit/)).toBeNull();
+			unmount();
+		}
 	});
 });
 
@@ -306,6 +415,9 @@ describe('RecurrenceForm: "Jeden Termin einzeln anlegen" (OR-5)', () => {
 		});
 		expect(screen.queryByRole('group', { name: /liegen vor heute/ })).toBeNull();
 		await fireEvent.click(toggle() as HTMLInputElement);
+		// "Serie ab heute beginnen" (chosen in advance, WH-2) misses no date: nothing to ask.
+		expect(screen.queryByRole('group', { name: /liegen vor heute/ })).toBeNull();
+		await fireEvent.click(screen.getByRole('radio', { name: 'Ursprüngliches Datum behalten' }));
 
 		// The ticket gets 01.08., the series goes on from 02.08.: 54 dates before 25.09.
 		const question = screen.getByRole('group', {

@@ -23,8 +23,15 @@ import {
 	type RecurrenceParams,
 	type Weekday
 } from './recurrence';
+import { overdueSinceText } from './due-label';
 import { formatCalendarDate } from './format';
 import { dayLabel, joinWords, recurrenceTextInSentence, shortDate } from './recurrence-text';
+import {
+	DEFAULT_SERIES_START,
+	createDates,
+	firstFromToday,
+	type SeriesStart
+} from './series-start';
 import type { TemplateStatus, TemplateSubtask } from './series-template';
 import type { Priority } from './status';
 
@@ -290,6 +297,8 @@ export const RECURRENCE_MESSAGES: Readonly<Record<string, string>> = Object.free
 	validation_recurrence_each_mode:
 		'„Verpasste Termine nachholen“ gibt es nur bei einem festen Rhythmus.',
 	validation_recurrence_backlog: 'Bitte „Alle nachholen“ oder „Nur ab heute“ wählen.',
+	validation_recurrence_start:
+		'Bitte „Serie ab heute beginnen“ oder „Ursprüngliches Datum behalten“ wählen.',
 	validation_recurrence_reopen_older:
 		'Von dieser Serie ist schon ein anderes Ticket offen, und dieses Ticket ist nicht das zuletzt erledigte. Du kannst es als normales Ticket wieder öffnen (aus der Serie lösen).',
 	validation_recurrence_initial_status:
@@ -563,6 +572,12 @@ export interface RecurrenceFormValues {
 	 * absent: no answer, the rule then waits for it at the overview.
 	 */
 	backlog?: BacklogChoice;
+	/**
+	 * Where a series with a ticket begins whose first date lies in the past (WH-2, ADR-0022 addendum
+	 * 14): "Serie ab heute beginnen" or "Ursprüngliches Datum behalten"; absent counts as
+	 * DEFAULT_SERIES_START, the choice made in advance.
+	 */
+	start?: SeriesStart;
 }
 
 /**
@@ -692,7 +707,8 @@ export type RecurrenceFormContext =
  * The backlog the form asks about when "Jeden Termin einzeln anlegen" goes on (ADR-0022 addendum
  * 5): more than EACH_MAX_PER_RUN dates before today that the rule would make at once. For a
  * ticket the series starts after its due date (or its first date without one, ADR-0023 section
- * 1); for an existing rule without the switch at its next ticket. Null otherwise.
+ * 1), after the first date from today when it begins from today (WH-2); for an existing rule
+ * without the switch at its next ticket. Null otherwise.
  */
 export function formBacklog(
 	values: RecurrenceFormValues,
@@ -710,7 +726,14 @@ export function formBacklog(
 		from = context.nextDue;
 	} else {
 		if (context.due !== null && !isCalendarDate(context.due)) return null;
-		from = after(params, context.due ?? onOrAfter(params, params.anchor));
+		const dates = createDates({
+			rule: params,
+			withTicket: true,
+			ticketDue: context.due ?? '',
+			today,
+			start: values.start ?? DEFAULT_SERIES_START
+		});
+		from = dates === null || dates.nextDue === '' ? null : dates.nextDue;
 	}
 	const backlog = backlogOf(params, from, today);
 	return backlog !== null && (backlog.more || backlog.count > EACH_MAX_PER_RUN) ? backlog : null;
@@ -815,17 +838,104 @@ export function appearsText(appears: CalendarDate, today: CalendarDate): string 
 	return `erscheint ${dayLabel(appears, today)}`;
 }
 
+// --- A series whose first date lies in the past (WH-2, ADR-0022 addendum 14) -------------------
+
+/** Labels of the choice; the texts of validation_recurrence_start name them. */
+export const SERIES_START_TODAY_LABEL = 'Serie ab heute beginnen';
+export const SERIES_START_KEEP_LABEL = 'Ursprüngliches Datum behalten';
+
 /**
- * The ticket after "Wiederholen…" (ADR-0023 section 1), as the server leaves it: in the series,
- * and with a fixed rhythm a ticket without due date gets the first occurrence. For panel and list
- * until the realtime event of the server follows.
+ * The hint of the form when a series would begin in the past:
+ *   reason  'due': the due date of the ticket lies before today; 'first': a ticket without due date
+ *           would get a first date before today ("Beginnt am"); 'rule': "Beginnt am" of a new rule
+ *           lies before today
+ *   past    that date
+ *   first   the first regular date on or after today (firstFromToday): where the series begins
+ *           with "Serie ab heute beginnen", and where a new rule begins anyway
+ *   choice  whether the user chooses: a ticket may keep its date ("Ursprüngliches Datum behalten");
+ *           a new rule has no ticket and begins from today on the server (ADR-0023 section 1), so the
+ *           hint only says so
+ */
+export interface SeriesStartQuestion {
+	reason: 'due' | 'first' | 'rule';
+	past: CalendarDate;
+	first: CalendarDate;
+	choice: boolean;
+}
+
+/**
+ * Whether the form asks where the series begins (WH-2): every way a rule is created shows the same
+ * hint, "Wiederholen…" at a ticket (also prepared from the inbox or after a failed rule), the section
+ * "Wiederholen" of "Neues Ticket" (also a series taken over from a calendar) and "Neue Regel". The
+ * ticket is `context` (its due date, null without one; `withoutDue` for callers without a context);
+ * without either it is a new rule. Not when a rule is edited, while the values are invalid, or when
+ * the date lies today or later.
+ */
+export function seriesStartQuestion(
+	values: RecurrenceFormValues,
+	today: CalendarDate,
+	context: RecurrenceFormContext | undefined,
+	withoutDue = false
+): SeriesStartQuestion | null {
+	if (context?.kind === 'rule' || Object.keys(formErrors(values)).length > 0) return null;
+	const rule = validRule(formParams(values));
+	const first = rule === null ? null : firstFromToday(rule, today);
+	if (rule === null || first === null) return null;
+	const due = context?.kind === 'ticket' ? context.due : withoutDue ? null : undefined;
+	if (due === undefined) {
+		return rule.anchor < today ? { reason: 'rule', past: rule.anchor, first, choice: false } : null;
+	}
+	if (due !== null && !isCalendarDate(due)) return null;
+	const past = due ?? (rule.mode === 'calendar' ? onOrAfter(rule, rule.anchor) : null);
+	if (past === null || past >= today) return null;
+	return { reason: due === null ? 'first' : 'due', past, first, choice: true };
+}
+
+/**
+ * "Die Fälligkeit liegt in der Vergangenheit (12.03.2024).", "Der erste Termin liegt in der
+ * Vergangenheit (07.09.2026)." or "„Beginnt am“ liegt in der Vergangenheit (12.03.2024)."
+ */
+export function seriesStartText(question: SeriesStartQuestion): string {
+	const date = formatCalendarDate(question.past);
+	if (question.reason === 'due') return `Die Fälligkeit liegt in der Vergangenheit (${date}).`;
+	if (question.reason === 'first') return `Der erste Termin liegt in der Vergangenheit (${date}).`;
+	return `„Beginnt am“ liegt in der Vergangenheit (${date}).`;
+}
+
+/** "Erstes Vorkommen: Mo 12.10.", for today "Erstes Vorkommen: Mo 05.10. (heute)". */
+export function firstOccurrenceText(question: SeriesStartQuestion, today: CalendarDate): string {
+	const label = dayLabel(question.first, today);
+	return `Erstes Vorkommen: ${question.first === today ? `${label} (heute)` : label}`;
+}
+
+/**
+ * What "Ursprüngliches Datum behalten" means, with the text the lists show: "Das Ticket bleibt
+ * „überfällig seit 12.03.2024“." (in the current year „überfällig seit 07.09.“).
+ */
+export function keepStartText(question: SeriesStartQuestion, today: CalendarDate): string {
+	return `Das Ticket bleibt „${overdueSinceText(question.past, today)}“.`;
+}
+
+/**
+ * The ticket after "Wiederholen…" (ADR-0023 section 1), as the server leaves it (createDates): in
+ * the series; with a fixed rhythm a ticket without due date gets the first occurrence, and a first
+ * date before today moves to the first one from today unless the user keeps it (WH-2). For panel
+ * and list until the realtime event of the server follows.
  */
 export function joinedSeries<
 	T extends { due: CalendarDate | null; recurring: boolean; recurrenceId?: string | null }
 >(ticket: T, ruleId: string, values: RecurrenceFormValues, today: CalendarDate): T {
-	const firstDue =
-		ticket.due === null && values.mode === 'calendar'
-			? formPreview(values, today, true).firstDue
-			: null;
-	return { ...ticket, recurring: true, recurrenceId: ruleId, due: ticket.due ?? firstDue };
+	const dates = createDates({
+		rule: formParams(values),
+		withTicket: true,
+		ticketDue: ticket.due ?? '',
+		today,
+		start: values.start ?? DEFAULT_SERIES_START
+	});
+	return {
+		...ticket,
+		recurring: true,
+		recurrenceId: ruleId,
+		due: dates?.ticketDue ?? ticket.due
+	};
 }

@@ -20,6 +20,7 @@
 		formBacklog,
 		formPreview,
 		openBlockText,
+		seriesStartQuestion,
 		type RecurrenceFormContext,
 		type RecurrenceFormField,
 		type RecurrenceFormValues
@@ -29,6 +30,7 @@
 	import SectionMessage from './guidance/SectionMessage.svelte';
 	import { WEEKDAY_NAMES, WEEKDAY_SHORT, dayLabel } from '$lib/domain/recurrence-text';
 	import ErrorIcon from './ErrorIcon.svelte';
+	import SeriesStartChoice from './SeriesStartChoice.svelte';
 
 	// Fields of a rhythm (E5 plan, package 4), shared by "Wiederholen…", the rule panel and the
 	// conversion of a calendar series: kind as a radio group, interval and unit, weekdays as a
@@ -40,6 +42,10 @@
 	// Switching it on with more than EACH_MAX_PER_RUN dates before today asks inline whether to
 	// catch up all of them or go on from today (ADR-0022 addendum 5); switching it off while several
 	// tickets of the rule are open says that the series waits for all of them (recommendation 6).
+	// A series whose first date lies in the past (the due date of the ticket, the first date "Beginnt
+	// am" gives a ticket without one, or "Beginnt am" of a new rule) shows SeriesStartChoice (WH-2,
+	// ADR-0022 addendum 14): with a ticket "Serie ab heute beginnen" (chosen in advance) or
+	// "Ursprüngliches Datum behalten", kept in `values.start`.
 	let {
 		values = $bindable(),
 		errors = {},
@@ -75,6 +81,8 @@
 
 	const calendar = $derived(values.mode === 'calendar');
 	const preview = $derived(formPreview(values, today, withoutDue));
+	/** Where a series begins whose first date lies in the past (WH-2). */
+	const startQuestion = $derived(seriesStartQuestion(values, today, context, withoutDue));
 	/** The sentence of "So funktioniert’s" with the dates of these settings. */
 	const example = $derived(liveExample(values, today));
 	/** Days 29 to 31 do not exist in every month: they are clamped (ADR-0021 section 2). */
@@ -317,13 +325,14 @@
 			</ol>
 		{/if}
 	</div>
-	{#if preview.firstDue !== null && preview.firstDue < today}
-		<!-- Recommendation 4: a start in the past makes the ticket overdue at once. -->
-		<SectionMessage tone="warning" compact>
-			„Beginnt am“ liegt in der Vergangenheit: Das Ticket bekommt den ersten Termin {formatCalendarDate(
-				preview.firstDue
-			)} und ist damit schon überfällig.
-		</SectionMessage>
+	{#if startQuestion !== null}
+		<!-- WH-2 (before: recommendation 4, only a warning): a start in the past, begin from today? -->
+		<SeriesStartChoice
+			question={startQuestion}
+			{today}
+			value={values.start}
+			onchoose={(start) => (values.start = start)}
+		/>
 	{:else if preview.firstDue !== null}
 		<p class="note">
 			Das Ticket hat noch keine Fälligkeit und bekommt den ersten Termin: {formatCalendarDate(

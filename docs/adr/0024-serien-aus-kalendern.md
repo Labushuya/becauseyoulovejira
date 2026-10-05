@@ -1,6 +1,6 @@
 # ADR-0024: Serien aus `.ics` und Google Calendar als Vorschlag für eine Regel
 
-- **Status:** Angenommen (2026-09-26: Der Nutzer hat die Empfehlungen zu OF-E5-1 bis OF-E5-5 bestätigt; umgesetzt in E5, siehe Nachtrag am Ende)
+- **Status:** Angenommen (2026-09-26: Der Nutzer hat die Empfehlungen zu OF-E5-1 bis OF-E5-5 bestätigt; umgesetzt in E5, siehe Nachtrag am Ende); Nachtrag 6 (2026-10-05): Starttermin in der Vergangenheit (WH-2)
 - **Datum:** 2026-09-25
 - **Entscheidung durch:** Advisor
 - **Ergänzt:** [ADR-0014](0014-datenmodell-eingang.md) (Eingang, Umwandeln), [ADR-0017](0017-parser-ics-eml.md) (Parser), [ADR-0021](0021-regelmodell-wiederkehrende-aufgaben.md) (Regelmodell), [ADR-0023](0023-lebenszyklus-von-regeln-und-instanzen.md) §1 (Anlegen mit Ticket)
@@ -123,3 +123,12 @@ Nachtrag 3 übernahm den Status des Tickets still als „Status beim Anlegen“.
 ## Nachtrag 5 (2026-10-01, WV-3): Unteraufgaben der Vorlage
 
 Seit [ADR-0022](0022-erzeugung-von-instanzen.md) Nachtrag 10 hat die Vorlage eine Liste „Unteraufgaben“. Eine Regel aus einer Kalenderserie oder aus „Neues Ticket“ mit „Wiederholen“ beginnt ohne Einträge: Das eben angelegte Ticket hat noch keine Unteraufgaben, und still übernommen wird nichts (wie beim Status, Nachtrag 4). Nach der Migration nennt der Abschnitt „Wiederholen“ den Weg: „… Ändern kannst du das danach am Ticket unter „Wiederholt sich“, dort auch Unteraufgaben, die jedes künftige Ticket bekommt.“ Dort füllt „Unteraufgaben dieses Tickets übernehmen“ die Liste aus den Unteraufgaben des Tickets ([ADR-0023](0023-lebenszyklus-von-regeln-und-instanzen.md) Nachtrag 8). Belegt in `new-ticket.test.ts` („names where the sub-tasks of the next tickets are set, after their migration“).
+
+## Nachtrag 6 (2026-10-05, WH-2): Starttermin in der Vergangenheit
+
+Seit [ADR-0022](0022-erzeugung-von-instanzen.md) Nachtrag 14 fragt jedes Anlegen einer Regel mit Ticket, wenn der erste Termin vor heute liegt: „Serie ab heute beginnen“ (vorausgewählt, mit „Erstes Vorkommen: …“) oder „Ursprüngliches Datum behalten“. Für Kalenderserien gilt:
+
+- **Der Vorschlag selbst** beginnt wie bisher nie in der Vergangenheit (erster Nachtrag: „Beginnt am“ ist der erste Termin ab heute im selben Takt), und ohne Klick bekommt das Ticket keine Fälligkeit (P-5). Ohne Fälligkeit erscheint deshalb kein Hinweis.
+- **Ein Startdatum in der Vergangenheit** entsteht erst, wenn der Nutzer es wählt: „Als Fälligkeit übernehmen“ mit dem alten Quelldatum der Serie, eine Fälligkeit von Hand oder ein früheres „Beginnt am“. Dann zeigt der Abschnitt „Wiederholen“ von „Neues Ticket“ dieselbe Frage wie „Wiederholen…“ (derselbe Baustein `SeriesStartChoice` in `RecurrenceForm`), und der zweite Schritt sendet die Wahl als `start` mit der Regel. Mit „ab heute“ setzt der Hook die Fälligkeit des eben angelegten Tickets in derselben Transaktion wie die Regel auf den ersten Termin ab heute; der Verlauf nennt es als Änderung der Fälligkeit nach „created“. Scheitert die Regel, bleibt das Ticket mit dem eingegebenen Datum, und das Angebot „Wiederholen…“ trägt die Wahl mit (`offerRepeat` behält die Werte).
+- **„Wiederholung für TASK-12 anlegen…“** im Panel eines umgewandelten Serientermins öffnet „Wiederholen…“ am Ticket; hat es eine vergangene Fälligkeit, fragt der Dialog genauso.
+- Belegt in `new-ticket.test.ts` („asks the same for a calendar series taken over with its old date as due date“) und `recurrence-summary.test.ts` („asks the same in the dialog prepared from the inbox“).
