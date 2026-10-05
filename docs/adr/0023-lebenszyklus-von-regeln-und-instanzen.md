@@ -22,7 +22,7 @@ Die Invariante „höchstens eine offene Instanz pro Regel“ ([ADR-0022](0022-e
   - Die SPA sendet dafür beim Anlegen der Regel zusätzlich `ticket` im Body. Das ist kein Schemafeld.
   - Der Request-Hook von `recurrence_rules` öffnet die Transaktion über `inTransaction`. Darin prüft er das Ticket (sichtbar, gleicher Scope, nicht `done`, noch in keiner Serie), legt die Regel an und setzt `tickets.recurrence`. Beides geschieht zusammen oder gar nicht.
   - `anchor` ist die Fälligkeit des Tickets bzw. heute.
-  - Bei `calendar` wird `next_due = after(rule, ticket.due)`.
+  - Bei `calendar` wird `next_due = after(rule, ticket.due)`. *(Seit WH-2 fragt das Anlegen, wenn die Fälligkeit bzw. der erste Termin vor heute liegt; mit „Serie ab heute beginnen“ bekommt das Ticket den ersten Termin ab heute, [ADR-0022](0022-erzeugung-von-instanzen.md) Nachtrag 14.)*
   - Hat das Ticket keine Fälligkeit, gilt bei `calendar`: Der Dialog zeigt den ersten Termin `onOrAfter(anchor)`. Erst mit der Bestätigung bekommt das Ticket diese Fälligkeit, still wird nichts gesetzt.
   - Bei `after_completion` bleibt die Fälligkeit des Tickets, wie sie ist, und `next_due` bleibt leer.
 - **Neue Regel ohne Ticket** (Übersicht „Wiederholungen“):
