@@ -21,11 +21,19 @@
 	} from '$lib/domain/labels';
 	import { hasFilters, parseListQuery, resetFilters } from '$lib/domain/list-query';
 	import { nextSort, sortDirection, type SortKey } from '$lib/domain/ordering';
+	import {
+		PINNED_SECTION,
+		pinnedCountText,
+		pinnedMoreText,
+		readPinnedFolded,
+		writePinnedFolded
+	} from '$lib/domain/pins';
 	import { parentOf } from '$lib/domain/subtasks';
 	import type { TicketSummary } from '$lib/domain/ticket';
 	import type { CatalogStore } from '$lib/stores/catalog.svelte';
 	import { getColumnPrefs } from '$lib/stores/column-prefs.svelte';
 	import { SILENT_FLAGS } from '$lib/stores/flags.svelte';
+	import { findPinStore, type PinStore } from '$lib/stores/pins.svelte';
 	import type { TicketDuplicateStore } from '$lib/stores/ticket-duplicate.svelte';
 	import type { TicketListStore } from '$lib/stores/ticket-list.svelte';
 	import type { TicketRowActionsStore } from '$lib/stores/ticket-row-actions.svelte';
@@ -58,12 +66,14 @@
 	import ErrorIcon from './ErrorIcon.svelte';
 	import EmptyState from './guidance/EmptyState.svelte';
 	import GroupPopover from './GroupPopover.svelte';
+	import PinIcon from './PinIcon.svelte';
 	import SectionBar from './SectionBar.svelte';
 	import { CELL_PADDING_REM, CHIP_GAP_REM, createChipMeasure, remPx } from './table/chip-measure';
 	import { ColumnFit, cellsOf } from './table/column-fit.svelte';
 	import { naturalWidth } from './table/measure';
 	import ResizableHeader from './table/ResizableHeader.svelte';
 	import TicketActions from './TicketActions.svelte';
+	import TicketPinToggle from './TicketPinToggle.svelte';
 	import TicketRowDialogs from './TicketRowDialogs.svelte';
 	import TicketTableRow from './TicketTableRow.svelte';
 	import ViewSwitch from './ViewSwitch.svelte';
@@ -99,6 +109,10 @@
 	// panel is open closes the panel. A right click on a row, Shift+F10 or the context menu key
 	// open the same menu at the pointer or the focused element (AM-3, rowMenus); the browser keeps
 	// its menu in fields, on selected text, on other links, with Ctrl and for touch.
+	// Pinned tickets (ADR-0064): the first tbody is the section "Angeheftet" with the open pinned
+	// tickets of the area in the order of pinning, whatever the filters, the search and the sort; they
+	// do not stand again below, and the number of the heading says "+ N angeheftet". Its head folds
+	// like a group, kept on this device. Every row has the pin toggle at the end of its title.
 	let {
 		store,
 		catalog,
@@ -109,6 +123,7 @@
 		bulk,
 		rowActions,
 		duplicates = null,
+		pins = findPinStore(),
 		tools,
 		emptyExtra
 	}: {
@@ -128,6 +143,8 @@
 		rowActions?: TicketRowActionsStore;
 		/** "Duplizieren …" in the menu of a row (ADR-0045); null leaves the entry out. */
 		duplicates?: TicketDuplicateStore | null;
+		/** The own pins (ADR-0064) for the toggle of a row; null: no toggle (the section follows the store). */
+		pins?: PinStore | null;
 		/**
 		 * KPI tiles and filter bar, below the section bar: the switch "Aufgaben | Projekte |
 		 * Eingang" stands at the same place in every view (ADR-0025 section 10, package UI-8).
@@ -144,6 +161,7 @@
 		heading: `${uid}-heading`,
 		caption: `${uid}-caption`,
 		done: `${uid}-done`,
+		pinned: `${uid}-pinned`,
 		switchHint: `${uid}-switch-hint`
 	};
 	const query = $derived(store.query);
@@ -152,14 +170,23 @@
 	/** Only the section "Erledigt" is shown (status filter "Erledigt"). */
 	const onlyDone = $derived(query.status === 'done');
 	const hasOpenRows = $derived(store.visible.length > 0);
+	/** The section "Angeheftet" (ADR-0064) stands above the list, whatever the filters. */
+	const pinnedCount = $derived(store.pinned.length);
+	const hasPinnedRows = $derived(pinnedCount > 0);
 	const countReady = $derived(
 		store.openState === 'ready' && (!onlyDone || store.doneState === 'ready')
 	);
 	const countLabel = $derived.by(() => {
 		const count = store.visibleCount;
-		if (store.visibleCountMore) return `mehr als ${count} Tickets`;
-		return count === 1 ? '1 Ticket' : `${count} Tickets`;
+		const pinnedText = hasPinnedRows ? `, ${pinnedMoreText(pinnedCount)}` : '';
+		if (store.visibleCountMore) return `mehr als ${count} Tickets${pinnedText}`;
+		return `${count === 1 ? '1 Ticket' : `${count} Tickets`}${pinnedText}`;
 	});
+	const countText = $derived(
+		`${store.visibleCount}${store.visibleCountMore ? '+' : ''}${
+			hasPinnedRows ? ` ${pinnedMoreText(pinnedCount)}` : ''
+		}`
+	);
 	/**
 	 * With a status filter the switch has no effect (T-6): "Erledigt" shows the done tickets
 	 * anyway, any other status hides them. The switch is locked with this hint.
@@ -199,7 +226,7 @@
 
 	/** All chips of the widest row side by side, plus the padding of the cell. */
 	function tagsNaturalWidth(): number {
-		const tickets = [...store.visible, ...(showDone ? store.done : [])];
+		const tickets = [...store.pinned, ...store.visible, ...(showDone ? store.done : [])];
 		const gap = CHIP_GAP_REM * rem;
 		const widest = Math.max(
 			0,
@@ -235,6 +262,35 @@
 		if (collapsed.has(path)) collapsed.delete(path);
 		else collapsed.add(path);
 		writeCollapsedGroups(sessionStore(), [...collapsed]);
+	}
+
+	function deviceStore(): Storage | null {
+		try {
+			return window.localStorage;
+		} catch {
+			return null;
+		}
+	}
+
+	/** The section "Angeheftet" folded on this device (ADR-0064); default open. */
+	let pinnedFolded = $state(readPinnedFolded(deviceStore()));
+
+	/** Folds or unfolds the section "Angeheftet"; the button keeps the focus. */
+	function togglePinned() {
+		pinnedFolded = !pinnedFolded;
+		writePinnedFolded(deviceStore(), pinnedFolded);
+	}
+
+	/**
+	 * After pinning or releasing, the row stands in its other section: the focus follows it to its
+	 * toggle (a folded section keeps it where restoreFocus put it).
+	 */
+	async function focusPinToggle(ticketId: string) {
+		await tick();
+		const toggle = [...(root?.querySelectorAll<HTMLElement>('[data-pin-toggle]') ?? [])].find(
+			(element) => element.dataset.pinToggle === ticketId
+		);
+		toggle?.focus();
 	}
 
 	/** Open tickets of a group (a just checked row still stands in it but does not count). */
@@ -338,6 +394,7 @@
 
 	$effect(() => {
 		// Re-run whenever the rendered rows change.
+		void store.pinned;
 		void store.visible;
 		void store.groups;
 		void store.done;
@@ -346,11 +403,23 @@
 
 	/** Chosen rows for the bulk actions (plan BI-2). */
 	let selection = $state<Selection>(EMPTY_SELECTION);
-	/** Rows a selection may hold: every ticket that passes the filters, open and shown done. */
+	/**
+	 * Rows a selection may hold: every ticket that passes the filters, open and shown done, and the
+	 * pinned ones above (ADR-0064).
+	 */
 	const selectable = $derived(
-		[...store.visible, ...(showDone ? store.done : [])].map((ticket) => ticket.id)
+		[...store.pinned, ...store.visible, ...(showDone ? store.done : [])].map((ticket) => ticket.id)
 	);
-	const head = $derived(headState(selection, selectable));
+	/**
+	 * Rows of the head checkbox: every ticket that passes the filters, as before the pins; a pinned
+	 * ticket the filters hide is chosen only by its own box.
+	 */
+	const filteredIds = $derived(
+		[...store.pinnedInFilter, ...store.visible, ...(showDone ? store.done : [])].map(
+			(ticket) => ticket.id
+		)
+	);
+	const head = $derived(headState(selection, filteredIds));
 	const chosenTickets = $derived(
 		selection.ids.flatMap((id) => {
 			const ticket = store.find(id);
@@ -437,9 +506,9 @@
 </script>
 
 <!-- One section (a group, the open or the done tickets): sub-tasks follow their parent only when
-     both are in it (ADR-0033 section 5). -->
-{#snippet rows(tickets: readonly TicketSummary[])}
-	{#each arrangeRows(tickets, nest, (id) => store.find(id)) as row (row.ticket.id)}
+     both are in it (ADR-0033 section 5); the pinned tickets keep the order of pinning. -->
+{#snippet rows(tickets: readonly TicketSummary[], nestRows: boolean = nest)}
+	{#each arrangeRows(tickets, nestRows, (id) => store.find(id)) as row (row.ticket.id)}
 		{@const ticket = row.ticket}
 		<TicketTableRow
 			{ticket}
@@ -469,9 +538,17 @@
 			}}
 			menu={rowActions ? rowMenu : undefined}
 			menuBusy={rowActions?.isPreparing(ticket.id) ?? false}
+			pin={pins?.available && (ticket.status !== 'done' || pins.isPinned(ticket.id))
+				? pinToggle
+				: undefined}
 			ontoggle={(done) => store.setDone(ticket.id, done)}
 		/>
 	{/each}
+{/snippet}
+
+<!-- The pin toggle of a row (ADR-0064). -->
+{#snippet pinToggle(ticket: TicketSummary)}
+	<TicketPinToggle {ticket} {pins} onchanged={(id) => void focusPinToggle(id)} />
 {/snippet}
 
 <!-- The menu "•••" of a row (plan aktionsmenues, AM-2). -->
@@ -588,7 +665,7 @@
 	<SectionBar
 		title="Aufgaben"
 		headingId={ids.heading}
-		count={countReady ? `${store.visibleCount}${store.visibleCountMore ? '+' : ''}` : null}
+		count={countReady ? countText : null}
 		{countLabel}
 		bind:heading
 	>
@@ -646,7 +723,7 @@
 
 	{#if store.openState === 'error' && store.openError}
 		{@render failure(store.openError, 'Erneut versuchen', () => store.reload())}
-	{:else if store.openState === 'ready' && !hasOpenRows && !onlyDone}
+	{:else if store.openState === 'ready' && !hasOpenRows && !onlyDone && !hasPinnedRows}
 		{#if filtered}
 			<EmptyState
 				icon="search"
@@ -682,7 +759,7 @@
 		<p class="loading" role="status">Tickets werden geladen …</p>
 	{/if}
 
-	{#if hasOpenRows || showDone}
+	{#if hasOpenRows || showDone || hasPinnedRows}
 		<div class="frame" bind:this={frame}>
 			<table {@attach rowMenus}>
 				<caption id={ids.caption}>
@@ -715,9 +792,9 @@
 									type="checkbox"
 									aria-label="Alle angezeigten Tickets auswählen"
 									checked={head === 'all'}
-									disabled={selectable.length === 0}
+									disabled={filteredIds.length === 0}
 									bind:this={headBox}
-									onchange={() => (selection = toggleAll(selection, selectable))}
+									onchange={() => (selection = toggleAll(selection, filteredIds))}
 								/>
 							</ResizableHeader>
 						{/if}
@@ -734,6 +811,56 @@
 						{@render header('actions', 'Aktionen')}
 					</tr>
 				</thead>
+				{#if hasPinnedRows}
+					<!-- The section "Angeheftet" (ADR-0064): whatever the filters, folded per device. -->
+					<tbody data-section="pinned" aria-labelledby={ids.pinned}>
+						<tr class="section-head group-head pinned-head">
+							<th scope="rowgroup" colspan={fit.visible.length} id={ids.pinned}>
+								<button
+									class="group-toggle"
+									type="button"
+									aria-expanded={!pinnedFolded}
+									title={pinnedFolded ? 'Abschnitt aufklappen' : 'Abschnitt zuklappen'}
+									onclick={togglePinned}
+								>
+									<svg class="fold" viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+										<path d={pinnedFolded ? 'M4.5 3l3 3-3 3' : 'M3 4.5l3 3 3-3'} />
+									</svg>
+									<PinIcon />
+									{PINNED_SECTION}<span class="group-count"
+										><span aria-hidden="true">{pinnedCount}</span><span class="visually-hidden"
+											>, {pinnedCountText(pinnedCount)}</span
+										></span
+									>
+								</button>
+							</th>
+						</tr>
+						{#if !pinnedFolded}
+							{@render rows(store.pinned, false)}
+						{/if}
+					</tbody>
+					{#if !hasOpenRows && !onlyDone && store.openState === 'ready'}
+						<!-- Everything else the filters let through is pinned, or nothing is. -->
+						<tbody data-section="open" aria-label="Offene Tickets">
+							<tr class="section-foot">
+								<td colspan={fit.visible.length}>
+									{#if filtered}
+										<p class="muted">Keine weiteren Tickets für diese Filter.</p>
+										<button
+											class="button-secondary button-small reset"
+											type="button"
+											onclick={clearFilters}
+										>
+											Filter zurücksetzen
+										</button>
+									{:else}
+										<p class="muted">Keine weiteren offenen Tickets.</p>
+									{/if}
+								</td>
+							</tr>
+						</tbody>
+					{/if}
+				{/if}
 				{#if hasOpenRows && store.groups !== null}
 					{#each store.groups as group (group.path)}
 						{@const headId = `${uid}-group-${group.key}`}

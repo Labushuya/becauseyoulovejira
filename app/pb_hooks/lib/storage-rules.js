@@ -10,6 +10,7 @@ var TABLE_GROUPS = {
   tickets: 'tickets',
   comments: 'tickets',
   ticket_reads: 'tickets',
+  ticket_pins: 'tickets',
   ticket_counters: 'tickets',
   dependencies: 'tickets',
   ticket_history: 'history',

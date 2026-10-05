@@ -3,15 +3,18 @@
 // link, status, priority and due date; at most ten, then "Alle N in Aufgaben öffnen"; a ticket
 // opens in the remembered way in the projects (ADR-0054), with the state of the project view and
 // the project panel it replaces; empty, loading and failed; the menu "•••" of the ticket rows with
-// its context menu; the focus when the focused entry leaves. Page state is mocked; the open-mode
-// and row-action stores run for real on fakes.
+// its context menu; the focus when the focused entry leaves; the own pins of the project first
+// (ADR-0064). Page state is mocked; the open-mode, row-action and pin stores run for real on fakes.
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { TicketPin } from '$lib/domain/pins';
 import type { Ticket, TicketSummary } from '$lib/domain/ticket';
 import { FlagStore } from '$lib/stores/flags.svelte';
 import { TicketOpenModeStore } from '$lib/stores/open-mode.svelte';
+import { PinStore } from '$lib/stores/pins.svelte';
+import { fakePins, pinOf } from '$lib/test/fake-pins';
 import {
 	TicketRowActionsStore,
 	type TicketRowActionsData
@@ -361,5 +364,82 @@ describe('focus when an entry leaves', () => {
 		await view.rerender({ project: HOUSE, today: TODAY, tickets: [two!] });
 		await tick();
 		expect(document.activeElement).toBe(outside);
+	});
+});
+
+describe('open tickets of a project: the own pins (ADR-0064)', () => {
+	async function pinsOver(pinned: TicketPin[]) {
+		const fake = fakePins(pinned);
+		const pins = new PinStore(fake.data, SESSION);
+		await pins.load();
+		return { fake, pins };
+	}
+
+	const PINNED = 'Angeheftet in „Haus“';
+	const keysOf = (name?: string) =>
+		entries(name).map((entry) => entry.querySelector('.key')?.textContent);
+
+	it('lists the pins of the project first, oldest on top, outside the limit and not again below', async () => {
+		const tickets = [ticket(), ticket(), ticket(), ticket()];
+		const [one, two, , four] = tickets;
+		// Four was pinned before two; the pin of a ticket of another project does not show here.
+		const { pins } = await pinsOver([
+			pinOf(two!.id, 20),
+			pinOf(four!.id, 10),
+			pinOf('other0000000001', 5)
+		]);
+		show({ tickets, pins, limit: 1 });
+
+		expect(keysOf(PINNED)).toEqual([four!.key, two!.key]);
+		expect(keysOf()).toEqual([one!.key]);
+		// The rest is behind the link, which counts every open ticket of the project.
+		expect(screen.getByRole('link', { name: 'Alle 4 in Aufgaben öffnen' })).toBeTruthy();
+		// The label "Angeheftet" is for the eye; the list names itself.
+		expect(document.querySelector('.pinned-label')?.getAttribute('aria-hidden')).toBe('true');
+		for (const entry of entries(PINNED)) {
+			expect(
+				within(entry)
+					.getByRole('button', { name: /anheften$/ })
+					.getAttribute('aria-pressed')
+			).toBe('true');
+		}
+	});
+
+	it('pins with the toggle of an entry; the entry moves up and keeps the focus', async () => {
+		const [one, two] = [ticket(), ticket()];
+		const { pins, fake } = await pinsOver([]);
+		show({ tickets: [one, two], pins });
+		expect(screen.queryByRole('list', { name: PINNED })).toBeNull();
+
+		const button = within(list()).getByRole('button', { name: `${two!.key} anheften` });
+		expect(button.getAttribute('aria-pressed')).toBe('false');
+		button.focus();
+		await fireEvent.click(button);
+		await vi.waitFor(() => expect(screen.getByRole('list', { name: PINNED })).toBeTruthy());
+		await tick();
+
+		expect(fake.data.pin).toHaveBeenCalledWith(two!.id);
+		expect(keysOf(PINNED)).toEqual([two!.key]);
+		expect(keysOf()).toEqual([one!.key]);
+		const moved = within(screen.getByRole('list', { name: PINNED })).getByRole('button', {
+			name: `${two!.key} anheften`
+		});
+		expect(moved.getAttribute('aria-pressed')).toBe('true');
+		expect(document.activeElement).toBe(moved);
+	});
+
+	it('shows the empty state only without any open ticket, and every ticket pinned is no empty list', async () => {
+		const only = ticket();
+		const { pins } = await pinsOver([pinOf(only.id, 10)]);
+		show({ tickets: [only], pins });
+		expect(keysOf(PINNED)).toEqual([only.key]);
+		expect(screen.queryByRole('list', { name: 'Offene Tickets von „Haus“' })).toBeNull();
+		expect(screen.queryByText('Keine offenen Tickets')).toBeNull();
+	});
+
+	it('shows neither a section nor a toggle without the pins', () => {
+		show({ tickets: [ticket()], pins: null });
+		expect(screen.queryByRole('button', { name: /anheften$/ })).toBeNull();
+		expect(screen.queryByRole('list', { name: PINNED })).toBeNull();
 	});
 });

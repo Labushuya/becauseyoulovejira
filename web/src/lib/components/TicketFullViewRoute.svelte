@@ -16,6 +16,7 @@
 	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
 	import { getTicketSourcesStore } from '$lib/stores/ticket-sources.svelte';
 	import { findTicketOpenMode, ticketLinks } from '$lib/stores/open-mode.svelte';
+	import { findPinStore } from '$lib/stores/pins.svelte';
 	import { findTicketHost } from '$lib/ticket-host';
 	import { FULL_VIEW_LINK, ticketPathSteps } from '$lib/ticket-links';
 	import { getTicketRoute } from '$lib/ticket-route';
@@ -34,6 +35,7 @@
 	import TicketLeaveQuestion from './TicketLeaveQuestion.svelte';
 	import TicketMeta from './TicketMeta.svelte';
 	import TicketParentField from './TicketParentField.svelte';
+	import TicketPinToggle from './TicketPinToggle.svelte';
 	import TicketSources from './TicketSources.svelte';
 	import TicketSubtasks from './TicketSubtasks.svelte';
 
@@ -69,6 +71,8 @@
 	const duplicates = findTicketDuplicateStore();
 	const moves = findAreaMoveStore();
 	const flags = findFlagStore() ?? SILENT_FLAGS;
+	/** The own pins (ADR-0064): the toggle before "•••". */
+	const pins = findPinStore();
 
 	const uid = $props.id();
 	const headingId = `${uid}-title`;
@@ -167,6 +171,7 @@
 			{/if}
 		{/snippet}
 		{#snippet actions()}
+			<TicketPinToggle {ticket} {pins} variant="head" />
 			<TicketActions
 				{ticket}
 				{flags}

@@ -1,4 +1,4 @@
-The symbols in charm-icons.ts are taken unchanged from Lucide (https://lucide.dev),
+The symbols in charm-icons.ts and pin-icon.ts are taken unchanged from Lucide (https://lucide.dev),
 package lucide-static, version 1.52.0 (https://github.com/lucide-icons/lucide).
 License text of that version, copied from its LICENSE file:
 
