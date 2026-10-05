@@ -124,3 +124,12 @@ Die Farb- und Gestaltungsregeln aus §3 und die Clean-Room-Regel aus §4 gelten 
 - Ein Verlauf nur im Hintergrund, aus der vorhandenen Akzentfläche. Schatten nur neutral über Tokens und immer mit Linie.
 - Der Fokusring ist `--color-brand-text` statt `--color-brand`.
 - Alle übrigen Punkte von §3 und die Clean-Room-Regel aus §4 gelten weiter; aus dem Task-Board wird auch für das Glas kein CSS übernommen.
+
+## Nachtrag (2026-10-05): Kennzahlen-Kacheln werden Filter-Karten (FI-1)
+
+[ADR-0013](0013-filter-suche-sortierung-gruppierung.md), Nachtrag C, ersetzt in §1 die Zeile „Kennzahlen-Kacheln“ und den Satz „Die Zahlen zählen immer alle nicht erledigten Tickets, unabhängig von den gesetzten Filtern“ sowie in §5 den Namen der Kacheln:
+
+- Die Kacheln heißen „Filter-Karten“ und sind Umschalter. Mehrere gewählte Karten zeigen ihre Vereinigung, und die Filter der Filterleiste schränken sie weiter ein.
+- „Nicht erledigt“ heißt „Alle offenen“, gilt als gewählt, solange keine andere Karte gewählt ist, und hebt die übrigen Karten auf, statt alle Filter zurückzusetzen.
+- Jede Karte zählt die offenen Tickets, die Filter und Suche passieren, ohne die anderen Karten. Die Kopfzeile zählt weiter alle offenen.
+- Der Name einer Karte ist Bezeichnung und Zahl („Überfällig: 4“). Farbe ist weiter nie das einzige Merkmal: Gewählte Karten tragen zusätzlich ein Häkchen im Kästchen und eine fettere Zahl. Die Karte „Überfällig“ ist nicht rot (§3).
