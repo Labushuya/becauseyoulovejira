@@ -188,10 +188,13 @@
 		}
 	}
 
-	/* High contrast: the system draws the surfaces, the check in the box keeps the state visible. */
+	/*
+	 * High contrast: the system draws the surfaces; the check takes the forced colour of the text of
+	 * the card, so it stays visible on the system background.
+	 */
 	@media (forced-colors: active) {
 		.check {
-			stroke: CanvasText;
+			stroke: currentColor;
 		}
 	}
 </style>
