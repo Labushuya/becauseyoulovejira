@@ -140,7 +140,10 @@ describe('lastViewLabel', () => {
 		['/wiederholungen/neu', 'Zurück zu Wiederholungen'],
 		['/wiederholungen/rule00000000001', 'Zurück zur Regel'],
 		['/papierkorb', 'Zurück zum Papierkorb'],
-		['/papierkorb/ticket00000000a', 'Zurück zum Papierkorb']
+		['/papierkorb/ticket00000000a', 'Zurück zum Papierkorb'],
+		// The view "Erledigte" and a ticket next to it (ADR-0066).
+		['/erledigt?q=Miete', 'Zurück zu Erledigte'],
+		['/erledigt/tickets/unknown00000001?charm=auto', 'Zurück zum Ticket']
 	])('labels %s as "%s"', (href, label) => {
 		expect(lastViewLabel(href)).toBe(label);
 	});

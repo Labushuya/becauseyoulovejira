@@ -49,7 +49,6 @@ function ticket(index: number, overrides: Partial<TicketSummary> = {}): TicketSu
 function fakeData(open: TicketSummary[]): TicketListData {
 	return {
 		listOpen: vi.fn(async () => open),
-		listDone: vi.fn(async (page: number) => ({ items: [], page, hasMore: false })),
 		searchOpen: vi.fn(async (): Promise<string[]> => []),
 		setDone: vi.fn(async () => open[0] as TicketSummary),
 		update: vi.fn(async () => open[0] as TicketSummary)

@@ -174,7 +174,6 @@ async function show(path = '/kalender', setup: Setup = {}) {
 	);
 	const listData: TicketListData = {
 		listOpen: vi.fn(async () => setup.open ?? []),
-		listDone: async (page) => ({ items: [], page, hasMore: false }),
 		searchOpen: vi.fn(async (): Promise<string[]> => []),
 		setDone: vi.fn(),
 		update: vi.fn()

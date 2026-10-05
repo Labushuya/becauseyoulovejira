@@ -83,17 +83,16 @@ describe('parseListQuery', () => {
 		expect(parse(`gruppe=${value}`)).toEqual(query({ grouping }));
 	});
 
-	it('reads the switch "Erledigte anzeigen" only as 1', () => {
-		expect(parse('erledigte=1').showDone).toBe(true);
-		expect(parse('erledigte=0').showDone).toBe(false);
-		expect(parse('erledigte=true').showDone).toBe(false);
+	it('knows the switch "Erledigte anzeigen" no more (ER-1, ADR-0066)', () => {
+		expect(parse('erledigte=1')).toEqual(EMPTY_LIST_QUERY);
+		expect(normalize('erledigte=1&sort=-titel')).toBe('?erledigte=1&sort=-titel');
 	});
 
 	it('combines every group', () => {
 		expect(
 			parse(
 				`status=waiting&prio=high&faellig=bald&quelle=chat&projekt=${PROJECT_ID}&tag=${TAG_ID}` +
-					'&q=Auto&sort=-faellig&gruppe=projekt&erledigte=1&unterprojekte=0&karte=dringend'
+					'&q=Auto&sort=-faellig&gruppe=projekt&unterprojekte=0&karte=dringend'
 			)
 		).toEqual({
 			cards: ['urgent'],
@@ -108,8 +107,7 @@ describe('parseListQuery', () => {
 			search: 'Auto',
 			sort: { key: 'due', reversed: true },
 			grouping: 'project',
-			subGrouping: null,
-			showDone: true
+			subGrouping: null
 		});
 	});
 
@@ -147,10 +145,6 @@ describe('parseListQuery', () => {
 			query({ priority: 'low', grouping: 'status' })
 		);
 	});
-
-	it('ignores doubled switches', () => {
-		expect(parse('erledigte=1&erledigte=1').showDone).toBe(false);
-	});
 });
 
 describe('serializeListQuery', () => {
@@ -160,7 +154,6 @@ describe('serializeListQuery', () => {
 
 	it('writes the parameters in a fixed order', () => {
 		const full: ListQuery = {
-			showDone: true,
 			subGrouping: 'priority',
 			grouping: 'due',
 			sort: { key: 'created', reversed: false },
@@ -179,13 +172,13 @@ describe('serializeListQuery', () => {
 			'?karte=in-arbeit&karte=dringend' +
 				'&status=backlog&prio=urgent&faellig=ueberfaellig&quelle=kalender&wiederholung=einmalig' +
 				`&projekt=ohne&tag=${TAG_ID}&q=%C3%96l+wechseln&sort=erstellt&gruppe=faellig` +
-				'&untergruppe=prio&erledigte=1'
+				'&untergruppe=prio'
 		);
 		expect(serializeListQuery({ ...full, project: PROJECT_ID, subProjects: false })).toBe(
 			'?karte=in-arbeit&karte=dringend' +
 				'&status=backlog&prio=urgent&faellig=ueberfaellig&quelle=kalender&wiederholung=einmalig' +
 				`&projekt=${PROJECT_ID}&unterprojekte=0&tag=${TAG_ID}&q=%C3%96l+wechseln&sort=erstellt` +
-				'&gruppe=faellig&untergruppe=prio&erledigte=1'
+				'&gruppe=faellig&untergruppe=prio'
 		);
 	});
 
@@ -207,7 +200,7 @@ describe('serializeListQuery', () => {
 		expect(normalize(`gruppe=status&prio=low&status=open`)).toBe(
 			normalize(`status=open&prio=low&gruppe=status`)
 		);
-		expect(normalize('erledigte=1&sort=-titel')).toBe('?sort=-titel&erledigte=1');
+		expect(normalize('gruppe=prio&sort=-titel')).toBe('?sort=-titel&gruppe=prio');
 	});
 
 	it('writes the reversed sort with a minus sign', () => {
@@ -243,11 +236,10 @@ describe('serializeListQuery', () => {
 		'q=Rechnung+%26+Mahnung',
 		'q=100%25',
 		'sort=-key&gruppe=prio',
-		'erledigte=1',
 		'quelle=manuell',
 		'faellig=heute&quelle=chat&gruppe=quelle',
 		'karte=in-arbeit&karte=heute&karte=dringend&prio=urgent',
-		`status=done&prio=low&faellig=bald&quelle=mail&projekt=${PROJECT_ID}&tag=${TAG_ID}&q=a%2Bb&sort=faellig&gruppe=status&erledigte=1`
+		`status=done&prio=low&faellig=bald&quelle=mail&projekt=${PROJECT_ID}&tag=${TAG_ID}&q=a%2Bb&sort=faellig&gruppe=status`
 	])('round trip of "%s" is stable', (search) => {
 		const once = normalize(search);
 		expect(once).toBe(search === '' ? '' : `?${search}`);
@@ -270,8 +262,7 @@ describe('withFilter, resetFilters, hasFilters', () => {
 		search: 'Auto',
 		sort: { key: 'title', reversed: false },
 		grouping: 'priority',
-		subGrouping: 'project',
-		showDone: true
+		subGrouping: 'project'
 	};
 
 	it('sets one filter and leaves the others', () => {
@@ -287,13 +278,12 @@ describe('withFilter, resetFilters, hasFilters', () => {
 		expect(full).toEqual(before);
 	});
 
-	it('resets cards, filters and search, keeps sort, grouping and the switch', () => {
+	it('resets cards, filters and search, keeps sort and grouping', () => {
 		expect(resetFilters(full)).toEqual(
 			query({
 				sort: { key: 'title', reversed: false },
 				grouping: 'priority',
-				subGrouping: 'project',
-				showDone: true
+				subGrouping: 'project'
 			})
 		);
 	});
@@ -303,7 +293,6 @@ describe('withFilter, resetFilters, hasFilters', () => {
 		expect(hasFilters(query({ sort: { key: 'key', reversed: true }, grouping: 'due' }))).toBe(
 			false
 		);
-		expect(hasFilters(query({ showDone: true }))).toBe(false);
 		for (const key of FILTER_KEYS) {
 			expect(hasFilters({ ...EMPTY_LIST_QUERY, [key]: full[key] }), key).toBe(true);
 		}
@@ -346,7 +335,7 @@ describe('list query: filter cards (FI-1)', () => {
 				sort: { key: 'title', reversed: false }
 			})
 		);
-		expect(normalize('faellig=ueberfaellig&erledigte=1')).toBe('?faellig=ueberfaellig&erledigte=1');
+		expect(normalize('faellig=ueberfaellig&gruppe=prio')).toBe('?faellig=ueberfaellig&gruppe=prio');
 	});
 
 	it('counts the cards as a filter that "Zurücksetzen" clears, but not as a detail filter', () => {
@@ -466,8 +455,8 @@ describe('list query: two levels of grouping (plan OR-3)', () => {
 		expect(serializeListQuery(query({ grouping: 'status', subGrouping: 'status' }))).toBe(
 			'?gruppe=status'
 		);
-		expect(normalize('untergruppe=prio&erledigte=1&gruppe=faellig')).toBe(
-			'?gruppe=faellig&untergruppe=prio&erledigte=1'
+		expect(normalize('untergruppe=prio&sort=titel&gruppe=faellig')).toBe(
+			'?sort=titel&gruppe=faellig&untergruppe=prio'
 		);
 		expect(normalize('untergruppe=prio')).toBe('');
 	});

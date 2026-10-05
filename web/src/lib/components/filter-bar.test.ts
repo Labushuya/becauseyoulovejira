@@ -44,7 +44,7 @@ const OLD: Project = {
 };
 const GARDEN: Tag = { id: 'tag000000000001', name: 'Garten', updated: UPDATED };
 
-async function showBar(path = '/', tags: Tag[] = [GARDEN]) {
+async function showBar(path = '/', tags: Tag[] = [GARDEN], calendar = false) {
 	mocks.page.url = new URL(path, 'http://localhost:3000');
 	const catalog = new CatalogStore(
 		{
@@ -55,7 +55,7 @@ async function showBar(path = '/', tags: Tag[] = [GARDEN]) {
 		SESSION
 	);
 	await catalog.load();
-	return render(FilterBar, { props: { catalog } });
+	return render(FilterBar, { props: { catalog, calendar } });
 }
 
 /** Target of the last navigation as path plus query. */
@@ -114,9 +114,10 @@ describe('filter bar', () => {
 
 		expect(screen.getByRole('region', { name: 'Filter' })).toBeTruthy();
 		const status = within(group('Status'));
+		// "Aufgaben" shows only open work since ER-1 (ADR-0066): no chip "Erledigt".
 		expect(
 			status.getAllByRole('radio').map((radio) => radio.parentElement?.textContent?.trim())
-		).toEqual(['Alle', 'Backlog', 'Offen', 'In Arbeit', 'Wartet', 'Erledigt']);
+		).toEqual(['Alle', 'Backlog', 'Offen', 'In Arbeit', 'Wartet']);
 		expect(status.getByRole('radio', { name: 'Alle' })).toHaveProperty('checked', true);
 		expect(
 			within(group('Priorität'))
@@ -130,9 +131,20 @@ describe('filter bar', () => {
 		).toEqual(['Alle', 'Überfällig', 'Heute', 'Bald', 'Ohne Datum']);
 	});
 
+	it('keeps the status "Erledigt" only in the calendar (ADR-0053, ADR-0066)', async () => {
+		await showBar('/kalender', [GARDEN], true);
+
+		const status = within(group('Status'));
+		expect(
+			status.getAllByRole('radio').map((radio) => radio.parentElement?.textContent?.trim())
+		).toEqual(['Alle', 'Backlog', 'Offen', 'In Arbeit', 'Wartet', 'Erledigt']);
+		await fireEvent.click(status.getByRole('radio', { name: 'Erledigt' }));
+		expect(lastTarget()).toBe('/kalender?status=done');
+	});
+
 	it.each([
 		['Status', 'In Arbeit', '/?status=in_progress'],
-		['Status', 'Erledigt', '/?status=done'],
+		['Status', 'Wartet', '/?status=waiting'],
 		['Priorität', 'Dringend', '/?prio=urgent'],
 		['Fällig', 'Überfällig', '/?faellig=ueberfaellig'],
 		['Fällig', 'Bald', '/?faellig=bald'],
@@ -160,11 +172,11 @@ describe('filter bar', () => {
 	});
 
 	it('keeps the panel path and unknown parameters when filtering', async () => {
-		await showBar('/tickets/abc123def456ghi?x=1&erledigte=1');
+		await showBar('/tickets/abc123def456ghi?x=1&gruppe=prio');
 
 		await fireEvent.click(within(group('Status')).getByRole('radio', { name: 'Offen' }));
 
-		expect(lastTarget()).toBe('/tickets/abc123def456ghi?x=1&status=open&erledigte=1');
+		expect(lastTarget()).toBe('/tickets/abc123def456ghi?x=1&status=open&gruppe=prio');
 	});
 
 	it('offers the projects in a popover with "Ohne Projekt" and the archived ones in their own group', async () => {
@@ -290,16 +302,16 @@ describe('filter bar', () => {
 		expect(source).toMatch(/kind="panel"/);
 	});
 
-	it('resets the filters but keeps sort, grouping and the switch', async () => {
+	it('resets the filters but keeps sort and grouping', async () => {
 		await showBar(
-			`/?status=open&prio=urgent&faellig=heute&projekt=${HOUSE.id}&tag=${GARDEN.id}&sort=-titel&gruppe=prio&erledigte=1`
+			`/?status=open&prio=urgent&faellig=heute&projekt=${HOUSE.id}&tag=${GARDEN.id}&sort=-titel&gruppe=prio`
 		);
 
 		const reset = screen.getByRole('button', { name: 'Zurücksetzen' });
 		expect(reset.getAttribute('aria-disabled')).toBeNull();
 		await fireEvent.click(reset);
 
-		expect(lastTarget()).toBe('/?sort=-titel&gruppe=prio&erledigte=1');
+		expect(lastTarget()).toBe('/?sort=-titel&gruppe=prio');
 	});
 
 	it('resets the filter cards as well, back to "Alle offenen" (FI-1)', async () => {

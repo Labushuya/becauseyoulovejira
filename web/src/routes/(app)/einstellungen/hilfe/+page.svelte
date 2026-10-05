@@ -21,7 +21,13 @@
 	import { CONTEXT_TEXTS, RESTART_NEEDED } from '$lib/guidance/texts';
 	import { HELP_SECTIONS, helpHref } from '$lib/settings-sections';
 	import { appContext } from '$lib/stores/context.svelte';
-	import { calendarHref, channelSetupHref, dayPlanHref, trashHref } from '$lib/ticket-links';
+	import {
+		calendarHref,
+		channelSetupHref,
+		dayPlanHref,
+		doneHref,
+		trashHref
+	} from '$lib/ticket-links';
 
 	// Settings "Hilfe" (ADR-0026 section 7, plan EH-9 §3.10): jump links, the keyboard shortcuts from
 	// the one source, the short syntax of the quick entry, how the access data work (moved here from
@@ -244,6 +250,29 @@
 			„Im Haushalt: 3 Einträge für heute“, mit dem Weg dorthin; seinen Inhalt zeigt der Plan nicht.
 			Ein Ticket, das in den anderen Bereich oder in den Papierkorb wandert, verschwindet aus den
 			Plänen.
+		</p>
+	</section>
+
+	<section id="erledigte" aria-labelledby="erledigte-title">
+		<h3 id="erledigte-title">Erledigte</h3>
+		<p>
+			„Aufgaben“ zeigt nur offene Arbeit. Was erledigt ist, steht unter
+			<a href={doneHref()}>Erledigte</a>, der Ansicht vor dem Papierkorb: alle erledigten Tickets
+			des Bereichs, das zuletzt Erledigte oben, in Gruppen nach dem Tag des Abschlusses: Heute,
+			Gestern, Diese Woche (ab Montag), Diesen Monat, danach je Monat, etwa „September 2026“.
+			„Erledigte ansehen →“ in „Aufgaben“ führt hierher und nimmt Projekt, Tag und Suche mit. Alte
+			Lesezeichen mit „Erledigte anzeigen“ oder dem Status „Erledigt“ führen ebenfalls hierher.
+		</p>
+		<p>
+			Suche (Titel, Beschreibung oder Key), Projekt, Tag und Charm schränken die Liste ein; neben
+			der Überschrift steht, wie viele erledigte Tickets dazu passen. Es kommen 50 auf einmal;
+			weitere lädt die Liste, sobald du ans Ende scrollst, oder mit dem Knopf „Mehr laden“.
+		</p>
+		<p>
+			Im Menü „•••“ eines Eintrags stehen die Aktionen jeder Ticketzeile, dazu „Wieder öffnen“: Das
+			Ticket ist sofort wieder offen und steht in „Aufgaben“. „Rückgängig“ in der Meldung erledigt
+			es erneut, dann mit dem Zeitpunkt von jetzt. Was anderswo erledigt wird, erscheint oben; was
+			anderswo wieder geöffnet wird, verschwindet.
 		</p>
 	</section>
 
@@ -923,14 +952,8 @@
 						Dringend“. Passen angeheftete Tickets dazu, nennt sie sie wie die Zahl neben „Aufgaben“,
 						etwa „4 + 1 angeheftet aus: Dringend“; zusammen ergibt das die Zahl der Karte.
 						„Zurücksetzen“ dort oder in der Filterleiste setzt Karten, Filter und Suche zurück;
-						Sortierung, Gruppierung und „Erledigte anzeigen“ bleiben. Mit „Erledigte anzeigen“
-						gelten die Karten auch für den Abschnitt „Erledigt“; ein erledigtes Ticket ist nie „In
-						Arbeit“ oder „Überfällig“.
-					</li>
-					<li>
-						Mit dem Statusfilter „Erledigt“ gibt es keine offenen Tickets: Die Karten sind dann
-						gesperrt und sagen „Karten gelten für offene Tickets“, und keine Karte wirkt. Deine
-						Auswahl bleibt und gilt wieder, sobald du den Statusfilter zurücknimmst.
+						Sortierung und Gruppierung bleiben. Die Karten gelten nur für offene Tickets; erledigte
+						stehen unter „Erledigte“.
 					</li>
 					<li>
 						Die Auswahl steht in der Adresse (<code>?karte=heute&amp;karte=dringend</code>) und
@@ -970,11 +993,11 @@
 				<summary>Wie hole ich ein gelöschtes Ticket zurück?</summary>
 				<p>
 					Gelöschte Tickets („In den Papierkorb …“ im Menü „•••“ des Tickets) liegen im
-					<a href={trashHref()}>Papierkorb</a> (Link neben dem Umschalter der Ansichten). Dort stellst
-					du ein Ticket mit „Wiederherstellen“ wieder her, samt Key, Unteraufgaben und Quellen; direkt
-					nach dem Löschen geht das auch mit „Rückgängig“ unten links. Nach dem Wiederherstellen bleibst
-					du im Papierkorb, und die Meldung unten links bietet „Öffnen“. Nach 30 Tagen löscht die App
-					es endgültig; die Frist stellst du unter „Einstellungen → Tickets“ ein.
+					<a href={trashHref()}>Papierkorb</a> (letzte der Ansichten oben). Dort stellst du ein Ticket
+					mit „Wiederherstellen“ wieder her, samt Key, Unteraufgaben und Quellen; direkt nach dem Löschen
+					geht das auch mit „Rückgängig“ unten links. Nach dem Wiederherstellen bleibst du im Papierkorb,
+					und die Meldung unten links bietet „Öffnen“. Nach 30 Tagen löscht die App es endgültig; die
+					Frist stellst du unter „Einstellungen → Tickets“ ein.
 				</p>
 			</details>
 			<details>

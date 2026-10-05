@@ -12,9 +12,15 @@ import {
 	channelSetupHref,
 	convertFrom,
 	convertHref,
+	doneFullViewHref,
+	doneHref,
+	doneOfListHref,
+	doneTicketHref,
+	doneViewHref,
 	fullViewHref,
 	inboxHref,
 	inboxItemHref,
+	legacyDoneHref,
 	listHref,
 	newProjectHref,
 	newSubProjectHref,
@@ -25,19 +31,21 @@ import {
 	projectsViewHref,
 	projectTicketsHref,
 	showArchivedFrom,
-	showDoneFrom,
 	ticketHref,
 	ticketPath,
 	withCalendarQuery,
+	withDoneQuery,
 	withInboxQuery,
 	withListQuery,
 	withShowArchived,
-	withShowDone,
 	withTemplate,
 	withoutConvert
 } from './ticket-links';
 
 const at = (path: string) => new URL(path, 'http://localhost:3000');
+
+const PROJECT = 'proj00000000001';
+const TAG = 'tag000000000001';
 
 describe('ticket links', () => {
 	it('keeps path, query and hash of a held-up navigation target (ADR-0025 section 4)', () => {
@@ -47,57 +55,46 @@ describe('ticket links', () => {
 		expect(appHref(at('/'))).toBe('/');
 	});
 
-	it('reads the switch "Erledigte anzeigen" from the query', () => {
-		expect(showDoneFrom(at('/?erledigte=1'))).toBe(true);
-		expect(showDoneFrom(at('/'))).toBe(false);
-		expect(showDoneFrom(at('/?erledigte=0'))).toBe(false);
-	});
-
 	it('addresses tickets by record ID and keeps the current query', () => {
-		expect(ticketHref('abc123def456ghi', at('/?erledigte=1'))).toBe(
-			'/tickets/abc123def456ghi?erledigte=1'
+		expect(ticketHref('abc123def456ghi', at('/?gruppe=prio'))).toBe(
+			'/tickets/abc123def456ghi?gruppe=prio'
 		);
 		expect(ticketHref('abc123def456ghi', at('/tickets/other'))).toBe('/tickets/abc123def456ghi');
 	});
 
 	it('addresses the full view of a ticket with the current query (ADR-0025 section 7)', () => {
-		expect(fullViewHref('abc123def456ghi', at('/tickets/abc123def456ghi?erledigte=1'))).toBe(
-			'/tickets/abc123def456ghi/voll?erledigte=1'
+		expect(fullViewHref('abc123def456ghi', at('/tickets/abc123def456ghi?gruppe=prio'))).toBe(
+			'/tickets/abc123def456ghi/voll?gruppe=prio'
 		);
 		expect(fullViewHref('abc123def456ghi', at('/'))).toBe('/tickets/abc123def456ghi/voll');
 		expect(FULL_VIEW_LINK).toBe('[data-full-view-link]');
 	});
 
 	it('opens the form "Neues Ticket" with the current query', () => {
-		expect(newTicketHref(at('/?erledigte=1'))).toBe('/tickets/neu?erledigte=1');
+		expect(newTicketHref(at('/?gruppe=prio'))).toBe('/tickets/neu?gruppe=prio');
 		expect(newTicketHref(at('/tickets/abc'))).toBe('/tickets/neu');
 	});
 
 	it('leads back to the list with the current query', () => {
-		expect(listHref(at('/tickets/abc?erledigte=1'))).toBe('/?erledigte=1');
+		expect(listHref(at('/tickets/abc?gruppe=prio'))).toBe('/?gruppe=prio');
 		expect(listHref(at('/tickets/abc'))).toBe('/');
 	});
 
-	it('sets and removes the switch and keeps other parameters', () => {
-		expect(withShowDone(at('/'), true)).toBe('/?erledigte=1');
-		expect(withShowDone(at('/?erledigte=1'), false)).toBe('/');
-		expect(withShowDone(at('/tickets/abc?x=2'), true)).toBe('/tickets/abc?x=2&erledigte=1');
-		expect(withShowDone(at('/tickets/abc?erledigte=1&x=2'), false)).toBe('/tickets/abc?x=2');
-	});
-
 	it('keeps filters, sort and grouping in every link', () => {
-		const url = at('/?status=open&sort=-prio&gruppe=projekt&erledigte=1');
+		const url = at('/?status=open&sort=-prio&gruppe=projekt');
 		expect(ticketHref('abc123def456ghi', url)).toBe(
-			'/tickets/abc123def456ghi?status=open&sort=-prio&gruppe=projekt&erledigte=1'
+			'/tickets/abc123def456ghi?status=open&sort=-prio&gruppe=projekt'
 		);
 		expect(listHref(at('/tickets/abc?faellig=heute&q=Auto'))).toBe('/?faellig=heute&q=Auto');
-		expect(withShowDone(url, false)).toBe('/?status=open&sort=-prio&gruppe=projekt');
 	});
 
 	it('writes the list state in the fixed order and drops invalid list parameters', () => {
-		expect(withShowDone(at('/?erledigte=1&status=foo&prio=high#x'), true)).toBe(
-			'/?prio=high&erledigte=1#x'
-		);
+		expect(
+			withListQuery(at('/?status=foo&prio=high#x'), {
+				...EMPTY_LIST_QUERY,
+				priority: 'high'
+			})
+		).toBe('/?prio=high#x');
 		expect(
 			withListQuery(at('/tickets/abc?x=1&status=open'), {
 				...EMPTY_LIST_QUERY,
@@ -156,6 +153,73 @@ describe('ticket links', () => {
 	});
 });
 
+describe('links of the view "Erledigte" (ER-1, ADR-0066)', () => {
+	it('addresses the view, a ticket next to it and its full view with the filters', () => {
+		expect(doneHref()).toBe('/erledigt');
+		const url = at(`/erledigt?projekt=${PROJECT}&q=Miete&charm=geburtstag&prio=high`);
+		expect(doneViewHref(url)).toBe(`/erledigt?projekt=${PROJECT}&q=Miete&charm=geburtstag`);
+		expect(doneTicketHref('abc123def456ghi', url)).toBe(
+			`/erledigt/tickets/abc123def456ghi?projekt=${PROJECT}&q=Miete&charm=geburtstag`
+		);
+		expect(doneFullViewHref('abc123def456ghi', at('/erledigt?tag=' + TAG))).toBe(
+			`/erledigt/tickets/abc123def456ghi/voll?tag=${TAG}`
+		);
+		expect(
+			withDoneQuery(at('/erledigt/tickets/abc123def456ghi?q=alt'), {
+				search: null,
+				project: PROJECT,
+				subProjects: false,
+				tag: null,
+				charm: null
+			})
+		).toBe(`/erledigt/tickets/abc123def456ghi?projekt=${PROJECT}&unterprojekte=0`);
+	});
+
+	it('links "Aufgaben" to "Erledigte" with the filters both views know', () => {
+		expect(doneOfListHref(at('/'))).toBe('/erledigt');
+		expect(
+			doneOfListHref(
+				at(
+					`/tickets/abc?karte=dringend&status=open&prio=high&projekt=${PROJECT}&unterprojekte=0&tag=${TAG}&q=Auto&sort=titel&gruppe=prio`
+				)
+			)
+		).toBe(`/erledigt?projekt=${PROJECT}&unterprojekte=0&tag=${TAG}&q=Auto`);
+	});
+
+	it('leads old addresses of "Aufgaben" that asked for done tickets to "Erledigte"', () => {
+		// The switch "Erledigte anzeigen" without a status, and the status filter "Erledigt".
+		expect(legacyDoneHref(at(`/?erledigte=1&projekt=${PROJECT}&prio=high&sort=titel`))).toBe(
+			`/erledigt?projekt=${PROJECT}`
+		);
+		expect(legacyDoneHref(at(`/?status=done&tag=${TAG}&q=Miete`))).toBe(
+			`/erledigt?tag=${TAG}&q=Miete`
+		);
+		// A ticket and its full view stay open next to "Erledigte".
+		expect(legacyDoneHref(at('/tickets/abc123def456ghi?erledigte=1&q=Auto'))).toBe(
+			'/erledigt/tickets/abc123def456ghi?q=Auto'
+		);
+		expect(legacyDoneHref(at('/tickets/abc123def456ghi/voll?status=done'))).toBe(
+			'/erledigt/tickets/abc123def456ghi/voll'
+		);
+	});
+
+	it('only drops the old parameters where they asked for nothing done', () => {
+		// The switch next to another status hid the done tickets anyway.
+		expect(legacyDoneHref(at('/?status=open&erledigte=1&gruppe=prio'))).toBe(
+			'/?status=open&gruppe=prio'
+		);
+		expect(legacyDoneHref(at('/?erledigte=0'))).toBe('/');
+		// "Neues Ticket" stays over "Aufgaben".
+		expect(legacyDoneHref(at('/tickets/neu?erledigte=1&aus=item00000000001'))).toBe(
+			'/tickets/neu?aus=item00000000001'
+		);
+		expect(legacyDoneHref(at('/tickets/neu?status=done'))).toBe('/tickets/neu');
+		// Every other address stays as it is.
+		expect(legacyDoneHref(at('/?status=open&gruppe=prio'))).toBeNull();
+		expect(legacyDoneHref(at('/tickets/abc123def456ghi'))).toBeNull();
+	});
+});
+
 describe('inbox links (E4 plan, package 3)', () => {
 	it('keeps only the chips of the inbox', () => {
 		expect(inboxHref()).toBe('/eingang');
@@ -177,8 +241,8 @@ describe('inbox links (E4 plan, package 3)', () => {
 		expect(convertFrom(at('/tickets/neu?aus=../x'))).toBeNull();
 		expect(convertFrom(at('/tickets/neu?aus=a&aus=b'))).toBeNull();
 		expect(convertFrom(at('/tickets/neu'))).toBeNull();
-		expect(withoutConvert(at('/tickets/neu?erledigte=1&aus=item00000000001')).search).toBe(
-			'?erledigte=1'
+		expect(withoutConvert(at('/tickets/neu?gruppe=prio&aus=item00000000001')).search).toBe(
+			'?gruppe=prio'
 		);
 		expect(ticketPath('tick00000000001')).toBe('/tickets/tick00000000001');
 	});

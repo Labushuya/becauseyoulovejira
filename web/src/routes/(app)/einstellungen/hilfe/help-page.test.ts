@@ -43,7 +43,7 @@ describe('help page (EH-9)', () => {
 		}
 	});
 
-	it('jumps to the sections that exist on the page, nineteen since the day plan', () => {
+	it('jumps to the sections that exist on the page, twenty since the view "Erledigte"', () => {
 		const { container } = render(Page);
 
 		const jump = within(screen.getByRole('navigation', { name: 'Auf dieser Seite' }));
@@ -54,6 +54,7 @@ describe('help page (EH-9)', () => {
 			'Wiederholungen',
 			'Kalender',
 			'Tagesplan',
+			'Erledigte',
 			'Kanäle und Zugangsdaten',
 			'Eigener Eingang (API)',
 			'WhatsApp Web',
@@ -195,12 +196,9 @@ describe('help page (EH-9)', () => {
 		);
 		expect(content).toMatch(/„12 Tickets aus: In Arbeit, Heute fällig,\s+Dringend“/);
 		expect(content).toMatch(/Ältere Lesezeichen mit Status,\s+Priorität oder Fälligkeit/);
-		// PL-1: pinned tickets in the summary, the cards locked by the status filter "Erledigt".
+		// PL-1: pinned tickets in the summary; ER-1: the cards only for open tickets.
 		expect(content).toMatch(/„4 \+ 1 angeheftet aus: Dringend“/);
-		expect(content).toMatch(/„Karten gelten für offene Tickets“/);
-		expect(content).toMatch(
-			/Auswahl bleibt und gilt wieder, sobald du den Statusfilter zurücknimmst/
-		);
+		expect(content).toMatch(/Die Karten gelten nur für offene Tickets; erledigte\s+stehen unter/);
 	});
 
 	it('explains pinning: the toggle, the section above every filter, personal pins, releasing (ADR-0064)', () => {
@@ -443,6 +441,24 @@ describe('help page (EH-9)', () => {
 		expect(content).toMatch(/Vergangene Tage sind nur zu lesen, morgen kannst du schon planen/);
 		expect(content).toMatch(/einen gemeinsamen für alle Mitglieder/);
 		expect(content).toMatch(/seinen Inhalt zeigt der Plan nicht/);
+	});
+
+	it('explains the view "Erledigte": groups, loading more, filters and reopening (ADR-0066)', () => {
+		const { container } = render(Page);
+		const section = container.querySelector<HTMLElement>('section#erledigte')!;
+		expect(section.getAttribute('aria-labelledby')).toBe('erledigte-title');
+		expect(helpHref('erledigte')).toBe('/einstellungen/hilfe#erledigte');
+		expect(within(section).getByRole('link', { name: 'Erledigte' }).getAttribute('href')).toBe(
+			'/erledigt'
+		);
+		const content = text(section);
+		expect(content).toMatch(/„Aufgaben“ zeigt nur offene Arbeit/);
+		expect(content).toMatch(/Heute, Gestern, Diese Woche \(ab Montag\), Diesen Monat/);
+		expect(content).toMatch(/„Erledigte ansehen →“ in „Aufgaben“/);
+		expect(content).toMatch(/Projekt, Tag und Charm/);
+		expect(content).toMatch(/„Mehr laden“/);
+		expect(content).toMatch(/„Wieder öffnen“/);
+		expect(content).toMatch(/„Rückgängig“ in der Meldung erledigt es\s+erneut/);
 	});
 
 	it('explains moving a due date: mouse, menu or "m", undo, series and touch (ADR-0053 §12)', () => {

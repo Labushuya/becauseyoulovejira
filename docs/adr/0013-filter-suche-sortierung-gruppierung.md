@@ -1,6 +1,6 @@
 # ADR-0013: Filter, Suche, Sortierung und Gruppierung: was der Client und was der Server rechnet
 
-- **Status:** Angenommen
+- **Status:** Angenommen; §3 seit Nachtrag E (ER-1) für die Ansicht „Erledigte“ ([ADR-0066](0066-ansicht-erledigte.md))
 - **Datum:** 2026-09-25
 - **Entscheidung durch:** Advisor
 - **Ergänzt:** [ADR-0006](0006-frontend-zustand-und-datenzugriff.md) (dort §2 „Server-Sortierung wird in E3 je Variante neu bewertet“)
@@ -149,3 +149,14 @@ Produktentscheidung zu PL-1. Der Text oben bleibt; dieser Nachtrag ändert Nacht
    - bleibt die gewählte Kartenwahl in der Adresse (`karte=…`) und als gedrückte, gesperrte Karte sichtbar; sobald der Statusfilter zurückgenommen ist, wirkt sie wieder, auch für „Erledigte anzeigen“.
 3. **Warum gedrückt und gesperrt statt abgewählt:** Die Karten zeigen so, was nach dem Statusfilter wieder gilt, ohne die Adresse zu ändern; der Hinweis erklärt, warum sie gerade nicht wirken. Würde der Statusfilter die Wahl löschen, ginge sie mit Zurück und Lesezeichen verloren.
 4. **Tests:** `domain/filter-cards.test.ts` (`cardsLocked`, `appliedCards`, `matchesFilter` mit allen 16 Kartenwahlen beim Statusfilter „Erledigt“, Zusammenfassung mit angehefteten), `components/filter-cards.test.ts` (gesperrt, Hinweis, Tooltip, „Alle offenen“ nicht gedrückt, Wahl bleibt), `components/filter-summary.test.ts`, `components/ticket-table-pins.test.ts` (echter Store mit Pins: „4 + 1 angeheftet aus: Dringend“ bei „Dringend: 5“, keine Zusammenfassung beim Statusfilter „Erledigt“), `stores/ticket-list.test.ts` (Abschnitt „Erledigt“ ohne Karten beim Statusfilter, mit ihnen danach) und `tests/integration/web-filter-parity.test.mjs` (der Server wendet beim Statusfilter „Erledigt“ keine Karte an).
+
+## Nachtrag E (2026-10-05, Paket ER-1): Erledigte Tickets in einer eigenen Ansicht
+
+Nutzerentscheidung vom 2026-10-05, ausgeführt in [ADR-0066](0066-ansicht-erledigte.md). Der Text oben bleibt als Geschichte; dieser Nachtrag ersetzt §3 und die Teile von §4 und den Nachträgen C und D, die erledigte Tickets in „Aufgaben“ betreffen.
+
+1. **„Aufgaben“ zeigt nur offene Arbeit.** Der Abschnitt „Erledigt“ und der Schalter „Erledigte anzeigen“ entfallen; der Parameter `erledigte` gehört nicht mehr zur `ListQuery`. An seiner Stelle führt der Link „Erledigte ansehen →“ in die Ansicht `/erledigt` und nimmt `projekt`, `unterprojekte`, `tag` und `q` mit.
+2. **Statusfilter:** „Erledigt“ ist kein Wert des Statusfilters von „Aufgaben“ mehr. Der Kalender (ADR-0053) behält ihn, deshalb bleibt `done` ein gültiger Wert der `ListQuery`, die die Filterleiste nur im Kalender anbietet.
+3. **Alte Adressen:** Mit `status=done` oder mit `erledigte=1` ohne Status verlangte eine Adresse erledigte Tickets; sie führt seit ER-1 an dieselbe Stelle unter `/erledigt`, mit den Filtern, die beide Ansichten kennen. `erledigte` neben einem anderen Status zeigte nichts Erledigtes und wird nur entfernt. Lesezeichen, Verlauf und die gemerkte letzte Ansicht bleiben so gültig; eine Migration gespeicherter Daten gibt es nicht.
+4. **§3 „Erledigte Tickets: Filter auf dem Server“** gilt jetzt für die Ansicht „Erledigte“ mit eigenem Filter (Suche, Projekt mit Unterprojekten, Tag, Charm): `COMPLETED_FILTER` in `data/tickets.ts`, Gegenstück `matchesDoneQuery` in `domain/done-view.ts`, Paritätstest `tests/integration/web-filter-parity.test.mjs`. Die feste Reihenfolge „zuletzt erledigte zuerst“ bleibt; statt Sortierung per Spaltenkopf gliedert die Ansicht nach dem Tag des Abschlusses. `listDoneTickets`, `DONE_FILTER`, `DONE_SOURCE_FILTER` und `DONE_CARDS_FILTER` entfallen.
+5. **Nachtrag C §5 und §10:** Die Filter-Karten gelten nur noch für offene Tickets; eine Karte für erledigte Tickets gibt es weiter nicht, denn diese haben ihre eigene Ansicht.
+6. **Nachtrag D §2 bis §4 (gesperrte Karten):** Gegenstandslos, weil „Aufgaben“ den Statusfilter „Erledigt“ nicht mehr kennt und eine solche Adresse nach `/erledigt` führt. `cardsLocked`, `appliedCards`, `CARDS_LOCKED_HINT` und die Sperre in `FilterCards` entfallen samt ihren Tests; die Karten wirken immer mit der gewählten Kartenwahl. Nachtrag D §1 (angeheftete Tickets in der Zusammenfassung) gilt weiter.

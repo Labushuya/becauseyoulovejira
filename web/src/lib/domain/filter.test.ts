@@ -199,12 +199,11 @@ describe('matchesFilter', () => {
 		}
 	});
 
-	it('ignores search, sort, grouping and the switch', () => {
+	it('ignores search, sort and grouping', () => {
 		const view = query({
 			search: 'nichts davon',
 			sort: { key: 'title', reversed: true },
-			grouping: 'status',
-			showDone: true
+			grouping: 'status'
 		});
 		expect(matchesFilter(ticket(), view, TODAY)).toBe(true);
 	});

@@ -1,23 +1,18 @@
 // Filter cards of "Aufgaben" (FI-1, ADR-0013 addendum C): the union of the chosen cards without
 // duplicates, "Alle offenen", toggling without resetting each other, the URL values, the numbers
-// per card and the summary above the list; since PL-1 the matching pinned tickets in the summary and
-// the cards locked by the status filter "Erledigt".
+// per card and the summary above the list; since PL-1 the matching pinned tickets in the summary.
 
 import { describe, expect, it } from 'vitest';
 import { addDays } from './berlin-date';
 import { dueBucket, matchesFilter, type FilterableTicket } from './filter';
 import {
 	ALL_OPEN_LABEL,
-	CARDS_LOCKED_HINT,
 	CARD_LABELS,
 	FILTER_CARDS,
-	appliedCards,
 	cardSummary,
 	cardsFromUrl,
 	cardsLabel,
-	cardsLocked,
 	cardsToUrl,
-	cardsUseToday,
 	chooseAllOpen,
 	countCards,
 	isAllOpen,
@@ -210,38 +205,6 @@ describe('matchesCards: the union of the chosen cards', () => {
 	});
 });
 
-describe('locked cards: the status filter "Erledigt" (PL-1)', () => {
-	it('locks the cards only with the status filter "Erledigt"', () => {
-		expect(cardsLocked({ status: 'done' })).toBe(true);
-		for (const status of [null, ...STATUSES.filter((value) => value !== 'done')]) {
-			expect(cardsLocked({ status })).toBe(false);
-		}
-		expect(CARDS_LOCKED_HINT).toBe('Karten gelten für offene Tickets');
-	});
-
-	it('applies no card while locked and the chosen ones again without the status filter', () => {
-		const cards: FilterCard[] = ['in_progress', 'urgent'];
-		expect(appliedCards({ status: 'done', cards })).toEqual([]);
-		expect(appliedCards({ status: null, cards })).toEqual(cards);
-		expect(appliedCards({ status: 'waiting', cards })).toEqual(cards);
-	});
-
-	it('lets the done tickets pass whatever cards are chosen, and narrows them again without it', () => {
-		const urgentDone = ticket({ status: 'done', priority: 'urgent' });
-		const quietDone = ticket({ status: 'done', due: addDays(TODAY, -2) });
-		const done = [urgentDone, quietDone];
-		const shown = (overrides: Partial<ListQuery>) =>
-			done.filter((entry) => matchesFilter(entry, { ...EMPTY_LIST_QUERY, ...overrides }, TODAY));
-
-		for (const cards of allSelections()) {
-			expect(shown({ status: 'done', cards })).toEqual(done);
-		}
-		// "Erledigte anzeigen" without a status filter: the cards narrow the done section again.
-		expect(shown({ cards: ['urgent'] })).toEqual([urgentDone]);
-		expect(shown({ cards: ['overdue'] })).toEqual([]);
-	});
-});
-
 describe('choosing cards', () => {
 	it('adds a card to the chosen ones and takes it out again, the others stay', () => {
 		expect(toggleCard([], 'urgent')).toEqual(['urgent']);
@@ -280,12 +243,6 @@ describe('choosing cards', () => {
 		expect(sameCards(['urgent', 'overdue'], ['overdue', 'urgent'])).toBe(true);
 		expect(sameCards(['urgent'], ['urgent', 'overdue'])).toBe(false);
 		expect(sameCards([], [])).toBe(true);
-	});
-
-	it('knows which cards compare with today', () => {
-		expect(cardsUseToday(['in_progress', 'urgent'])).toBe(false);
-		expect(cardsUseToday(['due_today'])).toBe(true);
-		expect(cardsUseToday(['overdue', 'urgent'])).toBe(true);
 	});
 });
 
@@ -378,12 +335,9 @@ describe('summary above the list', () => {
 		expect(cardSummary([], { count: 3 })).toBe('3 Tickets aus: Alle offenen');
 	});
 
-	it('says when filters narrow the cards and when more tickets match', () => {
+	it('says when filters narrow the cards', () => {
 		expect(cardSummary(['due_today', 'overdue'], { count: 4, filtered: true })).toBe(
 			'4 Tickets aus: Heute fällig, Überfällig – weitere Filter aktiv'
-		);
-		expect(cardSummary(['urgent'], { count: 50, more: true })).toBe(
-			'Mehr als 50 Tickets aus: Dringend'
 		);
 	});
 
