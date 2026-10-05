@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { RECURRENCE_TABLE, withKeyDefaults } from '$lib/domain/columns';
 	import {
 		openInstancesOf,
 		ruleDeleteText,
@@ -25,6 +26,7 @@
 	import ConfirmDialog from './overlay/ConfirmDialog.svelte';
 	import RecurrenceTable from './RecurrenceTable.svelte';
 	import SectionBar from './SectionBar.svelte';
+	import { remPx } from './table/chip-measure';
 	import { ColumnFit } from './table/column-fit.svelte';
 	import ViewSwitch from './ViewSwitch.svelte';
 	import { ticketLinks } from '$lib/stores/open-mode.svelte';
@@ -83,8 +85,21 @@
 	let root = $state<HTMLElement>();
 	let heading = $state<HTMLElement>();
 
-	// Columns of the table (ADR-0030), shared by the table and the menu "Spalten".
-	const columnFit = new ColumnFit(getColumnPrefs('recurrences'));
+	// Columns of the table (ADR-0030), shared by the table and the menu "Spalten". "Offene Tickets"
+	// takes the longest open key as its default (KN-1, ADR-0030 Nachtrag 7).
+	const rem = remPx();
+	const columnFit = new ColumnFit(getColumnPrefs('recurrences'), () =>
+		withKeyDefaults(
+			RECURRENCE_TABLE.columns,
+			[
+				{
+					id: 'open',
+					keys: rules.flatMap((rule) => (openTicketsOf(rule) ?? []).map((ticket) => ticket.key))
+				}
+			],
+			rem
+		)
+	);
 	let busyId = $state<string | null>(null);
 
 	/** "Pausieren" or "Fortsetzen" of a row; the store shows the success flag. */

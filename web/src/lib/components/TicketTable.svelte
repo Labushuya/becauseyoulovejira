@@ -4,7 +4,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { projectColorOf, type ShownColor } from '$lib/domain/colors';
-	import { NEST_SUBTASKS, TICKET_TABLE } from '$lib/domain/columns';
+	import { NEST_SUBTASKS, TICKET_TABLE, withKeyDefaults } from '$lib/domain/columns';
 	import { arrangeRows } from '$lib/domain/subtasks';
 	import {
 		GROUPING_LABELS,
@@ -224,9 +224,33 @@
 	let root = $state<HTMLElement>();
 	let heading = $state<HTMLElement>();
 
+	/** Pixels of 1rem on this page, for the widths measured in the rows. */
+	const rem = remPx();
+	/** The tickets the table shows: pinned, open and, when switched on, the done ones. */
+	const shownTickets = $derived([
+		...store.pinned,
+		...store.visible,
+		...(showDone ? store.done : [])
+	]);
+
 	// Columns (ADR-0030): the preferences of this device and the measured frame decide which
-	// columns are shown and how wide they are.
-	const columnFit = new ColumnFit(getColumnPrefs('tickets'));
+	// columns are shown and how wide they are. Key and "Übergeordnet" take the longest key of the
+	// shown tickets as their default, Key with room for the dot "neu" (KN-1, Nachtrag 7).
+	const columnFit = new ColumnFit(getColumnPrefs('tickets'), () =>
+		withKeyDefaults(
+			TICKET_TABLE.columns,
+			[
+				{ id: 'key', keys: shownTickets.map((ticket) => ticket.key), dot: true },
+				{
+					id: 'parent',
+					keys: shownTickets.flatMap(
+						(ticket) => parentOf(ticket, (id) => store.find(id))?.key ?? []
+					)
+				}
+			],
+			rem
+		)
+	);
 	const fit = $derived(columnFit.fit);
 	const shown = $derived(columnFit.shown);
 	// Sub-tasks directly below their parent (ADR-0033 section 5), a switch of the menu "Spalten".
@@ -241,12 +265,11 @@
 
 	// Compact tags (SP-4): one measure with its cache for all rows, and the room for the chips.
 	const measureChip = createChipMeasure();
-	const rem = remPx();
 	const tagsSpace = $derived(columnFit.widthOf('tags') - CELL_PADDING_REM * rem);
 
 	/** All chips of the widest row side by side, plus the padding of the cell. */
 	function tagsNaturalWidth(): number {
-		const tickets = [...store.pinned, ...store.visible, ...(showDone ? store.done : [])];
+		const tickets = shownTickets;
 		const gap = CHIP_GAP_REM * rem;
 		const widest = Math.max(
 			0,
@@ -545,6 +568,8 @@
 			isNew={store.isNew(ticket)}
 			recurrenceText={ticket.recurring ? recurrenceTextOf(ticket) : ''}
 			columns={shown}
+			columnWidths={fit.widths}
+			{rem}
 			{tagsSpace}
 			measure={measureChip}
 			selected={selection.ids.includes(ticket.id)}

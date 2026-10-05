@@ -173,6 +173,8 @@ describe('RecurrenceTable', () => {
 		).toBe(false);
 		const key = screen.getByRole('link', { name: 'TASK-7' });
 		expect(key.getAttribute('href')).toBe('/tickets/ticket000000001');
+		// Key and title on hover: a long key a narrow column cuts off stays readable (KN-1).
+		expect(key.getAttribute('title')).toBe('TASK-7 · Müll rausbringen');
 	});
 
 	it('says "wird geladen" while the open tickets are unknown', () => {

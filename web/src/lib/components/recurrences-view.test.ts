@@ -96,7 +96,8 @@ function fakeData(rules: RecurrenceRule[] | null, overrides: Partial<RecurrenceD
 async function show(
 	rules: RecurrenceRule[] | null = RULES,
 	props: Partial<{ activeId: string | null; creating: boolean }> = {},
-	data: Partial<RecurrenceData> = {}
+	data: Partial<RecurrenceData> = {},
+	open: TicketSummary[] = [instance('rule00000000001')]
 ) {
 	const session = { ensureValid: () => true, logout: vi.fn() };
 	const flags = new FlagStore();
@@ -105,7 +106,7 @@ async function show(
 	await store.load();
 	const tickets = new TicketListStore(
 		{
-			listOpen: async () => [instance('rule00000000001')],
+			listOpen: async () => open,
 			listDone: async (page: number) => ({ items: [], page, hasMore: false }),
 			searchOpen: vi.fn(async (): Promise<string[]> => []),
 			setDone: vi.fn(),
@@ -160,6 +161,30 @@ describe('RecurrencesView', () => {
 		expect(titles()).toEqual(['Müll rausbringen', 'Blumen', 'Steuer']);
 		expect(screen.getByRole('link', { name: 'TASK-7' }).getAttribute('href')).toBe(
 			'/tickets/ticket000000001'
+		);
+	});
+
+	it('fits "Offene Tickets" to the longest open key; the menu "Spalten" steps from there (KN-1)', async () => {
+		const col = () => document.querySelector('col[data-column="open"]') as HTMLElement;
+		const wider = () =>
+			screen.getByRole('button', { name: 'Spalte Offene Tickets breiter', hidden: true });
+		try {
+			await show(RULES, {}, {}, [{ ...instance('rule00000000001'), key: 'ABCDEF-1000000' }]);
+			// "ABCDEF-1000000" needs 136 px instead of the default of 7rem; the menu names that width.
+			expect(col().style.width).toBe('136px');
+			expect(wider().parentElement?.querySelector('.width')?.textContent).toBe('8,5 rem');
+			await fireEvent.click(wider());
+			await tick();
+			expect(col().style.width).toBe('152px');
+		} finally {
+			localStorage.removeItem('byl-columns-recurrences');
+		}
+	});
+
+	it('keeps 7rem for "Offene Tickets" with short keys', async () => {
+		await show();
+		expect((document.querySelector('col[data-column="open"]') as HTMLElement).style.width).toBe(
+			'112px'
 		);
 	});
 

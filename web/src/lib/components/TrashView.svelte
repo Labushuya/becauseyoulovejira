@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import type { ResolvedPathname } from '$app/types';
+	import { TRASH_TABLE, withKeyDefaults } from '$lib/domain/columns';
 	import { EMPTY_SELECTION, keepShown, type Selection } from '$lib/domain/selection';
 	import type { ProjectRef } from '$lib/domain/ticket';
 	import {
@@ -21,6 +22,7 @@
 	import ConfirmDialog from './overlay/ConfirmDialog.svelte';
 	import SectionBar from './SectionBar.svelte';
 	import SelectionBar from './SelectionBar.svelte';
+	import { remPx } from './table/chip-measure';
 	import { ColumnFit } from './table/column-fit.svelte';
 	import TrashTable from './TrashTable.svelte';
 	import ViewSwitch from './ViewSwitch.svelte';
@@ -70,7 +72,6 @@
 
 	const uid = $props.id();
 	const headingId = `${uid}-heading`;
-	const columnFit = new ColumnFit(getColumnPrefs('trash'));
 
 	let heading = $state<HTMLElement>();
 	let selection = $state<Selection>(EMPTY_SELECTION);
@@ -84,6 +85,12 @@
 	const blockedCount = $derived(store.blockedCount);
 	const items = $derived(
 		onlyBlocked ? store.items.filter((item) => item.dependencies > 0) : store.items
+	);
+	// Columns of the table (ADR-0030), shared with the menu "Spalten"; the key takes the longest
+	// key of the shown tickets as its default (KN-1, Nachtrag 7).
+	const rem = remPx();
+	const columnFit = new ColumnFit(getColumnPrefs('trash'), () =>
+		withKeyDefaults(TRASH_TABLE.columns, [{ id: 'key', keys: items.map((item) => item.key) }], rem)
 	);
 	const order = $derived(items.map((item) => item.id));
 	const chosen = $derived(selection.ids.filter((id) => order.includes(id)));

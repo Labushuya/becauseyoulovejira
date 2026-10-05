@@ -59,10 +59,13 @@ function fakeData(open: TicketSummary[]): TicketListData {
 /** Three tags on the second ticket (expanded, as the list loads them). */
 const TAGS = ['Haus', 'Garten', 'Bank'].map((name, index) => ({ id: `tag${index}`, name }));
 
-async function showTable(path = '/', context?: Map<unknown, unknown>) {
+async function showTable(
+	path = '/',
+	context?: Map<unknown, unknown>,
+	open: TicketSummary[] = [ticket(1), ticket(2, { tagIds: TAGS.map((tag) => tag.id), tags: TAGS })]
+) {
 	mocks.page.url = new URL(path, 'http://localhost:3000');
-	const tagged = ticket(2, { tagIds: TAGS.map((tag) => tag.id), tags: TAGS });
-	const store = new TicketListStore(fakeData([ticket(1), tagged]), SESSION, {});
+	const store = new TicketListStore(fakeData(open), SESSION, {});
 	const catalog = new CatalogStore(
 		{ listProjects: vi.fn(async () => []), listTags: vi.fn(async () => []), createTag: vi.fn() },
 		SESSION
@@ -211,8 +214,8 @@ describe('columns of the ticket table (ADR-0030)', () => {
 		await vi.advanceTimersByTimeAsync(0);
 		await fireEvent.pointerDown(grip('key'), { button: 0, pointerId: 2, clientX: 0 });
 		await fireEvent.pointerMove(grip('key'), { pointerId: 2, clientX: 900 });
-		// Key: at most 8rem.
-		expect(colWidth('key')).toBe('128px');
+		// Key: at most 12rem (8rem before KN-1).
+		expect(colWidth('key')).toBe('192px');
 		await fireEvent.pointerMove(grip('key'), { pointerId: 2, clientX: -900 });
 		expect(colWidth('key')).toBe('64px');
 	});
@@ -499,6 +502,57 @@ describe('columns of the ticket table (ADR-0030)', () => {
 		await vi.advanceTimersByTimeAsync(0);
 
 		expect(colWidth('due')).toBe('150px');
+	});
+});
+
+describe('ticket table: long keys (KN-1, ADR-0030 Nachtrag 7)', () => {
+	const LONG = [
+		ticket(1, { key: 'TASK-9' }),
+		ticket(2, { key: 'ABCDEF-1000000' }),
+		ticket(3, { key: 'TASK-10' })
+	];
+
+	/** The key cell of the ticket with this index. */
+	function keyCell(index: number): HTMLElement {
+		const id = `t${String(index).padStart(14, '0')}`;
+		return table().querySelector(`tr[data-ticket-id="${id}"] td[data-col="key"]`) as HTMLElement;
+	}
+
+	it('fits the default width of "Key" to the longest key of the list, with room for the dot', async () => {
+		await showTable('/', undefined, LONG);
+
+		// "ABCDEF-1000000" with the dot "neu": 150 px instead of 6rem; nothing is cut off.
+		expect(colWidth('key')).toBe('150px');
+		expect(keyCell(2).textContent?.trim()).toBe('ABCDEF-1000000');
+		expect(keyCell(2).hasAttribute('title')).toBe(false);
+		expect(stored()).toBeNull();
+	});
+
+	it('lets a width of the user win and names a key it cuts off; the default comes back', async () => {
+		const registry = new ColumnPrefsRegistry(window);
+		await showTable('/', new Map([[COLUMN_PREFS_CONTEXT, registry]]), LONG);
+
+		registry.get('tickets').setWidths({ key: 80 });
+		await vi.advanceTimersByTimeAsync(0);
+		expect(colWidth('key')).toBe('80px');
+		expect(keyCell(2).getAttribute('title')).toBe('ABCDEF-1000000');
+
+		// "Standard wiederherstellen": the default from the keys again.
+		registry.get('tickets').reset();
+		await vi.advanceTimersByTimeAsync(0);
+		expect(colWidth('key')).toBe('150px');
+		expect(keyCell(2).hasAttribute('title')).toBe(false);
+	});
+
+	it('drags the key up to 12rem', async () => {
+		await showTable('/', undefined, LONG);
+		resize(frame(), 2000);
+		await vi.advanceTimersByTimeAsync(0);
+		await fireEvent.pointerDown(grip('key'), { button: 0, pointerId: 1, clientX: 0 });
+		await fireEvent.pointerMove(grip('key'), { pointerId: 1, clientX: 900 });
+		expect(colWidth('key')).toBe('192px');
+		await fireEvent.pointerUp(grip('key'), { pointerId: 1, clientX: 900 });
+		expect(stored()).toMatchObject({ widths: { key: 192 } });
 	});
 });
 

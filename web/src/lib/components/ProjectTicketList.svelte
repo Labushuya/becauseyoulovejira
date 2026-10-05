@@ -109,6 +109,13 @@
 		return tickets.filter((ticket) => !ids.has(ticket.id));
 	});
 	const slice = $derived(sliceProjectTickets(others, limit));
+	/**
+	 * Length of the longest shown key: its place is that many `ch` of the mono font wide (at least
+	 * the former 5.5rem), so keys of every length line up and are never cut off (KN-1).
+	 */
+	const keyChars = $derived(
+		Math.max(0, ...[...pinned, ...slice.shown].map((ticket) => ticket.key.length))
+	);
 	const label = $derived(projectTicketsLabel(project.name, ownOnly));
 	const allHref = $derived(projectTicketsHref(project.id, !ownOnly));
 
@@ -236,14 +243,19 @@
 	{#if pinned.length > 0}
 		<!-- The pins of the project (ADR-0064); the list names itself, the label is for the eye. -->
 		<p class="pinned-label" aria-hidden="true"><PinIcon />{PINNED_SECTION}</p>
-		<ul class="tickets pinned" aria-label={projectPinsLabel(project.name)} bind:this={pinnedList}>
+		<ul
+			class="tickets pinned"
+			aria-label={projectPinsLabel(project.name)}
+			style:--key-chars={keyChars}
+			bind:this={pinnedList}
+		>
 			{#each pinned as ticket (ticket.id)}
 				{@render entry(ticket)}
 			{/each}
 		</ul>
 	{/if}
 	{#if slice.shown.length > 0}
-		<ul class="tickets" aria-label={label} bind:this={list}>
+		<ul class="tickets" aria-label={label} style:--key-chars={keyChars} bind:this={list}>
 			{#each slice.shown as ticket (ticket.id)}
 				{@render entry(ticket)}
 			{/each}
@@ -296,14 +308,16 @@
 		text-decoration: underline;
 	}
 
+	/*
+	 * As wide as the longest shown key in `ch` of the mono font (--key-chars), at least 5.5rem: the
+	 * keys line up like a column and grow with their number instead of being cut off (KN-1).
+	 */
 	.key {
 		flex: none;
-		width: 5.5rem;
-		overflow: hidden;
+		min-width: max(5.5rem, calc(var(--key-chars, 0) * 1ch));
 		font-family: var(--font-mono);
 		font-size: var(--font-size-control);
 		white-space: nowrap;
-		text-overflow: ellipsis;
 		color: var(--color-text-muted);
 	}
 
