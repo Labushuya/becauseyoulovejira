@@ -10,6 +10,10 @@ var STATUSES = Object.freeze(['backlog', 'open', 'in_progress', 'waiting']);
 // source of the duplicate ("Kopie der Herkunft übernehmen").
 var SOURCE_CHOICES = Object.freeze(['none', 'copy']);
 
+// The area a duplicate goes to (ADR-0045, addendum MV-2): '' for the area of the original, else the
+// household of the account or its private area.
+var AREAS = Object.freeze(['household', 'private']);
+
 // Longest title of a ticket (tickets.title, migration 1790200500).
 var TITLE_MAX = 200;
 
@@ -26,7 +30,13 @@ var MESSAGES = Object.freeze({
   validation_duplicate_source: 'Diese Wahl der Quelle gibt es nicht.',
   validation_duplicate_source_missing: 'Das Original hat keine Hauptquelle, die sich kopieren ließe.',
   validation_duplicate_source_file:
-    'Die Originaldatei der Hauptquelle fehlt; die Herkunft lässt sich so nicht vollständig kopieren.'
+    'Die Originaldatei der Hauptquelle fehlt; die Herkunft lässt sich so nicht vollständig kopieren.',
+  validation_duplicate_area: 'Diesen Zielbereich gibt es nicht.',
+  validation_duplicate_no_household: 'Du bist in keinem Haushalt.',
+  validation_duplicate_area_right: 'In den Haushalt duplizieren lassen sich nur eigene private Tickets.',
+  validation_duplicate_source_area:
+    'In einen anderen Bereich kommen keine Quellen mit: Einträge des Eingangs bleiben beim Original, und Ticket-Quellen verweisen nie über die Grenze eines Bereichs.',
+  validation_duplicate_project_area: 'Dieses Projekt gibt es im Zielbereich nicht, oder es ist archiviert.'
 });
 
 function text(value) {
@@ -51,6 +61,7 @@ function trim(value) {
  *   source       'none' (also when missing) or 'copy'
  *   description, priority, tags, due, parent, subtasks, comments: what to take over (flags)
  *   color        the own color of the ticket (flag, ADR-0052; a client of before sends none)
+ *   to           '' (also when missing) for the area of the original, or one of AREAS (MV-2)
  */
 function parseRequest(body) {
   var input = body && typeof body === 'object' ? body : {};
@@ -69,12 +80,17 @@ function parseRequest(body) {
   if (SOURCE_CHOICES.indexOf(source) === -1) {
     return { field: 'source', code: 'validation_duplicate_source' };
   }
+  var to = text(input.to);
+  if (to !== '' && AREAS.indexOf(to) === -1) {
+    return { field: 'to', code: 'validation_duplicate_area' };
+  }
   return {
     options: {
       title: title,
       status: status,
       project: text(input.project),
       source: source,
+      to: to,
       description: isTrueFlag(input.description),
       priority: isTrueFlag(input.priority),
       tags: isTrueFlag(input.tags),
@@ -103,9 +119,43 @@ function takenValues(ticket, options) {
   };
 }
 
-/** Value of the history entry "duplicate": direction 'from' (the duplicate) or 'to' (the original). */
-function historyValue(direction, ticketId, key) {
+/**
+ * Value of the history entry "duplicate": direction 'from' (the duplicate) or 'to' (the original).
+ * Across the border of an area (MV-2) `area` names the area of the other ticket ('household' or
+ * 'private'), and the entry keeps only its key, no ID: no reference crosses the border (ADR-0059 §4).
+ */
+function historyValue(direction, ticketId, key, area) {
+  if (area === 'household' || area === 'private') {
+    return JSON.stringify({ direction: direction, ticket: '', key: text(key), area: area });
+  }
   return JSON.stringify({ direction: direction, ticket: text(ticketId), key: text(key) });
+}
+
+/**
+ * Whether a duplicate goes into another area than its original (MV-2): `to` '' keeps the area,
+ * 'household' leaves the private area, 'private' leaves the household. `household` is the household
+ * of the original ('' for a private one).
+ */
+function crossesArea(household, to) {
+  if (to === 'household') {
+    return text(household) === '';
+  }
+  if (to === 'private') {
+    return text(household) !== '';
+  }
+  return false;
+}
+
+/**
+ * The right to duplicate into another area (ADR-0045, addendum MV-2), '' or the code: into the
+ * household only an own private ticket (`original` { owner, household }); into the private area every
+ * member who sees the ticket of the household (the route checks the view rule and the membership).
+ */
+function areaViolation(to, original, actor) {
+  if (to === 'household' && !(text(original.household) === '' && text(original.owner) === text(actor))) {
+    return 'validation_duplicate_area_right';
+  }
+  return '';
 }
 
 /**
@@ -149,6 +199,7 @@ function copyMeta(meta, from) {
 module.exports = {
   STATUSES: STATUSES,
   SOURCE_CHOICES: SOURCE_CHOICES,
+  AREAS: AREAS,
   TITLE_MAX: TITLE_MAX,
   COMMENT_MAX: COMMENT_MAX,
   HISTORY_FIELD: HISTORY_FIELD,
@@ -156,6 +207,8 @@ module.exports = {
   parseRequest: parseRequest,
   takenValues: takenValues,
   historyValue: historyValue,
+  crossesArea: crossesArea,
+  areaViolation: areaViolation,
   copiedCommentBody: copiedCommentBody,
   copyMeta: copyMeta
 };

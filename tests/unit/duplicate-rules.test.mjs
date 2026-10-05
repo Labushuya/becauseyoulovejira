@@ -1,5 +1,6 @@
 // Pure rules of "Ticket duplizieren" (ADR-0045): the request of the route, the fields taken over,
-// the history value, the note of copied comments and the details of a copied source.
+// the history value, the note of copied comments and the details of a copied source; since MV-2 the
+// area of the duplicate and the right to duplicate into the other area.
 
 import { describe, expect, it } from 'vitest';
 import { loadHookLib } from '../support/hook-lib.mjs';
@@ -21,13 +22,15 @@ describe('parseRequest', () => {
 			parent: true,
 			subtasks: true,
 			comments: true,
-			color: true
+			color: true,
+			to: 'household'
 		});
 		expect(options).toEqual({
 			title: 'Kopie',
 			status: 'open',
 			project: 'p1',
 			source: 'copy',
+			to: 'household',
 			description: true,
 			priority: true,
 			tags: false,
@@ -44,12 +47,21 @@ describe('parseRequest', () => {
 		expect(options).toMatchObject({
 			project: '',
 			source: 'none',
+			to: '',
 			description: false,
 			subtasks: false,
 			comments: false,
 			color: false
 		});
 		expect(rules.parseRequest({ ...valid, source: null }).options.source).toBe('none');
+	});
+
+	it('reads the area of the duplicate: none for that of the original, else household or private (MV-2)', () => {
+		expect(rules.parseRequest({ ...valid, to: null }).options.to).toBe('');
+		expect(rules.parseRequest({ ...valid, to: 'private' }).options.to).toBe('private');
+		for (const to of ['haushalt', 'h:abc', 3]) {
+			expect(rules.parseRequest({ ...valid, to })).toEqual({ field: 'to', code: 'validation_duplicate_area' });
+		}
 	});
 
 	it('requires a title of 1 to 200 characters', () => {
@@ -91,10 +103,33 @@ describe('parseRequest', () => {
 			'validation_duplicate_status',
 			'validation_duplicate_source',
 			'validation_duplicate_source_missing',
-			'validation_duplicate_source_file'
+			'validation_duplicate_source_file',
+			'validation_duplicate_area',
+			'validation_duplicate_no_household',
+			'validation_duplicate_area_right',
+			'validation_duplicate_source_area',
+			'validation_duplicate_project_area'
 		]) {
 			expect(rules.MESSAGES[code], code).toMatch(/\S/);
 		}
+	});
+});
+
+describe('the area of a duplicate (ADR-0045, addendum MV-2)', () => {
+	it('crosses the border only into the other area', () => {
+		expect(rules.crossesArea('', '')).toBe(false);
+		expect(rules.crossesArea('h1', '')).toBe(false);
+		expect(rules.crossesArea('', 'household')).toBe(true);
+		expect(rules.crossesArea('h1', 'household')).toBe(false);
+		expect(rules.crossesArea('h1', 'private')).toBe(true);
+		expect(rules.crossesArea('', 'private')).toBe(false);
+	});
+
+	it('duplicates into the household only an own private ticket, into the private area any of the household', () => {
+		expect(rules.areaViolation('household', { owner: 'u1', household: '' }, 'u1')).toBe('');
+		expect(rules.areaViolation('household', { owner: 'u2', household: '' }, 'u1')).toBe('validation_duplicate_area_right');
+		expect(rules.areaViolation('household', { owner: 'u1', household: 'h1' }, 'u1')).toBe('validation_duplicate_area_right');
+		expect(rules.areaViolation('private', { owner: 'u2', household: 'h1' }, 'u1')).toBe('');
 	});
 });
 
@@ -140,6 +175,22 @@ describe('history value', () => {
 		expect(JSON.parse(rules.historyValue('from', 'a1', 'HAUS-12'))).toEqual({ direction: 'from', ticket: 'a1', key: 'HAUS-12' });
 		expect(JSON.parse(rules.historyValue('to', 'b2', 'HAUS-13'))).toEqual({ direction: 'to', ticket: 'b2', key: 'HAUS-13' });
 		expect(rules.HISTORY_FIELD).toBe('duplicate');
+	});
+
+	it('names the area of the other ticket across the border, without its ID (MV-2)', () => {
+		expect(JSON.parse(rules.historyValue('to', 'b2', 'HAUS-13', 'household'))).toEqual({
+			direction: 'to',
+			ticket: '',
+			key: 'HAUS-13',
+			area: 'household'
+		});
+		expect(JSON.parse(rules.historyValue('from', 'a1', 'PRIV-4', 'private'))).toEqual({
+			direction: 'from',
+			ticket: '',
+			key: 'PRIV-4',
+			area: 'private'
+		});
+		expect(JSON.parse(rules.historyValue('from', 'a1', 'PRIV-4', ''))).toEqual({ direction: 'from', ticket: 'a1', key: 'PRIV-4' });
 	});
 });
 

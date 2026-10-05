@@ -76,10 +76,12 @@ function isRecordId(value) {
 
 /**
  * Body of POST /api/byl/area/move: { kind, ids, to, preview?, project?, dependencies?,
- * ticket_sources?, codes? }. Returns the input (ids once each, codes in capitals; project,
- * dependencies and ticket_sources undefined when not chosen) or { problem }. `ticket_sources` is the
- * choice for links of source and follow-up tickets across the border (QT-1, ADR-0067), with the same
- * values as `dependencies`.
+ * ticket_sources?, codes?, series?, series_done? }. Returns the input (ids once each, codes in
+ * capitals; project, dependencies and ticket_sources undefined when not chosen) or { problem }.
+ * `ticket_sources` is the choice for links of source and follow-up tickets across the border (QT-1,
+ * ADR-0067), with the same values as `dependencies`. `series` ("Ganze Serie verschieben", MV-2) takes
+ * the rule of every moved ticket of a series and the open occurrences of every moved rule along,
+ * `series_done` also the done ones; both are booleans and false when not sent (the behaviour of E7-4).
  */
 function moveInput(body) {
   if (!isObject(body)) {
@@ -139,6 +141,9 @@ function moveInput(body) {
       codes[key] = normalizeCode(body.codes[key]);
     }
   }
+  if (!isFlag(body.series) || !isFlag(body.series_done)) {
+    return { problem: 'format' };
+  }
   return {
     kind: body.kind,
     ids: ids,
@@ -147,8 +152,15 @@ function moveInput(body) {
     project: project,
     dependencies: dependencies,
     ticket_sources: ticketSources,
-    codes: codes
+    codes: codes,
+    series: body.series === true,
+    series_done: body.series_done === true
   };
+}
+
+// A switch of the body: true, false or not sent.
+function isFlag(value) {
+  return value === undefined || value === null || value === true || value === false;
 }
 
 /** A typed code as it is stored: capitals, without white space. */
