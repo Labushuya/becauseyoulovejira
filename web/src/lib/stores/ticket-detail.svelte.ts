@@ -137,7 +137,8 @@ const DRAFT_FIELDS: readonly (keyof TicketDraft)[] = [
 	'project',
 	'tags',
 	'color',
-	'charm'
+	'charm',
+	'assignee'
 ];
 
 /** The part of the list store the panel updates, so the list shows a change at once. */

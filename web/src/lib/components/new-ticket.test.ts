@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { InboxItem } from '$lib/domain/inbox';
 import type { Project } from '$lib/domain/project';
 import type { Ticket, TicketDraft } from '$lib/domain/ticket';
+import { fixedAssignees } from '$lib/stores/assignees.svelte';
 import { CatalogStore } from '$lib/stores/catalog.svelte';
 import type { CreateResult } from '$lib/stores/ticket-detail.svelte';
 import type { Editor } from '@tiptap/core';
@@ -448,6 +449,88 @@ describe('new ticket: charm (ADR-0062)', () => {
 	it('offers no charm while the server does not know it', () => {
 		renderForm();
 		expect(screen.queryByRole('button', { name: 'Charm wählen' })).toBeNull();
+	});
+});
+
+describe('new ticket: "Zuständig" in the household (ADR-0068, PL-2)', () => {
+	const ME = 'user00000000001';
+	const BERT = 'user00000000002';
+	const MEMBERS = [
+		{ id: ME, name: 'Anna Beispiel', self: true },
+		{ id: BERT, name: 'Bert Beispiel', self: false }
+	];
+	const inHousehold = () => ({
+		assignmentAvailable: true,
+		assignees: fixedAssignees(MEMBERS, ME)
+	});
+	const field = () => screen.getByLabelText<HTMLSelectElement>('Zuständig');
+	const mine = () => screen.getByRole('button', { name: 'Mir zuweisen' });
+
+	it('offers "Niemand" and the members, "Niemand" chosen, and sends no assignee for it', async () => {
+		const { oncreate } = renderForm(undefined, inHousehold());
+		expect(field().value).toBe('');
+		expect([...field().options].map((option) => option.textContent)).toEqual([
+			'Niemand',
+			'Anna Beispiel (ich)',
+			'Bert Beispiel'
+		]);
+		await fireEvent.input(titleField(), { target: { value: 'Neu' } });
+		await fireEvent.click(createButton());
+		expect(oncreate.mock.calls[0]?.[0]).not.toHaveProperty('assignee');
+	});
+
+	it('creates with another member and asks before the choice is lost', async () => {
+		const { oncreate, oncancel } = renderForm(undefined, inHousehold());
+		await fireEvent.change(field(), { target: { value: BERT } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }));
+		expect(await discardQuestion()).not.toBeNull();
+		expect(oncancel).not.toHaveBeenCalled();
+		await answer('Weiter bearbeiten');
+
+		await fireEvent.input(titleField(), { target: { value: 'Neu' } });
+		await fireEvent.click(createButton());
+		expect(oncreate.mock.calls[0]?.[0]).toMatchObject({ title: 'Neu', assignee: BERT });
+	});
+
+	it('makes the own account the assignee with one click on "Mir"', async () => {
+		const { oncreate } = renderForm(undefined, inHousehold());
+		expect(mine().textContent).toBe('Mir zuweisen');
+		expect(mine().getAttribute('aria-disabled')).toBeNull();
+		await fireEvent.click(mine());
+		expect(field().value).toBe(ME);
+		// Already the own account: the button stays where the focus is, locked.
+		expect(mine().getAttribute('aria-disabled')).toBe('true');
+		await fireEvent.input(titleField(), { target: { value: 'Neu' } });
+		await fireEvent.click(createButton());
+		expect(oncreate.mock.calls[0]?.[0]).toMatchObject({ assignee: ME });
+	});
+
+	it('shows a refusal of the server at the field', async () => {
+		const refusal = 'Zuständig sein kann nur ein Mitglied des Haushalts.';
+		renderForm(
+			async () => ({ ok: false, message: null, fields: { assignee: refusal } }),
+			inHousehold()
+		);
+		await fireEvent.change(field(), { target: { value: BERT } });
+		await fireEvent.input(titleField(), { target: { value: 'Neu' } });
+		await fireEvent.click(createButton());
+		await vi.waitFor(() => expect(field().getAttribute('aria-invalid')).toBe('true'));
+		expect(
+			document.getElementById(field().getAttribute('aria-describedby') ?? '')?.textContent
+		).toBe(refusal);
+	});
+
+	it.each([
+		[
+			'in the private area',
+			{ assignmentAvailable: true, assignees: fixedAssignees(MEMBERS, ME, false) }
+		],
+		['before the migration', { assignees: fixedAssignees(MEMBERS, ME) }],
+		['without the directory of the layout', { assignmentAvailable: true }]
+	])('is not offered %s', (_label, props) => {
+		renderForm(undefined, props);
+		expect(screen.queryByLabelText('Zuständig')).toBeNull();
+		expect(screen.queryByRole('button', { name: 'Mir zuweisen' })).toBeNull();
 	});
 });
 

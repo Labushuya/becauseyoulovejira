@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { tick, untrack } from 'svelte';
+	import { NOBODY_LABEL } from '$lib/domain/assignee';
 	import type { CalendarDate } from '$lib/domain/berlin-date';
 	import { inheritLabel, projectColorOf, type ProjectColor } from '$lib/domain/colors';
 	import { berlinDateOf, formatBerlinDateTime } from '$lib/domain/format';
@@ -25,11 +26,13 @@
 		type TagRef,
 		type TicketDraft
 	} from '$lib/domain/ticket';
+	import { findAssignees, type AssigneeSource } from '$lib/stores/assignees.svelte';
 	import type { EnsureTagResult } from '$lib/stores/catalog.svelte';
 	import type { CreateResult } from '$lib/stores/ticket-detail.svelte';
 	import CharmPicker from './CharmPicker.svelte';
 	import ColorChoice from './ColorChoice.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
+	import Field from './form/Field.svelte';
 	import InitialStatusChoice from './InitialStatusChoice.svelte';
 	import RichTextEditor from './RichTextEditor.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
@@ -65,7 +68,11 @@
 	// archived or deleted; the hint below "Projekt" says which and why. After the migration of the
 	// colors (`colorsAvailable`, ADR-0052) the field "Farbe" follows the project, "Wie Projekt" with
 	// the color of the chosen project first and chosen. After the migration of the charms
-	// (`charmsAvailable`, ADR-0062) the field "Charm" follows, none chosen.
+	// (`charmsAvailable`, ADR-0062) the field "Charm" follows, none chosen. After the migration of
+	// "Zuständig" (`assignmentAvailable`, ADR-0068, PL-2) a tab of the household has the field
+	// "Zuständig" after the row of status, priority and due date: "Niemand" (chosen) or a member, and
+	// "Mir" as one click; the private area has none. Another member as assignee gets the notice of the
+	// server; the form creates no sub-tasks, so nothing else gets an assignee.
 	let {
 		projects = [],
 		initialProject = null,
@@ -80,6 +87,7 @@
 		colorsAvailable = false,
 		charmsAvailable = false,
 		assignmentAvailable = false,
+		assignees = findAssignees(),
 		today = null,
 		tags = [],
 		oncreatetag = async () => ({ ok: false, message: null }),
@@ -111,8 +119,14 @@
 		colorsAvailable?: boolean;
 		/** Offer the charm of the ticket (ADR-0062, RecurrenceStore.charmsReady). */
 		charmsAvailable?: boolean;
-		/** Offer "Zuständigkeit" of the next tickets in a household (ADR-0068, RecurrenceStore.assigneesReady). */
+		/**
+		 * The server knows "Zuständig" of tickets and rules (one migration, ADR-0068;
+		 * RecurrenceStore.assigneesReady): offer the field of the ticket and "Zuständigkeit" of the next
+		 * tickets in a household.
+		 */
 		assignmentAvailable?: boolean;
+		/** The members and names of the household (the directory of the layout). */
+		assignees?: AssigneeSource | null;
 		/** Berlin date of today, for the preview of the section "Wiederholung". */
 		today?: CalendarDate | null;
 		/** Tags that can be chosen (the catalog). */
@@ -153,7 +167,8 @@
 		tagsError: `${uid}-tags-error`,
 		description: `${uid}-description-error`,
 		recurrence: `${uid}-recurrence`,
-		recurrenceBody: `${uid}-recurrence-body`
+		recurrenceBody: `${uid}-recurrence-body`,
+		assignee: `${uid}-assignee`
 	};
 
 	// The form is opened for one entry (the route keys it), so the values are read once.
@@ -178,6 +193,8 @@
 	let color = $state<ProjectColor | null>(null);
 	/** Charm (ADR-0062); null is none. */
 	let charm = $state<string | null>(null);
+	/** "Zuständig" (ADR-0068): a member, '' for "Niemand". */
+	let assignee = $state('');
 	let tagIds = $state<string[]>([...initialTagIds]);
 	let tagText = $state('');
 	let tagError = $state<string | null>(null);
@@ -228,6 +245,15 @@
 			return tag === undefined ? [] : [tag];
 		})
 	);
+	/** "Zuständig" only in a tab of the household, once the server and the members are known. */
+	const assigneeShown = $derived(
+		assignmentAvailable && assignees !== null && assignees.active && assignees.members.length > 0
+	);
+	const members = $derived(assigneeShown && assignees !== null ? assignees.members : []);
+	const selfId = $derived(assignees?.context.selfId ?? null);
+	const selfIsMember = $derived(members.some((member) => member.id === selfId));
+	/** The assignee that is shown and sent: a current member, else nobody. */
+	const chosenAssignee = $derived(members.some((member) => member.id === assignee) ? assignee : '');
 	const tagsError = $derived(tagError ?? fieldErrors.tags ?? null);
 	const missingTitle = $derived(title.trim() === '');
 	const dirty = $derived(
@@ -240,6 +266,7 @@
 			project !== defaultProject ||
 			color !== null ||
 			charm !== null ||
+			chosenAssignee !== '' ||
 			tagIds.join(',') !== initialTagIds.join(',') ||
 			tagText.trim() !== '' ||
 			repeatOpen
@@ -283,7 +310,9 @@
 				// Only an own color goes along (ADR-0052); none is "wie Projekt".
 				...(colorsAvailable && color !== null && { color }),
 				// Only a chosen charm goes along (ADR-0062).
-				...(charmsAvailable && charm !== null && { charm })
+				...(charmsAvailable && charm !== null && { charm }),
+				// Only a chosen member goes along (ADR-0068); "Niemand" sends no field.
+				...(chosenAssignee !== '' && { assignee: chosenAssignee })
 			},
 			rhythm === null
 				? null
@@ -492,6 +521,37 @@
 		{#if dueError}
 			<p class="field-error" id={ids.dueError}><ErrorIcon /><span>{dueError}</span></p>
 		{/if}
+		{#if assigneeShown}
+			<Field label="Zuständig" id={ids.assignee} error={fieldErrors.assignee ?? ''} width="auto">
+				{#snippet control(field)}
+					<div class="assignee-row">
+						<select
+							{...field}
+							value={chosenAssignee}
+							disabled={pending}
+							onchange={(event) => (assignee = event.currentTarget.value)}
+						>
+							<option value="">{NOBODY_LABEL}</option>
+							{#each members as member (member.id)}
+								<option value={member.id}
+									>{member.self ? `${member.name} (ich)` : member.name}</option
+								>
+							{/each}
+						</select>
+						{#if selfId !== null && selfIsMember}
+							<button
+								class="button-secondary button-small"
+								type="button"
+								aria-disabled={chosenAssignee === selfId || pending ? 'true' : undefined}
+								onclick={() => {
+									if (!pending && selfId !== null) assignee = selfId;
+								}}>Mir <span class="visually-hidden">zuweisen</span></button
+							>
+						{/if}
+					</div>
+				{/snippet}
+			</Field>
+		{/if}
 		{#if ruleSuggestion !== null}
 			<SectionMessage tone="info">
 				Dieser Termin wiederholt sich: {ruleSuggestion.text}.
@@ -543,6 +603,7 @@
 							{eachAvailable}
 							context={{ kind: 'ticket', due: dueOrNull(due) }}
 							{assignmentAvailable}
+							{assignees}
 						/>
 						<p class="hint">
 							Künftige Tickets bekommen Titel, Beschreibung, Priorität, Projekt und Tags aus diesem
@@ -768,5 +829,18 @@
 		flex-wrap: wrap;
 		gap: 0.25rem 0.5rem;
 		align-items: center;
+	}
+
+	/* "Zuständig" with "Mir" beside it (ADR-0068). */
+	.assignee-row {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+		align-items: center;
+		min-width: 0;
+	}
+
+	.assignee-row select {
+		max-width: 100%;
 	}
 </style>
