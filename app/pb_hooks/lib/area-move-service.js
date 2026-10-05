@@ -1104,6 +1104,7 @@ function finalProject(plan, projectId) {
 
 function moveRules(txApp, plan, mapTag) {
   var recurrence = require(__hooks + '/lib/recurrence-service.js');
+  var assignees = require(__hooks + '/lib/assignee-service.js');
   for (var i = 0; i < plan.order.rules.length; i++) {
     // Read again: releasing an open instance saved the rule (next_due) in this transaction.
     var rule = findById(txApp, RULES, plan.order.rules[i]);
@@ -1111,9 +1112,27 @@ function moveRules(txApp, plan, mapTag) {
     var project = finalProject(plan, rule.getString('project'));
     rule.set('project', project ? project.id : '');
     rule.set('tags', mappedTags(rule, mapTag));
+    // The private area knows no assignment of its tickets (ADR-0068 §7): the rotation goes.
+    if (plan.direction === 'private') {
+      assignees.dropRuleAssignment(txApp, rule);
+    }
     rule.set(recurrence.SYSTEM_KEY, true);
     txApp.save(rule);
   }
+}
+
+// A ticket that leaves the household for the private area loses its assignee (ADR-0068 §7); returns
+// the one it had for the history ('' for none or another direction).
+function dropAssignee(plan, ticket) {
+  if (plan.direction !== 'private') {
+    return '';
+  }
+  return require(__hooks + '/lib/assignee-service.js').dropAssignee(ticket);
+}
+
+// "Zuständigkeit entfernt" in the history of a moved ticket, after its entry `area_move`.
+function assigneeHistory(txApp, plan, ticketId, previous) {
+  require(__hooks + '/lib/assignee-service.js').clearedHistory(txApp, ticketId, previous, plan.actor);
 }
 
 // Tickets in the order of their project and their number, so the new numbers follow the old ones.
@@ -1138,6 +1157,7 @@ function moveTrashedTicket(txApp, plan, ticket, mapTag) {
   var project = snapshot.project !== '' && has(plan, 'projects', snapshot.project) ? plan.sets.projects[snapshot.project] : null;
   place(plan, ticket);
   ticket.set('tags', mappedTags(ticket, mapTag));
+  var assignee = dropAssignee(plan, ticket);
   var key = assignKey(txApp, ticket, plan.to.scope, project, project ? plan.finalCodes[project.id] : ticketKey.TASK);
   if (project !== null) {
     snapshot.project_code = plan.finalCodes[project.id];
@@ -1146,6 +1166,7 @@ function moveTrashedTicket(txApp, plan, ticket, mapTag) {
   ticket.set(rules.MOVE_KEY, true);
   txApp.save(ticket);
   historyEntry(txApp, ticket.id, rules.HISTORY_FIELD, previous, rules.historyValue({ to: plan.direction, key: key, dissolved: true }), plan.actor);
+  assigneeHistory(txApp, plan, ticket.id, assignee);
 }
 
 function moveTickets(txApp, plan, mapTag) {
@@ -1181,6 +1202,7 @@ function moveTickets(txApp, plan, mapTag) {
     place(plan, ticket);
     ticket.set('project', project ? project.id : '');
     ticket.set('tags', mappedTags(ticket, mapTag));
+    var assignee = dropAssignee(plan, ticket);
     var key = assignKey(txApp, ticket, plan.to.scope, project, project ? plan.finalCodes[project.id] || project.getString('code') : ticketKey.TASK);
     ticket.set(rules.MOVE_KEY, true);
     txApp.save(ticket);
@@ -1199,6 +1221,7 @@ function moveTickets(txApp, plan, mapTag) {
       }),
       plan.actor
     );
+    assigneeHistory(txApp, plan, ticket.id, assignee);
   }
 }
 

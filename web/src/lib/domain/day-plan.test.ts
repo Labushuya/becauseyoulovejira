@@ -31,14 +31,15 @@ describe('kind of a ticket', () => {
 });
 
 describe('names of the settings', () => {
-	it('names the six sources and the three modes in German', () => {
+	it('names the seven sources and the three modes in German', () => {
 		expect(DAY_PLAN_SOURCES.map((source) => SOURCE_LABELS[source])).toEqual([
 			'Laufende Vorhaben',
 			'Heute fällig',
 			'Überfällig',
 			'Wiederholung von heute',
 			'Übrig von gestern',
-			'In Arbeit'
+			'In Arbeit',
+			'Mir zugewiesen'
 		]);
 		expect(MODE_LABELS).toEqual({
 			off: 'Aus',

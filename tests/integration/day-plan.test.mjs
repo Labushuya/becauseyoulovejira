@@ -305,7 +305,9 @@ describe('suggestions and their sources', () => {
 			overdue: 'suggest',
 			recurrence: 'suggest',
 			leftover: 'suggest',
-			in_progress: 'suggest'
+			in_progress: 'suggest',
+			// "Mir zugewiesen" since E7-5 (ADR-0068 §8); a private ticket has no assignee.
+			assigned: 'suggest'
 		});
 		expect(answer.leftover).toEqual([tickets.leftover.id]);
 		const entries = await entriesOf(answer.plan.id);

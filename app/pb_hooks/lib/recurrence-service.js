@@ -21,6 +21,7 @@ var ticketService = require(__hooks + '/lib/ticket-service.js');
 var errors = require(__hooks + '/lib/errors.js');
 var trashRules = require(__hooks + '/lib/trash-rules.js');
 var charms = require(__hooks + '/lib/charms.js');
+var assignees = require(__hooks + '/lib/assignee-service.js');
 
 var RULES = 'recurrence_rules';
 var TICKETS = 'tickets';
@@ -200,12 +201,15 @@ function prepareCreateRequest(e) {
   checkAnchorBody(e);
   checkBacklogBody(e);
   checkStartBody(e);
+  assignees.rememberNextSent(e);
   ticketService.rememberActor(e);
 }
 
 // onRecordUpdateRequest; a superuser may set every field, like at connections (repairs in the
 // admin UI, tests with a past next_due): the model hook then keeps the values as sent.
 function prepareUpdateRequest(e) {
+  // The pointer of a rotation that the body names (ADR-0068 §5), also for a superuser.
+  assignees.rememberNextSent(e);
   if (e.hasSuperuserAuth()) {
     e.record.set(SYSTEM_KEY, true);
     return;
@@ -427,6 +431,8 @@ function prepareCreate(txApp, record, nowMs) {
   checkInitialStatus(txApp, record);
   checkTemplateSubtasks(txApp, record);
   ticketService.checkCharm(record, null);
+  // "Zuständigkeit" of the new tickets (ADR-0068 §5): none, "fest" or "abwechselnd", only in a household.
+  assignees.checkRule(txApp, record, null, false);
   ticketService.checkRelations(txApp, record, scope, '');
 
   var start = record.get(START_KEY) ? String(record.get(START_KEY)) : '';
@@ -474,6 +480,8 @@ function prepareUpdate(txApp, record, nowMs) {
     }
     // Nor a charm outside of the catalog (ADR-0062); an unchanged one is not checked again.
     ticketService.checkCharm(record, original);
+    // Nor an assignment the hook would refuse (ADR-0068); the generation only moves the pointer.
+    assignees.checkRule(txApp, record, original, true);
     return;
   }
   record.set('next_due', original.getString('next_due'));
@@ -491,6 +499,7 @@ function prepareUpdate(txApp, record, nowMs) {
   checkInitialStatus(txApp, record);
   checkTemplateSubtasks(txApp, record);
   ticketService.checkCharm(record, original);
+  assignees.checkRule(txApp, record, original, false);
   var project = ticketService.checkRelations(txApp, record, scope, original.getString('project'));
 
   var beforeRaw = paramsOf(original);
@@ -611,6 +620,13 @@ function newInstance(txApp, rule, due, occurrence) {
   }
   ticket.set('owner', rule.getString('owner'));
   ticket.set('household', rule.getString('household'));
+  // The person of this occurrence by the mode of the rule (ADR-0068 §5): "fest" its person,
+  // "abwechselnd" the next one of the rotation, whose pointer moves on in the rule (saved by the run
+  // after its tickets). The sub-tasks of the template get none, like no charm.
+  var assignee = assignees.occurrenceAssignee(txApp, rule);
+  if (assignee !== '') {
+    ticket.set('assignee', assignee);
+  }
   txApp.save(ticket);
   newSubtasks(txApp, collection, rule, ticket, nowMs);
   return ticket;
@@ -964,10 +980,16 @@ function reopen(txApp, record, rule) {
   }
   followUp.set(UNDO_KEY, true);
   txApp.delete(followUp);
+  // The rotation goes back to the person of the removed follow-up (ADR-0068 §5), so the next one is
+  // made for the same person again.
+  var pointerMoved = assignees.takeBackOccurrence(txApp, rule, followUp.getString('assignee'));
   // With each date its own ticket, next_due stays: moving it back could make dates of the series
   // again that have their (done) tickets already.
-  if (!each) {
-    setNextDue(txApp, rule, rules.nextDueOnReopen(state, true, removedDue));
+  var nextDue = each ? null : rules.nextDueOnReopen(state, true, removedDue);
+  if (nextDue !== null) {
+    setNextDue(txApp, rule, nextDue);
+  } else if (pointerMoved) {
+    saveSystem(txApp, rule);
   }
 }
 

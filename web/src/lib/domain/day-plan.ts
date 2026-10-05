@@ -38,8 +38,12 @@ export const ONGOING_BADGE = 'Vorhaben';
 
 // --- Sources and modes -------------------------------------------------------------------------
 
+/**
+ * The sources of suggestions. "Mir zugewiesen" (`assigned`, E7-5, ADR-0068 §8) depends on the account
+ * that looks at the plan and exists only in a household (a private ticket has no assignee).
+ */
 export type DayPlanSource =
-	'ongoing' | 'due_today' | 'overdue' | 'recurrence' | 'leftover' | 'in_progress';
+	'ongoing' | 'due_today' | 'overdue' | 'recurrence' | 'leftover' | 'in_progress' | 'assigned';
 export type SourceMode = 'off' | 'suggest' | 'auto';
 export type DayPlanOrigin = 'manual' | DayPlanSource;
 export type DayPlanSettings = Readonly<Record<DayPlanSource, SourceMode>>;
@@ -51,7 +55,8 @@ export const DAY_PLAN_SOURCES: readonly DayPlanSource[] = Object.freeze([
 	'overdue',
 	'recurrence',
 	'leftover',
-	'in_progress'
+	'in_progress',
+	'assigned'
 ]);
 export const SOURCE_MODES: readonly SourceMode[] = Object.freeze(['off', 'suggest', 'auto']);
 export const DEFAULT_SOURCES: DayPlanSettings = Object.freeze({
@@ -60,7 +65,8 @@ export const DEFAULT_SOURCES: DayPlanSettings = Object.freeze({
 	overdue: 'suggest',
 	recurrence: 'suggest',
 	leftover: 'suggest',
-	in_progress: 'suggest'
+	in_progress: 'suggest',
+	assigned: 'suggest'
 });
 export const DAY_PLAN_ORIGINS: readonly DayPlanOrigin[] = Object.freeze([
 	'manual',
@@ -69,7 +75,8 @@ export const DAY_PLAN_ORIGINS: readonly DayPlanOrigin[] = Object.freeze([
 	'recurrence',
 	'leftover',
 	'in_progress',
-	'ongoing'
+	'ongoing',
+	'assigned'
 ]);
 /** The reason a suggestion names first when a ticket matches several sources: the most specific. */
 export const SOURCE_PRECEDENCE: readonly DayPlanSource[] = Object.freeze([
@@ -78,8 +85,12 @@ export const SOURCE_PRECEDENCE: readonly DayPlanSource[] = Object.freeze([
 	'leftover',
 	'overdue',
 	'due_today',
+	'assigned',
 	'in_progress'
 ]);
+
+/** Sources that exist only in a household: the settings of the private area leave them out. */
+export const HOUSEHOLD_SOURCES: readonly DayPlanSource[] = Object.freeze(['assigned']);
 
 /** Names of the sources in the settings. */
 export const SOURCE_LABELS: Readonly<Record<DayPlanSource, string>> = Object.freeze({
@@ -88,7 +99,8 @@ export const SOURCE_LABELS: Readonly<Record<DayPlanSource, string>> = Object.fre
 	overdue: 'Überfällig',
 	recurrence: 'Wiederholung von heute',
 	leftover: 'Übrig von gestern',
-	in_progress: 'In Arbeit'
+	in_progress: 'In Arbeit',
+	assigned: 'Mir zugewiesen'
 });
 
 /** Names of the modes in the settings. */
@@ -146,6 +158,8 @@ export interface PlanTicketFacts {
 	 * proposed. '' or absent for every other ticket.
 	 */
 	series?: string;
+	/** The account the ticket is assigned to (ADR-0068), '' or absent for none. */
+	assignee?: string;
 	priority: Priority | string;
 	created: string;
 }
@@ -170,6 +184,8 @@ export interface SuggestionContext {
 	dismissed: readonly string[];
 	/** Ticket IDs of the entries of yesterday that were neither done nor checked for the day. */
 	leftover: readonly string[];
+	/** The account that looks at the plan, for "Mir zugewiesen"; '' or absent for none. */
+	viewer?: string;
 }
 
 export interface Suggestion {
@@ -182,11 +198,15 @@ export interface Suggestion {
 	reasons: string[];
 }
 
-/** The sources an open ticket matches on `today`, in the order of SOURCE_PRECEDENCE. */
+/**
+ * The sources an open ticket matches on `today`, in the order of SOURCE_PRECEDENCE; "Mir zugewiesen"
+ * when `viewer` is its assignee.
+ */
 export function matchingSources(
 	ticket: PlanTicketFacts,
 	today: CalendarDate,
-	leftover: readonly string[]
+	leftover: readonly string[],
+	viewer?: string
 ): DayPlanSource[] {
 	if (ticket.status === 'done') return [];
 	const due = ticket.due || '';
@@ -196,6 +216,7 @@ export function matchingSources(
 		leftover: leftover.includes(ticket.id),
 		overdue: due !== '' && due < today,
 		due_today: due === today,
+		assigned: !!viewer && !!ticket.assignee && ticket.assignee === viewer,
 		in_progress: ticket.status === 'in_progress'
 	};
 	return SOURCE_PRECEDENCE.filter((source) => matches[source]);
@@ -218,6 +239,8 @@ export function reasonText(
 			return overdueSinceText(ticket.due === '' ? today : ticket.due, today);
 		case 'due_today':
 			return 'heute fällig';
+		case 'assigned':
+			return 'dir zugewiesen';
 		case 'in_progress':
 			return 'in Arbeit';
 	}
@@ -299,7 +322,7 @@ export function suggestionsOf(
 		let best: SourceMode = 'off';
 		let origin: DayPlanSource | null = null;
 		const reasons: string[] = [];
-		for (const source of matchingSources(ticket, context.today, context.leftover)) {
+		for (const source of matchingSources(ticket, context.today, context.leftover, context.viewer)) {
 			const mode = settings[source];
 			if (mode === 'off') continue;
 			reasons.push(reasonText(source, ticket, context.today));

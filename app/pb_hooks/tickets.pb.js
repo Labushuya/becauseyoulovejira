@@ -41,6 +41,13 @@ onRecordCreate(function (e) {
   });
 }, 'tickets');
 
+// "Zuständig" (ADR-0068 §4): a ticket someone else gave to its assignee tells his open tabs after the
+// commit (topic byl/assigned); own assignments and those of the server tell nobody.
+onRecordAfterCreateSuccess(function (e) {
+  e.next();
+  require(`${__hooks}/lib/assignee-service.js`).notifyAssigned(e.app, e.record);
+}, 'tickets');
+
 // Recurring tasks (ADR-0022 section 4, ADR-0023 sections 2, 3 and 6; E5 plan package 3): in the
 // same transaction, completing an instance fixes the next date of an after-completion rule,
 // reopening one removes an untouched follow-up (or is refused), and releasing an open instance
@@ -52,11 +59,14 @@ onRecordCreate(function (e) {
 // Writes of the trash and internal saves of a ticket in the trash (ADR-0037) skip all of this, and so
 // do the writes of a move between the areas (ADR-0061), which set scope, key and history themselves.
 // A ticket that becomes done loses the pins of every account (ADR-0064); completed sub-tickets lose
-// theirs through their own save.
+// theirs through their own save. An assignment by someone else deletes the read row of the assignee
+// (ADR-0068 §4); a membership that ends clears the assignee itself (lib/assignee-service.js) and writes
+// its history, so its saves skip this hook like those of the trash and of a move.
 onRecordUpdate(function (e) {
   if (
     require(`${__hooks}/lib/trash-service.js`).skipsTicketHooks(e.record) ||
-    e.record.get(require(`${__hooks}/lib/area-move-rules.js`).MOVE_KEY)
+    e.record.get(require(`${__hooks}/lib/area-move-rules.js`).MOVE_KEY) ||
+    require(`${__hooks}/lib/assignee-service.js`).skipsTicketHooks(e.record)
   ) {
     e.next();
     return;
@@ -64,6 +74,7 @@ onRecordUpdate(function (e) {
   var service = require(`${__hooks}/lib/ticket-service.js`);
   var recurrence = require(`${__hooks}/lib/recurrence-service.js`);
   var pins = require(`${__hooks}/lib/pin-service.js`);
+  var assignees = require(`${__hooks}/lib/assignee-service.js`);
   require(`${__hooks}/lib/transaction.js`).inTransaction(e, function (txApp) {
     service.checkExpectedUpdated(txApp, e.record);
     var before = service.prepareUpdate(txApp, e.record);
@@ -76,6 +87,7 @@ onRecordUpdate(function (e) {
     if (completes) {
       pins.releaseTicket(txApp, e.record.id);
     }
+    assignees.afterTicketUpdate(txApp, e.record);
   });
 }, 'tickets');
 
@@ -86,6 +98,7 @@ onRecordAfterUpdateSuccess(function (e) {
   } catch (err) {
     e.app.logger().warn('Wiederholung: Folgeticket nicht erzeugt', 'ticket', e.record.id, 'error', String(err));
   }
+  require(`${__hooks}/lib/assignee-service.js`).notifyAssigned(e.app, e.record);
 }, 'tickets');
 
 // Since the trash (ADR-0037) every delete through the Record API moves the ticket to the trash

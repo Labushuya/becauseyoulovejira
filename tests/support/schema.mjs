@@ -183,7 +183,12 @@ export const EXPECTED_COLLECTIONS = {
 			color: select(PROJECT_COLORS, false),
 			// Charm of the next tickets (ADR-0062, migration 1790204400), empty for none; the hook
 			// checks the key against its catalog.
-			charm: text({ max: 40 })
+			charm: text({ max: 40 }),
+			// "Zuständigkeit" of the next tickets (ADR-0068, migration 1790204900): none, one fixed person
+			// or a rotation with its pointer; the hook checks the members.
+			assignee_mode: select(['fixed', 'rotate'], false),
+			assignees: relation('users', { maxSelect: 10 }),
+			assignee_next: number({ min: 0 })
 		},
 		indexes: [
 			'CREATE INDEX idx_recurrence_rules_owner ON recurrence_rules (owner)',
@@ -225,7 +230,11 @@ export const EXPECTED_COLLECTIONS = {
 			charm: text({ max: 40 }),
 			// Kind (ADR-0065, migration 1790204600): "Aufgabe" or "Laufendes Vorhaben"; the hook gives
 			// every new ticket `task`.
-			kind: select(['task', 'ongoing'], false)
+			kind: select(['task', 'ongoing'], false),
+			// "Zuständig" (ADR-0068, migration 1790204900): a member of the household or none; when
+			// someone else assigned it, which only the hook writes.
+			assignee: relation('users'),
+			assigned_at: date()
 		},
 		indexes: [
 			'CREATE UNIQUE INDEX idx_tickets_scope_key ON tickets (scope, key)',
@@ -240,7 +249,8 @@ export const EXPECTED_COLLECTIONS = {
 			// instance per rule; since 1790202300 without the tickets in the trash, ADR-0037).
 			"CREATE UNIQUE INDEX idx_tickets_open_occurrence ON tickets (recurrence, occurrence) WHERE recurrence != '' AND status != 'done' AND deleted_at = ''",
 			'CREATE INDEX idx_tickets_deleted_at ON tickets (deleted_at)',
-			'CREATE INDEX idx_tickets_pinned_comment ON tickets (pinned_comment)'
+			'CREATE INDEX idx_tickets_pinned_comment ON tickets (pinned_comment)',
+			'CREATE INDEX idx_tickets_assignee ON tickets (assignee)'
 		]
 	},
 	inbox_items: {
@@ -430,7 +440,8 @@ export const EXPECTED_COLLECTIONS = {
 			plan: relation('day_plans', { required: true, cascadeDelete: true }),
 			ticket: relation('tickets', { required: true, cascadeDelete: true }),
 			position: number({ min: 0 }),
-			origin: select(['manual', 'due_today', 'overdue', 'recurrence', 'leftover', 'in_progress', 'ongoing'], true),
+			// "Mir zugewiesen" (`assigned`) since E7-5 (ADR-0068, migration 1790204900).
+			origin: select(['manual', 'due_today', 'overdue', 'recurrence', 'leftover', 'in_progress', 'ongoing', 'assigned'], true),
 			done_today: bool(),
 			done_at: date(),
 			added_by: relation('users'),

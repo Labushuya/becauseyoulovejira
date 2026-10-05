@@ -1245,3 +1245,69 @@ describe('QT-1 hooks before the migration of tickets as sources (ADR-0067)', () 
 		expect((await pb.collection('tickets').getOne(ticket.id)).title).toBe('Original');
 	});
 });
+
+describe('E7-5 hooks before the migration of the assignees (ADR-0068)', () => {
+	const ASSIGNEES_MIGRATION = '1790204900_assignees.js';
+	let before;
+	let owner;
+	let member;
+
+	/** A new account with random credentials (in memory only), signed in. */
+	async function account(superuser, name) {
+		const email = `user-${randomBytes(12).toString('hex')}@example.com`;
+		const password = randomBytes(24).toString('base64url');
+		const id = (await superuser.collection('users').create({ email, password, passwordConfirm: password, name })).id;
+		const pb = new PocketBase(before.url);
+		pb.autoCancellation(false);
+		await pb.collection('users').authWithPassword(email, password);
+		return { id, pb };
+	}
+
+	beforeAll(async () => {
+		before = await startPocketBase({ migrationFilter: (name) => name < ASSIGNEES_MIGRATION });
+		const superuser = new PocketBase(before.url);
+		superuser.autoCancellation(false);
+		await superuser.collection('_superusers').authWithPassword(before.email, before.password);
+		await account(superuser, 'Verwalter');
+		owner = await account(superuser, 'Anna Beispiel');
+		member = await account(superuser, 'Bert Beispiel');
+		await owner.pb.send('/api/byl/household', { method: 'POST', body: { name: 'Haus' } });
+		const { code } = await owner.pb.send('/api/byl/household/invites', { method: 'POST', body: {} });
+		await member.pb.send('/api/byl/household/join', { method: 'POST', body: { code } });
+	});
+
+	afterAll(async () => {
+		await before?.stop();
+	});
+
+	it('creates and changes tickets and rules as before; a sent assignee is ignored', async () => {
+		const { household } = await owner.pb.send('/api/byl/household', { method: 'GET' });
+		const ticket = await owner.pb
+			.collection('tickets')
+			.create({ owner: owner.id, household: household.id, title: 'Vor der Zuständigkeit', assignee: member.id });
+		expect(ticket).not.toHaveProperty('assignee');
+		const changed = await member.pb.collection('tickets').update(ticket.id, { title: 'Geändert', assignee: member.id });
+		expect(changed.title).toBe('Geändert');
+		expect(changed).not.toHaveProperty('assignee');
+		const rule = await owner.pb.collection('recurrence_rules').create({
+			owner: owner.id,
+			household: household.id,
+			title: 'Müll',
+			mode: 'calendar',
+			freq: 'weekly',
+			initial_status: 'open',
+			active: false,
+			assignee_mode: 'rotate',
+			assignees: [owner.id, member.id]
+		});
+		expect(rule).not.toHaveProperty('assignee_mode');
+		// The day plan works without the source "Mir zugewiesen" matching anything.
+		const plan = await member.pb.send('/api/byl/dayplan', { method: 'GET', query: { scope: `h:${household.id}` } });
+		expect(plan.suggestions.some((entry) => entry.origin === 'assigned')).toBe(false);
+	});
+
+	it('lets a member leave as before', async () => {
+		const state = await member.pb.send('/api/byl/household/leave', { method: 'POST', body: {} });
+		expect(state.household).toBeNull();
+	});
+});

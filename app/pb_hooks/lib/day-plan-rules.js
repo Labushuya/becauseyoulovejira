@@ -23,8 +23,10 @@ function kindOf(value) {
 
 // --- Sources and modes -------------------------------------------------------------------------
 
-// The sources of suggestions in the order of the settings.
-var SOURCES = Object.freeze(['ongoing', 'due_today', 'overdue', 'recurrence', 'leftover', 'in_progress']);
+// The sources of suggestions in the order of the settings. "Mir zugewiesen" (`assigned`, since E7-5,
+// ADR-0068 §8) is the only one that depends on the account that looks at the plan: the tickets of the
+// area whose assignee it is (only in a household, a private ticket has none).
+var SOURCES = Object.freeze(['ongoing', 'due_today', 'overdue', 'recurrence', 'leftover', 'in_progress', 'assigned']);
 var MODES = Object.freeze(['off', 'suggest', 'auto']);
 var DEFAULT_SOURCES = Object.freeze({
   ongoing: 'auto',
@@ -32,12 +34,13 @@ var DEFAULT_SOURCES = Object.freeze({
   overdue: 'suggest',
   recurrence: 'suggest',
   leftover: 'suggest',
-  in_progress: 'suggest'
+  in_progress: 'suggest',
+  assigned: 'suggest'
 });
 // Where an entry came from: by hand or from a source.
-var ORIGINS = Object.freeze(['manual', 'due_today', 'overdue', 'recurrence', 'leftover', 'in_progress', 'ongoing']);
+var ORIGINS = Object.freeze(['manual', 'due_today', 'overdue', 'recurrence', 'leftover', 'in_progress', 'ongoing', 'assigned']);
 // The reason a suggestion names first when a ticket matches several sources: the most specific one.
-var PRECEDENCE = Object.freeze(['ongoing', 'recurrence', 'leftover', 'overdue', 'due_today', 'in_progress']);
+var PRECEDENCE = Object.freeze(['ongoing', 'recurrence', 'leftover', 'overdue', 'due_today', 'assigned', 'in_progress']);
 
 var MODE_RANK = { off: 0, suggest: 1, auto: 2 };
 var PRIORITY_RANK = { urgent: 0, high: 1, medium: 2, low: 3 };
@@ -113,16 +116,18 @@ function contains(list, value) {
 /**
  * The sources a ticket matches on `today`, in the order of PRECEDENCE, whatever their modes. Only an
  * open ticket matches. `ticket`: { id, status, due ('' or a calendar date), kind, recurring, series
- * (see seriesKeyOf; suggestionsOf reads it) }.
+ * (see seriesKeyOf; suggestionsOf reads it), assignee ('' for none) }.
  * `leftover`: IDs of the entries of yesterday that were neither done nor checked for the day.
+ * `viewer`: the account that looks at the plan ('' or missing for none).
  * - ongoing: the kind is "Laufendes Vorhaben".
  * - recurrence: a ticket of a series that is due today.
  * - leftover: left over from the plan of yesterday.
  * - overdue: due before today.
  * - due_today: due today, the same as "Heute fällig" of the list (domain/filter.ts dueBucket).
+ * - assigned: the viewer is its assignee ("Mir zugewiesen", the card of the list).
  * - in_progress: the status "In Arbeit".
  */
-function matchingSources(ticket, today, leftover) {
+function matchingSources(ticket, today, leftover, viewer) {
   if (!ticket || ticket.status === 'done') {
     return [];
   }
@@ -133,6 +138,7 @@ function matchingSources(ticket, today, leftover) {
     leftover: contains(leftover, ticket.id),
     overdue: due !== '' && due < today,
     due_today: due === today,
+    assigned: !!viewer && !!ticket.assignee && ticket.assignee === viewer,
     in_progress: ticket.status === 'in_progress'
   };
   var result = [];
@@ -176,6 +182,8 @@ function reasonText(source, ticket, today) {
       return overdueSinceText(ticket.due, today);
     case 'due_today':
       return 'heute fällig';
+    case 'assigned':
+      return 'dir zugewiesen';
     case 'in_progress':
       return 'in Arbeit';
     default:
@@ -258,7 +266,8 @@ function seriesOf(tickets, planned) {
  * nor removed from it today and matches a source that is not off; of a series only its current
  * occurrence, and nothing while one of its tickets is in the plan (WH-1). `context`: { today,
  * settings (as settingsOf gives them), planned (ticket IDs in the plan), dismissed (ticket IDs
- * removed from it), leftover (see matchingSources) }. Each suggestion: { id, mode ('suggest' or
+ * removed from it), leftover (see matchingSources), viewer (the account that looks at the plan, for
+ * "Mir zugewiesen"; '' or missing for none) }. Each suggestion: { id, mode ('suggest' or
  * 'auto', the strongest of its sources), origin (the first source of that mode by PRECEDENCE),
  * reasons (the texts of every source that is not off, in that order) }. Sorted by origin, due date
  * (none last), priority, creation and ID.
@@ -276,7 +285,7 @@ function suggestionsOf(tickets, context) {
     if (key !== '' && (series.inPlan[key] || !has(series.current, key) || series.current[key].id !== ticket.id)) {
       continue;
     }
-    var sources = matchingSources(ticket, context.today, context.leftover);
+    var sources = matchingSources(ticket, context.today, context.leftover, context.viewer);
     var best = 'off';
     var origin = '';
     var reasons = [];
