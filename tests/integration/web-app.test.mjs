@@ -62,4 +62,23 @@ describe('installable web app (SF-5)', () => {
 		expect(html).toMatch(/navigator\.serviceWorker\.register/);
 		expect(html).toMatch(/service-worker\.js/);
 	});
+
+	// The minified build keeps no license comments (AR-4): the notices ship as files of the build.
+	it('ships the licenses of the symbols, the fonts and the bundled libraries as text', async () => {
+		const symbols = await get('/licenses.txt');
+		expect(symbols.status).toBe(200);
+		expect(symbols.headers.get('content-type')).toMatch(/^text\/plain/);
+		const shipped = await symbols.text();
+		for (const part of ['ISC License', 'Copyright (c) 2026 Lucide Icons and Contributors', 'Copyright (c) 2013-present Cole Bemis', 'licenses-libraries.txt']) {
+			expect(shipped, part).toContain(part);
+		}
+		const libraries = await get('/licenses-libraries.txt');
+		expect(libraries.status).toBe(200);
+		expect(libraries.headers.get('content-type')).toMatch(/^text\/plain/);
+		const bundled = await libraries.text();
+		for (const name of ['@fontsource-variable/inter', '@fontsource-variable/jetbrains-mono', 'svelte', '@sveltejs/kit', 'pocketbase', 'driver.js', '@tiptap/core', 'markdown-it', 'dompurify']) {
+			expect(bundled, name).toMatch(new RegExp(`^## ${name.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')} - \\d`, 'm'));
+		}
+		expect(bundled).toContain('SIL OPEN FONT LICENSE Version 1.1');
+	});
 });

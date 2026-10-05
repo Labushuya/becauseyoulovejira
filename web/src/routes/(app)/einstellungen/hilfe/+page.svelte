@@ -1,8 +1,9 @@
 <script lang="ts">
-	import { resolve } from '$app/paths';
+	import { asset, resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import CodeBlock from '$lib/components/guidance/CodeBlock.svelte';
 	import ExternalLink from '$lib/components/guidance/ExternalLink.svelte';
+	import NewTabHint from '$lib/components/guidance/NewTabHint.svelte';
 	import { GITHUB_TOKEN_TEMPLATE_URL } from '$lib/domain/channel-setup';
 	import {
 		EMERGENCY_CONTENTS,
@@ -1051,8 +1052,17 @@
 				<ul>
 					<li>
 						Oben im Panel und in der Vollansicht öffnet „•••“ (Weitere Aktionen) die Aktionen des
-						Tickets: „Link kopieren“, „Duplizieren …“ und „In den Papierkorb …“. Daneben bleiben
-						„Vollansicht“ bzw. „Im Seitenpanel öffnen“ und das Schließen.
+						Tickets in dieser Reihenfolge: „Zum Tagesplan“ (nicht bei erledigten Tickets), „Link
+						kopieren“, „Duplizieren …“, „Folge-Ticket anlegen …“, als Mitglied eines Haushalts mit
+						dem Recht dazu „In den Haushalt verschieben …“ bzw. „Ins Private verschieben …“ und nach
+						einer Linie „In den Papierkorb …“. Daneben bleiben „Vollansicht“ bzw. „Im Seitenpanel
+						öffnen“ und das Schließen.
+					</li>
+					<li>
+						In „Erledigte“ steht statt „Zum Tagesplan“ „Wieder öffnen“, im Kalender kommt
+						„Fälligkeit verschieben …“ dazu. Anheften ist kein Eintrag des Menüs: Dafür gibt es den
+						Knopf „Anheften“ (eine Nadel) im Kopf des Tickets vor „•••“ und in „Aufgaben“ am Ende
+						des Titels.
 					</li>
 					<li>
 						Mit der Tastatur: <kbd>Tab</kbd> bis zu „•••“, <kbd>Enter</kbd> oder die Leertaste
@@ -1976,6 +1986,15 @@
 			</div>
 		</dl>
 	</section>
+
+	<p class="note licenses">
+		Lizenzen der Bestandteile anderer Projekte:
+		<a href={asset('/licenses.txt')} target="_blank" rel="noopener">Symbole<NewTabHint /></a>
+		sowie
+		<a href={asset('/licenses-libraries.txt')} target="_blank" rel="noopener"
+			>Schriften und Programmbibliotheken<NewTabHint /></a
+		>, je mit dem vollständigen Lizenztext.
+	</p>
 
 	<p class="note elements">
 		Zum Prüfen der Darstellung: <a href={resolve('/einstellungen/hilfe/elemente')}
