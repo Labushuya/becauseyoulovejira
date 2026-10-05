@@ -119,6 +119,18 @@ describe('by hand', () => {
 		await vi.waitFor(() => expect(failing.ingests()).toHaveLength(2));
 	});
 
+	it('names a message whose entry moved into another area of the app (E7-4b, AR-4)', async () => {
+		const moved = start({}, { status: 'duplicate', state: 'moved' });
+		await moved.scan();
+		buttonOf(ANNA).click();
+		await vi.waitFor(() =>
+			expect(buttonOf(ANNA).parentElement?.querySelector('[role="status"]')?.textContent).toBe(
+				'In einen anderen Bereich verschoben.'
+			)
+		);
+		expect(buttonOf(ANNA).parentElement?.textContent).not.toContain('Schon im Eingang.');
+	});
+
 	it('keeps keys and clicks of the button away from WhatsApp', async () => {
 		const { scan } = start();
 		await scan();

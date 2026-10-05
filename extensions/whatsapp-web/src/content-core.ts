@@ -62,6 +62,8 @@ export function statusText(result: IngestResult): string {
 		case 'created':
 			return 'Angelegt.';
 		case 'duplicate':
+			// Its entry moved into another area of the app (E7-4b), the same text as the app.
+			if (result.state === 'moved') return 'In einen anderen Bereich verschoben.';
 			return result.state === 'discarded' ? 'Schon da (verworfen).' : 'Schon im Eingang.';
 		case 'filtered':
 			return 'Kein Stichwort – nicht übernommen.';

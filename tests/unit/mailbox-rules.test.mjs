@@ -2,7 +2,8 @@
 
 import { describe, expect, it } from 'vitest';
 import { loadHookLib } from '../support/hook-lib.mjs';
-import { DEFAULT_PORT, IMPORT_MAX, LIST_DEFAULT, LIST_MAX, PORT_ENV } from '../../helpers/mail/src/server.ts';
+// The constants without the server of the helper, which needs its installed packages (AR-4).
+import { DEFAULT_PORT, IMPORT_MAX, LIST_DEFAULT, LIST_MAX, PORT_ENV } from '../../helpers/mail/src/mailbox-limits.ts';
 
 const rules = loadHookLib('mailbox-rules.js');
 

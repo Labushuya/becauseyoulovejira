@@ -5,9 +5,9 @@ $ErrorActionPreference = 'Stop'
 # executable application of Node 24 with the bundled helpers\mail. The executable is checked
 # without Node (PATH only with the Windows folders): "--version" and a self-test without network.
 # app\byl-mail.exe is gitignored like pocketbase.exe. If it is running (the app of the user runs
-# from the same folder), the old file is renamed and removed at a later build; the running helper
-# keeps working and the next start uses the new file. Problems are entries of the catalog
-# app\byl-problems.ps1 (ADR-0048).
+# from the same folder), the old file is renamed and removed at a later build or the next start of
+# the app (AR-4); the running helper keeps working and the next start uses the new file. Problems are
+# entries of the catalog app\byl-problems.ps1 (ADR-0048).
 #
 # Call: powershell -NoProfile -ExecutionPolicy Bypass -File scripts\build-mail-helper.ps1
 
@@ -88,9 +88,8 @@ try {
     }
     Write-Host "$($version.Output): self-test without Node passed."
 
-    # Leftovers of earlier builds that replaced a running helper.
-    Get-ChildItem -LiteralPath $appDir -Filter 'byl-mail.exe.old-*' -ErrorAction SilentlyContinue |
-        ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue }
+    # Leftovers of earlier builds that replaced a running helper (exact names, each removal printed).
+    Remove-BylHelperLeftover -AppDir $appDir -Helper $BylMailHelperName
 
     try {
         if (Test-Path -LiteralPath $target -PathType Leaf) {

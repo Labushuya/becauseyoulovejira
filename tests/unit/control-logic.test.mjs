@@ -6,6 +6,7 @@
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { loadHookLib } from '../support/hook-lib.mjs';
 import { runPowerShellJson } from '../support/powershell.mjs';
 
 const ROOT_DIR = resolve(fileURLToPath(new URL('../..', import.meta.url)));
@@ -736,5 +737,135 @@ describe('start fingerprint, reload, status and logs (ADR-0039 sections 5 and 6)
 			'1 Test-Instanz (Entwicklung) auf Port 53300',
 			'2 Test-Instanzen (Entwicklung)'
 		]);
+	});
+});
+
+// AR-4: the leftovers <helper>.old-<time> a build leaves when it replaces a running helper, on a fake
+// app folder in %TEMP% (files only, no program runs): the exact names, which helper runs, and what
+// is removed, kept for a running helper or kept while a process holds the file.
+const LEFTOVER_SCRIPT = String.raw`
+. $env:BYL_FUNCTIONS
+Set-StrictMode -Version 2.0
+$in = $env:BYL_TEST_INPUT | ConvertFrom-Json
+$result = @{}
+$result.owners = @(foreach ($name in @($in.names)) { Get-BylOldHelperOwner -Name $name })
+$result.running = @(Get-BylRunningHelper -Process @($in.processes) -AppDir $in.appDir)
+$result.runningOtherCase = @(Get-BylRunningHelper -Process @($in.otherCase) -AppDir $in.appDir)
+$result.runningNone = @(Get-BylRunningHelper -Process @() -AppDir $in.appDir).Count
+$pick = { param($Leftovers) @($Leftovers | ForEach-Object { [ordered]@{ name = $_.Name; result = $_.Result } }) }
+$entries = { @([System.IO.Directory]::GetFileSystemEntries($app) | ForEach-Object { [System.IO.Path]::GetFileName($_) }) }
+$app = Join-Path $env:TEMP ('byl-old-' + [guid]::NewGuid().ToString('N'))
+$held = $null
+try {
+    [void](New-Item -ItemType Directory -Force -Path $app)
+    foreach ($name in @($in.files)) { [System.IO.File]::WriteAllText((Join-Path $app $name), 'x') }
+    [void](New-Item -ItemType Directory -Force -Path (Join-Path $app $in.folder))
+    # Open without sharing deletion, like the program file of a helper that still runs.
+    $held = [System.IO.File]::Open((Join-Path $app $in.held), 'Open', 'Read', 'Read')
+    $result.first = @(& $pick (Remove-BylOldHelperFile -AppDir $app -Running @('byl-backup.exe')))
+    $result.leftFirst = @(& $entries)
+    $held.Dispose()
+    $held = $null
+    $result.mailOnly = @(& $pick (Remove-BylOldHelperFile -AppDir $app -Helper @('byl-mail.exe')))
+    $result.rest = @(& $pick (Remove-BylOldHelperFile -AppDir $app))
+    $result.leftAtEnd = @(& $entries)
+    $result.missingFolder = @(Remove-BylOldHelperFile -AppDir (Join-Path $app 'fehlt')).Count
+}
+finally {
+    if ($null -ne $held) { $held.Dispose() }
+    Remove-Item -LiteralPath $app -Recurse -Force -ErrorAction SilentlyContinue
+}
+$result | ConvertTo-Json -Depth 5 -Compress
+`;
+
+describe('leftovers of replaced helpers (AR-4)', () => {
+	const APP = 'C:\\byl #1\\app';
+	const NAMES = [
+		'byl-mail.exe.old-20261005120000',
+		'byl-backup.exe.old-20261005120000',
+		'byl-mail.exe.old-2026100512000',
+		'byl-mail.exe.old-202610051200000',
+		'BYL-MAIL.EXE.old-20261005120000',
+		'byl-mail.exe.old-20261005120000.txt',
+		'x-byl-mail.exe.old-20261005120000',
+		'pocketbase.exe.old-20261005120000',
+		'byl-mail.exe',
+		''
+	];
+	let left;
+
+	beforeAll(() => {
+		left = runPowerShellJson(
+			LEFTOVER_SCRIPT,
+			{
+				names: NAMES,
+				appDir: APP,
+				processes: [
+					{ ProcessId: 1, Name: 'byl-mail.exe', ExecutablePath: `${APP}\\byl-mail.exe`, CommandLine: 'byl-mail.exe run --url=http://127.0.0.1:8090' },
+					{ ProcessId: 2, Name: 'byl-mail.exe', ExecutablePath: `${APP}\\byl-mail.exe.old-20261005120000`, CommandLine: 'byl-mail.exe --self-test' },
+					{ ProcessId: 3, Name: 'byl-backup.exe', ExecutablePath: 'D:\\andere\\app\\byl-backup.exe', CommandLine: 'byl-backup.exe seal' },
+					{ ProcessId: 4, Name: 'byl-backup.exe', ExecutablePath: `${APP}\\sub\\byl-backup.exe`, CommandLine: 'byl-backup.exe seal' },
+					{ ProcessId: 5, Name: 'pocketbase.exe', ExecutablePath: `${APP}\\pocketbase.exe`, CommandLine: 'pocketbase.exe serve' },
+					{ ProcessId: 6, Name: 'byl-backup.exe', ExecutablePath: null, CommandLine: null }
+				],
+				otherCase: [{ ProcessId: 7, Name: 'BYL-BACKUP.EXE', ExecutablePath: 'c:/BYL #1/APP/BYL-BACKUP.EXE', CommandLine: 'x' }],
+				files: [
+					'byl-mail.exe.old-20261001080000',
+					'byl-mail.exe.old-20261002080000',
+					'byl-backup.exe.old-20261003080000',
+					'BYL-MAIL.EXE.old-20261004080000',
+					'byl-mail.exe.old-entwurf',
+					'notizen.old-20261001080000',
+					'byl-mail.exe'
+				],
+				folder: 'byl-mail.exe.old-20261005080000',
+				held: 'byl-mail.exe.old-20261002080000'
+			},
+			{ BYL_FUNCTIONS: FUNCTIONS_FILE }
+		);
+	}, 60_000);
+
+	it('takes only the exact names the build gives, like the page "Speicher"', () => {
+		expect(left.owners).toEqual(['byl-mail.exe', 'byl-backup.exe', '', '', '', '', '', '', '', '']);
+		const storage = loadHookLib('storage-rules.js');
+		expect(NAMES.map((name) => storage.isOldProgram(name))).toEqual(left.owners.map((owner) => owner !== ''));
+	});
+
+	it('knows which helper of the folder runs, also from its leftover, never one of another folder', () => {
+		expect(left.running).toEqual(['byl-mail.exe']);
+		expect(left.runningOtherCase).toEqual(['byl-backup.exe']);
+		expect(left.runningNone).toBe(0);
+	});
+
+	it('removes leftovers no process holds, keeps those of a running helper and a held file without an error', () => {
+		expect(left.first).toEqual([
+			{ name: 'byl-backup.exe.old-20261003080000', result: 'Running' },
+			{ name: 'byl-mail.exe.old-20261001080000', result: 'Removed' },
+			{ name: 'byl-mail.exe.old-20261002080000', result: 'Locked' }
+		]);
+		expect([...left.leftFirst].sort()).toEqual(
+			[
+				'BYL-MAIL.EXE.old-20261004080000',
+				'byl-backup.exe.old-20261003080000',
+				'byl-mail.exe',
+				'byl-mail.exe.old-20261002080000',
+				'byl-mail.exe.old-20261005080000',
+				'byl-mail.exe.old-entwurf',
+				'notizen.old-20261001080000'
+			].sort()
+		);
+		// Once the process lets go: only the chosen helper, then the rest; other names stay.
+		expect(left.mailOnly).toEqual([{ name: 'byl-mail.exe.old-20261002080000', result: 'Removed' }]);
+		expect(left.rest).toEqual([{ name: 'byl-backup.exe.old-20261003080000', result: 'Removed' }]);
+		expect([...left.leftAtEnd].sort()).toEqual(
+			[
+				'BYL-MAIL.EXE.old-20261004080000',
+				'byl-mail.exe',
+				'byl-mail.exe.old-20261005080000',
+				'byl-mail.exe.old-entwurf',
+				'notizen.old-20261001080000'
+			].sort()
+		);
+		expect(left.missingFolder).toBe(0);
 	});
 });

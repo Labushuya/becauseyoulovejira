@@ -1,6 +1,7 @@
 # Helpers of the build scripts (scripts\build.ps1, build-mail-helper.ps1, build-backup-helper.ps1,
 # fetch-pocketbase.ps1; ADR-0040, addendum "Build und Abhaengigkeiten"). Plain ASCII, dot-sourced;
-# only Update-BylDependency (its progress and the output of npm) and the problems print.
+# only Update-BylDependency (its progress and the output of npm), Remove-BylHelperLeftover (each
+# removed file) and the problems print.
 #
 # Problems (ADR-0048): the entries of the catalog app\byl-problems.ps1, printed by
 # Write-BylBuildProblem with the paths of this repository. No log file: the output above a problem
@@ -15,6 +16,9 @@
 
 $BylRepositoryRoot = Split-Path -Parent $PSScriptRoot
 . ([System.IO.Path]::Combine($BylRepositoryRoot, 'app', 'byl-problems.ps1'))
+# The rules for the leftovers of replaced helpers, shared with byl-control.ps1 (AR-4); loading the
+# file has no side effects.
+. ([System.IO.Path]::Combine($BylRepositoryRoot, 'app', 'byl-functions.ps1'))
 
 # The folders with their own package-lock.json, relative to the root of the repository.
 $BylDependencyFolders = @('.', 'web', 'helpers/mail', 'helpers/backup', 'extensions/whatsapp-web')
@@ -229,4 +233,19 @@ function Update-BylDependency {
     if ($LASTEXITCODE -ne 0) { throw (New-BylProblemError -Code 'npm-ci' -Values @{ folder = $path; code = $LASTEXITCODE }) }
     Set-BylDependencyMarker -Folder $path -Hash $state.Hash
     return 'Installed'
+}
+
+function Remove-BylHelperLeftover {
+    # Removes the leftovers <helper>.old-<time> in $AppDir that an earlier build left when it replaced
+    # a running helper (AR-4), with the rules of Remove-BylOldHelperFile (exact names of the helpers
+    # $Helper only; a file still held by its process stays without an error), and prints each removal.
+    # The control script removes the rest at the next start.
+    param(
+        [Parameter(Mandatory = $true)][string]$AppDir,
+        [string[]]$Helper = @($BylMailHelperName, $BylBackupHelperName)
+    )
+
+    foreach ($leftover in @(Remove-BylOldHelperFile -AppDir $AppDir -Helper $Helper)) {
+        if ($leftover.Result -eq 'Removed') { Write-Host "Removed app\$($leftover.Name), left by an earlier build." }
+    }
 }

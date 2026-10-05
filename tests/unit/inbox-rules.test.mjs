@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { loadHookLib } from '../support/hook-lib.mjs';
 import * as inbox from '../../web/src/lib/domain/inbox.ts';
+import { statusText } from '../../extensions/whatsapp-web/src/content-core.ts';
 
 const rules = loadHookLib('inbox-rules.js');
 
@@ -207,5 +208,9 @@ describe('handledAtAction and duplicateMessage', () => {
 				expect(inbox.duplicateMessage(state, key), `${state} ${key}`).toBe(rules.duplicateMessage(state, key));
 			}
 		}
+	});
+
+	it('says the same for a moved entry in the extension for WhatsApp Web (AR-4)', () => {
+		expect(statusText({ status: 'duplicate', state: rules.MOVED_STATE })).toBe(rules.duplicateMessage(rules.MOVED_STATE, ''));
 	});
 });

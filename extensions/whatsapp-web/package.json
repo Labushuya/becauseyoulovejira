@@ -1,6 +1,6 @@
 {
 	"name": "byl-whatsapp-web",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"private": true,
 	"description": "Browser extension of becauseyoulovejira for WhatsApp Web: reads the open tab only and hands messages to the local app (ADR-0038)",
 	"type": "module",

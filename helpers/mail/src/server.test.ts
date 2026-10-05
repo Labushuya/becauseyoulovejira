@@ -19,12 +19,16 @@ const ID = 'abcdefghij12345';
 class MemoryIngest implements IngestApi {
 	connections: MailConnection[] = [];
 	items: { draft: IngestDraft; original: Uint8Array | undefined }[] = [];
+	/** State PocketBase names for a duplicate (`moved`: its entry moved into another area, E7-4b). */
+	duplicateState = 'new';
 	async listConnections() {
 		return this.connections;
 	}
 	async sendItem(draft: IngestDraft, original?: Uint8Array) {
 		const existing = this.items.findIndex((item) => item.draft.source_ref === draft.source_ref);
-		if (existing >= 0) return { status: 'duplicate' as const, item: String(existing), state: 'new' };
+		if (existing >= 0) {
+			return { status: 'duplicate' as const, item: String(existing), state: this.duplicateState };
+		}
 		this.items.push({ draft, original });
 		return { status: 'created' as const, item: String(this.items.length - 1) };
 	}
@@ -257,6 +261,26 @@ describe('POST /mailbox/import', () => {
 		});
 		expect(imap.writes()).toEqual([]);
 		expect(imap.flagsUnchanged()).toBe(true);
+	});
+
+	it('names the state of a duplicate, also an entry moved into another area (E7-4b, AR-4)', async () => {
+		mail('Hallo');
+		expect((await call('/mailbox/import', { connection: ID, uids: [1] })).json).toEqual({
+			items: [{ uid: 1, status: 'created', message: '' }]
+		});
+		const texts: [string, string][] = [
+			['moved', 'In einen anderen Bereich verschoben.'],
+			['discarded', 'Schon verworfen.'],
+			['converted', 'Schon umgewandelt.'],
+			['new', 'Schon im Eingang.'],
+			['', 'Schon im Eingang.'],
+			['unbekannt', 'Schon im Eingang.']
+		];
+		for (const [state, message] of texts) {
+			ingest.duplicateState = state;
+			const again = await call('/mailbox/import', { connection: ID, uids: [1] });
+			expect(again.json, state).toEqual({ items: [{ uid: 1, status: 'duplicate', message }] });
+		}
 	});
 
 	it('takes a chosen mail over 25 MB from its beginning, without the file (ADR-0031)', async () => {

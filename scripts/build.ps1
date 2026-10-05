@@ -77,6 +77,11 @@ try {
 		Write-Host "Running build..."
 		Invoke-BylBuildStep -Name 'npm run build' -Rerun ($npm -f $rootDir, 'build') -Run { npm run build }
 
+		# Leftovers app\byl-mail.exe.old-<time> and app\byl-backup.exe.old-<time> of earlier builds that
+		# replaced a running helper: removed once no process holds them; the rest goes at the next start
+		# of the app (AR-4)
+		Remove-BylHelperLeftover -AppDir (Join-Path $rootDir 'app')
+
 		# Build the mail helper app/byl-mail.exe and check it without Node (before the tests: they run it)
 		Write-Host "Building mail helper..."
 		$mailHelper = Join-Path $PSScriptRoot 'build-mail-helper.ps1'

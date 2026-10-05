@@ -68,6 +68,24 @@ describe('build.ps1 -SkipTests (static)', () => {
 	});
 });
 
+describe('leftovers of replaced helpers in the build (static, AR-4)', () => {
+	it('removes them with the rule of the control script before the helpers, also with -SkipTests, never by a wildcard', () => {
+		const build = read('scripts/build.ps1');
+		const removal = build.indexOf("Remove-BylHelperLeftover -AppDir (Join-Path $rootDir 'app')");
+		expect(removal).toBeGreaterThan(build.indexOf('Write-Host "Skipping the tests'));
+		expect(removal).toBeLessThan(build.indexOf("-Name 'build-mail-helper.ps1'"));
+		expect(read('scripts/build-functions.ps1')).toContain(". ([System.IO.Path]::Combine($BylRepositoryRoot, 'app', 'byl-functions.ps1'))");
+		for (const [script, helper] of [
+			['scripts/build-mail-helper.ps1', '$BylMailHelperName'],
+			['scripts/build-backup-helper.ps1', '$BylBackupHelperName']
+		]) {
+			const source = read(script);
+			expect(source, script).toContain(`Remove-BylHelperLeftover -AppDir $appDir -Helper ${helper}`);
+			expect(source, script).not.toMatch(/\.old-\*/);
+		}
+	});
+});
+
 describe.skipIf(process.platform !== 'win32')('build.ps1 -SkipTests in Windows PowerShell', { timeout: scaled(60_000) }, () => {
 	let base;
 	// Git of the tests without the configuration of the system and the account (hooks, signing,
@@ -195,7 +213,10 @@ ConvertTo-Json -InputObject @($results) -Depth 4 -Compress
 
 	it('build.ps1 -SkipTests ends with the entry of the catalog before Node or npm run', () => {
 		const files = Object.fromEntries(
-			['scripts/build.ps1', 'scripts/build-functions.ps1', 'app/byl-problems.ps1'].map((path) => [path, readFileSync(join(ROOT_DIR, path))])
+			['scripts/build.ps1', 'scripts/build-functions.ps1', 'app/byl-problems.ps1', 'app/byl-functions.ps1'].map((path) => [
+				path,
+				readFileSync(join(ROOT_DIR, path))
+			])
 		);
 		const copy = repository('kopie', files);
 		const run = () => {

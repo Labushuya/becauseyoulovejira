@@ -5,9 +5,11 @@
 // operation of the app with the frequent problems of the scripts (ADR-0048), the backups with the
 // emergency plan (ADR-0046 §8) and the storage (ADR-0047 §6). No table (description lists).
 
+import { readFileSync } from 'node:fs';
 import { render, screen, within } from '@testing-library/svelte';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { page } from '$app/state';
+import { MOVE_TEXTS } from '$lib/domain/area-move';
 import { MEMBER_CONTEXT, PC_CONTEXT, REMOTE_CONTEXT, useContext } from '$lib/test/context';
 import {
 	EMERGENCY_LOSSES,
@@ -259,8 +261,14 @@ describe('help page (EH-9)', () => {
 		// Deleting for good only after the dependencies are decided (ADR-0047).
 		expect(text(section)).toContain('und keine Quelle hängt mehr daran');
 		expect(text(section)).toContain('die Hauptquelle bleibt bei ihrem Ticket');
-		// The menu "•••" of a ticket (plan aktionsmenues): entries, keyboard, copying the link.
-		expect(text(section)).toContain('„Link kopieren“, „Duplizieren …“ und „In den Papierkorb …“');
+		// The menu "•••" of a ticket (plan aktionsmenues): entries in the order of TicketActions since
+		// TP-1, QT-1, E7-4 and ER-1 (AR-4), keyboard, copying the link.
+		expect(text(section)).toContain(
+			'in dieser Reihenfolge: „Zum Tagesplan“ (nicht bei erledigten Tickets), „Link kopieren“, „Duplizieren …“, „Folge-Ticket anlegen …“, als Mitglied eines Haushalts mit dem Recht dazu „In den Haushalt verschieben …“ bzw. „Ins Private verschieben …“ und nach einer Linie „In den Papierkorb …“.'
+		);
+		expect(text(section)).toContain(
+			'In „Erledigte“ steht statt „Zum Tagesplan“ „Wieder öffnen“, im Kalender kommt „Fälligkeit verschieben …“ dazu. Anheften ist kein Eintrag des Menüs'
+		);
 		expect(text(section)).toContain('die Pfeiltasten wählen');
 		// "Duplizieren …" into the other area (MV-2, ADR-0045 addendum MV-2).
 		expect(text(section)).toMatch(/wählst du oben das „Ziel“: „Privat“ oder den Haushalt/);
@@ -1052,6 +1060,41 @@ describe('help page (EH-9)', () => {
 		expect(link.closest('section')).toBeNull();
 		expect(link.closest('p')?.classList.contains('note')).toBe(true);
 		expect(container.querySelector('.help')?.lastElementChild).toBe(link.closest('p'));
+	});
+
+	it('links quietly to the licenses of symbols, fonts and libraries in a new tab (AR-4)', () => {
+		const { container } = render(Page);
+		const symbols = screen.getByRole('link', { name: 'Symbole (öffnet in neuem Tab)' });
+		const libraries = screen.getByRole('link', {
+			name: 'Schriften und Programmbibliotheken (öffnet in neuem Tab)'
+		});
+		expect(symbols.getAttribute('href')).toBe('/licenses.txt');
+		expect(libraries.getAttribute('href')).toBe('/licenses-libraries.txt');
+		for (const link of [symbols, libraries]) {
+			expect(link.getAttribute('target')).toBe('_blank');
+			expect(link.getAttribute('rel')).toBe('noopener');
+		}
+		// A note after the last section, right before the overview of the form controls.
+		const note = symbols.closest('p');
+		expect(note?.classList.contains('note')).toBe(true);
+		expect(note?.contains(libraries)).toBe(true);
+		expect(note?.closest('section')).toBeNull();
+		expect(container.querySelector('.help')?.lastElementChild?.previousElementSibling).toBe(note);
+	});
+
+	it('names every entry of the menu "•••" of a ticket that TicketActions has (AR-4)', () => {
+		render(Page);
+		const answer = screen.getByText('Was steht im Menü „•••“ eines Tickets?').closest('details');
+		expect(answer).not.toBeNull();
+		const source = readFileSync(
+			`${import.meta.dirname}/../../../../lib/components/TicketActions.svelte`,
+			'utf8'
+		);
+		const labels = [...source.matchAll(/label: '([^']+)'/g)].map((match) => match[1]);
+		expect(labels).toContain('Folge-Ticket anlegen …');
+		for (const label of [...labels, MOVE_TEXTS.action.household, MOVE_TEXTS.action.private]) {
+			expect(text(answer as Element), label).toContain(`„${label}“`);
+		}
 	});
 });
 
