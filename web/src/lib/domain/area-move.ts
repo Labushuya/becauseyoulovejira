@@ -134,6 +134,15 @@ export interface TicketSourceConflict {
 	trashed: boolean;
 }
 
+/**
+ * What a move into the private area takes away (ADR-0068 §7, PL-2): tickets that lose their assignee
+ * and rules that lose their fixed person or rotation. A server before PL-2 names none.
+ */
+export interface AssigneesCleared {
+	tickets: number;
+	rules: number;
+}
+
 /** The answer of a preview and of a move. */
 export interface MovePreview {
 	preview: boolean;
@@ -157,6 +166,8 @@ export interface MovePreview {
 		series: number;
 		/** Occurrences that move with their rule and stay in their series (MV-2). */
 		occurrences: { open: number; done: number };
+		/** Tickets and rules that lose their assignee into the private area (PL-2). */
+		assigneesCleared: AssigneesCleared;
 	};
 	/**
 	 * What "Ganze Serie verschieben" covers (MV-2): the rules of the records of a series and their open
@@ -230,6 +241,12 @@ const strings = (value: unknown): string[] =>
 	Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : [];
 
 const KINDS: readonly MoveKind[] = ['ticket', 'project', 'rule', 'item'];
+
+/** `assignees_cleared` of the counts of an answer; none without it (a server before PL-2). */
+function parseAssigneesCleared(value: unknown): AssigneesCleared {
+	const cleared = isRecord(value) ? value : {};
+	return { tickets: count(cleared.tickets), rules: count(cleared.rules) };
+}
 
 function parseProjectConflict(value: unknown): MovePreview['conflicts']['project'] | undefined {
 	if (value === null) return null;
@@ -331,7 +348,8 @@ export function parseMovePreview(value: unknown): MovePreview | null {
 			dependencies: count(counts.dependencies),
 			ticketSources: count(counts.ticket_sources),
 			series: count(counts.series),
-			occurrences: { open: count(occurrences.open), done: count(occurrences.done) }
+			occurrences: { open: count(occurrences.open), done: count(occurrences.done) },
+			assigneesCleared: parseAssigneesCleared(counts.assignees_cleared)
 		},
 		seriesOffer: { rules: count(offer.rules), open: count(offer.open), done: count(offer.done) },
 		conflicts: {
@@ -409,6 +427,17 @@ export function countLines(preview: MovePreview): string[] {
 		);
 	}
 	return lines;
+}
+
+/**
+ * The warning of a move into the private area and of dissolving with "übernehmen" (ADR-0068 §7,
+ * PL-2): "Bei 3 Tickets und 1 Wiederholung fällt die Zuständigkeit weg."; null when nothing loses one.
+ */
+export function assigneesClearedText(cleared: AssigneesCleared): string | null {
+	const parts: string[] = [];
+	if (cleared.tickets > 0) parts.push(plural(cleared.tickets, 'Ticket', 'Tickets'));
+	if (cleared.rules > 0) parts.push(plural(cleared.rules, 'Wiederholung', 'Wiederholungen'));
+	return parts.length === 0 ? null : `Bei ${parts.join(' und ')} fällt die Zuständigkeit weg.`;
 }
 
 /**
@@ -628,6 +657,8 @@ export interface DissolvePreview {
 		connections: number;
 		comments: number;
 	};
+	/** "übernehmen": tickets and rules that lose their assignee in the private area (PL-2). */
+	assigneesCleared: AssigneesCleared;
 	codes: (NamedProject & { suggestion: string })[];
 }
 
@@ -676,6 +707,9 @@ export function parseDissolvePreview(value: unknown): DissolvePreview | null {
 		household: { id, name: text(value.household.name) },
 		members,
 		counts,
+		assigneesCleared: parseAssigneesCleared(
+			isRecord(value.counts) ? value.counts.assignees_cleared : undefined
+		),
 		codes
 	};
 }

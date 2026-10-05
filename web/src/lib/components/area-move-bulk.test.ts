@@ -84,7 +84,8 @@ const SERIES = { rules: 1, open: 1, done: 4 };
 
 /**
  * A preview of the server without conflicts: the move may run at once. With `series` the chosen
- * tickets belong to a series, and `body` says what the dialog chose.
+ * tickets belong to a series, and `body` says what the dialog chose. Into the private area the two
+ * chosen tickets lose their assignee, and a whole series its rotation (PL-2).
  */
 function preview(
 	moved: MovePreview['moved'] = null,
@@ -93,10 +94,11 @@ function preview(
 ): MovePreview {
 	const whole = series && body.series === true;
 	const done = whole && body.series_done === true;
+	const toPrivate = body.to === 'private';
 	return {
 		preview: moved === null,
 		kind: 'ticket',
-		to: 'household',
+		to: toPrivate ? 'private' : 'household',
 		scope: `h:${HOUSE.id}`,
 		fromName: 'Privat',
 		toName: HOUSE.name,
@@ -110,7 +112,8 @@ function preview(
 			dependencies: 0,
 			ticketSources: 0,
 			series: whole ? 1 : 0,
-			occurrences: { open: whole ? 1 : 0, done: done ? 4 : 0 }
+			occurrences: { open: whole ? 1 : 0, done: done ? 4 : 0 },
+			assigneesCleared: toPrivate ? { tickets: 2, rules: whole ? 1 : 0 } : { tickets: 0, rules: 0 }
 		},
 		seriesOffer: series ? SERIES : { rules: 0, open: 0, done: 0 },
 		conflicts: {
@@ -133,7 +136,7 @@ function preview(
 	};
 }
 
-async function setup(series = false) {
+async function setup(series = false, area: 'private' | 'household' = 'private') {
 	const household = new HouseholdStore(
 		{
 			fetch: async () => ({ kind: 'ok' as const, value: householdState })
@@ -142,15 +145,16 @@ async function setup(series = false) {
 	);
 	await household.load();
 	const memory = new Map<string, string>();
-	const area = new AreaStore(
+	const areas = new AreaStore(
 		() => ({
 			getItem: (key: string) => memory.get(key) ?? null,
 			setItem: (key: string, value: string) => void memory.set(key, value)
 		}),
 		() => undefined
 	);
-	area.begin(ME);
-	area.followHousehold(HOUSE);
+	areas.begin(ME);
+	areas.followHousehold(HOUSE);
+	if (area === 'household') areas.select('household');
 
 	const open = [ticket(1), ticket(2), ticket(3)];
 	const data: TicketListData = {
@@ -199,7 +203,9 @@ async function setup(series = false) {
 	const moves = new AreaMoveStore({ move }, SESSION, undefined, (result) =>
 		dropMovedTickets(store, result)
 	);
-	render(AreaMoveBulkHarness, { props: { area, household, moves, store, catalog, bulk } });
+	render(AreaMoveBulkHarness, {
+		props: { area: areas, household, moves, store, catalog, bulk }
+	});
 	await vi.waitFor(() => expect(box('TASK-1')).toBeTruthy());
 	return { store, move };
 }
@@ -332,6 +338,30 @@ describe('the bulk action "In den Haushalt verschieben …" (E7-4b)', () => {
 				series_done: false
 			},
 			expect.anything()
+		);
+	});
+
+	it('warns into the private area which tickets and series lose their assignee (PL-2)', async () => {
+		await setup(true, 'household');
+		await choose('TASK-1');
+		await choose('TASK-2');
+		await fireEvent.click(screen.getByRole('button', { name: 'Ins Private verschieben …' }));
+		const dialog = await vi.waitFor(() =>
+			screen.getByRole('dialog', { name: '2 Tickets ins Private verschieben' })
+		);
+		await vi.waitFor(() =>
+			expect(
+				within(dialog).getByText('Bei 2 Tickets und 1 Wiederholung fällt die Zuständigkeit weg.')
+			).toBeTruthy()
+		);
+		// Without the series the rule stays in the household and keeps its rotation.
+		await fireEvent.click(
+			within(dialog).getByRole('checkbox', {
+				name: 'Bei wiederkehrenden Tickets die ganze Serie mitnehmen'
+			})
+		);
+		await vi.waitFor(() =>
+			expect(within(dialog).getByText('Bei 2 Tickets fällt die Zuständigkeit weg.')).toBeTruthy()
 		);
 	});
 });

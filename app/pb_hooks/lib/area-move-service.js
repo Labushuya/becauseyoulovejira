@@ -29,6 +29,8 @@
 //   choice "mitnehmen"). An occurrence that moves with its rule stays in the series; one that stays
 //   behind leaves it as before. The preview counts series, open and done occurrences apart and offers
 //   the choice whenever a record of the plan belongs to a series (`series_offer`).
+// - Since PL-2 the preview of a move into the private area and of dissolving with `adopt` counts the
+//   tickets and rules that lose their assignee or rotation there (`counts.assignees_cleared`).
 // - POST /api/byl/household/dissolve: only the owner; `adopt` moves everything of the household with
 //   the same rules into his private area (codes taken there get a suffix), `delete` deletes it for
 //   good after the name of the household is typed. Then the memberships, the codes and the household
@@ -853,6 +855,38 @@ function ticketRef(ticket) {
   return ticket === null ? null : { id: ticket.id, key: ticket.getString('key'), title: ticket.getString('title') };
 }
 
+/**
+ * What a move into the private area takes away (ADR-0068 §7, ADR-0061 addendum PL-2): the tickets of
+ * the plan with an assignee (sub-tasks, the trash and the occurrences of whole series included) and the
+ * rules with a fixed person or a rotation. Nothing into the household and before the migration
+ * 1790204900. The dialogs warn with it ("Bei 3 Tickets und 1 Wiederholung fällt die Zuständigkeit weg.").
+ */
+function assigneesCleared(txApp, plan) {
+  var counts = { tickets: 0, rules: 0 };
+  if (plan.direction !== 'private') {
+    return counts;
+  }
+  var assignees = require(__hooks + '/lib/assignee-service.js');
+  var i;
+  if (assignees.ready(txApp)) {
+    var tickets = recordsOf(plan, 'tickets');
+    for (i = 0; i < tickets.length; i++) {
+      if (tickets[i].getString('assignee') !== '') {
+        counts.tickets += 1;
+      }
+    }
+  }
+  if (assignees.rulesReady(txApp)) {
+    var moved = recordsOf(plan, 'rules');
+    for (i = 0; i < moved.length; i++) {
+      if (moved[i].getString('assignee_mode') !== '' || moved[i].getStringSlice('assignees').length > 0) {
+        counts.rules += 1;
+      }
+    }
+  }
+  return counts;
+}
+
 // The active projects of the target, for the choice of the project (the tab knows only its own area).
 function targetProjects(txApp, plan) {
   var found = txApp.findRecordsByFilter(PROJECTS, 'scope = {:scope} && archived = false', 'name,id', 0, 0, { scope: plan.to.scope });
@@ -947,7 +981,9 @@ function summaryOf(txApp, plan, input) {
       ticket_sources: plan.linkCount,
       // Rules that move as whole series (MV-2), and their occurrences.
       series: plan.series ? plan.order.rules.length : 0,
-      occurrences: occurrences
+      occurrences: occurrences,
+      // Tickets and rules that lose their assignee or rotation into the private area (PL-2).
+      assignees_cleared: assigneesCleared(txApp, plan)
     },
     series_offer: plan.offer,
     conflicts: {
@@ -1718,6 +1754,8 @@ function dissolve(e) {
     collectHousehold(txApp, plan);
     analyse(txApp, plan);
     var counts = householdCounts(txApp, household.id);
+    // "übernehmen" moves into the private area like a move: assignees and rotations go (PL-2).
+    counts.assignees_cleared = input.mode === 'adopt' ? assigneesCleared(txApp, plan) : { tickets: 0, rules: 0 };
     outcome.counts = counts;
     outcome.body = {
       preview: input.preview,

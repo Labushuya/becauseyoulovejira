@@ -1,10 +1,17 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import { MOVE_TEXTS, countLines, noteLines, ticketSourceLine } from '$lib/domain/area-move';
+	import {
+		MOVE_TEXTS,
+		assigneesClearedText,
+		countLines,
+		noteLines,
+		ticketSourceLine
+	} from '$lib/domain/area-move';
 	import { insideModal } from '$lib/overlay/modal-context';
 	import type { AreaMoveStore } from '$lib/stores/area-move.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import Field from './form/Field.svelte';
+	import SectionMessage from './guidance/SectionMessage.svelte';
 	import InlineDialog from './InlineDialog.svelte';
 	import Modal from './overlay/Modal.svelte';
 
@@ -17,7 +24,9 @@
 	// 16). Nothing moves before the button; a refusal of the server stands in the dialog. Since MV-2 a
 	// rule, a ticket of a series and the bulk action offer "Ganze Serie verschieben" (or "Bei
 	// wiederkehrenden Tickets die ganze Serie mitnehmen") with "Bisherige erledigte Vorkommen
-	// mitnehmen (N)", both chosen; each change loads the preview anew.
+	// mitnehmen (N)", both chosen; each change loads the preview anew. Since PL-2 a move into the
+	// private area warns below the counts when tickets or rules lose their assignee there ("Bei 3
+	// Tickets und 1 Wiederholung fällt die Zuständigkeit weg."); without any there is no warning.
 	let {
 		store,
 		returnFocus
@@ -52,6 +61,9 @@
 	const title = $derived(request === null ? '' : MOVE_TEXTS.title(request.label, request.to));
 	const counts = $derived(preview === null ? [] : countLines(preview));
 	const notes = $derived(preview === null ? [] : noteLines(preview));
+	const assigneesCleared = $derived(
+		preview === null ? null : assigneesClearedText(preview.counts.assigneesCleared)
+	);
 	const project = $derived(preview?.conflicts.project ?? null);
 	const codesOfProject = $derived(
 		project === null ? '' : project.projects.map((entry) => entry.code).join(', ')
@@ -101,6 +113,10 @@
 					{preview.fromName} → {preview.toName}
 				</p>
 			</section>
+
+			{#if assigneesCleared !== null}
+				<SectionMessage tone="warning">{assigneesCleared}</SectionMessage>
+			{/if}
 
 			{#if offer !== null && request !== null}
 				<fieldset class="group">
