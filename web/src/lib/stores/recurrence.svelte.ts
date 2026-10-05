@@ -67,6 +67,7 @@ import {
 	type RepeatRequest
 } from '$lib/domain/recurrence-rule';
 import { shortDate } from '$lib/domain/recurrence-text';
+import { DEFAULT_SERIES_START } from '$lib/domain/series-start';
 import type { Ticket } from '$lib/domain/ticket';
 import type { EditResult } from './catalog-editor';
 import { SILENT_FLAGS, type FlagSink } from './flags.svelte';
@@ -369,7 +370,9 @@ export class RecurrenceStore implements SeriesChangeSink {
 	 * "Wiederholen…" (ADR-0023 section 1): a rule whose template is the ticket as it is now, with
 	 * the ticket as its current instance. The next tickets start with the status the user chose
 	 * for "Folgetickets starten mit" (ADR-0022 addendum 9); without a choice (before the migration
-	 * of "Status beim Anlegen", nothing is asked) the field is left out.
+	 * of "Status beim Anlegen", nothing is asked) the field is left out. `start` says where the
+	 * series begins if the first date of the ticket lies in the past (WH-2, ADR-0022 addendum 14):
+	 * the hook moves the ticket to the first date from today unless the user kept the date.
 	 */
 	repeat(
 		ticket: Ticket,
@@ -382,7 +385,8 @@ export class RecurrenceStore implements SeriesChangeSink {
 			{
 				...template,
 				...(initialStatus !== null && { initial_status: chosen }),
-				...formParams(values)
+				...formParams(values),
+				start: values.start ?? DEFAULT_SERIES_START
 			},
 			ticket.id,
 			// The rule lies in the area of its ticket (E7-3).

@@ -224,7 +224,9 @@ describe('RecurrenceStore', () => {
 				month_day: 0,
 				anchor: '2026-09-28',
 				lead_days: 3,
-				each_occurrence: false
+				each_occurrence: false,
+				// "Serie ab heute beginnen", chosen in advance (WH-2, ADR-0022 addendum 14).
+				start: 'today'
 			},
 			'ticket000000001'
 		);
@@ -271,6 +273,28 @@ describe('RecurrenceStore', () => {
 				tags: ['tag000000000001']
 			});
 		}
+	});
+
+	// WH-2 (ADR-0022 addendum 14): the choice of the form goes along as the body field `start` on
+	// every way with a ticket ("Wiederholen…", "Neues Ticket", the prepared offer); the hook decides.
+	it('sends where the series begins: "today" unless the user keeps the date', async () => {
+		const data = fakeData([]);
+		const store = new RecurrenceStore(data, session());
+		await store.load();
+		const values = defaultFormValues('2024-03-12', '2026-09-25');
+
+		await store.repeat(ticket({ due: '2024-03-12' }), { values, initialStatus: 'open' });
+		await store.repeat(ticket({ due: '2024-03-12' }), {
+			values: { ...values, start: 'keep' },
+			initialStatus: 'open'
+		});
+		await store.repeatCreated(ticket({ due: '2024-03-12' }), {
+			values: { ...values, start: 'today' },
+			initialStatus: 'open'
+		});
+
+		const starts = vi.mocked(data.createRule).mock.calls.map(([draft]) => draft.start);
+		expect(starts).toEqual(['today', 'keep', 'today']);
 	});
 
 	it('pauses, resumes, saves a rhythm, deletes and detaches with success flags', async () => {

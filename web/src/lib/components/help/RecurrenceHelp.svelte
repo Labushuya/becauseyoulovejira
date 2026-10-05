@@ -200,6 +200,17 @@
 		<li>Eine Regel zu löschen, lässt ihre Tickets als normale Tickets stehen.</li>
 		<li>„Neues Ticket“ mit „Wiederholen“: Das angelegte Ticket ist das erste der Serie.</li>
 		<li>
+			Liegt die Fälligkeit beim Anlegen einer Wiederholung in der Vergangenheit (etwa bei einem
+			alten Eintrag aus Notion), fragt die App, wo die Serie beginnt. „Serie ab heute beginnen“ ist
+			vorausgewählt: Das Ticket bekommt den ersten regulären Termin ab heute, bei „täglich“ also
+			heute, bei „wöchentlich montags“ an einem Mittwoch den kommenden Montag; der Dialog nennt das
+			Datum („Erstes Vorkommen“), und der Verlauf zeigt die geänderte Fälligkeit. „Ursprüngliches
+			Datum behalten“ lässt das Ticket „überfällig seit …“; nach dem Erledigen kommt das nächste für
+			den ersten Termin danach, mit „Verpasste Termine nachholen“ dagegen je ein Ticket für die
+			Termine seitdem. Dasselbe gilt für „Beginnt am“ in der Vergangenheit bei einem Ticket ohne
+			Fälligkeit. Eine neue Regel ohne Ticket beginnt immer ab heute.
+		</li>
+		<li>
 			Folgetickets bekommen Titel, Beschreibung, Priorität, Projekt, Tags und den „Status beim
 			Anlegen“ aus der Vorlage der Regel. Die Vorlage übernimmt beim Einrichten die Werte des
 			Tickets. Mit welchem Status Folgetickets starten, fragt die App beim Anlegen der Regel

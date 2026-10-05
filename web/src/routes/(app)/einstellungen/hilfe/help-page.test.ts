@@ -558,6 +558,21 @@ describe('help page (EH-9)', () => {
 		}
 	});
 
+	// WH-2 (ADR-0022 addendum 14): a series whose due date lies in the past.
+	it('explains that a series with a due date in the past begins from today unless it is kept', () => {
+		render(Page);
+		const content = text(screen.getByRole('region', { name: 'Wiederholungen' }));
+		for (const phrase of [
+			'Liegt die Fälligkeit beim Anlegen einer Wiederholung in der Vergangenheit (etwa bei einem alten Eintrag aus Notion), fragt die App, wo die Serie beginnt.',
+			'„Serie ab heute beginnen“ ist vorausgewählt: Das Ticket bekommt den ersten regulären Termin ab heute, bei „täglich“ also heute, bei „wöchentlich montags“ an einem Mittwoch den kommenden Montag',
+			'der Dialog nennt das Datum („Erstes Vorkommen“), und der Verlauf zeigt die geänderte Fälligkeit.',
+			'„Ursprüngliches Datum behalten“ lässt das Ticket „überfällig seit …“',
+			'Eine neue Regel ohne Ticket beginnt immer ab heute.'
+		]) {
+			expect(content, phrase).toContain(phrase);
+		}
+	});
+
 	// Plan WV-3 (ADR-0022 addendum 10): "Unteraufgaben werden nicht kopiert" is replaced.
 	it('explains the sub-tasks of the template, how they are taken over and what reopening does', () => {
 		render(Page);
