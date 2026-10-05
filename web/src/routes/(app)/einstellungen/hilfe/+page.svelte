@@ -1115,12 +1115,48 @@
 						übernehmen“: Dann bekommt das Duplikat einen eigenen Eintrag als Kopie seiner
 						Hauptquelle, mit Text, Details und Originaldatei, markiert als „Kopie aus HAUS-12“. Die
 						Quelle des Originals bleibt, wo sie ist, und dieselbe Mail kommt trotzdem nicht doppelt
-						in den Eingang.
+						in den Eingang. Stammt das Original aus anderen Tickets, stammt das Duplikat mit dieser
+						Wahl ebenfalls aus ihnen.
 					</li>
 					<li>
 						Danach öffnet sich das Duplikat, wie du Tickets zuletzt geöffnet hast (Panel oder
 						Vollansicht). Der Verlauf nennt an beiden Tickets „Dupliziert aus …“ bzw. „Dupliziert
 						nach …“, und die Meldung unten links führt mit „HAUS-12 öffnen“ zurück zum Original.
+					</li>
+				</ul>
+			</details>
+			<details>
+				<summary>Wie lege ich ein Folge-Ticket an, und wie wird ein Ticket zur Quelle?</summary>
+				<ul>
+					<li>
+						Ein Ticket kann aus anderen Tickets stammen: „HAUS-20 stammt aus HAUS-3“. Das ist keine
+						Abhängigkeit (nichts wird blockiert) und keine Unteraufgabe, sondern die Herkunft.
+						Quelle kann jedes Ticket sein, offen oder erledigt, und ein Ticket kann mehrere Quellen
+						und mehrere Folge-Tickets haben.
+					</li>
+					<li>
+						„Folge-Ticket anlegen …“ im Menü „•••“ (oben im Panel, in der Vollansicht und in jeder
+						Zeile) schlägt „Folge: ‹Titel›“ vor, übernimmt Projekt und Bereich und auf Wunsch Tags
+						und Charm (angehakt) und die Beschreibung (nicht angehakt). Das neue Ticket ist eine
+						Aufgabe, startet offen und öffnet sich danach.
+					</li>
+					<li>
+						Unter „Quellen“ eines Tickets fügt „Quelle hinzufügen“ → „Ticket …“ ein vorhandenes
+						Ticket als Quelle hinzu; die Liste zeigt offene und erledigte. Es fehlen das Ticket
+						selbst, seine Quellen und jedes Ticket, das aus ihm stammt, weil es sonst einen Kreis
+						gäbe. Versucht es jemand doch, sagt die App, warum, etwa „HAUS-20 stammt bereits (über
+						HAUS-12) von HAUS-3 ab.“ Das Symbol neben einer Ticket-Quelle entfernt sie wieder.
+					</li>
+					<li>
+						Das Quell-Ticket zeigt seine Folge-Tickets im Abschnitt „Folge-Tickets“; beide Seiten
+						verlinken einander, und der Verlauf nennt „Quelle hinzugefügt“, „Quelle entfernt“ und
+						„Folge-Ticket“. Liegt eines im Papierkorb, steht „(im Papierkorb)“ daneben;
+						Wiederherstellen bringt die Verknüpfung zurück, endgültiges Löschen entfernt sie.
+					</li>
+					<li>
+						Tickets als Quelle gibt es nur im selben Bereich. Verschiebst du ein Ticket in den
+						anderen Bereich, fragt der Dialog, ob seine Quell- und Folge-Tickets mitkommen oder die
+						Verknüpfung gelöst wird. Tickets einer Wiederholung erben keine Ticket-Quellen.
 					</li>
 				</ul>
 			</details>

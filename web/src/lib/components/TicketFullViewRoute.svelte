@@ -15,6 +15,8 @@
 	import { findAreaMoveStore } from '$lib/stores/area-move.svelte';
 	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
 	import { getTicketSourcesStore } from '$lib/stores/ticket-sources.svelte';
+	import { findTicketFollowUpStore } from '$lib/stores/ticket-follow-up.svelte';
+	import { findTicketOriginsStore } from '$lib/stores/ticket-origins.svelte';
 	import { findTicketOpenMode, ticketLinks } from '$lib/stores/open-mode.svelte';
 	import { findPinStore } from '$lib/stores/pins.svelte';
 	import { findTicketHost } from '$lib/ticket-host';
@@ -25,6 +27,7 @@
 	import ColorMark from './ColorMark.svelte';
 	import DuplicateDialog from './DuplicateDialog.svelte';
 	import EditableTitle from './EditableTitle.svelte';
+	import FollowUpDialog from './FollowUpDialog.svelte';
 	import FullView from './overlay/FullView.svelte';
 	import RecurrenceSummary from './RecurrenceSummary.svelte';
 	import TicketActions from './TicketActions.svelte';
@@ -32,6 +35,7 @@
 	import TicketDeleteQuestion from './TicketDeleteQuestion.svelte';
 	import TicketDescription from './TicketDescription.svelte';
 	import TicketFields from './TicketFields.svelte';
+	import TicketFollowUps from './TicketFollowUps.svelte';
 	import TicketLeaveQuestion from './TicketLeaveQuestion.svelte';
 	import TicketMeta from './TicketMeta.svelte';
 	import TicketParentField from './TicketParentField.svelte';
@@ -69,6 +73,9 @@
 	const openMode = findTicketOpenMode();
 	const links = ticketLinks();
 	const duplicates = findTicketDuplicateStore();
+	/** Tickets as sources (ADR-0067); the layout of the ticket route opens them for the ticket. */
+	const origins = findTicketOriginsStore();
+	const followUps = findTicketFollowUpStore();
 	const moves = findAreaMoveStore();
 	const flags = findFlagStore() ?? SILENT_FLAGS;
 	/** The own pins (ADR-0064): the toggle before "•••". */
@@ -106,6 +113,9 @@
 	/** Ticket whose question of "Duplizieren …" is unfolded; another ticket starts without it. */
 	let duplicatingFor = $state<string | null>(null);
 	const duplicating = $derived(duplicatingFor !== null && duplicatingFor === id);
+	/** Ticket whose question of "Folge-Ticket anlegen …" is unfolded (ADR-0067). */
+	let followingFor = $state<string | null>(null);
+	const following = $derived(followingFor !== null && followingFor === id);
 	/** The button of the menu "•••": the questions give the focus back to it. */
 	let menuButton = $state<HTMLButtonElement>();
 
@@ -181,10 +191,19 @@
 					: () => {
 							duplicatingFor = id;
 							askingFor = null;
+							followingFor = null;
+						}}
+				onfollowup={followUps === null
+					? null
+					: () => {
+							followingFor = id;
+							askingFor = null;
+							duplicatingFor = null;
 						}}
 				ondelete={() => {
 					askingFor = id;
 					duplicatingFor = null;
+					followingFor = null;
 				}}
 				bind:trigger={menuButton}
 			/>
@@ -223,6 +242,7 @@
 					{ticket}
 					projects={catalog.activeProjects}
 					sources={sources.ticketId === ticket.id ? sources.items : []}
+					ticketSources={origins?.ticketId === ticket.id ? origins.sources : []}
 					commentCount={comments.ticketId === ticket.id ? comments.comments.length : 0}
 					{subtaskCount}
 					parentKey={ticket.parentId ? (parent?.key ?? null) : null}
@@ -230,6 +250,16 @@
 					onopen={openTicket}
 					returnFocus={() => menuButton}
 					onclose={() => (duplicatingFor = null)}
+				/>
+			{/if}
+			{#if following && followUps !== null}
+				<FollowUpDialog
+					{ticket}
+					project={catalog.projectOf(ticket)}
+					store={followUps}
+					onopen={openTicket}
+					returnFocus={() => menuButton}
+					onclose={() => (followingFor = null)}
 				/>
 			{/if}
 			{#if path.length > 0}
@@ -244,7 +274,20 @@
 					hrefOf={(subtaskId) => host.full(subtaskId, page.url)}
 				/>
 			{/if}
-			<TicketSources {ticket} store={sources} candidates={inbox.newItems} />
+			<TicketSources
+				{ticket}
+				store={sources}
+				candidates={inbox.newItems}
+				{origins}
+				hrefOf={(otherId) => host.full(otherId, page.url)}
+			/>
+			{#if origins !== null}
+				<TicketFollowUps
+					{ticket}
+					store={origins}
+					hrefOf={(otherId) => host.full(otherId, page.url)}
+				/>
+			{/if}
 			<TicketActivity store={comments} {catalog} pin={detail} />
 		{/snippet}
 		{#snippet side()}

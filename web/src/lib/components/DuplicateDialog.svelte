@@ -14,6 +14,7 @@
 	import { PRIORITY_LABELS } from '$lib/domain/labels';
 	import { projectPath } from '$lib/domain/project-tree';
 	import type { ProjectRef, Ticket } from '$lib/domain/ticket';
+	import type { TicketOrigin } from '$lib/domain/ticket-origins';
 	import { insideModal } from '$lib/overlay/modal-context';
 	import type { TicketDuplicateStore } from '$lib/stores/ticket-duplicate.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
@@ -28,7 +29,8 @@
 	// and comments not; the project with ProjectSelect), the status as a required choice without an
 	// answer in advance (the building
 	// block of "Folgetickets starten mit") and, when the original has sources, whether the duplicate
-	// gets a copy of its main source. A series never comes along; the dialog says so. In the side
+	// gets a copy of its main source and, since QT-1 (ADR-0067), stems from its source tickets as
+	// well. A series never comes along; the dialog says so. In the side
 	// panel a modal M; inside a modal (the full view) the same form stands inline (InlineDialog,
 	// ADR-0025 addendum 16). Errors of the server stand at their field, anything else as a message;
 	// after the duplicate exists the dialog closes and the owner opens it.
@@ -36,6 +38,7 @@
 		ticket,
 		projects,
 		sources = [],
+		ticketSources = [],
 		commentCount = 0,
 		subtaskCount = 0,
 		parentKey = null,
@@ -49,6 +52,8 @@
 		projects: readonly ProjectRef[];
 		/** Sources of the ticket (inbox items with `ticket = <id>`), the main one among them. */
 		sources?: readonly InboxItemSummary[];
+		/** Source tickets of the ticket (ADR-0067); those in the trash do not come along. */
+		ticketSources?: readonly Pick<TicketOrigin, 'id' | 'key' | 'trashed'>[];
 		commentCount?: number;
 		/** Sub-tasks of a parent ticket. */
 		subtaskCount?: number;
@@ -106,8 +111,12 @@
 			? 'Das Duplikat bekommt einen neuen Key im gewählten Projekt.'
 			: `„${projectPath(archivedProject)}“ ist archiviert und nimmt keine Tickets auf; wähle ein anderes Projekt oder keins.`
 	);
+	/** The source tickets the duplicate would stem from as well (ADR-0067, addendum of ADR-0045). */
+	const ticketKeys = $derived(
+		ticketSources.filter((source) => !source.trashed).map((source) => source.key)
+	);
 	/** A refusal of the source without the section (no sources known) goes to the message. */
-	const sourceShown = $derived(sources.length > 0);
+	const sourceShown = $derived(sources.length > 0 || ticketKeys.length > 0);
 
 	async function focusFirstError() {
 		await tick();
@@ -304,12 +313,14 @@
 						name={`${uid}-source`}
 						value="copy"
 						bind:group={answers.source}
-						disabled={mainSource === null}
+						disabled={mainSource === null && ticketKeys.length === 0}
 						aria-describedby={ids.copy}
 					/>
 					Kopie der Herkunft übernehmen
 				</label>
-				<p class="hint nested" id={ids.copy}>{copySourceHint(mainSource, ticket.key)}</p>
+				<p class="hint nested" id={ids.copy}>
+					{copySourceHint(mainSource, ticket.key, ticketKeys)}
+				</p>
 				{#if errors.source}
 					<p class="field-error" id={ids.sourceError}><ErrorIcon /><span>{errors.source}</span></p>
 				{/if}

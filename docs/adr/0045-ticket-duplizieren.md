@@ -119,3 +119,13 @@ Mit dem Tagesplan hat ein Ticket eine Art: „Aufgabe“ oder „Laufendes Vorha
 - **Immer übernommen, wie der Charm:** Das Duplikat bekommt die Art des Originals, jede neue Unteraufgabe die Art ihrer eigenen Unteraufgabe (`withKind` in `lib/duplicate-service.js`), ohne Schalter in der Abfrage (Produktentscheidung zu PL-1) und ohne eigenen Eintrag im Verlauf. Ein laufendes Vorhaben bleibt also eines, eine Aufgabe eine Aufgabe.
 - Vor der Migration des Tagesplans liest der Dienst die Art leer und setzt nichts; den Standard `task` setzt dann der Modell-Hook, sobald es das Feld gibt.
 - **Tests:** `ticket-duplicate.test.mjs` („takes the kind of the original and of each sub-ticket over, like the charm“).
+
+## Nachtrag (2026-10-05, [ADR-0067](0067-tickets-als-quelle.md), QT-1): Quell-Tickets im Duplikat
+
+Seit QT-1 kann ein Ticket aus anderen Tickets stammen („B stammt aus A“). §4 bleibt, ergänzt um:
+
+- **Dieselbe Wahl:** „Kopie der Herkunft übernehmen“ (`source: copy`) umfasst auch die Quell-Tickets. Das Duplikat stammt dann aus jedem **lebenden** Quell-Ticket des Originals (eines im Papierkorb nicht), in der Transaktion des Duplizierens, mit „Quelle hinzugefügt“ im Verlauf des Duplikats und „Folge-Ticket“ in dem jeder Quelle (`copySources` in `lib/ticket-source-service.js`). Folge-Tickets des Originals werden nie übernommen; „Keine Quelle“ übernimmt nichts.
+- **Ohne Hauptquelle:** Hat das Original keine Hauptquelle, aber Quell-Tickets, ist die Wahl möglich und übernimmt nur sie; ohne beides bleibt `validation_duplicate_source_missing`. Mit Hauptquelle und fehlender Originaldatei bleibt `validation_duplicate_source_file`.
+- **Abfrage:** Der Abschnitt „Quelle“ steht auch dann, wenn das Original nur Quell-Tickets hat; der Hinweis unter „Kopie der Herkunft übernehmen“ nennt sie („Das Duplikat stammt wie das Original aus HAUS-3 und HAUS-5.“, nach einer Hauptquelle mit „Außerdem …“). Die Zeile lädt die Quell-Tickets mit (`TicketRowActionsStore`).
+- **Antwort:** zusätzlich `ticket_sources` (Anzahl). Vor der Migration von QT-1 gibt es keine Quell-Tickets, alles bleibt wie vorher.
+- **Tests:** `ticket-sources.test.mjs` („takes the source tickets over with "Kopie der Herkunft übernehmen", not without“), `ticket-duplicate.test.ts`, `hooks-before-migration.test.mjs`.

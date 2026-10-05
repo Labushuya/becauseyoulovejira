@@ -18,6 +18,7 @@ import type { Ticket, TicketSummary } from '$lib/domain/ticket';
 import { CatalogStore } from '$lib/stores/catalog.svelte';
 import { FlagStore } from '$lib/stores/flags.svelte';
 import { TicketDuplicateStore } from '$lib/stores/ticket-duplicate.svelte';
+import { TicketFollowUpStore } from '$lib/stores/ticket-follow-up.svelte';
 import { TicketListStore, type TicketListData } from '$lib/stores/ticket-list.svelte';
 import {
 	TicketRowActionsStore,
@@ -91,6 +92,8 @@ interface Setup {
 	path?: string;
 	activeId?: string | null;
 	duplicates?: boolean;
+	/** "Folge-Ticket anlegen …" (ADR-0067), with its store. */
+	followUps?: boolean;
 	rowData?: Partial<TicketRowActionsData>;
 }
 
@@ -123,9 +126,11 @@ async function showTable(setup: Setup = {}) {
 		setup.duplicates === false
 			? null
 			: new TicketDuplicateStore({ duplicate: vi.fn() }, SESSION, flags);
+	const followUps =
+		setup.followUps === true ? new TicketFollowUpStore({ create: vi.fn() }, SESSION, flags) : null;
 	store.activate(parseListQuery(mocks.page.url.searchParams));
 	render(TicketTable, {
-		props: { store, catalog, rowActions, duplicates, activeId: setup.activeId ?? null }
+		props: { store, catalog, rowActions, duplicates, followUps, activeId: setup.activeId ?? null }
 	});
 	render(FlagGroup, { props: { store: flags } });
 	await vi.advanceTimersByTimeAsync(0);
@@ -311,6 +316,21 @@ describe('menu "•••" of a row (AM-2)', () => {
 		await tick();
 		expect(screen.queryByRole('dialog')).toBeNull();
 		expect(mocks.goto).not.toHaveBeenCalled();
+		expect(document.activeElement).toBe(button);
+	});
+
+	it('offers "Folge-Ticket anlegen …" with its store and asks with the whole ticket (ADR-0067)', async () => {
+		const { rowData } = await showTable({ followUps: true });
+		const button = await choose('Folge-Ticket anlegen …');
+		expect(rowData.get).toHaveBeenCalledWith(ID);
+		expect(rowData.sources).not.toHaveBeenCalled();
+		const dialog = screen.getByRole('dialog', { name: 'Folge-Ticket aus TASK-1' });
+		expect(within(dialog).getByLabelText<HTMLInputElement>('Titel').value).toBe(
+			'Folge: Fenster putzen'
+		);
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Abbrechen' }));
+		await tick();
+		expect(screen.queryByRole('dialog')).toBeNull();
 		expect(document.activeElement).toBe(button);
 	});
 

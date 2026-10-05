@@ -161,3 +161,17 @@ Geprüft, kein Fehler: Das Layout nimmt die verschobenen Tickets sofort aus der 
 | Verwaiste Haushalte automatisch löschen | Endgültiges Löschen ohne Vorschau und Bestätigung; der Verwalter sähe nie, was verloren geht. |
 
 **Neustart nötig** (`neu-starten.bat`): neue Route und geänderte Hooks; die Oberfläche nach dem Build und F5. Keine Migration.
+
+## Nachtrag QT-1 (2026-10-05, [ADR-0067](0067-tickets-als-quelle.md)): Quell- und Folge-Tickets beim Verschieben
+
+- **Entscheidung durch:** Nutzer (Vorgabe zu QT-1: Ticket-Quellen über die neue Bereichsgrenze erscheinen in der Vorschau als Konflikt mit der Wahl „mitnehmen“ oder „Verknüpfung lösen“, analog zu den Abhängigkeiten), Executor (eigene Wahl, Verlauf).
+
+Ein Ticket kann seit QT-1 aus anderen Tickets stammen (`ticket_sources`). Eine solche Verknüpfung liegt immer innerhalb eines Bereichs (ADR-0067 §4). §2 und §3 bleiben, ergänzt um:
+
+- **Konflikt mit eigener Wahl:** Eine Verknüpfung eines verschobenen Tickets zu einem Quell- oder Folge-Ticket, das zurückbleibt (auch einem im Papierkorb), steht in der Vorschau unter `conflicts.ticket_sources` (je `ticket`, `other`, `relation` `source` oder `follow_up`, `trashed`); `needs.ticket_sources` verlangt die Wahl `ticket_sources: take|release` (Werte wie bei den Abhängigkeiten, ohne Wahl 400 `ticket-sources-choice`, „Bitte wählen, ob die Quell- und Folge-Tickets mitkommen oder die Verknüpfung gelöst wird.“). Eine eigene Wahl statt der der Abhängigkeiten, weil beides etwas anderes bedeutet und Ticket-Quellen viel häufiger sind.
+- **„mitnehmen“:** Das andere Ticket kommt mit seinen Unteraufgaben mit, wiederholt, bis keine Verknüpfung mehr hinausführt; zusammen mit „mitnehmen“ der Abhängigkeiten über beide Arten (`takeLinked` in `lib/area-move-service.js`). Ein Ticket im Papierkorb kommt nie mit; seine Verknüpfung wird gelöst.
+- **„Verknüpfung lösen“:** Die Verknüpfung geht in der Transaktion des Verschiebens, mit „Quelle entfernt“ und „Folge-Ticket entfernt“ im Verlauf beider Tickets (`unlink` in `lib/ticket-source-service.js`).
+- **Zwischen verschobenen Tickets** bleiben Verknüpfungen, wie sie sind; sie haben keinen eigenen Bereich. `counts.ticket_sources` zählt sie („2 Verknüpfungen von Quell- und Folge-Tickets“).
+- **Auflösen:** „übernehmen“ nimmt alle Tickets mit, also bleiben alle Verknüpfungen; „löschen“ entfernt sie über die Kaskade der Relation.
+- **Oberfläche:** `AreaMoveDialog` hat die Gruppe „Quell- und Folge-Tickets, die zurückbleiben“ mit je einer Zeile („HAUS-12 stammt aus HAUS-3 „Heizung prüfen““) und den Wahlen „Mitnehmen: die verknüpften Tickets kommen mit“ und „Verknüpfung lösen: die Tickets bleiben, der Verlauf beider vermerkt es“; „Mitnehmen“ lädt die Vorschau neu (`chooseTicketSources` im `AreaMoveStore`).
+- **Tests:** `ticket-sources.test.mjs` (Vorschau, „lösen“, „mitnehmen“, Papierkorb), `area-move-rules.test.mjs`, `area-move.test.ts` (Domain und Dialog).

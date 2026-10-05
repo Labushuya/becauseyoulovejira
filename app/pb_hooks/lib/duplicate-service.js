@@ -263,8 +263,9 @@ function pinCopy(txApp, duplicate, commentId, actor) {
  * Route "Ticket duplizieren" (ADR-0045): the request body as described in
  * lib/duplicate-rules.js parseRequest. Only a ticket the request may see (else 404; the trash is
  * never visible), only in an area where the user may create tickets (else 403). Answers { id, key,
- * title, original: { id, key }, subtasks: [{ id, key }], comments, source } with the ID of the
- * copied source ('' without one).
+ * title, original: { id, key }, subtasks: [{ id, key }], comments, source, ticket_sources } with the
+ * ID of the copied source ('' without one) and the number of source tickets the duplicate stems from
+ * like the original (QT-1, ADR-0067; only with "Kopie der Herkunft übernehmen").
  */
 function duplicate(e, id) {
   var original = visibleOriginal(e, id);
@@ -276,12 +277,15 @@ function duplicate(e, id) {
   var actor = actorOf(e);
   var household = original.getString('household');
   assertMayCreate(e.app, actor, household);
+  // "Kopie der Herkunft übernehmen" copies the main source and, since QT-1 (ADR-0067), takes the
+  // source tickets of the original over as well; it needs at least one of them.
+  var ticketSources = require(__hooks + '/lib/ticket-source-service.js');
   if (options.source === 'copy') {
     var main = findById(e.app, INBOX, original.getString('source_item'));
-    if (!main) {
+    if (!main && ticketSources.liveSourceCount(e.app, original.id) === 0) {
       throw fail('source', 'validation_duplicate_source_missing');
     }
-    if (!inbox.originalFileExists(e.app, main)) {
+    if (main && !inbox.originalFileExists(e.app, main)) {
       throw fail('source', 'validation_duplicate_source_file');
     }
   }
@@ -294,11 +298,11 @@ function duplicate(e, id) {
     }
     var key = current.getString('key');
     var copy = null;
-    if (options.source === 'copy') {
-      var item = findById(txApp, INBOX, current.getString('source_item'));
-      if (!item) {
-        throw fail('source', 'validation_duplicate_source_missing');
-      }
+    var item = options.source === 'copy' ? findById(txApp, INBOX, current.getString('source_item')) : null;
+    if (options.source === 'copy' && !item && ticketSources.liveSourceCount(txApp, current.id) === 0) {
+      throw fail('source', 'validation_duplicate_source_missing');
+    }
+    if (item) {
       copy = inbox.copySource(txApp, item, {
         owner: actor,
         household: household,
@@ -316,6 +320,7 @@ function duplicate(e, id) {
     pinCopy(txApp, duplicated, comments.pinned, actor);
     saveHistory(txApp, duplicated.id, rules.historyValue('from', current.id, key), actor);
     saveHistory(txApp, current.id, rules.historyValue('to', duplicated.id, duplicated.getString('key')), actor);
+    var linked = options.source === 'copy' ? ticketSources.copySources(txApp, current, duplicated, actor) : 0;
     result = {
       id: duplicated.id,
       key: duplicated.getString('key'),
@@ -323,7 +328,8 @@ function duplicate(e, id) {
       original: { id: current.id, key: key },
       subtasks: subtasks,
       comments: comments.count,
-      source: copy ? copy.id : ''
+      source: copy ? copy.id : '',
+      ticket_sources: linked
     };
   });
   return result;

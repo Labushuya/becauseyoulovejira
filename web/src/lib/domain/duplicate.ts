@@ -4,6 +4,7 @@
 
 import { CHANNEL_LABELS, type InboxItemSummary } from './inbox';
 import type { Status } from './status';
+import { keyList } from './ticket-origins';
 
 /** A duplicate starts as new work: every status but "Erledigt". */
 export type DuplicateStatus = Exclude<Status, 'done'>;
@@ -219,17 +220,25 @@ export function duplicateRequestOf(
 }
 
 /**
- * What "Kopie der Herkunft übernehmen" does with the main source of the original, or why it is not
- * possible without one.
+ * What "Kopie der Herkunft übernehmen" does with the main source of the original and, since QT-1
+ * (ADR-0067), with its source tickets (`ticketKeys`, the live ones), or why it is not possible
+ * without either.
  */
 export function copySourceHint(
 	main: Pick<InboxItemSummary, 'title' | 'channel' | 'original'> | null,
-	key: string
+	key: string,
+	ticketKeys: readonly string[] = []
 ): string {
-	if (main === null) return DUPLICATE_MESSAGES.validation_duplicate_source_missing;
+	const tickets = ticketKeys.length > 0 ? keyList(ticketKeys) : '';
+	if (main === null) {
+		return tickets === ''
+			? DUPLICATE_MESSAGES.validation_duplicate_source_missing
+			: `Das Duplikat stammt wie das Original aus ${tickets}.`;
+	}
 	const what =
 		main.original === '' ? 'mit Text und Details' : 'mit Text, Details und Originaldatei';
-	return `Ein neuer Eintrag als Kopie von „${main.title}“ (${CHANNEL_LABELS[main.channel]}) wird die Hauptquelle des Duplikats, ${what}, gekennzeichnet als „Kopie aus ${key}“.`;
+	const copy = `Ein neuer Eintrag als Kopie von „${main.title}“ (${CHANNEL_LABELS[main.channel]}) wird die Hauptquelle des Duplikats, ${what}, gekennzeichnet als „Kopie aus ${key}“.`;
+	return tickets === '' ? copy : `${copy} Außerdem stammt es wie das Original aus ${tickets}.`;
 }
 
 /** Text of a history entry "duplicate" (ADR-0045 §6): "Dupliziert aus HAUS-12" or "… nach HAUS-13". */

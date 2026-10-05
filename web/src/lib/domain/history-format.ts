@@ -27,6 +27,7 @@ import {
 	type ProjectRef,
 	type TagRef
 } from './ticket';
+import { HISTORY_FOLLOW_UP, HISTORY_SOURCE, originHistoryText } from './ticket-origins';
 
 export const EMPTY_VALUE = '–';
 export const DELETED_VALUE = '(gelöscht)';
@@ -297,6 +298,11 @@ function describe(entry: HistoryEntry, lookups: HistoryLookups, selfId: string |
 		case 'area_move':
 			// ADR-0061 §3: moved into another area, with the key before ("vorher PRIV-12").
 			return areaMoveHistoryText(oldValue, newValue);
+		case HISTORY_SOURCE:
+		case HISTORY_FOLLOW_UP:
+			// ADR-0067 §6: "Quelle hinzugefügt: HAUS-3" in the follow-up, "Folge-Ticket: HAUS-20" in
+			// the source, and "… entfernt" when the link goes.
+			return originHistoryText(field, oldValue, newValue);
 		case SKIPPED_FIELD: {
 			// ADR-0022 addendum 4: a catch-up ticket names the missed dates it stands for.
 			const skipped = parseSkipped(newValue);

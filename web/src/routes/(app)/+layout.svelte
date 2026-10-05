@@ -103,6 +103,16 @@
 		ticketSourcesData
 	} from '$lib/stores/ticket-sources.svelte';
 	import {
+		TicketFollowUpStore,
+		setTicketFollowUpStore,
+		ticketFollowUpData
+	} from '$lib/stores/ticket-follow-up.svelte';
+	import {
+		TicketOriginsStore,
+		setTicketOriginsStore,
+		ticketOriginsData
+	} from '$lib/stores/ticket-origins.svelte';
+	import {
 		TicketListStore,
 		readsData,
 		setTicketListStore,
@@ -249,6 +259,10 @@
 	const sources = setTicketSourcesStore(
 		new TicketSourcesStore(ticketSourcesData(pb), auth, flags, (item) => inbox.upsert(item))
 	);
+	// Tickets as sources of the open ticket and its follow-ups (ADR-0067), live; "Folge-Ticket
+	// anlegen …" in the menus "•••" of tickets and rows.
+	setTicketOriginsStore(new TicketOriginsStore(ticketOriginsData(pb), auth, flags));
+	setTicketFollowUpStore(new TicketFollowUpStore(ticketFollowUpData(pb), auth, flags));
 	// "Ansehen" of a file of a watched folder (ADR-0051 §6): the panel of an entry and the sources of
 	// a ticket open the current file through it.
 	setFolderViewer(new FolderViewer(folderViewData(pb), auth));

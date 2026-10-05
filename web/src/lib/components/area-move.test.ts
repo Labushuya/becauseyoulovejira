@@ -63,7 +63,8 @@ function preview(overrides: Partial<MovePreview> = {}): MovePreview {
 			rules: 0,
 			items: 0,
 			comments: 3,
-			dependencies: 0
+			dependencies: 0,
+			ticketSources: 0
 		},
 		conflicts: {
 			project: {
@@ -79,6 +80,7 @@ function preview(overrides: Partial<MovePreview> = {}): MovePreview {
 					other: { id: 'tick00000000009', key: 'PRIV-9', title: 'Neun' }
 				}
 			],
+			ticketSources: [],
 			parents: [],
 			projectParents: [],
 			codes: [],
@@ -89,7 +91,7 @@ function preview(overrides: Partial<MovePreview> = {}): MovePreview {
 			targets: 0,
 			unitTargets: 0
 		},
-		needs: { project: true, dependencies: true, codes: [] },
+		needs: { project: true, dependencies: true, ticketSources: false, codes: [] },
 		moved: null,
 		...overrides
 	};
@@ -154,7 +156,8 @@ async function setup(options: Setup = {}) {
 												rules: 0,
 												items: 0,
 												comments: 3,
-												dependencies: 1
+												dependencies: 1,
+												ticketSources: 0
 											}
 										}
 									: {}
@@ -320,6 +323,72 @@ describe('the dialog of a move (ADR-0061 §1, §2)', () => {
 			}
 		]);
 		expect(moved).toHaveBeenCalledTimes(1);
+	});
+
+	it('asks what happens to source and follow-up tickets that stay behind (QT-1, ADR-0067)', async () => {
+		const crossing = preview({
+			conflicts: {
+				...preview().conflicts,
+				project: null,
+				dependencies: [],
+				ticketSources: [
+					{
+						ticket: { id: 'tick00000000001', key: 'PRIV-1', title: 'Eins' },
+						other: { id: 'tick00000000005', key: 'PRIV-5', title: 'Heizung prüfen' },
+						relation: 'source',
+						trashed: false
+					}
+				]
+			},
+			needs: { project: false, dependencies: false, ticketSources: true, codes: [] }
+		});
+		const { move } = await setup({
+			area: 'private',
+			move: async (body) => ({
+				kind: 'ok',
+				value:
+					body.preview === true
+						? crossing
+						: {
+								...crossing,
+								preview: false,
+								moved: { tickets: [], projects: [], rules: [], items: [] }
+							}
+			})
+		});
+		await choose('In den Haushalt verschieben …');
+		const dialog = await vi.waitFor(() =>
+			screen.getByRole('dialog', { name: 'PRIV-1 in den Haushalt verschieben' })
+		);
+		const group = await vi.waitFor(() =>
+			within(dialog).getByRole('radiogroup', {
+				name: 'Quell- und Folge-Tickets, die zurückbleiben'
+			})
+		);
+		expect(within(group).getByText('PRIV-1 stammt aus PRIV-5 „Heizung prüfen“')).toBeTruthy();
+		await fireEvent.click(
+			within(dialog).getByRole('button', { name: 'In den Haushalt verschieben' })
+		);
+		expect(group.getAttribute('aria-invalid')).toBe('true');
+		expect(move).toHaveBeenCalledTimes(1);
+
+		await fireEvent.click(
+			within(group).getByRole('radio', {
+				name: 'Verknüpfung lösen: die Tickets bleiben, der Verlauf beider vermerkt es'
+			})
+		);
+		await vi.waitFor(() => expect(move).toHaveBeenCalledTimes(2));
+		expect(move.mock.calls[1]?.[0]).toMatchObject({ preview: true, ticket_sources: 'release' });
+		await fireEvent.click(
+			within(dialog).getByRole('button', { name: 'In den Haushalt verschieben' })
+		);
+		await vi.waitFor(() => expect(move).toHaveBeenCalledTimes(3));
+		expect(move.mock.calls[2]?.[0]).toEqual({
+			kind: 'ticket',
+			ids: ['tick00000000001'],
+			to: 'household',
+			ticket_sources: 'release'
+		});
 	});
 
 	it('says that the entry disappears for the others when it goes into the private area', async () => {

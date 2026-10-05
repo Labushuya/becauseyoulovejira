@@ -31,6 +31,7 @@
 	import { STATUS_LABELS } from '$lib/domain/labels';
 	import { projectPath } from '$lib/domain/project-tree';
 	import type { ProjectRef } from '$lib/domain/ticket';
+	import { findTicketFollowUpStore } from '$lib/stores/ticket-follow-up.svelte';
 	import type { TicketRowActionsStore } from '$lib/stores/ticket-row-actions.svelte';
 	import CharmIcon from '../CharmIcon.svelte';
 	import ColorMark from '../ColorMark.svelte';
@@ -108,6 +109,8 @@
 	/** Titles from this length name themselves on hover; one line may cut them. */
 	const LONG_TITLE = 40;
 	const tabindex = $derived(tabbable ? undefined : -1);
+	/** "Folge-Ticket anlegen …" in the menu (ADR-0067), with the store of the (app) layout. */
+	const followUps = findTicketFollowUpStore();
 
 	const project = $derived.by((): ProjectRef | null => {
 		if (entry.kind === 'ticket') return projectOf(entry.ticket.projectId) ?? entry.ticket.project;
@@ -237,6 +240,7 @@
 					buttonTabindex={tabbable ? undefined : -1}
 					onmovedue={move}
 					onduplicate={duplicates ? () => void actions.choose('duplicate', ticket) : null}
+					onfollowup={followUps !== null ? () => void actions.choose('followup', ticket) : null}
 					ondelete={() => void actions.choose('delete', ticket)}
 				/>
 			</span>

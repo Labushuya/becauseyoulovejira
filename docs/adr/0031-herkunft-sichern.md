@@ -246,3 +246,12 @@ Nutzerentscheidung vom 2026-10-01 („direktes Ansehen öffnet ‚Link‘ zur Da
 - **Der Verweis folgt der Datei:** Verschiebt oder benennt der Nutzer sie um, erkennt der Kanal das (gleicher Hash, ohne Hash gleiche Größe und Zeit) und setzt den Pfad der Einträge um; Status „verschoben nach …“. Der Text des Eintrags bleibt eingefroren.
 - **Kopie-Status** in Panel und Quellen eines Tickets: „Verweis“ statt „Vollständig“, „Nur Text“ usw. (§5); „Ansehen“ und „Herunterladen“ statt „Originaldatei … herunterladen“ im Panel, in den Quellen eines Tickets der Symbolknopf „Aktuelle Datei öffnen“ (seit OD-2).
 - **Duplizieren mit Kopie der Herkunft** (Nachtrag F) kopiert auch hier den Eintrag, also den Verweis samt Status; eine Datei wird nie kopiert.
+
+## Nachtrag K (2026-10-05, [ADR-0067](0067-tickets-als-quelle.md), QT-1): Auch andere Tickets sind Quellen
+
+Nutzerentscheidung vom 2026-10-05: Ein Ticket kann aus anderen Tickets stammen („B stammt aus A“), nicht nur aus Einträgen des Eingangs. §1 bis §7 gelten weiter für die Einträge; für Tickets als Quelle gilt ADR-0067:
+
+- **Eigene Collection:** Ticket-Quellen sind keine Einträge des Eingangs, sondern Verknüpfungen in `ticket_sources` (ticket, source). Ein Quell-Ticket kann vielen Tickets Quelle sein, ein Eintrag des Eingangs gehört weiter genau einem Ticket (§1); die Hauptquelle bleibt ein Eintrag (`tickets.source_item`), ein Ticket ist nie Hauptquelle.
+- **Abschnitt „Quellen“** (§7): Nach den Einträgen stehen die Quell-Tickets (Key als Link, Titel, Status, „(im Papierkorb)“ ohne Link), je mit „KEY als Quelle entfernen“. „Quelle hinzufügen“ wird ein Menü mit „Eintrag aus dem Eingang …“ (der bisherige Dialog) und „Ticket …“ (Ticket-Picker ohne Kreise). Das Quell-Ticket zeigt seine Folge-Tickets im neuen Abschnitt „Folge-Tickets“.
+- **Löschen:** Anders als Einträge (§3, Nachtrag B) werden Ticket-Quellen beim endgültigen Löschen eines der beiden Tickets entfernt; im Papierkorb bleiben sie (ADR-0067 §7).
+- **Verlauf:** eigene Felder `ticket_source` und `follow_up` statt `source_link` (ADR-0067 §8).

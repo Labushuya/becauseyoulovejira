@@ -31,6 +31,8 @@ export const AREA_MOVE_PROBLEMS: Readonly<Record<string, string>> = {
 	project: 'Dieses Projekt gibt es im Ziel nicht, oder es ist archiviert.',
 	'dependencies-choice':
 		'Bitte wählen, ob die verknüpften Tickets mitkommen oder die Verknüpfung gelöst wird.',
+	'ticket-sources-choice':
+		'Bitte wählen, ob die Quell- und Folge-Tickets mitkommen oder die Verknüpfung gelöst wird.',
 	code: 'Bitte einen Code aus 2 bis 6 Großbuchstaben wählen, den es im Ziel noch nicht gibt (nicht TASK).',
 	'owner-only': 'Auflösen kann nur der Inhaber des Haushalts.',
 	mode: 'Bitte wählen: alles ins Private übernehmen oder alles endgültig löschen.',
@@ -67,6 +69,10 @@ export const MOVE_TEXTS = Object.freeze({
 	dependencyLegend: 'Abhängigkeiten zu Tickets, die zurückbleiben',
 	take: 'Mitnehmen: die verknüpften Tickets kommen mit',
 	release: 'Verknüpfung lösen: die Tickets bleiben, die Abhängigkeit geht',
+	/** Tickets as sources across the border (ADR-0067, QT-1). */
+	ticketSourceLegend: 'Quell- und Folge-Tickets, die zurückbleiben',
+	takeSources: 'Mitnehmen: die verknüpften Tickets kommen mit',
+	releaseSources: 'Verknüpfung lösen: die Tickets bleiben, der Verlauf beider vermerkt es',
 	codeLegend: 'Neuer Code im Ziel',
 	codeHint: (code: string) => `Im Ziel gibt es schon ein Projekt mit dem Code ${code}.`,
 	done: (label: string, to: MoveDirection) =>
@@ -107,6 +113,18 @@ export interface TicketRef {
 	title: string;
 }
 
+/**
+ * A link of a source or follow-up ticket across the border (ADR-0067): seen from the moved ticket,
+ * `source` (it stems from the other) or `follow_up` (the other stems from it).
+ */
+export interface TicketSourceConflict {
+	ticket: TicketRef | null;
+	other: TicketRef | null;
+	relation: 'source' | 'follow_up';
+	/** The other ticket lies in the trash: it never comes along, the link goes. */
+	trashed: boolean;
+}
+
 /** The answer of a preview and of a move. */
 export interface MovePreview {
 	preview: boolean;
@@ -124,6 +142,8 @@ export interface MovePreview {
 		items: number;
 		comments: number;
 		dependencies: number;
+		/** Links of source and follow-up tickets between moved tickets (ADR-0067). */
+		ticketSources: number;
 	};
 	conflicts: {
 		project: {
@@ -134,6 +154,8 @@ export interface MovePreview {
 		} | null;
 		tags: { reused: string[]; created: string[] };
 		dependencies: { ticket: TicketRef | null; other: TicketRef | null }[];
+		/** Links of source and follow-up tickets across the border (ADR-0067). */
+		ticketSources: TicketSourceConflict[];
 		parents: { id: string; key: string; parent: string }[];
 		projectParents: { id: string; code: string; parent: string }[];
 		codes: (NamedProject & { suggestion: string })[];
@@ -145,7 +167,7 @@ export interface MovePreview {
 		/** Targets of repositories and folders in GitHub and folder channels that are cleared (E7-4b). */
 		unitTargets: number;
 	};
-	needs: { project: boolean; dependencies: boolean; codes: string[] };
+	needs: { project: boolean; dependencies: boolean; ticketSources: boolean; codes: string[] };
 	/** After a move: the new keys and codes. */
 	moved: {
 		tickets: { id: string; key: string; previous: string }[];
@@ -229,6 +251,13 @@ export function parseMovePreview(value: unknown): MovePreview | null {
 		ticket: ticketRef(entry.ticket),
 		other: ticketRef(entry.other)
 	}));
+	// A server before QT-1 names none.
+	const ticketSources = listOf(c.ticket_sources ?? [], (entry): TicketSourceConflict => ({
+		ticket: ticketRef(entry.ticket),
+		other: ticketRef(entry.other),
+		relation: entry.relation === 'follow_up' ? 'follow_up' : 'source',
+		trashed: entry.trashed === true
+	}));
 	const parents = listOf(c.parents ?? [], (entry) =>
 		typeof entry.id === 'string'
 			? { id: entry.id, key: text(entry.key), parent: text(entry.parent) }
@@ -253,6 +282,7 @@ export function parseMovePreview(value: unknown): MovePreview | null {
 	if (
 		project === undefined ||
 		dependencies === null ||
+		ticketSources === null ||
 		parents === null ||
 		projectParents === null ||
 		codes === null ||
@@ -278,12 +308,14 @@ export function parseMovePreview(value: unknown): MovePreview | null {
 			rules: count(counts.rules),
 			items: count(counts.items),
 			comments: count(counts.comments),
-			dependencies: count(counts.dependencies)
+			dependencies: count(counts.dependencies),
+			ticketSources: count(counts.ticket_sources)
 		},
 		conflicts: {
 			project,
 			tags: { reused: strings(tags.reused), created: strings(tags.created) },
 			dependencies,
+			ticketSources,
 			parents,
 			projectParents,
 			codes,
@@ -301,6 +333,7 @@ export function parseMovePreview(value: unknown): MovePreview | null {
 		needs: {
 			project: value.needs.project === true,
 			dependencies: value.needs.dependencies === true,
+			ticketSources: value.needs.ticket_sources === true,
 			codes: strings(value.needs.codes)
 		},
 		moved
@@ -328,7 +361,31 @@ export function countLines(preview: MovePreview): string[] {
 	if (counts.dependencies > 0) {
 		lines.push(plural(counts.dependencies, 'Abhängigkeit', 'Abhängigkeiten'));
 	}
+	if (counts.ticketSources > 0) {
+		lines.push(
+			plural(
+				counts.ticketSources,
+				'Verknüpfung von Quell- und Folge-Ticket',
+				'Verknüpfungen von Quell- und Folge-Tickets'
+			)
+		);
+	}
 	return lines;
+}
+
+/**
+ * One link of a source or follow-up ticket across the border, seen from the moved ticket:
+ * "HAUS-12 stammt aus HAUS-3 „Heizung prüfen“" or "HAUS-20 „Reparatur“ stammt aus HAUS-12", with
+ * "(im Papierkorb)" for a ticket in the trash.
+ */
+export function ticketSourceLine(entry: TicketSourceConflict): string {
+	const inside = entry.ticket?.key ?? '–';
+	const other = entry.other === null ? '–' : entry.other.key;
+	const title = entry.other?.title ? ` „${entry.other.title}“` : '';
+	const trashed = entry.trashed ? ' (im Papierkorb)' : '';
+	return entry.relation === 'source'
+		? `${inside} stammt aus ${other}${title}${trashed}`
+		: `${other}${title}${trashed} stammt aus ${inside}`;
 }
 
 /** What else changes without a choice: tags by name, parents, series, entries of the inbox. */
@@ -391,6 +448,8 @@ export function noteLines(preview: MovePreview): string[] {
 export interface MoveChoices {
 	project: string | null;
 	dependencies: DependencyChoice | null;
+	/** Links of source and follow-up tickets across the border (ADR-0067); missing = not chosen. */
+	ticketSources?: DependencyChoice | null;
 	codes: Record<string, string>;
 }
 
@@ -398,7 +457,7 @@ export interface MoveChoices {
 export function initialChoices(preview: MovePreview): MoveChoices {
 	const codes: Record<string, string> = {};
 	for (const entry of preview.conflicts.codes) codes[entry.id] = entry.suggestion;
-	return { project: null, dependencies: null, codes };
+	return { project: null, dependencies: null, ticketSources: null, codes };
 }
 
 /** A typed code as the server stores it: capitals, without white space. */
@@ -410,12 +469,14 @@ const CODE_PATTERN = /^[A-Z]{2,6}$/;
 
 /**
  * What is missing or wrong before the move may run, by field (`project`, `dependencies`,
- * `code:<project ID>`); empty when the choices are complete. The server checks again.
+ * `ticketSources`, `code:<project ID>`); empty when the choices are complete. The server checks
+ * again.
  */
 export function choiceErrors(
 	preview: MovePreview,
 	choices: MoveChoices,
-	hadDependencies: boolean
+	hadDependencies: boolean,
+	hadTicketSources = false
 ): Record<string, string> {
 	const errors: Record<string, string> = {};
 	if (preview.conflicts.project !== null && choices.project === null) {
@@ -423,6 +484,9 @@ export function choiceErrors(
 	}
 	if (hadDependencies && choices.dependencies === null) {
 		errors.dependencies = 'Bitte „Mitnehmen“ oder „Verknüpfung lösen“ wählen.';
+	}
+	if (hadTicketSources && (choices.ticketSources ?? null) === null) {
+		errors.ticketSources = 'Bitte „Mitnehmen“ oder „Verknüpfung lösen“ wählen.';
 	}
 	const chosen = preview.conflicts.codes.map((entry) =>
 		normalizeCode(choices.codes[entry.id] ?? '')
@@ -454,6 +518,7 @@ export function moveBody(
 		...(preview && { preview: true }),
 		...(choices.project !== null && { project: choices.project }),
 		...(choices.dependencies !== null && { dependencies: choices.dependencies }),
+		...((choices.ticketSources ?? null) !== null && { ticket_sources: choices.ticketSources }),
 		...(Object.keys(codes).length > 0 && { codes })
 	};
 }

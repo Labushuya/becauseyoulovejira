@@ -46,6 +46,8 @@ var PROBLEMS = {
   'project-choice': 'Bitte wählen, in welches Projekt die Einträge im Ziel kommen, oder „Ohne Projekt“.',
   project: 'Dieses Projekt gibt es im Ziel nicht, oder es ist archiviert.',
   'dependencies-choice': 'Bitte wählen, ob die verknüpften Tickets mitkommen oder die Verknüpfung gelöst wird.',
+  'ticket-sources-choice':
+    'Bitte wählen, ob die Quell- und Folge-Tickets mitkommen oder die Verknüpfung gelöst wird.',
   code: 'Bitte einen Code aus 2 bis 6 Großbuchstaben wählen, den es im Ziel noch nicht gibt (nicht TASK).',
   'owner-only': 'Auflösen kann nur der Inhaber des Haushalts.',
   mode: 'Bitte wählen: alles ins Private übernehmen oder alles endgültig löschen.',
@@ -73,9 +75,11 @@ function isRecordId(value) {
 }
 
 /**
- * Body of POST /api/byl/area/move: { kind, ids, to, preview?, project?, dependencies?, codes? }.
- * Returns the input (ids once each, codes in capitals; project and dependencies undefined when not
- * chosen) or { problem }.
+ * Body of POST /api/byl/area/move: { kind, ids, to, preview?, project?, dependencies?,
+ * ticket_sources?, codes? }. Returns the input (ids once each, codes in capitals; project,
+ * dependencies and ticket_sources undefined when not chosen) or { problem }. `ticket_sources` is the
+ * choice for links of source and follow-up tickets across the border (QT-1, ADR-0067), with the same
+ * values as `dependencies`.
  */
 function moveInput(body) {
   if (!isObject(body)) {
@@ -113,6 +117,13 @@ function moveInput(body) {
     }
     dependencies = body.dependencies;
   }
+  var ticketSources;
+  if (body.ticket_sources !== undefined && body.ticket_sources !== null) {
+    if (DEPENDENCY_CHOICES.indexOf(body.ticket_sources) === -1) {
+      return { problem: 'format' };
+    }
+    ticketSources = body.ticket_sources;
+  }
   var codes = {};
   if (body.codes !== undefined && body.codes !== null) {
     if (!isObject(body.codes)) {
@@ -135,6 +146,7 @@ function moveInput(body) {
     preview: body.preview === true,
     project: project,
     dependencies: dependencies,
+    ticket_sources: ticketSources,
     codes: codes
   };
 }

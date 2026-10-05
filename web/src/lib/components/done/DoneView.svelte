@@ -20,6 +20,10 @@
 	import type { DoneListStore } from '$lib/stores/done-list.svelte';
 	import { ticketLinks } from '$lib/stores/open-mode.svelte';
 	import type { TicketDuplicateStore } from '$lib/stores/ticket-duplicate.svelte';
+	import {
+		findTicketFollowUpStore,
+		type TicketFollowUpStore
+	} from '$lib/stores/ticket-follow-up.svelte';
 	import type { TicketRowActionsStore } from '$lib/stores/ticket-row-actions.svelte';
 	import type { DeleteResult, DeleteSources } from '$lib/stores/trash-move';
 	import { findTicketHost } from '$lib/ticket-host';
@@ -46,7 +50,7 @@
 	// the remembered way, ADR-0036 §1), the charm before the title (ADR-0062), the badge "Vorhaben"
 	// (ADR-0065), the project and the time of completion, and ends with the menu "•••" of every
 	// ticket row (TicketActions): open, "Wieder öffnen" with "Rückgängig" in its flag, "Duplizieren …"
-	// (ADR-0045) and what every row has; a right click or Shift+F10 open it (rowMenus). If the entry
+	// (ADR-0045), "Folge-Ticket anlegen …" (ADR-0067) and what every row has; a right click or Shift+F10 open it (rowMenus). If the entry
 	// with the focus leaves (reopened, here or elsewhere), the focus goes to the entry now at its
 	// place, else to the heading.
 	let {
@@ -54,6 +58,7 @@
 		catalog,
 		rowActions = null,
 		duplicates = null,
+		followUps = findTicketFollowUpStore(),
 		subtaskCountOf = () => 0,
 		parentKeyOf = () => null,
 		inboxCount = null,
@@ -65,6 +70,8 @@
 		rowActions?: TicketRowActionsStore | null;
 		/** "Duplizieren …" in that menu (ADR-0045); null leaves the entry out. */
 		duplicates?: TicketDuplicateStore | null;
+		/** "Folge-Ticket anlegen …" in that menu (ADR-0067); null leaves the entry out. */
+		followUps?: TicketFollowUpStore | null;
 		/** Number of sub-tasks of a ticket (the questions of the menu). */
 		subtaskCountOf?: (ticketId: string) => number;
 		/** Key of the parent of a sub-task, null for a top-level ticket. */
@@ -221,6 +228,7 @@
 						onduplicate={duplicates === null
 							? null
 							: () => void actions.choose('duplicate', ticket)}
+						onfollowup={followUps === null ? null : () => void actions.choose('followup', ticket)}
 						ondelete={() => void actions.choose('delete', ticket)}
 					/>
 				</span>
@@ -334,6 +342,7 @@
 	<TicketRowDialogs
 		{rowActions}
 		{duplicates}
+		{followUps}
 		projects={catalog.activeProjects}
 		{subtaskCountOf}
 		{parentKeyOf}

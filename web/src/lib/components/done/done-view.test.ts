@@ -10,10 +10,11 @@ import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { parseDoneQuery } from '$lib/domain/done-view';
 import type { Project } from '$lib/domain/project';
-import type { TicketSummary } from '$lib/domain/ticket';
+import type { Ticket, TicketSummary } from '$lib/domain/ticket';
 import { CatalogStore } from '$lib/stores/catalog.svelte';
 import { DoneListStore } from '$lib/stores/done-list.svelte';
 import { FlagStore } from '$lib/stores/flags.svelte';
+import { TicketFollowUpStore } from '$lib/stores/ticket-follow-up.svelte';
 import { TicketRowActionsStore } from '$lib/stores/ticket-row-actions.svelte';
 import { doneTicket, fakeDoneData } from '$lib/test/done-list-fake';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
@@ -75,10 +76,25 @@ function stubIntersection() {
 async function showView(
 	data: ReturnType<typeof fakeDoneData>,
 	path = '/erledigt',
-	{ menu = true }: { menu?: boolean } = {}
+	{
+		menu = true,
+		followUps = false,
+		known = []
+	}: {
+		menu?: boolean;
+		/** "Folge-Ticket anlegen …" (ADR-0067), with its store. */
+		followUps?: boolean;
+		/** Tickets the menu loads in full for its questions. */
+		known?: readonly TicketSummary[];
+	} = {}
 ) {
 	mocks.page.url = new URL(path, 'http://localhost:3000');
 	const flags = new FlagStore();
+	const get = vi.fn(async (id: string): Promise<Ticket> => {
+		const ticket = known.find((entry) => entry.id === id);
+		if (ticket === undefined) throw new Error(`unknown ticket ${id}`);
+		return { ...ticket, description: '', sourceItem: null };
+	});
 	const store = new DoneListStore(data, SESSION, { today: () => TODAY, flags });
 	const catalog = new CatalogStore(
 		{
@@ -92,7 +108,7 @@ async function showView(
 	const rowActions = menu
 		? new TicketRowActionsStore(
 				{
-					get: vi.fn(),
+					get,
 					sources: vi.fn(async () => []),
 					commentCount: vi.fn(async () => 0),
 					delete: vi.fn(async () => null)
@@ -103,12 +119,19 @@ async function showView(
 				flags
 			)
 		: null;
+	const followUpStore = followUps
+		? new TicketFollowUpStore({ create: vi.fn() }, SESSION, flags)
+		: null;
 	store.show(parseDoneQuery(mocks.page.url.searchParams));
 	render(TicketHostHarness, {
-		props: { host: DONE_HOST, component: DoneView, props: { store, catalog, rowActions } }
+		props: {
+			host: DONE_HOST,
+			component: DoneView,
+			props: { store, catalog, rowActions, followUps: followUpStore }
+		}
 	});
 	await vi.advanceTimersByTimeAsync(0);
-	return { store, catalog, flags };
+	return { store, catalog, flags, get };
 }
 
 function groupNames(): string[] {
@@ -226,6 +249,42 @@ describe('view "Erledigte"', () => {
 		]);
 		expect(flags.flags[0]?.title).toBe(`${first.key} wieder offen.`);
 		expect(flags.flags[0]?.action?.label).toBe('Rückgängig');
+	});
+
+	it('offers "Folge-Ticket anlegen …" of the row menus for a done ticket (QT-1, ADR-0067)', async () => {
+		const done = doneTicket('2026-10-07 08:00:00.000Z', { title: 'Steuer' });
+		const { get } = await showView(fakeDoneData([[done]]), '/erledigt', {
+			followUps: true,
+			known: [done]
+		});
+
+		const button = screen.getByRole('button', { name: `Weitere Aktionen für ${done.key}` });
+		const menu = document.getElementById(
+			String(button.getAttribute('aria-controls'))
+		) as HTMLElement;
+		expect(
+			within(menu)
+				.getAllByRole('menuitem', { hidden: true })
+				.map((item) => item.textContent?.trim())
+		).toEqual([
+			'Im Seitenpanel öffnen',
+			'In Vollansicht öffnen',
+			'Wieder öffnen',
+			'Link kopieren',
+			'Folge-Ticket anlegen …',
+			'In den Papierkorb …'
+		]);
+
+		await fireEvent.click(button);
+		await fireEvent.click(
+			within(menu).getByRole('menuitem', { name: 'Folge-Ticket anlegen …', hidden: true })
+		);
+		await vi.advanceTimersByTimeAsync(0);
+		await tick();
+
+		expect(get).toHaveBeenCalledWith(done.id);
+		const dialog = screen.getByRole('dialog', { name: `Folge-Ticket aus ${done.key}` });
+		expect(within(dialog).getByLabelText<HTMLInputElement>('Titel').value).toBe('Folge: Steuer');
 	});
 
 	it('loads more with the button and moves the focus to the first new entry after the last page', async () => {

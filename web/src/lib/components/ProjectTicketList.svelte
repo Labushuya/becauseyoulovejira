@@ -15,6 +15,7 @@
 	import type { ProjectRef, TicketSummary } from '$lib/domain/ticket';
 	import { ticketLinks } from '$lib/stores/open-mode.svelte';
 	import { findPinStore, type PinStore } from '$lib/stores/pins.svelte';
+	import { findTicketFollowUpStore } from '$lib/stores/ticket-follow-up.svelte';
 	import type { TicketRowActionsStore } from '$lib/stores/ticket-row-actions.svelte';
 	import { findTicketHost } from '$lib/ticket-host';
 	import { projectTicketsHref } from '$lib/ticket-links';
@@ -90,6 +91,8 @@
 
 	const links = ticketLinks();
 	const host = findTicketHost();
+	/** "Folge-Ticket anlegen …" in the menu (ADR-0067), with the store of the (app) layout. */
+	const followUps = findTicketFollowUpStore();
 	/** Titles from this length name themselves on hover; the line clamp may cut them (ADR-0030). */
 	const LONG_TITLE = 60;
 
@@ -214,6 +217,7 @@
 						buttonLabel={`Weitere Aktionen für ${ticket.key}`}
 						buttonClass="button-icon row-menu"
 						onduplicate={duplicates ? () => void actions.choose('duplicate', ticket) : null}
+						onfollowup={followUps !== null ? () => void actions.choose('followup', ticket) : null}
 						ondelete={() => void actions.choose('delete', ticket)}
 					/>
 				</span>

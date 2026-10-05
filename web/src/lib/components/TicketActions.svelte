@@ -23,7 +23,9 @@
 	// the full view its dialog unfolds inline like the others. Since TP-1 (ADR-0065) "Zum Tagesplan"
 	// puts a ticket that is not done into the plan of today of its own area (only inside the (app)
 	// layout, which has the store). Since ER-1 (ADR-0066) the view "Erledigte" puts "Wieder öffnen" at
-	// the same place for a done ticket (`onreopen`); every other entry is the one of every row.
+	// the same place for a done ticket (`onreopen`); every other entry is the one of every row. Since
+	// QT-1 (ADR-0067) "Folge-Ticket anlegen …" follows "Duplizieren …" (only with its store), for open
+	// and done tickets alike.
 	let {
 		ticket,
 		flags,
@@ -33,6 +35,7 @@
 		onreopen = null,
 		reopenBusy = false,
 		onduplicate = null,
+		onfollowup = null,
 		ondelete,
 		buttonLabel = 'Weitere Aktionen',
 		buttonClass,
@@ -58,6 +61,8 @@
 		reopenBusy?: boolean;
 		/** "Duplizieren …"; null leaves the entry out. */
 		onduplicate?: (() => void) | null;
+		/** "Folge-Ticket anlegen …" (ADR-0067), also for a done ticket; null leaves the entry out. */
+		onfollowup?: (() => void) | null;
 		/** "In den Papierkorb …". */
 		ondelete: () => void;
 		/** Name of the button; a row names its ticket ("Weitere Aktionen für HAUS-12"). */
@@ -116,6 +121,9 @@
 		...(onduplicate === null
 			? []
 			: [{ label: 'Duplizieren …', dialog: !inline, onselect: onduplicate }]),
+		...(onfollowup === null
+			? []
+			: [{ label: 'Folge-Ticket anlegen …', dialog: !inline, onselect: onfollowup }]),
 		...(move === null ? [] : [{ label: move.label, dialog: !inline, onselect: move.run }]),
 		{ label: 'In den Papierkorb …', dialog: !inline, separated: true, onselect: ondelete }
 	]);

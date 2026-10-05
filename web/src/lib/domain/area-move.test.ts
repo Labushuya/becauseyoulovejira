@@ -16,6 +16,7 @@ import {
 	noteLines,
 	parseDissolvePreview,
 	parseMovePreview,
+	ticketSourceLine,
 	type MovePreview
 } from './area-move';
 import type { Membership } from './household';
@@ -216,6 +217,7 @@ describe('the choices of the dialog', () => {
 		expect(initialChoices(preview())).toEqual({
 			project: null,
 			dependencies: null,
+			ticketSources: null,
 			codes: { proj00000000001: 'PRIVH' }
 		});
 	});
@@ -283,6 +285,59 @@ describe('the choices of the dialog', () => {
 			dependencies: 'take',
 			codes: { proj00000000001: 'PRIVH' }
 		});
+	});
+});
+
+describe('links of source and follow-up tickets across the border (QT-1, ADR-0067)', () => {
+	const conflicts = () => answer().conflicts as Record<string, unknown>;
+	const crossing = {
+		counts: { ...(answer().counts as object), ticket_sources: 2 },
+		conflicts: {
+			...conflicts(),
+			ticket_sources: [
+				{
+					ticket: { id: 'tick00000000001', key: 'PRIV-1', title: 'Eins' },
+					other: { id: 'tick00000000005', key: 'PRIV-5', title: 'Heizung prüfen' },
+					relation: 'source',
+					trashed: false
+				},
+				{
+					ticket: { id: 'tick00000000001', key: 'PRIV-1', title: 'Eins' },
+					other: { id: 'tick00000000006', key: 'PRIV-6', title: 'Reparatur' },
+					relation: 'follow_up',
+					trashed: true
+				}
+			]
+		},
+		needs: { project: true, dependencies: true, ticket_sources: true, codes: [] }
+	};
+
+	it('reads them, a server before QT-1 names none', () => {
+		const old = preview();
+		expect(old.conflicts.ticketSources).toEqual([]);
+		expect(old.counts.ticketSources).toBe(0);
+		expect(old.needs.ticketSources).toBe(false);
+
+		const shown = preview(crossing);
+		expect(shown.needs.ticketSources).toBe(true);
+		expect(shown.conflicts.ticketSources.map(ticketSourceLine)).toEqual([
+			'PRIV-1 stammt aus PRIV-5 „Heizung prüfen“',
+			'PRIV-6 „Reparatur“ (im Papierkorb) stammt aus PRIV-1'
+		]);
+		expect(countLines(shown).at(-1)).toBe('2 Verknüpfungen von Quell- und Folge-Tickets');
+	});
+
+	it('asks for the choice and sends it as ticket_sources', () => {
+		const shown = preview(crossing);
+		const chosen = { ...initialChoices(shown), project: '', dependencies: 'take' as const };
+		expect(Object.keys(choiceErrors(shown, chosen, true, true))).toEqual(['ticketSources']);
+		expect(choiceErrors(shown, { ...chosen, ticketSources: 'release' }, true, true)).toEqual({});
+		const request = { kind: 'ticket' as const, ids: ['tick00000000001'], to: 'household' as const };
+		expect(moveBody(request, { ...chosen, ticketSources: 'take' }, true)).toMatchObject({
+			ticket_sources: 'take',
+			preview: true
+		});
+		expect(moveBody(request, chosen, true)).not.toHaveProperty('ticket_sources');
 	});
 });
 

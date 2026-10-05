@@ -21,6 +21,7 @@ import { PROJECT_FIELDS, toProject, type ProjectRecord } from './projects';
 import { READ_FIELDS, toTicketRead, type TicketRead } from './reads';
 import { RULE_FIELDS, toRecurrenceRule, type RuleRecord } from './recurrence';
 import { TAG_FIELDS, toTag, type TagRecord } from './tags';
+import { TICKET_SOURCE_FIELDS, toTicketSourceLink, type TicketSourceLink } from './ticket-origins';
 import {
 	TICKET_DETAIL_FIELDS,
 	TICKET_EXPAND,
@@ -219,6 +220,28 @@ export function subscribePins(
 			'*',
 			changes(toTicketPin, onChange),
 			{ fields: PIN_FIELDS }
+		);
+}
+
+/**
+ * The links of one ticket as follow-up or as source (QT-1, ADR-0067): another tab or another member
+ * of the household adds or removes a source ticket, or creates a follow-up. The rules deliver only
+ * links between two tickets the account sees, neither in the trash.
+ */
+export function subscribeTicketSources(
+	pb: PocketBase,
+	ticketId: string,
+	onChange: (change: RecordChange<TicketSourceLink>) => void
+): Promise<Unsubscribe> {
+	return pb
+		.collection('ticket_sources')
+		.subscribe<{ id: string; ticket?: unknown; source?: unknown }>(
+			'*',
+			changes(toTicketSourceLink, onChange),
+			{
+				filter: pb.filter('ticket = {:ticket} || source = {:ticket}', { ticket: ticketId }),
+				fields: TICKET_SOURCE_FIELDS
+			}
 		);
 }
 
