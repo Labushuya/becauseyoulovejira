@@ -523,6 +523,10 @@ function deleteWithSources(e, id) {
 module.exports = {
   ACTOR_KEY: ACTOR_KEY,
   CREATED_BY_RULE_KEY: CREATED_BY_RULE_KEY,
+  // The day plan completes a ticket through the same save (TP-1, ADR-0065) and answers the question
+  // about open blocking sub-tickets the same way.
+  FORCE_DONE_KEY: FORCE_DONE_KEY,
+  COMPLETE_CHILDREN_KEY: COMPLETE_CHILDREN_KEY,
   deleteWithSources: deleteWithSources,
   assignKey: assignKey,
   historyValues: historyValues,

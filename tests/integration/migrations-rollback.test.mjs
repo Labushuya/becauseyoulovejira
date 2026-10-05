@@ -820,13 +820,15 @@ function withDatabase(dataDir, fn) {
  * of the colors (ADR-0052, 1790203400): every earlier test runs that migration along, and it only
  * adds an empty value; its own test reads the column itself (colorRows). The same for the fields of
  * the accounts (ADR-0056, 1790203700); its own test reads them itself (accountRows). The same for
- * the charms (ADR-0062, 1790204400), which add an empty value as well (charmRows).
+ * the charms (ADR-0062, 1790204400), which add an empty value as well (charmRows), and for the kind of
+ * a ticket (ADR-0065, 1790204600), which every row gets as `task` (kindRows).
  */
 function snapshot(db) {
 	const exists = (table) =>
 		db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(table) !== undefined;
 	const rows = (table) => (exists(table) ? db.prepare(`SELECT * FROM ${table} ORDER BY id`).all() : null);
-	const withoutColor = (list) => (list === null ? null : withoutFields(list, [...COLOR_FIELDS, ...CHARM_FIELDS]));
+	const withoutColor = (list) =>
+		list === null ? null : withoutFields(list, [...COLOR_FIELDS, ...CHARM_FIELDS, ...KIND_FIELDS]);
 	const users = rows('users');
 	return {
 		users: users === null ? null : withoutFields(users, ACCOUNT_FIELDS),
@@ -891,6 +893,11 @@ const MOVED_FINGERPRINTS_COLLECTION = 'inbox_moved_fingerprints';
 const CHARM_MIGRATION = '1790204400_charms.js';
 const CHARM_FIELDS = ['charm'];
 const CHARM_COLLECTIONS = ['tickets', 'recurrence_rules'];
+// The day plan (ADR-0065, 1790204600), which every earlier test runs along as well: the select field
+// `kind` at tickets (every row of before becomes `task`) and the collections of the plans.
+const DAY_PLAN_MIGRATION = '1790204600_day_plans.js';
+const KIND_FIELDS = ['kind'];
+const DAY_PLAN_COLLECTIONS = ['day_plans', 'day_plan_items', 'day_plan_settings'];
 // [after, before] of the owner branch of 1790203900, of a record and of a record through its ticket.
 const PRIVATE_BRANCHES = [
 	['((owner = @request.auth.id && household = "") || (household != ""', '(owner = @request.auth.id || (household != ""'],
@@ -1029,21 +1036,33 @@ function withoutLoginFailures(collections) {
 
 /**
  * The collections as before managing a household (ADR-0058): no household_invites, withoutHousehold,
- * and no fingerprints of moved entries (E7-4b, 1790204300); without the charms that follow them
- * (ADR-0062, 1790204400, withoutCharmFields), since every test that runs the one along runs the
- * other as well.
+ * and no fingerprints of moved entries (E7-4b, 1790204300); without the charms and the day plan that
+ * follow them (ADR-0062, 1790204400, and ADR-0065, 1790204600, withoutDayPlans and withoutCharmFields),
+ * since every test that runs the one along runs the others as well.
  */
 function withoutHouseholdCollections(collections) {
-	return collections
-		.filter((collection) => collection.name !== HOUSEHOLD_INVITES_COLLECTION && collection.name !== MOVED_FINGERPRINTS_COLLECTION)
+	return withoutDayPlans(
+		collections.filter(
+			(collection) => collection.name !== HOUSEHOLD_INVITES_COLLECTION && collection.name !== MOVED_FINGERPRINTS_COLLECTION
+		)
+	)
 		.map(withoutHousehold)
 		.map(withoutCharmFields);
 }
 
-/** A collection without the field of the charms (ADR-0062, 1790204400). */
+/**
+ * A collection without the field of the charms (ADR-0062, 1790204400) and, at tickets, without the
+ * kind of the day plan that follows it (ADR-0065, 1790204600).
+ */
 function withoutCharmFields(collection) {
 	if (!CHARM_COLLECTIONS.includes(collection.name) || !Array.isArray(collection.fields)) return collection;
-	return { ...collection, fields: collection.fields.filter((field) => !CHARM_FIELDS.includes(field.name)) };
+	const later = [...CHARM_FIELDS, ...KIND_FIELDS];
+	return { ...collection, fields: collection.fields.filter((field) => !later.includes(field.name)) };
+}
+
+/** The collections without those of the day plan (ADR-0065, 1790204600). */
+function withoutDayPlans(collections) {
+	return collections.filter((collection) => !DAY_PLAN_COLLECTIONS.includes(collection.name));
 }
 
 /**
@@ -1427,7 +1446,8 @@ describe('migration rollback of "Jeden Termin einzeln anlegen" (plan OR-5)', () 
 				LOGIN_FAILURES_MIGRATION,
 				ACCOUNTS_MIGRATION,
 				...HOUSEHOLD_MIGRATIONS,
-				CHARM_MIGRATION
+				CHARM_MIGRATION,
+				DAY_PLAN_MIGRATION
 			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -1579,7 +1599,8 @@ describe('migration rollback of the trash (ADR-0037)', () => {
 				LOGIN_FAILURES_MIGRATION,
 				ACCOUNTS_MIGRATION,
 				...HOUSEHOLD_MIGRATIONS,
-				CHARM_MIGRATION
+				CHARM_MIGRATION,
+				DAY_PLAN_MIGRATION
 			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -1691,7 +1712,8 @@ describe('migration rollback of the own inbox (ADR-0038)', () => {
 				LOGIN_FAILURES_MIGRATION,
 				ACCOUNTS_MIGRATION,
 				...HOUSEHOLD_MIGRATIONS,
-				CHARM_MIGRATION
+				CHARM_MIGRATION,
+				DAY_PLAN_MIGRATION
 			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -1823,7 +1845,8 @@ describe('migration rollback of "Status beim Anlegen" (plan WV, ADR-0022 addendu
 				LOGIN_FAILURES_MIGRATION,
 				ACCOUNTS_MIGRATION,
 				...HOUSEHOLD_MIGRATIONS,
-				CHARM_MIGRATION
+				CHARM_MIGRATION,
+				DAY_PLAN_MIGRATION
 			]);
 			const ruleFields = [...STATUS_RULE_FIELDS, ...SUBTASKS_RULE_FIELDS];
 
@@ -1926,7 +1949,8 @@ describe('migration rollback of the pinned comment (ADR-0044)', () => {
 				LOGIN_FAILURES_MIGRATION,
 				ACCOUNTS_MIGRATION,
 				...HOUSEHOLD_MIGRATIONS,
-				CHARM_MIGRATION
+				CHARM_MIGRATION,
+				DAY_PLAN_MIGRATION
 			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -2029,7 +2053,8 @@ describe('migration rollback of the sub-tasks of the template (plan WV-3, ADR-00
 				LOGIN_FAILURES_MIGRATION,
 				ACCOUNTS_MIGRATION,
 				...HOUSEHOLD_MIGRATIONS,
-				CHARM_MIGRATION
+				CHARM_MIGRATION,
+				DAY_PLAN_MIGRATION
 			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -2123,7 +2148,7 @@ describe('migration rollback of the target project (ADR-0049)', () => {
 		async () => {
 			// The GitHub channel (ADR-0050, 1790203200) follows and runs along; it changes no row.
 			const fromTarget = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(TARGET_MIGRATION));
-			expect(fromTarget).toEqual([TARGET_MIGRATION, GITHUB_MIGRATION, FOLDER_MIGRATION, COLOR_MIGRATION, SECURITY_MIGRATION, LOGIN_FAILURES_MIGRATION, ACCOUNTS_MIGRATION, ...HOUSEHOLD_MIGRATIONS, CHARM_MIGRATION]);
+			expect(fromTarget).toEqual([TARGET_MIGRATION, GITHUB_MIGRATION, FOLDER_MIGRATION, COLOR_MIGRATION, SECURITY_MIGRATION, LOGIN_FAILURES_MIGRATION, ACCOUNTS_MIGRATION, ...HOUSEHOLD_MIGRATIONS, CHARM_MIGRATION, DAY_PLAN_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -2220,7 +2245,7 @@ describe('migration rollback of the GitHub channel (ADR-0050)', () => {
 		async () => {
 			// The folder channel (ADR-0051, 1790203300) follows and runs along; it changes no row.
 			const fromGithub = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(GITHUB_MIGRATION));
-			expect(fromGithub).toEqual([GITHUB_MIGRATION, FOLDER_MIGRATION, COLOR_MIGRATION, SECURITY_MIGRATION, LOGIN_FAILURES_MIGRATION, ACCOUNTS_MIGRATION, ...HOUSEHOLD_MIGRATIONS, CHARM_MIGRATION]);
+			expect(fromGithub).toEqual([GITHUB_MIGRATION, FOLDER_MIGRATION, COLOR_MIGRATION, SECURITY_MIGRATION, LOGIN_FAILURES_MIGRATION, ACCOUNTS_MIGRATION, ...HOUSEHOLD_MIGRATIONS, CHARM_MIGRATION, DAY_PLAN_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -2333,7 +2358,7 @@ describe('migration rollback of the folder channel (ADR-0051)', () => {
 		async () => {
 			// The colors (ADR-0052, 1790203400) follow and run along; they change no row.
 			const fromFolder = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(FOLDER_MIGRATION));
-			expect(fromFolder).toEqual([FOLDER_MIGRATION, COLOR_MIGRATION, SECURITY_MIGRATION, LOGIN_FAILURES_MIGRATION, ACCOUNTS_MIGRATION, ...HOUSEHOLD_MIGRATIONS, CHARM_MIGRATION]);
+			expect(fromFolder).toEqual([FOLDER_MIGRATION, COLOR_MIGRATION, SECURITY_MIGRATION, LOGIN_FAILURES_MIGRATION, ACCOUNTS_MIGRATION, ...HOUSEHOLD_MIGRATIONS, CHARM_MIGRATION, DAY_PLAN_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -2419,7 +2444,10 @@ describe('migration rollback of the colors (ADR-0052)', () => {
 	// The charms (ADR-0062, 1790204400) run along and add a column to tickets and rules as well.
 	const withoutColorColumns = (data) =>
 		Object.fromEntries(
-			Object.entries(data).map(([table, list]) => [table, withoutFields(list, [...COLOR_FIELDS, ...CHARM_FIELDS])])
+			Object.entries(data).map(([table, list]) => [
+				table,
+				withoutFields(list, [...COLOR_FIELDS, ...CHARM_FIELDS, ...KIND_FIELDS])
+			])
 		);
 
 	/** A project with a sub project, a rule and two tickets, as before the colors. */
@@ -2445,7 +2473,7 @@ describe('migration rollback of the colors (ADR-0052)', () => {
 		'adds a select field of the palette to projects, tickets and rules without changing a row; the way back loses only the colors',
 		async () => {
 			const fromColor = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(COLOR_MIGRATION));
-			expect(fromColor).toEqual([COLOR_MIGRATION, SECURITY_MIGRATION, LOGIN_FAILURES_MIGRATION, ACCOUNTS_MIGRATION, ...HOUSEHOLD_MIGRATIONS, CHARM_MIGRATION]);
+			expect(fromColor).toEqual([COLOR_MIGRATION, SECURITY_MIGRATION, LOGIN_FAILURES_MIGRATION, ACCOUNTS_MIGRATION, ...HOUSEHOLD_MIGRATIONS, CHARM_MIGRATION, DAY_PLAN_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -2515,7 +2543,7 @@ describe('migration of the security hardening (ADR-0055)', () => {
 		'switches the rate limiter on with "Normal" and the superusers to this machine, there and back, and keeps settings of the admin UI',
 		async () => {
 			const fromSecurity = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(SECURITY_MIGRATION));
-			expect(fromSecurity).toEqual([SECURITY_MIGRATION, LOGIN_FAILURES_MIGRATION, ACCOUNTS_MIGRATION, ...HOUSEHOLD_MIGRATIONS, CHARM_MIGRATION]);
+			expect(fromSecurity).toEqual([SECURITY_MIGRATION, LOGIN_FAILURES_MIGRATION, ACCOUNTS_MIGRATION, ...HOUSEHOLD_MIGRATIONS, CHARM_MIGRATION, DAY_PLAN_MIGRATION]);
 			const settingsOf = (dataDir) => readDataDir(dataDir).settings;
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -2561,7 +2589,7 @@ describe('migration rollback of the protocol of failed sign-ins (ADR-0055 §8)',
 		'adds login_failures without API rules and removes it with its rows on the way back',
 		async () => {
 			const fromLogins = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(LOGIN_FAILURES_MIGRATION));
-			expect(fromLogins).toEqual([LOGIN_FAILURES_MIGRATION, ACCOUNTS_MIGRATION, ...HOUSEHOLD_MIGRATIONS, CHARM_MIGRATION]);
+			expect(fromLogins).toEqual([LOGIN_FAILURES_MIGRATION, ACCOUNTS_MIGRATION, ...HOUSEHOLD_MIGRATIONS, CHARM_MIGRATION, DAY_PLAN_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -2600,7 +2628,7 @@ describe('migration rollback of the accounts and the administrator (ADR-0056)', 
 		'gives the right to the account created first (smallest ID on a tie) without other changes, and back',
 		async () => {
 			const fromAccounts = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(ACCOUNTS_MIGRATION));
-			expect(fromAccounts).toEqual([ACCOUNTS_MIGRATION, ...HOUSEHOLD_MIGRATIONS, CHARM_MIGRATION]);
+			expect(fromAccounts).toEqual([ACCOUNTS_MIGRATION, ...HOUSEHOLD_MIGRATIONS, CHARM_MIGRATION, DAY_PLAN_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -2680,7 +2708,7 @@ describe('migration rollback of managing a household (ADR-0058)', () => {
 		'adds the codes, the rights and the rule of joining, keeps the owner branch for private records only, and back, without touching a row',
 		async () => {
 			const fromHousehold = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(HOUSEHOLD_INVITES_MIGRATION));
-			expect(fromHousehold).toEqual([...HOUSEHOLD_MIGRATIONS, CHARM_MIGRATION]);
+			expect(fromHousehold).toEqual([...HOUSEHOLD_MIGRATIONS, CHARM_MIGRATION, DAY_PLAN_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -2763,7 +2791,7 @@ describe('migration rollback of the retention of a household (ADR-0059 §6)', ()
 		'adds the retention of every household empty (30 days), and back, without touching another row',
 		async () => {
 			const fromRetention = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(AREA_RETENTION_MIGRATION));
-			expect(fromRetention).toEqual([AREA_RETENTION_MIGRATION, PRIVATE_CONNECTIONS_MIGRATION, MOVED_FINGERPRINTS_MIGRATION, CHARM_MIGRATION]);
+			expect(fromRetention).toEqual([AREA_RETENTION_MIGRATION, PRIVATE_CONNECTIONS_MIGRATION, MOVED_FINGERPRINTS_MIGRATION, CHARM_MIGRATION, DAY_PLAN_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -2812,7 +2840,7 @@ describe('migration of the connections of a household from before (ADR-0061 §7)
 		'puts a connection of a household into the private area of its active owner, and leaves everything else',
 		async () => {
 			const fromConnections = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(PRIVATE_CONNECTIONS_MIGRATION));
-			expect(fromConnections).toEqual([PRIVATE_CONNECTIONS_MIGRATION, MOVED_FINGERPRINTS_MIGRATION, CHARM_MIGRATION]);
+			expect(fromConnections).toEqual([PRIVATE_CONNECTIONS_MIGRATION, MOVED_FINGERPRINTS_MIGRATION, CHARM_MIGRATION, DAY_PLAN_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -2853,10 +2881,10 @@ describe('migration of the connections of a household from before (ADR-0061 §7)
 
 				const up = await migrate(args, 'up');
 				expect(appliedFiles(up, 'Applied')).toEqual(fromConnections);
-				// The fingerprints of moved entries (1790204300) and the charms (1790204400) run along; no
-				// other collection changes.
+				// The fingerprints of moved entries (1790204300), the charms (1790204400) and the day plan
+				// (1790204600) run along; no other collection changes.
 				expect(
-					withoutTimestamps(readDataDir(dataDir).collections)
+					withoutDayPlans(withoutTimestamps(readDataDir(dataDir).collections))
 						.filter((collection) => collection.name !== MOVED_FINGERPRINTS_COLLECTION)
 						.map(withoutCharmFields)
 				).toEqual(schemaBefore);
@@ -2898,7 +2926,7 @@ describe('migration rollback of the fingerprints of moved entries (ADR-0061, add
 		'adds the collection without touching a row, and back with its rows',
 		async () => {
 			const fromMoved = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(MOVED_FINGERPRINTS_MIGRATION));
-			expect(fromMoved).toEqual([MOVED_FINGERPRINTS_MIGRATION, CHARM_MIGRATION]);
+			expect(fromMoved).toEqual([MOVED_FINGERPRINTS_MIGRATION, CHARM_MIGRATION, DAY_PLAN_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -2925,9 +2953,9 @@ describe('migration rollback of the fingerprints of moved entries (ADR-0061, add
 				const up = await migrate(args, 'up');
 				expect(appliedFiles(up, 'Applied')).toEqual(fromMoved);
 				assertSchema(readDataDir(dataDir).collections);
-				// The charms (1790204400) run along.
+				// The charms (1790204400) and the day plan (1790204600) run along.
 				expect(
-					withoutTimestamps(readDataDir(dataDir).collections)
+					withoutDayPlans(withoutTimestamps(readDataDir(dataDir).collections))
 						.filter((collection) => collection.name !== MOVED_FINGERPRINTS_COLLECTION)
 						.map(withoutCharmFields)
 				).toEqual(schemaBefore);
@@ -2966,8 +2994,9 @@ describe('migration rollback of the charms (ADR-0062)', () => {
 	/** The rows of tickets and rules, the column of the charm included (snapshot leaves it out). */
 	const charmRows = (db) =>
 		Object.fromEntries(CHARM_COLLECTIONS.map((table) => [table, db.prepare(`SELECT * FROM ${table} ORDER BY id`).all()]));
+	// The kind of the day plan (1790204600) runs along: every ticket of before becomes a task.
 	const withoutCharmColumns = (data) =>
-		Object.fromEntries(Object.entries(data).map(([table, list]) => [table, withoutFields(list, CHARM_FIELDS)]));
+		Object.fromEntries(Object.entries(data).map(([table, list]) => [table, withoutFields(list, [...CHARM_FIELDS, ...KIND_FIELDS])]));
 
 	/** A rule and two tickets, as before the charms. */
 	function insertData(db) {
@@ -2987,7 +3016,7 @@ describe('migration rollback of the charms (ADR-0062)', () => {
 		'adds an empty text field to tickets and rules without changing a row; the way back loses only the charms',
 		async () => {
 			const fromCharm = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(CHARM_MIGRATION));
-			expect(fromCharm).toEqual([CHARM_MIGRATION]);
+			expect(fromCharm).toEqual([CHARM_MIGRATION, DAY_PLAN_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -3004,7 +3033,9 @@ describe('migration rollback of the charms (ADR-0062)', () => {
 				for (const name of CHARM_COLLECTIONS) {
 					expect(charmField(dataDir, name), name).toMatchObject({ type: 'text', required: false, max: 40 });
 				}
-				expect(withoutTimestamps(readDataDir(dataDir).collections).map(withoutCharmFields)).toEqual(schemaBefore);
+				expect(withoutDayPlans(withoutTimestamps(readDataDir(dataDir).collections)).map(withoutCharmFields)).toEqual(
+					schemaBefore
+				);
 				// No row changes: data of before has no charm.
 				const migrated = withDatabase(dataDir, charmRows);
 				expect(withoutCharmColumns(migrated)).toEqual(before);
@@ -3028,6 +3059,91 @@ describe('migration rollback of the charms (ADR-0062)', () => {
 				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromCharm);
 				assertSchema(readDataDir(dataDir).collections);
 				expect(withDatabase(dataDir, charmRows).tickets.map((row) => row.charm)).toEqual(['', '']);
+			});
+		}
+	);
+});
+
+describe('migration rollback of the day plan (ADR-0065)', () => {
+	const OWNER = 'user00000000001';
+	const SCOPE = 'u:user00000000001';
+	const kindField = (dataDir) =>
+		readDataDir(dataDir)
+			.collections.find((collection) => collection.name === 'tickets')
+			?.fields.find((field) => field.name === 'kind');
+	const collectionNames = (dataDir) => readDataDir(dataDir).collections.map((collection) => collection.name);
+	/** The rows of tickets, the column of the kind included (snapshot leaves it out). */
+	const ticketRows = (db) => db.prepare('SELECT * FROM tickets ORDER BY id').all();
+
+	it(
+		'makes every ticket of before a task and adds the plans without another change; the way back loses only plans, settings and kinds',
+		async () => {
+			const fromDayPlan = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(DAY_PLAN_MIGRATION));
+			expect(fromDayPlan).toEqual([DAY_PLAN_MIGRATION]);
+
+			await withTempDataDir(async ({ dataDir, args }) => {
+				await migrate(args, 'up');
+				await migrate(args, 'down', String(fromDayPlan.length));
+				expect(kindField(dataDir)).toBeUndefined();
+				for (const name of DAY_PLAN_COLLECTIONS) expect(collectionNames(dataDir), name).not.toContain(name);
+				withDatabase(dataDir, (db) => {
+					db.prepare('INSERT INTO users (id, email, tokenKey, password, created, updated) VALUES (?, ?, ?, ?, ?, ?)').run(
+						OWNER,
+						'eins@example.invalid',
+						'tk1',
+						'hash',
+						STAMP,
+						STAMP
+					);
+					const ticket = db.prepare(
+						'INSERT INTO tickets (id, number, key, title, status, priority, scope, owner, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+					);
+					ticket.run('ticket000000001', 1, 'TASK-1', 'Sprachkurs', 'in_progress', 'medium', SCOPE, OWNER, STAMP, STAMP);
+					ticket.run('ticket000000002', 2, 'TASK-2', 'Müll', 'done', 'low', SCOPE, OWNER, STAMP, STAMP);
+				});
+				const before = withDatabase(dataDir, ticketRows);
+				const rows = withDatabase(dataDir, snapshot);
+				const schemaBefore = withoutTimestamps(readDataDir(dataDir).collections);
+
+				const up = await migrate(args, 'up');
+				expect(appliedFiles(up, 'Applied')).toEqual(fromDayPlan);
+				assertSchema(readDataDir(dataDir).collections);
+				expect(kindField(dataDir)).toMatchObject({ type: 'select', required: false, values: ['task', 'ongoing'], maxSelect: 1 });
+				expect(withoutDayPlans(withoutTimestamps(readDataDir(dataDir).collections)).map(withoutCharmFields)).toEqual(
+					schemaBefore.map(withoutCharmFields)
+				);
+				// Every ticket of before is a task now; `updated` and every other column stay.
+				const migrated = withDatabase(dataDir, ticketRows);
+				expect(migrated.map((row) => row.kind)).toEqual(['task', 'task']);
+				expect(withoutFields(migrated, KIND_FIELDS)).toEqual(before);
+				expect(withDatabase(dataDir, snapshot)).toEqual(rows);
+				for (const name of DAY_PLAN_COLLECTIONS) {
+					expect(withDatabase(dataDir, (db) => db.prepare(`SELECT COUNT(*) AS n FROM ${name}`).get().n), name).toBe(0);
+				}
+
+				// A plan with an entry and settings, and an ongoing project: on the way back only they go.
+				withDatabase(dataDir, (db) => {
+					db.prepare('UPDATE tickets SET kind = ? WHERE id = ?').run('ongoing', 'ticket000000001');
+					db.prepare(
+						'INSERT INTO day_plans (id, date, dismissed, scope, owner, household, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+					).run('dayplan00000001', '2031-01-08', '[]', SCOPE, OWNER, '', STAMP, STAMP);
+					db.prepare(
+						'INSERT INTO day_plan_items (id, plan, ticket, position, origin, done_today, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+					).run('dayitem00000001', 'dayplan00000001', 'ticket000000001', 0, 'ongoing', 1, STAMP, STAMP);
+					db.prepare(
+						'INSERT INTO day_plan_settings (id, sources, scope, owner, household, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?)'
+					).run('daysettings0001', '{"in_progress":"off"}', SCOPE, OWNER, '', STAMP, STAMP);
+				});
+
+				const down = await migrate(args, 'down', String(fromDayPlan.length));
+				expect(appliedFiles(down, 'Reverted')).toEqual([...fromDayPlan].reverse());
+				expect(withoutTimestamps(readDataDir(dataDir).collections)).toEqual(schemaBefore);
+				expect(withDatabase(dataDir, ticketRows)).toEqual(before);
+				expect(withDatabase(dataDir, snapshot)).toEqual(rows);
+
+				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromDayPlan);
+				assertSchema(readDataDir(dataDir).collections);
+				expect(withDatabase(dataDir, ticketRows).map((row) => row.kind)).toEqual(['task', 'task']);
 			});
 		}
 	);

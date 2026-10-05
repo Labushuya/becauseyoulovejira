@@ -18,11 +18,12 @@ const BASE = {
 	household: '',
 	pinned_comment: '',
 	color: '',
-	charm: ''
+	charm: '',
+	kind: 'task'
 };
 
 describe('TRACKED_FIELDS', () => {
-	it('matches the whitelist of the E1 plan (OF-12) plus the pinned comment (ADR-0044) and the color (ADR-0052), since ADR-0062 the charm', () => {
+	it('matches the whitelist of the E1 plan (OF-12) plus the pinned comment (ADR-0044) and the color (ADR-0052), since ADR-0062 the charm, since ADR-0065 the kind', () => {
 		expect([...TRACKED_FIELDS]).toEqual([
 			'title',
 			'description',
@@ -38,9 +39,15 @@ describe('TRACKED_FIELDS', () => {
 			'household',
 			'pinned_comment',
 			'color',
-			'charm'
+			'charm',
+			'kind'
 		]);
 		expect(Object.isFrozen(TRACKED_FIELDS)).toBe(true);
+	});
+
+	it('records a change of the kind of a ticket both ways (ADR-0065)', () => {
+		expect(diff(BASE, { ...BASE, kind: 'ongoing' })).toEqual([{ field: 'kind', old_value: 'task', new_value: 'ongoing' }]);
+		expect(diff({ ...BASE, kind: 'ongoing' }, BASE)).toEqual([{ field: 'kind', old_value: 'ongoing', new_value: 'task' }]);
 	});
 
 	it('records setting, changing and clearing the charm of a ticket (ADR-0062)', () => {
