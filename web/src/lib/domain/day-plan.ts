@@ -8,6 +8,7 @@
 // dueBucket), never a time zone of the runtime (ADR-0005).
 
 import { addDays, parseCalendarDate, type CalendarDate } from './berlin-date';
+import { overdueSinceText } from './due-label';
 import type { Priority, Status } from './status';
 
 // --- Kind of a ticket --------------------------------------------------------------------------
@@ -140,8 +141,24 @@ export interface PlanTicketFacts {
 	due: CalendarDate | '';
 	kind: TicketKind | string;
 	recurring: boolean;
+	/**
+	 * The series the ticket stands for alone (`seriesKeyOf`, WH-1): only its current occurrence is
+	 * proposed. '' or absent for every other ticket.
+	 */
+	series?: string;
 	priority: Priority | string;
 	created: string;
+}
+
+/**
+ * The series a ticket stands for alone (WH-1): its rule, unless it was made with "Verpasste Termine
+ * nachholen" (`occurrence` set, every date its own ticket that counts on its own); '' without a rule.
+ */
+export function seriesKeyOf(
+	recurrenceId: string | null | undefined,
+	occurrence: string | null | undefined
+): string {
+	return recurrenceId && !occurrence ? recurrenceId : '';
 }
 
 export interface SuggestionContext {
@@ -165,11 +182,6 @@ export interface Suggestion {
 	reasons: string[];
 }
 
-/** Whole days from `from` to `to`. */
-export function daysBetween(from: CalendarDate, to: CalendarDate): number {
-	return Math.round((parseCalendarDate(to) - parseCalendarDate(from)) / 86_400_000);
-}
-
 /** The sources an open ticket matches on `today`, in the order of SOURCE_PRECEDENCE. */
 export function matchingSources(
 	ticket: PlanTicketFacts,
@@ -189,7 +201,7 @@ export function matchingSources(
 	return SOURCE_PRECEDENCE.filter((source) => matches[source]);
 }
 
-/** Text of a reason, e.g. "überfällig seit 3 Tagen". */
+/** Text of a reason, e.g. "überfällig seit 05.10." (the text of the list, WH-1). */
 export function reasonText(
 	source: DayPlanSource,
 	ticket: Pick<PlanTicketFacts, 'due'>,
@@ -202,10 +214,8 @@ export function reasonText(
 			return 'Wiederholung';
 		case 'leftover':
 			return 'übrig von gestern';
-		case 'overdue': {
-			const days = ticket.due === '' ? 0 : daysBetween(ticket.due, today);
-			return days === 1 ? 'überfällig seit 1 Tag' : `überfällig seit ${days} Tagen`;
-		}
+		case 'overdue':
+			return overdueSinceText(ticket.due === '' ? today : ticket.due, today);
 		case 'due_today':
 			return 'heute fällig';
 		case 'in_progress':
@@ -237,18 +247,55 @@ function compare(
 }
 
 /**
+ * Whether `a` is a later occurrence of its series than `b`: the later due date (one without counts
+ * as the earliest), then the later creation, then the greater ID.
+ */
+function isLater(a: PlanTicketFacts, b: PlanTicketFacts): boolean {
+	const dueA = a.due || '';
+	const dueB = b.due || '';
+	if (dueA !== dueB) return dueA > dueB;
+	if (a.created !== b.created) return a.created > b.created;
+	return a.id > b.id;
+}
+
+/**
+ * Only the current occurrence of a series counts (WH-1): for every series its latest open ticket,
+ * and the series with a ticket in the plan already. The same as `seriesOf` of the hook.
+ */
+function seriesOf(
+	tickets: readonly PlanTicketFacts[],
+	planned: readonly string[]
+): { current: Map<string, PlanTicketFacts>; inPlan: Set<string> } {
+	const current = new Map<string, PlanTicketFacts>();
+	const inPlan = new Set<string>();
+	for (const ticket of tickets) {
+		const series = ticket.series ?? '';
+		if (series === '' || ticket.status === 'done') continue;
+		const known = current.get(series);
+		if (known === undefined || isLater(ticket, known)) current.set(series, ticket);
+		if (planned.includes(ticket.id)) inPlan.add(series);
+	}
+	return { current, inPlan };
+}
+
+/**
  * The suggestions of the plan of `today`: every open ticket that is neither planned nor removed today
- * and matches a source that is not off; sorted by origin, due date (none last), priority, creation
- * and ID. The same as `suggestionsOf` of the hook.
+ * and matches a source that is not off; of a series only its current occurrence, and nothing while
+ * one of its tickets is in the plan (WH-1); sorted by origin, due date (none last), priority,
+ * creation and ID. The same as `suggestionsOf` of the hook.
  */
 export function suggestionsOf(
 	tickets: readonly PlanTicketFacts[],
 	context: SuggestionContext
 ): Suggestion[] {
 	const settings = settingsOf(context.settings);
+	const series = seriesOf(tickets, context.planned);
 	const found: (Suggestion & { ticket: PlanTicketFacts })[] = [];
 	for (const ticket of tickets) {
 		if (context.planned.includes(ticket.id) || context.dismissed.includes(ticket.id)) continue;
+		const key = ticket.series ?? '';
+		if (key !== '' && (series.inPlan.has(key) || series.current.get(key)?.id !== ticket.id))
+			continue;
 		let best: SourceMode = 'off';
 		let origin: DayPlanSource | null = null;
 		const reasons: string[] = [];

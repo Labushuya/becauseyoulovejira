@@ -299,7 +299,7 @@
 				>
 				{#if rule.eachOccurrence === true}
 					<span aria-hidden="true">·</span>
-					<span>jeder Termin einzeln</span>
+					<span>holt verpasste Termine nach</span>
 				{/if}
 			{/if}
 		</p>

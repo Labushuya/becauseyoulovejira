@@ -113,11 +113,13 @@ export function ruleText(rule: RecurrenceRule): string {
  * The next ticket of a rule as the server will make it (plan "Wiederholungen verständlich machen",
  * recommendation 2):
  *   due        its due date; for a fixed rhythm with missed dates the latest of them up to today,
- *              which is what a ticket made today gets (ADR-0022 section 3); null while an
- *              after-completion rule waits for the completion of its open ticket
+ *              which is what a ticket made today gets (ADR-0022 section 3); while an open ticket
+ *              holds it back, the first date after today unless next_due lies later, which is what
+ *              completing that ticket today gives (WH-1, ADR-0022 addendum 13: never a date in the
+ *              past); null while an after-completion rule waits for the completion of its open ticket
  *   appears    the day from which it is made (due minus the lead time), which may be today or
  *              earlier ("in Kürze")
- *   blockedBy  keys of the open tickets it waits for: without "Jeden Termin einzeln anlegen" a rule
+ *   blockedBy  keys of the open tickets it waits for: without "Verpasste Termine nachholen" a rule
  *              makes nothing while one of its tickets is open
  */
 export interface NextTicket {
@@ -140,11 +142,35 @@ export function nextTicketOf(
 	if (rule.nextDue === null || valid === null) {
 		return { state: 'after_completion', due: null, appears: null, blockedBy };
 	}
-	const due =
-		valid.mode === 'calendar' && rule.eachOccurrence !== true && rule.nextDue < today
-			? catchUp(valid, rule.nextDue, today)
-			: rule.nextDue;
+	const due = scheduledDue(
+		valid,
+		rule.nextDue,
+		rule.eachOccurrence === true,
+		today,
+		blockedBy.length > 0
+	);
 	return { state: 'scheduled', due, appears: createOn(due, valid.lead_days), blockedBy };
+}
+
+/**
+ * Due date of the next ticket of a valid rule (see NextTicket): next_due with "Verpasste Termine
+ * nachholen" (`each`) or after completion; a fixed rhythm held back by an open ticket goes on after
+ * the day that ticket is completed, today at the earliest (nextDueAfterDay of the hook, WH-1);
+ * without one, missed dates are caught up with the latest of them (generation of the hook).
+ */
+function scheduledDue(
+	valid: RecurrenceParams,
+	nextDue: CalendarDate,
+	each: boolean,
+	today: CalendarDate,
+	blocked: boolean
+): CalendarDate {
+	if (valid.mode !== 'calendar' || each) return nextDue;
+	if (blocked) {
+		const earliest = after(valid, today);
+		return nextDue >= earliest ? nextDue : earliest;
+	}
+	return nextDue < today ? catchUp(valid, nextDue, today) : nextDue;
 }
 
 /** "HAUS-12 erledigt ist" or "HAUS-12 und HAUS-14 erledigt sind". */
@@ -262,7 +288,7 @@ export const RECURRENCE_MESSAGES: Readonly<Record<string, string>> = Object.free
 	validation_recurrence_open_instance:
 		'Von dieser Serie ist schon ein anderes Ticket offen. Erledige es zuerst oder löse ein Ticket aus der Serie.',
 	validation_recurrence_each_mode:
-		'„Jeden Termin einzeln anlegen“ gibt es nur bei einem festen Rhythmus.',
+		'„Verpasste Termine nachholen“ gibt es nur bei einem festen Rhythmus.',
 	validation_recurrence_backlog: 'Bitte „Alle nachholen“ oder „Nur ab heute“ wählen.',
 	validation_recurrence_reopen_older:
 		'Von dieser Serie ist schon ein anderes Ticket offen, und dieses Ticket ist nicht das zuletzt erledigte. Du kannst es als normales Ticket wieder öffnen (aus der Serie lösen).',

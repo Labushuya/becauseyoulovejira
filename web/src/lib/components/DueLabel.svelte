@@ -3,12 +3,12 @@
 	import { relativeDue } from '$lib/domain/due-label';
 	import { dueState } from '$lib/domain/ordering';
 
-	// Due date of a row (E3 plan, T-9 and package 6): relative label ("gestern", "seit 3 Tagen
-	// überfällig", "heute", "morgen", "in 4 Tagen", otherwise the date) in a <time> element; the
-	// full date is its title and, for screen readers, part of the text. Overdue is bold in text
-	// colour with an icon, today and tomorrow are in the brand text colour; never red (ADR-0009).
-	// Done tickets show the plain date. `today` comes from the list store, so the labels change at
-	// the Berlin midnight without a reload.
+	// Due date of a row (E3 plan, T-9 and package 6): relative label ("überfällig seit 03.10.",
+	// "heute", "morgen", "in 4 Tagen", otherwise the date; WH-1) in a <time> element; the full date
+	// is its title and, for screen readers, part of the text. Overdue is bold in text colour with an
+	// icon, today and tomorrow are in the brand text colour; never red (ADR-0009). Done tickets show
+	// the plain date. `today` comes from the list store, so the labels change at the Berlin midnight
+	// without a reload.
 	let {
 		due,
 		today,
@@ -18,8 +18,13 @@
 	const label = $derived(relativeDue(due, today));
 	const kind = $derived(done ? 'plain' : dueState(due, today));
 	const text = $derived(done ? (label.date ?? label.text) : label.text);
-	/** Full date for screen readers when the visible text is a relative one. */
-	const suffix = $derived(label.date !== null && text !== label.date ? `, ${label.date}` : '');
+	/**
+	 * The rest of the spoken text for screen readers after the visible one: ", 25.09.2026" after
+	 * "heute", the year after "überfällig seit 25.09." (so it reads "überfällig seit 25.09.2026").
+	 */
+	const suffix = $derived(
+		text !== label.spoken && label.spoken.startsWith(text) ? label.spoken.slice(text.length) : ''
+	);
 </script>
 
 {#if label.datetime === null}

@@ -1,8 +1,10 @@
 // Planned dates of the rules in the calendar (ADR-0053 §4, layer "Künftige Wiederholungen"). Pure:
 // the dates a rule will make tickets for, without a ticket yet, within the shown period. It asks the
 // same functions as the rest of the SPA and therefore the same rules as the hook (ADR-0021 to
-// ADR-0023): the next ticket from `nextTicketOf` (catch-up of missed dates without "Jeden Termin
-// einzeln anlegen"), the dates after it from `after` of recurrence.ts, the day it appears from
+// ADR-0023): the next ticket from `nextTicketOf` (catch-up of missed dates without "Verpasste
+// Termine nachholen"; while an open ticket holds the series back, the first date after today, so a
+// missed date never stands as an open entry, WH-1), the dates after it from `after` of
+// recurrence.ts, the day it appears from
 // `createOn` (due minus the lead time). Paused rules make nothing and are left out; a rule that
 // waits for the choice about a large backlog makes the dates from today on either way. A rule
 // "nach Erledigung" has only its next date, and none while its ticket is open (it hangs on the

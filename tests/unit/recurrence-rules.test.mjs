@@ -255,11 +255,76 @@ describe('generation (ADR-0022 sections 2 and 3; package 3)', () => {
 		});
 	});
 
-	it('fixes the next date at completion and release only for after-completion rules', () => {
+	it('fixes the next date at completion and release: after completion from that day, a fixed rhythm after it (WH-1)', () => {
 		expect(rules.nextDueOnCompletion(completion(), '2026-09-25', recurrence)).toBe('2026-09-28');
-		expect(rules.nextDueOnCompletion(weekly(), '2026-09-25', recurrence)).toBeNull();
 		expect(rules.nextDueOnRelease(completion(), '2026-09-25', recurrence)).toBe('2026-09-28');
-		expect(rules.nextDueOnRelease(weekly(), '2026-09-25', recurrence)).toBeNull();
+		// Monday 21.09. carried along, done or released on Friday 25.09.: the coming Monday.
+		const carried = { ...weekly(), next_due: '2026-09-21' };
+		expect(rules.nextDueOnCompletion(carried, '2026-09-25', recurrence)).toBe('2026-09-28');
+		expect(rules.nextDueOnRelease(carried, '2026-09-25', recurrence)).toBe('2026-09-28');
+		// With "Verpasste Termine nachholen" next_due stays.
+		expect(rules.nextDueOnCompletion({ ...carried, each: true }, '2026-09-25', recurrence)).toBeNull();
+		expect(rules.nextDueOnRelease({ ...carried, each: true }, '2026-09-25', recurrence)).toBeNull();
+	});
+});
+
+describe('only the current occurrence counts (WH-1, ADR-0022 addendum 13)', () => {
+	const state = (rule, nextDue) => ({ ...rule, active: true, next_due: nextDue });
+	const daily = () => recurrence.normalize({ mode: 'calendar', freq: 'daily', anchor: '2026-09-01' });
+
+	it('goes on with the first date after the day of the completion, never with one before or on it', () => {
+		// Wednesday after a Monday: the coming Monday.
+		expect(rules.nextDueAfterDay(state(weekly(), '2026-10-12'), '2026-10-07', recurrence)).toBeNull();
+		expect(rules.nextDueAfterDay(state(weekly(), '2026-10-05'), '2026-10-07', recurrence)).toBe('2026-10-12');
+		// Done on a regular date: the date after it.
+		expect(rules.nextDueAfterDay(state(weekly(), '2026-10-12'), '2026-10-12', recurrence)).toBe('2026-10-19');
+		// Daily, left for ten days: tomorrow.
+		expect(rules.nextDueAfterDay(state(daily(), '2026-09-26'), '2026-10-05', recurrence)).toBe('2026-10-06');
+		// Done early (its date is 08.10., next_due 09.10.): next_due stays.
+		expect(rules.nextDueAfterDay(state(daily(), '2026-10-09'), '2026-10-05', recurrence)).toBeNull();
+		// Not for after completion, the switch or an incomplete rule.
+		expect(rules.nextDueAfterDay(state(completion(), ''), '2026-10-05', recurrence)).toBeNull();
+		expect(rules.nextDueAfterDay({ ...state(daily(), '2026-09-26'), each: true }, '2026-10-05', recurrence)).toBeNull();
+		const incomplete = { mode: 'calendar', freq: '', interval: 1, weekdays: [], month_day: null, anchor: '', lead_days: 3 };
+		expect(rules.nextDueAfterDay(state(incomplete, '2026-09-26'), '2026-10-05', recurrence)).toBeNull();
+	});
+
+	it('keeps the end of the month: the 31st clamped in short months, then the 31st again', () => {
+		const day31 = recurrence.normalize({ mode: 'calendar', freq: 'monthly', month_day: 31, anchor: '2027-01-31' });
+		const last = recurrence.normalize({ mode: 'calendar', freq: 'monthly', month_day: -1, anchor: '2027-01-31' });
+		// January carried into February: the clamped 28.02.; done on that day: 31.03.
+		expect(rules.nextDueAfterDay(state(day31, '2027-02-28'), '2027-02-15', recurrence)).toBeNull();
+		expect(rules.nextDueAfterDay(state(day31, '2027-02-28'), '2027-03-02', recurrence)).toBe('2027-03-31');
+		expect(rules.nextDueAfterDay(state(day31, '2027-02-28'), '2027-02-28', recurrence)).toBe('2027-03-31');
+		expect(rules.nextDueAfterDay(state(last, '2028-01-31'), '2028-02-10', recurrence)).toBe('2028-02-29');
+		expect(rules.skippedDates(state(day31, '2027-02-28'), '2027-02-28', '2027-04-02', recurrence)).toEqual({
+			count: 2,
+			dates: ['2027-02-28', '2027-03-31'],
+			more: false
+		});
+	});
+
+	it('takes the Berlin day of the completion, also on both days of the clock change', () => {
+		const berlin = loadHookLib('berlin-time.js');
+		const running = state(recurrence.normalize({ mode: 'calendar', freq: 'daily', anchor: '2026-01-01' }), '2026-03-20');
+		// 29.03.2026 00:30 (still winter time) is 28.03. 23:30 UTC; 25.10.2026 00:30 (still summer
+		// time) is 24.10. 22:30 UTC: in UTC both are the day before.
+		const spring = berlin.berlinToday(Date.UTC(2026, 2, 28, 23, 30));
+		const autumn = berlin.berlinToday(Date.UTC(2026, 9, 24, 22, 30));
+		expect([spring, autumn]).toEqual(['2026-03-29', '2026-10-25']);
+		expect(rules.nextDueOnCompletion(running, spring, recurrence)).toBe('2026-03-30');
+		expect(rules.nextDueOnCompletion({ ...running, next_due: '2026-10-20' }, autumn, recurrence)).toBe('2026-10-26');
+	});
+
+	it('notes the dates passed while the occurrence was open, without the day of the completion', () => {
+		const carried = state(daily(), '2026-09-26');
+		expect(rules.skippedDates(carried, carried.next_due, '2026-10-05', recurrence)).toEqual({
+			count: 9,
+			dates: ['2026-09-26', '2026-09-27', '2026-09-28', '2026-09-29', '2026-09-30'],
+			more: false
+		});
+		// Done on the day after its own date: nothing passed.
+		expect(rules.skippedDates(state(daily(), '2026-10-05'), '2026-10-05', '2026-10-05', recurrence)).toBeNull();
 	});
 });
 
@@ -427,7 +492,7 @@ describe('"Jeden Termin einzeln anlegen" (plan OR-5, ADR-0022 addendum 2)', () =
 		expect(rules.eachViolation('after_completion', true)).toBe('validation_recurrence_each_mode');
 		expect(rules.eachViolation('after_completion', false)).toBe('');
 		expect(rules.MESSAGES.validation_recurrence_each_mode).toBe(
-			'„Jeden Termin einzeln anlegen“ gibt es nur bei einem festen Rhythmus.'
+			'„Verpasste Termine nachholen“ gibt es nur bei einem festen Rhythmus.'
 		);
 		const before = { ...weekly(), active: true, each: true };
 		expect(rules.clearsHint(before, { ...weekly(), active: true, each: false })).toBe(true);

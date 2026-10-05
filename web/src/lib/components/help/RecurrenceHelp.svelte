@@ -1,12 +1,13 @@
 <script lang="ts">
-	import { parseCalendarDate, type CalendarDate } from '$lib/domain/berlin-date';
+	import type { CalendarDate } from '$lib/domain/berlin-date';
 	import { helpExamples } from '$lib/domain/recurrence-examples';
 	import { dayLabel, joinWords, shortDate } from '$lib/domain/recurrence-text';
 
 	// Section "Wiederholungen" of the help (plan "Wiederholungen verständlich machen", part A): what
 	// the kinds, the lead time and the switch mean, three examples as timelines, special dates and
 	// the rest, since plan WV with the template (what the next tickets get, "Auch für künftige
-	// Tickets übernehmen", why nothing asks when a ticket appears). Every date comes from
+	// Tickets übernehmen", why nothing asks when a ticket appears), since WH-1 with "only the current
+	// occurrence counts" and the switch "Verpasste Termine nachholen". Every date comes from
 	// helpExamples(), which plays the scenarios with the decisions of the generation; nothing is
 	// typed by hand (tests/unit/web-recurrence.test.mjs checks them
 	// against the hook). The year of the examples is never shown. No table (like the whole help):
@@ -20,12 +21,9 @@
 	const day = (date: CalendarDate) => dayLabel(date, date);
 	/** "31.01." without weekday and year. */
 	const plain = (date: CalendarDate) => shortDate(date, date);
-	const DAY_MS = 24 * 60 * 60 * 1000;
-	const daysBetween = (from: CalendarDate, to: CalendarDate) =>
-		Math.round((parseCalendarDate(to) - parseCalendarDate(from)) / DAY_MS);
-	const overdue = daysBetween(fixed.leftLong.next.due, fixed.leftLong.done);
-	const skippedFixed = fixed.leftLong.next.skipped?.dates.map(plain) ?? [];
-	const skippedSwitch = each.doneWithout.skipped?.count ?? 0;
+	const passedFixed = fixed.leftLong.carried.passed?.dates.map(plain) ?? [];
+	const passedSwitch = each.doneWithout.passed?.count ?? 0;
+	const nextWithout = each.doneWithout.nextDue === '' ? '' : day(each.doneWithout.nextDue);
 	const offSkipped = each.offWithout.skipped?.count ?? 0;
 	const sub = $derived(`h${headingLevel + 1}`);
 </script>
@@ -39,7 +37,8 @@
 			<dt>Fester Rhythmus</dt>
 			<dd>
 				An welchen Kalendertagen ist es dran? Etwa Müll am Montag, Miete am 1., ein Geburtstag. Ob
-				du früher oder später erledigst, ändert die Termine nicht.
+				du früher oder später erledigst, ändert die Termine nicht. Erledigst du spät, geht es mit
+				dem nächsten Termin nach dem Erledigen weiter, nie mit einem in der Vergangenheit.
 			</dd>
 		</div>
 		<div class="row">
@@ -57,11 +56,14 @@
 			</dd>
 		</div>
 		<div class="row">
-			<dt>Jeden Termin einzeln anlegen</dt>
+			<dt>Verpasste Termine nachholen</dt>
 			<dd>
-				Aus (Standard): Solange ein Ticket der Serie offen ist, entsteht kein weiteres; verpasste
-				Termine werden zu einem zusammengefasst. An (nur fester Rhythmus): Jeder Termin bekommt sein
-				eigenes Ticket, auch wenn frühere noch offen sind.
+				Aus (Standard): Es zählt nur das aktuelle Ticket der Serie. Bleibt es liegen, entsteht kein
+				weiteres; es zeigt „überfällig seit“ mit seinem Termin, in der Liste, im Ticket und im
+				Tagesplan. Erst wenn du es erledigst, entsteht das nächste, für den nächsten Termin nach dem
+				Erledigen. Die Termine dazwischen gelten als übersprungen, das Ticket sagt es. An (nur
+				fester Rhythmus, etwa für Miete): Jeder Termin bekommt sein eigenes Ticket, auch wenn
+				frühere noch offen sind, und jedes zählt.
 			</dd>
 		</div>
 	</dl>
@@ -93,12 +95,12 @@
 			)}; fällig bleibt {day(fixed.late.next.due)}
 		</li>
 		<li>
-			Drei Wochen liegen gelassen, erledigt am {day(fixed.leftLong.done)}: Die verpassten Montage
-			werden zusammengefasst. Es entsteht ein Ticket, fällig {day(fixed.leftLong.next.due)} (schon
-			{overdue === 1 ? '1 Tag' : `${overdue} Tage`} überfällig); {joinWords(skippedFixed)} gelten als
-			übersprungen, das Ticket sagt es. Danach geht es normal weiter: Das Ticket für {day(
-				fixed.leftLong.after.due
-			)} erscheint am {day(fixed.leftLong.after.appeared)}
+			Drei Wochen liegen gelassen: Es bleibt bei dem einen Ticket, es zeigt „überfällig seit {plain(
+				fixed.leftLong.carried.due
+			)}“. Erledigt am {day(fixed.leftLong.done)}: Die Montage {joinWords(passedFixed)} gelten als übersprungen,
+			das Ticket sagt es. Das nächste ist {day(fixed.leftLong.next.due)} fällig, der erste Montag nach
+			dem Erledigen, und erscheint am {day(fixed.leftLong.next.appeared)}; einen Montag in der
+			Vergangenheit holt die Regel nicht nach
 		</li>
 		<li>
 			Mit Vorlauf 0 erscheint das Ticket am Montag selbst ({day(fixed.leadZero.appeared)}).
@@ -134,7 +136,7 @@
 	</ol>
 
 	<svelte:element this={sub} class="example-title">
-		Beispiel 3: „Jeden Termin einzeln anlegen“, täglich, Vorlauf 0
+		Beispiel 3: „Verpasste Termine nachholen“, täglich, Vorlauf 0
 	</svelte:element>
 	<ol class="timeline">
 		<li>
@@ -142,10 +144,10 @@
 			{each.openWith}.
 		</li>
 		<li>
-			Danach das älteste offene erledigt: ohne Schalter entsteht ein neues für heute ({day(
-				each.doneWithout.due
-			)}), {skippedSwitch} Termine gelten als übersprungen; mit Schalter entsteht
-			{each.madeWith === 0 ? 'nichts Neues' : `${each.madeWith} neue`}, die anderen bleiben offen.
+			Danach am {day(each.doneWithout.done)} das älteste offene erledigt: ohne Schalter entsteht das nächste
+			erst für den Tag danach ({nextWithout}), {passedSwitch} Termine gelten als übersprungen; mit Schalter
+			entsteht {each.madeWith === 0 ? 'nichts Neues' : `${each.madeWith} neue`}, die anderen bleiben
+			offen und zählen weiter.
 		</li>
 		<li>
 			App {each.offDays} Tage aus: ohne Schalter ein Ticket für heute ({offSkipped} Termine übersprungen).
@@ -156,8 +158,8 @@
 			Termine übersprungen).
 		</li>
 		<li>
-			Faustregel: Schalter an, wenn jeder einzelne Termin zählt (Tabletten, Rechnungen); aus, wenn
-			nur „mal wieder dran“ zählt.
+			Faustregel: Schalter an, wenn jeder einzelne Termin zählt (Miete, Tabletten, Rechnungen); aus,
+			wenn nur „mal wieder dran“ zählt (Spülmaschine ausräumen, Müll).
 		</li>
 	</ol>
 
@@ -186,8 +188,9 @@
 		<li>Die Fälligkeit eines Tickets der Serie zu verschieben, verschiebt die Serie nicht.</li>
 		<li>
 			Ein Ticket der Serie zu löschen, legt es in den Papierkorb: Der Termin gilt als übersprungen,
-			die Regel läuft weiter. Hat die Serie beim Wiederherstellen schon ein offenes Ticket, bietet
-			der Papierkorb an, es als normales Ticket zurückzuholen (aus der Serie lösen).
+			die Regel läuft weiter, ohne Schalter mit dem nächsten Termin nach heute (wie „Aus der Serie
+			lösen“). Hat die Serie beim Wiederherstellen schon ein offenes Ticket, bietet der Papierkorb
+			an, es als normales Ticket zurückzuholen (aus der Serie lösen).
 		</li>
 		<li>
 			Wieder öffnen: Nur das zuletzt erledigte Ticket nimmt ein eben entstandenes, unberührtes
@@ -208,7 +211,7 @@
 		<li>
 			Unteraufgaben legst du in der Vorlage fest (Liste „Unteraufgaben“, höchstens 20, je mit Titel
 			und Priorität, sortierbar). Jedes neue Ticket der Serie bekommt sie als neue, offene
-			Unteraufgaben ohne Fälligkeit, auch beim Nachholen und mit „Jeden Termin einzeln anlegen“. Am
+			Unteraufgaben ohne Fälligkeit, auch beim Nachholen und mit „Verpasste Termine nachholen“. Am
 			Ticket füllt „Unteraufgaben dieses Tickets übernehmen“ die Liste mit seinen Unteraufgaben
 			(„Ergänzen“ oder „Ersetzen“, wenn schon welche darin stehen); von selbst kommen sie nicht in
 			die Vorlage. Änderungen gelten nur für künftige Tickets. Nimmt das Wiedereröffnen des zuletzt

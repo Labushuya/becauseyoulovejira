@@ -498,7 +498,7 @@ describe('agenda', () => {
 			'Montag, 5. Oktober 2026'
 		]);
 		const group = screen.getByRole('region', { name: 'Überfällig (1 Eintrag)' });
-		expect(within(group).getByText('seit 12 Tagen überfällig')).toBeTruthy();
+		expect(within(group).getByText('überfällig seit 20.09.')).toBeTruthy();
 		expect(within(group).getByRole('link').getAttribute('tabindex')).toBeNull();
 	});
 

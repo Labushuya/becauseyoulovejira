@@ -130,7 +130,7 @@ describe('suggestions and pool, live from the open tickets', () => {
 			['t000000000000a2', ['in Arbeit']]
 		]);
 		tickets.map.set(due.id, { ...due, due: '2031-05-11', updated: '2031-05-14 09:00:00.000Z' });
-		expect(store.suggestions[0]?.suggestion.reasons).toEqual(['überfällig seit 3 Tagen']);
+		expect(store.suggestions[0]?.suggestion.reasons).toEqual(['überfällig seit 11.05.']);
 		tickets.map.set(due.id, { ...due, due: null, updated: '2031-05-14 09:00:01.000Z' });
 		expect(store.suggestions.map((row) => row.ticket.id)).toEqual(['t000000000000a2']);
 	});

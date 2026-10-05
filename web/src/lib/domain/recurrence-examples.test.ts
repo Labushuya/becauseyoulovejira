@@ -12,13 +12,17 @@ const TODAY = '2026-09-25';
 describe('liveExample', () => {
 	it('names when the ticket and the next one appear with a fixed rhythm', () => {
 		const values = defaultFormValues('2026-10-05', TODAY);
+		// Without "Verpasste Termine nachholen" (WH-1): the next one waits for the first.
 		expect(liveExample(values, TODAY)).toBe(
 			'Mit diesen Einstellungen: Das Ticket für Mo 05.10. erscheint am Fr 02.10. Das nächste ist ' +
-				'Mo 12.10. fällig und erscheint am Fr 09.10., egal wann du das erste erledigst. Ist das ' +
-				'erste dann noch offen, erscheint es erst, wenn du es erledigst.'
+				'Mo 12.10. fällig und erscheint am Fr 09.10., wenn das erste bis dahin erledigt ist. ' +
+				'Bleibt es länger offen, kommt das nächste erst mit dem Erledigen, für den ersten Termin ' +
+				'danach; verpasste Termine gelten als übersprungen.'
 		);
-		expect(liveExample({ ...values, eachOccurrence: true }, TODAY)).toMatch(
-			/Es kommt auch, wenn das erste dann noch offen ist\.$/
+		expect(liveExample({ ...values, eachOccurrence: true }, TODAY)).toBe(
+			'Mit diesen Einstellungen: Das Ticket für Mo 05.10. erscheint am Fr 02.10. Das nächste ist ' +
+				'Mo 12.10. fällig und erscheint am Fr 09.10., egal wann du das erste erledigst. Es kommt ' +
+				'auch, wenn das erste dann noch offen ist.'
 		);
 		expect(liveExample({ ...values, leadDays: '0' }, TODAY)).toMatch(
 			/^Mit diesen Einstellungen: Das Ticket für Mo 05\.10\. erscheint am Mo 05\.10\. /

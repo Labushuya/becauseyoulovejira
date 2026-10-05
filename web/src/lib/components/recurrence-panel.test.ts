@@ -438,7 +438,7 @@ describe('RecurrencePanel: a rule', () => {
 		const text =
 			'Die Serie geht weiter, sobald alle 2 offenen Tickets erledigt sind (TASK-7, TASK-8).';
 		expect(screen.queryByText(text)).toBeNull();
-		await fireEvent.click(screen.getByRole('switch', { name: 'Jeden Termin einzeln anlegen' }));
+		await fireEvent.click(screen.getByRole('switch', { name: 'Verpasste Termine nachholen' }));
 		expect(screen.getByText(text)).toBeTruthy();
 	});
 

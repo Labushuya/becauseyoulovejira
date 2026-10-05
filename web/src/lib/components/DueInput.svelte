@@ -2,13 +2,15 @@
 	// Due date as a native date field (E2 plan, T-7): Enter or leaving the field saves, Escape
 	// restores the saved value, the icon button "Fälligkeit entfernen" clears it (an icon instead of
 	// text, so the row fits the 480 px panel). An incomplete date in the browser
-	// (validity.badInput) is rejected instead of being saved as "no due date".
+	// (validity.badInput) is rejected instead of being saved as "no due date". A hint of the owner
+	// (`hintId`, "überfällig seit …", WH-1) describes the field next to an error.
 	let {
 		id,
 		value,
 		saving = false,
 		error = null,
 		errorId,
+		hintId,
 		onedit,
 		oninput,
 		onsave,
@@ -22,6 +24,8 @@
 		saving?: boolean;
 		error?: string | null;
 		errorId: string;
+		/** ID of a hint below the field, e.g. "überfällig seit 05.10."; none without. */
+		hintId?: string;
 		onedit: () => void;
 		oninput: (value: string) => void;
 		onsave: () => void;
@@ -31,6 +35,9 @@
 	} = $props();
 
 	let input = $state<HTMLInputElement>();
+	const describedBy = $derived(
+		[error ? errorId : '', hintId ?? ''].filter((part) => part !== '').join(' ') || undefined
+	);
 
 	function commit() {
 		if (input?.validity.badInput) onreject();
@@ -56,7 +63,7 @@
 		{value}
 		readonly={saving}
 		aria-invalid={error ? 'true' : undefined}
-		aria-describedby={error ? errorId : undefined}
+		aria-describedby={describedBy}
 		bind:this={input}
 		onfocus={onedit}
 		oninput={(event) => oninput(event.currentTarget.value)}

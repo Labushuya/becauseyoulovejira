@@ -245,11 +245,27 @@ describe('RecurrenceForm: preview with several weekdays (OR-1)', () => {
 	});
 });
 
-// The switch "Jeden Termin einzeln anlegen" (plan OR-5): only with a fixed rhythm and once the
-// server knows it; off by default, with a hint on what each state means.
+// The switch "Jeden Termin einzeln anlegen" (plan OR-5), since WH-1 named "Verpasste Termine
+// nachholen": only with a fixed rhythm and once the server knows it; off by default, with a hint on
+// what each state means.
 describe('RecurrenceForm: "Jeden Termin einzeln anlegen" (OR-5)', () => {
 	const toggle = () =>
-		screen.queryByRole<HTMLInputElement>('switch', { name: 'Jeden Termin einzeln anlegen' });
+		screen.queryByRole<HTMLInputElement>('switch', { name: 'Verpasste Termine nachholen' });
+
+	it('is named "Verpasste Termine nachholen" and says what off means (WH-1)', () => {
+		render(RecurrenceFormHarness, {
+			props: { initial: values(), today: TODAY, eachAvailable: true }
+		});
+		expect(screen.queryByRole('switch', { name: 'Jeden Termin einzeln anlegen' })).toBeNull();
+		const control = toggle();
+		const hint =
+			document.getElementById(String(control?.getAttribute('aria-describedby')))?.textContent ?? '';
+		expect(hint.replace(/\s+/g, ' ').trim()).toBe(
+			'Nur das aktuelle Ticket zählt: Bleibt es liegen, zeigt es „überfällig seit …“, und das ' +
+				'nächste entsteht erst beim Erledigen, für den nächsten Termin danach. Verpasste Termine ' +
+				'gelten als übersprungen.'
+		);
+	});
 
 	it('is not offered before the server knows it', () => {
 		render(RecurrenceFormHarness, { props: { initial: values(), today: TODAY } });
@@ -265,7 +281,7 @@ describe('RecurrenceForm: "Jeden Termin einzeln anlegen" (OR-5)', () => {
 		expect(control?.checked).toBe(false);
 		const hint = () =>
 			document.getElementById(String(control?.getAttribute('aria-describedby')))?.textContent ?? '';
-		expect(hint()).toMatch(/Höchstens ein offenes Ticket; verpasste Termine werden zum jüngsten/);
+		expect(hint()).toMatch(/Nur das aktuelle Ticket zählt/);
 
 		await fireEvent.click(control as HTMLInputElement);
 		expect(component.current().eachOccurrence).toBe(true);
@@ -343,7 +359,7 @@ describe('RecurrenceForm: "Jeden Termin einzeln anlegen" (OR-5)', () => {
 				today: TODAY,
 				eachAvailable: true,
 				errors: {
-					eachOccurrence: '„Jeden Termin einzeln anlegen“ gibt es nur bei einem festen Rhythmus.'
+					eachOccurrence: '„Verpasste Termine nachholen“ gibt es nur bei einem festen Rhythmus.'
 				}
 			}
 		});

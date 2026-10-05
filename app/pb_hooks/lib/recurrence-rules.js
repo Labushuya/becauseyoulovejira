@@ -30,7 +30,7 @@ var MESSAGES = {
   validation_recurrence_managed: 'Eine Wiederholung entsteht über „Wiederholen…“ am Ticket.',
   validation_recurrence_open_instance:
     'Von dieser Serie ist schon ein anderes Ticket offen. Erledige es zuerst oder löse ein Ticket aus der Serie.',
-  validation_recurrence_each_mode: '„Jeden Termin einzeln anlegen“ gibt es nur bei einem festen Rhythmus.',
+  validation_recurrence_each_mode: '„Verpasste Termine nachholen“ gibt es nur bei einem festen Rhythmus.',
   validation_recurrence_backlog: 'Bitte „Alle nachholen“ oder „Nur ab heute“ wählen.',
   validation_recurrence_reopen_older:
     'Von dieser Serie ist schon ein anderes Ticket offen, und dieses Ticket ist nicht das zuletzt erledigte. Du kannst es als normales Ticket wieder öffnen (aus der Serie lösen).',
@@ -500,17 +500,39 @@ function reopenConflicts(others, reopenedOccurrence, each) {
   return same;
 }
 
-// next_due when an instance is completed (ADR-0022 section 4): the completion date plus the
-// interval for after-completion rules; calendar rules keep theirs (null: unchanged).
-function nextDueOnCompletion(rule, completedDate, recurrence) {
-  return rule.mode === 'after_completion' ? recurrence.afterCompletion(rule, completedDate) : null;
+/**
+ * next_due of a fixed rhythm with one open occurrence (WH-1, ADR-0022 addendum 13): the first date
+ * of the series after `day`, unless next_due lies later already (an occurrence done or left before
+ * its date). So the next ticket is never due on `day` or before it: the dates that passed while the
+ * occurrence was open are skipped, not made. Null (unchanged) with "Verpasste Termine nachholen"
+ * (`each`: every date keeps its own ticket), for other modes and for an invalid rule.
+ */
+function nextDueAfterDay(rule, day, recurrence) {
+  if (rule.mode !== 'calendar' || rule.each || !recurrence.isValid(rule)) {
+    return null;
+  }
+  var next = recurrence.after(rule, day);
+  return !isEmpty(rule.next_due) && rule.next_due >= next ? null : next;
 }
 
-// next_due when the open instance is deleted or leaves the series (ADR-0023 section 6): a calendar
-// date counts as skipped (unchanged, null); after completion it is as if the instance was done
-// today, so no replacement appears at once.
+// next_due when an instance is completed on `completedDate`, the Berlin day of the completion
+// (ADR-0022 section 4 and addendum 13): the completion date plus the interval for after-completion
+// rules; a fixed rhythm without "Verpasste Termine nachholen" goes on with the first date after that
+// day (nextDueAfterDay); null: unchanged.
+function nextDueOnCompletion(rule, completedDate, recurrence) {
+  return rule.mode === 'after_completion'
+    ? recurrence.afterCompletion(rule, completedDate)
+    : nextDueAfterDay(rule, completedDate, recurrence);
+}
+
+// next_due when the open instance is deleted or leaves the series (ADR-0023 section 6 and addendum
+// 9): after completion it is as if the instance was done today, so no replacement appears at once; a
+// fixed rhythm without "Verpasste Termine nachholen" skips its dates up to today (nextDueAfterDay),
+// so an overdue occurrence that goes is never followed by one in the past.
 function nextDueOnRelease(rule, today, recurrence) {
-  return rule.mode === 'after_completion' ? recurrence.afterCompletion(rule, today) : null;
+  return rule.mode === 'after_completion'
+    ? recurrence.afterCompletion(rule, today)
+    : nextDueAfterDay(rule, today, recurrence);
 }
 
 /**
@@ -530,7 +552,9 @@ function isUntouched(followUp, completedAt) {
 }
 
 // next_due after reopening an instance (ADR-0023 section 3). `removedDue` is the due date of the
-// untouched follow-up that was removed ('' if there was none). Returns the new value or null.
+// untouched follow-up that was removed ('' if there was none). Returns the new value or null. Since
+// WH-1 that date already lies after the day of the completion, so the dates skipped then stay
+// skipped and are not made again (ADR-0023 addendum 9).
 function nextDueOnReopen(rule, hadFollowUp, removedDue) {
   if (rule.mode === 'after_completion') {
     return '';
@@ -593,8 +617,10 @@ var SKIPPED_DATES_MAX = 5;
 var SKIPPED_COUNT_MAX = 1000;
 
 /**
- * The dates of a calendar rule that one catch-up ticket stands for besides its own (ADR-0022
- * section 3): every occurrence from `pendingDue` (the stored next_due) up to, not including, `due`.
+ * The dates of a calendar rule that one ticket stands for besides its own: every occurrence from
+ * `pendingDue` (the stored next_due) up to, not including, `due`. A catch-up ticket notes them when
+ * it is made (ADR-0022 section 3), an occurrence that was carried along when it is completed, with
+ * the day of the completion as `due`: that day counts as done, not as skipped (WH-1, addendum 13).
  * Returns null when nothing was skipped, else { count, dates, more }: at most SKIPPED_DATES_MAX
  * dates, oldest first, `more` when the count stopped at SKIPPED_COUNT_MAX. The loop runs over
  * dates of the series and is capped, never over days.
@@ -656,6 +682,7 @@ module.exports = {
   generationEach: generationEach,
   reopenConflicts: reopenConflicts,
   eachViolation: eachViolation,
+  nextDueAfterDay: nextDueAfterDay,
   nextDueOnCompletion: nextDueOnCompletion,
   nextDueOnRelease: nextDueOnRelease,
   isUntouched: isUntouched,

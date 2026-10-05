@@ -74,6 +74,12 @@ export interface TicketSummary {
 	 */
 	recurrenceId?: string | null;
 	/**
+	 * Date of the series the ticket was made for with "Verpasste Termine nachholen" (plan OR-5); left
+	 * out for every other ticket. Such a ticket counts on its own in the day plan, every other ticket
+	 * of a series stands for its series (WH-1).
+	 */
+	occurrence?: CalendarDate | null;
+	/**
 	 * ID of the ticket this one is a sub-task of, null for a top-level ticket (ADR-0033). The data
 	 * layer always sets it and the two fields below; objects built by hand may leave them out.
 	 */

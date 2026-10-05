@@ -1,7 +1,7 @@
-// Decisions of the generation in the SPA (ADR-0022 with addenda 2, 4 and 5): a mirror of the pure
-// functions of app/pb_hooks/lib/recurrence-rules.js that the server runs before it creates tickets
-// (generation, generationEach, backlogCount, backlogDecision, nextDueOnCompletion, skippedDates),
-// with the same inputs and results. The SPA creates no tickets with them: the help page and the
+// Decisions of the generation in the SPA (ADR-0022 with addenda 2, 4, 5 and 13): a mirror of the
+// pure functions of app/pb_hooks/lib/recurrence-rules.js that the server runs before it creates
+// tickets (generation, generationEach, backlogCount, backlogDecision, nextDueAfterDay,
+// nextDueOnCompletion, skippedDates), with the same inputs and results. The SPA creates no tickets with them: the help page and the
 // explanation in the form play their examples through them (recurrence-examples.ts), so every
 // date they name is what the server would do. tests/unit/web-recurrence.test.mjs runs the same
 // examples with the functions of the hook and compares every result.
@@ -18,10 +18,14 @@ import {
 } from './recurrence';
 import { CATCH_UP_ALL_HINT, EACH_LIMIT_HINT, EACH_MAX_PER_RUN } from './recurrence-rule';
 
-/** A rule as the generation sees it: parameters, `active` and the stored `next_due`. */
+/**
+ * A rule as the generation sees it: parameters, `active`, the stored `next_due` and `each`
+ * ("Verpasste Termine nachholen"; absent counts as off).
+ */
 export interface GenerationRule extends RecurrenceParams {
 	active: boolean;
 	next_due: CalendarDate | '';
+	each?: boolean;
 }
 
 export type GenerationPlan = { due: CalendarDate; nextDue: CalendarDate | '' } | null;
@@ -120,15 +124,30 @@ export function backlogDecision(input: {
 	};
 }
 
-/** nextDueOnCompletion of the hook: after completion the date plus the interval, else unchanged. */
+/**
+ * nextDueAfterDay of the hook (WH-1): a fixed rhythm without "Verpasste Termine nachholen" goes on
+ * with the first date after `day` unless next_due lies later; else unchanged (null).
+ */
+export function nextDueAfterDay(rule: GenerationRule, day: CalendarDate): CalendarDate | null {
+	const valid = validRule(rule);
+	if (valid === null || valid.mode !== 'calendar' || rule.each === true) return null;
+	const next = after(valid, day);
+	return rule.next_due !== '' && rule.next_due >= next ? null : next;
+}
+
+/**
+ * nextDueOnCompletion of the hook: after completion the date plus the interval; a fixed rhythm
+ * without the switch the first date after the day of the completion (nextDueAfterDay).
+ */
 export function nextDueOnCompletion(
 	rule: GenerationRule,
 	completedDate: CalendarDate
 ): CalendarDate | null {
 	const valid = validRule(rule);
-	return valid !== null && valid.mode === 'after_completion'
+	if (valid === null) return null;
+	return valid.mode === 'after_completion'
 		? afterCompletion(valid, completedDate)
-		: null;
+		: nextDueAfterDay(rule, completedDate);
 }
 
 /** skippedDates of the hook: the missed dates a catch-up ticket stands for. */

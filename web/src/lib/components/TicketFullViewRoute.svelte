@@ -293,7 +293,7 @@
 		{#snippet side()}
 			<section class="card" aria-labelledby={`${uid}-details`}>
 				<h3 id={`${uid}-details`}>Details</h3>
-				<TicketFields store={detail} {catalog} {ticket} recurrenceShown>
+				<TicketFields store={detail} {catalog} {ticket} today={tickets.today} recurrenceShown>
 					{#snippet parentRow()}
 						<TicketParentField
 							store={detail}

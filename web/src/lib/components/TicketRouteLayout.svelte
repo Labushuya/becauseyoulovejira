@@ -245,6 +245,7 @@
 		duplicate={duplicates === null ? undefined : duplicateQuestion}
 		followUp={followUps === null ? undefined : followUpQuestion}
 		{flags}
+		today={tickets.today}
 	>
 		{#snippet parentField(ticket: Ticket)}
 			<TicketParentField

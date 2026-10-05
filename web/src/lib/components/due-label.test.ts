@@ -24,10 +24,32 @@ function visibleText(element: Element): string {
 }
 
 describe('due label', () => {
+	// WH-1: an overdue ticket names the day it is overdue since; screen readers hear the year too.
 	it.each([
-		['2026-08-26', 'seit 30 Tagen überfällig', 'overdue'],
-		['2026-09-23', 'seit 2 Tagen überfällig', 'overdue'],
-		['2026-09-24', 'gestern', 'overdue'],
+		['2026-08-26', 'überfällig seit 26.08.'],
+		['2026-09-23', 'überfällig seit 23.09.'],
+		['2026-09-24', 'überfällig seit 24.09.']
+	])('shows %s as "%s", with the year for screen readers', (due, text) => {
+		const { root, time } = show(due);
+		const [year, month, day] = due.split('-');
+		const date = `${day}.${month}.${year}`;
+
+		expect(root.dataset.due).toBe('overdue');
+		expect(visibleText(root)).toBe(text);
+		expect(time?.getAttribute('datetime')).toBe(due);
+		expect(time?.getAttribute('title')).toBe(date);
+		expect(time?.querySelector('.visually-hidden')?.textContent).toBe(year);
+		expect(time?.textContent).toBe(`überfällig seit ${date}`);
+	});
+
+	it('names the year of an overdue date of another year in the visible text', () => {
+		const { time } = show('2025-12-30', false, '2026-01-02');
+
+		expect(time?.textContent).toBe('überfällig seit 30.12.2025');
+		expect(time?.querySelector('.visually-hidden')).toBeNull();
+	});
+
+	it.each([
 		['2026-09-25', 'heute', 'today'],
 		['2026-09-26', 'morgen', 'tomorrow'],
 		['2026-09-27', 'in 2 Tagen', 'soon'],

@@ -115,7 +115,7 @@ describe('ticket table row', () => {
 		]);
 		const due = cell(row, 'due').querySelector('time');
 		expect(due?.getAttribute('datetime')).toBe('2026-09-20');
-		expect(due?.textContent).toBe('seit 4 Tagen überfällig, 20.09.2026');
+		expect(due?.textContent).toBe('überfällig seit 20.09.2026');
 		// 22:30 UTC is already the next day in Berlin.
 		const created = within(cell(row, 'created')).getByText('02.09.2026');
 		expect(created.getAttribute('datetime')).toBe('2026-09-02');

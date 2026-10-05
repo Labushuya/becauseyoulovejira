@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { tick, type Snippet } from 'svelte';
+	import type { CalendarDate } from '$lib/domain/berlin-date';
 	import { colorOf, inheritLabel, projectColorOf } from '$lib/domain/colors';
+	import { overdueSinceText } from '$lib/domain/due-label';
 	import type { Ticket } from '$lib/domain/ticket';
 	import type { CatalogStore } from '$lib/stores/catalog.svelte';
 	import type { TicketDetailStore } from '$lib/stores/ticket-detail.svelte';
@@ -25,17 +27,21 @@
 	// project; only when the server knows the field. The charm (ADR-0062) after it, chosen in its
 	// dialog and saved at once as well. The switch "Laufendes Vorhaben" (ADR-0065) after the charm:
 	// the kind decides what the check mark of the day plan means; it saves at once, a refusal sets the
-	// switch back and stands below it.
+	// switch back and stands below it. Below the due date an open overdue ticket says since when, in
+	// the words of the list and the day plan, "überfällig seit 05.10." (WH-1).
 	let {
 		store,
 		catalog,
 		ticket,
+		today,
 		recurrenceShown = false,
 		parentRow
 	}: {
 		store: TicketDetailStore;
 		catalog: CatalogStore;
 		ticket: Ticket;
+		/** The Berlin day of the list store; without it no line "überfällig seit …". */
+		today?: CalendarDate;
 		/** The recurrence of the ticket is shown elsewhere; otherwise a plain line says so. */
 		recurrenceShown?: boolean;
 		/** Row "Übergeordnet" (TicketParentField) after the tags. */
@@ -51,7 +57,8 @@
 		projectHint: `${uid}-project-hint`,
 		color: `${uid}-color`,
 		tags: `${uid}-tags`,
-		kindHint: `${uid}-kind-hint`
+		kindHint: `${uid}-kind-hint`,
+		overdue: `${uid}-overdue`
 	};
 	const errorIdOf = (field: string) => `${uid}-${field}-error`;
 
@@ -65,6 +72,12 @@
 	/** The kind (ADR-0065) likewise. */
 	const kindShown = $derived(ticket.kind !== undefined);
 	const ongoing = $derived(store.value('kind') === 'ongoing');
+	/** "überfällig seit 05.10." for an open ticket due before today (the saved due date), else null. */
+	const overdueSince = $derived(
+		today !== undefined && ticket.status !== 'done' && ticket.due !== null && ticket.due < today
+			? overdueSinceText(ticket.due, today)
+			: null
+	);
 
 	/** The switch "Laufendes Vorhaben": saves at once; a refusal sets it back. */
 	async function toggleKind(event: Event & { currentTarget: HTMLInputElement }) {
@@ -158,6 +171,7 @@
 			saving={store.isSaving('due')}
 			error={store.fieldError('due')}
 			errorId={errorIdOf('due')}
+			hintId={overdueSince === null ? undefined : ids.overdue}
 			onedit={() => store.edit('due')}
 			oninput={(value) => store.setDraft('due', value)}
 			onsave={() => store.save('due')}
@@ -169,6 +183,22 @@
 				void store.save('due');
 			}}
 		/>
+		{#if overdueSince !== null}
+			<!-- Bold in text colour with the clock of the list, never red (ADR-0009). -->
+			<p class="overdue" id={ids.overdue}>
+				<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false">
+					<circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" stroke-width="1.5" />
+					<path
+						d="M8 4.75V8.5l2.25 1.5"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="1.5"
+						stroke-linecap="round"
+					/>
+				</svg>
+				<span>{overdueSince}</span>
+			</p>
+		{/if}
 		{@render fieldError('due')}
 	</div>
 
@@ -309,5 +339,15 @@
 	.hint {
 		font-size: var(--font-size-small);
 		color: var(--color-text-muted);
+	}
+
+	/* "überfällig seit 05.10." below the due date (WH-1): like the overdue label of the list. */
+	.overdue {
+		display: inline-flex;
+		gap: 0.25rem;
+		align-items: center;
+		font-size: var(--font-size-small);
+		font-weight: 600;
+		color: var(--color-text);
 	}
 </style>

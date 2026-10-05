@@ -2,6 +2,7 @@
 	import type { Snippet } from 'svelte';
 	import type { ResolvedPathname } from '$app/types';
 	import { MOVE_TEXTS } from '$lib/domain/area-move';
+	import type { CalendarDate } from '$lib/domain/berlin-date';
 	import { ticketColorOf } from '$lib/domain/colors';
 	import type { ParentRef, Ticket } from '$lib/domain/ticket';
 	import type { CatalogStore } from '$lib/stores/catalog.svelte';
@@ -56,7 +57,8 @@
 		sourceCount = 0,
 		subtaskCount = 0,
 		parent = null,
-		parentHref = null
+		parentHref = null,
+		today
 	}: {
 		store: TicketDetailStore;
 		/** Projects and tags (E3 plan, T-16). */
@@ -101,6 +103,8 @@
 		parent?: ParentRef | null;
 		/** Address of the panel of that parent. */
 		parentHref?: ResolvedPathname | null;
+		/** The Berlin day of the list, for "überfällig seit …" below the due date (WH-1). */
+		today?: CalendarDate;
 	} = $props();
 
 	const uid = $props.id();
@@ -225,7 +229,7 @@
 		</div>
 	{:else if store.state === 'ready' && ticket}
 		<EditableTitle {store} {headingId} bind:heading />
-		<TicketFields {store} {catalog} {ticket} recurrenceShown={recurrence !== undefined}>
+		<TicketFields {store} {catalog} {ticket} {today} recurrenceShown={recurrence !== undefined}>
 			{#snippet parentRow()}
 				{@render parentField?.(ticket)}
 			{/snippet}
