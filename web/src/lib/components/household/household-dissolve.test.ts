@@ -42,7 +42,12 @@ function stateAs(role: 'owner' | 'member'): HouseholdState {
 	};
 }
 
-function preview(mode: 'adopt' | 'delete', done = false): DissolvePreview {
+/** With "übernehmen" three tickets and a rotation lose their assignee in the private area (PL-2). */
+function preview(
+	mode: 'adopt' | 'delete',
+	done = false,
+	cleared = mode === 'adopt' ? { tickets: 3, rules: 1 } : { tickets: 0, rules: 0 }
+): DissolvePreview {
 	return {
 		preview: !done,
 		mode,
@@ -61,6 +66,7 @@ function preview(mode: 'adopt' | 'delete', done = false): DissolvePreview {
 			connections: 0,
 			comments: 0
 		},
+		assigneesCleared: cleared,
 		codes:
 			mode === 'adopt'
 				? [{ id: 'proj00000000001', code: 'HAUS', name: 'Haus', suggestion: 'HAUSH' }]
@@ -114,6 +120,30 @@ describe('"Haushalt auflösen" on the page (ADR-0061 §5)', () => {
 		expect(within(dialog).getByText(/Anna Beispiel/)).toBeTruthy();
 		expect(within(dialog).getByText('Haus: HAUS → HAUSH')).toBeTruthy();
 		expect(data.dissolve).toHaveBeenCalledWith({ mode: 'adopt', preview: true }, expect.anything());
+	});
+
+	it('warns with "übernehmen" that tickets and rules lose their assignee, not with "löschen" (PL-2)', async () => {
+		const { data } = await setup('owner');
+		const dialog = await openDialog();
+		const warning = 'Bei 3 Tickets und 1 Wiederholung fällt die Zuständigkeit weg.';
+		expect(within(dialog).getByText(warning)).toBeTruthy();
+		await fireEvent.click(within(dialog).getByRole('radio', { name: 'Alles endgültig löschen' }));
+		await vi.waitFor(() =>
+			expect(data.dissolve).toHaveBeenLastCalledWith(
+				{ mode: 'delete', preview: true },
+				expect.anything()
+			)
+		);
+		expect(within(dialog).queryByText(warning)).toBeNull();
+	});
+
+	it('says nothing about assignees when none is lost (PL-2)', async () => {
+		await setup('owner', async (body) => ({
+			kind: 'ok',
+			value: preview(body.mode, false, { tickets: 0, rules: 0 })
+		}));
+		const dialog = await openDialog();
+		expect(within(dialog).queryByText(/fällt die Zuständigkeit weg/)).toBeNull();
 	});
 
 	it('takes everything into the private area, and the household is gone', async () => {

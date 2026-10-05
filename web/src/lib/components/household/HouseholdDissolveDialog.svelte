@@ -2,9 +2,11 @@
 	import { tick, untrack } from 'svelte';
 	import ErrorIcon from '$lib/components/ErrorIcon.svelte';
 	import Field from '$lib/components/form/Field.svelte';
+	import SectionMessage from '$lib/components/guidance/SectionMessage.svelte';
 	import Modal from '$lib/components/overlay/Modal.svelte';
 	import {
 		DISSOLVE_TEXTS,
+		assigneesClearedText,
 		dissolveCountLines,
 		nameConfirmed,
 		type DissolveMode,
@@ -16,7 +18,8 @@
 	// the household holds, its members, the codes that get a suffix) and the two ways, everything into
 	// the own private area or everything deleted for good; deleting needs the name of the household
 	// typed. Modal M on the page "Einstellungen → Haushalt"; a refusal stands in the dialog. Afterwards
-	// the household is gone: the store says so, and the area of the tab becomes "Privat".
+	// the household is gone: the store says so, and the area of the tab becomes "Privat". Since PL-2
+	// "übernehmen" warns when tickets or rules lose their assignee in the private area.
 	let {
 		store,
 		name,
@@ -47,6 +50,12 @@
 
 	const busy = $derived(store.busy?.kind === 'dissolve');
 	const lines = $derived(preview === null ? [] : dissolveCountLines(preview.counts));
+	/** Only the preview of "übernehmen" counts them; the one of "löschen" names none. */
+	const assigneesCleared = $derived(
+		mode === 'adopt' && preview !== null && preview.mode === 'adopt'
+			? assigneesClearedText(preview.assigneesCleared)
+			: null
+	);
 
 	// The preview of the chosen way (the codes with a suffix only for "übernehmen").
 	$effect(() => {
@@ -178,6 +187,10 @@
 			</label>
 			<p class="note nested" id={ids.remove}>{DISSOLVE_TEXTS.removeHint}</p>
 		</fieldset>
+
+		{#if assigneesCleared !== null}
+			<SectionMessage tone="warning">{assigneesCleared}</SectionMessage>
+		{/if}
 
 		{#if mode === 'delete'}
 			<Field label={DISSOLVE_TEXTS.nameLabel(name)} error={nameError}>

@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import {
 	areaMoveHistoryText,
+	assigneesClearedText,
 	choiceErrors,
 	countLines,
 	dissolveCountLines,
@@ -412,6 +413,46 @@ describe('whole series (MV-2)', () => {
 		});
 		expect([offersSeries('rule'), offersSeries('ticket')]).toEqual([true, true]);
 		expect([offersSeries('project'), offersSeries('item')]).toEqual([false, false]);
+	});
+});
+
+describe('assignees that go into the private area (ADR-0068 §7, PL-2)', () => {
+	it('reads the counts of a preview and of dissolving; a server before PL-2 names none', () => {
+		expect(preview().counts.assigneesCleared).toEqual({ tickets: 0, rules: 0 });
+		const shown = preview({
+			to: 'private',
+			counts: { ...(answer().counts as object), assignees_cleared: { tickets: 3, rules: 1 } }
+		});
+		expect(shown.counts.assigneesCleared).toEqual({ tickets: 3, rules: 1 });
+		expect(
+			preview({ counts: { ...(answer().counts as object), assignees_cleared: { tickets: -1 } } })
+				.counts.assigneesCleared
+		).toEqual({ tickets: 0, rules: 0 });
+		const dissolve = {
+			preview: true,
+			mode: 'adopt',
+			household: { id: 'house0000000001', name: 'Haus Beispiel' },
+			members: [],
+			counts: { tickets: 4, assignees_cleared: { tickets: 2, rules: 1 } },
+			codes: []
+		};
+		expect(parseDissolvePreview(dissolve)?.assigneesCleared).toEqual({ tickets: 2, rules: 1 });
+		expect(parseDissolvePreview({ ...dissolve, counts: { tickets: 4 } })?.assigneesCleared).toEqual(
+			{ tickets: 0, rules: 0 }
+		);
+	});
+
+	it('warns with the tickets and the rules, and says nothing without any', () => {
+		expect(assigneesClearedText({ tickets: 3, rules: 1 })).toBe(
+			'Bei 3 Tickets und 1 Wiederholung fällt die Zuständigkeit weg.'
+		);
+		expect(assigneesClearedText({ tickets: 1, rules: 0 })).toBe(
+			'Bei 1 Ticket fällt die Zuständigkeit weg.'
+		);
+		expect(assigneesClearedText({ tickets: 0, rules: 2 })).toBe(
+			'Bei 2 Wiederholungen fällt die Zuständigkeit weg.'
+		);
+		expect(assigneesClearedText({ tickets: 0, rules: 0 })).toBeNull();
 	});
 });
 

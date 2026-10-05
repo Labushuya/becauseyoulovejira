@@ -1041,6 +1041,12 @@ describe('help page (EH-9)', () => {
 		expect(content).toMatch(/„Nächstes Vorkommen: Bert, danach: Anna“/);
 		expect(content).toMatch(/„Anna hat dir HAUS-12 zugewiesen\.“/);
 		expect(content).toMatch(/Was du dir selbst zuweist, meldet nichts/);
+		// Since PL-2: the field when creating and the warning before moving into the private area.
+		expect(content).toMatch(
+			/„Neues Ticket“ im Haushalt das Feld „Zuständig“, vorgewählt „Niemand“/
+		);
+		expect(content).toMatch(/„Mir“ als einem Klick/);
+		expect(content).toMatch(/„Bei 3 Tickets und 1 Wiederholung fällt die Zuständigkeit weg\.“/);
 		// The section "Haushalt" points here.
 		const household = screen.getByRole('region', { name: 'Haushalt' });
 		expect(

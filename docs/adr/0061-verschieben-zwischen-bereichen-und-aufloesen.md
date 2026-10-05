@@ -1,6 +1,6 @@
 # ADR-0061: Verschieben zwischen Bereichen und Auflösen (E7-4)
 
-- **Status:** Angenommen und umgesetzt (E7-4, [Plan E7 „Haushalt“](../plan/e7-haushalt.md) §3b); Nachtrag E7-5: Zuständigkeit beim Verschieben ([ADR-0068](0068-zustaendigkeit.md))
+- **Status:** Angenommen und umgesetzt (E7-4, [Plan E7 „Haushalt“](../plan/e7-haushalt.md) §3b); Nachtrag E7-5: Zuständigkeit beim Verschieben ([ADR-0068](0068-zustaendigkeit.md)); Nachtrag PL-2: Warnung, wenn Zuständigkeit wegfällt
 - **Datum:** 2026-10-04
 - **Entscheidung durch:** Nutzer (Freigabe der Etappe E7 und des Pakets E7-4 „Verschieben und Auflösen“), Advisor (Akzeptanzkriterien: Vorschau, Transaktion, Kaskaden, Konflikte, Nummern, Rechte, Realtime, Auflösen, Inhaber ohne Konto, Altbestand), Executor (Route, Kaskaden im Einzelnen, Eingangseinträge, Abhängigkeiten, Realtime, Oberfläche, Altbestand)
 - **Bezug:** [ADR-0058](0058-haushalt-mitgliedschaft-einladungen-rechte.md) (Rechte, `move_out`, Nachtrag „Bereich eines Eintrags“), [ADR-0059](0059-bereiche-privat-und-haushalt.md) (Bereiche, keine Verweise über die Grenze), [ADR-0037](0037-papierkorb.md) (Papierkorb, Realtime-Muster `broadcastRemoved`), [ADR-0033](0033-unteraufgaben.md), [ADR-0034](0034-unterprojekte.md), [ADR-0023](0023-lebenszyklus-von-regeln-und-instanzen.md) §6 („Aus der Serie lösen“), [ADR-0049](0049-zielprojekt-je-eingangsweg.md) (Zielprojekt), [ADR-0054](0054-tickets-im-kontext-oeffnen.md), [ADR-0056](0056-konten-und-verwalter.md) (Verwalter, Seite „Konten verwalten“)
@@ -209,3 +209,9 @@ Ein Ticket kann seit QT-1 aus anderen Tickets stammen (`ticket_sources`). Eine s
 - **Privat → Haushalt:** Nichts zu tun; private Tickets und Regeln haben keine Zuständigkeit. Wer zuständig ist, legt danach ein Mitglied fest.
 - **Auflösen** mit „alles ins Private übernehmen“ verschiebt auf demselben Weg; die Mitgliedschaften enden danach und räumen ohnehin auf ([ADR-0058](0058-haushalt-mitgliedschaft-einladungen-rechte.md) Nachtrag E7-5).
 - **Belegt in** `tests/integration/assignees.test.mjs` (Ticket und ganze Serie ins Private).
+
+## Nachtrag PL-2 (2026-10-06, [ADR-0068](0068-zustaendigkeit.md) Nachtrag PL-2): Warnung, wenn Zuständigkeit wegfällt
+
+- **Vorschau:** `counts.assignees_cleared` `{ tickets, rules }` zählt, was ins Private seine Zuständigkeit verliert: Tickets des Plans mit Zuständigkeit (samt Unteraufgaben, Papierkorb und Vorkommen einer ganzen Serie nach MV-2) und Regeln mit „Fest“ oder „Abwechselnd“ (`assigneesCleared` in `lib/area-move-service.js`). In den Haushalt und vor der Migration `1790204900` immer 0. „Haushalt auflösen“ nennt es in der Vorschau von `adopt` ebenso, `delete` nennt 0.
+- **Dialoge:** `AreaMoveDialog` (einzeln, Sammelaktion, ganze Serie) zeigt unter „Das wird verschoben“ die Warnung „Bei 3 Tickets und 1 Wiederholung fällt die Zuständigkeit weg.“, `HouseholdDissolveDialog` unter der Wahl bei „übernehmen“; ohne Betroffene keine. Eine geänderte Wahl lädt die Vorschau neu und mit ihr die Zahl.
+- **Folgen:** Keine Migration; **Neustart nötig** (`neu-starten.bat`) für die Zähler. Vorher nennt der Server sie nicht, und die Dialoge warnen nicht.

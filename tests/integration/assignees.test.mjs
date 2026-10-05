@@ -9,7 +9,10 @@
 // nachholen" and when reopening takes a follow-up back. Moving (also a whole series) into the private
 // area clears assignments, duplicating keeps them only in the same household, a follow-up has none.
 // The day plan suggests "Mir zugewiesen" for the account that looks at it, the same as the rules of the
-// SPA. Changes reach the other member live.
+// SPA. Changes reach the other member live. Since PL-2: creating a ticket for another member tells him
+// and makes it new for him, creating one for oneself tells nobody, a private one refuses any assignee;
+// the previews of moving (also a whole series) and of dissolving with "adopt" count what loses its
+// assignee in the private area (`counts.assignees_cleared`).
 //
 // Dates are relative to the Berlin "today" of the machine: completing runs with the real clock like the
 // app, the runs of the generation with the clock of the test route POST /api/byl-test/recurrence/run.
@@ -20,6 +23,7 @@ import { createAreaScenario, uniqueSuffix } from '../support/scenario.mjs';
 import { scaled } from '../support/timing.mjs';
 import { addDays, berlinToday } from '../../web/src/lib/domain/berlin-date.ts';
 import { suggestionsOf } from '../../web/src/lib/domain/day-plan.ts';
+import { isNew } from '../../web/src/lib/domain/unread.ts';
 
 const MOVE = '/api/byl/area/move';
 const PLAN = '/api/byl/dayplan';
@@ -263,6 +267,52 @@ describe('the notice of an assignment and "neu"', () => {
 	});
 });
 
+describe('creating a ticket with an assignee (PL-2)', () => {
+	it('tells B about a new ticket A gives him and makes it new for him', async () => {
+		const toB = await notices(b);
+		const created = await a.ticket({ household: householdId, assignee: b.id, title: 'Wäsche aufhängen' });
+		await until(() => toB.some((notice) => notice.ticket === created.id), 'notice of the new ticket to B');
+		expect(toB.find((notice) => notice.ticket === created.id)).toEqual({
+			ticket: created.id,
+			key: created.key,
+			title: 'Wäsche aufhängen',
+			scope: householdScope(),
+			by: a.id,
+			by_name: 'Anna Beispiel'
+		});
+		// New for B: no read row, and the assignment by someone else is noted at or after his base line.
+		const stored = await ticketOf(created.id);
+		expect(stored.assigned_at).not.toBe('');
+		expect(await readsOf(b, created.id)).toEqual([]);
+		const bRecord = await superuser.collection('users').getOne(b.id);
+		const ticket = {
+			id: stored.id,
+			created: stored.created,
+			status: stored.status,
+			assignee: stored.assignee,
+			assignedAt: stored.assigned_at
+		};
+		expect(isNew(ticket, new Set(), bRecord.unread_since || bRecord.created, b.id)).toBe(true);
+		expect(await assigneeHistory(created.id)).toEqual([]);
+	});
+
+	it('tells nobody about a new ticket for the account that creates it', async () => {
+		const toA = await notices(a);
+		const own = await a.ticket({ household: householdId, assignee: a.id });
+		expect(own).toMatchObject({ assignee: a.id, assigned_at: '' });
+		expect((await nothingBefore(toA, a, b)).filter((notice) => notice.ticket === own.id)).toEqual([]);
+	});
+
+	it('refuses any assignee at a new private ticket, also another member of the household', async () => {
+		for (const person of [a, b]) {
+			expect(await rejection(a.ticket({ assignee: person.id }))).toEqual({
+				status: 400,
+				codes: { assignee: 'validation_assignee_private' }
+			});
+		}
+	});
+});
+
 describe('a membership that ends', () => {
 	it('takes the person out of every ticket (in the trash too) with history and out of every rotation', async () => {
 		const { a: owner, b: member, c: outsider, householdId: home } = await createAreaScenario(instance, [
@@ -458,6 +508,51 @@ describe('moving, duplicating and follow-ups', () => {
 		// Back into the household the series has no assignment.
 		await a.send(MOVE, { kind: 'rule', ids: [rule.id], to: 'household', series: true, series_done: true });
 		expect(await ruleOf(rule.id)).toMatchObject({ household: householdId, assignee_mode: '', assignees: [] });
+	});
+
+	it('counts in the preview the tickets that lose their assignee, sub-tasks included, only into the private area (PL-2)', async () => {
+		const parent = await a.ticket({ household: householdId, assignee: b.id });
+		await a.ticket({ household: householdId, parent: parent.id, assignee: a.id });
+		await a.ticket({ household: householdId, parent: parent.id });
+		const other = await a.ticket({ household: householdId });
+		const preview = await a.send(MOVE, { kind: 'ticket', ids: [parent.id, other.id], to: 'private', preview: true });
+		expect(preview.counts).toMatchObject({ tickets: 4, subtasks: 2, assignees_cleared: { tickets: 2, rules: 0 } });
+		// The preview changes nothing.
+		expect((await ticketOf(parent.id)).assignee).toBe(b.id);
+		const own = await a.ticket();
+		const into = await a.send(MOVE, { kind: 'ticket', ids: [own.id], to: 'household', preview: true });
+		expect(into.counts.assignees_cleared).toEqual({ tickets: 0, rules: 0 });
+	});
+
+	it('counts a whole series with its rotation, the rule alone without it, and a single occurrence (PL-2)', async () => {
+		const rule = await dailyRule({ assignee_mode: 'rotate', assignees: [a.id, b.id] });
+		const [open] = await openOf(rule.id);
+		expect(open.assignee).toBe(a.id);
+		const whole = await a.send(MOVE, { kind: 'rule', ids: [rule.id], to: 'private', preview: true, series: true, series_done: true });
+		expect(whole.counts).toMatchObject({ series: 1, assignees_cleared: { tickets: 1, rules: 1 } });
+		const alone = await a.send(MOVE, { kind: 'rule', ids: [rule.id], to: 'private', preview: true });
+		expect(alone.counts.assignees_cleared).toEqual({ tickets: 0, rules: 1 });
+		const single = await a.send(MOVE, { kind: 'ticket', ids: [open.id], to: 'private', preview: true, series: false });
+		expect(single.counts.assignees_cleared).toEqual({ tickets: 1, rules: 0 });
+		expect(await ruleOf(rule.id)).toMatchObject({ household: householdId, assignee_mode: 'rotate' });
+	});
+
+	it('counts the same for dissolving with "adopt", the trash included, and nothing for "delete" (PL-2)', async () => {
+		const { a: owner, b: member, householdId: home } = await createAreaScenario(instance, ['Anna Fünf', 'Bert Fünf', 'Clara Fünf']);
+		const create = (data) => owner.client.collection('tickets').create({ owner: owner.id, household: home, ...data });
+		await create({ title: 'Dach', assignee: member.id });
+		const trashed = await create({ title: 'Altglas', assignee: owner.id });
+		await owner.send(`/api/byl/tickets/${trashed.id}/delete`, { sources: 'inbox' });
+		await create({ title: 'Zaun' });
+		const base = { owner: owner.id, household: home, mode: 'calendar', freq: 'weekly', initial_status: 'open', active: false };
+		await owner.client.collection('recurrence_rules').create({ ...base, title: 'Müll', assignee_mode: 'rotate', assignees: [owner.id, member.id] });
+		await owner.client.collection('recurrence_rules').create({ ...base, title: 'Fenster' });
+
+		const adopt = await owner.send('/api/byl/household/dissolve', { mode: 'adopt', preview: true });
+		expect(adopt.counts).toMatchObject({ tickets: 2, trash: 1, rules: 2, assignees_cleared: { tickets: 2, rules: 1 } });
+		const remove = await owner.send('/api/byl/household/dissolve', { mode: 'delete', preview: true });
+		expect(remove.counts.assignees_cleared).toEqual({ tickets: 0, rules: 0 });
+		expect((await superuser.collection('households').getOne(home)).id).toBe(home);
 	});
 
 	it('keeps the assignee of a duplicate in the same household (also of its sub-tasks), never in another area', async () => {

@@ -68,7 +68,8 @@ function preview(overrides: Partial<MovePreview> = {}): MovePreview {
 			dependencies: 0,
 			ticketSources: 0,
 			series: 0,
-			occurrences: { open: 0, done: 0 }
+			occurrences: { open: 0, done: 0 },
+			assigneesCleared: { tickets: 0, rules: 0 }
 		},
 		seriesOffer: { rules: 0, open: 0, done: 0 },
 		conflicts: {
@@ -166,7 +167,8 @@ async function setup(options: Setup = {}) {
 												dependencies: 1,
 												ticketSources: 0,
 												series: 0,
-												occurrences: { open: 0, done: 0 }
+												occurrences: { open: 0, done: 0 },
+												assigneesCleared: { tickets: 0, rules: 0 }
 											}
 										}
 									: {}
@@ -432,6 +434,34 @@ describe('the dialog of a move (ADR-0061 §1, §2)', () => {
 			within(dialog).getByText('Für die anderen Mitglieder verschwindet der Eintrag.')
 		).toBeTruthy();
 		expect(within(dialog).queryByLabelText('Projekt im Ziel')).toBeNull();
+		// Nothing loses an assignee: no warning (PL-2).
+		expect(within(dialog).queryByText(/fällt die Zuständigkeit weg/)).toBeNull();
+	});
+
+	it('warns when tickets and rules lose their assignee in the private area (PL-2)', async () => {
+		const base = preview();
+		await setup({
+			area: 'household',
+			move: async () => ({
+				kind: 'ok',
+				value: preview({
+					to: 'private',
+					counts: { ...base.counts, assigneesCleared: { tickets: 3, rules: 1 } },
+					conflicts: { ...base.conflicts, project: null, dependencies: [] },
+					needs: { project: false, dependencies: false, ticketSources: false, codes: [] }
+				})
+			})
+		});
+		await choose('Ins Private verschieben …');
+		const dialog = await vi.waitFor(() =>
+			screen.getByRole('dialog', { name: 'PRIV-1 ins Private verschieben' })
+		);
+		const warning = await vi.waitFor(() =>
+			within(dialog).getByText('Bei 3 Tickets und 1 Wiederholung fällt die Zuständigkeit weg.')
+		);
+		// A warning of the section messages: the tone is a hidden word, never only the look.
+		expect(warning.closest('[data-tone]')?.getAttribute('data-tone')).toBe('warning');
+		expect(warning.textContent).toMatch(/^Achtung:/);
 	});
 
 	it('shows a refusal of the server in the dialog and moves nothing', async () => {
@@ -477,7 +507,12 @@ describe('whole series (MV-2)', () => {
 				dependencies: 0,
 				ticketSources: 0,
 				series: whole ? 1 : 0,
-				occurrences: { open: whole ? 1 : 0, done: done ? 12 : 0 }
+				occurrences: { open: whole ? 1 : 0, done: done ? 12 : 0 },
+				// Into the private area the rule loses its rotation, its occurrences their assignees.
+				assigneesCleared:
+					body.to === 'private'
+						? { tickets: whole ? (done ? 13 : 1) : 0, rules: whole || rule ? 1 : 0 }
+						: { tickets: 0, rules: 0 }
 			},
 			seriesOffer: { rules: 1, open: 1, done: 12 },
 			conflicts: {
@@ -608,6 +643,34 @@ describe('whole series (MV-2)', () => {
 				'13 bisherige Tickets der Wiederholung bleiben, wo sie sind, ohne Bezug zur Regel. Künftige Tickets entstehen im Ziel.'
 			)
 		).toBeTruthy();
+	});
+
+	it('warns for a whole series into the private area, and again after the choice changes (PL-2)', async () => {
+		const { moves } = await setup({ area: 'household', move: answer });
+		moves.open({
+			kind: 'rule',
+			ids: [RULE],
+			to: 'private',
+			label: 'Wiederholung „Müll“',
+			series: 'whole'
+		});
+		const dialog = await vi.waitFor(() =>
+			screen.getByRole('dialog', { name: 'Wiederholung „Müll“ ins Private verschieben' })
+		);
+		await vi.waitFor(() =>
+			expect(
+				within(dialog).getByText('Bei 13 Tickets und 1 Wiederholung fällt die Zuständigkeit weg.')
+			).toBeTruthy()
+		);
+		// Without the series only the rule moves and loses its rotation.
+		await fireEvent.click(
+			within(dialog).getByRole('checkbox', { name: 'Ganze Serie verschieben' })
+		);
+		await vi.waitFor(() =>
+			expect(
+				within(dialog).getByText('Bei 1 Wiederholung fällt die Zuständigkeit weg.')
+			).toBeTruthy()
+		);
 	});
 
 	it('asks nothing about series for a project', async () => {
