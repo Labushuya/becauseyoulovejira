@@ -19,7 +19,7 @@ export const CREATE_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
 	validation_create_title: 'Der Titel darf nicht leer sein.',
 	validation_create_title_max: 'Der Titel hat höchstens 200 Zeichen.',
 	validation_create_description_max: 'Die Beschreibung hat höchstens 100 000 Zeichen.',
-	validation_create_unavailable: 'Diese Option steht nach dem nächsten Neustart der App bereit.',
+	validation_create_unavailable: 'Diese Option kennt der Server erst nach einem Neustart der App.',
 	validation_create_subtasks: 'Die Unteraufgaben sind ungültig.',
 	validation_create_subtasks_max: 'Beim Anlegen gehen höchstens 20 Unteraufgaben.',
 	validation_create_subtask_title: 'Jede Unteraufgabe braucht einen Titel.',

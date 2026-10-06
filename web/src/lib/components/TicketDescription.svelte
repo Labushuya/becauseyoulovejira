@@ -76,7 +76,7 @@
 	}
 </script>
 
-<section class="description" aria-labelledby={titleId}>
+<section class="description" aria-labelledby={titleId} data-ticket-option="description">
 	<div class="section-head">
 		<h3 id={titleId}>Beschreibung</h3>
 		{#if !editing}

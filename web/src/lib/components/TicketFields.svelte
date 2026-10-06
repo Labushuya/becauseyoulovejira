@@ -12,6 +12,7 @@
 	import ColorChoice from './ColorChoice.svelte';
 	import DueInput from './DueInput.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
+	import KindSwitch from './KindSwitch.svelte';
 	import PrioritySelect from './PrioritySelect.svelte';
 	import ProjectSelect from './ProjectSelect.svelte';
 	import StatusSelect from './StatusSelect.svelte';
@@ -32,7 +33,9 @@
 	// switch back and stands below it. Below the due date an open overdue ticket says since when, in
 	// the words of the list and the day plan, "überfällig seit 05.10." (WH-1). "Zuständig" (ADR-0068)
 	// after the priority, only at a ticket of the household and only when the server knows the field:
-	// "Niemand" or a member, saved at once, with "Ich übernehme".
+	// "Niemand" or a member, saved at once, with "Ich übernehme". Every option carries its key of the
+	// registry domain/ticket-options.ts at its control (`data-ticket-option`): "Neues Ticket" offers
+	// the same options (NT-1, ADR-0069, parity test ticket-options-parity.test.ts).
 	let {
 		store,
 		catalog,
@@ -64,7 +67,6 @@
 		projectHint: `${uid}-project-hint`,
 		color: `${uid}-color`,
 		tags: `${uid}-tags`,
-		kindHint: `${uid}-kind-hint`,
 		overdue: `${uid}-overdue`,
 		assignee: `${uid}-assignee`
 	};
@@ -96,13 +98,6 @@
 			? overdueSinceText(ticket.due, today)
 			: null
 	);
-
-	/** The switch "Laufendes Vorhaben": saves at once; a refusal sets it back. */
-	async function toggleKind(event: Event & { currentTarget: HTMLInputElement }) {
-		const input = event.currentTarget;
-		await store.choose('kind', input.checked ? 'ongoing' : 'task');
-		input.checked = store.value('kind') === 'ongoing';
-	}
 
 	/** New tag from the picker: an existing one in another spelling or a new one, then assigned. */
 	async function createTag(name: string): Promise<boolean> {
@@ -140,7 +135,7 @@
 
 <div class="fields">
 	<label for={ids.status}>Status</label>
-	<div class="control">
+	<div class="control" data-ticket-option="status">
 		<StatusSelect
 			id={ids.status}
 			value={store.value('status')}
@@ -169,7 +164,7 @@
 	</div>
 
 	<label for={ids.priority}>Priorität</label>
-	<div class="control">
+	<div class="control" data-ticket-option="priority">
 		<PrioritySelect
 			id={ids.priority}
 			value={store.value('priority')}
@@ -183,7 +178,7 @@
 
 	{#if assigneeShown && assignees}
 		<label for={ids.assignee}>Zuständig</label>
-		<div class="control">
+		<div class="control" data-ticket-option="assignee">
 			<AssigneeField
 				id={ids.assignee}
 				value={store.value('assignee')}
@@ -198,7 +193,7 @@
 	{/if}
 
 	<label for={ids.due}>Fälligkeit</label>
-	<div class="control">
+	<div class="control" data-ticket-option="due">
 		<DueInput
 			id={ids.due}
 			value={store.value('due')}
@@ -237,7 +232,7 @@
 	</div>
 
 	<label for={ids.project}>Projekt</label>
-	<div class="control">
+	<div class="control" data-ticket-option="project">
 		<ProjectSelect
 			id={ids.project}
 			value={store.value('project')}
@@ -254,7 +249,7 @@
 
 	{#if colorShown}
 		<span class="term" id={ids.color}>Farbe</span>
-		<div class="control">
+		<div class="control" data-ticket-option="color">
 			<ColorChoice
 				value={colorOf(store.value('color'))}
 				inheritLabel={inheritLabel('ticket', inherited)}
@@ -270,7 +265,7 @@
 
 	{#if charmShown}
 		<span class="term">Charm</span>
-		<div class="control">
+		<div class="control" data-ticket-option="charm">
 			<CharmPicker
 				value={store.value('charm') || null}
 				busy={store.isSaving('charm')}
@@ -283,36 +278,19 @@
 
 	{#if kindShown}
 		<span class="term">Art</span>
-		<div class="control">
-			<label class="switch-row">
-				<span>Laufendes Vorhaben</span>
-				<input
-					type="checkbox"
-					role="switch"
-					checked={ongoing}
-					aria-busy={store.isSaving('kind') ? 'true' : undefined}
-					aria-invalid={store.fieldError('kind') ? 'true' : undefined}
-					aria-describedby={store.fieldError('kind')
-						? `${ids.kindHint} ${errorIdOf('kind')}`
-						: ids.kindHint}
-					onchange={toggleKind}
-				/>
-			</label>
-			<p class="hint" id={ids.kindHint}>
-				{ongoing
-					? 'Im Tagesplan heißt der Haken „für heute erledigt“; das Ticket bleibt offen.'
-					: 'Im Tagesplan erledigt der Haken dieses Ticket.'}
-			</p>
-			{#if store.fieldError('kind')}
-				<p class="field-error" id={errorIdOf('kind')}>
-					<ErrorIcon /><span>{store.fieldError('kind')}</span>
-				</p>
-			{/if}
+		<div class="control" data-ticket-option="kind">
+			<!-- Saves at once; a refusal sets the switch back and stands below it. -->
+			<KindSwitch
+				{ongoing}
+				busy={store.isSaving('kind')}
+				error={store.fieldError('kind')}
+				onchange={(wanted) => store.choose('kind', wanted ? 'ongoing' : 'task')}
+			/>
 		</div>
 	{/if}
 
 	<label for={ids.tags}>Tags</label>
-	<div class="control">
+	<div class="control" data-ticket-option="tags">
 		<TagPicker
 			id={ids.tags}
 			selected={ticketTags}
@@ -358,21 +336,6 @@
 	.fields :global(input[type='date']) {
 		width: fit-content;
 		max-width: 100%;
-	}
-
-	/* The switch "Laufendes Vorhaben" (ADR-0065): name left, switch right (ADR-0029 G-5). */
-	.fields .switch-row {
-		display: flex;
-		gap: 0.75rem;
-		align-items: center;
-		justify-content: space-between;
-		color: var(--color-text);
-		cursor: pointer;
-	}
-
-	.hint {
-		font-size: var(--font-size-small);
-		color: var(--color-text-muted);
 	}
 
 	/* "überfällig seit 05.10." below the due date (WH-1): like the overdue label of the list. */

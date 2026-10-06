@@ -1,9 +1,10 @@
 // "Neues Ticket" with everything at once (NT-1, ADR-0069). Stateless functions with the PocketBase
 // instance as first parameter; the root integration tests run them against the disposable instance.
 // The route creates the ticket and its options in one transaction, or nothing; afterwards the ticket
-// (and the rule of a series) are read with the fields of the panel.
+// and the rule of a series are read with the fields of the panel and of the rules.
 
 import type PocketBase from 'pocketbase';
+import type { RecurrenceRule } from '../domain/recurrence-rule';
 import {
 	createRequestBody,
 	toCreateOutcome,
@@ -16,13 +17,15 @@ import { fromDueInput, type Ticket } from '../domain/ticket';
 import { clientHousehold } from './area';
 import { DataError, toDataError, withDataErrors } from './errors';
 import type { RequestOptions } from './options';
+import { getRule } from './recurrence';
 import { getTicket } from './tickets';
 
 const ROUTE = '/api/byl/tickets/create';
 
-/** A created ticket as the panel shows it, with the answer of the route. */
+/** A created ticket as the panel shows it, its rule (null without a series) and the answer of the route. */
 export interface CreatedTicket {
 	ticket: Ticket;
+	rule: RecurrenceRule | null;
 	outcome: CreateOutcome;
 }
 
@@ -46,7 +49,9 @@ export function createTicketWithOptions(
 		});
 		const outcome = toCreateOutcome(answer);
 		if (outcome === null) throw new DataError('server');
-		return { ticket: await getTicket(pb, outcome.id, { signal }), outcome };
+		const ticket = await getTicket(pb, outcome.id, { signal });
+		const rule = outcome.rule === '' ? null : await getRule(pb, outcome.rule, { signal });
+		return { ticket, rule, outcome };
 	});
 }
 

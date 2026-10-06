@@ -17,7 +17,7 @@
 	} = $props();
 </script>
 
-<dl class="meta" class:stacked={show !== 'all'}>
+<dl class="meta" class:stacked={show !== 'all'} data-ticket-option="meta">
 	{#if show !== 'dates' && ticket.source !== null}
 		<div>
 			<dt>Quelle</dt>

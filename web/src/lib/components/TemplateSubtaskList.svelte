@@ -23,13 +23,17 @@
 	// übernehmen" fills the list with its sub-tasks: at once into an empty list, otherwise after an
 	// inline question "Ergänzen" (default, nothing is lost) or "Ersetzen". No dialog: the list stands
 	// in the full view as well (ADR-0025 addendum 16). `subtasks` is replaced as a whole on every
-	// change, so a binding through getter and setter (a draft in a store) works.
+	// change, so a binding through getter and setter (a draft in a store) works. "Neues Ticket" (NT-1)
+	// uses the same list for the sub-tasks of the new ticket, with its own hint.
 	let {
 		subtasks = $bindable(),
 		ticketSubtasks = [],
 		invalidRows = [],
 		error = null,
-		busy = false
+		errorRow = null,
+		busy = false,
+		disabled = false,
+		hint = `Jedes neue Ticket der Serie bekommt sie als offene Unteraufgaben ohne Fälligkeit, höchstens ${TEMPLATE_SUBTASKS_MAX}.`
 	}: {
 		subtasks: TemplateSubtask[];
 		/** Sub-tasks of the ticket the template is edited at; empty elsewhere (rule panel). */
@@ -38,7 +42,13 @@
 		invalidRows?: readonly number[];
 		/** A refusal of the list by the server. */
 		error?: string | null;
+		/** The row that refusal names (`params.index`), marked with it; null for the list as a whole. */
+		errorRow?: number | null;
 		busy?: boolean;
+		/** No rows can be added (the hint says why). */
+		disabled?: boolean;
+		/** What the list is for, below its legend. */
+		hint?: string;
 	} = $props();
 
 	const uid = $props.id();
@@ -79,7 +89,7 @@
 	}
 
 	async function add() {
-		if (busy || full) return;
+		if (busy || full || disabled) return;
 		subtasks = [...subtasks, { title: '', priority: DEFAULT_PRIORITY }];
 		status = '';
 		await tick();
@@ -146,13 +156,12 @@
 
 <fieldset class="subtasks" aria-describedby={error ? `${ids.hint} ${ids.error}` : ids.hint}>
 	<legend id={ids.legend}>Unteraufgaben</legend>
-	<p class="hint" id={ids.hint}>
-		Jedes neue Ticket der Serie bekommt sie als offene Unteraufgaben ohne Fälligkeit, höchstens {TEMPLATE_SUBTASKS_MAX}.
-	</p>
+	<p class="hint" id={ids.hint}>{hint}</p>
 	{#if subtasks.length > 0}
 		<ol class="list" aria-labelledby={ids.legend} bind:this={list}>
 			{#each subtasks as entry, index (index)}
 				{@const invalid = invalidRows.includes(index) && entry.title.trim() === ''}
+				{@const refused = !invalid && error !== null && errorRow === index}
 				<li class="row">
 					<span class="position" aria-hidden="true">{index + 1}.</span>
 					<label class="visually-hidden" for={titleId(index)}>
@@ -168,8 +177,8 @@
 						maxlength={TITLE_MAX_LENGTH}
 						data-row-part="title"
 						value={entry.title}
-						aria-invalid={invalid ? 'true' : undefined}
-						aria-describedby={invalid ? rowErrorId(index) : undefined}
+						aria-invalid={invalid || refused ? 'true' : undefined}
+						aria-describedby={invalid ? rowErrorId(index) : refused ? ids.error : undefined}
 						oninput={(event) => setRow(index, { ...entry, title: event.currentTarget.value })}
 					/>
 					<label class="visually-hidden" for={priorityId(index)}>
@@ -238,8 +247,8 @@
 		<button
 			class="button-subtle"
 			type="button"
-			aria-disabled={full || busy ? 'true' : undefined}
-			aria-describedby={full ? `${uid}-full` : undefined}
+			aria-disabled={full || busy || disabled ? 'true' : undefined}
+			aria-describedby={full ? `${uid}-full` : disabled ? ids.hint : undefined}
 			bind:this={addButton}
 			onclick={() => void add()}
 		>

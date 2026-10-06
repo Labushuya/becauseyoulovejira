@@ -370,6 +370,19 @@ export function createRule(
 	});
 }
 
+/** One rule, e.g. the one "Neues Ticket" created with its ticket (NT-1). */
+export function getRule(
+	pb: PocketBase,
+	id: string,
+	{ signal }: RequestOptions = {}
+): Promise<RecurrenceRule> {
+	return withDataErrors(signal, async () =>
+		toRecurrenceRule(
+			await pb.collection(RULES).getOne<RuleRecord>(id, { fields: RULE_FIELDS, signal })
+		)
+	);
+}
+
 /** Changes template or rhythm; the hook computes next_due again (ADR-0023 section 5). */
 export function updateRule(
 	pb: PocketBase,

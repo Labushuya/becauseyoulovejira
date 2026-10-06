@@ -28,7 +28,7 @@
 </script>
 
 {#if followUps.length > 0}
-	<section class="follow-ups" aria-labelledby={headingId}>
+	<section class="follow-ups" aria-labelledby={headingId} data-ticket-option="followUps">
 		<h3 id={headingId}>Folge-Tickets</h3>
 		<ul class="list" aria-labelledby={headingId}>
 			{#each followUps as entry (entry.link)}

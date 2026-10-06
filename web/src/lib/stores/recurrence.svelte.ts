@@ -394,26 +394,52 @@ export class RecurrenceStore implements SeriesChangeSink {
 	 * series begins if the first date of the ticket lies in the past (WH-2, ADR-0022 addendum 14):
 	 * the hook moves the ticket to the first date from today unless the user kept the date.
 	 */
-	repeat(
-		ticket: Ticket,
-		{ values, initialStatus }: RepeatRequest
-	): Promise<EditResult<RecurrenceRule>> {
+	repeat(ticket: Ticket, request: RepeatRequest): Promise<EditResult<RecurrenceRule>> {
 		const { initial_status: chosen, ...template } = templateBody(
-			ticketTemplate(ticket, initialStatus ?? DEFAULT_TEMPLATE_STATUS)
+			ticketTemplate(ticket, request.initialStatus ?? DEFAULT_TEMPLATE_STATUS)
 		);
 		return this.create(
 			{
 				...template,
-				...(initialStatus !== null && { initial_status: chosen }),
-				...formParams(values),
-				start: values.start ?? DEFAULT_SERIES_START,
-				// "Zuständigkeit" of the next tickets (ADR-0068), only when the server knows it.
-				...(this.assigneesReady && assignmentBody(values.assignment, null))
+				...this.ruleParams({
+					...request,
+					initialStatus: request.initialStatus === null ? null : chosen
+				})
 			},
 			ticket.id,
 			// The rule lies in the area of its ticket (E7-3).
 			ticket.scope ? householdOfScope(ticket.scope) : undefined
 		);
+	}
+
+	/**
+	 * What a new rule with a ticket says beyond its template: the rhythm, where it begins (WH-2),
+	 * "Folgetickets starten mit" when it was asked and "Zuständigkeit" when the server knows it. The
+	 * template is the ticket: "Wiederholen…" adds it, "Neues Ticket" with everything at once (NT-1)
+	 * leaves it to the server, which takes the created ticket. `subtasks` are the sub-tasks of the
+	 * template (plan WV-3), only once the server knows them.
+	 */
+	ruleParams(
+		{ values, initialStatus }: RepeatRequest,
+		subtasks: readonly TemplateSubtask[] = []
+	): Omit<
+		RuleDraft,
+		'title' | 'description' | 'project' | 'tags' | 'priority' | 'color' | 'charm'
+	> {
+		return {
+			...(initialStatus !== null && { initial_status: initialStatus }),
+			...formParams(values),
+			start: values.start ?? DEFAULT_SERIES_START,
+			// "Zuständigkeit" of the next tickets (ADR-0068), only when the server knows it.
+			...(this.assigneesReady && assignmentBody(values.assignment, null)),
+			...(this.subtasksReady &&
+				subtasks.length > 0 && {
+					template_subtasks: subtasks.map((entry) => ({
+						title: entry.title,
+						priority: entry.priority
+					}))
+				})
+		};
 	}
 
 	/**
