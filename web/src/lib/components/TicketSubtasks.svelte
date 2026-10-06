@@ -91,7 +91,7 @@
 	}
 </script>
 
-<section class="subtasks" aria-labelledby={ids.title}>
+<section class="subtasks" aria-labelledby={ids.title} data-ticket-option="subtasks">
 	<div class="section-head">
 		<h3 id={ids.title}>Unteraufgaben</h3>
 		{#if progress.total > 0}

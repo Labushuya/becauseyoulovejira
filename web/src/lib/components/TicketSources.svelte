@@ -155,8 +155,8 @@
 	}
 </script>
 
-<section class="sources" aria-labelledby={headingId}>
-	<div class="head">
+<section class="sources" aria-labelledby={headingId} data-ticket-option="sources">
+	<div class="head" data-ticket-option={ticketsOn ? 'ticketSources' : undefined}>
 		<h3 id={headingId}>Quellen</h3>
 		{#if ticketsOn}
 			<ActionsMenu

@@ -21,8 +21,21 @@ import {
 	type TrashMove,
 	type UpdateOptions
 } from '$lib/data/tickets';
+import {
+	createTicketWithOptions,
+	fetchCreateSupport,
+	type CreatedTicket
+} from '$lib/data/ticket-create';
 import { toggleTask } from '$lib/markdown';
 import { PIN_FLAGS, type CommentPinControl } from '$lib/domain/comments';
+import type { RecurrenceRule } from '$lib/domain/recurrence-rule';
+import {
+	createFieldOf,
+	type CreateField,
+	type CreateListField,
+	type CreateRequest,
+	type CreateSupport
+} from '$lib/domain/ticket-create';
 import type { SourceHandling } from '$lib/domain/sources';
 import { isCalendarDate } from '$lib/domain/berlin-date';
 import { isCharmKey } from '$lib/domain/charms';
@@ -114,6 +127,13 @@ export interface TicketDetailData {
 	update(id: string, patch: TicketPatch, options?: UpdateOptions): Promise<Ticket>;
 	create(draft: TicketDraft, origin?: TicketOrigin): Promise<Ticket>;
 	/**
+	 * "Neues Ticket" with everything at once (NT-1, ADR-0069): the ticket and its options in one
+	 * transaction of the route. Without it (tests of single parts) the store creates as before.
+	 */
+	createWithOptions?(request: CreateRequest): Promise<CreatedTicket>;
+	/** What the route knows; null before the restart after NT-1 (the route is missing). */
+	createSupport?(): Promise<CreateSupport | null>;
+	/**
 	 * Moves the ticket to the trash (ADR-0037) through the route, the sources as chosen; answers
 	 * the move for "Rückgängig" (null before the migration of the trash).
 	 */
@@ -123,10 +143,19 @@ export interface TicketDetailData {
 /** Outcome of ticking a task; a failure carries a message unless nothing is to be shown. */
 export type TaskResult = { ok: true } | { ok: false; message: string | null };
 
-/** Outcome of creating a ticket; a failure carries a message and/or errors per field. */
+/**
+ * Outcome of creating a ticket; a failure carries a message and/or errors per field of the form,
+ * with the row of a list (`index`) where the server named one. With everything at once (NT-1) a
+ * success also names the rule of the series, null without one.
+ */
 export type CreateResult =
-	| { ok: true; ticket: Ticket }
-	| { ok: false; message: string | null; fields: Partial<Record<keyof TicketDraft, string>> };
+	| { ok: true; ticket: Ticket; rule?: RecurrenceRule | null }
+	| {
+			ok: false;
+			message: string | null;
+			fields: Partial<Record<CreateField, string>>;
+			index?: Partial<Record<CreateListField, number>>;
+	  };
 
 const DRAFT_FIELDS: readonly (keyof TicketDraft)[] = [
 	'title',
@@ -175,9 +204,14 @@ export function ticketDetailData(pb: PocketBase): TicketDetailData {
 		get: (id, options) => getTicket(pb, id, options),
 		update: (id, patch, options) => updateTicket(pb, id, patch, options),
 		create: (draft, origin) => createTicket(pb, draft, { origin }),
+		createWithOptions: (request) => createTicketWithOptions(pb, request),
+		createSupport: () => fetchCreateSupport(pb),
 		delete: (id, sources) => deleteTicket(pb, id, { sources })
 	};
 }
+
+/** Fields of a list in the form whose errors name a row (`params.index`). */
+const LIST_FIELDS: readonly CreateListField[] = ['subtasks', 'ticketSources', 'sources'];
 
 /** Current value of a field as the text of its control ('' for no due date, project or color). */
 function fieldText(ticket: Ticket, field: EditableField): string {
@@ -273,6 +307,11 @@ export class TicketDetailStore implements CommentPinControl {
 	#error = $state<string | null>(null);
 	/** The shown ticket went into an area this tab does not see (E7-4, ADR-0061 §3). */
 	#movedAway = $state(false);
+	/**
+	 * What "Neues Ticket" with everything at once may offer (NT-1): undefined until asked, null while
+	 * the server does not know the route (before its restart), then the options it knows.
+	 */
+	#support = $state.raw<CreateSupport | null | undefined>(undefined);
 
 	/** The loaded ticket, or the list's version of it if that one is newer (check mark). */
 	#ticket = $derived.by((): Ticket | null => {
@@ -970,6 +1009,88 @@ export class TicketDetailStore implements CommentPinControl {
 			const itemMessage = failure.fields.source_item?.message;
 			if (itemMessage !== undefined) return { ok: false, message: itemMessage, fields };
 			return { ok: false, message: known ? null : failure.message, fields };
+		}
+	}
+
+	/**
+	 * What "Neues Ticket" may offer beyond the fields of before (NT-1): undefined until
+	 * `loadCreateSupport` answered, null before the restart of the server after NT-1.
+	 */
+	get createSupport(): CreateSupport | null | undefined {
+		return this.#support;
+	}
+
+	/**
+	 * Asks the server once which options of "Neues Ticket" it knows. A known answer stays for the
+	 * session; a missing route (before the restart) or a failure is asked again the next time.
+	 */
+	async loadCreateSupport(): Promise<void> {
+		if (this.#support) return;
+		if (this.#data.createSupport === undefined) {
+			this.#support = null;
+			return;
+		}
+		if (!this.#session.ensureValid()) return;
+		try {
+			this.#support = await this.#data.createSupport();
+		} catch (error) {
+			if (toDataError(error).kind === 'session') this.#session.logout();
+			this.#support = null;
+		}
+	}
+
+	/**
+	 * "Neues Ticket" with everything at once (NT-1, ADR-0069): the ticket, its sub-tasks, sources,
+	 * the rule of a series, the pin and the entry of the day plan in one request, or nothing. On
+	 * success the ticket joins the list and becomes the ticket of the panel, like `create`; a refusal
+	 * stands at the field of the form it belongs to (`createFieldOf`), with the row of a list.
+	 */
+	async createWithOptions(request: CreateRequest): Promise<CreateResult> {
+		const title = request.draft.title.trim();
+		if (title === '')
+			return { ok: false, message: null, fields: { title: TITLE_REQUIRED_MESSAGE } };
+		if (this.#data.createWithOptions === undefined) return { ok: false, message: null, fields: {} };
+		if (!this.#session.ensureValid()) return { ok: false, message: null, fields: {} };
+		try {
+			const created = await this.#data.createWithOptions({
+				...request,
+				draft: { ...request.draft, title }
+			});
+			this.#list.upsert(created.ticket);
+			this.reset();
+			this.#id = created.ticket.id;
+			this.#follow(created.ticket.id);
+			this.#own = created.ticket;
+			this.#state = 'ready';
+			return { ok: true, ticket: created.ticket, rule: created.rule };
+		} catch (error) {
+			const failure = toDataError(error);
+			if (failure.kind === 'session') this.#session.logout();
+			if (failure.kind === 'session' || failure.kind === 'aborted') {
+				return { ok: false, message: null, fields: {} };
+			}
+			const fields: Partial<Record<CreateField, string>> = {};
+			const index: Partial<Record<CreateListField, number>> = {};
+			const loose: string[] = [];
+			for (const [name, detail] of Object.entries(failure.fields)) {
+				const field = createFieldOf(name);
+				if (field === null) {
+					loose.push(detail.message);
+					continue;
+				}
+				fields[field] ??= detail.message;
+				const row = detail.params?.index;
+				if ((LIST_FIELDS as readonly string[]).includes(field) && typeof row === 'number') {
+					index[field as CreateListField] = row;
+				}
+			}
+			const known = Object.keys(fields).length > 0;
+			return {
+				ok: false,
+				message: loose[0] ?? (known ? null : failure.message),
+				fields,
+				...(Object.keys(index).length > 0 && { index })
+			};
 		}
 	}
 

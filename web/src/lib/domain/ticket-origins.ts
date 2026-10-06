@@ -158,6 +158,19 @@ export function sourcePickerRules(
 }
 
 /**
+ * Rules of the ticket picker of the sources of a ticket that does not exist yet ("Neues Ticket",
+ * NT-1): the tickets chosen already are hidden, tickets of another area stay visible with the reason.
+ * A new ticket has no follow-ups, so no choice closes a circle.
+ */
+export function newTicketSourceRules(
+	scope: string | null | undefined,
+	chosen: readonly string[]
+): PickerRule[] {
+	const hidden = new Set(chosen);
+	return [(candidate) => (hidden.has(candidate.id) ? { hide: true } : null), sameScope(scope)];
+}
+
+/**
  * The title "Folge-Ticket anlegen …" starts with: "Folge: ‹Titel›", cut with "…" before it passes
  * FOLLOW_UP_TITLE_MAX.
  */

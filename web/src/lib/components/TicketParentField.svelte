@@ -8,6 +8,7 @@
 		findTicketPickerSource,
 		type TicketPickerSource
 	} from '$lib/stores/ticket-picker.svelte';
+	import BlocksParentSwitch from './BlocksParentSwitch.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import TicketPicker from './TicketPicker.svelte';
 
@@ -46,9 +47,7 @@
 	const uid = $props.id();
 	const ids = {
 		term: `${uid}-term`,
-		error: `${uid}-error`,
-		switchHint: `${uid}-switch-hint`,
-		switchError: `${uid}-switch-error`
+		error: `${uid}-error`
 	};
 
 	let choosing = $state(false);
@@ -97,12 +96,6 @@
 		}
 	}
 
-	async function toggleBlocks(event: Event & { currentTarget: HTMLInputElement }) {
-		const input = event.currentTarget;
-		const wanted = input.checked;
-		if (!(await store.setBlocksParent(wanted))) input.checked = !wanted;
-	}
-
 	function onkeydown(event: KeyboardEvent) {
 		// The combobox consumes Escape for its list and its text first.
 		if (event.key !== 'Escape' || event.defaultPrevented) return;
@@ -113,7 +106,7 @@
 </script>
 
 <span class="term" id={ids.term}>Übergeordnet</span>
-<div class="control" aria-labelledby={ids.term} role="group">
+<div class="control" aria-labelledby={ids.term} role="group" data-ticket-option="parent">
 	{#if choosing}
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div class="choose" bind:this={area} {onkeydown}>
@@ -174,26 +167,13 @@
 		{#if error}
 			<p class="field-error" id={ids.error}><ErrorIcon /><span>{error}</span></p>
 		{/if}
-		<label class="switch-row">
-			<span>Blockiert das übergeordnete Ticket</span>
-			<input
-				type="checkbox"
-				role="switch"
-				checked={blocks}
-				aria-busy={store.isSaving('blocksParent') ? 'true' : undefined}
-				aria-invalid={switchError ? 'true' : undefined}
-				aria-describedby={switchError ? `${ids.switchHint} ${ids.switchError}` : ids.switchHint}
-				onchange={toggleBlocks}
-			/>
-		</label>
-		<p class="hint" id={ids.switchHint}>
-			{blocks
-				? `Solange diese Unteraufgabe offen ist, fragt das Erledigen von ${parent.key} nach.`
-				: `${parent.key} lässt sich erledigen, auch wenn diese Unteraufgabe offen ist.`}
-		</p>
-		{#if switchError}
-			<p class="field-error" id={ids.switchError}><ErrorIcon /><span>{switchError}</span></p>
-		{/if}
+		<BlocksParentSwitch
+			{blocks}
+			parentKey={parent.key}
+			busy={store.isSaving('blocksParent')}
+			error={switchError}
+			onchange={(wanted) => store.setBlocksParent(wanted)}
+		/>
 	{:else if subtaskCount > 0}
 		<span class="muted">Keins – hat selbst Unteraufgaben</span>
 	{:else}
@@ -266,17 +246,6 @@
 		stroke-linejoin: round;
 	}
 
-	/* Name left, switch right, like "Glas-Effekt" (ADR-0029, G-5). */
-	.switch-row {
-		display: flex;
-		gap: 0.75rem;
-		align-items: center;
-		justify-content: space-between;
-		margin-top: 0.25rem;
-		cursor: pointer;
-	}
-
-	.hint,
 	.muted {
 		font-size: var(--font-size-small);
 		color: var(--color-text-muted);

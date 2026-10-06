@@ -21,6 +21,7 @@ import {
 } from '../domain/recurrence-rule';
 import { SUBTASK_MESSAGES, openChildrenMessage } from '../domain/subtasks';
 import { TARGET_MESSAGES } from '../domain/target-project';
+import { CREATE_MESSAGES } from '../domain/ticket-create';
 import { TICKET_SOURCE_MESSAGES, cycleMessage, cyclePathOf } from '../domain/ticket-origins';
 import { unreachableHint } from '../domain/context';
 import { TRASH_MESSAGES } from '../domain/trash';
@@ -129,7 +130,9 @@ const FIELD_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
 	// Tickets as sources (ADR-0067), the same texts as the hook; a circle names its chain below.
 	...TICKET_SOURCE_MESSAGES,
 	// "Zuständig" (ADR-0068), the same texts as the hook.
-	...ASSIGNEE_MESSAGES
+	...ASSIGNEE_MESSAGES,
+	// "Neues Ticket" with everything at once (ADR-0069), the same texts as the route.
+	...CREATE_MESSAGES
 });
 
 /** Texts that depend on the field as well, keyed by `<field>:<code>`; they win over the above. */
@@ -142,6 +145,10 @@ const FIELD_CODE_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
 	'source_item:validation_scope_mismatch': 'Der Eintrag ist nicht verfügbar.',
 	// Taking suggestions of another area into a day plan (ADR-0065).
 	'tickets:validation_scope_mismatch': DAY_PLAN_SCOPE_TEXT,
+	// Sources of "Neues Ticket" (ADR-0069): an entry or a ticket of another area.
+	'sources:validation_scope_mismatch':
+		'Ein Eintrag liegt in einem anderen Bereich (Privat oder Haushalt).',
+	'ticket_sources:validation_scope_mismatch': SCOPE_FIELD_MESSAGES.source ?? SCOPE_MESSAGE,
 	// Per field (E7-3, ADR-0059 §4): what lies in another area.
 	...Object.fromEntries(
 		Object.entries(SCOPE_FIELD_MESSAGES).map(([field, text]) => [

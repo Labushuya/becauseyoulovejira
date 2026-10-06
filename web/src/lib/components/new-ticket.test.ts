@@ -2,7 +2,10 @@
 // title, defaults, project with the filtered project chosen in advance, tags, Ctrl+Enter, lock
 // during the request, switching to the new ID with replaceState, server errors, discarding after a question.
 // The creation itself is covered against the harness (E2 plan, package 4). Since UI-3 the question
-// is the confirmation of ADR-0025 section 4 instead of window.confirm.
+// is the confirmation of ADR-0025 section 4 instead of window.confirm. Since NT-1 (ADR-0069) the
+// options beyond the main fields stand under "Weitere Optionen" (new-ticket-more.test.ts); the route
+// tests here run as before the restart of the server after NT-1 (two steps for a series), those of
+// one request in new-ticket-more.test.ts as well. Tests of color and series open the area first.
 
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
@@ -10,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { InboxItem } from '$lib/domain/inbox';
 import type { Project } from '$lib/domain/project';
 import type { Ticket, TicketDraft } from '$lib/domain/ticket';
+import { MORE_OPTIONS_KEY, NO_EXTRAS } from '$lib/domain/ticket-create';
 import { fixedAssignees } from '$lib/stores/assignees.svelte';
 import { CatalogStore } from '$lib/stores/catalog.svelte';
 import type { CreateResult } from '$lib/stores/ticket-detail.svelte';
@@ -38,7 +42,13 @@ async function answer(choice: 'Weiter bearbeiten' | 'Verwerfen') {
 const mocks = vi.hoisted(() => ({
 	goto: vi.fn(async () => undefined),
 	page: { url: new URL('http://localhost:3000/tickets/neu?erledigte=1') },
-	detail: { create: vi.fn(), upsert: vi.fn() },
+	// The server of before the restart after NT-1: it knows no request with everything at once.
+	detail: {
+		create: vi.fn(),
+		upsert: vi.fn(),
+		createSupport: null,
+		loadCreateSupport: vi.fn(async () => undefined)
+	},
 	catalog: null as unknown,
 	inbox: { fetch: vi.fn(), markConverted: vi.fn() },
 	tickets: {
@@ -179,7 +189,13 @@ beforeEach(() => {
 
 afterEach(() => {
 	vi.restoreAllMocks();
+	localStorage.removeItem(MORE_OPTIONS_KEY);
 });
+
+/** "Weitere Optionen" is open on this device (NT-1), so color and "Wiederholen" are in sight. */
+function moreOpenOnThisDevice() {
+	beforeEach(() => localStorage.setItem(MORE_OPTIONS_KEY, '1'));
+}
 
 describe('new ticket form', () => {
 	it('focuses the required title and starts with the defaults', async () => {
@@ -237,7 +253,9 @@ describe('new ticket form', () => {
 				tags: []
 			},
 			// No calendar series, so no section "Wiederholung" (package 6).
-			null
+			null,
+			// Nothing under "Weitere Optionen" (NT-1).
+			NO_EXTRAS
 		);
 		await vi.waitFor(() => expect(oncreated).toHaveBeenCalledWith('new000000000000'));
 	});
@@ -374,6 +392,7 @@ describe('new ticket route', () => {
 });
 
 describe('new ticket: color (ADR-0052)', () => {
+	moreOpenOnThisDevice();
 	const BLUE_HOUSE: Project = { ...HOUSE, color: 'blau' };
 	const group = () => screen.getByRole('radiogroup', { name: 'Farbe' });
 	const radio = (name: string) => within(group()).getByRole<HTMLInputElement>('radio', { name });
@@ -944,6 +963,7 @@ describe('new ticket from the inbox (E4 plan, package 3)', () => {
 });
 
 describe('new ticket from a calendar series (E5 plan, package 6; ADR-0024 section 1)', () => {
+	moreOpenOnThisDevice();
 	const ITEM_ID = 'item00000000002';
 	const RULE = { id: 'rule00000000009' };
 
@@ -1124,6 +1144,7 @@ describe('new ticket from a calendar series (E5 plan, package 6; ADR-0024 sectio
 // defaults of the due date or of today and the preview; only an open section creates the rule,
 // after the ticket (the two steps of ADR-0024); a failed rule keeps the ticket.
 describe('new ticket: repeat right away (plan OR-4)', () => {
+	moreOpenOnThisDevice();
 	const RULE = { id: 'rule00000000010' };
 
 	async function openPlain(state = 'ready', statusReady = false, subtasksReady = false) {
@@ -1341,6 +1362,7 @@ describe('new ticket: repeat right away (plan OR-4)', () => {
 // where the series begins, like "Wiederholen…": typed by hand, taken from an old entry of the inbox
 // (Notion) or from a calendar series. Today is Friday 25.09.2026.
 describe('new ticket: a due date in the past (WH-2)', () => {
+	moreOpenOnThisDevice();
 	const RULE = { id: 'rule00000000011' };
 	const OVERDUE: Ticket = { ...CREATED, due: '2024-03-12' };
 

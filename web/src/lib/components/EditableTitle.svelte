@@ -47,7 +47,7 @@
 	}
 </script>
 
-<div class="title">
+<div class="title" data-ticket-option="title">
 	{#if editing}
 		<input
 			id={`${uid}-input`}

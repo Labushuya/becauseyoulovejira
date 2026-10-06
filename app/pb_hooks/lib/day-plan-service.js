@@ -556,19 +556,30 @@ function add(e) {
     if (ticket.getString('status') === 'done') {
       throw fail('ticket', 'validation_dayplan_ticket_done');
     }
-    var plan = ensurePlan(txApp, area, date, actor);
-    var item = itemOf(txApp, plan.id, ticket.id);
-    if (item !== null) {
-      outcome.already = true;
-    } else {
-      item = newItem(txApp, plan, ticket.id, 'manual', nextPosition(itemsOf(txApp, plan.id)), actor);
-      placeAt(txApp, plan, item, body.index);
-      undismiss(txApp, plan, ticket.id);
-    }
-    outcome.item = findById(txApp, ITEMS, item.id);
-    outcome.plan = findById(txApp, PLANS, plan.id);
+    var added = addToPlan(txApp, area, date, ticket, actor, body.index);
+    outcome.already = added.already;
+    outcome.item = findById(txApp, ITEMS, added.item.id);
+    outcome.plan = findById(txApp, PLANS, added.plan.id);
   });
   return answer(e, { item: itemJson(outcome.item), plan: planJson(outcome.plan), already: outcome.already });
+}
+
+/**
+ * Puts a ticket into the plan of `area` and `date` in the transaction of the caller, by hand
+ * (`manual`), at `index` or at the end; the plan is created when it is missing. An entry that is
+ * there already stays. The route above and "Neues Ticket" with "Zum Tagesplan" (NT-1,
+ * lib/ticket-create-service.js) check area, day and status first. Returns { item, plan, already }.
+ */
+function addToPlan(txApp, area, date, ticket, actor, index) {
+  var plan = ensurePlan(txApp, area, date, actor);
+  var item = itemOf(txApp, plan.id, ticket.id);
+  if (item !== null) {
+    return { item: item, plan: plan, already: true };
+  }
+  item = newItem(txApp, plan, ticket.id, 'manual', nextPosition(itemsOf(txApp, plan.id)), actor);
+  placeAt(txApp, plan, item, index);
+  undismiss(txApp, plan, ticket.id);
+  return { item: item, plan: plan, already: false };
 }
 
 /**
@@ -931,6 +942,9 @@ function checkItem(app, record) {
 
 module.exports = {
   ready: ready,
+  daysOf: daysOf,
+  areaOf: areaOf,
+  addToPlan: addToPlan,
   fetch: fetch,
   add: add,
   adopt: adopt,

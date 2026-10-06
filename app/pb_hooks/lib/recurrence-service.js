@@ -178,31 +178,40 @@ function fail(field, code) {
 
 // --- Request hooks ---------------------------------------------------------------------------
 
-// onRecordCreateRequest: `active` defaults to true and `lead_days` to DEFAULT_LEAD_DAYS unless the
-// client sends them (bool and number fields have no schema default, and the model hook cannot
-// tell 0 or false from "not sent"). The body field `ticket` (no schema field) goes to the model
-// hook. An anchor the date field could not read counts as an error, not as "empty".
+// onRecordCreateRequest: the body of the request as applyCreateBody reads it, then the acting user.
 function prepareCreateRequest(e) {
-  var body = e.requestInfo().body;
-  checkInitialStatusChoice(e, body);
+  applyCreateBody(e.app, e.record, e.requestInfo().body, e.hasSuperuserAuth());
+  ticketService.rememberActor(e);
+}
+
+/**
+ * What a create request says beyond the fields of the record, for the Record API (request hook) and
+ * for "Neues Ticket" with everything at once (NT-1, lib/ticket-create-service.js), which builds the
+ * rule itself: `active` defaults to true and `lead_days` to DEFAULT_LEAD_DAYS unless the body sends
+ * them (bool and number fields have no schema default, and the model hook cannot tell 0 or false
+ * from "not sent"). The body field `ticket` (no schema field) goes to the model hook. An anchor the
+ * date field could not read counts as an error, not as "empty". `superuser`: the request of a
+ * superuser, who is not asked for "Status beim Anlegen".
+ */
+function applyCreateBody(app, record, body, superuser) {
+  checkInitialStatusChoice(app, body, superuser);
   if (body['active'] === undefined) {
-    e.record.set('active', true);
+    record.set('active', true);
   }
   if (body['lead_days'] === undefined || body['lead_days'] === null || body['lead_days'] === '') {
-    e.record.set('lead_days', recurrence.DEFAULT_LEAD_DAYS);
+    record.set('lead_days', recurrence.DEFAULT_LEAD_DAYS);
   }
   var ticket = body['ticket'];
   if (ticket !== undefined && ticket !== null && ticket !== '') {
     if (typeof ticket !== 'string') {
       throw fail('ticket', 'validation_recurrence_ticket_missing');
     }
-    e.record.set(TICKET_KEY, ticket);
+    record.set(TICKET_KEY, ticket);
   }
-  checkAnchorBody(e);
-  checkBacklogBody(e);
-  checkStartBody(e);
-  assignees.rememberNextSent(e);
-  ticketService.rememberActor(e);
+  checkAnchorBody(record, body);
+  checkBacklogBody(record, body);
+  checkStartBody(record, body);
+  assignees.rememberNextSentIn(record, body);
 }
 
 // onRecordUpdateRequest; a superuser may set every field, like at connections (repairs in the
@@ -214,19 +223,20 @@ function prepareUpdateRequest(e) {
     e.record.set(SYSTEM_KEY, true);
     return;
   }
-  checkAnchorBody(e);
-  checkBacklogBody(e);
+  var body = e.requestInfo().body;
+  checkAnchorBody(e.record, body);
+  checkBacklogBody(e.record, body);
   ticketService.rememberActor(e);
 }
 
 // "Status beim Anlegen" is the choice of the user (ADR-0022 addendum 9): after its migration a
 // create request of an app account must carry it, whichever way it comes ("Wiederholen…" with
-// `ticket`, the second step of "Neues Ticket", "Neue Regel"). Checked in the request hook, so it
-// never touches a rule without a user: a superuser (admin UI, repairs) and saves of the server
-// keep the default "open" of the model hook (checkInitialStatus), and editing a rule asks nothing.
-// Before the migration there is no field and nothing to ask.
-function checkInitialStatusChoice(e, body) {
-  if (e.hasSuperuserAuth() || !initialStatusReady(e.app)) {
+// `ticket`, "Neues Ticket" with its section "Wiederholen", "Neue Regel"). Checked with the body of
+// the request, so it never touches a rule without a user: a superuser (admin UI, repairs) and saves
+// of the server keep the default "open" of the model hook (checkInitialStatus), and editing a rule
+// asks nothing. Before the migration there is no field and nothing to ask.
+function checkInitialStatusChoice(app, body, superuser) {
+  if (superuser || !initialStatusReady(app)) {
     return;
   }
   var code = rules.initialStatusChoiceViolation(body['initial_status']);
@@ -237,29 +247,29 @@ function checkInitialStatusChoice(e, body) {
 
 // The body field `backlog` (ADR-0022 addendum 5): 'all' or 'today', anything else is refused; an
 // empty value means no choice.
-function checkBacklogBody(e) {
-  var choice = e.requestInfo().body['backlog'];
+function checkBacklogBody(record, body) {
+  var choice = body['backlog'];
   if (choice === undefined || choice === null || choice === '') {
     return;
   }
   if (rules.BACKLOG_CHOICES.indexOf(choice) === -1) {
     throw fail('backlog', 'validation_recurrence_backlog');
   }
-  e.record.set(BACKLOG_KEY, choice);
+  record.set(BACKLOG_KEY, choice);
 }
 
 // The body field `start` of a create request (WH-2, ADR-0022 addendum 14): 'today' or 'keep',
 // anything else is refused; an empty value keeps the date as before (clients from before WH-2).
 // It only matters with a ticket whose first date lies before today (createDates).
-function checkStartBody(e) {
-  var choice = e.requestInfo().body['start'];
+function checkStartBody(record, body) {
+  var choice = body['start'];
   if (choice === undefined || choice === null || choice === '') {
     return;
   }
   if (rules.START_CHOICES.indexOf(choice) === -1) {
     throw fail('start', 'validation_recurrence_start');
   }
-  e.record.set(START_KEY, choice);
+  record.set(START_KEY, choice);
 }
 
 // Applies the choice about a backlog to a rule with "Jeden Termin einzeln anlegen" (ADR-0022
@@ -276,9 +286,9 @@ function applyBacklogChoice(record, values, nextDue, today) {
   record.set('last_hint', decided.hint);
 }
 
-function checkAnchorBody(e) {
-  var anchor = e.requestInfo().body['anchor'];
-  if (anchor !== undefined && anchor !== null && anchor !== '' && e.record.getString('anchor') === '') {
+function checkAnchorBody(record, body) {
+  var anchor = body['anchor'];
+  if (anchor !== undefined && anchor !== null && anchor !== '' && record.getString('anchor') === '') {
     throw fail('anchor', 'validation_recurrence_anchor');
   }
 }
@@ -1097,6 +1107,7 @@ module.exports = {
   openInstance: openInstance,
   paramsOf: paramsOf,
   prepareCreateRequest: prepareCreateRequest,
+  applyCreateBody: applyCreateBody,
   prepareUpdateRequest: prepareUpdateRequest,
   guardTicketCreate: guardTicketCreate,
   guardTicketUpdate: guardTicketUpdate,

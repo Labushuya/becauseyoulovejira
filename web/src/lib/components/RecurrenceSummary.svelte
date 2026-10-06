@@ -283,7 +283,7 @@
 	}
 </script>
 
-<section class="recurrence" aria-labelledby={`${uid}-title`}>
+<section class="recurrence" aria-labelledby={`${uid}-title`} data-ticket-option="recurrence">
 	<h3 id={`${uid}-title`} class="visually-hidden">Wiederholung</h3>
 	{#if ticket.recurring}
 		<p class="line">

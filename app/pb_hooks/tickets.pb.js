@@ -145,6 +145,31 @@ routerAdd(
   $apis.requireAuth('users')
 );
 
+// "Neues Ticket" with everything at once (NT-1, ADR-0069): the fields of the ticket and its options
+// (sub-tasks, sources from the inbox, source tickets, the rule of a series, pin, day plan of today) in
+// one transaction, or nothing; every check before the first write (lib/ticket-create-service.js). GET
+// names the options the server knows.
+routerAdd(
+  'POST',
+  '/api/byl/tickets/create',
+  function (e) {
+    var result = require(`${__hooks}/lib/ticket-create-service.js`).create(e);
+    return e.json(200, result);
+  },
+  $apis.requireAuth('users')
+);
+
+routerAdd(
+  'GET',
+  '/api/byl/tickets/create',
+  function (e) {
+    var result = require(`${__hooks}/lib/ticket-create-service.js`).support(e);
+    e.response.header().set('Cache-Control', 'no-store');
+    return e.json(200, result);
+  },
+  $apis.requireAuth('users')
+);
+
 // "Ticket duplizieren" (ADR-0045): JSON with the title, the required status, the project and what
 // to take over (description, priority, tags, due, parent, sub-tickets, comments) and whether the
 // main source is copied ({ source: 'none' | 'copy' }). Creates the duplicate with everything

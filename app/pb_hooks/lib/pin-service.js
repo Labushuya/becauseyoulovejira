@@ -72,6 +72,18 @@ function checkCreate(app, record) {
   }
 }
 
+/**
+ * Pins a ticket for an account in the transaction of the caller ("Neues Ticket" with "Anheften", NT-1):
+ * the model hook above refuses a done ticket for every writer. Returns the pin.
+ */
+function pinTicket(txApp, userId, ticketId) {
+  var record = new Record(txApp.findCollectionByNameOrId(PINS));
+  record.set('user', userId);
+  record.set('ticket', ticketId);
+  txApp.save(record);
+  return record;
+}
+
 /** Every pin of a ticket, of every account. Returns how many went. */
 function releaseTicket(txApp, ticketId) {
   if (!pinsReady(txApp)) {
@@ -157,6 +169,7 @@ function releaseUnseen(txApp, ticketIds) {
 module.exports = {
   pinsReady: pinsReady,
   checkCreate: checkCreate,
+  pinTicket: pinTicket,
   releaseTicket: releaseTicket,
   completes: completes,
   releaseMembership: releaseMembership,

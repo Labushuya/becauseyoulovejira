@@ -160,10 +160,17 @@ export interface TicketDraft {
 	tags: string[];
 	/** The ticket this one is a sub-task of (ADR-0033); left out or null for a top-level ticket. */
 	parent?: string | null;
+	/**
+	 * A sub-task blocks completing its parent while it is open ("Blockiert das übergeordnete
+	 * Ticket", ADR-0033); left out for the default true. Only "Neues Ticket" sends it (NT-1).
+	 */
+	blocksParent?: boolean;
 	/** Own color (ADR-0052); left out or null for "wie Projekt". */
 	color?: ProjectColor | null;
 	/** Charm (ADR-0062), a key of the catalog; left out or null for none. */
 	charm?: string | null;
+	/** "Laufendes Vorhaben" (ADR-0065); left out for "Aufgabe". Only "Neues Ticket" sends it (NT-1). */
+	kind?: TicketKind;
 	/** The assignee (ADR-0068), a member of the household; left out or null for nobody. */
 	assignee?: string | null;
 }
@@ -198,11 +205,8 @@ export const QUICK_ORIGIN: TicketOrigin = Object.freeze({ source: 'quick' });
  * releases the pin (ADR-0044).
  */
 export type TicketPatch = Partial<TicketDraft> & {
-	blocksParent?: boolean;
 	detachSeries?: boolean;
 	pinnedComment?: string | null;
-	/** "Laufendes Vorhaben" or back to "Aufgabe" (ADR-0065). */
-	kind?: TicketKind;
 };
 
 export interface Comment {

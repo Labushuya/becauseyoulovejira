@@ -48,6 +48,7 @@
 		aria-disabled={busy ? 'true' : undefined}
 		title={pinned ? PIN_TOOLTIPS.unpin : PIN_TOOLTIPS.pin}
 		data-pin-toggle={ticket.id}
+		data-ticket-option={variant === 'head' ? 'pin' : undefined}
 		onclick={toggle}
 	>
 		<PinIcon filled={pinned} />

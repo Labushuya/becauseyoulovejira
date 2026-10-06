@@ -158,6 +158,18 @@ export function parentRules(
 	];
 }
 
+/**
+ * Rules of the parent of a ticket that does not exist yet ("Neues Ticket", NT-1): every sub-task stays
+ * visible with the reason (one level), tickets of another area as well. `scope` is the area the ticket
+ * is created in.
+ */
+export function newTicketParentRules(scope: string | null | undefined): PickerRule[] {
+	return [
+		(candidate) => (candidate.parentId ? { reason: PICKER_REASONS.isSubtask } : null),
+		sameScope(scope)
+	];
+}
+
 /** The first verdict of the rules that says something, else null. */
 export function judge(ticket: TicketSummary, rules: readonly PickerRule[]): PickerVerdict {
 	for (const rule of rules) {

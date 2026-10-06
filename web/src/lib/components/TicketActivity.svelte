@@ -84,6 +84,7 @@
 		aria-labelledby={tabId('comments')}
 		tabindex="-1"
 		hidden={selected !== 'comments'}
+		data-ticket-option="comments"
 		bind:this={commentsPanel}
 	>
 		<CommentList {store} {pin} ondeleted={() => commentsPanel?.focus()} />
@@ -95,6 +96,7 @@
 		aria-labelledby={tabId('history')}
 		tabindex="0"
 		hidden={selected !== 'history'}
+		data-ticket-option="history"
 	>
 		<HistoryList {store} {catalog} />
 	</div>

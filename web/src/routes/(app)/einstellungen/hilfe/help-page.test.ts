@@ -232,6 +232,7 @@ describe('help page (EH-9)', () => {
 			'Warum sehe ich im Admin-Bereich andere Konten?',
 			'Wie ändere ich Spalten und ihre Breite?',
 			'Wie wirken die Karten über der Liste?',
+			'Was kann ich schon beim Anlegen eines Tickets einstellen?',
 			'Wie arbeite ich mit Unteraufgaben?',
 			'Wie hole ich ein gelöschtes Ticket zurück?',
 			'Warum lässt sich ein Ticket im Papierkorb nicht endgültig löschen?',
@@ -259,6 +260,10 @@ describe('help page (EH-9)', () => {
 		expect(text(section)).toContain('höchstens einen angepinnten Kommentar');
 		expect(text(section)).toContain('„Weiterlesen“');
 		expect(section.querySelectorAll('details[open]')).toHaveLength(0);
+		// "Neues Ticket" with everything at once (ADR-0069): main fields, "Weitere Optionen", one step.
+		expect(text(section)).toContain('„Weitere Optionen (2 gesetzt)“');
+		expect(text(section)).toContain('in einem Schritt oder gar nicht');
+		expect(text(section)).toContain('„Umwandeln“ im Eingang öffnet denselben Dialog');
 		// Deleting for good only after the dependencies are decided (ADR-0047).
 		expect(text(section)).toContain('und keine Quelle hängt mehr daran');
 		expect(text(section)).toContain('die Hauptquelle bleibt bei ihrem Ticket');
