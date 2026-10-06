@@ -381,8 +381,8 @@
 	const filledSubtasks = $derived(subtasks.filter((entry) => entry.title.trim() !== ''));
 	const moreCount = $derived(
 		moreOptionsSet({
-			pin: pinShown && pin,
-			dayPlan: dayPlanShown && dayPlan,
+			pin: pinShown && pin && !isDone,
+			dayPlan: dayPlanShown && dayPlan && !isDone,
 			color: colorsAvailable ? color : null,
 			ongoing: kindShown && ongoing,
 			parent: parentShown && parent !== null,
