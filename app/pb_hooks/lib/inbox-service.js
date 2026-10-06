@@ -579,6 +579,34 @@ function completeConversion(txApp, item, ticket) {
   txApp.save(item);
 }
 
+// The code of the refusal of linking `item` to the ticket `ticketId` ('' when it may be linked): the
+// change of state the Record API allows ("Mit Ticket verknüpfen …", only a new item without ticket).
+function linkViolation(item, ticketId) {
+  var violation = rules.transitionViolation(
+    { state: item.getString('state'), ticket: item.getString('ticket') },
+    { state: 'converted', ticket: ticketId }
+  );
+  return violation ? violation.code : '';
+}
+
+/**
+ * Links an item to a ticket in the transaction of the caller ("Neues Ticket" with sources, NT-1), like
+ * "Mit Ticket verknüpfen …" through the Record API: only the change linkViolation allows, then the model
+ * hook checks the area and writes "source_link" with the acting user. Returns the code of a refusal
+ * ('' when the item was saved).
+ */
+function linkToTicket(txApp, item, ticket, actor) {
+  var code = linkViolation(item, ticket.id);
+  if (code !== '') {
+    return code;
+  }
+  item.set('state', 'converted');
+  item.set('ticket', ticket.id);
+  item.set(ACTOR_KEY, actor || '');
+  txApp.save(item);
+  return '';
+}
+
 // Transient record key of a ticket for the handling of its sources when it is deleted ('inbox'
 // or 'discard'); set by the route "Ticket löschen mit Quellenbehandlung", missing for every other
 // way to delete, which then means 'inbox' (ADR-0031, addendum B).
@@ -720,6 +748,9 @@ module.exports = {
   refuseDelete: refuseDelete,
   prepareConversion: prepareConversion,
   completeConversion: completeConversion,
+  linkViolation: linkViolation,
+  linkToTicket: linkToTicket,
+  MESSAGES: MESSAGES,
   SOURCE_HANDLING_KEY: SOURCE_HANDLING_KEY,
   SILENT_KEY: SILENT_KEY,
   COPY_OF_KEY: COPY_OF_KEY,

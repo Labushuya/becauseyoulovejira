@@ -388,11 +388,11 @@ function saveHistoryEntry(txApp, record, entry) {
   txApp.save(item);
 }
 
-// onRecordCreate before e.next(): scope, defaults, guards, the inbox item to convert, completed_at
-// and a fresh key. Client values for scope, number, key and completed_at are always overwritten.
-// Every check runs before the key is drawn, so a rejected create uses no number. Returns the
-// inbox item for recordCreation() (null without one).
-function prepareCreate(txApp, record) {
+// The checks of a new ticket without writing anything: scope, defaults, due date, charm, relations,
+// pinned comment, assignee and the inbox item to convert. The create hook runs them before it draws
+// the key; "Neues Ticket" with everything at once (NT-1, lib/ticket-create-service.js) runs them on
+// its record before the first write of its transaction. Returns { scope, project, item }.
+function checkCreate(txApp, record) {
   var scope = scopeOfRecord(record);
   record.set('scope', scope);
 
@@ -413,9 +413,18 @@ function prepareCreate(txApp, record) {
   // The assignee (ADR-0068): a member of the household, never at a private ticket.
   assignees.prepareTicket(txApp, record, null, actorOf(record));
   var item = inbox.prepareConversion(txApp, record, scope);
+  return { scope: scope, project: project, item: item };
+}
+
+// onRecordCreate before e.next(): the checks of checkCreate, completed_at and a fresh key. Client
+// values for scope, number, key and completed_at are always overwritten. Every check runs before
+// the key is drawn, so a rejected create uses no number. Returns the inbox item for
+// recordCreation() (null without one).
+function prepareCreate(txApp, record) {
+  var checked = checkCreate(txApp, record);
   applyCompletedAt(record, null);
-  assignKey(txApp, record, scope, project);
-  return item;
+  assignKey(txApp, record, checked.scope, checked.project);
+  return checked.item;
 }
 
 // onRecordCreate after e.next(): the creation itself is recorded with the key, and the inbox
@@ -547,6 +556,7 @@ module.exports = {
   checkPinnedComment: checkPinnedComment,
   checkCharm: checkCharm,
   releasePinOf: releasePinOf,
+  checkCreate: checkCreate,
   prepareCreate: prepareCreate,
   recordCreation: recordCreation,
   guardSourceChange: guardSourceChange,

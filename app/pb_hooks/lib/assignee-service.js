@@ -254,9 +254,17 @@ function clearedHistory(txApp, ticketId, previous, actor) {
 
 /** Request hooks of rules: whether the body names the pointer `assignee_next`. */
 function rememberNextSent(e) {
-  var value = e.requestInfo().body['assignee_next'];
+  rememberNextSentIn(e.record, e.requestInfo().body);
+}
+
+/**
+ * The same for a rule built from a body by the server ("Neues Ticket" with everything at once, NT-1):
+ * whether `body` names the pointer `assignee_next`.
+ */
+function rememberNextSentIn(record, body) {
+  var value = body['assignee_next'];
   if (value !== undefined && value !== null && value !== '') {
-    e.record.set(NEXT_SENT_KEY, true);
+    record.set(NEXT_SENT_KEY, true);
   }
 }
 
@@ -438,6 +446,7 @@ module.exports = {
   dropAssignee: dropAssignee,
   clearedHistory: clearedHistory,
   rememberNextSent: rememberNextSent,
+  rememberNextSentIn: rememberNextSentIn,
   checkRule: checkRule,
   occurrenceAssignee: occurrenceAssignee,
   takeBackOccurrence: takeBackOccurrence,
