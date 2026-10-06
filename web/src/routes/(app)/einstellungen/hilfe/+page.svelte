@@ -965,6 +965,36 @@
 				</ul>
 			</details>
 			<details>
+				<summary>Was kann ich schon beim Anlegen eines Tickets einstellen?</summary>
+				<ul>
+					<li>
+						Alles, was ein Ticket hat. „Neues Ticket“ zeigt oben die Hauptfelder: Titel, Status,
+						Priorität, Fälligkeit, im Haushalt „Zuständig“, Projekt, Charm, Tags und Beschreibung.
+						Titel tippen und <kbd>Enter</kbd> legt das Ticket sofort an, <kbd>Strg</kbd>+<kbd
+							>Enter</kbd
+						> aus jedem Feld ebenso.
+					</li>
+					<li>
+						Darunter klappt „Weitere Optionen“ den Rest auf, in der Reihenfolge des Tickets:
+						„Anheften“, „Zum Tagesplan von heute“, „Farbe“, „Laufendes Vorhaben“, „Übergeordnet“ mit
+						„Blockiert das übergeordnete Ticket“, „Wiederholen“, „Unteraufgaben“ und „Quellen“
+						(Einträge aus dem Eingang und Tickets, aus denen das neue stammt). Ob der Bereich offen
+						ist, merkt sich das Gerät; die Überschrift nennt, wie viele Optionen gesetzt sind, etwa
+						„Weitere Optionen (2 gesetzt)“.
+					</li>
+					<li>
+						Das Ticket entsteht mit allem in einem Schritt oder gar nicht: Lehnt der Server etwas
+						ab, steht der Grund am Feld, und nichts ist angelegt. „Umwandeln“ im Eingang öffnet
+						denselben Dialog.
+					</li>
+					<li>
+						Erst am angelegten Ticket gehen Kommentare, Verlauf, Folge-Tickets, Duplizieren,
+						Verschieben in den anderen Bereich, Papierkorb und „Link kopieren“, denn sie brauchen
+						ein bestehendes Ticket.
+					</li>
+				</ul>
+			</details>
+			<details>
 				<summary>Wie arbeite ich mit Unteraufgaben?</summary>
 				<ul>
 					<li>
@@ -1246,9 +1276,9 @@
 					</li>
 					<li>
 						Ein Ticket hat standardmäßig „Wie Projekt“. Unter „Farbe“ im Ticket, in „Neues Ticket“
-						oder mit „Farbe“ in der Leiste mehrerer gewählter Tickets gibst du ihm eine eigene, die
-						vorgeht. Eine Wiederholung gibt ihre Farbe den nächsten Tickets, „Duplizieren …“ nimmt
-						sie mit; jede Änderung steht im Verlauf.
+						(unter „Weitere Optionen“) oder mit „Farbe“ in der Leiste mehrerer gewählter Tickets
+						gibst du ihm eine eigene, die vorgeht. Eine Wiederholung gibt ihre Farbe den nächsten
+						Tickets, „Duplizieren …“ nimmt sie mit; jede Änderung steht im Verlauf.
 					</li>
 					<li>
 						Die Farbe ist ein Zusatz: ein Streifen am Anfang der Zeile in „Aufgaben“, ein Punkt vor
