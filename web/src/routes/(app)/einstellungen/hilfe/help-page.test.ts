@@ -461,6 +461,17 @@ describe('help page (EH-9)', () => {
 		expect(content).toMatch(/seinen Inhalt zeigt der Plan nicht/);
 	});
 
+	it('explains the parent above a sub-task in the day plan, without grouping (TP-2)', () => {
+		const { container } = render(Page);
+		const content = text(container.querySelector<HTMLElement>('section#tagesplan')!);
+		expect(content).toMatch(
+			/Bei einer Unteraufgabe steht im Plan, im Pool und in den Vorschlägen klein darüber/
+		);
+		expect(content).toMatch(/etwa „HAUS-7 › Wochenputz“; ein Klick auf den Key öffnet dieses/);
+		expect(content).toMatch(/der ganze steht im Tooltip/);
+		expect(content).toMatch(/der Plan gruppiert sie nicht unter ihrem Ticket/);
+	});
+
 	it('explains the view "Erledigte": groups, loading more, filters and reopening (ADR-0066)', () => {
 		const { container } = render(Page);
 		const section = container.querySelector<HTMLElement>('section#erledigte')!;

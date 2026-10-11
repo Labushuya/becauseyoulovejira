@@ -243,6 +243,12 @@
 			Eintrag gibt es außerdem „Auf morgen schieben“ und „Entfernen“. Mit den Pfeilen im Kopf gehst
 			du zum Vortag oder Folgetag: Vergangene Tage sind nur zu lesen, morgen kannst du schon planen.
 		</p>
+		<p>
+			Bei einer Unteraufgabe steht im Plan, im Pool und in den Vorschlägen klein darüber, zu welchem
+			Ticket sie gehört, etwa „HAUS-7 › Wochenputz“; ein Klick auf den Key öffnet dieses Ticket
+			neben dem Plan. Ein langer Titel wird gekürzt, der ganze steht im Tooltip. Unteraufgaben
+			stehen dabei einzeln an ihrem Platz, der Plan gruppiert sie nicht unter ihrem Ticket.
+		</p>
 		<h4 id="tagesplan-haushalt">Im Haushalt</h4>
 		<p>
 			Privat hast du deinen eigenen Plan, im Haushalt gibt es einen gemeinsamen für alle Mitglieder;

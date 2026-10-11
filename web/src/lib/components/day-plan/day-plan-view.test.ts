@@ -628,6 +628,183 @@ describe('pool', () => {
 	});
 });
 
+describe('sub-tasks with their parent (TP-2)', () => {
+	const PARENT = 't000000000000p1';
+	const IN_PLAN = 't000000000000s1';
+	const IN_POOL = 't000000000000s2';
+	const DUE = 't000000000000s3';
+	const parentRef = { id: PARENT, key: 'HAUS-7', title: 'Wochenputz' };
+	const parentHref = `/tagesplan/tickets/${PARENT}`;
+
+	/** A normal ticket and a parent with three sub-tasks: one in the plan, one due today, one more. */
+	function subtaskTickets(): TicketSummary[] {
+		const sub = { parentId: PARENT, parentRef };
+		return [
+			planTicket(A1, { title: 'Steuer abgeben' }),
+			planTicket(PARENT, { key: 'HAUS-7', title: 'Wochenputz' }),
+			planTicket(IN_PLAN, { key: 'HAUS-8', title: 'Fenster putzen', ...sub }),
+			planTicket(IN_POOL, { key: 'HAUS-9', title: 'Bad putzen', ...sub }),
+			planTicket(DUE, { key: 'HAUS-10', title: 'Böden wischen', due: TODAY, ...sub })
+		];
+	}
+
+	const subtaskItems = () => [
+		planItem('item00000000001', A1, 0),
+		planItem('item00000000002', IN_PLAN, 1)
+	];
+
+	/** The line of context of a sub-task within `root`: its visible text, link and hidden text. */
+	function contextIn(root: Element) {
+		const line = root.querySelector<HTMLElement>('[data-subtask-path]');
+		if (line === null) return null;
+		const visible = line.cloneNode(true) as HTMLElement;
+		for (const hidden of visible.querySelectorAll('.visually-hidden')) hidden.remove();
+		return {
+			line,
+			visible: visible.textContent?.replace(/\s+/g, ' ').trim(),
+			hidden: line.querySelector('.visually-hidden')?.textContent,
+			link: within(line).queryByRole('link'),
+			tooltip: line.querySelector('.path-title')?.getAttribute('title')
+		};
+	}
+
+	const pool = () =>
+		screen.getByRole('heading', { name: 'Pool' }).closest('section') as HTMLElement;
+
+	it('names the parent above the title of a sub-task in the plan; its key opens it', async () => {
+		await renderPlan({ tickets: subtaskTickets(), items: subtaskItems(), ongoing: [] });
+
+		const sub = entry('HAUS-8');
+		const context = contextIn(sub)!;
+		expect(context.visible).toBe('HAUS-7 › Wochenputz');
+		expect(context.hidden).toBe('Unteraufgabe von HAUS-7 Wochenputz:');
+		expect(context.tooltip).toBe('Wochenputz');
+		// The key opens the parent next to the plan, as the title links open their tickets.
+		expect(context.link?.textContent).toBe('HAUS-7');
+		expect(context.link?.getAttribute('href')).toBe(parentHref);
+		expect(context.link?.getAttribute('data-ticket-link')).toBe(PARENT);
+		const title = within(sub).getByRole('link', { name: 'Fenster putzen' });
+		expect(title.getAttribute('href')).toBe(`/tagesplan/tickets/${IN_PLAN}`);
+		// Above the title: first in the cell of the title, before the key and title of the sub-task.
+		expect(context.line.parentElement?.firstElementChild).toBe(context.line);
+		expect(
+			context.line.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING
+		).toBeTruthy();
+		// The rest of the entry stays as it was; a ticket without a parent has no line.
+		expect(screen.getByRole('checkbox', { name: 'HAUS-8 erledigt' })).toBeTruthy();
+		expect(contextIn(entry('TASK-a1'))).toBeNull();
+		// No grouping by parent: the order of the plan stays (E2).
+		expect(entryKeys()).toEqual(['TASK-a1', 'HAUS-8']);
+	});
+
+	it('names the parent of a sub-task in the pool, and nothing at the parent itself', async () => {
+		await renderPlan({ tickets: subtaskTickets(), items: subtaskItems(), ongoing: [] });
+
+		expect(
+			within(pool())
+				.getAllByRole('listitem')
+				.map((item) => item.querySelector('.key')?.textContent)
+		).toEqual(['HAUS-7', 'HAUS-9', 'HAUS-10']);
+		const sub = pool().querySelector(`[data-pool-ticket="${IN_POOL}"]`) as HTMLElement;
+		const context = contextIn(sub)!;
+		expect(context.visible).toBe('HAUS-7 › Wochenputz');
+		expect(context.hidden).toBe('Unteraufgabe von HAUS-7 Wochenputz:');
+		expect(context.link?.getAttribute('href')).toBe(parentHref);
+		expect(within(sub).getByRole('button', { name: 'HAUS-9 zum Tagesplan' })).toBeTruthy();
+		expect(contextIn(pool().querySelector(`[data-pool-ticket="${PARENT}"]`)!)).toBeNull();
+	});
+
+	it('names the parent of a suggested sub-task outside the name of its check box', async () => {
+		const { data } = await renderPlan({
+			tickets: subtaskTickets(),
+			items: subtaskItems(),
+			ongoing: []
+		});
+
+		const box = screen.getByRole('checkbox', {
+			name: (name) => name.startsWith('HAUS-10 Böden wischen') && !name.includes('HAUS-7')
+		});
+		const row = box.closest('li') as HTMLElement;
+		const context = contextIn(row)!;
+		expect(context.visible).toBe('HAUS-7 › Wochenputz');
+		expect(context.hidden).toBe('Unteraufgabe von HAUS-7 Wochenputz:');
+		expect(context.link?.getAttribute('href')).toBe(parentHref);
+		expect(context.line.closest('label')).toBeNull();
+		// Suggestions may hold sub-tasks: adopted like any other ticket, at the end of the plan (E2).
+		await fireEvent.click(box);
+		await fireEvent.click(screen.getByRole('button', { name: 'Übernehmen (1)' }));
+		await vi.waitFor(() => expect(data.adopt).toHaveBeenCalledWith('u:user00000000001', [DUE]));
+		await vi.waitFor(() => expect(entryKeys()).toEqual(['TASK-a1', 'HAUS-8', 'HAUS-10']));
+		expect(contextIn(entry('HAUS-10'))?.visible).toBe('HAUS-7 › Wochenputz');
+	});
+
+	it('follows a renamed parent live', async () => {
+		const { list } = await renderPlan({
+			tickets: subtaskTickets(),
+			items: subtaskItems(),
+			ongoing: []
+		});
+
+		list.map.set(PARENT, planTicket(PARENT, { key: 'HAUS-7', title: 'Frühjahrsputz' }));
+		await tick();
+		expect(contextIn(entry('HAUS-8'))?.visible).toBe('HAUS-7 › Frühjahrsputz');
+		expect(contextIn(entry('HAUS-8'))?.hidden).toBe('Unteraufgabe von HAUS-7 Frühjahrsputz:');
+	});
+
+	it('shows "…" without a link for an unknown parent and the loaded one outside the list', async () => {
+		const GONE = 't000000000000g1';
+		const MOVED = 't000000000000p2';
+		await renderPlan({
+			tickets: [
+				planTicket(A1, { title: 'Steuer abgeben' }),
+				planTicket(IN_PLAN, {
+					key: 'HAUS-8',
+					title: 'Fenster putzen',
+					parentId: GONE,
+					parentRef: null
+				}),
+				planTicket(IN_POOL, {
+					key: 'HAUS-9',
+					title: 'Bad putzen',
+					parentId: MOVED,
+					parentRef: { id: MOVED, key: 'HAUS-3', title: 'Umzug' }
+				})
+			],
+			items: subtaskItems(),
+			ongoing: []
+		});
+
+		const unknown = contextIn(entry('HAUS-8'))!;
+		expect(unknown.visible).toBe('… ›');
+		expect(unknown.hidden).toBe('Unteraufgabe von …:');
+		expect(unknown.link).toBeNull();
+		// Nothing else breaks: the entry opens, checks and moves as before.
+		expect(within(entry('HAUS-8')).getByRole('link', { name: 'Fenster putzen' })).toBeTruthy();
+		expect(screen.getByRole('checkbox', { name: 'HAUS-8 erledigt' })).toBeTruthy();
+		expect(within(entry('HAUS-8')).getByRole('button', { name: 'HAUS-8 nach oben' })).toBeTruthy();
+		// A parent outside the open tickets of the list (done, say) comes with the sub-task.
+		const loaded = contextIn(pool().querySelector(`[data-pool-ticket="${IN_POOL}"]`)!)!;
+		expect(loaded.visible).toBe('HAUS-3 › Umzug');
+		expect(loaded.link?.getAttribute('href')).toBe(`/tagesplan/tickets/${MOVED}`);
+	});
+
+	it('gives the line a row of its own that may shrink, so nothing scrolls sideways', () => {
+		const read = (name: string) => readFileSync(join(import.meta.dirname, name), 'utf8');
+		// Plan and pool: the line stands first in the cell of the title, a wrapping row that shrinks.
+		for (const file of ['DayPlanList.svelte', 'DayPlanPool.svelte']) {
+			expect(read(file), file).toMatch(
+				/\.title-cell\s*\{[^}]*flex: 1;[^}]*flex-wrap: wrap;[^}]*min-width: 0;/
+			);
+		}
+		// Suggestions: the row wraps, the line takes all of it, in line with the title.
+		const suggestions = read('DayPlanSuggestions.svelte');
+		expect(suggestions).toMatch(/\.suggestion\s*\{[^}]*flex-wrap: wrap;[^}]*min-width: 0;/);
+		expect(suggestions).toMatch(
+			/\.parent-line\s*\{[^}]*flex: 1 1 100%;[^}]*min-width: 0;[^}]*padding-left: 1\.5rem;/
+		);
+	});
+});
+
 describe('on a phone', () => {
 	const read = (name: string) => readFileSync(join(import.meta.dirname, name), 'utf8');
 
