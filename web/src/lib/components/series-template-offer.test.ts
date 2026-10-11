@@ -309,6 +309,19 @@ describe('the offer after a change in a cell of the table', () => {
 		expect(data.updateRule).toHaveBeenCalledExactlyOnceWith(RULE_ID, { priority: 'high' });
 	});
 
+	// FL-1 (ADR-0025 addendum 18, decision D3): the offer does not leave by itself.
+	it('keeps the offer until it is closed, also long after 8 s', async () => {
+		const { data } = await showTable([ticket()]);
+		await choose(/^Priorität von TASK-1/, /Hoch/);
+		expect(offerFlag()).not.toBeNull();
+		await vi.advanceTimersByTimeAsync(10 * 60_000);
+		const flag = offerFlag() as HTMLElement;
+		expect(within(flag).getByText('Nur dieses Ticket geändert.')).toBeTruthy();
+		await fireEvent.click(within(flag).getByRole('button', { name: 'Benachrichtigung schließen' }));
+		expect(offerFlag()).toBeNull();
+		expect(data.updateRule).not.toHaveBeenCalled();
+	});
+
 	it('offers nothing after the status cell', async () => {
 		const { update } = await showTable([ticket()]);
 		await choose(/^Status von TASK-1/, /In Arbeit/);

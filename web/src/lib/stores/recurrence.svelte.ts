@@ -8,7 +8,7 @@
 // The template of a rule (plan WV, ADR-0023 addendum 6): the draft of its inline editor at the
 // ticket lives here like the drafts of a ticket (panel and full view share it), and after a change
 // of an open ticket of a series, or a sub-task added to it (plan WV-3), the store offers "Auch für
-// künftige Tickets übernehmen" in a flag.
+// künftige Tickets übernehmen" in a flag that stays until it is taken, closed or replaced (FL-1).
 
 import type PocketBase from 'pocketbase';
 import { createContext } from 'svelte';
@@ -94,6 +94,13 @@ export const WAITING_DESCRIPTION =
 
 /** Start of the message when the rule of a converted series failed; the ticket stays. */
 export const REPEAT_FAILED = 'Das Ticket ist angelegt, die Wiederholung aber nicht.';
+
+/**
+ * Duration of the flag "Auch für künftige Tickets übernehmen": none. It stays until the user
+ * takes the offer or closes it, or a newer offer replaces it (FL-1, ADR-0025 addendum 18); after
+ * a change in the full view the user may still be reading there.
+ */
+export const OFFER_DURATION = null;
 
 /** "Wiederholen…" prepared for the panel of one ticket (E5 plan, package 6). */
 export interface RepeatOffer {
@@ -683,7 +690,8 @@ export class RecurrenceStore implements SeriesChangeSink {
 	 * After the user changed open tickets of a series (panel, full view, cell, bulk action): the info
 	 * flag "Nur dieses Ticket geändert." with "Auch für künftige Tickets übernehmen", which writes
 	 * exactly the changed fields into the templates. Nothing to offer (other fields, a done ticket,
-	 * a template with these values already): no flag, null. A newer offer replaces an older one.
+	 * a template with these values already): no flag, null. A newer offer replaces an older one;
+	 * otherwise the flag stays until it is taken or closed (OFFER_DURATION).
 	 */
 	offerTemplate(changes: readonly SeriesChange[]): string | null {
 		const offers = templateOffers(changes, (id) => this.ruleById(id));
@@ -694,6 +702,7 @@ export class RecurrenceStore implements SeriesChangeSink {
 			title: offerTitle(offers),
 			description: offerDescription(offers),
 			action: { label: OFFER_ACTION, run: () => void this.#applyOffers(offers) },
+			duration: OFFER_DURATION,
 			onclose: () => {
 				if (this.#templateOffer === id) this.#templateOffer = null;
 			}
@@ -706,8 +715,9 @@ export class RecurrenceStore implements SeriesChangeSink {
 	 * After the user added a sub-task to an open ticket of a series ("Unteraufgabe hinzufügen", plan
 	 * WV-3): the info flag "Nur dieses Ticket geändert." with "Auch für künftige Tickets übernehmen",
 	 * which adds it to the list of the template. A further sub-task of the same series joins the
-	 * shown offer; another offer replaces it. Nothing to offer (a done ticket, no series, the
-	 * template has the title already or is full, before the migration): no flag, null.
+	 * shown offer; another offer replaces it; otherwise the flag stays until it is taken or closed
+	 * (OFFER_DURATION). Nothing to offer (a done ticket, no series, the template has the title
+	 * already or is full, before the migration): no flag, null.
 	 */
 	offerSubtask(parent: SeriesParent, subtask: TemplateSubtask): string | null {
 		if (!this.subtasksReady) return null;
@@ -727,6 +737,7 @@ export class RecurrenceStore implements SeriesChangeSink {
 				label: OFFER_ACTION,
 				run: () => void this.#applySubtasks(parent, offer.subtasks)
 			},
+			duration: OFFER_DURATION,
 			onclose: () => {
 				if (this.#templateOffer === id) this.#templateOffer = null;
 				if (this.#subtaskOffer?.flag === id) this.#subtaskOffer = null;

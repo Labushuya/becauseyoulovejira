@@ -232,10 +232,11 @@
 		<li>
 			Änderst du Titel, Beschreibung, Priorität, Projekt oder Tags eines offenen Tickets der Serie,
 			gilt das zuerst nur für dieses Ticket. Ein Hinweis bietet „Auch für künftige Tickets
-			übernehmen“ an, auch nach einer Änderung in der Tabelle oder für mehrere Tickets. Dasselbe
-			gilt, wenn du einem offenen Ticket der Serie eine Unteraufgabe hinzufügst; Entfernen oder
-			Umbenennen einer Unteraufgabe änderst du dagegen direkt in der Vorlage. Status und Fälligkeit
-			gehören immer nur zum einzelnen Ticket.
+			übernehmen“ an, auch nach einer Änderung in der Tabelle oder für mehrere Tickets. Er bleibt
+			stehen, bis du ihn nutzt oder schließt; in der Vollansicht erscheint er vor dem Dialog.
+			Dasselbe gilt, wenn du einem offenen Ticket der Serie eine Unteraufgabe hinzufügst; Entfernen
+			oder Umbenennen einer Unteraufgabe änderst du dagegen direkt in der Vorlage. Status und
+			Fälligkeit gehören immer nur zum einzelnen Ticket.
 		</li>
 		<li>
 			Eine Rückfrage beim Entstehen eines Tickets gibt es nicht: Folgetickets entstehen im
