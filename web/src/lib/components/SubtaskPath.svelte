@@ -60,11 +60,12 @@
 	 * The day plan (TP-2): a line of its own above the title, never wider than its row. The key stays
 	 * whole as long as it fits; the title of the parent gives way first, with an ellipsis.
 	 */
+	/* Centred, not on the baseline: both parts clip their overflow, and the link is taller on touch. */
 	.context {
 		display: flex;
 		flex: 1 1 100%;
 		gap: 0.25rem;
-		align-items: baseline;
+		align-items: center;
 		min-width: 0;
 		font-size: var(--font-size-small);
 		color: var(--color-text-muted);
