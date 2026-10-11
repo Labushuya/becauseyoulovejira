@@ -34,3 +34,7 @@ Beide erledigt mit PL-1 ([ADR-0065](../adr/0065-tagesplan.md), Nachtrag PL-1):
 
 - ~~Duplizieren übernimmt die Art nicht.~~ Das Duplikat übernimmt die Art seines Originals wie den Charm.
 - ~~Die Einstellungen der Quellen erscheinen in einem anderen offenen Tab erst beim nächsten Abruf.~~ Sie erscheinen live in anderen Tabs und bei den anderen Mitgliedern des Haushalts.
+
+## TP-2 (umgesetzt): Unteraufgaben mit ihrem übergeordneten Ticket
+
+Nutzerwunsch vom 2026-10-12: Unteraufgaben standen im Plan ohne Zusammenhang. Seit TP-2 steht in Plan, Pool und Vorschlägen über jeder Unteraufgabe klein ihr übergeordnetes Ticket („HAUS-7 › Wochenputz“, der Key öffnet es); gruppiert wird nicht, die Reihenfolge bleibt frei. Entscheidung in [ADR-0065](../adr/0065-tagesplan.md), Nachtrag TP-2; Test-Manifest: Paket „TP-2“ (BYL-E6-1672 bis BYL-E6-1674, manuell BYL-E6-1675 bis BYL-E6-1679).

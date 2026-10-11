@@ -102,3 +102,8 @@ Nutzerentscheidung vom 2026-10-01. §3 gilt weiter für den Parent (Folgetickets
 - **Warum aus der Vorlage und nicht vom Vorgänger:** Die Begründung von §3 bleibt richtig. Der Vorgänger ist beim Erzeugen oft erledigt, gelöscht oder mit geänderten Unteraufgaben; ein Kopieren von dort würde den Stand eines einzelnen Termins weitertragen. Die Vorlage ist der festgelegte Plan der Serie, sichtbar und änderbar, wie Titel und Priorität. „Unteraufgaben dieses Tickets übernehmen“ macht die Unteraufgaben eines Tickets auf Wunsch zur Vorlage.
 - **Rückgängig:** Ein unberührtes Folgeticket geht beim Wiedereröffnen seines direkten Vorgängers samt seinen erzeugten Unteraufgaben; jede Änderung des Nutzers an ihnen hält es ([ADR-0023](0023-lebenszyklus-von-regeln-und-instanzen.md) Nachtrag 8).
 - **Erledigen** eines Folgetickets mit offenen Unteraufgaben aus der Vorlage fragt wie jedes übergeordnete Ticket (§2: „Unteraufgaben mit erledigen“ oder „Trotzdem erledigen“).
+
+## Nachtrag (2026-10-12, Tagesplan, TP-2): der Pfad als Baustein, im Tagesplan mit Titel
+
+- Der Pfad-Hinweis aus §5 Regel 4 („HAUS-12 ›“ mit dem Titel als Tooltip, für Screenreader „Unteraufgabe von HAUS-12:“) ist jetzt die Komponente `SubtaskPath`. Die Tabelle „Aufgaben“ sieht und klingt wie vorher; eine eingerückte Unteraufgabe behält nur den verborgenen Text, die Ecke zeichnet weiter die Zeile.
+- Der Tagesplan nutzt denselben Baustein mit dem Titel des übergeordneten Tickets als Kontextzeile über der Unteraufgabe („HAUS-12 › Umzug“, Key als Link, „Unteraufgabe von HAUS-12 Umzug:“), ohne Unteraufgaben unter ihrem Ticket zu gruppieren. Einzelheiten in [ADR-0065](0065-tagesplan.md), Nachtrag TP-2.

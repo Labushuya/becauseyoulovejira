@@ -341,7 +341,7 @@
   "meta": {
     "projekt": "becauseyoulovejira",
     "stand": "2026-10-12",
-    "commit": "b78db06"
+    "commit": "527764e"
   },
   "bereiche": [
     { "id": "betrieb", "titel": "Betrieb: Start, Stopp, Skripte und Daten" },
@@ -611,6 +611,8 @@
       "vermerk": "Keine Migration; Route und Hooks wirken erst nach einem Neustart der App (neu-starten.bat), bis dahin legt der Dialog an wie vorher; die Oberfläche nach dem Build und F5. Fünf manuelle Fälle (BYL-E6-1656 bis BYL-E6-1660)." },
     { "id": "FL-1", "vorhaben": "Flags vor Dialogen", "titel": "Hinweise (Flags) über geöffneten Dialogen: im obersten offenen Modal sichtbar und klickbar, Ablauf wie überall, Rückkehr ohne Duplikat und ohne Neustart der Zeit, immer eine Live-Region; das Angebot einer Serie bleibt stehen", "bereich": "ticket", "quelle": "Fehlerbericht", "datum": "2026-10-12", "adr": ["0025-ui-konsistenz-overlay-system.md, Nachtrag 18", "0023-lebenszyklus-von-regeln-und-instanzen.md, Nachtrag 10"], "faelle": ["BYL-E6-1661..BYL-E6-1671"],
       "vermerk": "Nur Oberfläche, kein Hook, keine Migration: nach dem Build F5, kein Neustart. Vier manuelle Fälle (BYL-E6-1668 bis BYL-E6-1671). Nachgezogen: BYL-E6-015, -016, -018." },
+    { "id": "TP-2", "vorhaben": "Tagesplan", "titel": "Unteraufgaben im Tagesplan mit ihrem übergeordneten Ticket: Key und Titel als kleine Kontextzeile in Plan, Pool und Vorschlägen, der Key als Link; keine Gruppierung; der Pfad als gemeinsamer Baustein, die Tabelle unverändert", "bereich": "aufgaben", "quelle": "Nutzerwunsch", "datum": "2026-10-12", "adr": ["0065-tagesplan.md, Nachtrag TP-2", "0033-unteraufgaben.md, Nachtrag TP-2"], "plan": "tagesplan.md", "faelle": ["BYL-E6-1672..BYL-E6-1679"],
+      "vermerk": "Nur Oberfläche, kein Hook, keine Migration: nach dem Build F5, kein Neustart. Fünf manuelle Fälle (BYL-E6-1675 bis BYL-E6-1679)." },
     { "id": "querschnitt", "vorhaben": "Querschnitt", "titel": "Testumgebung, Regeln der Datenschicht, Hook-Module und dieses Manifest", "bereich": "entwicklung", "faelle": ["BYL-X-001..BYL-X-004"] }
   ],
   "zurueckgestellt": [
@@ -6733,6 +6735,48 @@
           "pre": "Wie BYL-E6-1668; hell und dunkel, „Glas-Effekt“ an und aus (Einstellungen → Darstellung); ein schmales Fenster oder das Handy.",
           "steps": ["Einen kleinen Dialog öffnen (etwa „Tastaturkürzel“ mit „?“ oder im Panel „In den Papierkorb …“) und die Vollansicht eines Tickets.", "Auf Glas, Linie, Ecken, Schatten und das Einblenden achten.", "Unter 48rem bzw. am Handy die Vollansicht öffnen.", "Auf den Schleier neben einem Dialog klicken."],
           "expect": "Kleine Dialoge sind milchiges Glas mit feiner Linie, runden Ecken und Schatten, die Vollansicht ist undurchsichtig mit runden Ecken; beide blenden wie bisher ein. Am Handy füllt die Vollansicht den Bildschirm ohne Rand und Ecken. Ein Klick auf den Schleier schließt wie bisher; ein Klick auf eine Meldung schließt den Dialog nicht.",
+          "tests": [] }
+      ]
+    },
+    {
+      "tag": "E6", "name": "Unteraufgaben im Tagesplan mit übergeordnetem Ticket", "desc": "Nutzerwunsch vom 2026-10-12 (Paket TP-2, ADR-0065 Nachtrag TP-2, ADR-0033 Nachtrag TP-2): Unteraufgaben in Plan, Pool und Vorschlägen nennen ihr übergeordnetes Ticket als Kontextzeile, der Key öffnet es; keine Gruppierung; der Pfad ist ein gemeinsamer Baustein, die Tabelle bleibt unverändert. IDs BYL-E6-1672 bis BYL-E6-1679.",
+      "items": [
+        { "id": "BYL-E6-1672", "title": "Baustein „Pfad einer Unteraufgabe“: Tabelle wie vorher, Kontextzeile mit Titel, Rückfall (TP-2)", "art": ["unit", "komponente"], "status": "bestanden",
+          "pre": "SubtaskPath in jsdom; reine Texte in domain/subtasks.ts; Tabelle „Aufgaben“ mit echtem TicketListStore auf einer Fake-Datenschicht.", "steps": ["npm run test:web"],
+          "expect": "Ohne withTitle wie vor TP-2: verborgen „Unteraufgabe von HAUS-7:“, sichtbar „HAUS-7 ›“ (aria-hidden, Titel des übergeordneten Tickets als title), kein Link; eingerückt nur der verborgene Text. Die Tabelle rendert den Pfad über den Baustein an derselben Stelle (verborgener Text, dann .path vor dem Titel), ohne Link und ohne den Titel des übergeordneten Tickets. Mit withTitle und href eine Zeile „HAUS-7 › Wochenputz“: der Key als Link mit href und data-ticket-link, verborgen „Unteraufgabe von HAUS-7 Wochenputz:“, der Titel aria-hidden mit title. Ein unbekanntes übergeordnetes Ticket (parentOf ohne Liste und expand, Key „…“) zeigt „… ›“ ohne Link und „Unteraufgabe von …:“; ohne href steht der Key als Text. Die Zeile darf schrumpfen (min-width 0, eigene Zeile mit flex 1 1 100 %), der Key höchstens so breit wie die Zeile, der Titel einzeilig mit Auslassung; auf Touch-Bildschirmen ist der Link 24 px hoch.",
+          "tests": ["web/src/lib/components/subtask-path.test.ts", "web/src/lib/domain/subtasks.test.ts::names the key in the table and key and title in the day plan", "web/src/lib/domain/subtasks.test.ts::keeps the fallback of an unknown parent and opens only a known one", "web/src/lib/components/ticket-table-subtasks.test.ts::keeps its path with the shared building block as before: only the key, no link (TP-2)", "web/src/lib/components/ticket-table-subtasks.test.ts::keeps a sub-task at its place with the path when its parent is filtered out"] },
+        { "id": "BYL-E6-1673", "title": "Tagesplan: übergeordnetes Ticket über Unteraufgaben in Plan, Pool und Vorschlägen (TP-2)", "art": ["komponente"], "status": "bestanden",
+          "pre": "Seite „Tagesplan“ in jsdom mit dem echten DayPlanStore auf dem Fake-Server (day-plan-fake.ts), Ticket-Host des Tagesplans; Hilfeseite.", "steps": ["npm run test:web"],
+          "expect": "Eine Unteraufgabe im Plan trägt als erstes Element der Titelzelle, vor Key und Titel, die Zeile „HAUS-7 › Wochenputz“ mit verborgenem „Unteraufgabe von HAUS-7 Wochenputz:“ und dem Titel als title; der Link „HAUS-7“ öffnet das übergeordnete Ticket neben dem Plan (/tagesplan/tickets/<id>, wie die Titel-Links) und trägt data-ticket-link. Haken, Name des Hakens und Reihenfolge bleiben (keine Gruppierung). Im Pool trägt die Unteraufgabe dieselbe Zeile, das übergeordnete Ticket selbst keine, „+“ heißt wie bisher. In den Vorschlägen steht die Zeile außerhalb des label: der Name des Kästchens nennt nur die Unteraufgabe, Übernehmen nimmt sie wie jedes Ticket ans Ende des Plans, dort mit der Zeile. Tickets ohne übergeordnetes Ticket zeigen keine Zeile. Die Hilfe „Tagesplan“ erklärt die Zeile, den Link, das Kürzen und dass nicht gruppiert wird.",
+          "tests": ["web/src/lib/components/day-plan/day-plan-view.test.ts::names the parent above the title of a sub-task in the plan; its key opens it", "web/src/lib/components/day-plan/day-plan-view.test.ts::names the parent of a sub-task in the pool, and nothing at the parent itself", "web/src/lib/components/day-plan/day-plan-view.test.ts::names the parent of a suggested sub-task outside the name of its check box", "web/src/routes/(app)/einstellungen/hilfe/help-page.test.ts::explains the parent above a sub-task in the day plan, without grouping (TP-2)"] },
+        { "id": "BYL-E6-1674", "title": "Tagesplan: unbekanntes übergeordnetes Ticket, geladenes außerhalb der Liste, live umbenannt, schmale Zeile (TP-2)", "art": ["komponente"], "status": "bestanden",
+          "pre": "Wie BYL-E6-1673; Quelltext der Komponenten des Tagesplans.", "steps": ["npm run test:web"],
+          "expect": "Ist das übergeordnete Ticket weder in der Liste noch mitgeladen, zeigt der Eintrag „… ›“ ohne Link und „Unteraufgabe von …:“; Titel-Link, Haken und „nach oben“ des Eintrags gehen weiter. Ein übergeordnetes Ticket außerhalb der offenen Tickets der Liste (etwa erledigt) kommt mit der Unteraufgabe (expand) und ist verlinkt. Ein umbenanntes übergeordnetes Ticket der Liste ändert die Zeile und den verborgenen Text sofort. Plan und Pool haben eine umbrechende, schrumpfende Titelzelle; die Zeile der Vorschläge ist eine eigene Zeile, schrumpfend und bis zum Titel eingerückt, also scrollt nichts seitlich.",
+          "tests": ["web/src/lib/components/day-plan/day-plan-view.test.ts::shows \"…\" without a link for an unknown parent and the loaded one outside the list", "web/src/lib/components/day-plan/day-plan-view.test.ts::follows a renamed parent live", "web/src/lib/components/day-plan/day-plan-view.test.ts::gives the line a row of its own that may shrink, so nothing scrolls sideways"] },
+        { "id": "BYL-E6-1675", "title": "Unteraufgabe im Plan zeigt ihr übergeordnetes Ticket (TP-2)", "art": ["manuell"], "status": "offen",
+          "pre": "Build von main in app\\ und F5 (kein Neustart nötig); Chrome oder Firefox; ein offenes Ticket mit mindestens zwei offenen Unteraufgaben (etwa „Wochenputz“ mit „Fenster putzen“ und „Bad putzen“) und ein offenes Ticket ohne übergeordnetes Ticket.",
+          "steps": ["„Tagesplan“ öffnen.", "Eine der Unteraufgaben und das Ticket ohne übergeordnetes Ticket mit „+“ aus dem Pool in den Plan aufnehmen.", "Die Einträge im Plan ansehen; die Unteraufgabe am Griff an eine andere Stelle ziehen.", "Die Unteraufgabe abhaken und in der Meldung „Rückgängig“ klicken."],
+          "expect": "Über dem Titel der Unteraufgabe steht klein und gedämpft „KEY › Titel“ ihres übergeordneten Tickets, der Key in der Schrift der Keys; das Ticket ohne übergeordnetes Ticket sieht aus wie vorher. Die Unteraufgabe bleibt dort, wohin du sie ziehst (keine Gruppierung). Haken, Griff, „nach oben“, „nach unten“ und „•••“ stehen wie vorher; abgehakt ist nur der Titel der Unteraufgabe gedämpft und durchgestrichen, nicht die Zeile darüber.",
+          "tests": [] },
+        { "id": "BYL-E6-1676", "title": "Unteraufgabe im Pool zeigt ihr übergeordnetes Ticket (TP-2)", "art": ["manuell"], "status": "offen",
+          "pre": "Wie BYL-E6-1675.",
+          "steps": ["Im Tagesplan den Pool ansehen.", "Im Suchfeld des Pools den Titel einer Unteraufgabe eingeben.", "Die Unteraufgabe mit „+“ in den Plan aufnehmen."],
+          "expect": "Im Pool steht über jeder Unteraufgabe „KEY › Titel“ ihres übergeordneten Tickets; das übergeordnete Ticket selbst hat keine solche Zeile. Die Suche findet die Unteraufgabe wie bisher über ihren eigenen Key und Titel. Nach „+“ steht sie mit derselben Zeile im Plan.",
+          "tests": [] },
+        { "id": "BYL-E6-1677", "title": "Vorgeschlagene Unteraufgabe zeigt ihr übergeordnetes Ticket (TP-2)", "art": ["manuell"], "status": "offen",
+          "pre": "Wie BYL-E6-1675; eine offene Unteraufgabe mit Fälligkeit heute, die nicht im Plan steht.",
+          "steps": ["Im Tagesplan die „Vorschläge“ aufklappen.", "Auf den Titel der vorgeschlagenen Unteraufgabe klicken.", "Auf den Key in der Zeile darüber klicken, dann das Panel mit × schließen.", "„Übernehmen (1)“ klicken."],
+          "expect": "Der Vorschlag nennt über seinem Titel „KEY › Titel“ des übergeordneten Tickets, eingerückt bis zum Titel, mit dem Grund „heute fällig“ wie bisher. Ein Klick auf den Titel setzt das Häkchen; der Klick auf den Key ändert das Häkchen nicht, sondern öffnet das übergeordnete Ticket neben dem Plan. „Übernehmen (1)“ nimmt die Unteraufgabe in den Plan auf, dort wieder mit der Zeile.",
+          "tests": [] },
+        { "id": "BYL-E6-1678", "title": "Key des übergeordneten Tickets öffnet es neben dem Plan (TP-2)", "art": ["manuell"], "status": "offen",
+          "pre": "Wie BYL-E6-1675; eine Unteraufgabe im Plan; für den letzten Schritt ein Screenreader (etwa NVDA), falls vorhanden.",
+          "steps": ["Im Plan auf den Key in der Zeile über der Unteraufgabe klicken.", "Das Panel mit × schließen.", "Mit Tab bis zu diesem Key gehen, Enter drücken, dann Esc.", "Im Panel „Vollansicht öffnen“ wählen, die Vollansicht schließen und den Key erneut klicken.", "Mit dem Screenreader die Zeile der Unteraufgabe lesen lassen."],
+          "expect": "Der Key öffnet das übergeordnete Ticket neben dem Plan (Adresse /tagesplan/tickets/…), nicht in „Aufgaben“. Nach × bzw. Esc steht wieder der Plan da, und der Fokus liegt auf einem Link zu diesem Ticket, nicht am Seitenanfang. Ist die Vollansicht gemerkt, öffnet der Key die Vollansicht, wie die Titel im Plan. Der Screenreader liest „Unteraufgabe von KEY Titel:“, dann den Link „KEY“ und danach die Unteraufgabe; den Titel des übergeordneten Tickets nur einmal.",
+          "tests": [] },
+        { "id": "BYL-E6-1679", "title": "Schmaler Bildschirm: lesbar, gekürzt, ohne seitliches Scrollen (TP-2)", "art": ["manuell"], "status": "offen",
+          "pre": "Wie BYL-E6-1675; das übergeordnete Ticket mit einem langen Titel (etwa 80 Zeichen); ein schmales Fenster (unter 30rem) oder das Handy über den Zugriff im Heimnetz.",
+          "steps": ["Den Tagesplan im schmalen Fenster bzw. am Handy öffnen.", "Plan, Vorschläge und den Pool (am Handy unter dem Plan) ansehen und versuchen, seitlich zu scrollen bzw. zu wischen.", "Am Rechner mit der Maus auf den gekürzten Titel in der Zeile zeigen.", "Am Handy auf den Key in der Zeile tippen."],
+          "expect": "Die Zeile über der Unteraufgabe bleibt einzeilig: der Key ganz, der lange Titel endet mit „…“; die Seite scrollt nicht seitlich, Haken und Knöpfe bleiben sichtbar. Der Tooltip zeigt den ganzen Titel. Der Key lässt sich am Handy sicher antippen und öffnet das übergeordnete Ticket.",
           "tests": [] }
       ]
     },
