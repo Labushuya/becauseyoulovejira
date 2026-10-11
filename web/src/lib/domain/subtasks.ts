@@ -160,6 +160,9 @@ export function arrangeRows<T extends TicketSummary>(
 	return rows;
 }
 
+/** Key of a parent that is neither in the list nor expanded (not loaded, no access). */
+export const UNKNOWN_PARENT_KEY = '…';
+
 /**
  * The parent of a sub-task for its path: the list's own version of the parent if it has one (a new
  * key after a project change shows at once), else the expanded one; null for a top-level ticket.
@@ -174,5 +177,20 @@ export function parentOf(
 	const known = find(id);
 	if (known !== null) return { id, key: known.key, title: known.title };
 	if (ticket.parentRef && ticket.parentRef.id === id) return ticket.parentRef;
-	return { id, key: '…', title: '' };
+	return { id, key: UNKNOWN_PARENT_KEY, title: '' };
+}
+
+/** Whether the parent is resolved: only then its key opens it (TP-2). */
+export function isKnownParent(parent: Pick<ParentRef, 'key'>): boolean {
+	return parent.key !== UNKNOWN_PARENT_KEY;
+}
+
+/**
+ * What screen readers hear before the title of a sub-task: "Unteraufgabe von HAUS-7:" (the table,
+ * ADR-0033 section 5) or with the title of the parent "Unteraufgabe von HAUS-7 Wochenputz:" (the
+ * day plan, TP-2). An unknown parent stays "Unteraufgabe von …:".
+ */
+export function subtaskOfText(parent: Pick<ParentRef, 'key' | 'title'>, withTitle = false): string {
+	const name = withTitle && parent.title !== '' ? `${parent.key} ${parent.title}` : parent.key;
+	return `Unteraufgabe von ${name}:`;
 }

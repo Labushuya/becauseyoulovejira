@@ -53,6 +53,7 @@
 	import PriorityIcon from './PriorityIcon.svelte';
 	import SourceIcon from './SourceIcon.svelte';
 	import StatusPill from './StatusPill.svelte';
+	import SubtaskPath from './SubtaskPath.svelte';
 	import TagPicker from './TagPicker.svelte';
 	import DueEditor from './table/DueEditor.svelte';
 	import EditableCell from './table/EditableCell.svelte';
@@ -430,7 +431,7 @@
 		<!-- At most two lines, cut off only visually; screen readers read the whole title. -->
 		<div class="title-clamp">
 			{#if parent}
-				<span class="visually-hidden">Unteraufgabe von {parent.key}:</span>
+				<SubtaskPath {parent} path={!nested} />
 				{#if nested}
 					<!-- Indented below its parent: a corner instead of the path. -->
 					<svg
@@ -443,10 +444,6 @@
 					>
 						<path d="M4 2.5v6.5h8.5M10 6.5l2.5 2.5L10 11.5" />
 					</svg>
-				{:else}
-					<span class="path" aria-hidden="true" title={parent.title || undefined}
-						>{parent.key} ›</span
-					>
 				{/if}
 			{/if}
 			<SourceIcon source={ticket.source} />
@@ -791,7 +788,7 @@
 		color: var(--color-text-muted);
 	}
 
-	/* Sub-tasks (ADR-0033 section 5): indented below the parent, or the parent's key as path. */
+	/* Sub-tasks (ADR-0033 section 5): indented below the parent, or the path (SubtaskPath). */
 	.nested .title {
 		padding-left: 2rem;
 	}
@@ -805,14 +802,6 @@
 		stroke-width: 1.5;
 		stroke-linecap: round;
 		stroke-linejoin: round;
-	}
-
-	.path {
-		margin-right: 0.25rem;
-		font-family: var(--font-mono);
-		font-size: var(--font-size-small);
-		color: var(--color-text-muted);
-		white-space: nowrap;
 	}
 
 	/* Progress of the sub-tasks of a parent: "2/5". */
