@@ -2,8 +2,9 @@
 // place (created, converted, imported, deleted, "Rückgängig") and failed actions of table rows,
 // shown bottom left by FlagGroup.svelte. Success and info leave after FLAG_DURATION_MS, errors stay
 // until they are closed. The clock stops while any pause reason holds (pointer or focus on the
-// flags, hidden tab, open modal), so nobody misses a flag or its action. At most MAX_FLAGS are
-// shown, the newest first; a further one pushes out the oldest. The store never moves the focus.
+// flags, hidden tab), so nobody misses a flag or its action. An open modal no longer stops it: the
+// flags show in front of it since FL-1 (ADR-0025 addendum 18). At most MAX_FLAGS are shown, the
+// newest first; a further one pushes out the oldest. The store never moves the focus.
 
 import { createContext } from 'svelte';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
@@ -54,7 +55,7 @@ export const SILENT_FLAGS: FlagSink = {
 };
 
 /** Why the clock stands still. */
-export type PauseReason = 'hover' | 'focus' | 'hidden' | 'modal';
+export type PauseReason = 'hover' | 'focus' | 'hidden';
 
 /** Text for a live region; the ID makes the same text count as a new message. */
 export interface FlagMessage {
@@ -80,6 +81,9 @@ export class FlagStore implements FlagSink {
 	#status = $state.raw<FlagMessage | null>(null);
 	#alert = $state.raw<FlagMessage | null>(null);
 	#paused = $state(false);
+	/** IDs of the latest messages that a live region has shown long enough (see `markHeard`). */
+	#heardStatus: string | null = null;
+	#heardAlert: string | null = null;
 
 	/** Shown flags, newest first. */
 	get flags(): readonly Flag[] {
@@ -177,11 +181,31 @@ export class FlagStore implements FlagSink {
 		for (const entry of this.#entries.values()) this.#start(entry);
 	}
 
+	/**
+	 * A live region of FlagGroup showed the message for a frame, so a screen reader had it. The
+	 * flags move between outputs (the app layout, the topmost modal; ADR-0025 addendum 18): the
+	 * output that takes over does not repeat a heard message, but shows one that the previous
+	 * output dropped too early (a modal that closed together with its result).
+	 */
+	markHeard(id: string): void {
+		if (id === this.#status?.id) this.#heardStatus = id;
+		if (id === this.#alert?.id) this.#heardAlert = id;
+	}
+
+	/** Whether a live region has shown this message long enough already (see `markHeard`). */
+	wasHeard(message: FlagMessage | null): boolean {
+		return (
+			message !== null && (message.id === this.#heardStatus || message.id === this.#heardAlert)
+		);
+	}
+
 	/** Closes every flag (sign-out, leaving the app); pause reasons stay with their sources. */
 	clear(): void {
 		for (const id of [...this.#entries.keys()]) this.dismiss(id);
 		this.#status = null;
 		this.#alert = null;
+		this.#heardStatus = null;
+		this.#heardAlert = null;
 	}
 
 	#start(entry: Entry): void {

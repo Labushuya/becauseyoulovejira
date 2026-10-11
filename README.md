@@ -715,7 +715,7 @@ Das Exportieren einzelner Mails geht laut [Proton-Hilfe](https://proton.me/suppo
 ### Abhaken
 
 - Das Kästchen in der Spalte „Aktionen“ setzt ein Ticket auf **Erledigt**. Die Zeile verschwindet sofort, und unten links erscheint eine Meldung mit **„Rückgängig“** (stellt den vorherigen Status wieder her). Sie bleibt 8 Sekunden, länger, solange der Mauszeiger oder der Fokus auf ihr liegt. Das erledigte Ticket steht danach oben unter [Erledigte](#erledigte).
-- **Meldungen unten links:** Ergebnisse (angelegt, gelöscht, importiert, umgewandelt) und fehlgeschlagene Aktionen in Zeilen erscheinen dort, die neueste oben, höchstens drei. Erfolge verschwinden nach 8 Sekunden (die Zeit steht still, solange Zeiger oder Fokus auf der Meldung liegen, der Tab verborgen oder ein Dialog offen ist), Fehler bleiben, bis man sie mit × schließt. Mit der Tastatur erreicht man sie nach dem Seiteninhalt; der Fokus springt nie dorthin.
+- **Meldungen unten links:** Ergebnisse (angelegt, gelöscht, importiert, umgewandelt) und fehlgeschlagene Aktionen in Zeilen erscheinen dort, die neueste oben, höchstens drei. Erfolge verschwinden nach 8 Sekunden (die Zeit steht still, solange Zeiger oder Fokus auf der Meldung liegen oder der Tab verborgen ist), Fehler bleiben, bis man sie mit × schließt; das Angebot „Auch für künftige Tickets übernehmen“ einer Serie bleibt, bis man es nutzt oder schließt. Ist ein Dialog offen (etwa die Vollansicht), stehen die Meldungen vor ihm und lassen sich dort bedienen; beim Schließen bleiben sie unten links stehen. Mit der Tastatur erreicht man sie nach dem Seiteninhalt bzw. nach dem Inhalt des Dialogs; der Fokus springt nie dorthin.
 
 ### Erledigte
 

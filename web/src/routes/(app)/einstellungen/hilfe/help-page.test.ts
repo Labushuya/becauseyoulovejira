@@ -568,6 +568,8 @@ describe('help page (EH-9)', () => {
 			'Mit welchem Status Folgetickets starten, fragt die App beim Anlegen der Regel („Folgetickets starten mit“: „Offen“, „Wie dieses Ticket“ oder ein anderer Status), ohne Vorauswahl',
 			'am Ticket unter „Wiederholt sich“ („Künftige Tickets“, „Bearbeiten“)',
 			'Ein Hinweis bietet „Auch für künftige Tickets übernehmen“ an',
+			// FL-1 (ADR-0025 addendum 18): the offer waits, also in front of the full view.
+			'Er bleibt stehen, bis du ihn nutzt oder schließt; in der Vollansicht erscheint er vor dem Dialog.',
 			'Status und Fälligkeit gehören immer nur zum einzelnen Ticket.',
 			'Eine Rückfrage beim Entstehen eines Tickets gibt es nicht: Folgetickets entstehen im Hintergrund zur festen Zeit',
 			'gefragt wird einmal beim Anlegen der Regel'

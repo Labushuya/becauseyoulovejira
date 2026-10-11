@@ -663,6 +663,8 @@
 	/>
 	{@render children()}
 </main>
+<!-- The flags after the page; while a modal is open they show in the topmost one instead, in front
+     of it and clickable (ADR-0025 §8, addendum 18, FL-1). -->
 <FlagGroup store={flags} />
 
 {#if quickOpen}

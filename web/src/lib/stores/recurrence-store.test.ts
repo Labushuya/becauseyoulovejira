@@ -8,9 +8,10 @@ import {
 	formValuesOf
 } from '$lib/domain/recurrence-rule';
 import type { Ticket } from '$lib/domain/ticket';
-import type { FlagInput, FlagSink } from './flags.svelte';
+import { FLAG_DURATION_MS, FlagStore, type FlagInput, type FlagSink } from './flags.svelte';
 import type { RecordChange, Unsubscribe } from './realtime';
 import {
+	OFFER_DURATION,
 	REPEAT_FAILED,
 	RecurrenceStore,
 	waitingTitle,
@@ -686,7 +687,9 @@ describe('RecurrenceStore: the template of a series (plan WV)', () => {
 			title: 'Nur dieses Ticket geändert.',
 			description:
 				'Künftige Tickets von „Müll“ kommen weiter mit der bisherigen Vorlage (Titel, Priorität).',
-			action: { label: 'Auch für künftige Tickets übernehmen' }
+			action: { label: 'Auch für künftige Tickets übernehmen' },
+			// It does not leave by itself (FL-1, decision D3).
+			duration: null
 		});
 		flag?.action?.run();
 		await vi.waitFor(() => expect(data.updateRule).toHaveBeenCalledTimes(1));
@@ -777,6 +780,29 @@ describe('RecurrenceStore: the template of a series (plan WV)', () => {
 				title: 'Die Vorlage von „Müll“ wurde nicht geändert. Das Projekt ist archiviert.'
 			})
 		);
+	});
+
+	// FL-1 (ADR-0025 addendum 18, decision D3): after a change in the full view the user may still
+	// be reading there; the offer waits instead of leaving after 8 s like other flags.
+	it('keeps the offer until it is taken, closed or replaced, while other flags leave after 8 s', async () => {
+		const flags = new FlagStore();
+		const store = new RecurrenceStore(fakeData([rule()]), session(), flags);
+		await store.load();
+		vi.useFakeTimers();
+		try {
+			expect(OFFER_DURATION).toBeNull();
+			const first = store.offerTemplate([change({ title: 'Steuer' }, { title: 'Steuern' })]);
+			flags.show({ tone: 'success', title: 'Gespeichert.' });
+			vi.advanceTimersByTime(FLAG_DURATION_MS * 10);
+			expect(flags.flags.map((flag) => flag.id)).toEqual([first]);
+
+			const second = store.offerTemplate([change({ title: 'Steuer' }, { title: 'Abgaben' })]);
+			expect(flags.flags.map((flag) => flag.id)).toEqual([second]);
+			flags.dismiss(second ?? '');
+			expect(flags.flags).toEqual([]);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it('keeps the draft of the template, knows unsaved input and saves only the changes', async () => {
@@ -1004,7 +1030,9 @@ describe('RecurrenceStore: the sub-tasks of the template (plan WV-3)', () => {
 			tone: 'info',
 			title: 'Nur dieses Ticket geändert.',
 			description: 'Künftige Tickets von „Müll“ bekommen die Unteraufgabe „Deckel putzen“ nicht.',
-			action: { label: 'Auch für künftige Tickets übernehmen' }
+			action: { label: 'Auch für künftige Tickets übernehmen' },
+			// It does not leave by itself (FL-1, decision D3).
+			duration: null
 		});
 		// The next sub-task of the same series joins the offer shown, in a new flag.
 		const second = store.offerSubtask(parent, { title: 'Entkalken', priority: 'low' });
