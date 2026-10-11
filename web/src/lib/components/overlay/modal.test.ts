@@ -266,6 +266,15 @@ describe('modal: unsaved input', () => {
 	});
 });
 
+// FL-1 (ADR-0025 addendum 18): the flags of the app render in the topmost open modal; with them
+// flag-group.test.ts (FlagModalHarness). A modal outside of the app layout has none.
+describe('modal: flags', () => {
+	it('renders no flags without the flags of the app (a single component)', async () => {
+		await openModal();
+		expect(screen.queryByRole('region', { name: 'Benachrichtigungen' })).toBeNull();
+	});
+});
+
 describe('modal source', () => {
 	it('uses the size, blanket, radius and motion tokens (ADR-0025 section 2)', () => {
 		for (const token of [
@@ -283,20 +292,54 @@ describe('modal source', () => {
 		expect(source).not.toMatch(/gradient|danger/);
 	});
 
-	it('is thick glass from S to L and an opaque full view (ADR-0029 section 1)', () => {
-		const rule = (selector: string) =>
-			new RegExp(`${selector.replace(/[.()]/g, '\\$&')} \\{([^}]*)\\}`).exec(source)?.[1] ?? '';
-		const base = rule('.modal');
+	/** Rules of the style block: selector and body, with the media queries opened up. */
+	function rules(): { selector: string; body: string }[] {
+		const style = /<style>([\s\S]*)<\/style>/.exec(source)?.[1] ?? '';
+		const flat = style.replace(/\/\*[\s\S]*?\*\//g, '').replace(/@media[^{]*\{/g, '');
+		return [...flat.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((match) => ({
+			selector: (match[1] ?? '').trim(),
+			body: match[2] ?? ''
+		}));
+	}
+
+	/** The body of the first rule with exactly this selector. */
+	const rule = (selector: string) =>
+		rules().find((entry) => entry.selector === selector)?.body ?? '';
+
+	it('is thick glass from S to L and an opaque full view, on its frame (ADR-0029 section 1)', () => {
+		const base = rule('.frame');
 		expect(base).toMatch(/background:\s*var\(--color-surface\)/);
+		expect(base).toMatch(/border:\s*1px solid var\(--color-line\)/);
+		expect(base).toMatch(/border-radius:\s*var\(--radius-overlay\)/);
 		expect(base).toMatch(/box-shadow:\s*var\(--shadow-modal\)/);
 		expect(base).not.toMatch(/backdrop-filter/);
-		const glass = rule('.modal:not(.size-xl)');
+		const glass = rule('.modal:not(.size-xl) .frame');
 		expect(glass).toMatch(/background:\s*var\(--material-thick\)/);
 		expect(glass).toMatch(/backdrop-filter:\s*var\(--glass-filter-thick\)/);
 		expect(glass).toMatch(/border-color:\s*var\(--color-separator\)/);
 		expect(glass).toMatch(/inset 0 1px 0 var\(--glass-edge\),\s*var\(--shadow-modal\)/);
 		// The blanket stays a plain veil without blur (ADR-0029 section 8).
 		expect(rule('.modal::backdrop')).not.toMatch(/filter/);
+	});
+
+	// FL-1 (ADR-0025 addendum 18): the flags in the <dialog> are position: fixed. A transform (also
+	// in an animation), filter, backdrop-filter, perspective, containment or will-change on the
+	// <dialog> would make it their containing block: they would stand in it, clipped, instead of
+	// bottom left in the window.
+	it('keeps the <dialog> free of anything that would hold the flags in it (FL-1)', () => {
+		const onDialog = rules().filter(({ selector }) =>
+			/^(\.modal(\[open\]|:not\(\.size-xl\))?|\.size-(s|l|xl))$/.test(selector)
+		);
+		expect(onDialog.map((entry) => entry.selector)).toEqual(
+			expect.arrayContaining(['.modal', '.modal[open]', '.size-xl'])
+		);
+		for (const { selector, body } of onDialog) {
+			expect(body, selector).not.toMatch(
+				/transform|filter|perspective|contain|will-change|animation|background:\s*var|border:\s*1px/
+			);
+		}
+		expect(rule('.modal')).toMatch(/overflow:\s*visible/);
+		expect(rule('.modal[open] .frame')).toMatch(/animation:\s*modal-in/);
 	});
 
 	it('lets a footer button with margin-right: auto stand on the left (fix 2026-09-30)', () => {

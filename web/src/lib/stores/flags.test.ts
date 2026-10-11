@@ -112,13 +112,13 @@ describe('flag store: pause', () => {
 
 	it('goes on only when every reason is gone', () => {
 		const store = new FlagStore();
-		store.pause('modal');
-		store.show({ tone: 'info', title: 'Unter dem Modal' });
+		store.pause('hover');
+		store.show({ tone: 'info', title: 'Unter dem Zeiger' });
 		store.pause('hidden');
 		store.pause('hidden');
-		store.resume('modal');
+		store.resume('hover');
 		vi.advanceTimersByTime(60_000);
-		expect(titles(store)).toEqual(['Unter dem Modal']);
+		expect(titles(store)).toEqual(['Unter dem Zeiger']);
 		store.resume('focus');
 		expect(store.paused).toBe(true);
 		store.resume('hidden');
@@ -145,6 +145,29 @@ describe('flag store: live regions', () => {
 		const first = store.statusMessage?.id;
 		store.show({ tone: 'success', title: 'Gespeichert.' });
 		expect(store.statusMessage?.id).not.toBe(first);
+	});
+
+	// FL-1 (ADR-0025 addendum 18): the flags move between the layout and the topmost modal; the
+	// output that takes over must not repeat what a live region already showed long enough.
+	it('knows which of the latest messages a live region has shown, until the next or clear', () => {
+		const store = new FlagStore();
+		expect(store.wasHeard(null)).toBe(false);
+		store.show({ tone: 'success', title: 'Gespeichert.' });
+		store.show({ tone: 'error', title: 'Nicht gespeichert.' });
+		const status = store.statusMessage;
+		const alert = store.alertMessage;
+		expect(store.wasHeard(status)).toBe(false);
+		store.markHeard(status?.id ?? '');
+		expect(store.wasHeard(status)).toBe(true);
+		expect(store.wasHeard(alert)).toBe(false);
+		// An ID that is no longer the latest message changes nothing.
+		store.show({ tone: 'success', title: 'Noch einmal.' });
+		store.markHeard(status?.id ?? '');
+		expect(store.wasHeard(store.statusMessage)).toBe(false);
+		store.markHeard(alert?.id ?? '');
+		expect(store.wasHeard(alert)).toBe(true);
+		store.clear();
+		expect(store.wasHeard(alert)).toBe(false);
 	});
 
 	it('has a silent sink for views and tests without flags', () => {

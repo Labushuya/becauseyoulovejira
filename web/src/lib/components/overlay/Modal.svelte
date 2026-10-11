@@ -1,11 +1,14 @@
 <script lang="ts">
 	import { tick, untrack, type Snippet } from 'svelte';
 	import { closeAction, type CloseTrigger } from '$lib/overlay/close-rules';
+	import { flagOutlets } from '$lib/overlay/flag-outlets.svelte';
 	import {
 		enclosingModal,
 		provideModalContext,
 		reportNestedModal
 	} from '$lib/overlay/modal-context';
+	import { findFlagStore } from '$lib/stores/flags.svelte';
+	import FlagGroup from './FlagGroup.svelte';
 
 	// Modal building block (ADR-0025 section 3): a native <dialog> with showModal() for top layer,
 	// focus trap and inert background. Header with the title and the mandatory ×, a content area
@@ -17,6 +20,11 @@
 	// No dialog from a dialog (ADR-0025 section 3, addendum 16): the modal marks the components below
 	// it (modal-context.ts), so they show forms and questions inline; a modal that opens inside
 	// another one anyway is reported (thrown in tests, logged in the app).
+	// Flags in front of the modal (ADR-0025 section 8, addendum 18, FL-1): everything outside of a
+	// modal <dialog> is inert, so while it is open and the topmost one, the flags of the app render
+	// in it, as a direct child of the <dialog> after the frame. The glass, the line, the shadow and
+	// the animation lie on the frame, not on the <dialog>, so the <dialog> is no containing block
+	// for their position: fixed, and they stand bottom left in the window as usual.
 	let {
 		open,
 		size = 'm',
@@ -69,6 +77,16 @@
 	const uid = $props.id();
 	const titleId = `${uid}-title`;
 	const discardId = `${uid}-discard`;
+
+	/** The flags of the app (null outside of the app layout, e.g. tests of a single component). */
+	const flags = findFlagStore();
+	/** This modal in the stack of flag-outlets. */
+	const host = Symbol('modal');
+
+	/** Open and on top: the flags render here from now on. */
+	function holdFlags() {
+		if (flags !== null) flagOutlets.enter(host, flags);
+	}
 
 	/** The modal this one renders in, if any: then it must not open (ADR-0025 section 3). */
 	const outer = enclosingModal();
@@ -135,15 +153,18 @@
 			returnTarget = activeElement();
 			asking = false;
 			element.showModal();
+			holdFlags();
 			void tick().then(focusInitial);
 		} else if (!open && element.open) {
 			element.close();
+			flagOutlets.leave(host);
 			restoreFocus();
 		}
 	});
 
-	// Removed while open (the owner dropped it): the focus still goes back.
+	// Removed while open (the owner dropped it): the flags and the focus still go back.
 	$effect(() => () => {
+		flagOutlets.leave(host);
 		if (returnTarget !== null) restoreFocus();
 	});
 
@@ -208,6 +229,7 @@
 			return;
 		}
 		dialog.showModal();
+		holdFlags();
 		if (action === 'ask') request('escape');
 	}
 
@@ -286,10 +308,18 @@
 				</div>
 			{/if}
 		</div>
+		{#if flags !== null}
+			<FlagGroup store={flags} {host} />
+		{/if}
 	{/if}
 </dialog>
 
 <style>
+	/*
+	 * The <dialog> only places and sizes. It stays transparent and has no transform, filter or
+	 * backdrop-filter, so it is no containing block for the flags in it (FL-1, position: fixed),
+	 * and it clips nothing, so the shadow of the frame shows. The frame draws the surface.
+	 */
 	.modal {
 		--modal-width: var(--overlay-width-m);
 		width: min(var(--modal-width), calc(100vw - 2rem));
@@ -297,8 +327,19 @@
 		max-height: var(--overlay-max-height);
 		margin: auto;
 		padding: 0;
-		overflow: hidden;
+		overflow: visible;
 		color: var(--color-text);
+		background: none;
+		border: none;
+	}
+
+	/* Header and footer stay, the content scrolls alone. */
+	.frame {
+		display: flex;
+		flex-direction: column;
+		width: 100%;
+		max-height: var(--overlay-max-height);
+		overflow: hidden;
 		background: var(--color-surface);
 		border: 1px solid var(--color-line);
 		border-radius: var(--radius-overlay);
@@ -310,7 +351,7 @@
 	 * softly, lines on glass in --color-separator. The full view (XL) stays an opaque surface with
 	 * the same radius and shadow, because it is a large area full of content.
 	 */
-	.modal:not(.size-xl) {
+	.modal:not(.size-xl) .frame {
 		background: var(--material-thick);
 		backdrop-filter: var(--glass-filter-thick);
 		border-color: var(--color-separator);
@@ -338,6 +379,10 @@
 
 	.modal[open] {
 		display: flex;
+	}
+
+	/* On the frame, not on the <dialog>: a transform there would hold the flags for its duration. */
+	.modal[open] .frame {
 		animation: modal-in var(--motion-medium) var(--motion-ease);
 	}
 
@@ -348,14 +393,6 @@
 
 	.modal[open]::backdrop {
 		animation: veil-in var(--motion-medium) var(--motion-ease);
-	}
-
-	/* Header and footer stay, the content scrolls alone. */
-	.frame {
-		display: flex;
-		flex-direction: column;
-		width: 100%;
-		max-height: var(--overlay-max-height);
 	}
 
 	.size-xl .frame {
@@ -457,12 +494,12 @@
 			width: 100vw;
 			max-height: 100dvh;
 			height: 100dvh;
-			border: none;
-			border-radius: 0;
 		}
 
 		.size-xl .frame {
 			max-height: 100dvh;
+			border: none;
+			border-radius: 0;
 		}
 	}
 
