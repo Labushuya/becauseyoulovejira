@@ -1,6 +1,6 @@
 # ADR-0025: UI-Konsistenz – ein Overlay-System, Theme-Umschalter und angeglichene Projekt-UI
 
-- **Status:** Angenommen; §2 („Kein Schatten-Token“) teilweise ersetzt durch [ADR-0029](0029-glas-materialien.md), siehe Nachtrag 13; §11 präzisiert durch [ADR-0030](0030-spalten-breiten-und-kompakte-zeilen.md), siehe Nachtrag 14; §7 präzisiert durch [ADR-0036](0036-sammelbearbeitung-inline-und-oeffnungsmodus.md), siehe Nachtrag 15; §3 und §4 („kein Dialog aus einem Dialog“) präzisiert durch Nachtrag 16; §6 und §7 (Schließen eines Tickets in Projekten, Eingang und Wiederholungen) präzisiert durch Nachtrag 17 ([ADR-0054](0054-tickets-im-kontext-oeffnen.md)); §5 (Positionierung) ergänzt durch den Nachtrag „Rechtsklick“ in [ADR-0036](0036-sammelbearbeitung-inline-und-oeffnungsmodus.md): ein Popover öffnet per Code auch am Mauszeiger oder unter einem anderen Element
+- **Status:** Angenommen; §2 („Kein Schatten-Token“) teilweise ersetzt durch [ADR-0029](0029-glas-materialien.md), siehe Nachtrag 13; §11 präzisiert durch [ADR-0030](0030-spalten-breiten-und-kompakte-zeilen.md), siehe Nachtrag 14; §7 präzisiert durch [ADR-0036](0036-sammelbearbeitung-inline-und-oeffnungsmodus.md), siehe Nachtrag 15; §3 und §4 („kein Dialog aus einem Dialog“) präzisiert durch Nachtrag 16; §6 und §7 (Schließen eines Tickets in Projekten, Eingang und Wiederholungen) präzisiert durch Nachtrag 17 ([ADR-0054](0054-tickets-im-kontext-oeffnen.md)); §5 (Positionierung) ergänzt durch den Nachtrag „Rechtsklick“ in [ADR-0036](0036-sammelbearbeitung-inline-und-oeffnungsmodus.md): ein Popover öffnet per Code auch am Mauszeiger oder unter einem anderen Element; §8 (Pause bei offenem Modal) ersetzt und §3 (Darstellung) präzisiert durch Nachtrag 18 (FL-1): Flags stehen vor geöffneten Dialogen
 - **Datum:** 2026-09-25
 - **Entscheidung durch:** Nutzer (Fragen 1 bis 4 in Abschnitt 9, 2026-09-25), Advisor (übrige Festlegungen)
 - **Ersetzt teilweise:** [ADR-0010](0010-layout-nach-task-board.md) §1 (Reihenfolge der Leisten, 5 s „Rückgängig“ in der Zeile) und §2 (Aufbau des Detail-Panels, Vollansicht)
@@ -106,9 +106,9 @@ Grenzen: Clean-Room nach [ADR-0010](0010-layout-nach-task-board.md) §4. Aus dem
 ### 8. Flags (`overlay/FlagGroup.svelte`, `stores/flags.svelte.ts`)
 
 - **Unten links**, über dem Inhalt, neuestes oben, höchstens drei sichtbar. Store per Kontext im `(app)`-Layout ([ADR-0006](0006-frontend-zustand-und-datenzugriff.md)); `show({ tone, title, description?, action?, duration? })` und `dismiss(id)`.
-- `success` und `info` verschwinden nach **8 s**, `error` bleibt bis zum Schließen. Pause bei Zeiger oder Fokus auf dem Flag, bei verborgenem Tab und bei offenem Modal.
+- `success` und `info` verschwinden nach **8 s**, `error` bleibt bis zum Schließen. Pause bei Zeiger oder Fokus auf dem Flag, bei verborgenem Tab und bei offenem Modal *(seit FL-1 nicht mehr bei offenem Modal: Die Flags stehen dann im obersten Modal und laufen dort ab, Nachtrag 18)*.
 - Höchstens **eine** Aktion (etwa „Rückgängig“) und das × „Benachrichtigung schließen“. Linke 3-px-Linie in `--color-brand` bzw. bei Fehlern `--color-danger`, Icon und Text; kein Schatten.
-- **Barrierefreiheit:** `section aria-label="Benachrichtigungen"` im DOM nach `main`, zwei dauerhaft vorhandene Live-Regionen (`role="status"` und `role="alert"`), der Fokus wird nie verschoben.
+- **Barrierefreiheit:** `section aria-label="Benachrichtigungen"` im DOM nach `main`, zwei dauerhaft vorhandene Live-Regionen (`role="status"` und `role="alert"`), der Fokus wird nie verschoben *(seit FL-1 steht die Section bei offenem Modal stattdessen im obersten Modal; es gibt immer genau ein Paar Live-Regionen, Nachtrag 18)*.
 - **„Rückgängig“** für „Erledigt“ und „Verwerfen“ wandert aus der Zeile ins Flag, 8 s, Pause bei Hover und Fokus (Nutzerentscheidung 3). Die Zeile verschwindet sofort; das Rückgängigmachen bleibt zusätzlich auf anderem Weg möglich (wieder öffnen, wiederherstellen).
 - **Inline bleiben** Feld-, Formular- und Ladefehler mit Bezug zu einer Stelle (ADR-0009).
 
@@ -213,6 +213,37 @@ Präzisiert §6 („× und Esc führen zur Liste mit der aktuellen Query“) und
 - `ViewWithPanel` nennt seine Teile (`data-view-part` „list“ und „panel“), damit der Rückweg den Link findet, der das Ticket geöffnet hat; der Fokus geht seit KX-2 dorthin zurück (im Panel der Herkunft statt auf dessen Überschrift), ohne Link auf die Überschrift.
 - **„Änderungen verwerfen?“ beim Ersetzen (seit KX-2):** Ersetzt ein Link ein Projekt- oder Regel-Panel mit ungespeicherten Eingaben, fragt das Panel **inline** oben im Inhalt (wie die Vollansicht, `TicketLeaveQuestion`), nicht mit der Bestätigung aus §4: Der Link kann aus einem Dialog kommen (ein Duplikat, das sich öffnet), und kein Dialog öffnet aus einem Dialog (Nachtrag 16). × und Esc der Panels fragen weiter mit der Bestätigung aus §4.
 - **Kalender (seit KX-3, ADR-0054 §8):** Auch neben dem Kalender stehen jetzt das Panel einer Regel und eines Eintrags in der einen Panel-Spalte; ein Ticket aus ihnen ersetzt sie wie in den Bereichen (`von=regel-<id>` bzw. `von=eintrag-<id>`), × führt zurück zur Regel bzw. zum Eintrag und von dort zum Kalender. Weiterhin kein Stapeln.
+
+### 18. Nachtrag (2026-10-12, Paket FL-1): Flags vor geöffneten Dialogen
+
+Ersetzt in §8 „Pause … bei offenem Modal“ und präzisiert §3 (Darstellung des Modals). **Anlass** (Fehlerbericht des Nutzers): Ändert man in der Vollansicht ein Feld eines Serientickets, erschien „Nur dieses Ticket geändert. … Auch für künftige Tickets übernehmen“ **hinter** dem Dialog im inerten Hintergrund; man musste den Dialog schnell schließen, um das Angebot nicht zu verlieren. Dasselbe galt für jedes Flag mit Aktion, das bei offenem Dialog entsteht: „KEY erledigt.“ mit „Rückgängig“ beim Abhaken einer Unteraufgabe in der Vollansicht, Tagesplan, „Angepinnter Kommentar ersetzt.“, Hinweise auf eine Zuweisung (Realtime) und die Angebote einer Serie.
+
+**Ursache:** `FlagGroup` stand nur im `(app)`-Layout nach `main` (`position: fixed`, `z-index: 20`). Modals sind native `<dialog>` im Top Layer; mit `showModal()` ist alles außerhalb inert, auch für Screenreader. Die Flags pausierten zwar, solange ein `dialog[open]` existierte, blieben aber verdeckt und nicht klickbar.
+
+**Entscheidungen des Auftrags (2026-10-12):**
+
+- **D1 – im obersten Dialog:** Ist ein Modal offen, stehen die Flags im obersten offenen Modal, als direktes Kind seines `<dialog>` nach dem Rahmen (`.frame`), unten links im Fenster wie sonst, sichtbar und klickbar; per Tab erreicht man sie nach dem Inhalt des Dialogs. Bei mehreren offenen Modals gewinnt das oberste. Schließt es, wandern die Flags zurück ins Layout bzw. ins Modal darunter, ohne Duplikate und ohne Neustart der Zeit. Es gibt immer genau eine Ausgabe und damit ein Paar Live-Regionen, damit Screenreader nichts doppelt ansagen.
+- **D2 – Ablauf:** Sichtbare Flags laufen normal ab, auch in einem Dialog. Die Pause bei Zeiger, Fokus und verborgenem Tab bleibt; die Pause, solange irgendein `dialog[open]` existiert, entfällt (Pausegrund `modal` gestrichen).
+- **D3 – Angebote einer Serie** (`RecurrenceStore.offerTemplate`, `offerSubtask`) verschwinden nicht von selbst (`duration: null`, `OFFER_DURATION`): Sie bleiben, bis man die Aktion wählt, sie schließt oder ein neueres Angebot sie ersetzt. Wie jedes Flag kann ein Angebot weiter von drei neueren Flags verdrängt werden (höchstens drei sichtbar).
+- **D4:** Alle anderen Flags behalten ihre Dauer (Erfolg und Info 8 s, Fehler bleiben).
+
+**Umsetzung:**
+
+- `lib/overlay/flag-outlets.svelte.ts` hält den Stapel der offenen Modals mit den Flags eines Stores, als Spiegel des Top Layers: `enter` bei `showModal()` (auch beim erneuten Zeigen nach einem `close` des Browsers), `leave` beim Schließen und Aushängen, `hostOf(store)` nennt das oberste Modal oder `null` (das Layout).
+- `Modal.svelte` holt den Store über `findFlagStore()` und rendert, solange es offen ist, eine `FlagGroup` mit seinem Token als direktes Kind des `<dialog>`. Ohne Store im Kontext (Komponententests, „Die App ist schon offen“ im Wurzel-Layout) rendert es keine.
+- `FlagGroup` zeigt die Section nur, wenn `hostOf(store)` ihre Ausgabe nennt; die Gruppe des Layouts bleibt eingehängt und beobachtet den verborgenen Tab. Flags und Uhren liegen im Store, ein Wechsel startet nichts neu; schon stehende Flags erscheinen ohne erneutes Einblenden. Wechselt die Ausgabe unter Zeiger oder Fokus, endet deren Pause.
+- **Ansagen:** Eine Meldung gilt als gehört, wenn sie ein Bild lang (`requestAnimationFrame`) in einer Live-Region stand (`FlagStore.markHeard`). Die übernehmende Ausgabe wiederholt gehörte Meldungen nicht und zeigt eine noch nicht gehörte, etwa wenn ein Formular in einem Modal mit seinem Ergebnis schließt. Das entspricht dem bisherigen Verhalten: Auch vorher wurde die Region des Layouts im selben Moment wieder zugänglich, in dem die Meldung kam.
+- **Darstellung des Modals (§3, [ADR-0029](0029-glas-materialien.md)):** Ein `transform` (auch in der Öffnungsanimation), `filter` oder `backdrop-filter` auf dem `<dialog>` macht es zum Bezugsrahmen für `position: fixed`; die Flags stünden dann im Dialog und würden abgeschnitten. Deshalb trägt jetzt der Rahmen (`.frame`) statt des `<dialog>` Fläche bzw. Glas (S bis L), Linie, Radius, Schatten, `overflow: hidden` und die Öffnungsanimation; das `<dialog>` bleibt durchsichtig, ohne Rand, mit `overflow: visible`, und der Schleier (`::backdrop`) bleibt, wie er war. Sichtbar ändert sich nichts; `modal.test.ts` prüft beides statisch, der Blick im Browser steht im Manifest.
+- Belegt in `flag-outlets.test.ts`, `flags.test.ts`, `flag-group.test.ts` (mit `FlagModalHarness`: im Dialog außerhalb des Rahmens, Aktion klickbar, eine Live-Region, Rückkehr ohne Duplikate, neues Einblenden oder neue Zeit, Übergabe einer Meldung, Ablauf wie D2, zwei Dialoge), `modal.test.ts`, `recurrence-store.test.ts`, `series-template-offer.test.ts` und `help-page.test.ts`; Browserfälle BYL-E6-1668 bis BYL-E6-1671.
+
+**Grenzen:** Ein Modal ohne Store im Kontext zeigt keine Flags; liegt es oben (heute nur „Die App ist schon offen“, schließt nach 5 s), bleiben die Flags im Layout dahinter. Ein stehendes Angebot hält wie jedes Flag mit Aktion das Neuladen nach einem neuen Build beim nächsten Link auf, bis man es schließt ([ADR-0040](0040-veroeffentlichen-ohne-unterbrechung.md), `AppUpdateNotice`); „Neu laden“ im Hinweis geht weiter. Ob ein Screenreader eine Region ansagt, die mit ihrem Text neu erscheint, hängt vom Screenreader ab (BYL-E6-018).
+
+**Verworfen:**
+
+- **Nur ein höherer `z-index`:** Der Top Layer liegt über jedem `z-index`, und der Hintergrund bleibt inert.
+- **Die Flags als eigenes Popover im Top Layer:** Außerhalb des modalen Dialogs bleibt es inert, also weder klickbar noch für Screenreader zugänglich.
+- **Eine Ausgabe, deren Knoten per Code in den Dialog verschoben werden (Portal):** Svelte entfernt beim Aushängen die Knoten seines Bereichs der Reihe nach; verschobene Knoten brechen das. Eine verschobene Region mit Text würde zudem erneut angesagt.
+- **Weiter pausieren, solange ein Dialog offen ist:** Die Flags sind jetzt sichtbar; ein Flag, das stehen bleibt, solange der Nutzer in der Vollansicht arbeitet, widerspricht §8 und der Nutzerentscheidung 3 (8 s). Für das Angebot einer Serie gilt dafür D3.
 
 ## Alternativen
 
