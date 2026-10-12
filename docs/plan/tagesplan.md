@@ -37,4 +37,20 @@ Beide erledigt mit PL-1 ([ADR-0065](../adr/0065-tagesplan.md), Nachtrag PL-1):
 
 ## TP-2 (umgesetzt): Unteraufgaben mit ihrem übergeordneten Ticket
 
-Nutzerwunsch vom 2026-10-12: Unteraufgaben standen im Plan ohne Zusammenhang. Seit TP-2 steht in Plan, Pool und Vorschlägen über jeder Unteraufgabe klein ihr übergeordnetes Ticket („HAUS-7 › Wochenputz“, der Key öffnet es); gruppiert wird nicht, die Reihenfolge bleibt frei. Entscheidung in [ADR-0065](../adr/0065-tagesplan.md), Nachtrag TP-2; Test-Manifest: Paket „TP-2“ (BYL-E6-1672 bis BYL-E6-1674, manuell BYL-E6-1675 bis BYL-E6-1679).
+Nutzerwunsch vom 2026-10-12: Unteraufgaben standen im Plan ohne Zusammenhang. Seit TP-2 steht in Plan, Pool und Vorschlägen über jeder Unteraufgabe klein ihr übergeordnetes Ticket („HAUS-7 › Wochenputz“, der Key öffnet es); gruppiert wird nicht, die Reihenfolge bleibt frei. Entscheidung in [ADR-0065](../adr/0065-tagesplan.md), Nachtrag TP-2; Test-Manifest: Paket „TP-2“ (BYL-E6-1672 bis BYL-E6-1674, manuell BYL-E6-1675 bis BYL-E6-1679). Die Entscheidung „keine Gruppierung“ hat der Nutzer mit TP-3 aufgehoben.
+
+## TP-3 (umgesetzt): Hauptticket mit Unteraufgaben darunter, Pool-Suche über das Hauptticket
+
+Nutzerwunsch vom 2026-10-12: Unteraufgaben sollen im Tagesplan so stehen wie in „Aufgaben“, das Hauptticket und direkt darunter seine Unteraufgaben in derselben Reihenfolge, und die Pool-Suche soll sie auch über Key und Titel des Haupttickets finden. Damit hebt der Nutzer TP-2 E2 („keine Gruppierung“) auf.
+
+| Bereich | Inhalt |
+|---|---|
+| Pool | Angeordnet wie „Aufgaben“: Hauptticket, darunter eingerückt mit Ecke seine Unteraufgaben im Pool; steht das Hauptticket nicht im Pool, die Unteraufgabe einzeln mit der Kontextzeile aus TP-2. Die Grenze von 60 Einträgen nimmt ein Hauptticket mit seinen Unteraufgaben ganz oder gar nicht. |
+| Vorschläge | Ebenso angeordnet, wenn Hauptticket und Unteraufgabe vorgeschlagen sind; der Haken am Hauptticket wählt keine Unteraufgabe mit; „Übernehmen“ und „Alle übernehmen“ in der gezeigten Reihenfolge. |
+| Plan | Nur Anzeige: Die Reihenfolge bleibt die des Nutzers; eine Unteraufgabe direkt unter ihrem Hauptticket oder einer eingerückten Schwester steht eingerückt, sonst mit Kontextzeile. Ziehen, Knöpfe und `Alt`+Pfeil wie bisher. |
+| Fortschritt | Der Chip „1/4“ der Tabelle an jedem Hauptticket in Plan, Pool und Vorschlägen, mit demselben Baustein und denselben Zahlen. |
+| Suche | Jedes Wort in Key oder Titel des Tickets oder seines Haupttickets, verteilt erlaubt; „…“ zählt nicht; ein umbenanntes Hauptticket wirkt sofort. „Aufgaben“ und die Ticket-Auswahl suchen weiter nur im Ticket. |
+
+Entscheidung in [ADR-0065](../adr/0065-tagesplan.md), Nachtrag TP-3, und [ADR-0033](../adr/0033-unteraufgaben.md), Nachtrag TP-3; Test-Manifest: Paket „TP-3“ (BYL-E6-1715 bis BYL-E6-1720, manuell BYL-E6-1721 bis BYL-E6-1725). Nur Oberfläche: nach dem Build F5.
+
+**Folgt mit TP-4 (Server):** wie der Server einen neuen Eintrag im Plan einordnet (etwa eine Unteraufgabe direkt unter ihr Hauptticket, das schon im Plan steht) und in welcher Reihenfolge „Automatisch übernehmen“ einfügt. Bis dahin hängt der Server übernommene Einträge in der gesendeten Reihenfolge ans Ende.

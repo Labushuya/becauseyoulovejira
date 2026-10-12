@@ -1,6 +1,6 @@
 # ADR-0033: Unteraufgaben: eine Ebene, Fortschritt, Einrücken in der Tabelle und „blockiert das übergeordnete Ticket“
 
-- **Status:** Angenommen und umgesetzt in den Paketen UA-1 bis UA-5 nach [docs/plan/unteraufgaben.md](../plan/unteraufgaben.md) (#118 bis #122); manuelle Browser-Prüfungen stehen im Test-Manifest; Nachtrag UT-1: Status beim Anlegen, Statusmenü, Vererbung und Serienbezug
+- **Status:** Angenommen und umgesetzt in den Paketen UA-1 bis UA-5 nach [docs/plan/unteraufgaben.md](../plan/unteraufgaben.md) (#118 bis #122); manuelle Browser-Prüfungen stehen im Test-Manifest; Nachtrag UT-1: Status beim Anlegen, Statusmenü, Vererbung und Serienbezug; Nachtrag TP-3: Anordnung wie §5 auch im Tagesplan, Ecke und Chip als Bausteine
 - **Datum:** 2026-09-28
 - **Entscheidung durch:** Nutzer (Freigabe der Unteraufgaben am 2026-09-28 als ausdrückliche Anweisung nach CLAUDE.md §10), Advisor (Umfang und Bausteine), Executor (Regeln für Einrücken, Wiederholungen und Erledigen, Einzelheiten)
 - **Ergänzt:** [ADR-0012](0012-plain-ticketing.md) und [ADR-0011](0011-roadmap-e3-bis-e7.md) (je ein Nachtrag), [ADR-0030](0030-spalten-breiten-und-kompakte-zeilen.md) (Spalte „Übergeordnet“, Vorliebe „Unteraufgaben einrücken“), [ADR-0023](0023-lebenszyklus-von-regeln-und-instanzen.md) (Folgetickets)
@@ -120,3 +120,13 @@ Nutzerentscheidungen vom 2026-10-12 (U1 bis U5). Die Sätze „Status „Offen�
 - **„Wiederholen…“ (U5):** bleibt an Unteraufgaben sichtbar und funktioniert wie bisher (§3).
 - **Vor dem Neustart:** Formular und Statusmenü im Detail laufen über die Record-API und gehen sofort; Art und Zuständigkeit sendet die SPA selbst. Status je Zeile in „Neues Ticket“ und in der Vorlage bietet die SPA erst an, wenn `GET /api/byl/tickets/create` `subtask_status` nennt; vorher erzeugen die alten Hooks offene Unteraufgaben ohne Fälligkeit, Art und Zuständigkeit (die Hinweise sagen das). **Neustart nötig** (`neu-starten.bat`).
 - **Belegt in** `ticket-subtasks.test.ts`, `ticket-list.test.ts`, `ticket-table-inline.test.ts` (Tabelle unverändert), `recurrence-summary.test.ts`, `ticket-panel.test.ts`, `domain/subtasks.test.ts`, `web-data-tickets.test.mjs`; Test-Manifest BYL-E6-1689 bis BYL-E6-1703.
+
+## Nachtrag TP-3 (2026-10-12, Tagesplan): Anordnung wie §5 auch im Tagesplan, Ecke und Chip als Bausteine
+
+Nutzerwunsch vom 2026-10-12. §5 gilt unverändert für die Tabelle „Aufgaben“; der Nachtrag TP-2 („ohne Unteraufgaben unter ihrem Ticket zu gruppieren“) gilt für den Tagesplan in dieser Form:
+
+- **Anordnung als allgemeine Regel:** §5 Regel 3 und 4 rechnet jetzt `arrangeBy(entries, ticketOf, nest, find)` für beliebige Einträge mit einem Ticket (`ArrangedRow` mit `entry`, `nested`, `parent`); `arrangeRows` ist der Fall der Tabelle, mit gleichem Ergebnis. Der Tagesplan ordnet damit Pool und Vorschläge: Hauptticket, darunter eingerückt seine Unteraufgaben derselben Liste, Geschwister in der Reihenfolge der Liste bzw. der Rangfolge der Vorschläge; ohne Hauptticket in der Liste bleibt die Unteraufgabe an ihrem Platz mit ihrem Pfad. Die Grenze des Pools schneidet keinen solchen Block (`limitBlocks`).
+- **Plan eines Tages:** Dort bestimmt der Nutzer die Reihenfolge; angeordnet wird nicht. Eingerückt wird nur, was schon richtig steht: eine Unteraufgabe direkt unter ihrem Hauptticket oder unter einer eingerückten Unteraufgabe desselben Haupttickets (`nestedInOrder`).
+- **Bausteine:** Die Ecke einer eingerückten Unteraufgabe (`SubtaskNestIcon`) und der Chip „2/5“ (`SubtaskProgressChip`, Name „2 von 5 Unteraufgaben erledigt“) sind aus `TicketTableRow` herausgelöst; die Tabelle sieht und klingt wie vorher, der Tagesplan nutzt dieselben Bausteine mit denselben Zahlen (`progressOf` der Liste). Eingerückt hören Screenreader wie in der Tabelle „Unteraufgabe von HAUS-7:“.
+- **Suche:** Filter und Suche der Tabelle bleiben bei §5 Regel 1 (jedes Ticket einzeln, ohne Hauptticket). Nur der Pool des Tagesplans sucht zusätzlich über Key und Titel des Haupttickets.
+- Einzelheiten in [ADR-0065](0065-tagesplan.md), Nachtrag TP-3; Test-Manifest Paket „TP-3“.
