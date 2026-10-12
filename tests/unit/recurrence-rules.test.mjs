@@ -724,6 +724,52 @@ describe('the sub-tasks of the template (plan WV-3, ADR-0022 addendum 10)', () =
 		expect(rules.DEFAULT_SUBTASK_PRIORITY).toBe('medium');
 	});
 
+	it('keeps the status of an entry and leaves an empty one out (UT-1)', () => {
+		expect(
+			rules.templateSubtasksCheck([
+				{ title: 'Gießen', priority: 'low', status: 'in_progress' },
+				{ title: 'Düngen', status: 'backlog' },
+				{ title: 'Ernten', status: '' },
+				{ title: 'Jäten', status: null },
+				{ title: 'Mähen' }
+			])
+		).toEqual({
+			value: [
+				{ title: 'Gießen', priority: 'low', status: 'in_progress' },
+				{ title: 'Düngen', priority: 'medium', status: 'backlog' },
+				{ title: 'Ernten', priority: 'medium' },
+				{ title: 'Jäten', priority: 'medium' },
+				{ title: 'Mähen', priority: 'medium' }
+			],
+			code: '',
+			index: -1
+		});
+		for (const status of ['backlog', 'open', 'in_progress', 'waiting']) {
+			expect(rules.templateSubtasksCheck([{ title: 'A', status }]).value, status).toEqual([
+				{ title: 'A', priority: 'medium', status }
+			]);
+		}
+	});
+
+	it('starts a sub-task with its own status, else the one of its ticket, never done (UT-1)', () => {
+		expect(rules.subtaskStatusOf('waiting', 'open')).toBe('waiting');
+		expect(rules.subtaskStatusOf('backlog', 'done')).toBe('backlog');
+		// Without one: the status of the ticket, "open" for a done or unknown one.
+		for (const parent of ['backlog', 'open', 'in_progress', 'waiting']) {
+			expect(rules.subtaskStatusOf(undefined, parent), parent).toBe(parent);
+			expect(rules.subtaskStatusOf('', parent), parent).toBe(parent);
+		}
+		expect(rules.subtaskStatusOf(undefined, 'done')).toBe('open');
+		expect(rules.subtaskStatusOf(undefined, '')).toBe('open');
+		// "done" or anything unknown never counts as the own status.
+		expect(rules.subtaskStatusOf('done', 'waiting')).toBe('waiting');
+		expect(rules.subtaskStatusOf('sofort', 'done')).toBe('open');
+		// The fallback of a template is its "Status beim Anlegen" (initialStatusOf).
+		for (const initial of ['', 'backlog', 'in_progress', 'done', 'x']) {
+			expect(rules.subtaskStatusOf(undefined, rules.initialStatusOf(initial)), initial).toBe(rules.initialStatusOf(initial));
+		}
+	});
+
 	it('names the first problem and its entry', () => {
 		const check = (value) => {
 			const { code, index } = rules.templateSubtasksCheck(value);
@@ -743,7 +789,12 @@ describe('the sub-tasks of the template (plan WV-3, ADR-0022 addendum 10)', () =
 		expect(check([{ title: '🧹'.repeat(200) }])).toEqual(['', -1]);
 		expect(check([{ title: 'x'.repeat(201) }])).toEqual(['validation_recurrence_subtask_title_max', 0]);
 		expect(check([{ title: 'A', priority: 'sofort' }])).toEqual(['validation_recurrence_subtask_priority', 0]);
+		// "Erledigt" and anything unknown are no status of a new sub-task (UT-1).
+		expect(check([{ title: 'A' }, { title: 'B', status: 'done' }])).toEqual(['validation_recurrence_subtask_status', 1]);
+		expect(check([{ title: 'A', status: 'bald' }])).toEqual(['validation_recurrence_subtask_status', 0]);
+		expect(check([{ title: 'A', status: 2 }])).toEqual(['validation_recurrence_subtask_status', 0]);
 		for (const code of [
+			'validation_recurrence_subtask_status',
 			'validation_recurrence_subtasks',
 			'validation_recurrence_subtasks_max',
 			'validation_recurrence_subtask_title',

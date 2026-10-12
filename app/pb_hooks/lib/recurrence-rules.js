@@ -42,6 +42,7 @@ var MESSAGES = {
   validation_recurrence_subtask_title: 'Jede Unteraufgabe der Vorlage braucht einen Titel.',
   validation_recurrence_subtask_title_max: 'Der Titel einer Unteraufgabe hat höchstens 200 Zeichen.',
   validation_recurrence_subtask_priority: 'Bitte für jede Unteraufgabe eine gültige Priorität wählen.',
+  validation_recurrence_subtask_status: 'Als Status einer Unteraufgabe geht jeder Status außer „Erledigt“.',
   validation_project_archived: 'Das Projekt ist archiviert. Wähle ein anderes oder kein Projekt, um die Regel fortzusetzen.'
 };
 
@@ -153,7 +154,7 @@ function initialStatusChoiceViolation(value) {
 
 // --- Sub-tasks of the template (plan WV-3, ADR-0022 addendum 10) --------------------------------
 
-// At most so many sub-tasks per template; each becomes a new open sub-task of every next ticket.
+// At most so many sub-tasks per template; each becomes a new sub-task of every next ticket.
 var TEMPLATE_SUBTASKS_MAX = 20;
 // The same limit as the title of a ticket (characters, as PocketBase counts them).
 var TEMPLATE_SUBTASK_TITLE_MAX = 200;
@@ -173,12 +174,26 @@ function characterCount(text) {
 }
 
 /**
+ * The status a new sub-task starts with (UT-1, ADR-0033 addendum UT-1): its own status when it names
+ * one of a ticket that is not done, else the status of its parent, unless that one is done or unknown,
+ * then "open". The sub-tasks of a template fall back to its "Status beim Anlegen" this way (the status
+ * of the new ticket, initialStatusOf), those of "Neues Ticket" to the status of the new ticket.
+ */
+function subtaskStatusOf(status, parentStatus) {
+  if (INITIAL_STATUSES.indexOf(status) !== -1) {
+    return status;
+  }
+  return initialStatusOf(parentStatus);
+}
+
+/**
  * Checks and normalizes the sub-tasks of a template (`template_subtasks`, a JSON list). Empty
- * (undefined, null, '') is the empty list. Each entry is { title, priority }: the title is trimmed
- * and required (at most TEMPLATE_SUBTASK_TITLE_MAX characters), the priority one of the four, an
- * empty one "medium"; other keys are dropped. Returns { value, code, index }: the normalized list
- * and '' when valid, else the code of the first problem and the index of its entry (-1 for the
- * list as a whole).
+ * (undefined, null, '') is the empty list. Each entry is { title, priority, status? }: the title is
+ * trimmed and required (at most TEMPLATE_SUBTASK_TITLE_MAX characters), the priority one of the four,
+ * an empty one "medium"; the status (since UT-1) one of INITIAL_STATUSES, an empty one left out (the
+ * entry then starts with the "Status beim Anlegen" of the template, subtaskStatusOf); other keys are
+ * dropped. Returns { value, code, index }: the normalized list and '' when valid, else the code of
+ * the first problem and the index of its entry (-1 for the list as a whole).
  */
 function templateSubtasksCheck(raw) {
   if (isEmpty(raw)) {
@@ -207,7 +222,14 @@ function templateSubtasksCheck(raw) {
     if (SUBTASK_PRIORITIES.indexOf(priority) === -1) {
       return { value: null, code: 'validation_recurrence_subtask_priority', index: i };
     }
-    value.push({ title: title, priority: priority });
+    var entry = { title: title, priority: priority };
+    if (!isEmpty(item.status)) {
+      if (INITIAL_STATUSES.indexOf(item.status) === -1) {
+        return { value: null, code: 'validation_recurrence_subtask_status', index: i };
+      }
+      entry.status = item.status;
+    }
+    value.push(entry);
   }
   return { value: value, code: '', index: -1 };
 }
@@ -748,6 +770,7 @@ module.exports = {
   TEMPLATE_SUBTASK_TITLE_MAX: TEMPLATE_SUBTASK_TITLE_MAX,
   SUBTASK_PRIORITIES: SUBTASK_PRIORITIES,
   DEFAULT_SUBTASK_PRIORITY: DEFAULT_SUBTASK_PRIORITY,
+  subtaskStatusOf: subtaskStatusOf,
   templateSubtasksCheck: templateSubtasksCheck,
   SUBTASKS_FIELD: SUBTASKS_FIELD,
   subtasksNoteIds: subtasksNoteIds,

@@ -26,6 +26,7 @@ var dayPlans = require(__hooks + '/lib/day-plan-service.js');
 var dayPlanRules = require(__hooks + '/lib/day-plan-rules.js');
 var ticketSources = require(__hooks + '/lib/ticket-source-service.js');
 var ticketSourceRules = require(__hooks + '/lib/ticket-source-rules.js');
+var assignees = require(__hooks + '/lib/assignee-service.js');
 var berlinTime = require(__hooks + '/lib/berlin-time.js');
 
 var TICKETS = 'tickets';
@@ -275,12 +276,18 @@ function checkPinAndPlan(app, options, status) {
 
 // --- Writes in the transaction -----------------------------------------------------------------
 
-// New open sub-tasks in the order of the request: the project and the tags of the ticket, like
+// New sub-tasks in the order of the request: the project and the tags of the ticket, like
 // "Unteraufgabe hinzufügen" (ADR-0033 §4), each a millisecond later than the one before, so the
 // section "Unteraufgaben" keeps the order (like the sub-tasks of a template, ADR-0022 addendum 10).
+// Since UT-1 (ADR-0069 addendum UT-1) each starts with its own status or else the one of the ticket
+// (never done: then "open", recurrence-rules.js subtaskStatusOf) and takes the due date, the kind and
+// the assignee of the ticket. `ticket` is read again in the transaction after the rule, which may have
+// moved its due date to today (WH-2). An inherited assignee tells nobody of its own (INHERITED_KEY).
 function saveSubtasks(txApp, ticket, subtasks, actor) {
   var created = [];
   var nowMs = Date.now();
+  var kind = ticket.getString('kind');
+  var assignee = ticket.getString('assignee');
   for (var i = 0; i < subtasks.length; i++) {
     var child = new Record(txApp.findCollectionByNameOrId(TICKETS));
     var stamp = berlinTime.toPocketBaseDate(nowMs + i + 1);
@@ -290,11 +297,18 @@ function saveSubtasks(txApp, ticket, subtasks, actor) {
     child.set('household', ticket.getString('household'));
     child.set('title', subtasks[i].title);
     child.set('description', '');
-    child.set('status', 'open');
+    child.set('status', recurrenceRules.subtaskStatusOf(subtasks[i].status, ticket.getString('status')));
     child.set('priority', subtasks[i].priority);
-    child.set('due', '');
+    child.set('due', ticket.getString('due'));
     child.set('project', ticket.getString('project'));
     child.set('tags', stringList(ticket.getStringSlice('tags')));
+    if (kind !== '') {
+      child.set('kind', kind);
+    }
+    if (assignee !== '') {
+      child.set('assignee', assignee);
+      child.set(assignees.INHERITED_KEY, true);
+    }
     child.set('parent', ticket.id);
     child.set('blocks_parent', true);
     child.set('source', 'manual');
@@ -343,6 +357,9 @@ function planToday(txApp, ticket, actor) {
 /**
  * GET /api/byl/tickets/create: which options the server knows (the migrations that ran), so the form
  * offers only those. Before this package the route is missing (404) and the form creates as before.
+ * `subtask_status` (UT-1, no migration) says that these hooks take a status per sub-task, here and in
+ * the template of a rule; a server before its restart after UT-1 does not name it and would drop the
+ * status without a word, so the forms offer none then.
  */
 function support(e) {
   var tickets = e.app.findCollectionByNameOrId(TICKETS);
@@ -354,7 +371,8 @@ function support(e) {
     kind: hasField(tickets, 'kind'),
     color: hasField(tickets, 'color'),
     charm: hasField(tickets, 'charm'),
-    assignee: hasField(tickets, 'assignee')
+    assignee: hasField(tickets, 'assignee'),
+    subtask_status: true
   };
 }
 
@@ -386,7 +404,6 @@ function create(e) {
   var result = null;
   e.app.runInTransaction(function (txApp) {
     txApp.save(ticket);
-    var subtasks = saveSubtasks(txApp, ticket, options.subtasks, actor);
     var sources = linkSources(txApp, ticket, options.sources, actor);
     var linked = linkTicketSources(txApp, ticket, options.ticketSources, actor);
     var rule = null;
@@ -394,6 +411,10 @@ function create(e) {
       rule = ruleRecord(txApp, ticket, options.rule, actor, ticket.id);
       txApp.save(rule);
     }
+    // The sub-tasks after the rule: "Serie ab heute beginnen" may have moved the due date of the
+    // ticket in this transaction (WH-2), and they take the date it has now (UT-1).
+    var parent = rule === null ? ticket : findById(txApp, TICKETS, ticket.id);
+    var subtasks = saveSubtasks(txApp, parent, options.subtasks, actor);
     if (options.pin) {
       pins.pinTicket(txApp, actor, ticket.id);
     }

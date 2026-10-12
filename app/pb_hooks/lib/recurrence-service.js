@@ -632,7 +632,8 @@ function newInstance(txApp, rule, due, occurrence) {
   ticket.set('household', rule.getString('household'));
   // The person of this occurrence by the mode of the rule (ADR-0068 §5): "fest" its person,
   // "abwechselnd" the next one of the rotation, whose pointer moves on in the rule (saved by the run
-  // after its tickets). The sub-tasks of the template get none, like no charm.
+  // after its tickets). The sub-tasks of the template take the person of their ticket (UT-1,
+  // ADR-0068 addendum UT-1), so the pointer moves once per occurrence.
   var assignee = assignees.occurrenceAssignee(txApp, rule);
   if (assignee !== '') {
     ticket.set('assignee', assignee);
@@ -643,15 +644,17 @@ function newInstance(txApp, rule, due, occurrence) {
 }
 
 /**
- * The sub-tasks of the template as new, open sub-tasks of a new ticket of the series (plan WV-3,
- * ADR-0022 addendum 10), in the transaction of the ticket: title and priority of the entry, project,
- * tags, owner and household of the ticket (like "Unteraufgabe hinzufügen", ADR-0033 section 4), no
- * due date, blocks_parent true (the default of ADR-0033 section 2), no series. Each runs through the
- * ticket hooks (scope, key, checks, history "created" with the rule as author). Created and updated
- * get one timestamp each, one millisecond apart in the order of the template, so a sub-task stays
- * untouched and the list keeps the order (it sorts by creation). The note SUBTASKS_FIELD names them
- * for reopening (ADR-0023 section 3); like the note of missed dates it leaves `updated` of the
- * ticket alone.
+ * The sub-tasks of the template as new sub-tasks of a new ticket of the series (plan WV-3, ADR-0022
+ * addendum 10), in the transaction of the ticket: title and priority of the entry, its status or else
+ * the "Status beim Anlegen" of the template (the status of the ticket, subtaskStatusOf; UT-1), project,
+ * tags, owner and household of the ticket (like "Unteraufgabe hinzufügen", ADR-0033 section 4), and
+ * since UT-1 its due date, its kind and its assignee (ADR-0022 addendum 16), blocks_parent true (the
+ * default of ADR-0033 section 2), no series. Each runs through the ticket hooks (scope, key, checks,
+ * history "created" with the rule as author); an assignee of the server tells nobody (ADR-0068 §4).
+ * Created and updated get one timestamp each, one millisecond apart in the order of the template, so a
+ * sub-task stays untouched and the list keeps the order (it sorts by creation). The note
+ * SUBTASKS_FIELD names them for reopening (ADR-0023 section 3); like the note of missed dates it
+ * leaves `updated` of the ticket alone.
  */
 function newSubtasks(txApp, collection, rule, ticket, nowMs) {
   var subtasks = templateSubtasksOf(rule);
@@ -659,6 +662,10 @@ function newSubtasks(txApp, collection, rule, ticket, nowMs) {
     return;
   }
   var made = [];
+  // What every sub-task takes from the ticket (UT-1); before their migrations kind and assignee read
+  // as '' and are left out.
+  var kind = ticket.getString('kind');
+  var assignee = ticket.getString('assignee');
   for (var i = 0; i < subtasks.length; i++) {
     var child = new Record(collection);
     var stamp = berlinTime.toPocketBaseDate(nowMs + i + 1);
@@ -669,8 +676,14 @@ function newSubtasks(txApp, collection, rule, ticket, nowMs) {
     child.set('project', ticket.getString('project'));
     child.set('tags', listOf(ticket.getStringSlice('tags')));
     child.set('priority', subtasks[i].priority);
-    child.set('status', 'open');
-    child.set('due', '');
+    child.set('status', rules.subtaskStatusOf(subtasks[i].status, ticket.getString('status')));
+    child.set('due', ticket.getString('due'));
+    if (kind !== '') {
+      child.set('kind', kind);
+    }
+    if (assignee !== '') {
+      child.set('assignee', assignee);
+    }
     child.set('blocks_parent', true);
     child.set('parent', ticket.id);
     child.set('owner', ticket.getString('owner'));

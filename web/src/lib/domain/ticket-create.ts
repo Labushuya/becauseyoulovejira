@@ -25,6 +25,8 @@ export const CREATE_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
 	validation_create_subtask_title: 'Jede Unteraufgabe braucht einen Titel.',
 	validation_create_subtask_title_max: 'Der Titel einer Unteraufgabe hat höchstens 200 Zeichen.',
 	validation_create_subtask_priority: 'Bitte für jede Unteraufgabe eine gültige Priorität wählen.',
+	validation_create_subtask_status:
+		'Als Status einer Unteraufgabe geht jeder Status außer „Erledigt“.',
 	validation_create_subtasks_nested:
 		'Eine Unteraufgabe hat keine eigenen Unteraufgaben (nur eine Ebene).',
 	validation_create_ticket_sources: 'Die Quell-Tickets sind ungültig.',
@@ -41,7 +43,10 @@ export const CREATE_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
  * same transaction.
  */
 export interface TicketExtras {
-	/** New open sub-tasks in this order (ADR-0033), with the project and tags of the ticket. */
+	/**
+	 * New sub-tasks in this order (ADR-0033), with the project, tags, due date, kind and assignee of
+	 * the ticket; each with its own status or, left out, the one of the ticket (UT-1).
+	 */
 	subtasks: TemplateSubtask[];
 	/** Tickets the new one stems from (ADR-0067). */
 	ticketSources: string[];
@@ -102,7 +107,11 @@ export function createRequestBody(
 		...(draft.assignee ? { assignee: draft.assignee } : {}),
 		...(request.sourceItem !== null ? { source_item: request.sourceItem } : { source: 'manual' }),
 		...(extras.subtasks.length > 0 && {
-			subtasks: extras.subtasks.map((entry) => ({ title: entry.title, priority: entry.priority }))
+			subtasks: extras.subtasks.map((entry) => ({
+				title: entry.title,
+				priority: entry.priority,
+				...(entry.status !== undefined && { status: entry.status })
+			}))
 		}),
 		...(extras.ticketSources.length > 0 && { ticket_sources: [...extras.ticketSources] }),
 		...(extras.sources.length > 0 && { sources: [...extras.sources] }),
@@ -169,6 +178,11 @@ export interface CreateSupport {
 	color: boolean;
 	charm: boolean;
 	assignee: boolean;
+	/**
+	 * A status per sub-task, here and in the template of a rule (UT-1, no migration): false before the
+	 * restart after UT-1, whose hooks would drop it without a word.
+	 */
+	subtaskStatus: boolean;
 }
 
 /** The answer of the GET, or null when it is not one. */
@@ -183,7 +197,8 @@ export function toCreateSupport(value: unknown): CreateSupport | null {
 		kind: flag('kind'),
 		color: flag('color'),
 		charm: flag('charm'),
-		assignee: flag('assignee')
+		assignee: flag('assignee'),
+		subtaskStatus: flag('subtask_status')
 	};
 }
 

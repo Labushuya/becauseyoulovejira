@@ -123,6 +123,17 @@ describe('the list "Unteraufgaben" of the template (plan WV-3)', () => {
 			{ title: 'x'.repeat(200), priority: 'medium' },
 			{ title: '🧹'.repeat(200), priority: 'urgent' }
 		]);
+		// Since UT-1 an entry keeps a status of an open ticket; an empty one is left out.
+		const withStatus = [
+			{ title: 'Gießen', status: 'in_progress' },
+			{ title: 'Düngen', priority: 'low', status: 'backlog' },
+			{ title: 'Ernten', status: '' }
+		];
+		expect((await rules().update(rule.id, { template_subtasks: withStatus })).template_subtasks).toEqual([
+			{ title: 'Gießen', priority: 'medium', status: 'in_progress' },
+			{ title: 'Düngen', priority: 'low', status: 'backlog' },
+			{ title: 'Ernten', priority: 'medium' }
+		]);
 	});
 
 	it('refuses more than 20, an entry without a title, a long title and an unknown priority, for every writer', async () => {
@@ -159,6 +170,18 @@ describe('the list "Unteraufgaben" of the template (plan WV-3)', () => {
 					message: 'Bitte für jede Unteraufgabe eine gültige Priorität wählen.',
 					params: { index: 0 }
 				}
+			],
+			[
+				[{ title: 'Gut' }, { title: 'Fertig', status: 'done' }],
+				{
+					code: 'validation_recurrence_subtask_status',
+					message: 'Als Status einer Unteraufgabe geht jeder Status außer „Erledigt“.',
+					params: { index: 1 }
+				}
+			],
+			[
+				[{ title: 'Gut', status: 'bald' }],
+				{ code: 'validation_recurrence_subtask_status', params: { index: 0 } }
 			],
 			[
 				{ title: 'Kein Liste' },
@@ -199,26 +222,29 @@ describe('generation with the sub-tasks of the template (ADR-0022 addendum 10)',
 			lead_days: 2,
 			template_subtasks: [
 				{ title: 'Entkalken', priority: 'high' },
-				{ title: 'Filter wechseln', priority: 'medium' },
-				{ title: 'Deckel putzen', priority: 'urgent' }
+				{ title: 'Filter wechseln', priority: 'medium', status: 'backlog' },
+				{ title: 'Deckel putzen', priority: 'urgent', status: 'in_progress' }
 			]
 		});
 		expect((await run('2050-03-05T12:00:00Z')).tickets).toBe(1);
 
 		const [ticket] = await instancesOf(rule.id);
-		expect(ticket).toMatchObject({ key: `${code}-1`, status: 'waiting', priority: 'low' });
+		expect(ticket).toMatchObject({ key: `${code}-1`, status: 'waiting', priority: 'low', kind: 'task' });
 		const children = await childrenOf(ticket.id);
-		// In the order of the template, each a ticket of its own with the next keys.
-		expect(children.map(({ title, priority, key }) => ({ title, priority, key }))).toEqual([
-			{ title: 'Entkalken', priority: 'high', key: `${code}-2` },
-			{ title: 'Filter wechseln', priority: 'medium', key: `${code}-3` },
-			{ title: 'Deckel putzen', priority: 'urgent', key: `${code}-4` }
+		// In the order of the template, each a ticket of its own with the next keys; the status of
+		// the entry, without one the "Status beim Anlegen" of the template (UT-1).
+		expect(children.map(({ title, priority, key, status }) => ({ title, priority, key, status }))).toEqual([
+			{ title: 'Entkalken', priority: 'high', key: `${code}-2`, status: 'waiting' },
+			{ title: 'Filter wechseln', priority: 'medium', key: `${code}-3`, status: 'backlog' },
+			{ title: 'Deckel putzen', priority: 'urgent', key: `${code}-4`, status: 'in_progress' }
 		]);
 		for (const child of children) {
-			// Open, without a due date and a series, blocking (the default), project and tags of the ticket.
+			// The due date and the kind of the ticket (UT-1), no series, blocking (the default), project
+			// and tags of the ticket; no assignee in the private area.
 			expect(child).toMatchObject({
-				status: 'open',
-				due: '',
+				due: ticket.due,
+				kind: 'task',
+				assignee: '',
 				completed_at: '',
 				description: '',
 				parent: ticket.id,
@@ -292,8 +318,9 @@ describe('generation with the sub-tasks of the template (ADR-0022 addendum 10)',
 			expect(children.map(({ title, priority, status }) => ({ title, priority, status }))).toEqual([
 				{ title: 'Gießen', priority: 'high', status: 'open' }
 			]);
-			// The sub-task belongs to no series and has no date of the series.
-			expect(children[0]).toMatchObject({ recurrence: '', occurrence: '' });
+			// The sub-task belongs to no series and has no date of the series, but the due date of its
+			// ticket, i.e. of its date (UT-1).
+			expect(children[0]).toMatchObject({ recurrence: '', occurrence: '', due: ticket.due });
 		}
 	});
 
