@@ -33,7 +33,11 @@ const MENU = 'Menü „•••“ im Kopf';
 const FIELDS = 'Felder';
 const EXISTING = 'Setzt ein bestehendes Ticket voraus';
 
-/** The options in the order of the side panel: head, title, fields, sections. */
+/**
+ * The options in the order of the side panel: head, title, fields, sections. The sections since
+ * TD-1 (ADR-0031 addendum L): series, description, sub-tasks, comments and history, sources (entries
+ * and tickets), follow-ups, and last the line with source and dates.
+ */
 export const TICKET_OPTIONS: readonly TicketOption[] = Object.freeze([
 	{ key: 'pin', label: 'Anheften', detail: HEAD, area: 'all', create: 'more' },
 	{
@@ -139,13 +143,20 @@ export const TICKET_OPTIONS: readonly TicketOption[] = Object.freeze([
 	{ key: 'description', label: 'Beschreibung', detail: 'Abschnitt', area: 'all', create: 'main' },
 	{ key: 'subtasks', label: 'Unteraufgaben', detail: 'Abschnitt', area: 'all', create: 'more' },
 	{
-		key: 'meta',
-		label: 'Quelle und Daten',
-		detail: 'Zeile unter den Unteraufgaben',
+		key: 'comments',
+		label: 'Kommentare (mit „Anpinnen“)',
+		detail: 'Reiter „Kommentare“',
 		area: 'all',
 		create: null,
-		reason:
-			'Nur Anzeige: Erstellt, Aktualisiert und Erledigt am setzt der Server; die Quelle kommt aus dem Eingang (Umwandeln öffnet denselben Dialog).'
+		reason: `${EXISTING}: Ein Kommentar gehört zu einem Ticket; der Server lehnt einen angepinnten Kommentar beim Anlegen ab. Was zum Anfang gehört, steht in der Beschreibung.`
+	},
+	{
+		key: 'history',
+		label: 'Verlauf',
+		detail: 'Reiter „Verlauf“',
+		area: 'all',
+		create: null,
+		reason: `${EXISTING}: Der Verlauf schreibt nur der Server.`
 	},
 	{
 		key: 'sources',
@@ -170,20 +181,13 @@ export const TICKET_OPTIONS: readonly TicketOption[] = Object.freeze([
 		reason: `${EXISTING}: Folge-Tickets stammen aus diesem Ticket (Gegenrichtung); ein neues Ticket hat noch keine.`
 	},
 	{
-		key: 'comments',
-		label: 'Kommentare (mit „Anpinnen“)',
-		detail: 'Reiter „Kommentare“',
+		key: 'meta',
+		label: 'Quelle und Daten',
+		detail: 'Letzte Zeile des Panels; in der Vollansicht die Karten „Quelle“ und „Metadaten“',
 		area: 'all',
 		create: null,
-		reason: `${EXISTING}: Ein Kommentar gehört zu einem Ticket; der Server lehnt einen angepinnten Kommentar beim Anlegen ab. Was zum Anfang gehört, steht in der Beschreibung.`
-	},
-	{
-		key: 'history',
-		label: 'Verlauf',
-		detail: 'Reiter „Verlauf“',
-		area: 'all',
-		create: null,
-		reason: `${EXISTING}: Der Verlauf schreibt nur der Server.`
+		reason:
+			'Nur Anzeige: Erstellt, Aktualisiert und Erledigt am setzt der Server; die Quelle kommt aus dem Eingang (Umwandeln öffnet denselben Dialog).'
 	},
 	{
 		key: 'read',

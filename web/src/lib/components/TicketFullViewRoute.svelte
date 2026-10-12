@@ -60,6 +60,8 @@
 	// Over the calendar (/kalender/tickets/<id>/voll, ADR-0053 §6) and in the areas projects, inbox
 	// and rules (ADR-0054) the host of the context names the addresses, and closing gives the focus
 	// to the entry of the ticket there: in an area to the panel it came from, else to the view.
+	// The left column since TD-1 (ADR-0031 addendum L): path, title, description, sub-tasks, comments
+	// and history, sources, follow-ups; the right column keeps details, series, source and metadata.
 
 	const host = findTicketHost();
 	const detail = getTicketDetailStore();
@@ -274,6 +276,7 @@
 					hrefOf={(subtaskId) => host.full(subtaskId, page.url)}
 				/>
 			{/if}
+			<TicketActivity store={comments} {catalog} pin={detail} />
 			<TicketSources
 				{ticket}
 				store={sources}
@@ -288,7 +291,6 @@
 					hrefOf={(otherId) => host.full(otherId, page.url)}
 				/>
 			{/if}
-			<TicketActivity store={comments} {catalog} pin={detail} />
 		{/snippet}
 		{#snippet side()}
 			<section class="card" aria-labelledby={`${uid}-details`}>

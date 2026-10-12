@@ -20,6 +20,10 @@ import type { LiveSource, RecordChange } from '$lib/stores/realtime';
 import { getRecurrenceStore } from '$lib/stores/recurrence.svelte';
 import { TicketActivityStore, type TicketActivityData } from '$lib/stores/ticket-activity.svelte';
 import { TicketDuplicateStore } from '$lib/stores/ticket-duplicate.svelte';
+import { TICKET_OPTIONS } from '$lib/domain/ticket-options';
+import type { TicketOrigin } from '$lib/domain/ticket-origins';
+import { LiveHealth } from '$lib/stores/live-health.svelte';
+import { TicketOriginsStore, type TicketOriginsData } from '$lib/stores/ticket-origins.svelte';
 import {
 	TicketDetailStore,
 	type TicketDetailData,
@@ -68,6 +72,8 @@ const mocks = vi.hoisted(() => ({
 	catalog: null as unknown,
 	// "Duplizieren …" (ADR-0045) shows only with the store of the (app) layout; null hides it.
 	duplicates: null as unknown,
+	// Tickets as sources and follow-ups (ADR-0067) come from the (app) layout; null leaves them out.
+	origins: null as unknown,
 	// The section "Unteraufgaben" (ADR-0033) is covered in ticket-subtasks.test.ts; here the ticket
 	// has none.
 	tickets: {
@@ -107,6 +113,10 @@ vi.mock('$lib/stores/ticket-list.svelte', async (importOriginal) => ({
 vi.mock('$lib/stores/ticket-duplicate.svelte', async (importOriginal) => ({
 	...(await importOriginal<object>()),
 	findTicketDuplicateStore: () => mocks.duplicates
+}));
+vi.mock('$lib/stores/ticket-origins.svelte', async (importOriginal) => ({
+	...(await importOriginal<object>()),
+	findTicketOriginsStore: () => mocks.origins
 }));
 // The route shows "Wiederholen…" (E5 plan, package 4); rules are covered in
 // recurrence-summary.test.ts, here the store stays unloaded.
@@ -173,6 +183,7 @@ function openModeStore({
 afterEach(() => {
 	mocks.page.route = { id: PANEL_ROUTE };
 	mocks.duplicates = null;
+	mocks.origins = null;
 });
 
 /** The store of "Duplizieren …" (ADR-0045) on a fake route that answers the duplicate TASK-4. */
@@ -1428,6 +1439,132 @@ describe('ticket route: recurrence (E5 plan, package 4)', () => {
 		await vi.waitFor(() => expect(context.store.state).toBe('ready'));
 		expect(screen.getByRole('button', { name: 'Wiederholen…' })).toBeTruthy();
 		expect(screen.queryByText('wiederkehrend')).toBeNull();
+	});
+});
+
+// Order of the ticket (TD-1, ADR-0031 addendum L): comments right below the sub-tasks, the sources
+// below the comments, source and dates last; the registry of the options names the same order.
+describe('ticket route: order of the sections (TD-1)', () => {
+	/** Keys of the sections below the fields, in the order of the registry. */
+	const SECTIONS = [
+		'recurrence',
+		'description',
+		'subtasks',
+		'comments',
+		'history',
+		'sources',
+		'ticketSources',
+		'followUps',
+		'meta'
+	];
+
+	/** The keys of the options a part of the page marks, in the order of the page. */
+	const keysIn = (root: Element) =>
+		[...root.querySelectorAll<HTMLElement>('[data-ticket-option]')].map(
+			(element) => element.dataset.ticketOption ?? ''
+		);
+
+	/** A store of the origins with one source ticket and one follow-up (ADR-0067). */
+	function originsStore() {
+		const origin = (id: string, key: string): TicketOrigin => ({
+			link: `link${id.slice(4)}`,
+			id,
+			key,
+			title: `Ticket ${key}`,
+			status: 'open',
+			trashed: false,
+			created: '2026-09-20 08:00:00.000Z',
+			createdBy: 'me'
+		});
+		const unsubscribe = async () => undefined;
+		const data: TicketOriginsData = {
+			load: vi.fn(async () => ({
+				ticketId: ID,
+				sources: [origin('tick00000000001', 'HAUS-1')],
+				followUps: [origin('tick00000000002', 'HAUS-2')],
+				descendants: ['tick00000000002'],
+				already: false
+			})),
+			add: vi.fn(),
+			remove: vi.fn(),
+			links: vi.fn(async () => unsubscribe),
+			tickets: vi.fn(async () => unsubscribe),
+			reconnected: vi.fn(async () => unsubscribe)
+		};
+		return new TicketOriginsStore(data, { ensureValid: () => true, logout: vi.fn() }, undefined, {
+			health: new LiveHealth()
+		});
+	}
+
+	it('shows sub-tasks, comments and history, sources and follow-ups, and source and dates last in the panel', async () => {
+		mocks.origins = originsStore();
+		const context = createStore(ticket({ source: 'mail', sourceItem: 'item00000000001' }));
+		mocks.detail = context.store;
+		mocks.catalog = catalogOf();
+		mocks.activity = activityStore();
+		renderTicketRoute();
+		await vi.waitFor(() => expect(context.store.state).toBe('ready'));
+		const panel = screen.getByRole('complementary');
+		await vi.waitFor(() =>
+			expect(within(panel).getByRole('region', { name: 'Folge-Tickets' })).toBeTruthy()
+		);
+
+		const sections = keysIn(panel).filter((key) => SECTIONS.includes(key));
+		expect(sections).toEqual(SECTIONS);
+		// The registry of the options (and so "Weitere Optionen" of "Neues Ticket") has the same order.
+		const shown = keysIn(panel);
+		expect(shown).toEqual(
+			TICKET_OPTIONS.map((option) => option.key).filter((key) => shown.includes(key))
+		);
+		// The tabs of the activity come right after the sub-tasks, the line with the dates is last.
+		const subtasks = within(panel).getByRole('region', { name: 'Unteraufgaben' });
+		const tabs = within(panel).getByRole('tablist');
+		const sources = within(panel).getByRole('region', { name: 'Quellen' });
+		const meta = panel.querySelector('[data-ticket-option="meta"]') as HTMLElement;
+		const following = (a: Element, b: Element) =>
+			Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+		expect(following(subtasks, tabs)).toBe(true);
+		expect(following(tabs, sources)).toBe(true);
+		expect(following(sources, meta)).toBe(true);
+		expect(meta.textContent).toContain('Erstellt');
+	});
+
+	it('orders the left column of the full view the same way; the right column keeps its cards', async () => {
+		mocks.origins = originsStore();
+		mocks.catalog = catalogOf();
+		mocks.page.url = new URL(`http://localhost:3000/tickets/${ID}/voll?erledigte=1`);
+		mocks.page.route = { id: FULL_ROUTE };
+		const context = createStore(ticket({ source: 'mail', sourceItem: 'item00000000001' }));
+		mocks.detail = context.store;
+		mocks.activity = activityStore();
+		render(FullViewRouteHarness, { props: {} });
+		await vi.waitFor(() => expect(context.store.state).toBe('ready'));
+		const dialog = await screen.findByRole('dialog', { name: 'TASK-3 · Steuererklärung' });
+		await vi.waitFor(() =>
+			expect(within(dialog).getByRole('region', { name: 'Folge-Tickets' })).toBeTruthy()
+		);
+
+		const main = dialog.querySelector('.full-view > .main') as HTMLElement;
+		const side = dialog.querySelector('.full-view > .side') as HTMLElement;
+		expect(keysIn(main)).toEqual([
+			'title',
+			'description',
+			'subtasks',
+			'comments',
+			'history',
+			'sources',
+			'ticketSources',
+			'followUps'
+		]);
+		expect(keysIn(side).filter((key) => SECTIONS.includes(key))).toEqual([
+			'recurrence',
+			'meta',
+			'meta'
+		]);
+		for (const card of ['Details', 'Wiederholung', 'Quelle', 'Metadaten']) {
+			expect(within(side).getByRole('region', { name: card }), card).toBeTruthy();
+		}
+		mocks.page.url = new URL(`http://localhost:3000/tickets/${ID}?erledigte=1`);
 	});
 });
 
