@@ -1,23 +1,30 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { matchesWords, searchWords } from '$lib/domain/ticket-picker';
+	import { limitBlocks } from '$lib/domain/subtasks';
+	import { matchesWordsWithParent, searchWords } from '$lib/domain/ticket-picker';
 	import type { TicketSummary } from '$lib/domain/ticket';
 	import type { DayPlanStore } from '$lib/stores/day-plan.svelte';
 	import { ticketLinks } from '$lib/stores/open-mode.svelte';
 	import CharmIcon from '../CharmIcon.svelte';
 	import DueLabel from '../DueLabel.svelte';
 	import KindBadge from '../KindBadge.svelte';
+	import SubtaskNestIcon from '../SubtaskNestIcon.svelte';
 	import SubtaskPath from '../SubtaskPath.svelte';
+	import SubtaskProgressChip from '../SubtaskProgressChip.svelte';
 	import EmptyState from '../guidance/EmptyState.svelte';
 	import { DRAG_TICKET } from './DayPlanList.svelte';
 
 	// The pool of the day plan (ADR-0065 §4): the open tickets of the area that are not in the plan, in
-	// the default order of the list, with a search over key and title (the normalisation of the ticket
-	// picker, ADR-0042); a sub-task names its parent above its title (TP-2). Each ticket goes into the
-	// plan with "+" (the way on a phone, 44 px) or by
-	// dragging it onto the plan, at the place where it is dropped. A long pool shows the first
-	// POOL_LIMIT tickets and says how many more the search can find. On a wide screen the pool stands
-	// next to the plan, on a narrow one below it (the view decides).
+	// the default order of the list, arranged like the table "Aufgaben" (TP-3): a parent, directly
+	// below it indented its sub-tasks of the pool with the corner, the parent with the chip "2/5". A
+	// sub-task whose parent is not in the pool (in the plan, done, unknown, or not found by the
+	// search) stands alone and names its parent above its title (TP-2). The search goes over key and
+	// title of a ticket and of its parent (TP-3; the normalisation of the ticket picker, ADR-0042):
+	// every word in one of them. Each ticket goes into the plan with "+" (the way on a phone, 44 px)
+	// or by dragging it onto the plan, at the place where it is dropped. A long pool shows the first
+	// POOL_LIMIT tickets in whole blocks of a parent with its sub-tasks and says how many more the
+	// search can find. On a wide screen the pool stands next to the plan, on a narrow one below it
+	// (the view decides).
 	const POOL_LIMIT = 60;
 
 	let { store }: { store: DayPlanStore } = $props();
@@ -31,9 +38,14 @@
 	let text = $state('');
 
 	const words = $derived(searchWords(text));
-	const matching = $derived(store.pool.filter((ticket) => matchesWords(ticket, words)));
-	const shown = $derived(matching.slice(0, POOL_LIMIT));
-	const more = $derived(matching.length - shown.length);
+	const matching = $derived(
+		store.pool.filter((ticket) =>
+			matchesWordsWithParent(ticket, store.parentTicketOf(ticket), words)
+		)
+	);
+	const rows = $derived(store.arrange(matching, (ticket) => ticket));
+	const shown = $derived(limitBlocks(rows, POOL_LIMIT));
+	const more = $derived(rows.length - shown.length);
 
 	function onDragStart(event: DragEvent, ticket: TicketSummary) {
 		if (event.dataTransfer === null) return;
@@ -62,7 +74,7 @@
 			type="search"
 			autocomplete="off"
 			spellcheck="false"
-			placeholder="Key oder Titel"
+			placeholder="Key, Titel oder Hauptticket"
 			aria-describedby={hintId}
 			bind:value={text}
 		/>
@@ -73,19 +85,23 @@
 		<p class="hint" role="status">Kein Ticket passt zu „{text.trim()}“.</p>
 	{:else}
 		<ul class="tickets">
-			{#each shown as ticket (ticket.id)}
+			{#each shown as { entry: ticket, nested, parent } (ticket.id)}
 				{@const pending = store.isPending(ticket.id)}
-				{@const parent = store.parentOf(ticket)}
 				<li
 					class="ticket"
+					class:nested
 					draggable="true"
 					data-pool-ticket={ticket.id}
 					aria-busy={pending ? 'true' : undefined}
 					ondragstart={(event) => onDragStart(event, ticket)}
 				>
 					<span class="title-cell">
-						{#if parent}
-							<!-- A sub-task names its parent above its title (TP-2). -->
+						{#if parent && nested}
+							<!-- Indented below its parent (TP-3): the corner, the parent only for screen readers. -->
+							<SubtaskPath {parent} path={false} />
+							<SubtaskNestIcon />
+						{:else if parent}
+							<!-- A sub-task without its parent here names it above its title (TP-2). -->
 							<SubtaskPath {parent} withTitle href={links.href(parent.id, page.url)} />
 						{/if}
 						<CharmIcon charm={ticket.charm} />
@@ -96,6 +112,7 @@
 							data-ticket-link={ticket.id}>{ticket.title}</a
 						>
 						<KindBadge kind={ticket.kind} />
+						<SubtaskProgressChip progress={store.progressOf(ticket.id)} />
 						{#if ticket.due !== null}
 							<span class="due"><DueLabel due={ticket.due} today={store.today} /></span>
 						{/if}
@@ -146,8 +163,10 @@
 		width: 100%;
 	}
 
+	/* One column never wider than the pool, also with indented entries (TP-3). */
 	.tickets {
 		display: grid;
+		grid-template-columns: minmax(0, 1fr);
 		gap: 0.25rem;
 		margin: 0;
 		padding: 0;
@@ -164,6 +183,11 @@
 		border: 1px solid var(--color-line);
 		border-radius: var(--radius-control);
 		cursor: grab;
+	}
+
+	/* A sub-task below its parent (TP-3): the whole entry indented, like a row of the table. */
+	.ticket.nested {
+		margin-left: 1.5rem;
 	}
 
 	.title-cell {

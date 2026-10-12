@@ -516,15 +516,26 @@ describe('help page (EH-9)', () => {
 		expect(assignees).toMatch(/seine Unteraufgaben aus der Vorlage bekommen dieselbe Person/);
 	});
 
-	it('explains the parent above a sub-task in the day plan, without grouping (TP-2)', () => {
+	it('explains sub-tasks below their parent in the day plan and the line above a lone one (TP-2, TP-3)', () => {
 		const { container } = render(Page);
 		const content = text(container.querySelector<HTMLElement>('section#tagesplan')!);
+		// TP-3: below the parent like in "Aufgaben", the chip, the plan keeps its order.
 		expect(content).toMatch(
-			/Bei einer Unteraufgabe steht im Plan, im Pool und in den Vorschlägen klein darüber/
+			/Unteraufgaben stehen im Pool und in den Vorschlägen wie in „Aufgaben“: direkt unter ihrem Ticket, eingerückt/
 		);
+		expect(content).toMatch(/den Fortschritt, etwa „1\/4“/);
+		expect(content).toMatch(/Im Plan bleibt die Reihenfolge deine/);
+		expect(content).toMatch(/unter einer eingerückten Unteraufgabe desselben Tickets/);
+		expect(content).toMatch(
+			/Ein Haken am Ticket in den Vorschlägen wählt seine Unteraufgaben nicht mit/
+		);
+		// TP-2: the line of context of a sub-task without its parent above it.
 		expect(content).toMatch(/etwa „HAUS-7 › Wochenputz“; ein Klick auf den Key öffnet dieses/);
 		expect(content).toMatch(/der ganze steht im Tooltip/);
-		expect(content).toMatch(/der Plan gruppiert sie nicht unter ihrem Ticket/);
+		// TP-3: the search of the pool over the parent; elsewhere the ticket alone.
+		expect(content).toMatch(/findet eine Unteraufgabe auch über Key und Titel ihres Tickets/);
+		expect(content).toMatch(/die Wörter dürfen sich auf beide verteilen/);
+		expect(content).toMatch(/Die Suche in „Aufgaben“ und die Auswahl eines Tickets bleiben/);
 	});
 
 	it('explains the view "Erledigte": groups, loading more, filters and reopening (ADR-0066)', () => {

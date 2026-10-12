@@ -19,6 +19,7 @@ import {
 	judge,
 	loosePattern,
 	matchesWords,
+	matchesWordsWithParent,
 	normalizeSearch,
 	parentRules,
 	parseRecentTickets,
@@ -125,6 +126,55 @@ describe('matchesWords', () => {
 		const renamed = { ...apples, title: 'Birnen' };
 		expect(matchesWords(renamed, searchWords('äpfel'))).toBe(false);
 		expect(matchesWords(renamed, searchWords('birnen'))).toBe(true);
+	});
+
+	it('never looks at the parent: the picker and "Aufgaben" search the ticket only (TP-3)', () => {
+		const sub = ticket({
+			key: 'HAUS-13',
+			title: 'Fenster putzen',
+			parentId: 'parent000000001',
+			parentRef: { id: 'parent000000001', key: 'HAUS-7', title: 'Wochenputz' }
+		});
+		expect(matchesWords(sub, searchWords('fenster'))).toBe(true);
+		expect(matchesWords(sub, searchWords('wochenputz'))).toBe(false);
+		expect(matchesWords(sub, searchWords('haus-7'))).toBe(false);
+	});
+});
+
+describe('matchesWordsWithParent: the pool of the day plan (TP-3)', () => {
+	const parent = { key: 'HAUS-7', title: 'Großer Wochenputz' };
+	const sub = ticket({ key: 'HAUS-13', title: 'Fenster putzen' });
+
+	it('finds a sub-task over key or title of its parent, as normalised as the picker', () => {
+		for (const text of ['haus-7', 'wochenputz', 'GROSSER', 'großer wochenputz', 'fenster']) {
+			expect(matchesWordsWithParent(sub, parent, searchWords(text)), text).toBe(true);
+		}
+		expect(matchesWordsWithParent(sub, parent, searchWords('keller'))).toBe(false);
+		expect(matchesWordsWithParent(sub, parent, [])).toBe(true);
+	});
+
+	it('lets the words spread over the ticket and its parent, every word somewhere', () => {
+		expect(matchesWordsWithParent(sub, parent, searchWords('wochenputz fenster'))).toBe(true);
+		expect(matchesWordsWithParent(sub, parent, searchWords('haus-13 haus-7'))).toBe(true);
+		expect(matchesWordsWithParent(sub, parent, searchWords('wochenputz keller'))).toBe(false);
+	});
+
+	it('searches the ticket only without a parent, and the fallback "…" is no text', () => {
+		const top = ticket({ key: 'TASK-3', title: 'Fenster putzen' });
+		expect(matchesWordsWithParent(top, null, searchWords('fenster'))).toBe(true);
+		expect(matchesWordsWithParent(top, null, searchWords('wochenputz'))).toBe(false);
+		const unknown = { key: '…', title: '' };
+		expect(matchesWordsWithParent(sub, unknown, searchWords('…'))).toBe(false);
+		expect(matchesWordsWithParent(sub, unknown, searchWords('fenster'))).toBe(true);
+	});
+
+	it('reads a renamed parent anew, also for the same sub-task object', () => {
+		const before = { key: 'HAUS-7', title: 'Wochenputz' };
+		expect(matchesWordsWithParent(sub, before, searchWords('wochenputz'))).toBe(true);
+		// The list holds a new object after a change; the cache of the sub-task stays valid.
+		const renamed = { key: 'HAUS-7', title: 'Frühjahrsputz' };
+		expect(matchesWordsWithParent(sub, renamed, searchWords('fruhjahrsputz'))).toBe(true);
+		expect(matchesWordsWithParent(sub, renamed, searchWords('wochenputz'))).toBe(false);
 	});
 });
 

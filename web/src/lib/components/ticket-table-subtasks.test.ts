@@ -187,6 +187,32 @@ describe('sub-tasks in the ticket table', () => {
 		expect(document.querySelector('th[data-col="parent"]')?.textContent).toContain('Übergeordnet');
 	});
 
+	it('keeps the corner and the chip as before with the shared building blocks (TP-3)', async () => {
+		await showTable();
+
+		// Indented: the text for screen readers, then the corner, then the title.
+		const title = rowOf('HAUS-13').querySelector('th') as HTMLElement;
+		const hidden = title.querySelector('.visually-hidden') as HTMLElement;
+		const corner = hidden.nextElementSibling as Element;
+		expect(corner.tagName.toLowerCase()).toBe('svg');
+		expect(corner.classList.contains('nest-icon')).toBe(true);
+		expect(corner.getAttribute('aria-hidden')).toBe('true');
+		expect(corner.getAttribute('width')).toBe('12');
+		const link = title.querySelector('.title-link') as Element;
+		expect(corner.compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+		expect(rowOf('HAUS-12').querySelector('.nest-icon')).toBeNull();
+		// The chip after the title, with its name for screen readers in the row header.
+		const chip = rowOf('HAUS-12').querySelector('.progress-chip') as HTMLElement;
+		const parentLink = rowOf('HAUS-12').querySelector('.title-link') as Element;
+		expect(
+			parentLink.compareDocumentPosition(chip) & Node.DOCUMENT_POSITION_FOLLOWING
+		).toBeTruthy();
+		expect(chip.querySelector('.visually-hidden')?.textContent).toBe(
+			', 1 von 3 Unteraufgaben erledigt'
+		);
+		expect(rowOf('HAUS-13').querySelector('.progress-chip')).toBeNull();
+	});
+
 	it('keeps its path with the shared building block as before: only the key, no link (TP-2)', async () => {
 		await showTable('/?prio=urgent');
 

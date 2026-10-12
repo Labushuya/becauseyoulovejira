@@ -16,6 +16,7 @@
 	import { page } from '$app/state';
 	import { SOURCE_LABELS, initialsOf, type DayPlanSource } from '$lib/domain/day-plan';
 	import { personLabel } from '$lib/domain/people';
+	import { nestedInOrder } from '$lib/domain/subtasks';
 	import { auth } from '$lib/auth.svelte';
 	import type { DayPlanStore, PlanRow } from '$lib/stores/day-plan.svelte';
 	import { ticketLinks } from '$lib/stores/open-mode.svelte';
@@ -25,19 +26,23 @@
 	import AssigneeBadge from '../AssigneeBadge.svelte';
 	import CharmIcon from '../CharmIcon.svelte';
 	import KindBadge from '../KindBadge.svelte';
+	import SubtaskNestIcon from '../SubtaskNestIcon.svelte';
 	import SubtaskPath from '../SubtaskPath.svelte';
+	import SubtaskProgressChip from '../SubtaskProgressChip.svelte';
 	import EmptyState from '../guidance/EmptyState.svelte';
 
-	// The entries of a day plan (ADR-0065 §4): a list in the order of the plan. Each entry has its check
-	// mark (a task is completed, an ongoing project checked for the day; ADR-0065 §2), the charm, key
-	// and title as a link that opens the ticket next to the plan (a sub-task with the key and title of
-	// its parent above, the key a link as well; TP-2), the badge "Vorhaben", in a household
+	// The entries of a day plan (ADR-0065 §4): a list in the order of the plan, which only the user
+	// changes. Each entry has its check mark (a task is completed, an ongoing project checked for the
+	// day; ADR-0065 §2), the charm, key and title as a link that opens the ticket next to the plan, the
+	// chip "2/5" at a parent (TP-3), the badge "Vorhaben", in a household
 	// the initials of who added and checked it (names in the tooltip and for screen readers), and the
 	// menu with the other way of checking, "Auf morgen schieben", the kind and "Entfernen". The order
 	// changes by dragging an entry at its handle, by "Nach oben" and "Nach unten" and by Alt+arrow
 	// anywhere in the entry; a ticket of the pool can be dropped at a place. Days before are read-only:
 	// no check mark to change, no handle, no menu. In a household the initials of the assignee of the
-	// ticket follow its badge (ADR-0068 §8).
+	// ticket follow its badge (ADR-0068 §8). A sub-task stands indented with the corner of the table
+	// when the entry directly above it is its parent or an indented sibling (TP-3, only display: the
+	// order stays); otherwise it names its parent above its title, the key a link as well (TP-2).
 	let {
 		store,
 		household = false,
@@ -62,6 +67,8 @@
 	let dragging = $state<string | null>(null);
 
 	const rows = $derived(store.rows);
+	/** Per entry: indented below the entry above it (TP-3), derived from the order of the plan. */
+	const nested = $derived(nestedInOrder(rows.map((row) => row.ticket)));
 	const editable = $derived(store.editable);
 
 	function keyOf(row: PlanRow): string {
@@ -250,6 +257,7 @@
 				<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 				<li
 					class="entry"
+					class:nested={nested[index]}
 					class:done={row.done}
 					class:dragging={dragging === row.item.id}
 					class:drop-before={dropIndex === index}
@@ -287,7 +295,11 @@
 					<span class="title-cell">
 						{#if ticket !== null}
 							{@const parent = store.parentOf(ticket)}
-							{#if parent}
+							{#if parent && nested[index]}
+								<!-- Directly below its parent (TP-3): the corner, the parent only for screen readers. -->
+								<SubtaskPath {parent} path={false} />
+								<SubtaskNestIcon />
+							{:else if parent}
 								<!-- A sub-task names its parent above its title (TP-2). -->
 								<SubtaskPath {parent} withTitle href={links.href(parent.id, page.url)} />
 							{/if}
@@ -303,6 +315,7 @@
 								<!-- The initials of the assignee in the shared plan (ADR-0068 §8). -->
 								<AssigneeBadge assignee={ticket.assignee} context={assignees.context} />
 							{/if}
+							<SubtaskProgressChip progress={store.progressOf(ticket.id)} />
 						{:else}
 							<span class="missing">Ticket nicht sichtbar</span>
 						{/if}
@@ -364,8 +377,10 @@
 		min-width: 0;
 	}
 
+	/* One column never wider than the plan, also with indented entries (TP-3). */
 	.entries {
 		display: grid;
+		grid-template-columns: minmax(0, 1fr);
 		gap: 0.25rem;
 		margin: 0;
 		padding: 0;
@@ -382,6 +397,11 @@
 		background: var(--color-surface);
 		border: 1px solid var(--color-line);
 		border-radius: var(--radius-control);
+	}
+
+	/* A sub-task directly below its parent (TP-3): the whole entry indented, like in the pool. */
+	.entry.nested {
+		margin-left: 1.5rem;
 	}
 
 	.entry.done .title-link,

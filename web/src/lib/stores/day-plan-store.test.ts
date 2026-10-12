@@ -221,6 +221,45 @@ describe('suggestions and pool, live from the open tickets', () => {
 		expect(store.suggestions).toEqual([]);
 	});
 
+	it('arranges suggestions and pool like "Aufgaben" and adopts in the order shown (TP-3)', async () => {
+		const parent = ticket('t000000000000p1', { status: 'in_progress' });
+		const sub = { parentId: parent.id };
+		const tickets = fakeTickets([
+			ticket('t000000000000s1', { due: TODAY, ...sub }),
+			ticket('t000000000000a1', { due: '2031-05-10' }),
+			parent,
+			ticket('t000000000000s2', { status: 'done', ...sub })
+		]);
+		const data = fakeData();
+		const store = await loaded(data, tickets);
+		// The rules rank the overdue one, the sub-task due today and the parent in Arbeit; shown below
+		// its parent, the sub-task follows it.
+		expect(store.suggestions.map((row) => row.ticket.id)).toEqual([
+			't000000000000a1',
+			't000000000000s1',
+			't000000000000p1'
+		]);
+		expect(store.suggestionRows.map((row) => [row.entry.ticket.id, row.nested])).toEqual([
+			['t000000000000a1', false],
+			['t000000000000p1', false],
+			['t000000000000s1', true]
+		]);
+		expect(store.arrange(store.pool, (entry) => entry).map((row) => row.entry.id)).toEqual([
+			't000000000000a1',
+			't000000000000p1',
+			't000000000000s1'
+		]);
+		// The chip of the parent counts the done sub-task as well.
+		expect(store.progressOf(parent.id)).toEqual({ done: 1, total: 2 });
+		await store.adoptAll();
+		expect(data.adopt).toHaveBeenCalledWith(SCOPE, [
+			't000000000000a1',
+			't000000000000p1',
+			't000000000000s1'
+		]);
+		expect(ids(store)).toEqual(['t000000000000a1', 't000000000000p1', 't000000000000s1']);
+	});
+
 	it('puts a ticket of the pool at a place and reads the positions again', async () => {
 		const tickets = fakeTickets([ticket('t000000000000a1'), ticket('t000000000000a2')]);
 		const data = fakeData([item('item00000000001', 't000000000000a1', 0)]);
