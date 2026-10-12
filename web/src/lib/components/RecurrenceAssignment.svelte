@@ -11,6 +11,7 @@
 	} from '$lib/domain/assignee';
 	import type { AssigneeChoice } from '$lib/stores/assignees.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
+	import Field from './form/Field.svelte';
 
 	// "Zuständigkeit" of the next tickets of a rule of the household (E7-5, ADR-0068 §5): "Keine",
 	// "Fest" (one person, a native select) or "Abwechselnd" (an ordered list of members: added from a
@@ -148,21 +149,22 @@
 	</div>
 
 	{#if current.mode === 'fixed'}
-		<div class="field">
-			<label for={ids.fixed}>Person</label>
-			<select
-				id={ids.fixed}
-				value={people[0] ?? ''}
-				aria-invalid={error ? 'true' : undefined}
-				aria-describedby={error ? errorId : undefined}
-				onchange={(event) => chooseFixed(event.currentTarget.value)}
-			>
-				<option value="" disabled>Bitte wählen</option>
-				{#each members as member (member.id)}
-					<option value={member.id}>{member.self ? `${member.name} (ich)` : member.name}</option>
-				{/each}
-			</select>
-		</div>
+		<!-- A Field (ADR-0060, RG-1); the error of the group stands below it and describes it. -->
+		<Field label="Person" id={ids.fixed} describedBy={error ? errorId : undefined} width="auto">
+			{#snippet control(field)}
+				<select
+					{...field}
+					value={people[0] ?? ''}
+					aria-invalid={error ? 'true' : undefined}
+					onchange={(event) => chooseFixed(event.currentTarget.value)}
+				>
+					<option value="" disabled>Bitte wählen</option>
+					{#each members as member (member.id)}
+						<option value={member.id}>{member.self ? `${member.name} (ich)` : member.name}</option>
+					{/each}
+				</select>
+			{/snippet}
+		</Field>
 	{:else if current.mode === 'rotate'}
 		{#if people.length > 0}
 			<ol class="list" aria-labelledby={ids.legend} bind:this={list}>
@@ -294,13 +296,6 @@
 		cursor: pointer;
 	}
 
-	.field {
-		display: grid;
-		gap: 0.25rem;
-		min-width: 0;
-	}
-
-	.field select,
 	.add select {
 		width: fit-content;
 		max-width: 100%;

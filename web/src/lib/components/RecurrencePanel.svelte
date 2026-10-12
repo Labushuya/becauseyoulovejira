@@ -47,7 +47,6 @@
 	import ErrorIcon from './ErrorIcon.svelte';
 	import Lozenge from './guidance/Lozenge.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
-	import InitialStatusChoice from './InitialStatusChoice.svelte';
 	import ConfirmDialog from './overlay/ConfirmDialog.svelte';
 	import Drawer from './overlay/Drawer.svelte';
 	import RecurrenceBacklogQuestion from './RecurrenceBacklogQuestion.svelte';
@@ -57,10 +56,10 @@
 
 	// Panel of a rule (E5 plan, T-6 and package 5) on the side panel building block, like the
 	// project panel (UI-8): "Neue Regel" under /wiederholungen/neu and a rule under
-	// /wiederholungen/<id>. The template (title, priority, "Status beim Anlegen" since plan WV,
+	// /wiederholungen/<id>. The template (title, "Status beim Anlegen" since plan WV, priority,
 	// project, tags, description; the same fields as the inline editor at the ticket; "Neue Regel"
-	// asks it as "Folgetickets starten mit" without an answer in advance, ADR-0022 addendum 9) and the
-	// rhythm (RecurrenceForm with the preview "Nächste Termine") in one form. A rule also shows its
+	// asks the status in the same select without an answer in advance, ADR-0022 addenda 9 and 17) and
+	// the rhythm (RecurrenceForm with the preview "Nächste Termine") in one form. A rule also shows its
 	// state with the next ticket, its open ticket, the neutral hint of the server and "Pausieren" or
 	// "Fortsetzen"; "Löschen …" in the header asks "Regel löschen?" (its tickets stay, ADR-0023
 	// section 7). Saving an existing rule sends the rhythm only when it changed: a new template
@@ -238,7 +237,7 @@
 	let template = $state<RuleTemplate>({ ...initialTemplate, tagIds: [...initialTemplate.tagIds] });
 	let values = $state<RecurrenceFormValues>(copyValues(initialValues));
 	let tagText = $state('');
-	/** "Neue Regel": the answer to "Folgetickets starten mit"; '' while none is given. */
+	/** "Neue Regel": the answer to "Status beim Anlegen"; '' while none is given. */
 	let chosenStatus = $state<TemplateStatus | ''>('');
 	/** A new rule asks for the status of its tickets (ADR-0022 addendum 9), a saved one shows it. */
 	const askStatus = $derived(creating && statusAvailable);
@@ -357,7 +356,7 @@
 			tags: template.tagIds.filter((tagId) => tags.some((tag) => tag.id === tagId)),
 			priority: template.priority,
 			// Only a server after the migration knows the field (plan WV); a new rule sends the answer
-			// to "Folgetickets starten mit" (ADR-0022 addendum 9).
+			// to "Status beim Anlegen" (ADR-0022 addendum 9).
 			...(statusAvailable && {
 				initial_status: askStatus && chosenStatus !== '' ? chosenStatus : template.initialStatus
 			}),
@@ -610,15 +609,16 @@
 				bind:values={template}
 				bind:tagText
 				bind:titleInput
+				bind:chosenStatus
 				errors={fieldErrors}
 				{projects}
 				{tags}
 				{currentProject}
 				{busy}
-				statusAvailable={statusAvailable && !askStatus}
+				{statusAvailable}
+				{askStatus}
 				{subtasksAvailable}
 				{subtaskStatusAvailable}
-				subtaskDefaultStatus={askStatus && chosenStatus !== '' ? chosenStatus : null}
 				{colorsAvailable}
 				{charmsAvailable}
 				{invalidSubtasks}
@@ -627,19 +627,8 @@
 					stateError = null;
 					fieldErrors = { ...fieldErrors, project: undefined };
 				}}
+				onstatuschosen={() => (fieldErrors = { ...fieldErrors, initial_status: undefined })}
 			/>
-			{#if askStatus}
-				<InitialStatusChoice
-					bind:value={
-						() => chosenStatus,
-						(chosen) => {
-							chosenStatus = chosen;
-							fieldErrors = { ...fieldErrors, initial_status: undefined };
-						}
-					}
-					error={fieldErrors.initial_status ?? null}
-				/>
-			{/if}
 			<p class="hint">
 				{creating
 					? 'Jedes Ticket der Regel bekommt diese Vorlage.'
@@ -806,8 +795,9 @@
 		min-width: 0;
 	}
 
+	/* Hints in the size of the hints of a Field (ADR-0060, RG-1). */
 	.hint {
-		font-size: var(--font-size-control);
+		font-size: var(--font-size-small);
 		color: var(--color-text-muted);
 	}
 </style>

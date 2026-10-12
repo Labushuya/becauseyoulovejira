@@ -1091,24 +1091,22 @@ describe('new ticket from a calendar series (E5 plan, package 6; ADR-0024 sectio
 		expect(mocks.detail.create).not.toHaveBeenCalled();
 	});
 
-	it('asks "Folgetickets starten mit" before a series becomes a rule (ADR-0022 addendum 9)', async () => {
+	it('asks "Status beim Anlegen" before a series becomes a rule (ADR-0022 addenda 9 and 17)', async () => {
 		openFor(event({ rrule: 'FREQ=WEEKLY;BYDAY=MO' }), 'ready', true);
 		await fireEvent.click(await takeOver());
 		const section = screen.getByRole('region', { name: 'Wiederholen' });
-		const group = within(section).getByRole('radiogroup', { name: 'Folgetickets starten mit' });
-		expect(
-			within(group)
-				.getAllByRole<HTMLInputElement>('radio')
-				.some((radio) => radio.checked)
-		).toBe(false);
+		const status = within(section).getByLabelText<HTMLSelectElement>('Status beim Anlegen');
+		expect(status.value).toBe('');
+		expect(status.getAttribute('aria-required')).toBe('true');
 		await fireEvent.click(createButton());
-		await vi.waitFor(() => expect(document.activeElement).toBe(group));
+		await vi.waitFor(() => expect(document.activeElement).toBe(status));
+		expect(status.getAttribute('aria-invalid')).toBe('true');
 		expect(
-			within(group).getByText('Bitte wählen, mit welchem Status Folgetickets starten.')
+			within(section).getByText('Bitte wählen, mit welchem Status Folgetickets starten.')
 		).toBeTruthy();
 		expect(mocks.detail.create).not.toHaveBeenCalled();
 
-		await fireEvent.click(within(group).getByRole('radio', { name: 'Backlog' }));
+		await fireEvent.change(status, { target: { value: 'backlog' } });
 		await fireEvent.click(createButton());
 		await vi.waitFor(() => expect(mocks.rules.repeatCreated).toHaveBeenCalledOnce());
 		expect(mocks.rules.repeatCreated).toHaveBeenCalledWith(CREATED, {
@@ -1219,7 +1217,7 @@ describe('new ticket: repeat right away (plan OR-4)', () => {
 				/Künftige Tickets bekommen Titel, Beschreibung, Priorität, Projekt und Tags aus diesem Formular\./
 			)
 		).toBeTruthy();
-		expect(within(section()).queryByRole('radiogroup')).toBeNull();
+		expect(within(section()).queryByLabelText('Status beim Anlegen')).toBeNull();
 		await fireEvent.click(createButton());
 
 		await vi.waitFor(() => expect(mocks.rules.repeatCreated).toHaveBeenCalledOnce());
@@ -1298,9 +1296,10 @@ describe('new ticket: repeat right away (plan OR-4)', () => {
 		).toBeTruthy();
 	});
 
-	// ADR-0022 addendum 9: the open section asks with which status the next tickets start; "Wie
-	// dieses Ticket" follows the status chosen in the form.
-	it('asks "Folgetickets starten mit" without an answer in advance, following the status of the form', async () => {
+	// ADR-0022 addenda 9 and 17: the open section asks with which status the next tickets start, in
+	// the select "Status beim Anlegen" of the template; "(wie dieses Ticket)" follows the status
+	// chosen in the form.
+	it('asks "Status beim Anlegen" without an answer in advance, following the status of the form', async () => {
 		await openPlain('ready', true);
 		await fireEvent.input(titleField(), { target: { value: 'Blumen gießen' } });
 		await fireEvent.click(disclosure());
@@ -1309,34 +1308,33 @@ describe('new ticket: repeat right away (plan OR-4)', () => {
 				/Künftige Tickets bekommen Titel, Beschreibung, Priorität, Projekt und Tags aus diesem Formular; den Status wählst du hier\./
 			)
 		).toBeTruthy();
-		const group = within(section()).getByRole('radiogroup', { name: 'Folgetickets starten mit' });
-		const answers = () =>
-			within(group)
-				.getAllByRole<HTMLInputElement>('radio')
-				.map((radio) => [radio.labels?.[0]?.textContent?.trim(), radio.checked]);
+		expect(within(section()).queryByRole('radiogroup')).toBeNull();
+		const status = within(section()).getByLabelText<HTMLSelectElement>('Status beim Anlegen');
+		const answers = () => [...status.options].map((option) => [option.value, option.textContent]);
+		expect(status.value).toBe('');
 		expect(answers()).toEqual([
-			['Offen (wie dieses Ticket)', false],
-			['Backlog', false],
-			['In Arbeit', false],
-			['Wartet', false]
+			['', 'Bitte wählen'],
+			['backlog', 'Backlog'],
+			['open', 'Offen (wie dieses Ticket)'],
+			['in_progress', 'In Arbeit'],
+			['waiting', 'Wartet']
 		]);
 		await fireEvent.change(screen.getByLabelText('Status'), { target: { value: 'in_progress' } });
 		expect(answers()).toEqual([
-			['Offen', false],
-			['Wie dieses Ticket: In Arbeit', false],
-			['Backlog', false],
-			['Wartet', false]
+			['', 'Bitte wählen'],
+			['backlog', 'Backlog'],
+			['open', 'Offen'],
+			['in_progress', 'In Arbeit (wie dieses Ticket)'],
+			['waiting', 'Wartet']
 		]);
 
 		await fireEvent.click(createButton());
-		await vi.waitFor(() => expect(document.activeElement).toBe(group));
-		expect(group.getAttribute('aria-invalid')).toBe('true');
+		await vi.waitFor(() => expect(document.activeElement).toBe(status));
+		expect(status.getAttribute('aria-invalid')).toBe('true');
 		expect(mocks.detail.create).not.toHaveBeenCalled();
 
-		await fireEvent.click(
-			within(group).getByRole('radio', { name: 'Wie dieses Ticket: In Arbeit' })
-		);
-		expect(group.getAttribute('aria-invalid')).toBeNull();
+		await fireEvent.change(status, { target: { value: 'in_progress' } });
+		expect(status.getAttribute('aria-invalid')).toBeNull();
 		await fireEvent.click(createButton());
 		await vi.waitFor(() => expect(mocks.rules.repeatCreated).toHaveBeenCalledOnce());
 		expect(mocks.detail.create).toHaveBeenCalledWith(

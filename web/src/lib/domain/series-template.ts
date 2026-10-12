@@ -152,7 +152,9 @@ export function ticketTemplate(
 	};
 }
 
-// --- "Folgetickets starten mit": the question when a rule is created (ADR-0022 addendum 9) ------
+// --- The status a rule or a duplicate starts with (ADR-0022 addendum 9, ADR-0045 §2) -------------
+// A rule asks it in the select "Status beim Anlegen" since RG-1 (initialStatusLabels below, ADR-0022
+// addendum 17); the radio group InitialStatusChoice with these answers asks "Status des Duplikats".
 
 /** One answer of the question. */
 export interface InitialStatusOption {
@@ -163,11 +165,10 @@ export interface InitialStatusOption {
 }
 
 /**
- * The answers of "Folgetickets starten mit": "Offen" and, when it differs, the status of the
- * ticket ("Wie dieses Ticket: In Arbeit") first, then the other statuses of an open ticket in
- * their usual order. None is chosen in advance. Without a ticket ("Neue Regel") or with a done one
- * "Offen" stands first alone. The same answers start a duplicate (ADR-0045 §2), `like` "das
- * Original" then names the original ("Wie das Original: In Arbeit").
+ * The answers of the radio group: "Offen" and, when it differs, the status of the ticket ("Wie
+ * dieses Ticket: In Arbeit") first, then the other statuses of an open ticket in their usual order.
+ * None is chosen in advance. Without a ticket or with a done one "Offen" stands first alone. A
+ * duplicate (ADR-0045 §2) passes `like` "das Original" ("Wie das Original: In Arbeit").
  */
 export function initialStatusOptions(
 	ticketStatus: string | null,
@@ -188,6 +189,20 @@ export function initialStatusOptions(
 		(status) => !first.some((option) => option.value === status)
 	).map((status) => ({ value: status, label: STATUS_LABELS[status], first: false }));
 	return [...first, ...others];
+}
+
+/**
+ * Own names in the select "Status beim Anlegen" when a rule starts at a ticket (RG-1, ADR-0022
+ * addendum 17): the status of the ticket says so ("In Arbeit (wie dieses Ticket)"), the order stays
+ * the usual one of every status select. Without a ticket ("Neue Regel") or with a done one nothing
+ * is named.
+ */
+export function initialStatusLabels(
+	ticketStatus: string | null,
+	like = 'dieses Ticket'
+): Partial<Record<TemplateStatus, string>> {
+	if (!isTemplateStatus(ticketStatus)) return {};
+	return { [ticketStatus]: `${STATUS_LABELS[ticketStatus]} (wie ${like})` };
 }
 
 /** Fields of a template as the data layer sends them (a part of RuleDraft). */

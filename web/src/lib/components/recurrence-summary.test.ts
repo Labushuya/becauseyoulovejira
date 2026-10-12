@@ -573,12 +573,20 @@ describe('RecurrenceSummary: the template of the next tickets (plan WV)', () => 
 		expect(within(form).getByLabelText<HTMLInputElement>('Titel').value).toBe('Müll');
 		expect(within(form).getByLabelText<HTMLSelectElement>('Projekt').value).toBe(HOUSE.id);
 		const status = within(form).getByLabelText<HTMLSelectElement>('Status beim Anlegen');
+		// Editing shows the stored value, without the empty option of a new rule and not required
+		// (ADR-0022 addendum 17); status before priority as in "Neues Ticket" (RG-1).
+		expect(status.value).toBe('waiting');
+		expect(status.hasAttribute('aria-required')).toBe(false);
 		expect([...status.options].map((option) => option.textContent)).toEqual([
 			'Backlog',
 			'Offen',
 			'In Arbeit',
 			'Wartet'
 		]);
+		expect(
+			status.compareDocumentPosition(within(form).getByLabelText('Priorität')) &
+				Node.DOCUMENT_POSITION_FOLLOWING
+		).toBeTruthy();
 
 		await fireEvent.change(within(form).getByLabelText('Priorität'), {
 			target: { value: 'urgent' }
@@ -665,9 +673,9 @@ describe('RecurrenceSummary: the template of the next tickets (plan WV)', () => 
 				'Künftige Tickets bekommen die Werte dieses Tickets: Priorität Hoch · ohne Projekt · Tags Müll. Ändern kannst du sie danach hier unter „Wiederholt sich“.'
 			)
 		).toBeTruthy();
-		await fireEvent.click(
-			within(dialog).getByRole('radio', { name: 'Wie dieses Ticket: In Arbeit' })
-		);
+		await fireEvent.change(within(dialog).getByLabelText('Status beim Anlegen'), {
+			target: { value: 'in_progress' }
+		});
 		await fireEvent.click(within(dialog).getByRole('button', { name: 'Wiederholung anlegen' }));
 		await vi.waitFor(() => expect(fake.createRule).toHaveBeenCalledTimes(1));
 		expect(fake.createRule).toHaveBeenCalledWith(
@@ -684,41 +692,48 @@ describe('RecurrenceSummary: the template of the next tickets (plan WV)', () => 
 
 // ADR-0022 addendum 9, decision of the user: "den Benutzer fragen, mit welchem Status das
 // Folge-Ticket starten soll." "Wiederholen…" asks it as a required choice without an answer in
-// advance; "Regel bearbeiten" does not ask again.
-describe('RecurrenceSummary: "Folgetickets starten mit" in "Wiederholen…" (ADR-0022 addendum 9)', () => {
+// advance; "Regel bearbeiten" does not ask again. Since RG-1 (ADR-0022 addendum 17) in the select
+// "Status beim Anlegen" of the template, in a Field, with the status of the ticket named in it.
+describe('RecurrenceSummary: "Status beim Anlegen" in "Wiederholen…" (ADR-0022 addenda 9 and 17)', () => {
 	const statusReady = { initialStatusReady: vi.fn(async () => true) };
 	const REQUIRED = 'Bitte wählen, mit welchem Status Folgetickets starten.';
 	const question = (dialog: HTMLElement) =>
-		within(dialog).getByRole('radiogroup', { name: 'Folgetickets starten mit' });
-	const answers = (group: HTMLElement) =>
-		within(group)
-			.getAllByRole<HTMLInputElement>('radio')
-			.map((radio) => [radio.labels?.[0]?.textContent?.trim(), radio.checked]);
+		within(dialog).getByLabelText<HTMLSelectElement>('Status beim Anlegen');
+	const answers = (select: HTMLSelectElement) =>
+		[...select.options].map((option) => [option.value, option.textContent]);
+	const described = (control: HTMLElement) =>
+		(control.getAttribute('aria-describedby') ?? '')
+			.split(' ')
+			.filter(Boolean)
+			.map((id) => document.getElementById(id)?.textContent?.trim());
 
 	it('asks without an answer in advance and sends nothing until one is chosen', async () => {
 		const { fake } = await setup(ticket({ status: 'waiting' }), [], statusReady);
 		await fireEvent.click(screen.getByRole('button', { name: 'Wiederholen…' }));
 		const dialog = screen.getByRole('dialog', { name: 'Wiederholen…' });
-		const group = question(dialog);
-		expect(group.getAttribute('aria-required')).toBe('true');
-		expect(answers(group)).toEqual([
-			['Offen', false],
-			['Wie dieses Ticket: Wartet', false],
-			['Backlog', false],
-			['In Arbeit', false]
+		expect(within(dialog).queryByRole('radiogroup')).toBeNull();
+		const select = question(dialog);
+		expect(select.getAttribute('aria-required')).toBe('true');
+		expect(select.value).toBe('');
+		// The usual order of every status select; the status of the ticket says so.
+		expect(answers(select)).toEqual([
+			['', 'Bitte wählen'],
+			['backlog', 'Backlog'],
+			['open', 'Offen'],
+			['in_progress', 'In Arbeit'],
+			['waiting', 'Wartet (wie dieses Ticket)']
 		]);
 
 		await fireEvent.click(within(dialog).getByRole('button', { name: 'Wiederholung anlegen' }));
 		await tick();
 		expect(fake.createRule).not.toHaveBeenCalled();
-		expect(group.getAttribute('aria-invalid')).toBe('true');
-		const error = within(group).getByText(REQUIRED);
-		expect(group.getAttribute('aria-describedby')).toContain(error.parentElement?.id);
-		expect(document.activeElement).toBe(group);
+		expect(select.getAttribute('aria-invalid')).toBe('true');
+		expect(described(select)[0]).toBe(REQUIRED);
+		expect(document.activeElement).toBe(select);
 
-		await fireEvent.click(within(group).getByRole('radio', { name: 'Offen' }));
-		expect(group.getAttribute('aria-invalid')).toBeNull();
-		expect(within(group).queryByText(REQUIRED)).toBeNull();
+		await fireEvent.change(select, { target: { value: 'open' } });
+		expect(select.getAttribute('aria-invalid')).toBeNull();
+		expect(within(dialog).queryByText(REQUIRED)).toBeNull();
 		await fireEvent.click(within(dialog).getByRole('button', { name: 'Wiederholung anlegen' }));
 		await vi.waitFor(() => expect(fake.createRule).toHaveBeenCalledTimes(1));
 		expect(fake.createRule).toHaveBeenCalledWith(
@@ -727,7 +742,7 @@ describe('RecurrenceSummary: "Folgetickets starten mit" in "Wiederholen…" (ADR
 		);
 	});
 
-	it('names an open ticket at "Offen" and shows a refusal of the server at the question', async () => {
+	it('names an open ticket at "Offen" and shows a refusal of the server at the field', async () => {
 		const createRule = vi.fn(async () => {
 			throw new DataError('validation', {
 				status: 400,
@@ -742,19 +757,20 @@ describe('RecurrenceSummary: "Folgetickets starten mit" in "Wiederholen…" (ADR
 		await setup(ticket({ status: 'open' }), [], { ...statusReady, createRule });
 		await fireEvent.click(screen.getByRole('button', { name: 'Wiederholen…' }));
 		const dialog = screen.getByRole('dialog', { name: 'Wiederholen…' });
-		const group = question(dialog);
-		expect(answers(group).map(([label]) => label)).toEqual([
-			'Offen (wie dieses Ticket)',
+		const select = question(dialog);
+		expect(answers(select).map(([, label]) => label)).toEqual([
+			'Bitte wählen',
 			'Backlog',
+			'Offen (wie dieses Ticket)',
 			'In Arbeit',
 			'Wartet'
 		]);
-		await fireEvent.click(within(group).getByRole('radio', { name: 'Backlog' }));
+		await fireEvent.change(select, { target: { value: 'backlog' } });
 		await fireEvent.click(within(dialog).getByRole('button', { name: 'Wiederholung anlegen' }));
-		await vi.waitFor(() => expect(group.getAttribute('aria-invalid')).toBe('true'));
-		expect(
-			within(group).getByText('Als „Status beim Anlegen“ geht jeder Status außer „Erledigt“.')
-		).toBeTruthy();
+		await vi.waitFor(() => expect(select.getAttribute('aria-invalid')).toBe('true'));
+		expect(described(select)[0]).toBe(
+			'Als „Status beim Anlegen“ geht jeder Status außer „Erledigt“.'
+		);
 		expect(screen.getByRole('dialog', { name: 'Wiederholen…' })).toBeTruthy();
 	});
 
@@ -768,19 +784,17 @@ describe('RecurrenceSummary: "Folgetickets starten mit" in "Wiederholen…" (ADR
 			)
 		);
 		await fireEvent.click(screen.getByRole('button', { name: 'Wiederholen…' }));
-		const group = question(screen.getByRole('dialog', { name: 'Wiederholen…' }));
-		expect(within(group).getByRole<HTMLInputElement>('radio', { name: 'Backlog' }).checked).toBe(
-			true
-		);
+		const select = question(screen.getByRole('dialog', { name: 'Wiederholen…' }));
+		expect(select.value).toBe('backlog');
+		// A given answer needs no empty option.
+		expect(answers(select).map(([value]) => value)).not.toContain('');
 	});
 
 	it('asks nothing before the migration of "Status beim Anlegen"', async () => {
 		const { fake } = await setup(ticket());
 		await fireEvent.click(screen.getByRole('button', { name: 'Wiederholen…' }));
 		const dialog = screen.getByRole('dialog', { name: 'Wiederholen…' });
-		expect(
-			within(dialog).queryByRole('radiogroup', { name: 'Folgetickets starten mit' })
-		).toBeNull();
+		expect(within(dialog).queryByLabelText('Status beim Anlegen')).toBeNull();
 		await fireEvent.click(within(dialog).getByRole('button', { name: 'Wiederholung anlegen' }));
 		await vi.waitFor(() => expect(fake.createRule).toHaveBeenCalledTimes(1));
 		expect(vi.mocked(fake.createRule).mock.calls[0]?.[0]).not.toHaveProperty('initial_status');
@@ -794,6 +808,7 @@ describe('RecurrenceSummary: "Folgetickets starten mit" in "Wiederholen…" (ADR
 		);
 		await fireEvent.click(screen.getByRole('button', { name: 'Regel bearbeiten' }));
 		const dialog = screen.getByRole('dialog', { name: 'Regel bearbeiten' });
+		expect(within(dialog).queryByLabelText('Status beim Anlegen')).toBeNull();
 		expect(within(dialog).queryByRole('radiogroup')).toBeNull();
 	});
 });

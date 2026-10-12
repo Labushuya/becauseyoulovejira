@@ -7,6 +7,7 @@ import {
 	TEMPLATE_SUBTASKS_MAX,
 	appliedTitle,
 	changedTemplateFields,
+	initialStatusLabels,
 	initialStatusOptions,
 	moveSubtask,
 	offerDescription,
@@ -198,6 +199,21 @@ describe('templates of rules and tickets', () => {
 				['waiting', 'Wartet', false]
 			]);
 		}
+	});
+
+	// RG-1 (ADR-0022 addendum 17): the select "Status beim Anlegen" keeps the usual order and names
+	// the status of the ticket the rule starts with.
+	it('names the status of the ticket in the select "Status beim Anlegen", nothing without one', () => {
+		expect(initialStatusLabels('in_progress')).toEqual({
+			in_progress: 'In Arbeit (wie dieses Ticket)'
+		});
+		expect(initialStatusLabels('open')).toEqual({ open: 'Offen (wie dieses Ticket)' });
+		expect(initialStatusLabels('waiting', 'das Original')).toEqual({
+			waiting: 'Wartet (wie das Original)'
+		});
+		// "Neue Regel" has no ticket; a done ticket never starts a series.
+		expect(initialStatusLabels(null)).toEqual({});
+		expect(initialStatusLabels('done')).toEqual({});
 	});
 
 	it('names only the changed fields of a template', () => {

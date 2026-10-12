@@ -30,6 +30,7 @@
 	import SectionMessage from './guidance/SectionMessage.svelte';
 	import { WEEKDAY_NAMES, WEEKDAY_SHORT, dayLabel } from '$lib/domain/recurrence-text';
 	import ErrorIcon from './ErrorIcon.svelte';
+	import Field from './form/Field.svelte';
 	import { findAssignees, type AssigneeSource } from '$lib/stores/assignees.svelte';
 	import RecurrenceAssignment from './RecurrenceAssignment.svelte';
 	import SeriesStartChoice from './SeriesStartChoice.svelte';
@@ -50,6 +51,9 @@
 	// "Ursprüngliches Datum behalten", kept in `values.start`.
 	// "Zuständigkeit" (E7-5, ADR-0068 §5) follows for a rule of the household once the server knows it
 	// (`assignmentAvailable`): none, one fixed person or a rotation, with the preview of the next two.
+	// Since RG-1 the fields stand in a Field (ADR-0060: label above, then error and hint), the groups
+	// (kind, weekdays) carry a legend in the look of its label, and the weekdays are check boxes like
+	// every other choice of several (base.css, ADR-0029 G-5), without boxes of their own.
 	let {
 		values = $bindable(),
 		errors = {},
@@ -154,43 +158,46 @@
 		{@render fieldError('mode')}
 	</fieldset>
 
-	<div class="field">
-		<label for={idOf('interval')}>{calendar ? 'Alle' : 'Abstand nach Erledigung'}</label>
-		<div class="inline">
-			<input
-				id={idOf('interval')}
-				class="number"
-				type="number"
-				inputmode="numeric"
-				min={INTERVAL_MIN}
-				max={INTERVAL_MAX}
-				step="1"
-				bind:value={() => values.interval, (value) => (values.interval = String(value ?? ''))}
-				aria-invalid={errors.interval ? 'true' : undefined}
-				aria-describedby={describedBy('interval')}
-			/>
-			<label class="visually-hidden" for={idOf('freq')}>Einheit</label>
-			<select
-				id={idOf('freq')}
-				bind:value={values.freq}
-				aria-invalid={errors.freq ? 'true' : undefined}
-				aria-describedby={describedBy('freq')}
-			>
-				{#each RECURRENCE_FREQS as freq (freq)}
-					<option value={freq}>{UNIT_LABELS[freq]}</option>
-				{/each}
-			</select>
-		</div>
-		{@render fieldError('interval')}
-		{@render fieldError('freq')}
-	</div>
+	<Field
+		label={calendar ? 'Alle' : 'Abstand nach Erledigung'}
+		id={idOf('interval')}
+		error={errors.interval ?? ''}
+		width="auto"
+	>
+		{#snippet control(field)}
+			<div class="inline">
+				<input
+					{...field}
+					class="number"
+					type="number"
+					inputmode="numeric"
+					min={INTERVAL_MIN}
+					max={INTERVAL_MAX}
+					step="1"
+					bind:value={() => values.interval, (value) => (values.interval = String(value ?? ''))}
+				/>
+				<label class="visually-hidden" for={idOf('freq')}>Einheit</label>
+				<select
+					id={idOf('freq')}
+					bind:value={values.freq}
+					aria-invalid={errors.freq ? 'true' : undefined}
+					aria-describedby={describedBy('freq')}
+				>
+					{#each RECURRENCE_FREQS as freq (freq)}
+						<option value={freq}>{UNIT_LABELS[freq]}</option>
+					{/each}
+				</select>
+			</div>
+		{/snippet}
+	</Field>
+	{@render fieldError('freq')}
 
 	{#if calendar && values.freq === 'weekly'}
-		<fieldset class="group weekdays" aria-describedby={describedBy('weekdays')}>
+		<fieldset class="group" aria-describedby={describedBy('weekdays')}>
 			<legend>Wochentage</legend>
 			<div class="days">
 				{#each WEEKDAYS as day (day)}
-					<label class="day">
+					<label class="choice">
 						<input
 							type="checkbox"
 							checked={values.weekdays.includes(day)}
@@ -207,69 +214,64 @@
 	{/if}
 
 	{#if calendar && values.freq === 'monthly'}
-		<div class="field">
-			<label for={idOf('monthDay')}>Tag im Monat</label>
-			<div class="inline">
-				<input
-					id={idOf('monthDay')}
-					class="number"
-					type="number"
-					inputmode="numeric"
-					min="1"
-					max="31"
-					step="1"
-					disabled={values.lastDay}
-					bind:value={() => values.monthDay, (value) => (values.monthDay = String(value ?? ''))}
-					aria-invalid={errors.monthDay ? 'true' : undefined}
-					aria-describedby={describedBy('monthDay', clamped ? idOf('monthDay-hint') : undefined)}
-				/>
-				<label class="choice">
-					<input type="checkbox" bind:checked={values.lastDay} />
-					Letzter Tag
-				</label>
-			</div>
-			{#if clamped}
-				<p class="hint" id={idOf('monthDay-hint')}>In kürzeren Monaten am letzten Tag.</p>
-			{/if}
-			{@render fieldError('monthDay')}
-		</div>
+		<Field
+			label="Tag im Monat"
+			id={idOf('monthDay')}
+			error={errors.monthDay ?? ''}
+			hint={clamped ? 'In kürzeren Monaten am letzten Tag.' : undefined}
+			width="auto"
+		>
+			{#snippet control(field)}
+				<div class="inline">
+					<input
+						{...field}
+						class="number"
+						type="number"
+						inputmode="numeric"
+						min="1"
+						max="31"
+						step="1"
+						disabled={values.lastDay}
+						bind:value={() => values.monthDay, (value) => (values.monthDay = String(value ?? ''))}
+					/>
+					<label class="choice">
+						<input type="checkbox" bind:checked={values.lastDay} />
+						Letzter Tag
+					</label>
+				</div>
+			{/snippet}
+		</Field>
 	{/if}
 
-	<div class="field">
-		<label for={idOf('anchor')}>Beginnt am</label>
-		<input
-			id={idOf('anchor')}
-			type="date"
-			bind:value={values.anchor}
-			aria-invalid={errors.anchor ? 'true' : undefined}
-			aria-describedby={describedBy('anchor')}
-		/>
-		{@render fieldError('anchor')}
-	</div>
+	<Field label="Beginnt am" id={idOf('anchor')} error={errors.anchor ?? ''} width="auto">
+		{#snippet control(field)}
+			<input {...field} type="date" bind:value={values.anchor} />
+		{/snippet}
+	</Field>
 
-	<div class="field">
-		<label for={idOf('leadDays')}>Vorlauf (Tage)</label>
-		<input
-			id={idOf('leadDays')}
-			class="number"
-			type="number"
-			inputmode="numeric"
-			min={LEAD_DAYS_MIN}
-			max={LEAD_DAYS_MAX}
-			step="1"
-			bind:value={() => values.leadDays, (value) => (values.leadDays = String(value ?? ''))}
-			aria-invalid={errors.leadDays ? 'true' : undefined}
-			aria-describedby={describedBy('leadDays', idOf('leadDays-hint'))}
-		/>
-		<p class="hint" id={idOf('leadDays-hint')}>
-			So viele Tage vor der Fälligkeit erscheint das nächste Ticket (0 = am Tag selbst, kurz nach
-			Mitternacht).
-		</p>
-		{@render fieldError('leadDays')}
-	</div>
+	<Field
+		label="Vorlauf (Tage)"
+		id={idOf('leadDays')}
+		error={errors.leadDays ?? ''}
+		hint="So viele Tage vor der Fälligkeit erscheint das nächste Ticket (0 = am Tag selbst, kurz nach Mitternacht)."
+		width="auto"
+	>
+		{#snippet control(field)}
+			<input
+				{...field}
+				class="number"
+				type="number"
+				inputmode="numeric"
+				min={LEAD_DAYS_MIN}
+				max={LEAD_DAYS_MAX}
+				step="1"
+				bind:value={() => values.leadDays, (value) => (values.leadDays = String(value ?? ''))}
+			/>
+		{/snippet}
+	</Field>
 
 	{#if calendar && eachAvailable}
-		<div class="field">
+		<div class="option">
 			<label class="switch-row" for={idOf('each')}>
 				<span>Verpasste Termine nachholen</span>
 				<input
@@ -414,14 +416,16 @@
 		border: none;
 	}
 
-	legend,
-	.field > label {
+	/* The legend of a group in the look of the label of a Field (ADR-0060). */
+	legend {
 		margin-bottom: 0.25rem;
 		font-size: var(--font-size-control);
-		font-weight: 600;
+		font-weight: 500;
+		color: var(--color-text-muted);
 	}
 
-	.field {
+	/* A switch with its hint and error, in the gaps of a Field. */
+	.option {
 		display: grid;
 		gap: 0.25rem;
 	}
@@ -440,24 +444,11 @@
 		font-size: var(--font-size-body);
 	}
 
+	/* The weekdays side by side like other choices of several; they wrap on narrow columns. */
 	.days {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 0.375rem;
-	}
-
-	.day {
-		display: inline-flex;
-		gap: 0.25rem;
-		align-items: center;
-		padding: 0.25rem 0.5rem;
-		font-size: var(--font-size-control);
-		border: 1px solid var(--color-line);
-		border-radius: var(--radius-control);
-	}
-
-	input[type='date'] {
-		width: fit-content;
+		gap: 0.375rem 1rem;
 	}
 
 	.number {

@@ -6,35 +6,32 @@
 	} from '$lib/domain/series-template';
 	import ErrorIcon from './ErrorIcon.svelte';
 
-	// "Folgetickets starten mit" (ADR-0022 addendum 9, decision of the user: ask with which status
-	// the next tickets start): a required radio group whenever a user creates a rule ("Wiederholen…",
-	// the section "Wiederholen" of "Neues Ticket", "Neue Regel"). "Offen" and, when it differs, the
-	// status of the ticket ("Wie dieses Ticket: In Arbeit") first, the other statuses below a line.
-	// Nothing is chosen in advance; the owner checks that an answer was given and passes the error,
-	// which stands at the group like every field error (ADR-0009). The answer is stored as "Status
-	// beim Anlegen" of the rule and can be changed there later.
-	// "Ticket duplizieren" asks the same way for the status of the duplicate (ADR-0045 §2), with its
-	// own legend and hint and the original named as "das Original".
+	// "Status des Duplikats" (ADR-0045 §2): a required radio group without an answer in advance.
+	// "Offen" and, when it differs, the status of the original ("Wie das Original: In Arbeit") first,
+	// the other statuses below a line. The owner checks that an answer was given and passes the error,
+	// which stands at the group like every field error (ADR-0009).
+	// Until RG-1 a rule asked "Folgetickets starten mit" with this group as well; since then it asks
+	// "Status beim Anlegen" in the select of the template (InitialStatusField, ADR-0022 addendum 17).
 	let {
 		value = $bindable(''),
 		ticketStatus = null,
 		error = null,
-		legend = 'Folgetickets starten mit',
-		hint = 'Jedes neue Ticket der Serie beginnt mit diesem Status („Status beim Anlegen“). Ändern kannst du ihn später an der Regel.',
-		like = 'dieses Ticket'
+		legend,
+		hint,
+		like
 	}: {
 		/** The chosen status; '' while none is chosen. */
 		value: TemplateStatus | '';
-		/** Status of the ticket the rule starts with; null for "Neue Regel". */
+		/** Status of the ticket the new one is made from. */
 		ticketStatus?: string | null;
 		/** Field error: no answer, or a refusal of the server. */
 		error?: string | null;
 		/** Name of the group. */
-		legend?: string;
+		legend: string;
 		/** What the answer means, below the name. */
-		hint?: string;
-		/** How the answers name the ticket ("Wie dieses Ticket: …"). */
-		like?: string;
+		hint: string;
+		/** How the answers name the ticket ("Wie das Original: …"). */
+		like: string;
 	} = $props();
 
 	const uid = $props.id();

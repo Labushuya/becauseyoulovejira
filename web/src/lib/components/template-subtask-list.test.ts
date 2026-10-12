@@ -9,6 +9,7 @@ import TemplateSubtaskListHarness from '$lib/test/TemplateSubtaskListHarness.sve
 // a polite status of each step, at most 20 rows, and "Unteraufgaben dieses Tickets übernehmen"
 // with the inline question "Ergänzen" or "Ersetzen". Since UT-1 a status per row once the server
 // takes it, without an own choice the default ("Status beim Anlegen" or the status of the ticket).
+// Since RG-1 every control of a row has a short visible name above it.
 
 const entry = (
 	title: string,
@@ -294,5 +295,63 @@ describe('the status of each row (UT-1)', () => {
 			target: { value: 'A neu' }
 		});
 		expect(value()[1]).toEqual({ ...entry('A neu'), status: 'backlog' });
+	});
+});
+
+// RG-1: each control of a row has a short visible name above it, in the order of "Neues Ticket"
+// (title, status, priority); the accessible name adds the row, so a screen reader knows where a
+// field belongs (WCAG 2.5.3: the visible name starts the accessible one).
+describe('the names of the controls of a row (RG-1)', () => {
+	/** The visible text of a label: without the part only screen readers get. */
+	const visible = (label: Element) => {
+		const copy = label.cloneNode(true) as Element;
+		for (const hidden of copy.querySelectorAll('.visually-hidden')) hidden.remove();
+		return copy.textContent?.trim();
+	};
+
+	it('names title, status and priority visibly above their control, in this order', () => {
+		const { group } = setup([entry('Entkalken'), entry('Filter')], { statusAvailable: true });
+		const rows = within(group).getAllByRole('listitem');
+		expect(rows).toHaveLength(2);
+		for (const [index, row] of rows.entries()) {
+			const number = index + 1;
+			const controls = [
+				within(row).getByLabelText(`Titel der Unteraufgabe ${number}`),
+				within(row).getByLabelText(`Status der Unteraufgabe ${number}`),
+				within(row).getByLabelText(`Priorität der Unteraufgabe ${number}`)
+			];
+			expect(
+				controls.map((control) => visible(row.querySelector(`label[for="${control.id}"]`)!))
+			).toEqual(['Titel', 'Status', 'Priorität']);
+			for (const control of controls) {
+				const label = row.querySelector(`label[for="${control.id}"]`)!;
+				// The label stands above its control, in the same cell.
+				expect(label.parentElement).toBe(control.parentElement);
+				expect(label.compareDocumentPosition(control)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+				expect(label.classList.contains('visually-hidden')).toBe(false);
+			}
+			// Status before priority, as in "Neues Ticket" and the registry of the ticket options.
+			expect(
+				controls[1]!.compareDocumentPosition(controls[2]!) & Node.DOCUMENT_POSITION_FOLLOWING
+			).toBeTruthy();
+		}
+	});
+
+	it('names only title and priority before the server takes a status', () => {
+		const { group } = setup([entry('Entkalken')]);
+		const row = within(group).getByRole('listitem');
+		expect([...row.querySelectorAll('label')].map((label) => visible(label))).toEqual([
+			'Titel',
+			'Priorität'
+		]);
+	});
+
+	it('keeps the error of a row below it and links it to the title', () => {
+		const { group } = setup([entry(''), entry('B')], { invalidRows: [0] });
+		const title = within(group).getByLabelText('Titel der Unteraufgabe 1');
+		expect(title.getAttribute('aria-invalid')).toBe('true');
+		const error = document.getElementById(title.getAttribute('aria-describedby') ?? '');
+		expect(error?.textContent?.trim()).toBe('Bitte einen Titel eingeben.');
+		expect(error?.closest('li')).toBe(title.closest('li'));
 	});
 });

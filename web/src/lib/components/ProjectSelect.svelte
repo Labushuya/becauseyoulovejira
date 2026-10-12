@@ -1,6 +1,12 @@
+<script lang="ts" module>
+	/** The hint of the project of a ticket: a change gives it a new key. */
+	export const PROJECT_KEY_HINT = 'Beim Wechsel bekommt das Ticket einen neuen Key.';
+</script>
+
 <script lang="ts">
 	import { projectChoiceLabel, projectPath } from '$lib/domain/project-tree';
 	import type { ProjectRef } from '$lib/domain/ticket';
+	import type { FieldControl } from './form/Field.svelte';
 
 	// Project of a ticket (E3 plan, T-13): "Kein Projekt" and the active projects as
 	// "Name (CODE)". A project that is archived but already assigned stays visible as
@@ -12,8 +18,11 @@
 	// a sub project as "Haus › Garten (GART)", which every reader understands without indentation.
 	// The select never grows beyond its container (base.css): a long label ends in an ellipsis, and
 	// the title shows the whole label of the chosen project (docs/plan/layout-ueberlauf.md).
+	// In a form the select stands in a Field (ADR-0060, RG-1): `field` gives its ID, description and
+	// invalid state, and the field shows label, error and its hint (PROJECT_KEY_HINT or its own).
 	let {
 		id,
+		field,
 		value,
 		projects,
 		current = null,
@@ -22,11 +31,10 @@
 		error = null,
 		errorId,
 		hintId,
-		hint = 'Beim Wechsel bekommt das Ticket einen neuen Key.',
+		hint = PROJECT_KEY_HINT,
 		noneLabel = 'Kein Projekt',
 		onchoose
 	}: {
-		id: string;
 		/** Chosen project ID, '' for none. */
 		value: string;
 		/** Projects that can be chosen (the active ones, in tree order). */
@@ -36,21 +44,43 @@
 		/** A save is running; the select stays usable, so the keyboard focus stays on it. */
 		busy?: boolean;
 		disabled?: boolean;
-		error?: string | null;
-		errorId: string;
-		hintId: string;
-		/** Text of the hint below the select, rendered here with `hintId`. */
-		hint?: string;
 		/** Text of the empty choice, e.g. "Wie die Verbindung" for a repository of GitHub. */
 		noneLabel?: string;
 		onchoose: (value: string) => void;
-	} = $props();
+	} & (
+		| {
+				/** In a Field: ID, description and invalid state come from the field, so does the hint. */
+				field: FieldControl;
+				id?: undefined;
+				error?: undefined;
+				errorId?: undefined;
+				hintId?: undefined;
+				hint?: undefined;
+		  }
+		| {
+				field?: undefined;
+				id: string;
+				error?: string | null;
+				errorId: string;
+				hintId: string;
+				/** Text of the hint below the select, rendered here with `hintId`. */
+				hint?: string;
+		  }
+	) = $props();
 
 	/** The current project if the list of choosable projects lacks it. */
 	const extra = $derived(
 		current !== null && !projects.some((project) => project.id === current.id) ? current : null
 	);
-	const describedBy = $derived(error ? `${hintId} ${errorId}` : hintId);
+
+	/** ID, description and invalid state: of the field, or from the own props with the own hint. */
+	const attributes: FieldControl = $derived(
+		field ?? {
+			id: id ?? '',
+			'aria-describedby': error ? `${hintId} ${errorId}` : hintId,
+			'aria-invalid': error ? 'true' : undefined
+		}
+	);
 
 	function extraLabel(project: ProjectRef): string {
 		return `${projectPath(project)} (${project.code}${project.archived ? ', archiviert' : ''})`;
@@ -65,11 +95,9 @@
 </script>
 
 <select
-	{id}
+	{...attributes}
 	title={chosenLabel}
 	aria-busy={busy ? 'true' : undefined}
-	aria-invalid={error ? 'true' : undefined}
-	aria-describedby={describedBy}
 	{disabled}
 	onchange={(event) => onchoose(event.currentTarget.value)}
 >
@@ -85,7 +113,9 @@
 		</option>
 	{/if}
 </select>
-<p class="hint" id={hintId}>{hint}</p>
+{#if field === undefined}
+	<p class="hint" id={hintId}>{hint}</p>
+{/if}
 
 <style>
 	.hint {

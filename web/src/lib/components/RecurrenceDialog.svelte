@@ -13,7 +13,7 @@
 	import type { EditResult } from '$lib/stores/catalog-editor';
 	import { insideModal } from '$lib/overlay/modal-context';
 	import ErrorIcon from './ErrorIcon.svelte';
-	import InitialStatusChoice from './InitialStatusChoice.svelte';
+	import InitialStatusField from './InitialStatusField.svelte';
 	import InlineDialog from './InlineDialog.svelte';
 	import Modal from './overlay/Modal.svelte';
 	import RecurrenceForm from './RecurrenceForm.svelte';
@@ -23,9 +23,10 @@
 	// goes back to the opener on closing. The input is checked with the rules of the hook before it
 	// is sent; field errors of the server stand at their field, any other refusal as a message
 	// (ADR-0009). Nothing is saved without the primary button.
-	// "Wiederholen…" asks "Folgetickets starten mit" after the rhythm (`askStatus`, ADR-0022
-	// addendum 9): a required choice without an answer in advance; "Regel bearbeiten" does not ask
-	// again (the status of the rule is edited with its template).
+	// "Wiederholen…" asks "Status beim Anlegen" after the rhythm (`askStatus`, ADR-0022 addenda 9 and
+	// 17): the select of the template as a required choice without an answer in advance, the status
+	// of the ticket named in it; "Regel bearbeiten" does not ask again (the status of the rule is
+	// edited with its template).
 	// Inside a modal (the full view) no dialog opens (ADR-0025 section 3, addendum 16): the same form
 	// stands inline as an unfolded area (InlineDialog) where the owner renders it, with the same
 	// rules for Escape, "Abbrechen", focus and a running save.
@@ -60,9 +61,9 @@
 		context?: RecurrenceFormContext;
 		/** Keys of the open tickets of the rule (hint when the switch goes off). */
 		openKeys?: readonly string[];
-		/** Ask "Folgetickets starten mit" (after the migration, RecurrenceStore.statusReady). */
+		/** Ask "Status beim Anlegen" (after the migration, RecurrenceStore.statusReady). */
 		askStatus?: boolean;
-		/** Status of the ticket, offered as "Wie dieses Ticket: …". */
+		/** Status of the ticket, named in the select ("In Arbeit (wie dieses Ticket)"). */
 		ticketStatus?: string | null;
 		/** An answer the user gave before (a prepared "Wiederholen…" after a failed rule). */
 		initialStatus?: TemplateStatus | null;
@@ -162,16 +163,15 @@
 			<p class="hint">{note}</p>
 		{/if}
 		{#if askStatus}
-			<InitialStatusChoice
-				bind:value={
-					() => status,
-					(chosen) => {
-						status = chosen;
-						statusError = null;
-					}
-				}
+			<InitialStatusField
+				value={status}
+				ask
 				{ticketStatus}
 				error={statusError}
+				onchoose={(chosen) => {
+					status = chosen;
+					statusError = null;
+				}}
 			/>
 		{/if}
 		{#if message}
@@ -227,8 +227,9 @@
 		gap: 0.875rem;
 	}
 
+	/* Hints in the size of the hints of a Field (ADR-0060, RG-1). */
 	.hint {
-		font-size: var(--font-size-control);
+		font-size: var(--font-size-small);
 		color: var(--color-text-muted);
 	}
 </style>
