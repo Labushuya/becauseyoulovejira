@@ -1,14 +1,17 @@
 <script lang="ts">
 	import type { ResolvedPathname } from '$app/types';
 	import { formatBerlinDateTime } from '$lib/domain/format';
+	import type { PagedNoun } from '$lib/domain/paged-list';
 	import type { TicketOriginsStore } from '$lib/stores/ticket-origins.svelte';
+	import PagedList from './PagedList.svelte';
 	import StatusPill from './StatusPill.svelte';
 
 	// Section "Folge-Tickets" of a ticket (QT-1, ADR-0067 §1), in the panel and the full view after
 	// "Quellen": the tickets that stem directly from this one, each with key (link to the ticket in the
 	// remembered way, like the sub-tasks), title and status; one in the trash says "(im Papierkorb)"
 	// and has no link. Only shown while there are follow-ups; "Folge-Ticket anlegen …" in the menu
-	// "•••" makes one. Everything comes from the TicketOriginsStore and follows realtime.
+	// "•••" makes one. Everything comes from the TicketOriginsStore and follows realtime. Since TD-1
+	// (ADR-0031 addendum L) the list shows five per page with its own page (PagedList).
 	let {
 		ticket,
 		store,
@@ -20,6 +23,9 @@
 		hrefOf: (id: string) => ResolvedPathname;
 	} = $props();
 
+	/** Name of the entries, for the count and the buttons of the pages. */
+	const NOUN: PagedNoun = { one: 'Folge-Ticket', other: 'Folge-Tickets' };
+
 	const uid = $props.id();
 	const headingId = `${uid}-heading`;
 	const followUps = $derived(
@@ -30,9 +36,16 @@
 {#if followUps.length > 0}
 	<section class="follow-ups" aria-labelledby={headingId} data-ticket-option="followUps">
 		<h3 id={headingId}>Folge-Tickets</h3>
-		<ul class="list" aria-labelledby={headingId}>
-			{#each followUps as entry (entry.link)}
-				<li class="item">
+		<PagedList
+			items={followUps}
+			key={(entry) => entry.link}
+			label="Folge-Tickets"
+			noun={NOUN}
+			resetKey={ticket.id}
+			compact
+		>
+			{#snippet row(entry)}
+				<div class="item">
 					{#if entry.trashed}
 						<span class="key">{entry.key}</span>
 						<span class="title">{entry.title} <span class="muted">(im Papierkorb)</span></span>
@@ -44,9 +57,9 @@
 					<span class="visually-hidden">
 						Stammt seit {formatBerlinDateTime(entry.created)} aus diesem Ticket.
 					</span>
-				</li>
-			{/each}
-		</ul>
+				</div>
+			{/snippet}
+		</PagedList>
 	</section>
 {/if}
 
@@ -63,14 +76,6 @@
 	h3 {
 		font-size: var(--font-size-body);
 		font-weight: 600;
-	}
-
-	.list {
-		display: grid;
-		gap: 0.375rem;
-		margin: 0;
-		padding: 0;
-		list-style: none;
 	}
 
 	.item {

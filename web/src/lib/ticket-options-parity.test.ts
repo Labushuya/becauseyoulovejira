@@ -118,13 +118,33 @@ describe('the registry of the options (domain/ticket-options.ts)', () => {
 			'followUp',
 			'move',
 			'trash',
-			'meta',
-			'followUps',
 			'comments',
 			'history',
+			'followUps',
+			'meta',
 			'read',
 			'dependencies'
 		]);
+	});
+
+	it('names the sections in the order of the panel since TD-1: activity after the sub-tasks, source and dates last', () => {
+		// The panel renders them in this order (ticket-panel.test.ts checks the rendered panel against
+		// the registry); "Weitere Optionen" of "Neues Ticket" follows it below.
+		const sections = [
+			'recurrence',
+			'description',
+			'subtasks',
+			'comments',
+			'history',
+			'sources',
+			'ticketSources',
+			'followUps',
+			'meta'
+		];
+		expect(
+			TICKET_OPTIONS.map((option) => option.key).filter((key) => sections.includes(key))
+		).toEqual(sections);
+		expect(createKeys('more').slice(-3)).toEqual(['subtasks', 'sources', 'ticketSources']);
 	});
 });
 

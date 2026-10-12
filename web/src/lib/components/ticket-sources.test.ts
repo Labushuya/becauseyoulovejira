@@ -510,3 +510,81 @@ describe('TicketSources in the full view', () => {
 		await vi.waitFor(() => expect(document.activeElement).toBe(add));
 	});
 });
+
+// Five sources per page (TD-1, ADR-0031 addendum L); the list itself is tested in paged-list.test.ts.
+describe('TicketSources in pages (TD-1)', () => {
+	const NEXT = 'Weiter zur nächsten Seite der Quellen';
+	const PREVIOUS = 'Zurück zur vorherigen Seite der Quellen';
+
+	/** `count` sources besides the main source, linked one after the other: "Quelle 1" … */
+	const more = (count: number, prefix = 'more', name = 'Quelle', day = '25') =>
+		Array.from({ length: count }, (_, index) =>
+			item(`${prefix}${String(index + 1).padStart(15 - prefix.length, '0')}`, {
+				title: `${name} ${index + 1}`,
+				handledAt: `2026-09-${day} 10:${String(index).padStart(2, '0')}:00.000Z`
+			})
+		);
+
+	/** Titles of the sources on the shown page. */
+	const titles = () =>
+		within(screen.getByRole('list', { name: 'Quellen aus dem Eingang' }))
+			.getAllByRole('listitem')
+			.map((row) => row.querySelector('.title')?.textContent?.trim() ?? '');
+
+	const position = () =>
+		(document.querySelector('.position')?.textContent ?? '').replace(/\s+/g, ' ').trim();
+
+	it('shows five per page with the main source first on page 1, even as the newest', async () => {
+		await setup([...more(6), { ...MAIN, handledAt: '2026-09-30 09:00:00.000Z' }]);
+		expect(titles()).toEqual(['Rechnung März', 'Quelle 1', 'Quelle 2', 'Quelle 3', 'Quelle 4']);
+		const first = within(
+			screen.getByRole('list', { name: 'Quellen aus dem Eingang' })
+		).getAllByRole('listitem')[0] as HTMLElement;
+		expect(first.textContent).toContain('Hauptquelle');
+		expect(position()).toBe('Seite 1 von 2 · 7 Quellen');
+
+		await fireEvent.click(screen.getByRole('button', { name: NEXT }));
+		expect(titles()).toEqual(['Quelle 5', 'Quelle 6']);
+		expect(screen.queryByText('Hauptquelle')).toBeNull();
+		await vi.waitFor(() => expect(document.activeElement?.textContent).toContain('Quelle 5'));
+		expect(screen.getByRole('status').textContent).toContain('Seite 2 von 2');
+	});
+
+	it('goes back to page 1 when the only source of page 2 is released, the focus at its start', async () => {
+		const { data } = await setup([MAIN, ...more(5)]);
+		await fireEvent.click(screen.getByRole('button', { name: NEXT }));
+		expect(titles()).toEqual(['Quelle 5']);
+
+		await fireEvent.click(screen.getByRole('button', { name: '„Quelle 5“ lösen' }));
+		expect(data.release).toHaveBeenCalledWith('more00000000005');
+		await vi.waitFor(() => expect(titles()).toHaveLength(5));
+		expect(titles()[0]).toBe('Rechnung März');
+		expect(screen.queryByRole('group', { name: 'Seiten der Quellen' })).toBeNull();
+		await vi.waitFor(() => expect(document.activeElement?.textContent).toContain('Rechnung März'));
+	});
+
+	it('keeps the page of an entry while "Anderem Ticket zuordnen …" is open below it; paging closes it', async () => {
+		const { store } = await setup([MAIN, ...more(11)], [], true);
+		await fireEvent.click(screen.getByRole('button', { name: NEXT }));
+		expect(titles()).toEqual(['Quelle 5', 'Quelle 6', 'Quelle 7', 'Quelle 8', 'Quelle 9']);
+		const moveName = '„Quelle 6“ anderem Ticket zuordnen …';
+		await fireEvent.click(screen.getByRole('button', { name: moveName }));
+		expect(screen.getByRole('button', { name: moveName }).getAttribute('aria-expanded')).toBe(
+			'true'
+		);
+
+		// Meanwhile four older entries join the ticket (another tab): they stand before it, and the
+		// list follows the entry to its new page with the area still open.
+		for (const older of more(4, 'old', 'Ältere', '20')) store.upsert(older);
+		await vi.waitFor(() => expect(position()).toBe('Seite 3 von 4 · 16 Quellen'));
+		expect(titles()).toContain('Quelle 6');
+		const row = screen.getByRole('button', { name: moveName }).closest('li') as HTMLElement;
+		expect(within(row).getByRole('region', { name: 'Anderem Ticket zuordnen' })).toBeTruthy();
+
+		// Changing the page by hand leaves the entry and closes its area.
+		await fireEvent.click(screen.getByRole('button', { name: PREVIOUS }));
+		expect(position()).toBe('Seite 2 von 4 · 16 Quellen');
+		expect(screen.queryByRole('region', { name: 'Anderem Ticket zuordnen' })).toBeNull();
+		expect(titles()).not.toContain('Quelle 6');
+	});
+});

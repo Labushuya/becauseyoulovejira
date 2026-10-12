@@ -26,7 +26,8 @@
 	// Detail panel (E2 plan, package 7; E3 plan, T-13 and T-14) on the side panel building block
 	// (ADR-0025 section 6): header with the key, the pin toggle (ADR-0064), the menu "•••" (plan
 	// aktionsmenues: "Link kopieren", "Duplizieren …", "In den Papierkorb …"), "Vollansicht" and ×; title, fields,
-	// description, source and dates, comments and history. The parts (TicketFields,
+	// the series, description, sub-tasks, comments and history, sources and follow-ups, and last the
+	// line with source and dates (the order since TD-1, ADR-0031 addendum L). The parts (TicketFields,
 	// TicketDescription, TicketMeta, TicketActions) are the same as in the full view, which only
 	// arranges them differently (section 7). Escape closes the panel unless a form field has the
 	// focus (the rule is the Drawer's). Comments and history (E2 plan, packages 9 and 10) come in
@@ -74,10 +75,11 @@
 		onclose: () => void;
 		/** Called after the ticket was deleted; the owner closes the panel. */
 		ondeleted: () => void;
+		/** Comments and history, right after the sub-tasks (TD-1). */
 		activity?: Snippet<[Ticket]>;
 		/** "Wiederholen…" or the series of the ticket (E5 plan, package 4). */
 		recurrence?: Snippet<[Ticket]>;
-		/** Section "Quellen" (ADR-0031 section 7), after source and dates. */
+		/** Section "Quellen" (ADR-0031 section 7), after the activity, before source and dates (TD-1). */
 		sources?: Snippet<[Ticket]>;
 		/** Number of sources, for the question of "In den Papierkorb …" (ADR-0031, addendum B). */
 		sourceCount?: number;
@@ -237,9 +239,9 @@
 		{@render recurrence?.(ticket)}
 		<TicketDescription {store} {ticket} />
 		{@render subtasks?.(ticket)}
-		<TicketMeta {ticket} />
-		{@render sources?.(ticket)}
 		{@render activity?.(ticket)}
+		{@render sources?.(ticket)}
+		<TicketMeta {ticket} />
 	{:else}
 		<p class="loading" role="status">Ticket wird geladen …</p>
 	{/if}

@@ -255,3 +255,23 @@ Nutzerentscheidung vom 2026-10-05: Ein Ticket kann aus anderen Tickets stammen (
 - **Abschnitt „Quellen“** (§7): Nach den Einträgen stehen die Quell-Tickets (Key als Link, Titel, Status, „(im Papierkorb)“ ohne Link), je mit „KEY als Quelle entfernen“. „Quelle hinzufügen“ wird ein Menü mit „Eintrag aus dem Eingang …“ (der bisherige Dialog) und „Ticket …“ (Ticket-Picker ohne Kreise). Das Quell-Ticket zeigt seine Folge-Tickets im neuen Abschnitt „Folge-Tickets“.
 - **Löschen:** Anders als Einträge (§3, Nachtrag B) werden Ticket-Quellen beim endgültigen Löschen eines der beiden Tickets entfernt; im Papierkorb bleiben sie (ADR-0067 §7).
 - **Verlauf:** eigene Felder `ticket_source` und `follow_up` statt `source_link` (ADR-0067 §8).
+
+## Nachtrag L (2026-10-12, TD-1): Kommentare vor den Quellen, Quellen seitenweise
+
+Nutzerwunsch vom 2026-10-12: Die Kommentare stehen direkt unter den Unteraufgaben, die Quellen darunter; lange Listen von Quellen machen das Ticket nicht mehr endlos lang. Entscheidung des Advisors zu Reihenfolge, Baustein und Verhalten (R1 bis R3), Einzelheiten durch den Executor.
+
+- **Reihenfolge (ersetzt „nach den Metadaten“ aus §7 und die Lage aus Nachtrag K):**
+  - **Seitenpanel:** Titel → Felder → Wiederholung → Beschreibung → Unteraufgaben → Aktivität (Reiter „Kommentare“ | „Verlauf“) → Quellen (Einträge und Quell-Tickets) → Folge-Tickets → die Zeile mit Quelle und Daten als letzter Abschnitt.
+  - **Vollansicht, links:** Pfad → Titel → Beschreibung → Unteraufgaben → Aktivität → Quellen → Folge-Tickets. Die rechte Spalte bleibt: Details, Wiederholung, Quelle, Metadaten.
+  - **Begründung:** Kommentare liest und schreibt man bei der Arbeit am Ticket am häufigsten; die Herkunft ist meist bekannt und wird seltener gebraucht; Erstellt und Aktualisiert sind reine Auskunft.
+- **Registry und „Neues Ticket“:** `TICKET_OPTIONS` folgt der neuen Reihenfolge ([ADR-0069](0069-vollstaendiges-anlegen.md), Nachtrag TD-1). „Weitere Optionen“ bleibt unverändert, weil die verschobenen Abschnitte (Kommentare, Verlauf, Folge-Tickets, Quelle und Daten) Ausnahmen ohne Feld im Dialog sind.
+- **Seitenweise, Baustein `PagedList`** (`web/src/lib/components/PagedList.svelte`, Regeln rein in `domain/paged-list.ts`):
+  - höchstens 5 Einträge je Seite (`PAGE_SIZE`); bis 5 Einträge keine Steuerung, darüber unter der Liste „‹ Zurück“, „Seite 2 von 3 · 12 Quellen“ und „Weiter ›“ (`.button-subtle.button-small`, am Handy 44 px) in der Gruppe „Seiten der Quellen“;
+  - die Namen der Knöpfe beginnen mit dem sichtbaren Wort (WCAG 2.5.3) und nennen die Liste: „Zurück zur vorherigen Seite der Quellen“, „Weiter zur nächsten Seite der Quell-Tickets“; an den Enden `aria-disabled` und weiter fokussierbar;
+  - nach einem Seitenwechsel liegt der Fokus auf dem ersten Eintrag der neuen Seite (Eintrag mit `tabindex="-1"`), eine höfliche Statusregion sagt „Seite 2 von 3“;
+  - eigenständig für die Einträge aus dem Eingang („Quellen“), die Quell-Tickets und die Folge-Tickets, jede Liste mit ihrer eigenen Seite. Die Gesamtzahl steht an der Steuerung, nicht im Kopf, weil der Abschnitt „Quellen“ zwei Listen hat;
+  - die Hauptquelle steht immer zuerst auf Seite 1 (Ordnung des `TicketSourcesStore` über `orderSources`);
+  - ein anderes Ticket beginnt auf Seite 1. Wird die gezeigte Seite leer (Lösen, Umhängen, ein anderer Tab), zeigt die Liste die vorige Seite und sagt das an; ein Fokus, der mit dem Eintrag verloren ging, kommt an den Anfang dieser Seite. Die Seite bleibt danach gewählt, auch wenn die Liste wieder wächst;
+  - ist unter einem Eintrag „Anderem Ticket zuordnen …“ offen (in der Vollansicht eingebettet, im Panel als Modal), bleibt die Seite dieses Eintrags gezeigt, auch wenn sich die Liste davor ändert, ohne Ansage. Blättert der Nutzer selbst, schließt sich die Zuordnung, weil ihr Eintrag die Ansicht verlässt.
+- **Keine neue Abfrage, kein Hook, keine Migration:** Die bis zu 200 Einträge (`SOURCES_LIMIT`) und die Herkunft aus der Route sind schon geladen; der Client teilt sie nur. Die Seite steht weder in der Adresse noch im Speicher, sie gilt, solange das Ticket offen ist.
+- **Verworfen:** „Mehr anzeigen“ wie im `TicketPicker` (das Ticket würde wieder lang), ein Bereich mit fester Höhe und eigener Bildlaufleiste (Scrollen im Scrollen, schlecht am Handy), Seiten auch für Unteraufgaben, Kommentare und Verlauf (eigene Regeln: Fortschritt, Einklappen langer Kommentare, ADR-0044).
