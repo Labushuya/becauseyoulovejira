@@ -2,7 +2,8 @@
 // modes, the suggestions of a day, what a check mark means, which days can be planned, the order of
 // the entries and the texts of the page. Mirror of app/pb_hooks/lib/day-plan-rules.js
 // (tests/unit/web-day-plan.test.mjs keeps both equal); the SPA computes the suggestions from its live
-// tickets, the server the same for the automatic sources.
+// tickets, the server the same for the automatic sources. Only the blocks of the plan (TP-4) are the
+// SPA's own; where the server puts a new entry, its answers say.
 //
 // "Heute" is the Berlin day of berlin-date.ts, the same as "Heute fällig" of the list (domain/filter.ts
 // dueBucket), never a time zone of the runtime (ADR-0005).
@@ -385,14 +386,68 @@ export function isEditable(
 
 // --- Order -------------------------------------------------------------------------------------
 
-/** The IDs with `id` moved to `index` (clamped), or null when `id` is not among them. */
-export function moved(ids: readonly string[], id: string, index: number): string[] | null {
-	const from = ids.indexOf(id);
-	if (from === -1) return null;
-	const rest = [...ids.slice(0, from), ...ids.slice(from + 1)];
+/**
+ * The IDs with the `size` entries from `start` moved to `index` among the others (clamped). One
+ * entry is `moved` of the hook (the route `move`); more are a block of the plan (TP-4).
+ */
+export function movedBlock(
+	ids: readonly string[],
+	start: number,
+	size: number,
+	index: number
+): string[] {
+	const block = ids.slice(start, start + size);
+	const rest = [...ids.slice(0, start), ...ids.slice(start + size)];
 	let target = Number.isFinite(index) ? Math.floor(index) : rest.length;
 	target = Math.min(Math.max(target, 0), rest.length);
-	return [...rest.slice(0, target), id, ...rest.slice(target)];
+	return [...rest.slice(0, target), ...block, ...rest.slice(target)];
+}
+
+// --- Blocks of the plan (TP-4, ADR-0065 addendum TP-4; only the SPA) -------------------------------
+
+/**
+ * How many entries move with the entry at `index`: a parent with the sub-tasks indented directly
+ * below it (`nested` as nestedInOrder in domain/subtasks.ts gives it), 1 for every other entry.
+ */
+export function blockSize(nested: readonly boolean[], index: number): number {
+	if (index < 0 || index >= nested.length || nested[index] === true) return 1;
+	let end = index + 1;
+	while (end < nested.length && nested[end] === true) end += 1;
+	return end - index;
+}
+
+/**
+ * The place of a block one step up or down, as an index among the other entries: past the whole
+ * neighbour, an entry with the sub-tasks indented below it, so no block is torn apart; null at the
+ * top or the bottom.
+ */
+export function blockStep(
+	nested: readonly boolean[],
+	start: number,
+	size: number,
+	direction: -1 | 1
+): number | null {
+	if (direction < 0) {
+		if (start <= 0) return null;
+		let previous = start - 1;
+		while (previous > 0 && nested[previous] === true) previous -= 1;
+		return previous;
+	}
+	const next = start + size;
+	if (next >= nested.length) return null;
+	return next + blockSize(nested, next) - size;
+}
+
+/**
+ * The part of `after` that differs from `before` (the same IDs in another order): what a request of
+ * the order names. Entries before and after it keep their places anyway.
+ */
+export function changedRange(before: readonly string[], after: readonly string[]): string[] {
+	let first = 0;
+	while (first < after.length && before[first] === after[first]) first += 1;
+	let last = after.length - 1;
+	while (last >= first && before[last] === after[last]) last -= 1;
+	return after.slice(first, last + 1);
 }
 
 // --- Texts ---------------------------------------------------------------------------------------
@@ -410,7 +465,9 @@ export const DAY_PLAN_MESSAGES: Readonly<Record<string, string>> = Object.freeze
 	validation_dayplan_index: 'Ungültige Stelle im Plan.',
 	validation_dayplan_sources: 'Ungültige Einstellung der Vorschläge.',
 	validation_dayplan_tomorrow: 'Auf morgen schieben geht nur im Plan von heute.',
-	validation_dayplan_tickets: 'Bitte höchstens 200 Tickets auf einmal übernehmen.'
+	validation_dayplan_tickets: 'Bitte höchstens 200 Tickets auf einmal übernehmen.',
+	validation_dayplan_order: 'Die Reihenfolge passt nicht zu den Einträgen dieses Plans.',
+	validation_dayplan_order_max: 'Bitte höchstens 500 Einträge auf einmal ordnen.'
 });
 
 /** Text of `validation_scope_mismatch` at the ticket of an entry, the same as the hook. */

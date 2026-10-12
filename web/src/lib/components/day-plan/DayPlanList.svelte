@@ -16,7 +16,6 @@
 	import { page } from '$app/state';
 	import { SOURCE_LABELS, initialsOf, type DayPlanSource } from '$lib/domain/day-plan';
 	import { personLabel } from '$lib/domain/people';
-	import { nestedInOrder } from '$lib/domain/subtasks';
 	import { auth } from '$lib/auth.svelte';
 	import type { DayPlanStore, PlanRow } from '$lib/stores/day-plan.svelte';
 	import { ticketLinks } from '$lib/stores/open-mode.svelte';
@@ -42,7 +41,9 @@
 	// no check mark to change, no handle, no menu. In a household the initials of the assignee of the
 	// ticket follow its badge (ADR-0068 §8). A sub-task stands indented with the corner of the table
 	// when the entry directly above it is its parent or an indented sibling (TP-3, only display: the
-	// order stays); otherwise it names its parent above its title, the key a link as well (TP-2).
+	// order stays); otherwise it names its parent above its title, the key a link as well (TP-2). A
+	// parent moves with this block (TP-4): dragged, all of it is dragged; "nach oben", "nach unten"
+	// and Alt+arrow take it past the whole neighbour. A sub-task moves alone and may leave its block.
 	let {
 		store,
 		household = false,
@@ -68,8 +69,15 @@
 
 	const rows = $derived(store.rows);
 	/** Per entry: indented below the entry above it (TP-3), derived from the order of the plan. */
-	const nested = $derived(nestedInOrder(rows.map((row) => row.ticket)));
+	const nested = $derived(store.nested);
+	/** The entries that move with the dragged one (TP-4): a parent with its block. */
+	const draggedBlock = $derived(dragging === null ? [] : store.blockOf(dragging));
 	const editable = $derived(store.editable);
+
+	/** Whether an entry, a parent with its block (TP-4), stands at the bottom of the plan. */
+	function atBottom(row: PlanRow, index: number): boolean {
+		return index + store.blockOf(row.item.id).length >= rows.length;
+	}
 
 	function keyOf(row: PlanRow): string {
 		return row.ticket?.key ?? 'Eintrag';
@@ -220,9 +228,7 @@
 		dropIndex = null;
 		dragging = null;
 		if (itemId !== '') {
-			const from = rows.findIndex((row) => row.item.id === itemId);
-			if (from === -1) return;
-			void store.moveTo(itemId, index > from ? index - 1 : index);
+			void store.drop(itemId, index);
 		} else {
 			void store.add(ticketId, index);
 		}
@@ -259,7 +265,7 @@
 					class="entry"
 					class:nested={nested[index]}
 					class:done={row.done}
-					class:dragging={dragging === row.item.id}
+					class:dragging={draggedBlock.includes(row.item.id)}
 					class:drop-before={dropIndex === index}
 					class:drop-after={dropIndex === rows.length && index === rows.length - 1}
 					data-item-id={row.item.id}
@@ -351,7 +357,7 @@
 								aria-label={`${key} nach unten`}
 								title="Nach unten (Alt+Pfeil runter)"
 								aria-keyshortcuts="Alt+ArrowDown"
-								aria-disabled={index === rows.length - 1 || pending ? 'true' : undefined}
+								aria-disabled={atBottom(row, index) || pending ? 'true' : undefined}
 								onclick={() => void move(row, 1)}
 							>
 								<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">

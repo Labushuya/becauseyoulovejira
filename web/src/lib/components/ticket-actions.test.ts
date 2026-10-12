@@ -258,7 +258,8 @@ describe('"Zum Tagesplan" in the menu "•••" (ADR-0065)', () => {
 		const add = vi.fn(async () => ({
 			item: {} as never,
 			plan: { id: 'plan00000000001', date: '2031-05-14', scope: 'u:x', dismissed: [] },
-			already: false
+			already: false,
+			positions: null
 		}));
 		const shown: FlagInput[] = [];
 		const flags = {

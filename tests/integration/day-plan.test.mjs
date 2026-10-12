@@ -7,14 +7,16 @@
 // order; the shared plan of the household live for A and B and closed to C; no ticket across the
 // border of an area; moving a ticket into the other area and the trash take its entries along; the
 // settings of the sources, live for the members (PL-1); the kind of a ticket; pins neither a source nor
-// a reason to leave a ticket out (PL-1). The day comes from the test clock of
-// tests/fixtures/pb_hooks/day-plan-clock.pb.js, so no case depends on the time of the machine.
+// a reason to leave a ticket out (PL-1); where a new entry goes (a sub-task into the block of its
+// parent, a parent before its sub-tasks, TP-4) and the order of several entries at once (TP-4). The
+// day comes from the test clock of tests/fixtures/pb_hooks/day-plan-clock.pb.js, so no case depends
+// on the time of the machine.
 
 import { randomBytes } from 'node:crypto';
 import PocketBase from 'pocketbase';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startPocketBase } from '../support/pocketbase-harness.mjs';
-import { uniqueCode, uniqueSuffix } from '../support/scenario.mjs';
+import { FAIL_ORDER, uniqueCode, uniqueSuffix } from '../support/scenario.mjs';
 import { scaled } from '../support/timing.mjs';
 import {
 	addToDayPlan,
@@ -24,6 +26,7 @@ import {
 	listDayPlanItems,
 	moveDayPlanItem,
 	moveDayPlanItemToTomorrow,
+	orderDayPlan,
 	removeDayPlanItem,
 	saveDayPlanSettings,
 	subscribeDayPlanItems,
@@ -814,6 +817,219 @@ describe('the border of an area', () => {
 	});
 });
 
+/** The titles of the tickets of a plan in its order. */
+async function titlesOf(planId) {
+	const titles = [];
+	for (const ticket of ticketsOf(await entriesOf(planId))) titles.push((await ticketOf(ticket)).title);
+	return titles;
+}
+
+/** Every entry of a plan with its position, as the answers name them. */
+const positionsOf = async (planId) => (await entriesOf(planId)).map((entry) => ({ id: entry.id, position: entry.position }));
+
+describe('where a new entry goes (TP-4)', () => {
+	it('puts a sub-task into the block of its parent by the order of "Aufgaben"; a place given wins', async () => {
+		await useDay('2031-07-01');
+		const person = await createAccount();
+		const first = await person.add({ ticket: (await person.ticket({ title: 'A' })).id });
+		const planId = first.plan.id;
+		const parent = await person.ticket({ title: 'P' });
+		await person.add({ ticket: parent.id });
+		await person.add({ ticket: (await person.ticket({ title: 'B' })).id });
+		const late = await person.ticket({ title: 'S spät', parent: parent.id, due: due('2031-07-05') });
+		const added = await person.add({ ticket: late.id });
+		expect(await titlesOf(planId)).toEqual(['A', 'P', 'S spät', 'B']);
+		// The answer names the new entry at its place and every entry with its position.
+		expect(added.item).toMatchObject({ ticket: late.id, position: 2 });
+		expect(added.positions).toEqual(await positionsOf(planId));
+		// Due earlier: before its sibling, as in "Aufgaben".
+		await person.add({ ticket: (await person.ticket({ title: 'S früh', parent: parent.id, due: due('2031-07-03') })).id });
+		expect(await titlesOf(planId)).toEqual(['A', 'P', 'S früh', 'S spät', 'B']);
+		// Dropped at a place, it stays there; the plan is numbered 0, 1, 2, … again.
+		await person.add({ ticket: (await person.ticket({ title: 'S gezogen', parent: parent.id })).id, index: 0 });
+		expect(await titlesOf(planId)).toEqual(['S gezogen', 'A', 'P', 'S früh', 'S spät', 'B']);
+		expect((await entriesOf(planId)).map((entry) => entry.position)).toEqual([0, 1, 2, 3, 4, 5]);
+	});
+
+	it('puts a parent before its sub-tasks, a sub-task without a block after its siblings, the rest at the end', async () => {
+		await useDay('2031-07-02');
+		const person = await createAccount();
+		const parent = await person.ticket({ title: 'P' });
+		const { plan } = await person.add({ ticket: (await person.ticket({ title: 'X' })).id });
+		// Without its parent in the plan a sub-task goes to the end.
+		await person.add({ ticket: (await person.ticket({ title: 'S1', parent: parent.id, due: due('2031-07-03') })).id });
+		expect(await titlesOf(plan.id)).toEqual(['X', 'S1']);
+		// The parent goes directly before the first of its sub-tasks.
+		const added = await person.add({ ticket: parent.id });
+		expect(added.item.position).toBe(1);
+		expect(await titlesOf(plan.id)).toEqual(['X', 'P', 'S1']);
+		// Another entry between parent and sub-task: no block, the next sibling goes after the last one.
+		const [first] = await entriesOf(plan.id);
+		await person.send(`${PLAN}/items/${first.id}/move`, { index: 1 });
+		expect(await titlesOf(plan.id)).toEqual(['P', 'X', 'S1']);
+		await person.add({ ticket: (await person.ticket({ title: 'S2', parent: parent.id, due: due('2031-07-04') })).id });
+		expect(await titlesOf(plan.id)).toEqual(['P', 'X', 'S1', 'S2']);
+		// Anything else goes to the end.
+		await person.add({ ticket: (await person.ticket({ title: 'Y' })).id });
+		expect(await titlesOf(plan.id)).toEqual(['P', 'X', 'S1', 'S2', 'Y']);
+	});
+
+	it('adopts several one after the other in the order sent, and the automatic sources as well', async () => {
+		await useDay('2031-07-03');
+		const person = await createAccount();
+		const { plan } = await person.add({ ticket: (await person.ticket({ title: 'Vorher' })).id });
+		const parent = await person.ticket({ title: 'P', status: 'in_progress' });
+		const low = await person.ticket({ title: 'S1', parent: parent.id, due: due('2031-07-03') });
+		const high = await person.ticket({ title: 'S2', parent: parent.id, due: due('2031-07-03'), priority: 'high' });
+		const adopted = await person.send(`${PLAN}/adopt`, { tickets: [parent.id, low.id, high.id] });
+		expect(await titlesOf(plan.id)).toEqual(['Vorher', 'P', 'S2', 'S1']);
+		// Each new entry with the position it has at the end, and every position of the plan.
+		expect(adopted.items.map((item) => [item.ticket, item.position, item.origin])).toEqual([
+			[parent.id, 1, 'in_progress'],
+			[low.id, 3, 'due_today'],
+			[high.id, 2, 'due_today']
+		]);
+		expect(adopted.positions).toEqual(await positionsOf(plan.id));
+		// Sent the other way round: the sub-task first at the end, its parent then before it.
+		const other = await person.ticket({ title: 'Q' });
+		const sub = await person.ticket({ title: 'T', parent: other.id });
+		await person.send(`${PLAN}/adopt`, { tickets: [sub.id, other.id] });
+		expect(await titlesOf(plan.id)).toEqual(['Vorher', 'P', 'S2', 'S1', 'Q', 'T']);
+
+		// The automatic sources: the urgent sub-task comes first in the suggestions, its parent after.
+		await useDay('2031-07-04');
+		const second = await createAccount();
+		const today = await second.add({ ticket: (await second.ticket({ title: 'Erst' })).id });
+		const project = await second.ticket({ title: 'Vorhaben', kind: 'ongoing' });
+		await second.ticket({ title: 'Teil', kind: 'ongoing', parent: project.id, priority: 'urgent' });
+		expect((await second.fetch()).adopted).toBe(2);
+		expect(await titlesOf(today.plan.id)).toEqual(['Erst', 'Vorhaben', 'Teil']);
+	});
+
+	it('moves a sub-task to tomorrow into the block of its parent there', async () => {
+		await useDay('2031-07-05');
+		const person = await createAccount();
+		const parent = await person.ticket({ title: 'P' });
+		const tomorrowPlan = (await person.add({ ticket: parent.id, date: '2031-07-06' })).plan;
+		await person.add({ ticket: (await person.ticket({ title: 'A' })).id, date: '2031-07-06' });
+		const today = await person.add({ ticket: (await person.ticket({ title: 'S', parent: parent.id })).id });
+		const moved = await person.send(`${PLAN}/items/${today.item.id}/tomorrow`, {});
+		expect(moved.plan.id).toBe(tomorrowPlan.id);
+		expect(moved.item.position).toBe(1);
+		expect(await titlesOf(tomorrowPlan.id)).toEqual(['P', 'S', 'A']);
+		expect(moved.positions).toEqual(await positionsOf(tomorrowPlan.id));
+	});
+
+	it('puts a new sub-task of "Neues Ticket" with "Zum Tagesplan" into the block of its parent (NT-1)', async () => {
+		await useDay('2031-07-07');
+		const person = await createAccount();
+		const parent = await person.ticket({ title: 'P' });
+		const { plan } = await person.add({ ticket: parent.id });
+		await person.add({ ticket: (await person.ticket({ title: 'B' })).id });
+		await person.send('/api/byl/tickets/create', {
+			title: 'Neu',
+			description: '',
+			status: 'open',
+			priority: 'medium',
+			due: '',
+			project: '',
+			tags: [],
+			parent: parent.id,
+			source: 'manual',
+			day_plan: true
+		});
+		expect(await titlesOf(plan.id)).toEqual(['P', 'Neu', 'B']);
+	});
+});
+
+describe('the order of several entries at once (TP-4)', () => {
+	/**
+	 * The shared plan of `date` with A, P and its sub-tasks S1 and S2 (due one and two days later), B;
+	 * `ticket` makes another ticket of the household.
+	 */
+	async function sharedPlan(date) {
+		await useDay(date);
+		const scope = householdScope();
+		const ticket = (data) => a.ticket({ household: householdId, ...data });
+		const parent = await ticket({ title: 'P' });
+		const plan = (await a.fetch({ scope })).plan;
+		// The ongoing project of the household came in automatically; this plan starts without it.
+		for (const entry of await entriesOf(plan.id)) await a.send(`${PLAN}/items/${entry.id}/remove`, {});
+		const items = {};
+		for (const [name, data] of [
+			['A', {}],
+			['P', null],
+			['S1', { parent: parent.id, due: due(shift(date, 1)) }],
+			['S2', { parent: parent.id, due: due(shift(date, 2)) }],
+			['B', {}]
+		]) {
+			const id = data === null ? parent.id : (await ticket({ title: name, ...data })).id;
+			items[name] = (await a.add({ ticket: id, scope })).item.id;
+		}
+		return { scope, plan, items, parent, ticket };
+	}
+
+	it('puts the named entries in this order on their places, in one request, live for every member', async () => {
+		const { plan, items } = await sharedPlan('2031-07-08');
+		expect(await titlesOf(plan.id)).toEqual(['A', 'P', 'S1', 'S2', 'B']);
+		const events = await watchPlan(b, plan.id);
+		// "P" with its block before "A": the part of the plan that changed.
+		const answer = await a.send(`${PLAN}/order`, { plan: plan.id, ids: [items.P, items.S1, items.S2, items.A] });
+		expect(await titlesOf(plan.id)).toEqual(['P', 'S1', 'S2', 'A', 'B']);
+		expect(answer.items).toEqual(await positionsOf(plan.id));
+		await waitFor(events, (event) => event.action === 'update' && event.id === items.A && event.record.position === 3, 'update of A for B');
+		// B, a member as well, orders back the whole plan.
+		await b.send(`${PLAN}/order`, { plan: plan.id, ids: [items.A, items.P, items.S1, items.S2, items.B] });
+		expect(await titlesOf(plan.id)).toEqual(['A', 'P', 'S1', 'S2', 'B']);
+	});
+
+	it('keeps every entry the request does not name at its place, one added meanwhile for instance', async () => {
+		const { scope, plan, items, parent, ticket } = await sharedPlan('2031-07-11');
+		// Meanwhile B adds a sub-task (into the block) and another ticket (at the end); A does not know them.
+		await b.add({ ticket: (await ticket({ title: 'S3', parent: parent.id, due: due('2031-07-14') })).id, scope });
+		await b.add({ ticket: (await ticket({ title: 'X' })).id, scope });
+		expect(await titlesOf(plan.id)).toEqual(['A', 'P', 'S1', 'S2', 'S3', 'B', 'X']);
+		await a.send(`${PLAN}/order`, { plan: plan.id, ids: [items.B, items.A, items.P, items.S1, items.S2] });
+		expect(await titlesOf(plan.id)).toEqual(['B', 'A', 'P', 'S1', 'S3', 'S2', 'X']);
+		expect((await entriesOf(plan.id)).map((entry) => entry.position)).toEqual([0, 1, 2, 3, 4, 5, 6]);
+	});
+
+	it('refuses another plan, entries of another plan, twice named, too many or none, and days before', async () => {
+		const { plan, items } = await sharedPlan('2031-07-15');
+		const order = (person, ids, planId = plan.id) => person.send(`${PLAN}/order`, { plan: planId, ids });
+		// C sees no plan of the household; a plan that does not exist is not found either.
+		expect((await refusal(order(c, [items.A]))).status).toBe(404);
+		expect((await refusal(order(a, [items.A], 'abcdefghijklmno'))).status).toBe(404);
+		expect((await refusal(a.send(`${PLAN}/order`, { ids: [items.A] }))).status).toBe(404);
+		const own = await a.add({ ticket: (await a.ticket({ title: 'Privat' })).id });
+		for (const ids of [[items.A, own.item.id], [items.A, items.A], [], ['x'], 'A', [items.A, 7]]) {
+			expect((await refusal(order(a, ids))).codes.ids, JSON.stringify(ids)).toBe('validation_dayplan_order');
+		}
+		const many = Array.from({ length: 501 }, (_, index) => `item${String(index).padStart(11, '0')}`);
+		const tooMany = await refusal(order(a, many));
+		expect(tooMany).toMatchObject({ status: 400, codes: { ids: 'validation_dayplan_order_max' } });
+		expect(await titlesOf(plan.id)).toEqual(['A', 'P', 'S1', 'S2', 'B']);
+		// The day after, the plan is read-only.
+		await useDay('2031-07-16');
+		expect((await refusal(order(a, [items.B, items.A]))).codes.date).toBe('validation_dayplan_readonly');
+		expect(await titlesOf(plan.id)).toEqual(['A', 'P', 'S1', 'S2', 'B']);
+	});
+
+	it('saves every position or none', async () => {
+		await useDay('2031-07-17');
+		const person = await createAccount();
+		const failing = await person.add({ ticket: (await person.ticket({ title: FAIL_ORDER })).id });
+		const one = await person.add({ ticket: (await person.ticket({ title: 'Eins' })).id });
+		const two = await person.add({ ticket: (await person.ticket({ title: 'Zwei' })).id });
+		const before = await positionsOf(failing.plan.id);
+		// "Eins" and "Zwei" get their new places first, the entry with the marker fails last.
+		const refused = await refusal(person.send(`${PLAN}/order`, { plan: failing.plan.id, ids: [one.item.id, two.item.id, failing.item.id] }));
+		expect(refused.status).toBe(400);
+		expect(await positionsOf(failing.plan.id)).toEqual(before);
+		expect(await titlesOf(failing.plan.id)).toEqual([FAIL_ORDER, 'Eins', 'Zwei']);
+	});
+});
+
 describe('the data layer of the SPA (web/src/lib/data/day-plan.ts)', () => {
 	it('reads the plan of the area of the client with its entries and their tickets, and changes it', async () => {
 		await useDay('2031-05-14');
@@ -863,6 +1079,38 @@ describe('the data layer of the SPA (web/src/lib/data/day-plan.ts)', () => {
 		await expect(checkDayPlanItem(person.client, entry.id, 'halb')).rejects.toMatchObject({
 			kind: 'validation',
 			fields: { mode: { code: 'validation_dayplan_mode', message: 'Unbekannte Art des Abhakens.' } }
+		});
+	});
+
+	it('names the route of the order and the positions of the server, and orders through it (TP-4)', async () => {
+		await useDay('2031-07-18');
+		const person = await createAccount();
+		setClientArea(person.client, person.scope);
+		const parent = await person.ticket({ title: 'P' });
+		const answer = (await fetchDayPlan(person.client)).value;
+		expect(answer.supportsOrder).toBe(true);
+		const first = await addToDayPlan(person.client, { ticket: (await person.ticket({ title: 'A' })).id });
+		const added = await addToDayPlan(person.client, { ticket: parent.id });
+		expect(added.positions).toEqual([
+			{ id: first.item.id, position: 0 },
+			{ id: added.item.id, position: 1 }
+		]);
+		const sub = await person.ticket({ title: 'S', parent: parent.id, due: due('2031-07-18') });
+		const adopted = await adoptIntoDayPlan(person.client, person.scope, [sub.id]);
+		const subItem = adopted.items[0].id;
+		expect(adopted.positions).toEqual([
+			{ id: first.item.id, position: 0 },
+			{ id: added.item.id, position: 1 },
+			{ id: subItem, position: 2 }
+		]);
+		expect(await orderDayPlan(person.client, answer.plan.id, [added.item.id, subItem, first.item.id])).toEqual([
+			{ id: added.item.id, position: 0 },
+			{ id: subItem, position: 1 },
+			{ id: first.item.id, position: 2 }
+		]);
+		await expect(orderDayPlan(person.client, answer.plan.id, [first.item.id, first.item.id])).rejects.toMatchObject({
+			kind: 'validation',
+			fields: { ids: { code: 'validation_dayplan_order', message: 'Die Reihenfolge passt nicht zu den Einträgen dieses Plans.' } }
 		});
 	});
 

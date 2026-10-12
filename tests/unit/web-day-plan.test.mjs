@@ -1,12 +1,15 @@
 // The day plan (TP-1, ADR-0065): the SPA (web/src/lib/domain/day-plan.ts) and the hook
 // (app/pb_hooks/lib/day-plan-rules.js) know the same kinds, sources, modes, defaults, origins and
 // texts, and compute the same suggestions, check actions, days and orders. The suggestions are
-// compared on many generated plans, so a change on one side alone fails here.
+// compared on many generated plans, so a change on one side alone fails here. Since TP-4 the hook
+// places a sub-task among its siblings by the order of "Aufgaben": its ticketOrder must sort like
+// ticketOrder of web/src/lib/domain/ordering.ts, compared on many generated tickets as well.
 
 import { describe, expect, it } from 'vitest';
 import { loadHookLib } from '../support/hook-lib.mjs';
 import * as web from '../../web/src/lib/domain/day-plan.ts';
 import * as dueLabel from '../../web/src/lib/domain/due-label.ts';
+import * as ordering from '../../web/src/lib/domain/ordering.ts';
 
 const hook = loadHookLib('day-plan-rules.js');
 
@@ -130,13 +133,58 @@ describe('the other rules of the SPA and of the hook', () => {
 		for (const date of ['2031-06-09', TODAY, '2031-06-11', '2031-06-12']) {
 			expect(web.isEditable(date, TODAY, '2031-06-11')).toBe(hook.isEditable(date, TODAY, '2031-06-11'));
 		}
+		// One entry moved by the SPA is the route `move` of the hook (TP-4: movedBlock with one entry).
 		for (const index of [-1, 0, 1, 2, 5, 1.5]) {
-			expect(web.moved(['a', 'b', 'c'], 'b', index)).toEqual(hook.moved(['a', 'b', 'c'], 'b', index));
+			expect(web.movedBlock(['a', 'b', 'c'], 1, 1, index)).toEqual(hook.moved(['a', 'b', 'c'], 'b', index));
 		}
 		for (const [done, status] of [[true, 'open'], [false, 'done'], [false, 'open']]) {
 			expect(web.isDone(done, status)).toBe(hook.isDone({ done_today: done }, status));
 		}
 		expect(web.kindOf('ongoing')).toBe(hook.kindOf('ongoing'));
 		expect(web.kindOf('')).toBe(hook.kindOf(''));
+	});
+});
+
+describe('the order of "Aufgaben" in the SPA and in the hook (TP-4)', () => {
+	// Around the horizon of "soon due" (today + 7 days): overdue, today, the last day inside, the first
+	// outside, later and none.
+	const DUES = ['', '', '2031-06-01', '2031-06-09', TODAY, '2031-06-16', '2031-06-17', '2031-06-18', '2031-08-01'];
+	const CREATED = ['2031-06-01 10:00:00.000Z', '2031-06-01 10:00:00.000Z', '2031-06-02 08:30:00.000Z', '2031-06-10 23:59:59.999Z'];
+
+	function randomTickets(next, index) {
+		const tickets = [];
+		const count = 2 + next(10);
+		for (let i = 0; i < count; i++) {
+			tickets.push({
+				id: `o${index}x${next(5)}${i}`,
+				due: DUES[next(DUES.length)],
+				priority: PRIORITIES[next(PRIORITIES.length)],
+				created: CREATED[next(CREATED.length)]
+			});
+		}
+		return tickets;
+	}
+
+	const sign = (value) => Math.sign(value);
+	const forWeb = (ticket) => ({ ...ticket, due: ticket.due === '' ? null : ticket.due });
+
+	it('compares every pair alike and sorts 300 generated lists the same', () => {
+		expect(hook.SOON_DAYS).toBe(ordering.SOON_DAYS);
+		const next = generator(4711);
+		for (const today of [TODAY, '2031-12-28', '2032-02-25']) {
+			const hookOrder = hook.ticketOrder(today);
+			const webOrder = ordering.ticketOrder(today);
+			for (let index = 0; index < 100; index++) {
+				const tickets = randomTickets(next, index);
+				for (const a of tickets) {
+					for (const b of tickets) {
+						expect(sign(hookOrder(a, b)), `${today} ${a.id} ${b.id}`).toBe(sign(webOrder(forWeb(a), forWeb(b))));
+					}
+				}
+				const byHook = [...tickets].sort(hookOrder).map((ticket) => ticket.id);
+				const byWeb = tickets.map(forWeb).sort(webOrder).map((ticket) => ticket.id);
+				expect(byHook, `${today} list ${index}`).toEqual(byWeb);
+			}
+		}
 	});
 });

@@ -111,6 +111,18 @@ onRecordCreate(function (e) {
   e.next();
 }, 'day_plan_items');
 
+// Fails a new position of an entry of the day plan whose ticket has the marker title (TP-4): the
+// order of several entries is one transaction, so the positions saved before it may not stay.
+onRecordUpdate(function (e) {
+  var found = e.app.findRecordsByFilter('tickets', 'id = {:id}', '', 1, 0, {
+    id: e.record.getString('ticket')
+  });
+  if (found.length > 0 && found[0].getString('title') === '__byl_fail_order__') {
+    throw new BadRequestError('Injected order failure.');
+  }
+  e.next();
+}, 'day_plan_items');
+
 // Fails the last write of "Ticket duplizieren" (ADR-0045): the entry "Dupliziert nach …" in the
 // history of an original with the marker title. Copy of the source, duplicate, sub-tickets,
 // comments, pin and the history of the duplicate were written before in the same transaction, so

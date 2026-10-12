@@ -16,6 +16,7 @@ import type { TicketSummary } from '$lib/domain/ticket';
 import type { AreaStore } from '$lib/stores/area.svelte';
 import { DayPlanStore } from '$lib/stores/day-plan.svelte';
 import {
+	PLAN,
 	SELF,
 	TODAY,
 	fakeDayPlanData,
@@ -1079,7 +1080,8 @@ describe('sub-tasks below their parent (TP-3)', () => {
 		await vi.waitFor(() =>
 			expect(planRows()).toEqual(['HAUS-7', '  HAUS-8', '  HAUS-9', '  HAUS-10', 'TASK-a1'])
 		);
-		// Dragged to the end, the parent leaves its sub-tasks: they stand alone with their line.
+		// Dragged to the end without the route of the order (a server before its restart after TP-4),
+		// the parent leaves its sub-tasks: they stand alone with their line.
 		layoutEntries();
 		const dataTransfer = transfer();
 		await fireEvent.dragStart(planEntry('item00000000001').querySelector('.handle') as Element, {
@@ -1121,6 +1123,140 @@ describe('sub-tasks below their parent (TP-3)', () => {
 			);
 			expect(source, file).toMatch(new RegExp(`\\.${item}\\s*\\{[^}]*min-width: 0;`));
 		}
+	});
+});
+
+describe('a parent moves with its block (TP-4)', () => {
+	const PARENT = 't000000000000p1';
+	const S1 = 't000000000000s1';
+	const S2 = 't000000000000s2';
+	const sub = { parentId: PARENT, parentRef: { id: PARENT, key: 'HAUS-7', title: 'Wochenputz' } };
+	const ID = {
+		a1: 'item00000000001',
+		parent: 'item00000000002',
+		s1: 'item00000000003',
+		s2: 'item00000000004',
+		a2: 'item00000000005'
+	};
+
+	/** Plan: TASK-a1, "Wochenputz" HAUS-7 with HAUS-8 and HAUS-9 indented below it, TASK-a2. */
+	function renderBlock(answer: DayPlanAnswer = planAnswer({ supportsOrder: true })) {
+		return renderPlan({
+			tickets: [
+				planTicket(A1, { title: 'Steuer abgeben' }),
+				planTicket(PARENT, { key: 'HAUS-7', title: 'Wochenputz' }),
+				planTicket(S1, { key: 'HAUS-8', title: 'Fenster putzen', ...sub }),
+				planTicket(S2, { key: 'HAUS-9', title: 'Bad putzen', ...sub }),
+				planTicket(A2, { title: 'Spanisch lernen' })
+			],
+			items: [
+				planItem(ID.a1, A1, 0),
+				planItem(ID.parent, PARENT, 1),
+				planItem(ID.s1, S1, 2),
+				planItem(ID.s2, S2, 3),
+				planItem(ID.a2, A2, 4)
+			],
+			answer,
+			ongoing: []
+		});
+	}
+
+	const planEntry = (id: string) =>
+		document.querySelector<HTMLElement>(`[data-item-id="${id}"]`) as HTMLElement;
+	/** Keys of the plan, indented ones with two blanks before. */
+	const planRows = () =>
+		[...document.querySelectorAll<HTMLElement>('[data-item-id]')].map(
+			(item) =>
+				`${item.classList.contains('nested') ? '  ' : ''}${item.querySelector('.key')?.textContent}`
+		);
+	const button = (id: string, name: string) => within(planEntry(id)).getByRole('button', { name });
+	const status = () => screen.getByRole('status', { hidden: true }).textContent ?? '';
+
+	/** Drags an entry at its handle to the end of the plan; returns the entries that looked dragged. */
+	async function dragToEnd(id: string) {
+		layoutEntries();
+		const dataTransfer = transfer();
+		await fireEvent.dragStart(planEntry(id).querySelector('.handle') as Element, { dataTransfer });
+		const dragged = [...document.querySelectorAll('[data-item-id].dragging')].map((node) =>
+			node.getAttribute('data-item-id')
+		);
+		const plan = screen.getByRole('group', { name: 'Einträge des Plans' });
+		await drag(plan, 'dragover', dataTransfer, 500);
+		await drag(plan, 'drop', dataTransfer, 500);
+		return dragged;
+	}
+
+	it('drags a parent with its block: all of it looks dragged and lands together', async () => {
+		const { data } = await renderBlock();
+		expect(await dragToEnd(ID.parent)).toEqual([ID.parent, ID.s1, ID.s2]);
+		await vi.waitFor(() =>
+			expect(data.order).toHaveBeenCalledWith(PLAN.id, [ID.a2, ID.parent, ID.s1, ID.s2])
+		);
+		await vi.waitFor(() =>
+			expect(planRows()).toEqual(['TASK-a1', 'TASK-a2', 'HAUS-7', '  HAUS-8', '  HAUS-9'])
+		);
+		expect(data.move).not.toHaveBeenCalled();
+		expect(status()).toContain('HAUS-7 mit 2 Unteraufgaben an Stelle 3 von 5 verschoben.');
+		expect(document.querySelectorAll('.dragging')).toHaveLength(0);
+	});
+
+	it('takes a block past the whole neighbour with the buttons and Alt+arrow; at the bottom "nach unten" is locked', async () => {
+		const { data } = await renderBlock();
+		const down = button(ID.parent, 'HAUS-7 nach unten');
+		expect(down.getAttribute('aria-disabled')).toBeNull();
+		await fireEvent.click(down);
+		await vi.waitFor(() =>
+			expect(planRows()).toEqual(['TASK-a1', 'TASK-a2', 'HAUS-7', '  HAUS-8', '  HAUS-9'])
+		);
+		expect(data.order).toHaveBeenLastCalledWith(PLAN.id, [ID.a2, ID.parent, ID.s1, ID.s2]);
+		expect(button(ID.parent, 'HAUS-7 nach unten').getAttribute('aria-disabled')).toBe('true');
+		// Alt+arrow from the check mark of the parent: the block goes up past TASK-a2, the focus stays.
+		const check = screen.getByRole('checkbox', { name: 'HAUS-7 erledigt' });
+		check.focus();
+		await fireEvent.keyDown(check, { key: 'ArrowUp', altKey: true });
+		await vi.waitFor(() =>
+			expect(planRows()).toEqual(['TASK-a1', 'HAUS-7', '  HAUS-8', '  HAUS-9', 'TASK-a2'])
+		);
+		expect(document.activeElement).toBe(screen.getByRole('checkbox', { name: 'HAUS-7 erledigt' }));
+		expect(status()).toContain('HAUS-7 mit 2 Unteraufgaben an Stelle 2 von 5 verschoben.');
+		expect(data.move).not.toHaveBeenCalled();
+	});
+
+	it('moves a sub-task alone, out of its block, and names its parent there', async () => {
+		const { data } = await renderBlock();
+		await fireEvent.click(button(ID.s2, 'HAUS-9 nach unten'));
+		await vi.waitFor(() => expect(data.move).toHaveBeenCalledWith(ID.s2, 4));
+		await vi.waitFor(() =>
+			expect(planRows()).toEqual(['TASK-a1', 'HAUS-7', '  HAUS-8', 'TASK-a2', 'HAUS-9'])
+		);
+		expect(planEntry(ID.s2).querySelector('[data-subtask-path]')).not.toBeNull();
+		expect(status()).toContain('HAUS-9 steht jetzt an Stelle 5 von 5.');
+		expect(data.order).not.toHaveBeenCalled();
+	});
+
+	it('sets the block back and says so when the server refuses', async () => {
+		const { data, last } = await renderBlock();
+		data.order.mockRejectedValueOnce(new DataError('network'));
+		await fireEvent.click(button(ID.parent, 'HAUS-7 nach oben'));
+		await vi.waitFor(() =>
+			expect(last()).toMatchObject({
+				tone: 'error',
+				title: 'Die Reihenfolge wurde nicht gespeichert.'
+			})
+		);
+		expect(planRows()).toEqual(['TASK-a1', 'HAUS-7', '  HAUS-8', '  HAUS-9', 'TASK-a2']);
+	});
+
+	it('moves a parent alone, without an error, while the server does not know the order (before its restart)', async () => {
+		const { data, last } = await renderBlock(planAnswer());
+		expect(await dragToEnd(ID.parent)).toEqual([ID.parent]);
+		await vi.waitFor(() => expect(data.move).toHaveBeenCalledWith(ID.parent, 4));
+		await vi.waitFor(() =>
+			expect(planRows()).toEqual(['TASK-a1', 'HAUS-8', 'HAUS-9', 'TASK-a2', 'HAUS-7'])
+		);
+		expect(data.order).not.toHaveBeenCalled();
+		expect(last()).toBeUndefined();
+		expect(status()).toContain('HAUS-7 steht jetzt an Stelle 5 von 5.');
 	});
 });
 
