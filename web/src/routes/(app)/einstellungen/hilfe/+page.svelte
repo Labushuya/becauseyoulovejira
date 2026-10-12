@@ -1007,24 +1007,23 @@
 				<ul>
 					<li>
 						Im Ticket unter „Unteraufgaben“ legst du mit „Unteraufgabe hinzufügen“ eine nach der
-						anderen an: Titel tippen, <kbd>Enter</kbd> oder „Anlegen“; <kbd>Esc</kbd> oder
-						„Schließen“ schließt das Formular. Darunter stehen „Status“ (jeder außer „Erledigt“,
-						vorbelegt mit dem Status des Tickets, bei einem erledigten Ticket „Offen“) und
-						„Fälligkeit“ (vorbelegt mit der Fälligkeit des Tickets; ändern oder leeren geht dort).
-						Projekt, Tags, Art und Zuständigkeit bekommen sie vom Ticket. Ein vorhandenes Ticket wird
-						in der Zeile „Übergeordnet“ mit dem Knopf zum Festlegen zur Unteraufgabe. Es gibt nur eine
-						Ebene.
+						anderen an: Titel tippen, <kbd>Enter</kbd> oder „Anlegen“; <kbd>Esc</kbd> oder „Schließen“
+						schließt das Formular. Darunter stehen „Status“ (jeder außer „Erledigt“, vorbelegt mit dem
+						Status des Tickets, bei einem erledigten Ticket „Offen“) und „Fälligkeit“ (vorbelegt mit der
+						Fälligkeit des Tickets; ändern oder leeren geht dort). Projekt, Tags, Art und Zuständigkeit
+						bekommen sie vom Ticket. Ein vorhandenes Ticket wird in der Zeile „Übergeordnet“ mit dem Knopf
+						zum Festlegen zur Unteraufgabe. Es gibt nur eine Ebene.
 					</li>
 					<li>
 						Den Status einer Unteraufgabe änderst du direkt in der Liste: Ein Klick auf ihre
-						Status-Pille öffnet dasselbe Menü wie in der Tabelle „Aufgaben“. „Erledigt“ wirkt wie das
-						Häkchen davor, mit „Rückgängig“ in der Meldung.
+						Status-Pille öffnet dasselbe Menü wie in der Tabelle „Aufgaben“. „Erledigt“ wirkt wie
+						das Häkchen davor, mit „Rückgängig“ in der Meldung.
 					</li>
 					<li>
 						Gehört das übergeordnete Ticket zu einer Wiederholung, steht im Detail der Unteraufgabe
 						etwa „Teil von HAUS-7 · wiederholt sich jeden Montag“, dazu „aus der Vorlage – wird mit
-						jedem Termin neu angelegt“ oder „nur für diesen Termin“, wenn sich das sicher sagen lässt.
-						„Wiederholen…“ bleibt für die Unteraufgabe selbst.
+						jedem Termin neu angelegt“ oder „nur für diesen Termin“, wenn sich das sicher sagen
+						lässt. „Wiederholen…“ bleibt für die Unteraufgabe selbst.
 					</li>
 					<li>
 						Solange eine Unteraufgabe offen ist, fragt das Erledigen des übergeordneten Tickets
@@ -2117,9 +2116,8 @@
 					dieselbe Person) oder „Abwechselnd“ (eine Reihenfolge, etwa für „Müll rausbringen“). Jedes
 					neue Ticket der Serie bekommt die nächste Person, reihum, auch beim Nachholen verpasster
 					Termine; seine Unteraufgaben aus der Vorlage bekommen dieselbe Person. Die Vorschau sagt
-					„Nächstes Vorkommen: Bert, danach: Anna“. Öffnest du ein Ticket
-					wieder und verschwindet dadurch sein noch unberührtes Folgeticket, ist dieselbe Person
-					wieder als Nächste dran.
+					„Nächstes Vorkommen: Bert, danach: Anna“. Öffnest du ein Ticket wieder und verschwindet
+					dadurch sein noch unberührtes Folgeticket, ist dieselbe Person wieder als Nächste dran.
 				</dd>
 			</div>
 			<div class="row">
