@@ -25,11 +25,13 @@
 	import AssigneeBadge from '../AssigneeBadge.svelte';
 	import CharmIcon from '../CharmIcon.svelte';
 	import KindBadge from '../KindBadge.svelte';
+	import SubtaskPath from '../SubtaskPath.svelte';
 	import EmptyState from '../guidance/EmptyState.svelte';
 
 	// The entries of a day plan (ADR-0065 §4): a list in the order of the plan. Each entry has its check
 	// mark (a task is completed, an ongoing project checked for the day; ADR-0065 §2), the charm, key
-	// and title as a link that opens the ticket next to the plan, the badge "Vorhaben", in a household
+	// and title as a link that opens the ticket next to the plan (a sub-task with the key and title of
+	// its parent above, the key a link as well; TP-2), the badge "Vorhaben", in a household
 	// the initials of who added and checked it (names in the tooltip and for screen readers), and the
 	// menu with the other way of checking, "Auf morgen schieben", the kind and "Entfernen". The order
 	// changes by dragging an entry at its handle, by "Nach oben" and "Nach unten" and by Alt+arrow
@@ -284,6 +286,11 @@
 					/>
 					<span class="title-cell">
 						{#if ticket !== null}
+							{@const parent = store.parentOf(ticket)}
+							{#if parent}
+								<!-- A sub-task names its parent above its title (TP-2). -->
+								<SubtaskPath {parent} withTitle href={links.href(parent.id, page.url)} />
+							{/if}
 							<CharmIcon charm={ticket.charm} />
 							<span class="key">{ticket.key}</span>
 							<a

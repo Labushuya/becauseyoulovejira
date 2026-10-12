@@ -186,4 +186,20 @@ describe('sub-tasks in the ticket table', () => {
 		expect(rowOf('TASK-1').querySelector('[data-col="parent"]')?.textContent?.trim()).toBe('');
 		expect(document.querySelector('th[data-col="parent"]')?.textContent).toContain('Übergeordnet');
 	});
+
+	it('keeps its path with the shared building block as before: only the key, no link (TP-2)', async () => {
+		await showTable('/?prio=urgent');
+
+		const title = rowOf('HAUS-13').querySelector('th') as HTMLElement;
+		const hidden = title.querySelector('.visually-hidden');
+		expect(hidden?.textContent).toBe('Unteraufgabe von HAUS-12:');
+		// The path stands between the text for screen readers and the title, as before.
+		expect(hidden?.nextElementSibling?.classList.contains('path')).toBe(true);
+		expect(title.querySelector('.path')?.textContent).toBe('HAUS-12 ›');
+		// Only the day plan shows the title of the parent and its key as a link.
+		expect(title.querySelector('[data-subtask-path]')).toBeNull();
+		expect(title.querySelector('.path-key, .path-title')).toBeNull();
+		expect(screen.queryByRole('link', { name: 'HAUS-12' })).toBeNull();
+		expect(title.textContent).not.toContain('Umzug');
+	});
 });

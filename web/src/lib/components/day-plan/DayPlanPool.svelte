@@ -7,12 +7,14 @@
 	import CharmIcon from '../CharmIcon.svelte';
 	import DueLabel from '../DueLabel.svelte';
 	import KindBadge from '../KindBadge.svelte';
+	import SubtaskPath from '../SubtaskPath.svelte';
 	import EmptyState from '../guidance/EmptyState.svelte';
 	import { DRAG_TICKET } from './DayPlanList.svelte';
 
 	// The pool of the day plan (ADR-0065 §4): the open tickets of the area that are not in the plan, in
 	// the default order of the list, with a search over key and title (the normalisation of the ticket
-	// picker, ADR-0042). Each ticket goes into the plan with "+" (the way on a phone, 44 px) or by
+	// picker, ADR-0042); a sub-task names its parent above its title (TP-2). Each ticket goes into the
+	// plan with "+" (the way on a phone, 44 px) or by
 	// dragging it onto the plan, at the place where it is dropped. A long pool shows the first
 	// POOL_LIMIT tickets and says how many more the search can find. On a wide screen the pool stands
 	// next to the plan, on a narrow one below it (the view decides).
@@ -73,6 +75,7 @@
 		<ul class="tickets">
 			{#each shown as ticket (ticket.id)}
 				{@const pending = store.isPending(ticket.id)}
+				{@const parent = store.parentOf(ticket)}
 				<li
 					class="ticket"
 					draggable="true"
@@ -81,6 +84,10 @@
 					ondragstart={(event) => onDragStart(event, ticket)}
 				>
 					<span class="title-cell">
+						{#if parent}
+							<!-- A sub-task names its parent above its title (TP-2). -->
+							<SubtaskPath {parent} withTitle href={links.href(parent.id, page.url)} />
+						{/if}
 						<CharmIcon charm={ticket.charm} />
 						<span class="key">{ticket.key}</span>
 						<a

@@ -61,8 +61,8 @@ import {
 	type TicketKind
 } from '$lib/domain/day-plan';
 import type { Status } from '$lib/domain/status';
-import type { CompletionChoice } from '$lib/domain/subtasks';
-import type { TicketSummary } from '$lib/domain/ticket';
+import { parentOf, type CompletionChoice } from '$lib/domain/subtasks';
+import type { ParentRef, TicketSummary } from '$lib/domain/ticket';
 import { SILENT_FLAGS, type FlagSink } from './flags.svelte';
 import { hold, type LiveSource } from './realtime';
 import {
@@ -364,6 +364,14 @@ export class DayPlanStore {
 	get pool(): readonly TicketSummary[] {
 		const planned = this.#planned;
 		return this.#tickets.open.filter((ticket) => !planned.includes(ticket.id));
+	}
+
+	/**
+	 * The parent of a sub-task in plan, pool and suggestions (TP-2): live from the list, else as the
+	 * ticket was loaded with it, else only its ID (key "…"); null for a top-level ticket.
+	 */
+	parentOf(ticket: Pick<TicketSummary, 'parentId' | 'parentRef'>): ParentRef | null {
+		return parentOf(ticket, (id) => this.#tickets.find(id));
 	}
 
 	get settings(): DayPlanSettings {

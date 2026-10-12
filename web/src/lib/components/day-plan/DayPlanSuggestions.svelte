@@ -5,12 +5,14 @@
 	import { ticketLinks } from '$lib/stores/open-mode.svelte';
 	import CharmIcon from '../CharmIcon.svelte';
 	import KindBadge from '../KindBadge.svelte';
+	import SubtaskPath from '../SubtaskPath.svelte';
 	import DayPlanSettings from './DayPlanSettings.svelte';
 
 	// "Vorschläge" of the plan of today (ADR-0065 §3), a section that folds (the heading is the button,
 	// aria-expanded). Each suggestion names its reason ("heute fällig", "überfällig seit 05.10.", …);
 	// chosen ones go into the plan with "Übernehmen", all with "Alle übernehmen". What is in the plan is
-	// no suggestion any more. The sources are set next to the heading ("Einstellen").
+	// no suggestion any more. The sources are set next to the heading ("Einstellen"). A sub-task names
+	// its parent above its title (TP-2).
 	let {
 		store,
 		household = false,
@@ -78,7 +80,15 @@
 			<ul class="list">
 				{#each rows as row (row.ticket.id)}
 					{@const ticket = row.ticket}
+					{@const parent = store.parentOf(ticket)}
 					<li class="suggestion">
+						{#if parent}
+							<!-- A sub-task names its parent above its title (TP-2), outside the label: the
+							     link opens the parent and is no part of the name of the check box. -->
+							<span class="parent-line">
+								<SubtaskPath {parent} withTitle href={links.href(parent.id, page.url)} />
+							</span>
+						{/if}
 						<label class="choice">
 							<input
 								type="checkbox"
@@ -207,9 +217,19 @@
 
 	.suggestion {
 		display: flex;
-		gap: 0.5rem;
+		flex-wrap: wrap;
+		gap: 0 0.5rem;
 		align-items: center;
 		min-width: 0;
+	}
+
+	/* The parent of a sub-task: a line of its own, in line with the title after the check box (1rem
+	   in base.css) and the gap of the choice. */
+	.parent-line {
+		display: flex;
+		flex: 1 1 100%;
+		min-width: 0;
+		padding-left: 1.5rem;
 	}
 
 	.choice {

@@ -10,6 +10,7 @@ import {
 	arrangeRows,
 	compareSubtasks,
 	completionHint,
+	isKnownParent,
 	keysText,
 	openBlocking,
 	openChildrenMessage,
@@ -18,7 +19,9 @@ import {
 	progressLabel,
 	progressPercent,
 	progressText,
+	UNKNOWN_PARENT_KEY,
 	subtaskCountText,
+	subtaskOfText,
 	subtaskProgress
 } from './subtasks';
 
@@ -190,5 +193,23 @@ describe('parentOf', () => {
 			key: '…',
 			title: ''
 		});
+	});
+});
+
+describe('text of the path for screen readers (TP-2)', () => {
+	const PARENT = { id: 'parent000000001', key: 'HAUS-7', title: 'Wochenputz' };
+
+	it('names the key in the table and key and title in the day plan', () => {
+		expect(subtaskOfText(PARENT)).toBe('Unteraufgabe von HAUS-7:');
+		expect(subtaskOfText(PARENT, true)).toBe('Unteraufgabe von HAUS-7 Wochenputz:');
+		expect(subtaskOfText({ key: 'HAUS-7', title: '' }, true)).toBe('Unteraufgabe von HAUS-7:');
+	});
+
+	it('keeps the fallback of an unknown parent and opens only a known one', () => {
+		const unknown = parentOf({ parentId: PARENT.id, parentRef: null }, () => null);
+		expect(unknown?.key).toBe(UNKNOWN_PARENT_KEY);
+		expect(subtaskOfText(unknown!, true)).toBe('Unteraufgabe von …:');
+		expect(isKnownParent(unknown!)).toBe(false);
+		expect(isKnownParent(PARENT)).toBe(true);
 	});
 });
