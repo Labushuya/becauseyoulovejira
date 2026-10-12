@@ -237,6 +237,7 @@ describe('help page (EH-9)', () => {
 			'Wie hole ich ein gelöschtes Ticket zurück?',
 			'Warum lässt sich ein Ticket im Papierkorb nicht endgültig löschen?',
 			'Wo öffnet sich ein Ticket?',
+			'Wie ist ein Ticket aufgebaut?',
 			'Was steht im Menü „•••“ eines Tickets?',
 			'Wie dupliziere ich ein Ticket?',
 			'Wie lege ich ein Folge-Ticket an, und wie wird ein Ticket zur Quelle?',
@@ -459,6 +460,26 @@ describe('help page (EH-9)', () => {
 		expect(content).toMatch(/Vergangene Tage sind nur zu lesen, morgen kannst du schon planen/);
 		expect(content).toMatch(/einen gemeinsamen für alle Mitglieder/);
 		expect(content).toMatch(/seinen Inhalt zeigt der Plan nicht/);
+	});
+
+	it('explains the order of a ticket and the pages of its sources and follow-ups (TD-1)', () => {
+		render(Page);
+		const section = screen.getByRole('region', { name: 'Häufige Fragen' });
+		const question = [...section.querySelectorAll('details')].find(
+			(details) =>
+				details.querySelector('summary')?.textContent?.trim() === 'Wie ist ein Ticket aufgebaut?'
+		);
+		const content = text(question as HTMLElement);
+		expect(content).toMatch(
+			/Unteraufgaben, gleich darunter Kommentare und Verlauf, dann die Quellen/
+		);
+		expect(content).toMatch(/Ganz unten steht die Zeile mit Quelle und Daten/);
+		expect(content).toMatch(
+			/links dieselbe Folge: Beschreibung, Unteraufgaben, Kommentare und Verlauf, Quellen, Folge-Tickets/
+		);
+		expect(content).toMatch(/je fünf Einträge auf einer Seite/);
+		expect(content).toMatch(/„‹ Zurück“ und „Weiter ›“; „Seite 2 von 3 · 12 Quellen“/);
+		expect(content).toMatch(/die Hauptquelle steht immer zuerst auf Seite 1/);
 	});
 
 	it('explains the parent above a sub-task in the day plan, without grouping (TP-2)', () => {

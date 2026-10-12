@@ -1084,6 +1084,28 @@
 				</ul>
 			</details>
 			<details>
+				<summary>Wie ist ein Ticket aufgebaut?</summary>
+				<ul>
+					<li>
+						Im Seitenpanel folgen auf Titel und Felder die Wiederholung, die Beschreibung und die
+						Unteraufgaben, gleich darunter Kommentare und Verlauf, dann die Quellen mit den
+						Quell-Tickets und die Folge-Tickets. Ganz unten steht die Zeile mit Quelle und Daten
+						(Erstellt, Aktualisiert).
+					</li>
+					<li>
+						In der Vollansicht steht links dieselbe Folge: Beschreibung, Unteraufgaben, Kommentare
+						und Verlauf, Quellen, Folge-Tickets. Rechts bleiben Details, Wiederholung, Quelle und
+						Metadaten.
+					</li>
+					<li>
+						Quellen, Quell-Tickets und Folge-Tickets zeigen je fünf Einträge auf einer Seite.
+						Darunter blätterst du mit „‹ Zurück“ und „Weiter ›“; „Seite 2 von 3 · 12 Quellen“ sagt,
+						wo du bist. Jede Liste hat ihre eigene Seite, die Hauptquelle steht immer zuerst auf
+						Seite 1, und ein anderes Ticket beginnt wieder auf Seite 1.
+					</li>
+				</ul>
+			</details>
+			<details>
 				<summary>Was steht im Menü „•••“ eines Tickets?</summary>
 				<ul>
 					<li>

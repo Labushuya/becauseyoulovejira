@@ -341,7 +341,7 @@
   "meta": {
     "projekt": "becauseyoulovejira",
     "stand": "2026-10-12",
-    "commit": "527764e"
+    "commit": "cbc7bd1"
   },
   "bereiche": [
     { "id": "betrieb", "titel": "Betrieb: Start, Stopp, Skripte und Daten" },
@@ -613,6 +613,8 @@
       "vermerk": "Nur Oberfläche, kein Hook, keine Migration: nach dem Build F5, kein Neustart. Vier manuelle Fälle (BYL-E6-1668 bis BYL-E6-1671). Nachgezogen: BYL-E6-015, -016, -018." },
     { "id": "TP-2", "vorhaben": "Tagesplan", "titel": "Unteraufgaben im Tagesplan mit ihrem übergeordneten Ticket: Key und Titel als kleine Kontextzeile in Plan, Pool und Vorschlägen, der Key als Link; keine Gruppierung; der Pfad als gemeinsamer Baustein, die Tabelle unverändert", "bereich": "aufgaben", "quelle": "Nutzerwunsch", "datum": "2026-10-12", "adr": ["0065-tagesplan.md, Nachtrag TP-2", "0033-unteraufgaben.md, Nachtrag TP-2"], "plan": "tagesplan.md", "faelle": ["BYL-E6-1672..BYL-E6-1679"],
       "vermerk": "Nur Oberfläche, kein Hook, keine Migration: nach dem Build F5, kein Neustart. Fünf manuelle Fälle (BYL-E6-1675 bis BYL-E6-1679)." },
+    { "id": "TD-1", "vorhaben": "Ticket-Aufbau", "titel": "Kommentare direkt unter den Unteraufgaben, Quellen darunter, Quelle und Daten zuletzt (Panel und linke Spalte der Vollansicht, Registry gleich); Quellen, Quell-Tickets und Folge-Tickets seitenweise mit höchstens fünf Einträgen über den neuen Baustein PagedList", "bereich": "ticket", "quelle": "Nutzerwunsch", "datum": "2026-10-12", "adr": ["0031-herkunft-sichern.md, Nachtrag L", "0069-vollstaendiges-anlegen.md, Nachtrag TD-1"], "faelle": ["BYL-E6-1680..BYL-E6-1688"],
+      "vermerk": "Nur Oberfläche, kein Hook, keine Migration, keine neue Abfrage: nach dem Build F5, kein Neustart. Fünf manuelle Fälle (BYL-E6-1684 bis BYL-E6-1688)." },
     { "id": "querschnitt", "vorhaben": "Querschnitt", "titel": "Testumgebung, Regeln der Datenschicht, Hook-Module und dieses Manifest", "bereich": "entwicklung", "faelle": ["BYL-X-001..BYL-X-004"] }
   ],
   "zurueckgestellt": [
@@ -6777,6 +6779,52 @@
           "pre": "Wie BYL-E6-1675; das übergeordnete Ticket mit einem langen Titel (etwa 80 Zeichen); ein schmales Fenster (unter 30rem) oder das Handy über den Zugriff im Heimnetz.",
           "steps": ["Den Tagesplan im schmalen Fenster bzw. am Handy öffnen.", "Plan, Vorschläge und den Pool (am Handy unter dem Plan) ansehen und versuchen, seitlich zu scrollen bzw. zu wischen.", "Am Rechner mit der Maus auf den gekürzten Titel in der Zeile zeigen.", "Am Handy auf den Key in der Zeile tippen."],
           "expect": "Die Zeile über der Unteraufgabe bleibt einzeilig: der Key ganz, der lange Titel endet mit „…“; die Seite scrollt nicht seitlich, Haken und Knöpfe bleiben sichtbar. Der Tooltip zeigt den ganzen Titel. Der Key lässt sich am Handy sicher antippen und öffnet das übergeordnete Ticket.",
+          "tests": [] }
+      ]
+    },
+    {
+      "tag": "E6", "name": "Ticket-Aufbau: Kommentare unter den Unteraufgaben, Quellen seitenweise", "desc": "Nutzerwunsch vom 2026-10-12 (Paket TD-1, ADR-0031 Nachtrag L, ADR-0069 Nachtrag TD-1): Kommentare und Verlauf direkt unter den Unteraufgaben, die Quellen darunter, Quelle und Daten zuletzt; Quellen, Quell-Tickets und Folge-Tickets mit höchstens fünf Einträgen je Seite. IDs BYL-E6-1680 bis BYL-E6-1688.",
+      "items": [
+        { "id": "BYL-E6-1680", "title": "Reihenfolge in Panel und Vollansicht, Registry in derselben Folge (TD-1)", "art": ["unit", "komponente"], "status": "bestanden",
+          "pre": "Route eines Tickets (Panel) und Vollansicht in jsdom mit echtem TicketDetailStore, Herkunft mit einem Quell- und einem Folge-Ticket; Registry domain/ticket-options.ts.", "steps": ["npm run test:web"],
+          "expect": "Das Panel zeigt unter den Feldern Wiederholung, Beschreibung, Unteraufgaben, Kommentare und Verlauf, Quellen (Einträge, Quell-Tickets), Folge-Tickets und zuletzt die Zeile mit Quelle und Daten; die Reiter folgen direkt auf die Unteraufgaben. Die Markierungen data-ticket-option des Panels stehen in der Reihenfolge der Registry. Die linke Spalte der Vollansicht zeigt Titel, Beschreibung, Unteraufgaben, Kommentare und Verlauf, Quellen, Quell-Tickets, Folge-Tickets; rechts bleiben Details, Wiederholung, Quelle und Metadaten. Die Registry nennt die Ausnahmen in der neuen Folge (comments, history, followUps, meta) und „Weitere Optionen“ unverändert mit Unteraufgaben und Quellen am Ende. Mit der alten Reihenfolge schlagen diese Tests an.",
+          "tests": ["web/src/lib/components/ticket-panel.test.ts::shows sub-tasks, comments and history, sources and follow-ups, and source and dates last in the panel", "web/src/lib/components/ticket-panel.test.ts::orders the left column of the full view the same way; the right column keeps its cards", "web/src/lib/ticket-options-parity.test.ts::knows the exceptions of the product rule", "web/src/lib/ticket-options-parity.test.ts::names the sections in the order of the panel since TD-1: activity after the sub-tasks, source and dates last"] },
+        { "id": "BYL-E6-1681", "title": "Baustein PagedList: fünf je Seite, Steuerung, Fokus, Ansage, leere Seite, anderes Ticket, gehaltener Eintrag (TD-1)", "art": ["unit", "komponente"], "status": "bestanden",
+          "pre": "PagedList in jsdom mit einer Zeile je Eintrag; reine Regeln in domain/paged-list.ts.", "steps": ["npm run test:web"],
+          "expect": "0 und 5 Einträge ohne Steuerung; 6 Einträge auf zwei Seiten, 12 auf drei. Unter der Liste die Gruppe „Seiten der Quellen“ mit „‹ Zurück“, „Seite 1 von 3 · 12 Quellen“ und „Weiter ›“; die Namen „Zurück zur vorherigen Seite der Quellen“ und „Weiter zur nächsten Seite der Quellen“ beginnen mit dem sichtbaren Wort, an den Enden aria-disabled, fokussierbar und ohne Wirkung. Nach einem Wechsel liegt der Fokus auf dem ersten Eintrag der neuen Seite (tabindex -1) und die Statusregion sagt „Seite 2 von 3“. Wird die letzte Seite leer, zeigt die Liste die vorige, sagt „Seite 2 von 2“ und gibt einen verlorenen Fokus an deren Anfang, ein vorhandener Fokus bleibt; danach springt sie beim Wachsen nicht zurück. Fallen die Steuerung und die Seite mit dem sechsten Eintrag weg, kommt ein verlorener Fokus an den ersten Eintrag. Ein anderes Ticket beginnt auf Seite 1 ohne Ansage. Ein gehaltener Eintrag behält seine Seite, wenn die Liste davor wächst, ohne Ansage, und die Seite bleibt nach dem Loslassen.",
+          "tests": ["web/src/lib/components/paged-list.test.ts", "web/src/lib/domain/paged-list.test.ts"] },
+        { "id": "BYL-E6-1682", "title": "Quellen, Quell-Tickets und Folge-Tickets seitenweise: Hauptquelle zuerst, Lösen auf der letzten Seite, offene Zuordnung (TD-1)", "art": ["komponente"], "status": "bestanden",
+          "pre": "TicketSources und TicketFollowUps in jsdom mit echtem TicketSourcesStore und TicketOriginsStore auf Fake-Daten, auch eingebettet in einem Modal wie in der Vollansicht.", "steps": ["npm run test:web"],
+          "expect": "Sieben Quellen stehen auf zwei Seiten; die Hauptquelle steht zuerst auf Seite 1, auch wenn sie die neueste ist, Seite 2 hat sie nicht. Wird die einzige Quelle auf Seite 2 gelöst, zeigt die Liste Seite 1 ohne Steuerung und der Fokus liegt auf ihrem ersten Eintrag. Ist „Anderem Ticket zuordnen …“ unter einer Quelle eingebettet offen und kommen davor vier Einträge hinzu, folgt die Liste der Quelle auf ihre neue Seite mit dem offenen Bereich; „Zurück“ blättert und schließt den Bereich. Einträge und Quell-Tickets haben je eigene Listen „Quellen aus dem Eingang“ und „Quell-Tickets“ mit eigener Steuerung und Seite, die Einträge zuerst; Folge-Tickets zeigen fünf je Seite mit „Seite 1 von 2 · 7 Folge-Tickets“, Fokus und Ansage.",
+          "tests": ["web/src/lib/components/ticket-sources.test.ts::shows five per page with the main source first on page 1, even as the newest", "web/src/lib/components/ticket-sources.test.ts::goes back to page 1 when the only source of page 2 is released, the focus at its start", "web/src/lib/components/ticket-sources.test.ts::keeps the page of an entry while \"Anderem Ticket zuordnen …\" is open below it; paging closes it", "web/src/lib/components/ticket-origins.test.ts::pages the entries and the source tickets each on their own, five per page (TD-1)", "web/src/lib/components/ticket-origins.test.ts::shows five follow-ups per page with controls of their own (TD-1)"] },
+        { "id": "BYL-E6-1683", "title": "Hilfe: „Wie ist ein Ticket aufgebaut?“ (TD-1)", "art": ["komponente"], "status": "bestanden",
+          "pre": "Hilfeseite in jsdom.", "steps": ["npm run test:web"],
+          "expect": "Die häufigen Fragen haben nach „Wo öffnet sich ein Ticket?“ die Frage „Wie ist ein Ticket aufgebaut?“: die Folge im Panel (Kommentare und Verlauf gleich unter den Unteraufgaben, dann Quellen, ganz unten Quelle und Daten), dieselbe Folge links in der Vollansicht und fünf Einträge je Seite mit „‹ Zurück“, „Weiter ›“ und „Seite 2 von 3 · 12 Quellen“, die Hauptquelle zuerst auf Seite 1.",
+          "tests": ["web/src/routes/(app)/einstellungen/hilfe/help-page.test.ts::explains the order of a ticket and the pages of its sources and follow-ups (TD-1)"] },
+        { "id": "BYL-E6-1684", "title": "Reihenfolge im Seitenpanel (TD-1)", "art": ["manuell"], "status": "offen",
+          "pre": "Build von main in app\\ und F5 (kein Neustart nötig); Chrome oder Firefox; ein offenes Ticket mit Beschreibung, zwei Unteraufgaben, einem Kommentar und mindestens einer Quelle (etwa aus dem Eingang umgewandelt).",
+          "steps": ["Das Ticket in „Aufgaben“ im Seitenpanel öffnen.", "Das Panel von oben nach unten durchsehen.", "Im Reiter „Kommentare“ einen Kommentar schreiben und senden, dann auf „Verlauf“ wechseln."],
+          "expect": "Unter Titel und Feldern folgen Wiederholung, Beschreibung und Unteraufgaben, direkt darunter die Reiter „Kommentare“ | „Verlauf“, dann „Quellen“ (und gegebenenfalls „Folge-Tickets“), ganz unten die Zeile mit Quelle, Erstellt und Aktualisiert. Kommentare und Verlauf arbeiten wie vorher; nichts überlappt, jeder Abschnitt hat seine Linie oben.",
+          "tests": [] },
+        { "id": "BYL-E6-1685", "title": "Reihenfolge in der Vollansicht (TD-1)", "art": ["manuell"], "status": "offen",
+          "pre": "Wie BYL-E6-1684; ein Fenster breiter als 64rem.",
+          "steps": ["Im Panel „Vollansicht öffnen“ wählen.", "Die linke Spalte von oben nach unten durchsehen, dann die rechte.", "Unter „Quellen“ „Quelle hinzufügen …“ aufklappen und wieder schließen."],
+          "expect": "Links stehen Pfad (bei Unteraufgaben), Titel, Beschreibung, Unteraufgaben, die Reiter „Kommentare“ | „Verlauf“, „Quellen“ und „Folge-Tickets“ (falls vorhanden). Rechts stehen wie bisher Details, Wiederholung, Quelle und Metadaten. „Quelle hinzufügen …“ klappt unter der Überschrift „Quellen“ auf wie vorher.",
+          "tests": [] },
+        { "id": "BYL-E6-1686", "title": "Quellen blättern mit der Maus, Hauptquelle zuerst (TD-1)", "art": ["manuell"], "status": "offen",
+          "pre": "Wie BYL-E6-1684; ein Ticket, das aus einem Eintrag umgewandelt wurde (Hauptquelle), mit mindestens sieben weiteren Quellen (über „Quelle hinzufügen …“ verknüpft), dazu nach Wunsch sechs Quell-Tickets; ein zweites Ticket mit Quellen.",
+          "steps": ["Das Ticket öffnen und zu „Quellen“ gehen.", "Unter der Liste „Weiter ›“ klicken, dann „‹ Zurück“.", "Auf Seite 2 eine Quelle „Lösen“, bis die Seite leer ist.", "Auf Seite 2 bleiben und ein anderes Ticket mit Quellen öffnen."],
+          "expect": "Die Liste zeigt höchstens fünf Quellen, die Hauptquelle als erste auf Seite 1; darunter „‹ Zurück“, „Seite 1 von 2 · 8 Quellen“ und „Weiter ›“, auf Seite 1 ist „Zurück“ gedämpft. „Weiter ›“ zeigt die nächsten Quellen, „‹ Zurück“ die vorigen, das Ticket wird dabei nicht länger. Wird Seite 2 leer, zeigt die Liste Seite 1 ohne Steuerung. Quell-Tickets (falls vorhanden) haben unter ihrer Liste eine eigene Steuerung, die die Seite der Quellen nicht ändert. Das andere Ticket beginnt auf Seite 1.",
+          "tests": [] },
+        { "id": "BYL-E6-1687", "title": "Blättern mit Tastatur und Screenreader (TD-1)", "art": ["manuell"], "status": "offen",
+          "pre": "Wie BYL-E6-1686; für den letzten Schritt ein Screenreader (etwa NVDA), falls vorhanden.",
+          "steps": ["Mit Tab bis „Weiter ›“ unter den Quellen gehen und Enter drücken.", "Weiter mit Tab durch die neue Seite gehen.", "Mit Umschalt+Tab zurück bis „‹ Zurück“ und Leertaste drücken.", "In der Vollansicht unter einer Quelle auf Seite 2 „Anderem Ticket zuordnen …“ aufklappen, dann „Abbrechen“.", "Mit dem Screenreader auf „Weiter ›“ gehen und auslösen."],
+          "expect": "Nach Enter bzw. Leertaste steht der Fokus (sichtbarer Ring) auf dem ersten Eintrag der neuen Seite, Tab geht von dort in dessen Knöpfe. An den Enden bleiben die Knöpfe erreichbar, tun aber nichts. Nach „Abbrechen“ bleibt Seite 2 stehen. Der Screenreader nennt die Knöpfe „Zurück zur vorherigen Seite der Quellen“ bzw. „Weiter zur nächsten Seite der Quellen“, liest nach dem Wechsel den ersten Eintrag und sagt dezent „Seite 2 von 2“.",
+          "tests": [] },
+        { "id": "BYL-E6-1688", "title": "Handy und schmales Fenster (TD-1)", "art": ["manuell"], "status": "offen",
+          "pre": "Wie BYL-E6-1686; das Handy über den Zugriff im Heimnetz oder ein Fenster unter 36rem.",
+          "steps": ["Das Ticket mit vielen Quellen öffnen und bis „Quellen“ wischen.", "„Weiter ›“ und „‹ Zurück“ antippen.", "Versuchen, seitlich zu wischen."],
+          "expect": "Kommentare stehen direkt unter den Unteraufgaben, die Quellen darunter, Quelle und Daten ganz unten. Die Knöpfe zum Blättern sind groß genug zum Antippen (44 px), „Seite x von y · N Quellen“ bleibt lesbar und bricht bei Bedarf um; nach dem Tippen steht die neue Seite im Blick. Nichts scrollt seitlich.",
           "tests": [] }
       ]
     },

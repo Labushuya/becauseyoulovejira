@@ -91,3 +91,9 @@ Die Regeln von [ADR-0059](0059-bereiche-privat-und-haushalt.md) bleiben: „Zust
 - Die Aussage „erst das Ticket, dann die Regel“ von „Neues Ticket“ mit „Wiederholen“ (Plan OR-4, [ADR-0024](0024-serien-aus-kalendern.md) für eine übernommene Kalenderserie) gilt nur noch vor dem Neustart; danach entstehen beide zusammen oder gar nicht.
 - **Konvention** (CLAUDE.md §12): Eine neue Option eines Tickets bekommt einen Eintrag in `TICKET_OPTIONS`, ihre Markierung im Detail und ihr Feld in „Neues Ticket“ (Route und Formular), oder eine begründete Ausnahme.
 - Tests: `tests/integration/ticket-create.test.mjs` (eigene Instanz: A und B im Haushalt, C allein), `tests/unit/web-ticket-create.test.mjs`, `web/src/lib/components/new-ticket-more.test.ts`, `new-ticket.test.ts` (angepasst), `stores/ticket-create-store.test.ts`, `ticket-options-parity.test.ts`. Test-Manifest: BYL-E6-1641 bis BYL-E6-1655, manuell BYL-E6-1656 bis BYL-E6-1660.
+
+## Nachtrag TD-1 (2026-10-12): Neue Reihenfolge der Abschnitte
+
+- Das Detail ordnet seine Abschnitte seit TD-1 neu ([ADR-0031](0031-herkunft-sichern.md), Nachtrag L): Beschreibung, Unteraufgaben, Kommentare und Verlauf, Quellen (Einträge und Tickets), Folge-Tickets, Quelle und Daten zuletzt. `TICKET_OPTIONS` folgt dem: `comments` und `history` stehen vor `sources`, `meta` nach `followUps`.
+- „Weitere Optionen“ in „Neues Ticket“ bleibt gleich (Anheften, Zum Tagesplan, Farbe, Laufendes Vorhaben, Übergeordnet, Wiederholen, Unteraufgaben, Quellen): Die verschobenen Einträge sind Ausnahmen ohne Feld im Dialog, und Unteraufgaben und Quellen behalten ihre Folge.
+- Der Paritätstest (§6) prüft zusätzlich die Reihenfolge der Abschnitte in der Registry; `ticket-panel.test.ts` vergleicht das gerenderte Panel (mit Quell- und Folge-Tickets) mit der Registry und die linke Spalte der Vollansicht mit der neuen Folge.
