@@ -41,7 +41,12 @@ import {
 } from '$lib/domain/list-query';
 import { columnOrder, ticketOrder, type ResolveProject } from '$lib/domain/ordering';
 import { REOPEN_DETACHED_LABEL, REOPEN_REFUSALS } from '$lib/domain/recurrence-rule';
-import { NO_SERIES, type SeriesChangeSink } from '$lib/domain/series-template';
+import {
+	NO_SERIES,
+	subtaskStatusOf,
+	type SeriesChangeSink,
+	type TemplateStatus
+} from '$lib/domain/series-template';
 import type { Status } from '$lib/domain/status';
 import {
 	compareSubtasks,
@@ -53,7 +58,6 @@ import {
 } from '$lib/domain/subtasks';
 import {
 	DEFAULT_PRIORITY,
-	DEFAULT_STATUS,
 	REOPEN_STATUS,
 	type TicketDraft,
 	type TicketPatch,
@@ -139,6 +143,14 @@ export function readsData(pb: PocketBase): ReadsData {
 /** Outcome of "Unteraufgabe hinzufügen"; a failure carries a message unless nothing is to be shown. */
 export type SubtaskResult =
 	{ ok: true; ticket: TicketSummary } | { ok: false; message: string | null };
+
+/** What "Unteraufgabe hinzufügen" asks besides the title (UT-1); left out: the defaults. */
+export interface SubtaskChoice {
+	/** Status it starts with; left out: the one of the parent, "Offen" under a done one. */
+	status?: TemplateStatus;
+	/** Due date; left out: the one of the parent; null: none. */
+	due?: CalendarDate | null;
+}
 
 /** Key of a read row that is known only from the answer "already read" (no row ID). */
 const LOCAL_READ = 'local:';
@@ -705,26 +717,38 @@ export class TicketListStore {
 
 	/**
 	 * "Unteraufgabe hinzufügen" (ADR-0033 section 4): a sub-task of `parent` with the title, in the
-	 * project and with the tags of the parent, status and priority by default. It joins the list at
-	 * once and counts as read, like every ticket created one by one (ADR-0015 section 3). For an open
-	 * ticket of a series the rules offer to add it to the template as well (plan WV-3). A failure
-	 * comes back with the message of the field that failed.
+	 * project and with the tags of the parent, priority by default. Since UT-1 (ADR-0033 addendum
+	 * UT-1) it starts with the chosen status, else the one of the parent ("Offen" under a done one),
+	 * gets the chosen due date (left out: the one of the parent; null: none) and takes the kind and the
+	 * assignee of the parent. It joins the list at once and counts as read, like every ticket created
+	 * one by one (ADR-0015 section 3). For an open ticket of a series the rules offer to add it to the
+	 * template as well (plan WV-3), with its status only where it differs from the one it would get
+	 * anyway. A failure comes back with the message of the field that failed.
 	 */
-	async addSubtask(parent: TicketSummary, title: string): Promise<SubtaskResult> {
+	async addSubtask(
+		parent: TicketSummary,
+		title: string,
+		choice: SubtaskChoice = {}
+	): Promise<SubtaskResult> {
 		const text = title.trim();
 		if (text === '' || this.#data.create === undefined || !this.#session.ensureValid()) {
 			return { ok: false, message: null };
 		}
+		const usual = subtaskStatusOf(undefined, parent.status);
+		const status = subtaskStatusOf(choice.status, parent.status);
 		try {
 			const draft: TicketDraft = {
 				title: text,
 				description: '',
-				status: DEFAULT_STATUS,
+				status,
 				priority: DEFAULT_PRIORITY,
-				due: null,
+				due: choice.due === undefined ? parent.due : choice.due,
 				project: parent.projectId,
 				tags: [...parent.tagIds],
-				parent: parent.id
+				parent: parent.id,
+				// The kind and the assignee of the parent (ADR-0065, ADR-0068), where the server knows them.
+				...(parent.kind === 'ongoing' && { kind: parent.kind }),
+				...(parent.assignee && { assignee: parent.assignee })
 			};
 			// In the area of the parent (E7-3), whatever area the tab shows meanwhile.
 			const ticket = parent.scope
@@ -732,7 +756,11 @@ export class TicketListStore {
 				: await this.#data.create(draft);
 			this.upsert(ticket);
 			void this.markRead(ticket);
-			this.#series.offerSubtask(parent, { title: ticket.title, priority: ticket.priority });
+			this.#series.offerSubtask(parent, {
+				title: ticket.title,
+				priority: ticket.priority,
+				...(status !== usual && { status })
+			});
 			return { ok: true, ticket };
 		} catch (error) {
 			const failure = toDataError(error);

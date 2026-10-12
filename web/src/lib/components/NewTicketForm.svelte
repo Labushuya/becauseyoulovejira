@@ -16,7 +16,11 @@
 		type RepeatRequest
 	} from '$lib/domain/recurrence-rule';
 	import { suggestionFormValues, type RruleSuggestion } from '$lib/domain/rrule';
-	import type { TemplateStatus, TemplateSubtask } from '$lib/domain/series-template';
+	import {
+		subtaskStatusOf,
+		type TemplateStatus,
+		type TemplateSubtask
+	} from '$lib/domain/series-template';
 	import { isPriority, isStatus, type Priority, type Status } from '$lib/domain/status';
 	import {
 		CREATE_SUBTASKS_MAX,
@@ -81,8 +85,10 @@
 	// order of the detail: "Anheften" (ADR-0064), "Zum Tagesplan" of today (ADR-0065), "Farbe"
 	// (ADR-0052, "Wie Projekt" with the color of the chosen project first and chosen), "Laufendes
 	// Vorhaben" (ADR-0065), the parent with "Blockiert das übergeordnete Ticket" (ADR-0033),
-	// "Wiederholen" (plan OR-4), the sub-tasks (ADR-0033) and the sources: new entries of the inbox
-	// (ADR-0031) and tickets it stems from (ADR-0067). Options that differ from a new ticket are
+	// "Wiederholen" (plan OR-4), the sub-tasks (ADR-0033; since UT-1 each with a status, without an own
+	// choice the one of the ticket, "Offen" for a done one, once the server takes it:
+	// `subtaskStatusAvailable`) and the sources: new entries of the inbox (ADR-0031) and tickets it
+	// stems from (ADR-0067). Options that differ from a new ticket are
 	// counted in the heading, "Weitere Optionen (2 gesetzt)". The fields are the building blocks of the
 	// detail (ColorChoice, KindSwitch, BlocksParentSwitch, TicketPicker, TemplateSubtaskList,
 	// InboxEntryChoice, RecurrenceForm). The route creates everything in one request (one transaction
@@ -127,6 +133,7 @@
 		pinAvailable = false,
 		dayPlanAvailable = false,
 		ticketSourcesAvailable = false,
+		subtaskStatusAvailable = false,
 		candidates = [],
 		picker = findTicketPickerSource(),
 		scope = findAreaStore()?.key ?? null,
@@ -182,6 +189,11 @@
 		dayPlanAvailable?: boolean;
 		/** Tickets as sources are known (ADR-0067). */
 		ticketSourcesAvailable?: boolean;
+		/**
+		 * The server takes a status per sub-task and gives them the due date, kind and assignee of the
+		 * ticket (UT-1; CreateSupport.subtaskStatus): each row of the sub-tasks offers its status.
+		 */
+		subtaskStatusAvailable?: boolean;
 		/** New entries of the inbox that may become sources (without the one converted here). */
 		candidates?: readonly InboxItemSummary[];
 		/** Tickets of the pickers of parent and sources; the (app) layout provides them. */
@@ -515,8 +527,14 @@
 						initialStatus: statusAvailable && repeatStatus !== '' ? repeatStatus : null
 					},
 			{
+				// A status only where the row has an own one (UT-1); without one the server gives the
+				// sub-task the status of the ticket, and the template of a series its own.
 				subtasks: subtasksShown
-					? filledSubtasks.map((entry) => ({ title: entry.title.trim(), priority: entry.priority }))
+					? filledSubtasks.map((entry) => ({
+							title: entry.title.trim(),
+							priority: entry.priority,
+							...(subtaskStatusAvailable && entry.status !== undefined && { status: entry.status })
+						}))
 					: [],
 				ticketSources: ticketSourcesShown ? ticketSources.map((ticket) => ticket.id) : [],
 				sources: sourcesShown ? [...sources] : [],
@@ -1123,7 +1141,11 @@
 								error={fieldErrors.subtasks ?? null}
 								errorRow={errorIndex.subtasks ?? null}
 								busy={pending}
-								hint={`Entstehen mit dem Ticket als offene Unteraufgaben mit seinem Projekt und seinen Tags, höchstens ${CREATE_SUBTASKS_MAX}.`}
+								statusAvailable={subtaskStatusAvailable}
+								defaultStatus={subtaskStatusOf(undefined, status)}
+								hint={subtaskStatusAvailable
+									? `Entstehen mit dem Ticket mit seinem Projekt, seinen Tags, seiner Fälligkeit, Art und Zuständigkeit, höchstens ${CREATE_SUBTASKS_MAX}. Ohne eigene Wahl starten sie mit dem Status des Tickets (ist es erledigt, mit „Offen“).`
+									: `Entstehen mit dem Ticket als offene Unteraufgaben mit seinem Projekt und seinen Tags, höchstens ${CREATE_SUBTASKS_MAX}.`}
 							/>
 						{/if}
 					</div>

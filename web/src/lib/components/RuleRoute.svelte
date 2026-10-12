@@ -64,6 +64,7 @@
 			eachAvailable={store.eachReady}
 			statusAvailable={store.statusReady}
 			subtasksAvailable={store.subtasksReady}
+			subtaskStatusAvailable={store.subtaskStatusReady}
 			colorsAvailable={catalog.colorsReady}
 			charmsAvailable={store.charmsReady}
 			assignmentAvailable={store.assigneesReady}

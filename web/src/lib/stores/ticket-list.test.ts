@@ -1298,6 +1298,73 @@ describe('sub-tasks (ADR-0033)', () => {
 		);
 	});
 
+	it('starts a sub-task with the chosen status and due date, else with those of the parent (UT-1)', async () => {
+		const { store, data, parent } = await loaded();
+		const waiting = { ...parent, status: 'waiting' as const, due: '2026-10-20' };
+
+		await store.addSubtask(waiting, 'Ohne Wahl');
+		expect(data.create).toHaveBeenLastCalledWith(
+			expect.objectContaining({ status: 'waiting', due: '2026-10-20' })
+		);
+		await store.addSubtask(waiting, 'Mit Wahl', { status: 'backlog', due: null });
+		expect(data.create).toHaveBeenLastCalledWith(
+			expect.objectContaining({ status: 'backlog', due: null })
+		);
+		await store.addSubtask(waiting, 'Anderes Datum', { due: '2026-11-01' });
+		expect(data.create).toHaveBeenLastCalledWith(
+			expect.objectContaining({ status: 'waiting', due: '2026-11-01' })
+		);
+		// Under a done parent "Offen".
+		await store.addSubtask({ ...parent, status: 'done' }, 'Unter erledigtem');
+		expect(data.create).toHaveBeenLastCalledWith(
+			expect.objectContaining({ status: 'open', due: null })
+		);
+	});
+
+	it('gives a sub-task the kind and the assignee of the parent, only where it has them (UT-1)', async () => {
+		const { store, data, parent } = await loaded();
+
+		await store.addSubtask({ ...parent, kind: 'ongoing', assignee: 'user00000000002' }, 'Teil');
+		expect(data.create).toHaveBeenLastCalledWith(
+			expect.objectContaining({ kind: 'ongoing', assignee: 'user00000000002' })
+		);
+		await store.addSubtask({ ...parent, kind: 'task', assignee: null }, 'Teil 2');
+		const draft = data.create.mock.calls.at(-1)?.[0];
+		expect(draft).not.toHaveProperty('kind');
+		expect(draft).not.toHaveProperty('assignee');
+	});
+
+	it('offers a new sub-task to the template with its status only where it differs (UT-1)', async () => {
+		const f = family();
+		const series = {
+			offerTemplate: vi.fn(() => null),
+			offerSubtask: vi.fn(() => null),
+			withdrawTemplateOffer: vi.fn()
+		};
+		const data = {
+			...fakeData([f.parent]),
+			create: vi.fn(async (draft: TicketDraft): Promise<TicketSummary> =>
+				ticket({ title: draft.title, status: draft.status, parentId: draft.parent ?? null })
+			)
+		} satisfies TicketListData;
+		const store = new TicketListStore(data, session(), { series });
+		store.activate(EMPTY_LIST_QUERY);
+		await settle();
+		const parent = { ...f.parent, status: 'in_progress' as const, recurrenceId: 'rule00000000001' };
+
+		await store.addSubtask(parent, 'Wie das Ticket');
+		expect(series.offerSubtask).toHaveBeenLastCalledWith(parent, {
+			title: 'Wie das Ticket',
+			priority: 'medium'
+		});
+		await store.addSubtask(parent, 'Zurückgestellt', { status: 'backlog' });
+		expect(series.offerSubtask).toHaveBeenLastCalledWith(parent, {
+			title: 'Zurückgestellt',
+			priority: 'medium',
+			status: 'backlog'
+		});
+	});
+
 	it('keeps the sub project of the parent for a sub-task, not its parent project (ADR-0034)', async () => {
 		const { store, data, parent } = await loaded();
 		const inGarden = { ...parent, projectId: 'proj00000000011' };

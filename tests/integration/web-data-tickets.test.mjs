@@ -118,7 +118,8 @@ describe('web data layer: tickets', () => {
 		expect(open).toMatchObject({
 			parentId: parent.id,
 			blocksParent: true,
-			parentRef: { id: parent.id, key: parent.key, title: 'Umzug' }
+			// Since UT-1 with the series of the parent ("Teil von … · wiederholt sich"), none here.
+			parentRef: { id: parent.id, key: parent.key, title: 'Umzug', recurrenceId: null }
 		});
 		const listed = await listSubtaskTickets(owner.client);
 		expect(listed.map((ticket) => ticket.id).sort()).toEqual([open.id, closed.id].sort());
@@ -127,6 +128,34 @@ describe('web data layer: tickets', () => {
 			parentId: parent.id
 		});
 		expect((await listSubtaskTickets(a.client)).map((ticket) => ticket.id)).not.toContain(open.id);
+	});
+
+	it('names the series of the parent of a sub-task and creates a sub-task of an ongoing project as one (UT-1)', async () => {
+		const owner = await createOwner(superuser);
+		const parent = await createTicket(owner.client, draft({ title: 'Wochenputz', kind: 'ongoing' }));
+		expect(parent.kind).toBe('ongoing');
+		const rule = await owner.client.collection('recurrence_rules').create({
+			owner: owner.id,
+			title: 'Wochenputz',
+			mode: 'calendar',
+			freq: 'weekly',
+			weekdays: ['MO'],
+			anchor: '2050-01-03',
+			initial_status: 'open',
+			ticket: parent.id
+		});
+		const child = await createTicket(owner.client, draft({ title: 'Bad', parent: parent.id, kind: 'ongoing', status: 'waiting' }));
+
+		expect(child).toMatchObject({
+			kind: 'ongoing',
+			status: 'waiting',
+			parentRef: { id: parent.id, key: parent.key, title: 'Wochenputz', recurrenceId: rule.id }
+		});
+		expect((await listSubtaskTickets(owner.client)).find((ticket) => ticket.id === child.id)?.parentRef).toMatchObject({
+			recurrenceId: rule.id
+		});
+		// A task sends no kind; the server makes it one.
+		expect((await createTicket(owner.client, draft({ parent: parent.id, kind: 'task' }))).kind).toBe('task');
 	});
 
 	it('releases a sub-task from its parent through the patch (ADR-0033)', async () => {

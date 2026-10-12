@@ -47,6 +47,12 @@ export interface ParentRef {
 	id: string;
 	key: string;
 	title: string;
+	/**
+	 * The rule of the series of the parent, null without one (UT-1: "Teil von HAUS-7 · wiederholt
+	 * sich …" at the sub-task, also when the parent is not among the open tickets). Only the data
+	 * layer sets it; refs built from the list leave it out.
+	 */
+	recurrenceId?: string | null;
 }
 
 /** Ticket as the list needs it (without the description). */
@@ -169,7 +175,10 @@ export interface TicketDraft {
 	color?: ProjectColor | null;
 	/** Charm (ADR-0062), a key of the catalog; left out or null for none. */
 	charm?: string | null;
-	/** "Laufendes Vorhaben" (ADR-0065); left out for "Aufgabe". Only "Neues Ticket" sends it (NT-1). */
+	/**
+	 * "Laufendes Vorhaben" (ADR-0065); left out for "Aufgabe". "Neues Ticket" sends it (NT-1), and a
+	 * sub-task takes it from its parent (UT-1).
+	 */
 	kind?: TicketKind;
 	/** The assignee (ADR-0068), a member of the household; left out or null for nobody. */
 	assignee?: string | null;

@@ -10,6 +10,7 @@ import {
 } from '$lib/domain/recurrence-rule';
 import type { Project } from '$lib/domain/project';
 import type { TicketSubtask } from '$lib/domain/series-template';
+import type { ParentSeries } from '$lib/domain/subtasks';
 import type { Tag } from '$lib/domain/tag';
 import type { HistoryEntry, Ticket } from '$lib/domain/ticket';
 import { CatalogStore } from '$lib/stores/catalog.svelte';
@@ -99,7 +100,9 @@ async function setup(
 	/** Inside an open modal, as in the full view (ADR-0025 addendum 16). */
 	inModal = false,
 	/** Sub-tasks of the ticket (plan WV-3, "Unteraufgaben dieses Tickets übernehmen"). */
-	subtasks: TicketSubtask[] = []
+	subtasks: TicketSubtask[] = [],
+	/** The parent of a sub-task when it belongs to a series (UT-1). */
+	parentSeries: ParentSeries | null = null
 ) {
 	const fake: RecurrenceData = {
 		listRules: vi.fn(async () => rules),
@@ -143,6 +146,7 @@ async function setup(
 		history,
 		openTickets,
 		subtasks,
+		parentSeries,
 		onticket
 	};
 	if (inModal) render(InModalHarness, { props: { component: RecurrenceSummary, props } });
@@ -914,6 +918,109 @@ describe('RecurrenceSummary: the sub-tasks of the template (plan WV-3)', () => {
 
 // In the full view (a modal) no dialog opens (ADR-0025 section 3, addendum 16): "Wiederholen…"
 // and "Regel bearbeiten" unfold inline in the section, with the same form and rules.
+describe('RecurrenceSummary: the status of the sub-tasks of the template (UT-1)', () => {
+	const inSeries = () => ticket({ recurring: true, recurrenceId: 'rule00000000001' });
+
+	it('offers a status per sub-task once the hooks take it, the "Status beim Anlegen" in advance', async () => {
+		const updateRule = vi.fn(async (id: string, patch: object) => ({
+			...rule(),
+			...patch,
+			id,
+			updated: '2026-09-02 10:00:00.000Z'
+		}));
+		const series = rule({
+			initialStatus: 'waiting',
+			templateSubtasks: [{ title: 'Entkalken', priority: 'high' }]
+		});
+		await setup(inSeries(), [series], {
+			templateSubtasksReady: vi.fn(async () => true),
+			subtaskStatusReady: vi.fn(async () => true),
+			updateRule
+		});
+		await fireEvent.click(screen.getByRole('button', { name: 'Vorlage bearbeiten' }));
+		const list = screen.getByRole('group', { name: 'Unteraufgaben' });
+		const status = within(list).getByLabelText<HTMLSelectElement>('Status der Unteraufgabe 1');
+		expect(status.value).toBe('waiting');
+
+		await fireEvent.change(status, { target: { value: 'backlog' } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Vorlage speichern' }));
+		await vi.waitFor(() =>
+			expect(updateRule).toHaveBeenCalledWith('rule00000000001', {
+				template_subtasks: [{ title: 'Entkalken', priority: 'high', status: 'backlog' }]
+			})
+		);
+	});
+
+	it('offers no status while the server would drop it (before the restart)', async () => {
+		const series = rule({ templateSubtasks: [{ title: 'Entkalken', priority: 'high' }] });
+		await setup(inSeries(), [series], { templateSubtasksReady: vi.fn(async () => true) });
+		await fireEvent.click(screen.getByRole('button', { name: 'Vorlage bearbeiten' }));
+		expect(screen.queryByLabelText('Status der Unteraufgabe 1')).toBeNull();
+	});
+});
+
+describe('RecurrenceSummary: a sub-task of a ticket of a series (UT-1)', () => {
+	const RULE = 'rule00000000001';
+	const sub = (overrides: Partial<Ticket> = {}) =>
+		ticket({
+			id: 'ticket000000020',
+			key: 'HAUS-8',
+			title: 'Fenster putzen',
+			parentId: 'ticket000000007',
+			...overrides
+		});
+	const created = (user: string, oldValue: string): HistoryEntry => ({
+		id: 'hist00000000001',
+		ticket: 'ticket000000020',
+		field: 'created',
+		oldValue,
+		newValue: 'HAUS-8',
+		user,
+		created: '2026-09-21 10:00:00.000Z'
+	});
+	const series = rule({ templateSubtasks: [{ title: 'Fenster putzen', priority: 'medium' }] });
+	const parentSeries = { key: 'HAUS-7', recurrenceId: RULE };
+
+	async function show(history: HistoryEntry[], rules: RecurrenceRule[] = [series], item = sub()) {
+		return setup(item, rules, {}, undefined, history, [], false, [], parentSeries);
+	}
+
+	it('names the series of its parent and that the template makes it for every date', async () => {
+		await show([created('', RULE)]);
+		const line = screen.getByText('Teil von HAUS-7 · wiederholt sich jeden Montag').closest('p');
+		expect(line?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+			'Teil von HAUS-7 · wiederholt sich jeden Montag · aus der Vorlage – wird mit jedem Termin neu angelegt'
+		);
+		// "Wiederholen…" stays for the sub-task itself (U5).
+		expect(screen.getByRole('button', { name: 'Wiederholen…' })).toBeTruthy();
+	});
+
+	it('says "nur für diesen Termin" for one a person added that the template does not have', async () => {
+		await show([created('user00000000001', '')], [rule({ templateSubtasks: [] })]);
+		expect(screen.getByText('nur für diesen Termin')).toBeTruthy();
+		expect(screen.queryByText(/aus der Vorlage/)).toBeNull();
+	});
+
+	it('leaves the origin out when it is not sure, and the rhythm while the rule is unknown', async () => {
+		// Added by a person, but the template has the same title ("Neues Ticket" with the switch).
+		await show([created('user00000000001', '')]);
+		expect(screen.getByText('Teil von HAUS-7 · wiederholt sich jeden Montag')).toBeTruthy();
+		expect(screen.queryByText('nur für diesen Termin')).toBeNull();
+		expect(screen.queryByText(/aus der Vorlage/)).toBeNull();
+		document.body.innerHTML = '';
+
+		// Without history and without the rule in the store.
+		await show([], []);
+		expect(screen.getByText('Teil von HAUS-7 · wiederholt sich')).toBeTruthy();
+		expect(screen.queryByText('nur für diesen Termin')).toBeNull();
+	});
+
+	it('shows nothing of the kind for a ticket without a parent in a series', async () => {
+		await setup(ticket(), [series]);
+		expect(screen.queryByText(/Teil von/)).toBeNull();
+	});
+});
+
 describe('RecurrenceSummary in the full view', () => {
 	const fullView = () => screen.getByRole('dialog', { name: 'Vollansicht' });
 

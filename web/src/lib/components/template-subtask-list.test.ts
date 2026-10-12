@@ -1,13 +1,14 @@
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
-import type { TemplateSubtask, TicketSubtask } from '$lib/domain/series-template';
+import type { TemplateStatus, TemplateSubtask, TicketSubtask } from '$lib/domain/series-template';
 import TemplateSubtaskListHarness from '$lib/test/TemplateSubtaskListHarness.svelte';
 
 // The list "Unteraufgaben" of the template (plan WV-3, ADR-0022 addendum 10): rows with title and
 // priority, added, removed and moved with named buttons (keyboard and screen reader, no dragging),
 // a polite status of each step, at most 20 rows, and "Unteraufgaben dieses Tickets übernehmen"
-// with the inline question "Ergänzen" or "Ersetzen".
+// with the inline question "Ergänzen" or "Ersetzen". Since UT-1 a status per row once the server
+// takes it, without an own choice the default ("Status beim Anlegen" or the status of the ticket).
 
 const entry = (
 	title: string,
@@ -19,7 +20,14 @@ const entry = (
 
 function setup(
 	initial: TemplateSubtask[],
-	props: { ticketSubtasks?: TicketSubtask[]; invalidRows?: number[]; error?: string | null } = {}
+	props: {
+		ticketSubtasks?: TicketSubtask[];
+		invalidRows?: number[];
+		error?: string | null;
+		statusAvailable?: boolean;
+		defaultStatus?: TemplateStatus;
+		hint?: string;
+	} = {}
 ) {
 	render(TemplateSubtaskListHarness, { props: { initial, ...props } });
 	const group = screen.getByRole('group', { name: 'Unteraufgaben' });
@@ -222,5 +230,69 @@ describe('TemplateSubtaskList', () => {
 		expect(
 			within(group).queryByRole('button', { name: 'Unteraufgaben dieses Tickets übernehmen' })
 		).toBeNull();
+	});
+});
+
+describe('the status of each row (UT-1)', () => {
+	const statusOf = (group: HTMLElement, row: number) =>
+		within(group).getByLabelText<HTMLSelectElement>(`Status der Unteraufgabe ${row}`);
+
+	it('offers no status before the server takes it, and says what the old hooks do', () => {
+		const { group } = setup([entry('A')]);
+		expect(within(group).queryByLabelText('Status der Unteraufgabe 1')).toBeNull();
+		expect(
+			within(group).getByText(
+				'Jedes neue Ticket der Serie bekommt sie als offene Unteraufgaben ohne Fälligkeit, höchstens 20.'
+			)
+		).toBeTruthy();
+	});
+
+	it('shows the default for a row without an own status and keeps a chosen one', async () => {
+		const { group, value } = setup([entry('A'), { ...entry('B'), status: 'backlog' }], {
+			statusAvailable: true,
+			defaultStatus: 'waiting'
+		});
+		expect(
+			within(group).getByText(
+				'Jedes neue Ticket der Serie bekommt sie als Unteraufgaben mit seiner Fälligkeit, Art und Zuständigkeit, höchstens 20. Ohne eigene Wahl starten sie mit dem „Status beim Anlegen“.'
+			)
+		).toBeTruthy();
+		expect(statusOf(group, 1).value).toBe('waiting');
+		expect(statusOf(group, 2).value).toBe('backlog');
+		// Every status but "Erledigt".
+		expect([...statusOf(group, 1).options].map((option) => option.value)).toEqual([
+			'backlog',
+			'open',
+			'in_progress',
+			'waiting'
+		]);
+
+		await fireEvent.change(statusOf(group, 1), { target: { value: 'in_progress' } });
+		expect(value()).toEqual([
+			{ ...entry('A'), status: 'in_progress' },
+			{ ...entry('B'), status: 'backlog' }
+		]);
+		// The default again means "follow it": the row has no own status any more.
+		await fireEvent.change(statusOf(group, 2), { target: { value: 'waiting' } });
+		expect(value()).toEqual([{ ...entry('A'), status: 'in_progress' }, entry('B')]);
+	});
+
+	it('gives a new row no own status and keeps the status when moving and editing the title', async () => {
+		const { group, value } = setup([{ ...entry('A'), status: 'backlog' }, entry('B')], {
+			statusAvailable: true
+		});
+		await fireEvent.click(within(group).getByRole('button', { name: 'Unteraufgabe hinzufügen' }));
+		expect(value()[2]).toEqual({ title: '', priority: 'medium' });
+		expect(statusOf(group, 3).value).toBe('open');
+
+		await fireEvent.click(
+			within(group).getByRole('button', { name: '„A“ nach unten verschieben' })
+		);
+		await tick();
+		expect(value().map((item) => item.status)).toEqual([undefined, 'backlog', undefined]);
+		await fireEvent.input(within(group).getByLabelText('Titel der Unteraufgabe 2'), {
+			target: { value: 'A neu' }
+		});
+		expect(value()[1]).toEqual({ ...entry('A neu'), status: 'backlog' });
 	});
 });

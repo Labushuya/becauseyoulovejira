@@ -1,19 +1,33 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import type { ResolvedPathname } from '$app/types';
+	import { isCalendarDate, type CalendarDate } from '$lib/domain/berlin-date';
+	import {
+		TEMPLATE_STATUSES,
+		isTemplateStatus,
+		subtaskStatusOf,
+		type TemplateStatus
+	} from '$lib/domain/series-template';
+	import { joinWords } from '$lib/domain/recurrence-text';
 	import { progressLabel, progressPercent, progressText } from '$lib/domain/subtasks';
 	import { TITLE_MAX_LENGTH, type TicketSummary } from '$lib/domain/ticket';
 	import type { TicketListStore } from '$lib/stores/ticket-list.svelte';
 	import DoneToggle from './DoneToggle.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
-	import StatusPill from './StatusPill.svelte';
+	import StatusSelect from './StatusSelect.svelte';
+	import StatusMenu from './table/StatusMenu.svelte';
 
 	// Section "Unteraufgaben" (ADR-0033 section 4), shared by the side panel and the full view: the
 	// sub-tasks of a top-level ticket with check mark, key, title (link to their panel) and status,
-	// open ones first, then by creation; the progress as text and as a quiet bar. "Unteraufgabe
-	// hinzufügen" opens a field in the section: Enter creates one (project and tags of the ticket)
-	// and keeps the field for the next, Escape closes it and is consumed, so neither the panel nor
-	// the full view closes. Everything comes from the list store and follows realtime.
+	// open ones first, then by creation; the progress as text and as a quiet bar. Since UT-1 (ADR-0033
+	// addendum UT-1) the status of each is the menu of the table "Aufgaben" (StatusMenu): a choice
+	// saves at once like a cell, "Erledigt" goes through the check mark with "Rückgängig"; the check
+	// mark stays. "Unteraufgabe hinzufügen" opens a small form in the section: the title, the status
+	// (every one but "Erledigt", the one of the ticket in advance, "Offen" under a done one) and the
+	// due date (the one of the ticket in advance, to change or clear). Enter or "Anlegen" creates one
+	// (project, tags, kind and assignee of the ticket) and keeps the form for the next with its choices;
+	// Escape or "Schließen" closes it, Escape is consumed, so neither the panel nor the full view
+	// closes. Everything comes from the list store and follows realtime.
 	let {
 		ticket,
 		list,
@@ -22,7 +36,13 @@
 		ticket: TicketSummary;
 		list: Pick<
 			TicketListStore,
-			'subtasksOf' | 'progressOf' | 'isChecked' | 'isPending' | 'setDone' | 'addSubtask'
+			| 'subtasksOf'
+			| 'progressOf'
+			| 'isChecked'
+			| 'isPending'
+			| 'setDone'
+			| 'changeField'
+			| 'addSubtask'
 		>;
 		/** Address of the panel of a sub-task, with the list query of the current page. */
 		hrefOf: (id: string) => ResolvedPathname;
@@ -33,26 +53,46 @@
 		title: `${uid}-title`,
 		progress: `${uid}-progress`,
 		input: `${uid}-input`,
+		status: `${uid}-status`,
+		due: `${uid}-due`,
+		dueError: `${uid}-due-error`,
 		hint: `${uid}-hint`,
 		error: `${uid}-error`
 	};
 
 	const subtasks = $derived(list.subtasksOf(ticket.id));
 	const progress = $derived(list.progressOf(ticket.id));
+	/** What a new sub-task takes from the ticket without asking, for the hint of the form. */
+	const inherited = $derived(
+		joinWords([
+			'Projekt',
+			'Tags',
+			...(ticket.kind === 'ongoing' ? ['Art'] : []),
+			...(ticket.assignee ? ['Zuständigkeit'] : [])
+		])
+	);
 
 	let adding = $state(false);
 	let text = $state('');
+	/** Status and due date of the next sub-task; set from the ticket when the form opens. */
+	let status = $state<TemplateStatus>('open');
+	let due = $state('');
+	let dueInvalid = $state(false);
 	let busy = $state(false);
 	let error = $state<string | null>(null);
 	/** Polite message after creating one, e.g. "TASK-16 angelegt." */
-	let status = $state('');
+	let announcement = $state('');
 	let input = $state<HTMLInputElement>();
+	let dueInput = $state<HTMLInputElement>();
 	let addButton = $state<HTMLButtonElement>();
 
 	async function open() {
 		adding = true;
 		error = null;
-		status = '';
+		announcement = '';
+		status = subtaskStatusOf(undefined, ticket.status);
+		due = ticket.due ?? '';
+		dueInvalid = false;
 		await tick();
 		input?.focus();
 	}
@@ -67,24 +107,37 @@
 
 	async function add(event: SubmitEvent) {
 		event.preventDefault();
-		if (busy || text.trim() === '') return;
+		if (busy) return;
+		if (text.trim() === '') {
+			input?.focus();
+			return;
+		}
+		if (dueInvalid || (due !== '' && !isCalendarDate(due))) {
+			dueInvalid = true;
+			dueInput?.focus();
+			return;
+		}
 		busy = true;
 		error = null;
 		const title = text;
-		const result = await list.addSubtask(ticket, title);
+		const result = await list.addSubtask(ticket, title, {
+			status,
+			due: due === '' ? null : (due as CalendarDate)
+		});
 		busy = false;
 		if (result.ok) {
 			// What was typed meanwhile stays; only the saved title leaves the field.
 			if (text === title) text = '';
-			status = `${result.ticket.key} angelegt.`;
+			announcement = `${result.ticket.key} angelegt.`;
 			input?.focus();
 		} else if (result.message !== null) {
 			error = result.message;
 		}
 	}
 
+	/** Escape anywhere in the form closes it and is consumed. */
 	function onkeydown(event: KeyboardEvent) {
-		if (event.key !== 'Escape') return;
+		if (event.key !== 'Escape' || event.defaultPrevented) return;
 		event.preventDefault();
 		event.stopPropagation();
 		void close();
@@ -116,7 +169,16 @@
 					/>
 					<span class="key">{child.key}</span>
 					<a class="child-title" href={hrefOf(child.id)}>{child.title}</a>
-					<StatusPill status={child.status} />
+					<span class="status-menu">
+						<StatusMenu
+							ticketKey={child.key}
+							status={child.status}
+							busy={list.isPending(child.id)}
+							onchoose={(value) => {
+								if (value !== child.status) void list.changeField(child.id, { status: value });
+							}}
+						/>
+					</span>
 				</li>
 			{/each}
 		</ul>
@@ -125,7 +187,16 @@
 	{/if}
 
 	{#if adding}
-		<form class="add" novalidate onsubmit={add}>
+		<!-- Escape from any field of the form closes it (the keys stay with the fields). -->
+		<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+		<form
+			class="add"
+			novalidate
+			aria-label="Unteraufgabe hinzufügen"
+			aria-busy={busy ? 'true' : undefined}
+			onsubmit={add}
+			{onkeydown}
+		>
 			<label class="visually-hidden" for={ids.input}>Titel der Unteraufgabe</label>
 			<input
 				id={ids.input}
@@ -138,12 +209,58 @@
 				aria-busy={busy ? 'true' : undefined}
 				aria-invalid={error ? 'true' : undefined}
 				aria-describedby={error ? `${ids.hint} ${ids.error}` : ids.hint}
-				{onkeydown}
 			/>
-			<p class="hint" id={ids.hint}>Enter legt sie an, Esc schließt das Feld.</p>
+			<div class="options">
+				<div class="field">
+					<label for={ids.status}>Status</label>
+					<StatusSelect
+						id={ids.status}
+						value={status}
+						statuses={TEMPLATE_STATUSES}
+						errorId={`${ids.status}-error`}
+						onchoose={(value) => {
+							if (isTemplateStatus(value)) status = value;
+						}}
+					/>
+				</div>
+				<div class="field">
+					<label for={ids.due}>Fälligkeit</label>
+					<input
+						id={ids.due}
+						type="date"
+						bind:value={due}
+						bind:this={dueInput}
+						aria-invalid={dueInvalid ? 'true' : undefined}
+						aria-describedby={dueInvalid ? ids.dueError : undefined}
+						oninput={(event) => (dueInvalid = event.currentTarget.validity.badInput)}
+					/>
+					{#if dueInvalid}
+						<p class="field-error" id={ids.dueError}>
+							<ErrorIcon /><span>Ungültiges Datum.</span>
+						</p>
+					{/if}
+				</div>
+			</div>
+			<p class="hint" id={ids.hint}>
+				Enter legt sie an, Esc schließt. Status und Fälligkeit sind nach dem Ticket vorbelegt;
+				{inherited} übernimmt sie vom Ticket.
+			</p>
 			{#if error}
 				<p class="field-error" id={ids.error}><ErrorIcon /><span>{error}</span></p>
 			{/if}
+			<div class="actions">
+				<button
+					class="button-primary button-small"
+					type="submit"
+					aria-disabled={busy ? 'true' : undefined}
+					aria-busy={busy ? 'true' : undefined}
+				>
+					Anlegen
+				</button>
+				<button class="button-subtle button-small" type="button" onclick={() => void close()}>
+					Schließen
+				</button>
+			</div>
 		</form>
 	{:else}
 		<button
@@ -155,7 +272,7 @@
 			Unteraufgabe hinzufügen
 		</button>
 	{/if}
-	<p class="visually-hidden" aria-live="polite">{status}</p>
+	<p class="visually-hidden" aria-live="polite">{announcement}</p>
 </section>
 
 <style>
@@ -215,7 +332,7 @@
 		grid-template-columns: auto auto minmax(0, 1fr) auto;
 		gap: 0.5rem;
 		align-items: center;
-		padding: 0.3125rem 0;
+		padding: 0.125rem 0;
 		font-size: var(--font-size-body);
 		border-bottom: 1px solid var(--color-line);
 	}
@@ -239,6 +356,13 @@
 		text-decoration: underline;
 	}
 
+	/* The menu of the status (StatusMenu) is one cell of the row; its button keeps the look of the
+	   table, and only the pill shows: the pencil comes on pointing and focus. */
+	.status-menu {
+		display: flex;
+		min-width: 0;
+	}
+
 	/* Done sub-tasks step back (CLAUDE.md section 8). */
 	.done .child-title {
 		color: var(--color-text-muted);
@@ -246,17 +370,50 @@
 
 	.add {
 		display: grid;
-		gap: 0.25rem;
+		gap: 0.5rem;
 		justify-self: stretch;
 	}
 
-	.add input {
+	.add > input {
 		width: 100%;
+	}
+
+	/* Status and due date side by side; on a narrow panel they wrap below each other. */
+	.options {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem 1rem;
+	}
+
+	.field {
+		display: grid;
+		gap: 0.25rem;
+		align-content: start;
+		min-width: 0;
+	}
+
+	.field label {
+		font-size: var(--font-size-control);
+		font-weight: 500;
+		color: var(--color-text-muted);
+	}
+
+	.actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
 	}
 
 	.hint,
 	.muted {
 		font-size: var(--font-size-small);
 		color: var(--color-text-muted);
+	}
+
+	/* Touch screens: the menu of the status is as easy to hit as the other controls (44 px). */
+	@media (pointer: coarse) {
+		.status-menu :global(button.cell-edit) {
+			min-height: var(--control-height-touch);
+		}
 	}
 </style>

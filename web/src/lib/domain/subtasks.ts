@@ -194,3 +194,73 @@ export function subtaskOfText(parent: Pick<ParentRef, 'key' | 'title'>, withTitl
 	const name = withTitle && parent.title !== '' ? `${parent.key} ${parent.title}` : parent.key;
 	return `Unteraufgabe von ${name}:`;
 }
+
+// --- A sub-task of a ticket of a series (UT-1, ADR-0033 addendum UT-1) ------------------------------
+
+/** The parent of a sub-task that belongs to a series: its key and the rule of the series. */
+export interface ParentSeries {
+	key: string;
+	recurrenceId: string;
+}
+
+/**
+ * The parent of a sub-task when it belongs to a series, else null: the list's own version of the
+ * parent if it has one, else the expanded one (also a done parent outside the list).
+ */
+export function parentSeriesOf(
+	ticket: Pick<TicketSummary, 'parentId' | 'parentRef'>,
+	find: (id: string) => Pick<TicketSummary, 'key' | 'recurrenceId'> | null
+): ParentSeries | null {
+	const id = ticket.parentId ?? null;
+	if (id === null) return null;
+	const known = find(id);
+	const expanded = ticket.parentRef && ticket.parentRef.id === id ? ticket.parentRef : null;
+	const key = known?.key ?? expanded?.key ?? null;
+	const recurrenceId = known !== null ? known.recurrenceId : expanded?.recurrenceId;
+	return key !== null && recurrenceId ? { key, recurrenceId } : null;
+}
+
+/** "Teil von HAUS-7 · wiederholt sich jeden Montag"; without a known rhythm only "wiederholt sich". */
+export function parentSeriesText(parent: Pick<ParentSeries, 'key'>, rhythm: string): string {
+	return `Teil von ${parent.key} · wiederholt sich${rhythm === '' ? '' : ` ${rhythm}`}`;
+}
+
+/**
+ * Where a sub-task of a ticket of a series comes from: `template`, a copy of an entry of the template
+ * that every date gets anew, or `single`, one for this date only.
+ */
+export type SeriesOrigin = 'template' | 'single';
+
+export const SERIES_ORIGIN_TEXTS: Readonly<Record<SeriesOrigin, string>> = Object.freeze({
+	template: 'aus der Vorlage – wird mit jedem Termin neu angelegt',
+	single: 'nur für diesen Termin'
+});
+
+/** Titles compared without case and outer spaces, like "Unteraufgaben dieses Tickets übernehmen". */
+function sameTitle(a: string, b: string): boolean {
+	return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
+/**
+ * Where a sub-task of a ticket of a series comes from, from the data there is, without guessing:
+ * `created` is its history entry "created" (null when the history is not loaded or has none),
+ * `ruleId` the rule of the series of its parent, `templateTitles` the titles of the sub-tasks of the
+ * template now (null while the rule is unknown).
+ *   - Made by the rule (the generation writes "created" without a user and the rule as old value,
+ *     ADR-0022 addendum 10) and the template still has its title: `template`.
+ *   - Made by a person and the template has no entry of its title: `single`.
+ *   - Anything else (the template changed since, a sub-task of "Neues Ticket" that went into the
+ *     template as well, unknown history or rule): null, and the line says nothing about it.
+ */
+export function subtaskSeriesOrigin(input: {
+	title: string;
+	created: { user: string; oldValue: string } | null;
+	ruleId: string;
+	templateTitles: readonly string[] | null;
+}): SeriesOrigin | null {
+	const { title, created, ruleId, templateTitles } = input;
+	if (created === null || templateTitles === null) return null;
+	const inTemplate = templateTitles.some((entry) => sameTitle(entry, title));
+	if (created.user === '') return created.oldValue === ruleId && inTemplate ? 'template' : null;
+	return inTemplate ? null : 'single';
+}

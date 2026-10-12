@@ -184,6 +184,37 @@ describe('editing cells in place (plan BI-3)', () => {
 		expect(cellButton(/^Priorität von TASK-1: Dringend/)).toBeTruthy();
 	});
 
+	// UT-1 took the menu out as StatusMenu and MenuChoice for the section "Unteraufgaben"; the table
+	// keeps the same cell, names, choices and marks.
+	it('keeps its status menu as before: five choices, the current one checked by mark and weight', async () => {
+		const { update } = await showTable([ticket({ status: 'waiting' })]);
+		const button = await openCell(/^Status von TASK-1/);
+		expect(button.getAttribute('aria-label')).toBe('Status von TASK-1: Wartet, ändern');
+		expect(button.classList.contains('cell-edit')).toBe(true);
+		expect(button.closest('td')?.dataset.col).toBe('status');
+		const menu = popoverOf(button);
+		expect(menu.getAttribute('role')).toBe('menu');
+		expect(menu.getAttribute('aria-label')).toBe('Status von TASK-1');
+		const choices = within(menu).getAllByRole('menuitemradio', { hidden: true });
+		expect(choices.map((choice) => choice.textContent?.trim())).toEqual([
+			'Backlog',
+			'Offen',
+			'In Arbeit',
+			'✓Wartet',
+			'Erledigt'
+		]);
+		const current = choices[3] as HTMLElement;
+		expect(current.getAttribute('aria-checked')).toBe('true');
+		expect(current.classList.contains('checked')).toBe(true);
+		expect(current.querySelector('.mark')?.getAttribute('aria-hidden')).toBe('true');
+		expect(current.tabIndex).toBe(-1);
+
+		await fireEvent.click(choices[2] as HTMLElement);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(update).toHaveBeenCalledExactlyOnceWith(ID, { status: 'in_progress' });
+		expect(document.activeElement).toBe(button);
+	});
+
 	it('closes with Escape without saving and returns the focus to the cell', async () => {
 		const { update } = await showTable([ticket()]);
 		const button = await openCell(/^Status von TASK-1/);

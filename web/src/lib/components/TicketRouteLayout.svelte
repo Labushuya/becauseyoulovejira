@@ -3,7 +3,7 @@
 	import { beforeNavigate, goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { openInstancesOf } from '$lib/domain/recurrence-rule';
-	import { parentOf } from '$lib/domain/subtasks';
+	import { parentOf, parentSeriesOf } from '$lib/domain/subtasks';
 	import type { Ticket } from '$lib/domain/ticket';
 	import { getCatalogStore } from '$lib/stores/catalog.svelte';
 	import { SILENT_FLAGS, findFlagStore } from '$lib/stores/flags.svelte';
@@ -274,6 +274,7 @@
 				history={comments.history}
 				openTickets={ticket.recurrenceId ? openInstancesOf(tickets.open, ticket.recurrenceId) : []}
 				subtasks={tickets.subtasksOf(ticket.id)}
+				parentSeries={parentSeriesOf(ticket, (parentId) => tickets.find(parentId))}
 				onticket={(changed) => {
 					detail.upsert(changed);
 					tickets.upsert(changed);

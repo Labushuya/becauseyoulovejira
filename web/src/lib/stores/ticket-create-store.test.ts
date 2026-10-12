@@ -167,7 +167,8 @@ describe('loadCreateSupport', () => {
 		kind: true,
 		color: true,
 		charm: true,
-		assignee: true
+		assignee: true,
+		subtaskStatus: true
 	};
 
 	it('keeps a known answer for the session and asks again while the route is missing', async () => {

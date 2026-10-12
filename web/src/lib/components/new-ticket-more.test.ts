@@ -396,6 +396,65 @@ describe('main fields and "Weitere Optionen" (NT-1)', () => {
 	});
 });
 
+describe('the status of the sub-tasks (UT-1)', () => {
+	const ticketStatus = () =>
+		screen.getByLabelText<HTMLSelectElement>('Status', { selector: 'select' });
+	const rowStatus = (row: number) =>
+		screen.getByLabelText<HTMLSelectElement>(`Status der Unteraufgabe ${row}`);
+
+	async function twoRows() {
+		await openMore();
+		for (const [row, title] of [
+			[1, 'Termin machen'],
+			[2, 'Filter kaufen']
+		] as const) {
+			await fireEvent.click(screen.getByRole('button', { name: 'Unteraufgabe hinzufügen' }));
+			await fireEvent.input(screen.getByLabelText(`Titel der Unteraufgabe ${row}`), {
+				target: { value: title }
+			});
+		}
+	}
+
+	it('offers a status per row with the status of the ticket in advance, and sends only an own choice', async () => {
+		const { oncreate } = renderForm({ subtaskStatusAvailable: true });
+		await fireEvent.input(titleField(), { target: { value: 'Heizung warten' } });
+		await fireEvent.change(ticketStatus(), { target: { value: 'in_progress' } });
+		await twoRows();
+		expect(
+			screen.getByText(
+				/Entstehen mit dem Ticket mit seinem Projekt, seinen Tags, seiner Fälligkeit, Art und Zuständigkeit, höchstens 20\. Ohne eigene Wahl starten sie mit dem Status des Tickets/
+			)
+		).toBeTruthy();
+		expect(rowStatus(1).value).toBe('in_progress');
+		expect([...rowStatus(1).options].map((option) => option.value)).not.toContain('done');
+
+		await fireEvent.change(rowStatus(2), { target: { value: 'backlog' } });
+		// Rows without an own choice follow the ticket; a done ticket gives them "Offen".
+		await fireEvent.change(ticketStatus(), { target: { value: 'waiting' } });
+		expect([rowStatus(1).value, rowStatus(2).value]).toEqual(['waiting', 'backlog']);
+		await fireEvent.change(ticketStatus(), { target: { value: 'done' } });
+		expect([rowStatus(1).value, rowStatus(2).value]).toEqual(['open', 'backlog']);
+
+		await fireEvent.click(createButton());
+		const [, , extras] = oncreate.mock.calls[0] ?? [];
+		expect(extras?.subtasks).toEqual([
+			{ title: 'Termin machen', priority: 'medium' },
+			{ title: 'Filter kaufen', priority: 'medium', status: 'backlog' }
+		]);
+	});
+
+	it('offers no status before the server takes it and says what it does then', async () => {
+		renderForm();
+		await twoRows();
+		expect(screen.queryByLabelText('Status der Unteraufgabe 1')).toBeNull();
+		expect(
+			screen.getByText(
+				'Entstehen mit dem Ticket als offene Unteraufgaben mit seinem Projekt und seinen Tags, höchstens 20.'
+			)
+		).toBeTruthy();
+	});
+});
+
 describe('fields per area', () => {
 	const ME = 'user00000000001';
 	const MEMBERS = [
@@ -645,6 +704,30 @@ describe('the route: one request for everything', () => {
 		);
 		expect(mocks.rules.upsert).toHaveBeenCalledWith(RULE);
 		expect(mocks.tickets.markRead).toHaveBeenCalledWith(CREATED);
+	});
+
+	it('offers the status of a sub-task once the server names it, and sends it (UT-1)', async () => {
+		mocks.detail.createSupport = { ...SUPPORT, subtaskStatus: true };
+		render(NewTicketPage);
+		await fireEvent.input(titleField(), { target: { value: 'Müll rausbringen' } });
+		await openMore();
+		await fireEvent.click(screen.getByRole('button', { name: 'Unteraufgabe hinzufügen' }));
+		await fireEvent.input(screen.getByLabelText('Titel der Unteraufgabe 1'), {
+			target: { value: 'Tonne' }
+		});
+		await fireEvent.change(screen.getByLabelText('Status der Unteraufgabe 1'), {
+			target: { value: 'waiting' }
+		});
+		await fireEvent.click(createButton());
+
+		await vi.waitFor(() => expect(mocks.detail.createWithOptions).toHaveBeenCalledOnce());
+		expect(mocks.detail.createWithOptions).toHaveBeenCalledWith(
+			expect.objectContaining({
+				extras: expect.objectContaining({
+					subtasks: [{ title: 'Tonne', priority: 'medium', status: 'waiting' }]
+				})
+			})
+		);
 	});
 
 	it('converts an entry of the inbox in the same form, with every option', async () => {
