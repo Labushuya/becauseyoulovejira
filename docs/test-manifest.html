@@ -341,7 +341,7 @@
   "meta": {
     "projekt": "becauseyoulovejira",
     "stand": "2026-10-12",
-    "commit": "fee3374"
+    "commit": "4b60e9d"
   },
   "bereiche": [
     { "id": "betrieb", "titel": "Betrieb: Start, Stopp, Skripte und Daten" },
@@ -617,6 +617,8 @@
       "vermerk": "Nur Oberfläche, kein Hook, keine Migration, keine neue Abfrage: nach dem Build F5, kein Neustart. Fünf manuelle Fälle (BYL-E6-1684 bis BYL-E6-1688)." },
     { "id": "UT-1", "vorhaben": "Unteraufgaben", "titel": "Unteraufgaben: Status beim Anlegen (Detail, „Neues Ticket“, Vorlage einer Serie), Statusmenü der Tabelle im Hauptticket, Art, Fälligkeit und Zuständigkeit vom Haupt- bzw. Folgeticket, Serienbezug im Detail", "bereich": "ticket", "quelle": "Nutzerentscheidung", "datum": "2026-10-12", "adr": ["0033-unteraufgaben.md, Nachtrag UT-1", "0022-erzeugung-von-instanzen.md, Nachtrag 16", "0069-vollstaendiges-anlegen.md, Nachtrag UT-1", "0068-zustaendigkeit.md, Nachtrag UT-1"], "faelle": ["BYL-E6-1689..BYL-E6-1703"],
       "vermerk": "Hooks geändert, keine Migration: Neustart nötig (neu-starten.bat). Detail schon nach Build und F5; Status je Zeile in „Neues Ticket“ und Vorlage und die Vererbung beim automatischen Anlegen erst nach dem Neustart. Sieben manuelle Fälle (BYL-E6-1697 bis BYL-E6-1703)." },
+    { "id": "UT-1a", "vorhaben": "Unteraufgaben", "titel": "Nacharbeit zu UT-1: versehentlich mitgeschickte Dateien von svelte-kit sync im Wurzelordner (.svelte-kit/) entfernt; .gitignore ignoriert .svelte-kit/ jetzt überall", "bereich": "entwicklung", "quelle": "Nacharbeit", "datum": "2026-10-12", "faelle": [],
+      "vermerk": "Nur Repo-Pflege: keine Wirkung auf die App, kein Neustart, keine Fälle. Die Dateien enthielten nur Namen von Umgebungsvariablen, keine Werte." },
     { "id": "querschnitt", "vorhaben": "Querschnitt", "titel": "Testumgebung, Regeln der Datenschicht, Hook-Module und dieses Manifest", "bereich": "entwicklung", "faelle": ["BYL-X-001..BYL-X-004"] }
   ],
   "zurueckgestellt": [
