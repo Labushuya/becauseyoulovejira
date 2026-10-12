@@ -123,6 +123,14 @@ function show(current: RecurrenceRule | null, overrides: Record<string, unknown>
 
 const panel = () => screen.getByRole('complementary');
 
+/** The texts that describe a control, in the order of aria-describedby. */
+function describedTexts(control: HTMLElement): string[] {
+	return (control.getAttribute('aria-describedby') ?? '')
+		.split(' ')
+		.filter(Boolean)
+		.map((id) => document.getElementById(id)?.textContent?.trim() ?? `missing ${id}`);
+}
+
 describe('RecurrencePanel: "Neue Regel"', () => {
 	it('focuses the title and checks it before sending', async () => {
 		const props = show(null);
@@ -321,51 +329,114 @@ describe('RecurrencePanel: a rule', () => {
 		});
 	});
 
-	// ADR-0022 addendum 9: a new rule asks with which status its tickets start, without an answer
-	// in advance; a saved rule shows its value in "Status beim Anlegen" (above).
-	it('asks a new rule "Folgetickets starten mit" and shows a refusal of the status at the question', async () => {
+	// ADR-0022 addenda 9 and 17 (RG-1): a new rule asks with which status its tickets start, without
+	// an answer in advance, in the same select "Status beim Anlegen" a saved rule shows (above), at
+	// the same place of the template.
+	it('asks a new rule "Status beim Anlegen" in the select without an answer in advance and shows a refusal at the field', async () => {
 		const onsave = vi.fn(async (): Promise<SaveResult> => ({
 			ok: false,
 			message: null,
 			fields: { initial_status: 'Als „Status beim Anlegen“ geht jeder Status außer „Erledigt“.' }
 		}));
 		show(null, { statusAvailable: true, onsave });
-		expect(screen.queryByLabelText('Status beim Anlegen')).toBeNull();
-		const group = screen.getByRole('radiogroup', { name: 'Folgetickets starten mit' });
-		const radios = within(group).getAllByRole<HTMLInputElement>('radio');
-		expect(radios.map((radio) => [radio.labels?.[0]?.textContent?.trim(), radio.checked])).toEqual([
-			['Offen', false],
-			['Backlog', false],
-			['In Arbeit', false],
-			['Wartet', false]
+		expect(screen.queryByRole('radiogroup')).toBeNull();
+		const status = screen.getByLabelText<HTMLSelectElement>('Status beim Anlegen');
+		expect(status.value).toBe('');
+		expect(status.getAttribute('aria-required')).toBe('true');
+		expect(
+			[...status.options].map((option) => [option.value, option.textContent, option.disabled])
+		).toEqual([
+			['', 'Bitte wählen', true],
+			['backlog', 'Backlog', false],
+			['open', 'Offen', false],
+			['in_progress', 'In Arbeit', false],
+			['waiting', 'Wartet', false]
+		]);
+		expect(describedTexts(status)).toEqual([
+			'Jedes neue Ticket der Serie beginnt mit diesem Status. Ändern kannst du ihn später an der Regel.'
 		]);
 
 		await fireEvent.input(screen.getByLabelText('Titel'), { target: { value: 'Blumen' } });
 		await fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }));
 		await tick();
 		expect(onsave).not.toHaveBeenCalled();
-		expect(group.getAttribute('aria-invalid')).toBe('true');
-		expect(
-			within(group).getByText('Bitte wählen, mit welchem Status Folgetickets starten.')
-		).toBeTruthy();
-		expect(document.activeElement).toBe(group);
+		expect(status.getAttribute('aria-invalid')).toBe('true');
+		// The error of the Field first, then its hint (ADR-0060).
+		expect(describedTexts(status)[0]).toBe(
+			'Bitte wählen, mit welchem Status Folgetickets starten.'
+		);
+		expect(document.activeElement).toBe(status);
 
-		await fireEvent.click(within(group).getByRole('radio', { name: 'Wartet' }));
-		expect(group.getAttribute('aria-invalid')).toBeNull();
+		await fireEvent.change(status, { target: { value: 'waiting' } });
+		expect(status.value).toBe('waiting');
+		expect(status.getAttribute('aria-invalid')).toBeNull();
+		// The empty option goes once an answer is given.
+		expect([...status.options].map((option) => option.value)).not.toContain('');
 		await fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }));
-		await vi.waitFor(() => expect(group.getAttribute('aria-invalid')).toBe('true'));
+		await vi.waitFor(() => expect(status.getAttribute('aria-invalid')).toBe('true'));
 		expect(onsave).toHaveBeenCalledWith(expect.objectContaining({ initial_status: 'waiting' }));
-		expect(
-			within(group).getByText('Als „Status beim Anlegen“ geht jeder Status außer „Erledigt“.')
-		).toBeTruthy();
+		expect(describedTexts(status)[0]).toBe(
+			'Als „Status beim Anlegen“ geht jeder Status außer „Erledigt“.'
+		);
 	});
 
 	it('counts an answer to the question of a new rule as unsaved input', async () => {
 		const props = show(null, { statusAvailable: true });
-		await fireEvent.click(screen.getByRole('radio', { name: 'Offen' }));
+		await fireEvent.change(screen.getByLabelText('Status beim Anlegen'), {
+			target: { value: 'open' }
+		});
 		await fireEvent.click(within(panel()).getByRole('button', { name: 'Abbrechen' }));
 		expect(props.onclose).not.toHaveBeenCalled();
 		expect(screen.getByRole('dialog', { name: 'Neue Regel verwerfen?' })).toBeTruthy();
+	});
+
+	// RG-1: the template follows the order and the names of "Neues Ticket" and lays out its fields
+	// with Field (ADR-0060): the label above, then the error and the hint in the small size.
+	it('lays out the template in the order of "Neues Ticket", each text field and select in a Field', () => {
+		show(rule({ initialStatus: 'waiting', charm: 'muell' }), {
+			statusAvailable: true,
+			colorsAvailable: true,
+			charmsAvailable: true,
+			subtasksAvailable: true
+		});
+		const template = screen.getByRole('region', { name: 'Vorlage' });
+		const order = [
+			within(template).getByLabelText('Titel'),
+			within(template).getByLabelText('Status beim Anlegen'),
+			within(template).getByLabelText('Priorität'),
+			within(template).getByLabelText('Projekt'),
+			within(template).getByRole('radiogroup', { name: 'Farbe' }),
+			within(template).getByRole('button', { name: 'Charm: Müll' }),
+			within(template).getByLabelText('Tags'),
+			within(template).getByText('Beschreibung'),
+			within(template).getByRole('group', { name: 'Unteraufgaben' })
+		];
+		for (let index = 1; index < order.length; index += 1) {
+			const before = order[index - 1] as HTMLElement;
+			const after = order[index] as HTMLElement;
+			expect(
+				before.compareDocumentPosition(after) & Node.DOCUMENT_POSITION_FOLLOWING,
+				`${before.textContent} before ${after.textContent}`
+			).toBeTruthy();
+		}
+		// Every text field and select of the template stands in a Field: its label above it.
+		for (const name of ['Titel', 'Status beim Anlegen', 'Priorität', 'Projekt', 'Tags']) {
+			const control = within(template).getByLabelText(name);
+			const field = control.closest('.field') as HTMLElement;
+			expect(field, name).not.toBeNull();
+			const label = field.querySelector(`label[for="${control.id}"]`);
+			expect(label?.textContent, name).toBe(name);
+			expect(label?.compareDocumentPosition(control), name).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+		}
+		// The hint of "Status beim Anlegen" stands in its Field, in the small size of every hint.
+		const status = within(template).getByLabelText('Status beim Anlegen');
+		const hint = status.closest('.field')?.querySelector('.hint');
+		expect(hint?.textContent?.trim()).toBe(
+			'So startet jedes neue Ticket der Serie, Standard „Offen“.'
+		);
+		expect(describedTexts(status)).toEqual([
+			'So startet jedes neue Ticket der Serie, Standard „Offen“.'
+		]);
 	});
 
 	it('sends a changed rhythm with the template', async () => {
@@ -537,7 +608,9 @@ describe('RecurrencePanel: a rule', () => {
 			})
 		});
 		await fireEvent.input(screen.getByLabelText('Titel'), { target: { value: 'Blumen' } });
-		await fireEvent.click(screen.getByRole('radio', { name: /^Offen/ }));
+		await fireEvent.change(screen.getByLabelText('Status beim Anlegen'), {
+			target: { value: 'open' }
+		});
 		await fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }));
 		await vi.waitFor(() => expect(props.onsaved).toHaveBeenCalledOnce());
 		expect(screen.queryByRole('group', { name: 'Neue Regel verwerfen?' })).toBeNull();

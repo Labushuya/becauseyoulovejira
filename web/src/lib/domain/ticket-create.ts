@@ -78,7 +78,7 @@ export interface CreateRequest {
 	draft: TicketDraft;
 	/** The entry of the inbox the ticket is converted from (its main source), null for none. */
 	sourceItem: string | null;
-	/** Rhythm, "Folgetickets starten mit" and the rest of the rule; null without a series. */
+	/** Rhythm, "Status beim Anlegen" and the rest of the rule; null without a series. */
 	recurrence: RuleParams | null;
 	extras: Omit<TicketExtras, 'templateSubtasks'>;
 }

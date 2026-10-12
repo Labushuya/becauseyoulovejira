@@ -108,7 +108,7 @@ export interface RepeatOffer {
 	ticketId: string;
 	values: RecurrenceFormValues;
 	/**
-	 * The answer the user gave to "Folgetickets starten mit" before the rule failed; null: nothing
+	 * The answer the user gave to "Status beim Anlegen" before the rule failed; null: nothing
 	 * was answered yet, the dialog asks (ADR-0022 addendum 9).
 	 */
 	initialStatus: TemplateStatus | null;
@@ -415,7 +415,7 @@ export class RecurrenceStore implements SeriesChangeSink {
 	/**
 	 * "Wiederholen…" (ADR-0023 section 1): a rule whose template is the ticket as it is now, with
 	 * the ticket as its current instance. The next tickets start with the status the user chose
-	 * for "Folgetickets starten mit" (ADR-0022 addendum 9); without a choice (before the migration
+	 * for "Status beim Anlegen" (ADR-0022 addendum 9); without a choice (before the migration
 	 * of "Status beim Anlegen", nothing is asked) the field is left out. `start` says where the
 	 * series begins if the first date of the ticket lies in the past (WH-2, ADR-0022 addendum 14):
 	 * the hook moves the ticket to the first date from today unless the user kept the date.
@@ -440,11 +440,11 @@ export class RecurrenceStore implements SeriesChangeSink {
 
 	/**
 	 * What a new rule with a ticket says beyond its template: the rhythm, where it begins (WH-2),
-	 * "Folgetickets starten mit" when it was asked and "Zuständigkeit" when the server knows it. The
+	 * "Status beim Anlegen" when it was asked and "Zuständigkeit" when the server knows it. The
 	 * template is the ticket: "Wiederholen…" adds it, "Neues Ticket" with everything at once (NT-1)
 	 * leaves it to the server, which takes the created ticket. `subtasks` are the sub-tasks of the
 	 * template (plan WV-3), only once the server knows them; an entry keeps its status (UT-1) once the
-	 * hooks take it, else it starts with "Folgetickets starten mit".
+	 * hooks take it, else it starts with "Status beim Anlegen".
 	 */
 	ruleParams(
 		{ values, initialStatus }: RepeatRequest,
@@ -475,7 +475,7 @@ export class RecurrenceStore implements SeriesChangeSink {
 	 * section 1) and of "Neues Ticket" with the section "Wiederholen" (plan OR-4): the ticket
 	 * exists already and becomes the current instance of the new rule. If the rule fails, the
 	 * ticket stays, and its panel offers "Wiederholen…" with the same values, the same answer to
-	 * "Folgetickets starten mit" and the reason. The rule, or null if it failed.
+	 * "Status beim Anlegen" and the reason. The rule, or null if it failed.
 	 */
 	async repeatCreated(ticket: Ticket, request: RepeatRequest): Promise<RecurrenceRule | null> {
 		const result = await this.repeat(ticket, request);
@@ -494,7 +494,7 @@ export class RecurrenceStore implements SeriesChangeSink {
 	 * Hands "Wiederholen…" with prepared values to the panel of a ticket (inbox panel: "Wiederholung
 	 * für TASK-12 anlegen…"). Without a message the panel opens the dialog at once; with one it
 	 * shows the message and offers the prepared dialog. A newer offer replaces an older one. The
-	 * answer to "Folgetickets starten mit" comes along only when the user gave it already.
+	 * answer to "Status beim Anlegen" comes along only when the user gave it already.
 	 */
 	offerRepeat(
 		ticketId: string,

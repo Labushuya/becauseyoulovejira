@@ -1,13 +1,6 @@
 <script lang="ts">
 	import { inheritLabel, projectColorOf } from '$lib/domain/colors';
-	import { STATUS_LABELS } from '$lib/domain/labels';
-	import {
-		TEMPLATE_STATUSES,
-		isTemplateStatus,
-		type RuleTemplate,
-		type TemplateStatus,
-		type TicketSubtask
-	} from '$lib/domain/series-template';
+	import type { RuleTemplate, TemplateStatus, TicketSubtask } from '$lib/domain/series-template';
 	import { isPriority } from '$lib/domain/status';
 	import {
 		DESCRIPTION_MAX_LENGTH,
@@ -19,49 +12,57 @@
 	import CharmPicker from './CharmPicker.svelte';
 	import ColorChoice from './ColorChoice.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
+	import Field from './form/Field.svelte';
+	import InitialStatusField from './InitialStatusField.svelte';
 	import PrioritySelect from './PrioritySelect.svelte';
 	import ProjectSelect from './ProjectSelect.svelte';
 	import RichTextEditor from './RichTextEditor.svelte';
-	import StatusSelect from './StatusSelect.svelte';
 	import TagPicker from './TagPicker.svelte';
 	import TemplateSubtaskList from './TemplateSubtaskList.svelte';
 
-	// Fields of the template of a rule (plan WV): title, priority, "Status beim Anlegen", project,
-	// tags, description and since WV-3 the list "Unteraufgaben". The rule panel (/wiederholungen)
-	// and the inline editor at the ticket ("Wiederholt sich" → "Bearbeiten") use the same fields.
-	// `values` is replaced as a whole on every change, so a binding through getter and setter (a
-	// draft in a store) works as well. The status is offered only after its migration
-	// (`statusAvailable`); every status but "Erledigt" (ADR-0022 addendum 8). The sub-tasks only
-	// after theirs (`subtasksAvailable`, ADR-0022 addendum 10); at a ticket with sub-tasks the list
-	// can take them over (`ticketSubtasks`). The color of the next tickets after the project, "Wie
-	// Projekt (Blau)" first, after its migration (`colorsAvailable`, ADR-0052); the charm of the next
-	// tickets after it, after its migration (`charmsAvailable`, ADR-0062). Since UT-1 each sub-task
-	// of the list offers its status (`subtaskStatusAvailable`), without an own choice the "Status beim
-	// Anlegen" of the template.
+	// Fields of the template of a rule (plan WV): what every next ticket of the series gets. The rule
+	// panel (/wiederholungen) and the inline editor at the ticket ("Wiederholt sich" → "Bearbeiten")
+	// use the same fields. Since RG-1 they follow the order and the names of "Neues Ticket" and of
+	// the registry of the ticket options (domain/ticket-options.ts): Titel, "Status beim Anlegen",
+	// Priorität, Projekt, Farbe, Charm, Tags, Beschreibung, Unteraufgaben; every text field and select
+	// stands in a Field (ADR-0060: label above, then error and hint). `values` is replaced as a whole
+	// on every change, so a binding through getter and setter (a draft in a store) works as well.
+	// "Status beim Anlegen" after its migration (`statusAvailable`), every status but "Erledigt"
+	// (ADR-0022 addendum 8); a new rule asks it without an answer in advance (`askStatus`, the answer
+	// in `chosenStatus`, ADR-0022 addenda 9 and 17). The sub-tasks after their migration
+	// (`subtasksAvailable`, ADR-0022 addendum 10); at a ticket with sub-tasks the list can take them
+	// over (`ticketSubtasks`), and since UT-1 each sub-task offers its status (`subtaskStatusAvailable`),
+	// without an own choice the "Status beim Anlegen". The color of the next tickets, "Wie Projekt
+	// (Blau)" first, after its migration (`colorsAvailable`, ADR-0052); the charm after its migration
+	// (`charmsAvailable`, ADR-0062).
 	let {
 		values = $bindable(),
 		tagText = $bindable(''),
 		titleInput = $bindable(),
+		chosenStatus = $bindable(''),
 		errors = {},
 		projects,
 		tags,
 		currentProject = null,
 		busy = false,
 		statusAvailable = false,
+		askStatus = false,
 		subtasksAvailable = false,
 		subtaskStatusAvailable = false,
-		subtaskDefaultStatus = null,
 		colorsAvailable = false,
 		charmsAvailable = false,
 		ticketSubtasks = [],
 		invalidSubtasks = [],
 		oncreatetag,
-		onprojectchosen
+		onprojectchosen,
+		onstatuschosen
 	}: {
 		values: RuleTemplate;
 		/** Text in the tag picker, not yet a tag (unsaved input). */
 		tagText?: string;
 		titleInput?: HTMLInputElement;
+		/** The answer to "Status beim Anlegen" of a new rule (`askStatus`); '' while none is given. */
+		chosenStatus?: TemplateStatus | '';
 		/** Field errors, by the field names of the server. */
 		errors?: Partial<
 			Record<
@@ -86,15 +87,12 @@
 		busy?: boolean;
 		/** The server knows "Status beim Anlegen" (after its migration). */
 		statusAvailable?: boolean;
+		/** A new rule: "Status beim Anlegen" is a required choice without an answer in advance. */
+		askStatus?: boolean;
 		/** The server knows the sub-tasks of the template (after their migration, plan WV-3). */
 		subtasksAvailable?: boolean;
 		/** The hooks take a status per sub-task of the template (after the restart after UT-1). */
 		subtaskStatusAvailable?: boolean;
-		/**
-		 * "Status beim Anlegen" when it is asked apart from these fields ("Neue Regel"); null: the one
-		 * of `values`. Sub-tasks without an own status show and start with it.
-		 */
-		subtaskDefaultStatus?: TemplateStatus | null;
 		/** The server knows the color of the template (after its migration, ADR-0052). */
 		colorsAvailable?: boolean;
 		/** The server knows the charm of the template (after its migration, ADR-0062). */
@@ -107,20 +105,17 @@
 		oncreatetag: (name: string) => Promise<EnsureTagResult>;
 		/** A project was chosen (the owner may clear a refusal that named it). */
 		onprojectchosen?: () => void;
+		/** A status was chosen for a new rule (the owner may clear the error of a missing answer). */
+		onstatuschosen?: () => void;
 	} = $props();
 
 	const uid = $props.id();
 	const ids = {
 		title: `${uid}-title`,
-		titleError: `${uid}-title-error`,
-		priority: `${uid}-priority`,
 		status: `${uid}-status`,
-		statusHint: `${uid}-status-hint`,
+		priority: `${uid}-priority`,
 		project: `${uid}-project`,
-		projectHint: `${uid}-project-hint`,
-		projectError: `${uid}-project-error`,
 		tags: `${uid}-tags`,
-		tagsError: `${uid}-tags-error`,
 		color: `${uid}-color`,
 		colorError: `${uid}-color-error`,
 		charmError: `${uid}-charm-error`,
@@ -128,6 +123,13 @@
 	};
 
 	let tagError = $state<string | null>(null);
+
+	/** "Status beim Anlegen" as shown: the answer of a new rule, else the one of the template. */
+	const shownStatus = $derived(askStatus ? chosenStatus : values.initialStatus);
+	/** The status sub-tasks without an own one show and start with: the answer of a new rule once given. */
+	const subtaskDefault = $derived(
+		askStatus && chosenStatus !== '' ? chosenStatus : values.initialStatus
+	);
 
 	/** The color of the next tickets without an own one: of the project of the template. */
 	const inherited = $derived.by(() => {
@@ -147,6 +149,15 @@
 	);
 	const tagsError = $derived(tagError ?? errors.tags ?? null);
 
+	function chooseStatus(status: TemplateStatus) {
+		if (askStatus) {
+			chosenStatus = status;
+			onstatuschosen?.();
+		} else {
+			values = { ...values, initialStatus: status };
+		}
+	}
+
 	function addTag(tagId: string): boolean {
 		if (!values.tagIds.includes(tagId)) values = { ...values, tagIds: [...values.tagIds, tagId] };
 		tagError = null;
@@ -163,93 +174,66 @@
 	}
 </script>
 
-<div class="field">
-	<label for={ids.title}>Titel</label>
-	<input
-		id={ids.title}
-		type="text"
-		required
-		aria-required="true"
-		autocomplete="off"
-		maxlength={TITLE_MAX_LENGTH}
-		aria-invalid={errors.title ? 'true' : undefined}
-		aria-describedby={errors.title ? ids.titleError : undefined}
-		value={values.title}
-		oninput={(event) => (values = { ...values, title: event.currentTarget.value })}
-		bind:this={titleInput}
-	/>
-	{#if errors.title}
-		<p class="field-error" id={ids.titleError}><ErrorIcon /><span>{errors.title}</span></p>
-	{/if}
-</div>
-
-<div class="row">
-	<div class="field">
-		<label for={ids.priority}>Priorität</label>
-		<PrioritySelect
-			id={ids.priority}
-			value={values.priority}
-			error={errors.priority ?? null}
-			errorId={`${ids.priority}-error`}
-			onchoose={(value) => {
-				if (isPriority(value)) values = { ...values, priority: value };
-			}}
+<Field label="Titel" id={ids.title} error={errors.title ?? ''}>
+	{#snippet control(field)}
+		<input
+			{...field}
+			type="text"
+			required
+			aria-required="true"
+			autocomplete="off"
+			maxlength={TITLE_MAX_LENGTH}
+			value={values.title}
+			oninput={(event) => (values = { ...values, title: event.currentTarget.value })}
+			bind:this={titleInput}
 		/>
-	</div>
+	{/snippet}
+</Field>
 
+<!-- Status before priority, side by side as in "Neues Ticket" (RG-1). -->
+<div class="row">
 	{#if statusAvailable}
-		<div class="field">
-			<label for={ids.status}>Status beim Anlegen</label>
-			<StatusSelect
-				id={ids.status}
-				value={values.initialStatus}
-				statuses={TEMPLATE_STATUSES}
-				describedby={ids.statusHint}
-				error={errors.initial_status ?? null}
-				errorId={`${ids.status}-error`}
+		<InitialStatusField
+			id={ids.status}
+			value={shownStatus}
+			ask={askStatus}
+			error={errors.initial_status ?? null}
+			onchoose={chooseStatus}
+		/>
+	{/if}
+	<Field label="Priorität" id={ids.priority} error={errors.priority ?? ''} width="auto">
+		{#snippet control(field)}
+			<PrioritySelect
+				{field}
+				value={values.priority}
 				onchoose={(value) => {
-					if (isTemplateStatus(value)) values = { ...values, initialStatus: value };
+					if (isPriority(value)) values = { ...values, priority: value };
 				}}
 			/>
-		</div>
-	{/if}
-</div>
-{#if statusAvailable}
-	<p class="hint" id={ids.statusHint}>
-		So startet jedes neue Ticket der Serie, Standard „{STATUS_LABELS.open}“.
-	</p>
-	{#if errors.initial_status}
-		<p class="field-error" id={`${ids.status}-error`}>
-			<ErrorIcon /><span>{errors.initial_status}</span>
-		</p>
-	{/if}
-{/if}
-
-<div class="field">
-	<label for={ids.project}>Projekt</label>
-	<ProjectSelect
-		id={ids.project}
-		value={values.projectId ?? ''}
-		{projects}
-		current={currentProject}
-		error={errors.project ?? null}
-		errorId={ids.projectError}
-		hintId={ids.projectHint}
-		onchoose={(value) => {
-			values = { ...values, projectId: value === '' ? null : value };
-			onprojectchosen?.();
-		}}
-	/>
-	{#if errors.project}
-		<p class="field-error" id={ids.projectError}>
-			<ErrorIcon /><span>{errors.project}</span>
-		</p>
-	{/if}
+		{/snippet}
+	</Field>
 </div>
 
+<Field label="Projekt" id={ids.project} error={errors.project ?? ''}>
+	{#snippet control(field)}
+		<ProjectSelect
+			{field}
+			value={values.projectId ?? ''}
+			{projects}
+			current={currentProject}
+			onchoose={(value) => {
+				values = { ...values, projectId: value === '' ? null : value };
+				onprojectchosen?.();
+			}}
+		/>
+	{/snippet}
+</Field>
+
+<!-- Color and charm are groups of their own (a radio group, a picker), named by a label above them
+     in the look of the label of a Field. -->
 {#if colorsAvailable}
-	<div class="field">
-		<span class="label" id={ids.color}>Farbe</span>
+	<div class="group">
+		<span class="group-label" id={ids.color}>Farbe</span>
 		<ColorChoice
 			value={values.color}
 			inheritLabel={inheritLabel('ticket', inherited)}
@@ -263,8 +247,8 @@
 {/if}
 
 {#if charmsAvailable}
-	<div class="field">
-		<span class="label">Charm</span>
+	<div class="group">
+		<span class="group-label">Charm</span>
 		<CharmPicker
 			value={values.charm}
 			error={errors.charm ?? null}
@@ -275,40 +259,38 @@
 	</div>
 {/if}
 
-<div class="field">
-	<label for={ids.tags}>Tags</label>
-	<TagPicker
-		id={ids.tags}
-		selected={chosenTags}
-		{tags}
-		bind:text={tagText}
-		{busy}
-		error={tagsError}
-		errorId={ids.tagsError}
-		onadd={addTag}
-		onremove={(tagId) => {
-			values = { ...values, tagIds: values.tagIds.filter((entry) => entry !== tagId) };
-			return true;
-		}}
-		oncreate={createTag}
+<Field label="Tags" id={ids.tags} error={tagsError ?? ''}>
+	{#snippet control(field)}
+		<TagPicker
+			{field}
+			selected={chosenTags}
+			{tags}
+			bind:text={tagText}
+			{busy}
+			onadd={addTag}
+			onremove={(tagId) => {
+				values = { ...values, tagIds: values.tagIds.filter((entry) => entry !== tagId) };
+				return true;
+			}}
+			oncreate={createTag}
+		/>
+	{/snippet}
+</Field>
+
+<div class="group">
+	<RichTextEditor
+		label="Beschreibung"
+		maxlength={DESCRIPTION_MAX_LENGTH}
+		bind:value={() => values.description, (description) => (values = { ...values, description })}
+		invalid={errors.description !== undefined}
+		describedby={errors.description ? ids.description : undefined}
 	/>
-	{#if tagsError}
-		<p class="field-error" id={ids.tagsError}><ErrorIcon /><span>{tagsError}</span></p>
+	{#if errors.description}
+		<p class="field-error" id={ids.description}>
+			<ErrorIcon /><span>{errors.description}</span>
+		</p>
 	{/if}
 </div>
-
-<RichTextEditor
-	label="Beschreibung"
-	maxlength={DESCRIPTION_MAX_LENGTH}
-	bind:value={() => values.description, (description) => (values = { ...values, description })}
-	invalid={errors.description !== undefined}
-	describedby={errors.description ? ids.description : undefined}
-/>
-{#if errors.description}
-	<p class="field-error" id={ids.description}>
-		<ErrorIcon /><span>{errors.description}</span>
-	</p>
-{/if}
 
 {#if subtasksAvailable}
 	<TemplateSubtaskList
@@ -318,37 +300,36 @@
 		error={errors.template_subtasks ?? null}
 		{busy}
 		statusAvailable={subtaskStatusAvailable}
-		defaultStatus={subtaskDefaultStatus ?? values.initialStatus}
+		defaultStatus={subtaskDefault}
 	/>
 {/if}
 
 <style>
-	.field {
-		display: grid;
-		gap: 0.375rem;
-		align-content: start;
-		min-width: 0;
-	}
-
+	/* Status and priority side by side; on narrow columns the second wraps below. */
 	.row {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 0.75rem 1rem;
 	}
 
-	label,
-	.label {
+	/* The gaps of a Field (ADR-0060) for the groups without one. */
+	.group {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		gap: 0.25rem;
+		align-content: start;
+		min-width: 0;
+	}
+
+	/* The label of a Field, for a group that is no single control. */
+	.group-label {
 		font-size: var(--font-size-control);
 		font-weight: 500;
 		color: var(--color-text-muted);
 	}
 
-	input[type='text'] {
-		width: 100%;
-	}
-
 	.hint {
-		font-size: var(--font-size-control);
+		font-size: var(--font-size-small);
 		color: var(--color-text-muted);
 	}
 </style>

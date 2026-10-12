@@ -213,11 +213,12 @@
 		<li>
 			Folgetickets bekommen Titel, Beschreibung, Priorität, Projekt, Tags und den „Status beim
 			Anlegen“ aus der Vorlage der Regel. Die Vorlage übernimmt beim Einrichten die Werte des
-			Tickets. Mit welchem Status Folgetickets starten, fragt die App beim Anlegen der Regel
-			(„Folgetickets starten mit“: „Offen“, „Wie dieses Ticket“ oder ein anderer Status), ohne
-			Vorauswahl; ohne Wahl lässt sich die Regel nicht anlegen. Ansehen und ändern kannst du die
-			Vorlage am Ticket unter „Wiederholt sich“ („Künftige Tickets“, „Bearbeiten“) oder im Panel der
-			Regel unter „Wiederholungen“. Kommentare und Quellen gehen nicht mit.
+			Tickets. Mit welchem Status Folgetickets starten, fragt die App beim Anlegen der Regel im Feld
+			„Status beim Anlegen“ (es steht auf „Bitte wählen“, der Status des Tickets trägt den Zusatz
+			„wie dieses Ticket“), ohne Vorauswahl; ohne Wahl lässt sich die Regel nicht anlegen. Ansehen
+			und ändern kannst du die Vorlage am Ticket unter „Wiederholt sich“ („Künftige Tickets“,
+			„Bearbeiten“) oder im Panel der Regel unter „Wiederholungen“. Kommentare und Quellen gehen
+			nicht mit.
 		</li>
 		<li>
 			Unteraufgaben legst du in der Vorlage fest (Liste „Unteraufgaben“, höchstens 20, je mit Titel,

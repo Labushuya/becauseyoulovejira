@@ -527,7 +527,7 @@ describe('inbox panel: a converted calendar series (E5 plan, package 6)', () => 
 		await fireEvent.click(link, { ctrlKey: true });
 		expect(recurrence.takeOffer(TICKET.id)).toBeNull();
 		await fireEvent.click(link);
-		// No answer to "Folgetickets starten mit" yet: the dialog asks (ADR-0022 addendum 9).
+		// No answer to "Status beim Anlegen" yet: the dialog asks (ADR-0022 addenda 9 and 17).
 		expect(recurrence.takeOffer(TICKET.id)).toEqual({
 			ticketId: TICKET.id,
 			values: expect.objectContaining({ freq: 'monthly', lastDay: true, anchor: '2026-10-05' }),

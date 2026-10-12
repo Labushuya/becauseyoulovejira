@@ -280,7 +280,7 @@ export function ruleStateLabel(
 }
 
 /**
- * "Folgetickets starten mit" without an answer (ADR-0022 addendum 9): the form checks it before
+ * "Status beim Anlegen" without an answer (ADR-0022 addendum 9): the form checks it before
  * sending, the hook refuses a create without it with the same text.
  */
 export const INITIAL_STATUS_REQUIRED = 'Bitte wählen, mit welchem Status Folgetickets starten.';
@@ -602,7 +602,7 @@ export interface RecurrenceFormValues {
 
 /**
  * A rule to create for a ticket ("Wiederholen…", the section "Wiederholen" of "Neues Ticket"): the
- * rhythm and the answer to "Folgetickets starten mit" (ADR-0022 addendum 9); null where nothing is
+ * rhythm and the answer to "Status beim Anlegen" (ADR-0022 addendum 9); null where nothing is
  * asked (before the migration of "Status beim Anlegen").
  */
 export interface RepeatRequest {

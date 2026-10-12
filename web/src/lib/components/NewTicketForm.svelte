@@ -57,7 +57,7 @@
 	import ErrorIcon from './ErrorIcon.svelte';
 	import Field from './form/Field.svelte';
 	import InboxEntryChoice from './InboxEntryChoice.svelte';
-	import InitialStatusChoice from './InitialStatusChoice.svelte';
+	import InitialStatusField from './InitialStatusField.svelte';
 	import KindSwitch from './KindSwitch.svelte';
 	import RichTextEditor from './RichTextEditor.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
@@ -108,8 +108,8 @@
 	// Repeating right away (plan OR-4): the folded section "Wiederholen" holds the fields of a rhythm
 	// with the preview, starting on the due date or today; only an open section creates a rule, with the
 	// ticket as its first instance. Folding keeps the values for this form; untouched default values
-	// follow a changed due date. After the migration of "Status beim Anlegen" the open section asks
-	// "Folgetickets starten mit" (ADR-0022 addendum 9): required, nothing chosen in advance. With
+	// follow a changed due date. After the migration of "Status beim Anlegen" the open section asks it
+	// in the select of the template (ADR-0022 addenda 9 and 17): required, nothing chosen in advance. With
 	// sub-tasks it offers to give them to every next ticket of the series as well (plan WV-3). A
 	// calendar series (E5 plan, package 6; ADR-0024 section 1) shows its rhythm with "Als Wiederholung
 	// übernehmen"; that click opens "Weitere Optionen" and the section with the suggested values. A
@@ -162,7 +162,7 @@
 		repeat?: boolean;
 		/** Offer "Jeden Termin einzeln anlegen" in the section (plan OR-5). */
 		eachAvailable?: boolean;
-		/** Ask "Folgetickets starten mit" in the section (RecurrenceStore.statusReady). */
+		/** Ask "Status beim Anlegen" in the section (RecurrenceStore.statusReady). */
 		statusAvailable?: boolean;
 		/** The sub-tasks of the template of a rule are known (plan WV-3, RecurrenceStore.subtasksReady). */
 		subtasksAvailable?: boolean;
@@ -212,7 +212,7 @@
 		oncreatetag?: (name: string) => Promise<EnsureTagResult>;
 		/**
 		 * Creates the ticket; `recurrence` holds the values of the open section "Wiederholen" and the
-		 * answer to "Folgetickets starten mit", `extras` what "Weitere Optionen" adds.
+		 * answer to "Status beim Anlegen", `extras` what "Weitere Optionen" adds.
 		 */
 		oncreate: (
 			draft: TicketDraft,
@@ -333,7 +333,7 @@
 	/** Due date the default values were made for; null once they came from a suggestion. */
 	let defaultsFor: string | null = null;
 	let recurrenceErrors = $state<Partial<Record<RecurrenceFormField, string>>>({});
-	/** Answer to "Folgetickets starten mit"; '' while none is given. */
+	/** Answer to "Status beim Anlegen"; '' while none is given. */
 	let repeatStatus = $state<TemplateStatus | ''>('');
 	let repeatStatusError = $state<string | null>(null);
 	let recurrenceSection = $state<HTMLElement>();
@@ -1087,16 +1087,15 @@
 										: ''}.
 								</p>
 								{#if statusAvailable}
-									<InitialStatusChoice
-										bind:value={
-											() => repeatStatus,
-											(chosen) => {
-												repeatStatus = chosen;
-												repeatStatusError = null;
-											}
-										}
+									<InitialStatusField
+										value={repeatStatus}
+										ask
 										ticketStatus={status}
 										error={repeatStatusError}
+										onchoose={(chosen) => {
+											repeatStatus = chosen;
+											repeatStatusError = null;
+										}}
 									/>
 								{/if}
 								{#if subtasksAvailable && subtasksShown && filledSubtasks.length > 0}

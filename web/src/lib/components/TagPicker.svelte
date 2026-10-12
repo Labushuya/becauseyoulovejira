@@ -15,6 +15,7 @@
 		tagSuggestions
 	} from '$lib/domain/tag';
 	import type { TagRef } from '$lib/domain/ticket';
+	import type { FieldControl } from './form/Field.svelte';
 	import SuggestionList from './SuggestionList.svelte';
 
 	// Tag picker (E3 plan, T-14 and package 8) after the WAI-ARIA pattern "combobox with listbox":
@@ -32,8 +33,11 @@
 	// several tags; each existing tag is reused regardless of case. Backspace in the empty field
 	// removes the last tag and brings its name back as editable text. A polite live region says
 	// what happened.
+	// In a form the input stands in a Field (ADR-0060, RG-1): `field` gives its ID, description and
+	// invalid state, and the field shows label, error and hint; the hidden hint on the keys stays.
 	let {
 		id,
+		field,
 		selected,
 		tags,
 		text = $bindable(''),
@@ -45,8 +49,6 @@
 		onremove,
 		oncreate
 	}: {
-		/** ID of the input, for the label of the owner. */
-		id: string;
 		/** Tags of the ticket, in their order. */
 		selected: readonly TagRef[];
 		/** Every tag that can be chosen (the catalog). */
@@ -55,15 +57,29 @@
 		text?: string;
 		/** The owner saves; the picker takes no action meanwhile. */
 		busy?: boolean;
-		error?: string | null;
-		errorId: string;
-		/** Further description of the input (hint). */
-		describedBy?: string;
 		/** Each resolves to true when done; on false the input keeps its text. */
 		onadd: (tagId: string) => Promise<boolean> | boolean;
 		onremove: (tagId: string) => Promise<boolean> | boolean;
 		oncreate: (name: string) => Promise<boolean> | boolean;
-	} = $props();
+	} & (
+		| {
+				/** In a Field: ID, description and invalid state come from the field. */
+				field: FieldControl;
+				id?: undefined;
+				error?: undefined;
+				errorId?: undefined;
+				describedBy?: undefined;
+		  }
+		| {
+				field?: undefined;
+				/** ID of the input, for the label of the owner. */
+				id: string;
+				error?: string | null;
+				errorId: string;
+				/** Further description of the input (hint). */
+				describedBy?: string;
+		  }
+	) = $props();
 
 	type Option = { kind: 'tag'; tag: TagRef } | { kind: 'create'; name: string };
 
@@ -92,9 +108,16 @@
 	const showList = $derived(expanded && options.length > 0);
 	const activeId = $derived(showList && activeIndex >= 0 ? optionId(activeIndex) : undefined);
 	const described = $derived(
-		[describedBy, keysId, error ? errorId : undefined]
+		(field === undefined
+			? [describedBy, keysId, error ? errorId : undefined]
+			: [field['aria-describedby'], keysId]
+		)
 			.filter((part) => part !== undefined)
 			.join(' ')
+	);
+	const inputId = $derived(field?.id ?? id);
+	const invalid = $derived(
+		field === undefined ? (error ? 'true' : undefined) : field['aria-invalid']
 	);
 	let live = $state('');
 
@@ -304,7 +327,7 @@
 	{/if}
 	<div class="combo">
 		<input
-			{id}
+			id={inputId}
 			bind:this={input}
 			bind:value={text}
 			type="text"
@@ -317,7 +340,7 @@
 			aria-controls={listboxId}
 			aria-activedescendant={activeId}
 			aria-busy={locked ? 'true' : undefined}
-			aria-invalid={error ? 'true' : undefined}
+			aria-invalid={invalid}
 			aria-describedby={described}
 			{oninput}
 			{onkeydown}

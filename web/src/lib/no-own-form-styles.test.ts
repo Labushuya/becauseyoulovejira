@@ -8,6 +8,8 @@
 // style attribute on a control. Exceptions stand in ALLOWED with their reason; the list may only
 // shrink (an entry that no longer matches fails). jsdom lays nothing out, so the look itself is the
 // manual case of the overview page /einstellungen/hilfe/elemente.
+// Since RG-1 the forms of a rule (template, rhythm, assignment, "Status beim Anlegen") lay out their
+// fields with Field and keep their hints in its small size (RULE_FORMS, RULE_PARTS).
 
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
@@ -254,6 +256,51 @@ describe('controls take their look only from base.css (UI-1, ADR-0060)', () => {
 		expect(
 			controlTags('<input style="color: red" /><textarea style:color="red"></textarea>')
 		).toEqual(['<input style="color: red" />', '<textarea style:color="red">']);
+	});
+});
+
+/** The forms of a rule (RG-1): their text fields and selects stand in a Field (ADR-0060). */
+const RULE_FORMS = [
+	'lib/components/RecurrenceTemplateFields.svelte',
+	'lib/components/RecurrenceForm.svelte',
+	'lib/components/RecurrenceAssignment.svelte',
+	'lib/components/InitialStatusField.svelte'
+];
+
+/** The parts of the rule interface with hints of their own: the small size of a Field. */
+const RULE_PARTS = [
+	'lib/components/RecurrenceTemplateFields.svelte',
+	'lib/components/RecurrenceForm.svelte',
+	'lib/components/RecurrenceAssignment.svelte',
+	'lib/components/RecurrencePanel.svelte',
+	'lib/components/RecurrenceDialog.svelte',
+	'lib/components/RecurrenceSummary.svelte',
+	'lib/components/TemplateSubtaskList.svelte'
+];
+
+describe('the forms of a rule lay out their fields with Field (RG-1, ADR-0060)', () => {
+	const sourceOf = (file: string) => readFileSync(join(SRC_DIR, ...file.split('/')), 'utf8');
+
+	it.each(RULE_FORMS)('%s uses Field and lays out no field or label of its own', (file) => {
+		const source = sourceOf(file);
+		expect(source).toMatch(/import Field from '\.\/form\/Field\.svelte';/);
+		expect(markup(source)).toMatch(/<Field\b/);
+		expect(markup(source)).not.toMatch(/\sclass="field[\s"]/);
+		const own = rules(css(source, file))
+			.flatMap(([list]) => splitList(list))
+			.filter((selector) => /^(?:label|\.field)\b/.test(lastCompound(selector)));
+		expect(own).toEqual([]);
+	});
+
+	it.each(RULE_PARTS)('%s writes its hints in the small size of a Field', (file) => {
+		const hints = rules(css(sourceOf(file), file)).filter(([list]) =>
+			splitList(list).some((selector) => /^\.hint\b/.test(lastCompound(selector)))
+		);
+		expect(hints.length, file).toBeGreaterThan(0);
+		for (const [list, body] of hints) {
+			const size = /font-size:\s*([^;]+)/.exec(body)?.[1]?.trim();
+			if (size !== undefined) expect(size, `${file}: ${list}`).toBe('var(--font-size-small)');
+		}
 	});
 });
 

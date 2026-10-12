@@ -210,7 +210,7 @@
 	);
 	/**
 	 * What "Wiederholen…" takes from this ticket, named in the dialog; the status is asked there
-	 * ("Folgetickets starten mit", ADR-0022 addendum 9), so the sentence leaves it out.
+	 * ("Status beim Anlegen", ADR-0022 addendum 9), so the sentence leaves it out.
 	 */
 	const repeatNote = $derived(
 		`Künftige Tickets bekommen die Werte dieses Tickets: ${templateSummary(ticketTemplate(ticket, DEFAULT_TEMPLATE_STATUS), names, false)}. Ändern kannst du sie danach hier unter „Wiederholt sich“.` +
@@ -595,8 +595,9 @@
 		justify-content: flex-end;
 	}
 
+	/* Hints in the size of the hints of a Field (ADR-0060, RG-1). */
 	.hint {
-		font-size: var(--font-size-control);
+		font-size: var(--font-size-small);
 		color: var(--color-text-muted);
 	}
 

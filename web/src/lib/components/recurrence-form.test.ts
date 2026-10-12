@@ -164,6 +164,46 @@ describe('RecurrenceForm', () => {
 		).toBeTruthy();
 		expect(screen.queryByText(/schon überfällig/)).toBeNull();
 	});
+
+	// RG-1 (ADR-0060): the fields of the rhythm stand in a Field like the template, label above,
+	// then error and hint; the weekdays are check boxes like every other choice of several.
+	it('lays out its fields with Field and the weekdays as plain check boxes', () => {
+		render(RecurrenceForm, {
+			props: {
+				values: values({ freq: 'monthly', monthDay: '31' }),
+				today: TODAY,
+				errors: { anchor: 'Bitte ein gültiges Datum.' }
+			}
+		});
+		for (const name of ['Alle', 'Tag im Monat', 'Beginnt am', 'Vorlauf (Tage)']) {
+			const control = screen.getByLabelText(name);
+			const field = control.closest('.field');
+			expect(field, name).not.toBeNull();
+			expect(field?.querySelector(`label[for="${control.id}"]`)?.textContent, name).toBe(name);
+		}
+		// Error first, then the hint, both in the Field of their control.
+		const anchor = screen.getByLabelText('Beginnt am');
+		const anchorField = anchor.closest('.field') as HTMLElement;
+		expect(within(anchorField).getByText('Bitte ein gültiges Datum.')).toBeTruthy();
+		const lead = screen.getByLabelText('Vorlauf (Tage)');
+		const hint = lead.closest('.field')?.querySelector('.hint');
+		expect(hint?.textContent).toContain('So viele Tage vor der Fälligkeit erscheint');
+		expect(lead.getAttribute('aria-describedby')).toBe(hint?.id);
+		const day = screen.getByLabelText('Tag im Monat');
+		expect(document.getElementById(day.getAttribute('aria-describedby') ?? '')?.textContent).toBe(
+			'In kürzeren Monaten am letzten Tag.'
+		);
+	});
+
+	it('shows the weekdays as check boxes with their short name, without boxes of their own', () => {
+		render(RecurrenceForm, { props: { values: values(), today: TODAY } });
+		const days = screen.getByRole('group', { name: 'Wochentage' });
+		const monday = within(days).getByRole<HTMLInputElement>('checkbox', { name: 'Montag' });
+		const label = monday.closest('label') as HTMLElement;
+		expect(label.classList.contains('choice')).toBe(true);
+		expect(label.classList.contains('day')).toBe(false);
+		expect(within(label).getByText('Mo').getAttribute('aria-hidden')).toBe('true');
+	});
 });
 
 // WH-2 (ADR-0022 addendum 14): a series whose first date lies in the past asks where it begins, the

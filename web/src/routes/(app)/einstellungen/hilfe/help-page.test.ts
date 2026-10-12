@@ -631,7 +631,8 @@ describe('help page (EH-9)', () => {
 		for (const phrase of [
 			'Folgetickets bekommen Titel, Beschreibung, Priorität, Projekt, Tags und den „Status beim Anlegen“ aus der Vorlage der Regel.',
 			'Die Vorlage übernimmt beim Einrichten die Werte des Tickets.',
-			'Mit welchem Status Folgetickets starten, fragt die App beim Anlegen der Regel („Folgetickets starten mit“: „Offen“, „Wie dieses Ticket“ oder ein anderer Status), ohne Vorauswahl',
+			// RG-1 (ADR-0022 addendum 17): the same select as when editing, still without an answer.
+			'Mit welchem Status Folgetickets starten, fragt die App beim Anlegen der Regel im Feld „Status beim Anlegen“ (es steht auf „Bitte wählen“, der Status des Tickets trägt den Zusatz „wie dieses Ticket“), ohne Vorauswahl',
 			'am Ticket unter „Wiederholt sich“ („Künftige Tickets“, „Bearbeiten“)',
 			'Ein Hinweis bietet „Auch für künftige Tickets übernehmen“ an',
 			// FL-1 (ADR-0025 addendum 18): the offer waits, also in front of the full view.

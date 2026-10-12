@@ -33,7 +33,7 @@
 	// takes over (the fields of the ticket checked, since ADR-0052 its own color as well, sub-tasks
 	// and comments not; the project with ProjectSelect), the status as a required choice without an
 	// answer in advance (the building
-	// block of "Folgetickets starten mit") and, when the original has sources, whether the duplicate
+	// block InitialStatusChoice) and, when the original has sources, whether the duplicate
 	// gets a copy of its main source and, since QT-1 (ADR-0067), stems from its source tickets as
 	// well. A series never comes along; the dialog says so. In the side
 	// panel a modal M; inside a modal (the full view) the same form stands inline (InlineDialog,

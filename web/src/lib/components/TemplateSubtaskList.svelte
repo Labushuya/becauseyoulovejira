@@ -31,6 +31,9 @@
 	// as well (ADR-0025 addendum 16). `subtasks` is replaced as a whole on every change, so a binding
 	// through getter and setter (a draft in a store) works. "Neues Ticket" (NT-1) uses the same list
 	// for the sub-tasks of the new ticket, with its own hint and the status of the ticket as default.
+	// Since RG-1 every control of a row has a short visible name above it ("Titel", "Status",
+	// "Priorität", in the order of "Neues Ticket"); its accessible name adds the row ("Status der
+	// Unteraufgabe 2"), so a screen reader knows which row a field belongs to.
 	let {
 		subtasks = $bindable(),
 		ticketSubtasks = [],
@@ -195,46 +198,53 @@
 				{@const refused = !invalid && error !== null && errorRow === index}
 				<li class="row">
 					<span class="position" aria-hidden="true">{index + 1}.</span>
-					<label class="visually-hidden" for={titleId(index)}>
-						Titel der Unteraufgabe {index + 1}
-					</label>
-					<input
-						id={titleId(index)}
-						class="title"
-						type="text"
-						required
-						aria-required="true"
-						autocomplete="off"
-						maxlength={TITLE_MAX_LENGTH}
-						data-row-part="title"
-						value={entry.title}
-						aria-invalid={invalid || refused ? 'true' : undefined}
-						aria-describedby={invalid ? rowErrorId(index) : refused ? ids.error : undefined}
-						oninput={(event) => setRow(index, { ...entry, title: event.currentTarget.value })}
-					/>
-					{#if statusAvailable}
-						<label class="visually-hidden" for={statusId(index)}>
-							Status der Unteraufgabe {index + 1}
+					<!-- Each control with its name above it, short and visible; the number of the row
+					     only for screen readers ("Status der Unteraufgabe 2"). -->
+					<div class="cell title">
+						<label class="cell-label" for={titleId(index)}>
+							Titel <span class="visually-hidden">der Unteraufgabe {index + 1}</span>
 						</label>
-						<StatusSelect
-							id={statusId(index)}
-							value={entry.status ?? defaultStatus}
-							statuses={TEMPLATE_STATUSES}
-							errorId={`${statusId(index)}-error`}
-							onchoose={(value) => setStatus(index, entry, value)}
+						<input
+							id={titleId(index)}
+							type="text"
+							required
+							aria-required="true"
+							autocomplete="off"
+							maxlength={TITLE_MAX_LENGTH}
+							data-row-part="title"
+							value={entry.title}
+							aria-invalid={invalid || refused ? 'true' : undefined}
+							aria-describedby={invalid ? rowErrorId(index) : refused ? ids.error : undefined}
+							oninput={(event) => setRow(index, { ...entry, title: event.currentTarget.value })}
 						/>
+					</div>
+					{#if statusAvailable}
+						<div class="cell">
+							<label class="cell-label" for={statusId(index)}>
+								Status <span class="visually-hidden">der Unteraufgabe {index + 1}</span>
+							</label>
+							<StatusSelect
+								id={statusId(index)}
+								value={entry.status ?? defaultStatus}
+								statuses={TEMPLATE_STATUSES}
+								errorId={`${statusId(index)}-error`}
+								onchoose={(value) => setStatus(index, entry, value)}
+							/>
+						</div>
 					{/if}
-					<label class="visually-hidden" for={priorityId(index)}>
-						Priorität der Unteraufgabe {index + 1}
-					</label>
-					<PrioritySelect
-						id={priorityId(index)}
-						value={entry.priority}
-						errorId={`${priorityId(index)}-error`}
-						onchoose={(value) => {
-							if (isPriority(value)) setRow(index, { ...entry, priority: value });
-						}}
-					/>
+					<div class="cell">
+						<label class="cell-label" for={priorityId(index)}>
+							Priorität <span class="visually-hidden">der Unteraufgabe {index + 1}</span>
+						</label>
+						<PrioritySelect
+							id={priorityId(index)}
+							value={entry.priority}
+							errorId={`${priorityId(index)}-error`}
+							onchoose={(value) => {
+								if (isPriority(value)) setRow(index, { ...entry, priority: value });
+							}}
+						/>
+					</div>
 					<span class="moves">
 						<button
 							class="button-icon"
@@ -378,35 +388,66 @@
 		list-style: none;
 	}
 
-	/* Title, priority and the buttons in one row; on narrow columns the buttons wrap below. */
+	/*
+	 * Title, status, priority and the buttons in one row, each control with its short name above it
+	 * (RG-1, ADR-0060: the label above the control); on narrow columns status, priority and the
+	 * buttons wrap below and keep their names. Number and buttons sit on the line of the controls.
+	 */
 	.row {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 0.375rem;
-		align-items: center;
+		gap: 0.375rem 0.5rem;
+		align-items: end;
 		min-width: 0;
 	}
 
 	.position {
+		display: inline-flex;
 		flex: none;
+		align-items: center;
 		min-width: 1.5rem;
+		min-height: var(--control-height-m);
 		font-size: var(--font-size-control);
 		font-variant-numeric: tabular-nums;
 		color: var(--color-text-muted);
 	}
 
-	.title {
-		flex: 1 1 10rem;
+	.cell {
+		display: grid;
+		flex: 0 1 auto;
+		gap: 0.125rem;
 		min-width: 0;
 	}
 
-	.row :global(select) {
-		flex: 0 1 auto;
+	.cell.title {
+		flex: 1 1 10rem;
+	}
+
+	.cell.title input[type='text'] {
+		width: 100%;
+	}
+
+	/* Short names of the controls of a row, in the size of the hints (compact, RG-1). */
+	.cell-label {
+		font-size: var(--font-size-small);
+		font-weight: 500;
+		color: var(--color-text-muted);
 	}
 
 	.moves {
 		display: inline-flex;
 		flex: none;
+	}
+
+	/* The error of a row stands on a line of its own below it. */
+	.row > .field-error {
+		flex-basis: 100%;
+	}
+
+	@media (pointer: coarse) {
+		.position {
+			min-height: var(--control-height-touch);
+		}
 	}
 
 	.moves svg {

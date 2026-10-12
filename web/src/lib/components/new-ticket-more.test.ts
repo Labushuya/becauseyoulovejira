@@ -305,7 +305,9 @@ describe('main fields and "Weitere Optionen" (NT-1)', () => {
 			)
 		);
 		await fireEvent.click(screen.getByRole('button', { name: 'Wiederholen' }));
-		await fireEvent.click(screen.getByRole('radio', { name: 'Offen (wie dieses Ticket)' }));
+		await fireEvent.change(screen.getByLabelText('Status beim Anlegen'), {
+			target: { value: 'open' }
+		});
 		await fireEvent.click(
 			screen.getByRole('checkbox', {
 				name: 'Unteraufgaben auch jedem künftigen Ticket der Serie geben'
@@ -551,7 +553,9 @@ describe('refusals of the server at their field', () => {
 		await fireEvent.input(titleField(), { target: { value: 'T' } });
 		await openMore();
 		await fireEvent.click(screen.getByRole('button', { name: 'Wiederholen' }));
-		await fireEvent.click(screen.getByRole('radio', { name: 'Offen (wie dieses Ticket)' }));
+		await fireEvent.change(screen.getByLabelText('Status beim Anlegen'), {
+			target: { value: 'open' }
+		});
 		await fireEvent.click(createButton());
 		const section = screen.getByRole('region', { name: 'Wiederholen' });
 		await vi.waitFor(() => expect(within(section).getByText('Höchstens 365.')).toBeTruthy());
@@ -676,7 +680,9 @@ describe('the route: one request for everything', () => {
 			target: { value: 'Tonne' }
 		});
 		await fireEvent.click(screen.getByRole('button', { name: 'Wiederholen' }));
-		await fireEvent.click(screen.getByRole('radio', { name: 'Offen (wie dieses Ticket)' }));
+		await fireEvent.change(screen.getByLabelText('Status beim Anlegen'), {
+			target: { value: 'open' }
+		});
 		await fireEvent.click(createButton());
 
 		await vi.waitFor(() => expect(mocks.detail.createWithOptions).toHaveBeenCalledOnce());
