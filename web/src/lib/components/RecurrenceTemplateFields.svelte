@@ -5,6 +5,7 @@
 		TEMPLATE_STATUSES,
 		isTemplateStatus,
 		type RuleTemplate,
+		type TemplateStatus,
 		type TicketSubtask
 	} from '$lib/domain/series-template';
 	import { isPriority } from '$lib/domain/status';
@@ -34,7 +35,9 @@
 	// after theirs (`subtasksAvailable`, ADR-0022 addendum 10); at a ticket with sub-tasks the list
 	// can take them over (`ticketSubtasks`). The color of the next tickets after the project, "Wie
 	// Projekt (Blau)" first, after its migration (`colorsAvailable`, ADR-0052); the charm of the next
-	// tickets after it, after its migration (`charmsAvailable`, ADR-0062).
+	// tickets after it, after its migration (`charmsAvailable`, ADR-0062). Since UT-1 each sub-task
+	// of the list offers its status (`subtaskStatusAvailable`), without an own choice the "Status beim
+	// Anlegen" of the template.
 	let {
 		values = $bindable(),
 		tagText = $bindable(''),
@@ -46,6 +49,8 @@
 		busy = false,
 		statusAvailable = false,
 		subtasksAvailable = false,
+		subtaskStatusAvailable = false,
+		subtaskDefaultStatus = null,
 		colorsAvailable = false,
 		charmsAvailable = false,
 		ticketSubtasks = [],
@@ -83,6 +88,13 @@
 		statusAvailable?: boolean;
 		/** The server knows the sub-tasks of the template (after their migration, plan WV-3). */
 		subtasksAvailable?: boolean;
+		/** The hooks take a status per sub-task of the template (after the restart after UT-1). */
+		subtaskStatusAvailable?: boolean;
+		/**
+		 * "Status beim Anlegen" when it is asked apart from these fields ("Neue Regel"); null: the one
+		 * of `values`. Sub-tasks without an own status show and start with it.
+		 */
+		subtaskDefaultStatus?: TemplateStatus | null;
 		/** The server knows the color of the template (after its migration, ADR-0052). */
 		colorsAvailable?: boolean;
 		/** The server knows the charm of the template (after its migration, ADR-0062). */
@@ -305,6 +317,8 @@
 		invalidRows={invalidSubtasks}
 		error={errors.template_subtasks ?? null}
 		{busy}
+		statusAvailable={subtaskStatusAvailable}
+		defaultStatus={subtaskDefaultStatus ?? values.initialStatus}
 	/>
 {/if}
 

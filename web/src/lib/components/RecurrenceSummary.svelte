@@ -27,6 +27,12 @@
 		type TemplateStatus,
 		type TicketSubtask
 	} from '$lib/domain/series-template';
+	import {
+		SERIES_ORIGIN_TEXTS,
+		parentSeriesText,
+		subtaskSeriesOrigin,
+		type ParentSeries
+	} from '$lib/domain/subtasks';
 	import type { HistoryEntry, ProjectRef, TagRef, Ticket } from '$lib/domain/ticket';
 	import type { EditResult } from '$lib/stores/catalog-editor';
 	import type { EnsureTagResult } from '$lib/stores/catalog.svelte';
@@ -65,6 +71,10 @@
 	// ADR-0025 section 3). Its draft lives in the store, so panel and full view share it and leaving
 	// the ticket asks first; Escape or "Abbrechen" drop it. Since WV-3 the template has a list of
 	// sub-tasks, which "Unteraufgaben dieses Tickets übernehmen" fills from the sub-tasks here.
+	// Since UT-1 (ADR-0033 addendum UT-1) a sub-task whose parent belongs to a series says so first:
+	// "Teil von HAUS-7 · wiederholt sich jeden Montag", with "aus der Vorlage – wird mit jedem Termin
+	// neu angelegt" or "nur für diesen Termin" where its history and the template tell it for sure
+	// (subtaskSeriesOrigin). "Wiederholen…" stays for it as for every ticket without a series.
 	let {
 		ticket,
 		store,
@@ -73,6 +83,7 @@
 		history = [],
 		openTickets = [],
 		subtasks = [],
+		parentSeries = null,
 		onticket
 	}: {
 		ticket: Ticket;
@@ -89,12 +100,39 @@
 		history?: readonly HistoryEntry[];
 		/** Sub-tasks of the ticket, for "Unteraufgaben dieses Tickets übernehmen" (plan WV-3). */
 		subtasks?: readonly TicketSubtask[];
+		/** The parent of a sub-task when it belongs to a series (UT-1), else null. */
+		parentSeries?: ParentSeries | null;
 		/** The ticket after joining or leaving its series, for panel and list. */
 		onticket: (ticket: Ticket) => void;
 	} = $props();
 
 	const uid = $props.id();
 	const rule = $derived(store.ruleById(ticket.recurrenceId));
+
+	// The series of the parent of a sub-task (UT-1).
+	const parentRule = $derived(
+		parentSeries === null ? null : store.ruleById(parentSeries.recurrenceId)
+	);
+	const parentLine = $derived(
+		parentSeries === null
+			? null
+			: parentSeriesText(parentSeries, parentRule === null ? '' : ruleText(parentRule))
+	);
+	const origin = $derived(
+		parentSeries === null
+			? null
+			: subtaskSeriesOrigin({
+					title: ticket.title,
+					created:
+						history.find((entry) => entry.ticket === ticket.id && entry.field === 'created') ??
+						null,
+					ruleId: parentSeries.recurrenceId,
+					templateTitles:
+						parentRule === null
+							? null
+							: (parentRule.templateSubtasks ?? []).map((entry) => entry.title)
+				})
+	);
 	const text = $derived(rule === null ? '' : ruleText(rule));
 	const skipped = $derived.by(() => {
 		const entry = history.find((item) => item.ticket === ticket.id && item.field === SKIPPED_FIELD);
@@ -285,6 +323,15 @@
 
 <section class="recurrence" aria-labelledby={`${uid}-title`} data-ticket-option="recurrence">
 	<h3 id={`${uid}-title`} class="visually-hidden">Wiederholung</h3>
+	{#if parentLine !== null}
+		<p class="line parent-series">
+			<span>{parentLine}</span>
+			{#if origin !== null}
+				<span aria-hidden="true">·</span>
+				<span>{SERIES_ORIGIN_TEXTS[origin]}</span>
+			{/if}
+		</p>
+	{/if}
 	{#if ticket.recurring}
 		<p class="line">
 			<span>Wiederholt sich{text === '' ? '' : `: ${text}`}</span>
@@ -369,6 +416,7 @@
 							busy={templateBusy}
 							statusAvailable={store.statusReady}
 							subtasksAvailable={store.subtasksReady}
+							subtaskStatusAvailable={store.subtaskStatusReady}
 							colorsAvailable={catalog.colorsReady ?? false}
 							charmsAvailable={store.charmsReady}
 							ticketSubtasks={subtasks}

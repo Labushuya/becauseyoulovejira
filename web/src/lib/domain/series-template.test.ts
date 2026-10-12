@@ -15,6 +15,7 @@ import {
 	subtaskCountText,
 	subtaskOffer,
 	subtaskOfferDescription,
+	subtaskStatusOf,
 	subtasksOfTicket,
 	subtasksWithoutTitle,
 	takeSubtasks,
@@ -315,6 +316,33 @@ describe('the sub-tasks of a template', () => {
 		expect(subtasksWithoutTitle([entry('A'), entry(' '), entry(''), entry('B')])).toEqual([1, 2]);
 		expect(sameSubtasks([entry('A')], [entry('A')])).toBe(true);
 		expect(sameSubtasks([entry('A')], [entry('A', 'low')])).toBe(false);
+	});
+
+	it('keeps the status of an entry through reading, copying, moving and taking over (UT-1)', () => {
+		const waiting = { ...entry('A'), status: 'waiting' as const };
+		expect(
+			templateSubtasksOf([
+				{ title: 'A', status: 'waiting' },
+				{ title: 'B', status: 'done' }
+			])
+		).toEqual([waiting, entry('B')]);
+		expect(moveSubtask([entry('B'), waiting], 1, 0)).toEqual([waiting, entry('B')]);
+		expect(trimmedSubtasks([{ ...waiting, title: ' A ' }])).toEqual([waiting]);
+		expect(takeSubtasks([waiting], [entry('C')], false).subtasks).toEqual([waiting, entry('C')]);
+		// A changed status is a change of the list: "Vorlage speichern" sends it.
+		expect(sameSubtasks([waiting], [entry('A')])).toBe(false);
+		const template = templateOf(rule({ templateSubtasks: [entry('A')] }));
+		expect(templateChanges(template, { ...template, subtasks: [waiting] })).toEqual({
+			template_subtasks: [waiting]
+		});
+		expect(templateBody({ ...template, subtasks: [waiting] }).template_subtasks).toEqual([waiting]);
+	});
+
+	it('starts a sub-task with its own status, else the one of its parent, "Offen" for a done one (UT-1)', () => {
+		expect(subtaskStatusOf('backlog', 'waiting')).toBe('backlog');
+		expect(subtaskStatusOf(undefined, 'waiting')).toBe('waiting');
+		expect(subtaskStatusOf(undefined, 'done')).toBe('open');
+		expect(subtaskStatusOf('done', 'in_progress')).toBe('in_progress');
 	});
 
 	it('takes the sub-tasks of a ticket in the order they were made, open and done ones', () => {

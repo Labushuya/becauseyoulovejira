@@ -176,6 +176,7 @@
 		pinAvailable={(support?.pin ?? false) && (pins?.available ?? false)}
 		dayPlanAvailable={(support?.dayPlan ?? false) && dayPlans !== null}
 		ticketSourcesAvailable={support?.ticketSources ?? false}
+		subtaskStatusAvailable={support?.subtaskStatus ?? false}
 		{candidates}
 		today={tickets.today}
 		oncreatetag={(name) => catalog.ensureTag(name)}

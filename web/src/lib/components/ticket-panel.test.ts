@@ -1427,6 +1427,56 @@ describe('ticket route: sub-tasks (ADR-0033)', () => {
 		await tick();
 		expect(within(dialog).getByRole('region', { name: 'Unteraufgaben' })).toBeTruthy();
 	});
+
+	// UT-1: a sub-task of a ticket of a series names the series in panel and full view, also with
+	// the parent known only from the expanded relation (a done parent is not among the open tickets).
+	it('names the series of the parent in the panel and in the full view (UT-1)', async () => {
+		const rules = getRecurrenceStore();
+		const ruleId = 'rule00000000077';
+		rules.upsert({
+			id: ruleId,
+			title: 'Wochenputz',
+			description: '',
+			projectId: null,
+			tagIds: [],
+			priority: 'medium',
+			mode: 'calendar',
+			freq: 'weekly',
+			interval: 1,
+			weekdays: ['MO'],
+			monthDay: null,
+			anchor: '2026-09-07',
+			leadDays: 3,
+			nextDue: '2026-09-28',
+			lastGeneratedAt: null,
+			active: true,
+			lastHint: '',
+			created: '2026-09-01 10:00:00.000Z',
+			updated: '2026-09-01 10:00:00.000Z'
+		});
+		const inSeries = { ...PARENT, recurrenceId: ruleId };
+		const context = createStore(ticket({ parentId: PARENT.id, parentRef: inSeries }));
+		mocks.detail = context.store;
+		mocks.catalog = catalogOf();
+		mocks.activity = activityStore();
+		renderTicketRoute();
+		await vi.waitFor(() => expect(context.store.state).toBe('ready'));
+		expect(screen.getByText('Teil von HAUS-12 · wiederholt sich jeden Montag')).toBeTruthy();
+		// "Wiederholen…" stays for the sub-task itself.
+		expect(screen.getByRole('button', { name: 'Wiederholen…' })).toBeTruthy();
+		document.body.innerHTML = '';
+
+		const full = createStore(ticket({ parentId: PARENT.id, parentRef: inSeries }));
+		mocks.detail = full.store;
+		mocks.page.route = { id: FULL_ROUTE };
+		render(FullViewRouteHarness);
+		await vi.waitFor(() => expect(full.store.state).toBe('ready'));
+		const dialog = await screen.findByRole('dialog');
+		expect(
+			within(dialog).getByText('Teil von HAUS-12 · wiederholt sich jeden Montag')
+		).toBeTruthy();
+		rules.remove(ruleId);
+	});
 });
 
 describe('ticket route: recurrence (E5 plan, package 4)', () => {

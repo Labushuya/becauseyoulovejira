@@ -23,6 +23,7 @@ import {
 	DEFAULT_TEMPLATE_STATUS,
 	TEMPLATE_STATUSES,
 	TEMPLATE_SUBTASKS_MAX,
+	subtaskStatusOf,
 	templateStatusOf,
 	templateSubtasksOf
 } from '../../web/src/lib/domain/series-template.ts';
@@ -160,6 +161,22 @@ describe('recurrence: web app against the hooks', () => {
 		// What the hook stores, the SPA reads unchanged.
 		const stored = hookRules.templateSubtasksCheck([{ title: ' A ', priority: 'high' }, { title: 'B' }]).value;
 		expect(templateSubtasksOf(stored)).toEqual(stored);
+	});
+
+	it('reads the status of an entry like the hook stores it and starts a sub-task the same way (UT-1)', () => {
+		const stored = hookRules.templateSubtasksCheck([
+			{ title: 'A', status: 'waiting' },
+			{ title: 'B', priority: 'low', status: '' },
+			{ title: 'C', status: 'in_progress' }
+		]).value;
+		expect(templateSubtasksOf(stored)).toEqual(stored);
+		// A stored value the hook would refuse is no status in the SPA either.
+		expect(templateSubtasksOf([{ title: 'D', status: 'done' }])).toEqual([{ title: 'D', priority: 'medium' }]);
+		for (const own of [undefined, '', 'backlog', 'open', 'in_progress', 'waiting', 'done', 'x']) {
+			for (const parent of ['', 'backlog', 'open', 'in_progress', 'waiting', 'done', 'x']) {
+				expect(subtaskStatusOf(own, parent), `${own} ${parent}`).toBe(hookRules.subtaskStatusOf(own, parent));
+			}
+		}
 	});
 
 	it('offers the statuses for "Status beim Anlegen" the hook accepts, "Offen" by default (plan WV)', () => {

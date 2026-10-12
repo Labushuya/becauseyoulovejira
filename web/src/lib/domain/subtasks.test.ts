@@ -16,13 +16,17 @@ import {
 	openChildrenMessage,
 	openChildrenQuestion,
 	parentOf,
+	parentSeriesOf,
+	parentSeriesText,
 	progressLabel,
 	progressPercent,
 	progressText,
+	SERIES_ORIGIN_TEXTS,
 	UNKNOWN_PARENT_KEY,
 	subtaskCountText,
 	subtaskOfText,
-	subtaskProgress
+	subtaskProgress,
+	subtaskSeriesOrigin
 } from './subtasks';
 
 describe('texts of the sub-tasks', () => {
@@ -211,5 +215,82 @@ describe('text of the path for screen readers (TP-2)', () => {
 		expect(subtaskOfText(unknown!, true)).toBe('Unteraufgabe von …:');
 		expect(isKnownParent(unknown!)).toBe(false);
 		expect(isKnownParent(PARENT)).toBe(true);
+	});
+});
+
+describe('a sub-task of a ticket of a series (UT-1)', () => {
+	const RULE = 'rule00000000001';
+	const BY_RULE = { user: '', oldValue: RULE };
+	const BY_PERSON = { user: 'user00000000001', oldValue: '' };
+
+	it('finds the series of the parent in the list, else in the expanded parent (also a done one)', () => {
+		const sub = {
+			parentId: 'p1',
+			parentRef: { id: 'p1', key: 'HAUS-7', title: 'Wochenputz', recurrenceId: RULE }
+		};
+		expect(parentSeriesOf(sub, () => ({ key: 'HAUS-8', recurrenceId: 'rule2' }))).toEqual({
+			key: 'HAUS-8',
+			recurrenceId: 'rule2'
+		});
+		expect(parentSeriesOf(sub, () => null)).toEqual({ key: 'HAUS-7', recurrenceId: RULE });
+		// No series, no parent, or a parent without anything known: null.
+		expect(parentSeriesOf(sub, () => ({ key: 'HAUS-7', recurrenceId: null }))).toBeNull();
+		expect(parentSeriesOf({ parentId: null, parentRef: null }, () => null)).toBeNull();
+		expect(parentSeriesOf({ parentId: 'p1', parentRef: null }, () => null)).toBeNull();
+		expect(
+			parentSeriesOf(
+				{ parentId: 'p1', parentRef: { id: 'p1', key: 'HAUS-7', title: '' } },
+				() => null
+			)
+		).toBeNull();
+	});
+
+	it('says which series, with the rhythm when it is known', () => {
+		expect(parentSeriesText({ key: 'HAUS-7' }, 'jeden Montag')).toBe(
+			'Teil von HAUS-7 · wiederholt sich jeden Montag'
+		);
+		expect(parentSeriesText({ key: 'HAUS-7' }, '')).toBe('Teil von HAUS-7 · wiederholt sich');
+		expect(SERIES_ORIGIN_TEXTS).toEqual({
+			template: 'aus der Vorlage – wird mit jedem Termin neu angelegt',
+			single: 'nur für diesen Termin'
+		});
+	});
+
+	it('knows a copy of the template only when the rule made it and the template still has its title', () => {
+		const origin = (
+			created: { user: string; oldValue: string } | null,
+			titles: string[] | null,
+			title = 'Fenster putzen'
+		) => subtaskSeriesOrigin({ title, created, ruleId: RULE, templateTitles: titles });
+		expect(origin(BY_RULE, ['Bad', ' fenster PUTZEN '])).toBe('template');
+		// The template changed since, another rule made it, unknown history or rule: nothing for sure.
+		expect(origin(BY_RULE, ['Bad'])).toBeNull();
+		expect(origin({ user: '', oldValue: 'rule2' }, ['Fenster putzen'])).toBeNull();
+		expect(origin(null, ['Fenster putzen'])).toBeNull();
+		expect(origin(BY_RULE, null)).toBeNull();
+	});
+
+	it('knows a sub-task of this date only when a person added it and the template has no such entry', () => {
+		const origin = (titles: string[] | null) =>
+			subtaskSeriesOrigin({
+				title: 'Fenster putzen',
+				created: BY_PERSON,
+				ruleId: RULE,
+				templateTitles: titles
+			});
+		expect(origin([])).toBe('single');
+		expect(origin(['Bad'])).toBe('single');
+		// "Neues Ticket" with "Unteraufgaben auch jedem künftigen Ticket der Serie geben": both at once.
+		expect(origin(['Fenster putzen'])).toBeNull();
+		expect(origin(null)).toBeNull();
+		// The superuser (no user, no rule): nothing for sure.
+		expect(
+			subtaskSeriesOrigin({
+				title: 'X',
+				created: { user: '', oldValue: '' },
+				ruleId: RULE,
+				templateTitles: []
+			})
+		).toBeNull();
 	});
 });

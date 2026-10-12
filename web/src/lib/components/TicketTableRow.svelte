@@ -34,14 +34,14 @@
 	import { goto } from '$app/navigation';
 	import type { ResolvedPathname } from '$app/types';
 	import type { CalendarDate } from '$lib/domain/berlin-date';
-	import { projectColorOf, ticketColorOf, type ShownColor } from '$lib/domain/colors';
+	import { projectColorOf, ticketColorOf } from '$lib/domain/colors';
 	import { berlinDateOf, formatBerlinDateTime, formatCalendarDate } from '$lib/domain/format';
 	import { projectChoiceLabel, projectPath } from '$lib/domain/project-tree';
 	import { SOURCE_FAMILY_LABELS, sourceFamily } from '$lib/domain/source';
 	import { progressLabel, type SubtaskProgress } from '$lib/domain/subtasks';
 	import type { ParentRef, ProjectRef, TagRef, TicketSummary } from '$lib/domain/ticket';
-	import { PRIORITY_LABELS, STATUS_LABELS } from '$lib/domain/labels';
-	import { PRIORITIES, STATUSES } from '$lib/domain/status';
+	import { PRIORITY_LABELS } from '$lib/domain/labels';
+	import { PRIORITIES } from '$lib/domain/status';
 	import { NOBODY_LABEL, assigneeName } from '$lib/domain/assignee';
 	import type { AssigneeSource } from '$lib/stores/assignees.svelte';
 	import AssigneeBadge from './AssigneeBadge.svelte';
@@ -57,6 +57,8 @@
 	import TagPicker from './TagPicker.svelte';
 	import DueEditor from './table/DueEditor.svelte';
 	import EditableCell from './table/EditableCell.svelte';
+	import MenuChoice from './table/MenuChoice.svelte';
+	import StatusMenu from './table/StatusMenu.svelte';
 	import type { RowEdit } from './table/row-edit';
 
 	// One row of the ticket table (E3 plan, T-4): key, priority, status, title with the symbol of
@@ -255,29 +257,6 @@
 	}
 </script>
 
-<!-- One choice of a cell menu (plan BI-3): the current value is checked, by mark and weight. A
-     project shows its color as a dot (ADR-0052); its name is the text of the choice. -->
-{#snippet menuChoice(
-	checked: boolean,
-	text: string,
-	onchoose: () => void,
-	color: ShownColor | null = null
-)}
-	<button
-		class="item"
-		class:checked
-		type="button"
-		role="menuitemradio"
-		aria-checked={checked}
-		tabindex="-1"
-		onclick={onchoose}
-	>
-		<span class="mark" aria-hidden="true">{checked ? '✓' : ''}</span>{#if color}<span
-				class="choice-color"><ColorMark shown={color} named={false} /></span
-			>{/if}{text}
-	</button>
-{/snippet}
-
 {#snippet projectValue()}
 	{#if project}
 		<!-- A sub project shows its path "Haus › Garten" (ADR-0034); the title adds the code. -->
@@ -360,9 +339,11 @@
 					{#snippet value()}<PriorityIcon priority={ticket.priority} />{/snippet}
 					{#snippet editor({ close })}
 						{#each PRIORITIES as value (value)}
-							{@render menuChoice(value === ticket.priority, PRIORITY_LABELS[value], () =>
-								choose(close, { priority: value })
-							)}
+							<MenuChoice
+								checked={value === ticket.priority}
+								text={PRIORITY_LABELS[value]}
+								onchoose={() => choose(close, { priority: value })}
+							/>
 						{/each}
 					{/snippet}
 				</EditableCell>
@@ -374,21 +355,12 @@
 	{#if shows('status')}
 		<td class="status" class:editable={edit} data-col="status">
 			{#if edit}
-				<EditableCell
-					kind="menu"
-					label={`Status von ${ticket.key}`}
-					buttonLabel={`Status von ${ticket.key}: ${STATUS_LABELS[ticket.status]}, ändern`}
+				<StatusMenu
+					ticketKey={ticket.key}
+					status={ticket.status}
 					busy={edit.busy}
-				>
-					{#snippet value()}<StatusPill status={ticket.status} />{/snippet}
-					{#snippet editor({ close })}
-						{#each STATUSES as value (value)}
-							{@render menuChoice(value === ticket.status, STATUS_LABELS[value], () =>
-								choose(close, { status: value })
-							)}
-						{/each}
-					{/snippet}
-				</EditableCell>
+					onchoose={(value) => void edit?.save({ status: value })}
+				/>
 			{:else}
 				<StatusPill status={ticket.status} />
 			{/if}
@@ -410,15 +382,17 @@
 							context={assignees.context}
 						/>{/snippet}
 					{#snippet editor({ close })}
-						{@render menuChoice(!ticket.assignee, NOBODY_LABEL, () =>
-							choose(close, { assignee: null })
-						)}
+						<MenuChoice
+							checked={!ticket.assignee}
+							text={NOBODY_LABEL}
+							onchoose={() => choose(close, { assignee: null })}
+						/>
 						{#each assignees.members as member (member.id)}
-							{@render menuChoice(
-								member.id === ticket.assignee,
-								member.self ? `${member.name} (ich)` : member.name,
-								() => choose(close, { assignee: member.id })
-							)}
+							<MenuChoice
+								checked={member.id === ticket.assignee}
+								text={member.self ? `${member.name} (ich)` : member.name}
+								onchoose={() => choose(close, { assignee: member.id })}
+							/>
 						{/each}
 					{/snippet}
 				</EditableCell>
@@ -518,16 +492,18 @@
 				>
 					{#snippet value()}{@render projectValue()}{/snippet}
 					{#snippet editor({ close })}
-						{@render menuChoice(ticket.projectId === null, 'Kein Projekt', () =>
-							choose(close, { project: null })
-						)}
+						<MenuChoice
+							checked={ticket.projectId === null}
+							text="Kein Projekt"
+							onchoose={() => choose(close, { project: null })}
+						/>
 						{#each edit.projects as choice (choice.id)}
-							{@render menuChoice(
-								choice.id === ticket.projectId,
-								projectChoiceLabel(choice),
-								() => choose(close, { project: choice.id }),
-								projectColorOf(choice)
-							)}
+							<MenuChoice
+								checked={choice.id === ticket.projectId}
+								text={projectChoiceLabel(choice)}
+								onchoose={() => choose(close, { project: choice.id })}
+								color={projectColorOf(choice)}
+							/>
 						{/each}
 					{/snippet}
 				</EditableCell>
@@ -656,19 +632,6 @@
 		font-size: var(--font-size-control);
 		font-weight: 500;
 		color: var(--color-text-muted);
-	}
-
-	.mark {
-		display: inline-block;
-		width: 1.25em;
-	}
-
-	.choice-color {
-		margin-right: 0.375rem;
-	}
-
-	.item.checked {
-		font-weight: 600;
 	}
 
 	/* The selection (plan BI-2): the label fills the cell, so a click beside the box chooses too. */

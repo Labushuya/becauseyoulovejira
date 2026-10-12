@@ -33,28 +33,52 @@ export function templateStatusOf(value: unknown): TemplateStatus {
 
 /**
  * One sub-task of the template (plan WV-3, ADR-0022 addendum 10): every next ticket of the series
- * gets it as a new, open sub-task with this title and priority.
+ * gets it as a new sub-task with this title and priority. Since UT-1 an entry may name the status it
+ * starts with; without one it starts with the "Status beim Anlegen" of the template (subtaskStatusOf).
+ * "Neues Ticket" uses the same entries for the sub-tasks of the new ticket, whose status then falls
+ * back to the one of the ticket.
  */
 export interface TemplateSubtask {
 	title: string;
 	priority: Priority;
+	/** Status the sub-task starts with (never "done"); left out to follow its ticket (UT-1). */
+	status?: TemplateStatus;
 }
 
 /** At most so many sub-tasks per template; the same limit as TEMPLATE_SUBTASKS_MAX of the hook. */
 export const TEMPLATE_SUBTASKS_MAX = 20;
 
 /**
+ * The status a new sub-task starts with (UT-1), the same as subtaskStatusOf of the hook: its own when
+ * it names one, else the status of its parent, "Offen" for a done one. In a template the parent is
+ * the next ticket, which starts with the "Status beim Anlegen" of the template.
+ */
+export function subtaskStatusOf(status: unknown, parentStatus: unknown): TemplateStatus {
+	return isTemplateStatus(status) ? status : templateStatusOf(parentStatus);
+}
+
+/**
  * The sub-tasks of a stored template (`template_subtasks`): entries with a title, the priority
- * "Mittel" when it is missing; anything else (no list, broken entries) is left out. [] before the
- * migration of the field.
+ * "Mittel" when it is missing and since UT-1 the status when the entry names one of TEMPLATE_STATUSES;
+ * anything else (no list, broken entries) is left out. [] before the migration of the field.
  */
 export function templateSubtasksOf(value: unknown): TemplateSubtask[] {
 	if (!Array.isArray(value)) return [];
 	return value.flatMap((entry: unknown) => {
 		if (typeof entry !== 'object' || entry === null) return [];
-		const { title, priority } = entry as { title?: unknown; priority?: unknown };
+		const { title, priority, status } = entry as {
+			title?: unknown;
+			priority?: unknown;
+			status?: unknown;
+		};
 		if (typeof title !== 'string' || title.trim() === '') return [];
-		return [{ title, priority: isPriority(priority) ? priority : DEFAULT_PRIORITY }];
+		return [
+			{
+				title,
+				priority: isPriority(priority) ? priority : DEFAULT_PRIORITY,
+				...(isTemplateStatus(status) && { status })
+			}
+		];
 	});
 }
 
@@ -92,8 +116,13 @@ export function templateOf(
 	};
 }
 
+/** A copy of one entry; a status only when it has one (UT-1). */
+function copySubtask({ title, priority, status }: TemplateSubtask): TemplateSubtask {
+	return status === undefined ? { title, priority } : { title, priority, status };
+}
+
 function copySubtasks(subtasks: readonly TemplateSubtask[]): TemplateSubtask[] {
-	return subtasks.map(({ title, priority }) => ({ title, priority }));
+	return subtasks.map(copySubtask);
 }
 
 /**
@@ -202,7 +231,7 @@ function sameList(a: readonly string[], b: readonly string[]): boolean {
 	return a.length === b.length && a.every((value, index) => value === b[index]);
 }
 
-/** Whether two lists of sub-tasks are the same, in the same order. */
+/** Whether two lists of sub-tasks are the same, in the same order (with their statuses, UT-1). */
 export function sameSubtasks(
 	a: readonly TemplateSubtask[],
 	b: readonly TemplateSubtask[]
@@ -210,7 +239,10 @@ export function sameSubtasks(
 	return (
 		a.length === b.length &&
 		a.every(
-			(entry, index) => entry.title === b[index]?.title && entry.priority === b[index]?.priority
+			(entry, index) =>
+				entry.title === b[index]?.title &&
+				entry.priority === b[index]?.priority &&
+				entry.status === b[index]?.status
 		)
 	);
 }
@@ -239,7 +271,7 @@ export function templateChanges(before: RuleTemplate, after: RuleTemplate): Temp
 
 /** The list with its titles trimmed, as it is saved (the hook trims as well). */
 export function trimmedSubtasks(subtasks: readonly TemplateSubtask[]): TemplateSubtask[] {
-	return subtasks.map(({ title, priority }) => ({ title: title.trim(), priority }));
+	return subtasks.map((entry) => copySubtask({ ...entry, title: entry.title.trim() }));
 }
 
 /** Indexes of entries without a title: the form refuses them before sending. */
@@ -265,7 +297,8 @@ export type TicketSubtask = Pick<TicketSummary, 'id' | 'title' | 'priority' | 'c
 
 /**
  * The sub-tasks of a ticket as entries of the template, in the order they were made (open and
- * done ones: the template is the checklist of every next ticket).
+ * done ones: the template is the checklist of every next ticket). Without their status: how far
+ * they got belongs to this ticket, so they start with the "Status beim Anlegen" (UT-1).
  */
 export function subtasksOfTicket(children: readonly TicketSubtask[]): TemplateSubtask[] {
 	return [...children]

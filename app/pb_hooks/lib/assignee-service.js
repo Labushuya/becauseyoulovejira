@@ -30,11 +30,14 @@ var HISTORY_FIELD = 'assignee';
 // to the after-success hook; CLEANUP_KEY marks the saves of this module that take a person out of a
 // ticket (the ticket hooks then only call e.next(), this module writes the history itself);
 // NEXT_SENT_KEY marks a request to a rule that names the pointer `assignee_next`; ACTOR_KEY is the
-// account behind a membership that ends (the same name as in lib/ticket-service.js).
+// account behind a membership that ends (the same name as in lib/ticket-service.js). INHERITED_KEY
+// marks a new sub-task that takes the assignee of its ticket in the same request ("Neues Ticket",
+// UT-1): the person hears of the ticket once, not of every sub-task (ADR-0068 addendum UT-1).
 var NOTICE_KEY = '@assignee_notice';
 var CLEANUP_KEY = '@assignee_cleanup';
 var NEXT_SENT_KEY = '@assignee_next_sent';
 var ACTOR_KEY = '@actor';
+var INHERITED_KEY = '@assignee_inherited';
 
 function hasField(app, collection, field) {
   try {
@@ -150,7 +153,9 @@ function prepareTicket(txApp, record, original, actor) {
   } else {
     record.set('assigned_at', original ? original.getString('assigned_at') : '');
   }
-  if (rules.isForeignAssignment(facts)) {
+  // A sub-task that inherits the assignee in the request of its ticket tells nobody of its own; the
+  // ticket did (INHERITED_KEY). `assigned_at` is set all the same, so it is "neu" like the ticket.
+  if (rules.isForeignAssignment(facts) && !record.get(INHERITED_KEY)) {
     record.set(NOTICE_KEY, JSON.stringify({ to: assignee, by: facts.actor }));
   }
 }
@@ -436,6 +441,7 @@ module.exports = {
   HISTORY_FIELD: HISTORY_FIELD,
   NOTICE_KEY: NOTICE_KEY,
   CLEANUP_KEY: CLEANUP_KEY,
+  INHERITED_KEY: INHERITED_KEY,
   ready: ready,
   rulesReady: rulesReady,
   memberIds: memberIds,

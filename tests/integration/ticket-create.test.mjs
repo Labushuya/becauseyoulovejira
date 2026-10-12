@@ -17,7 +17,7 @@ import { scaled } from '../support/timing.mjs';
 import { createTicketWithOptions, fetchCreateSupport } from '../../web/src/lib/data/ticket-create.ts';
 import { createRule } from '../../web/src/lib/data/recurrence.ts';
 import { createTicket } from '../../web/src/lib/data/tickets.ts';
-import { berlinToday } from '../../web/src/lib/domain/berlin-date.ts';
+import { addDays, berlinToday } from '../../web/src/lib/domain/berlin-date.ts';
 import { defaultFormValues, formParams } from '../../web/src/lib/domain/recurrence-rule.ts';
 import { templateBody, ticketTemplate } from '../../web/src/lib/domain/series-template.ts';
 import { NO_EXTRAS } from '../../web/src/lib/domain/ticket-create.ts';
@@ -133,7 +133,8 @@ describe('what the server knows (GET /api/byl/tickets/create)', () => {
 			kind: true,
 			color: true,
 			charm: true,
-			assignee: true
+			assignee: true,
+			subtaskStatus: true
 		});
 	});
 
@@ -172,7 +173,7 @@ describe('creating with every option at once', () => {
 					extras: {
 						subtasks: [
 							{ title: 'Termin machen', priority: 'urgent' },
-							{ title: 'Filter kaufen', priority: 'medium' }
+							{ title: 'Filter kaufen', priority: 'medium', status: 'backlog' }
 						],
 						sources: [item.id],
 						ticketSources: [origin.id],
@@ -207,15 +208,16 @@ describe('creating with every option at once', () => {
 		expect(ticket.assignedAt).not.toBeNull();
 		expect(outcome).toMatchObject({ id: ticket.id, key: ticket.key, sources: 1, ticketSources: 1, pinned: true, dayPlan: true });
 
-		// Sub-tasks in the order of the form, like "Unteraufgabe hinzufügen": open, project and tags of
-		// the ticket, blocking, without due date, assignee or series.
+		// Sub-tasks in the order of the form, like "Unteraufgabe hinzufügen": project and tags of the
+		// ticket, blocking, without a series; since UT-1 the status of the ticket unless one is chosen,
+		// and its due date, kind and assignee.
 		const children = await superuser.collection('tickets').getFullList({
 			filter: superuser.filter('parent = {:id}', { id: ticket.id }),
 			sort: 'created,id'
 		});
 		expect(children.map((child) => [child.title, child.priority, child.status])).toEqual([
-			['Termin machen', 'urgent', 'open'],
-			['Filter kaufen', 'medium', 'open']
+			['Termin machen', 'urgent', 'in_progress'],
+			['Filter kaufen', 'medium', 'backlog']
 		]);
 		for (const child of children) {
 			expect(child).toMatchObject({
@@ -224,12 +226,14 @@ describe('creating with every option at once', () => {
 				household: householdId,
 				owner: a.id,
 				blocks_parent: true,
-				due: '',
-				assignee: '',
+				due: `${due} 00:00:00.000Z`,
+				assignee: b.id,
 				recurrence: '',
-				kind: 'task',
+				kind: 'ongoing',
 				source: 'manual'
 			});
+			// An assignment by A: new for B like the ticket.
+			expect(child.assigned_at).not.toBe('');
 		}
 		expect(outcome.subtasks.map((child) => child.id)).toEqual(children.map((child) => child.id));
 
@@ -295,6 +299,71 @@ describe('creating with every option at once', () => {
 		const parent = await a.ticket({ title: 'Umzug' });
 		const { ticket } = await create(a, request({ title: 'Kartons', parent: parent.id, blocksParent: false }));
 		expect(ticket).toMatchObject({ parentId: parent.id, blocksParent: false });
+	});
+});
+
+describe('the sub-tasks of a new ticket (UT-1)', () => {
+	const childrenOf = (id) =>
+		superuser.collection('tickets').getFullList({ filter: superuser.filter('parent = {:id}', { id }), sort: 'created,id' });
+
+	it('start with the status of the ticket unless one is chosen, and with "Offen" under a done ticket', async () => {
+		const subtasks = [
+			{ title: 'Ohne Wahl', priority: 'medium' },
+			{ title: 'Zurückgestellt', priority: 'low', status: 'backlog' }
+		];
+		const waiting = await create(a, request({ title: 'Wartet', status: 'waiting' }, { extras: { subtasks } }));
+		expect((await childrenOf(waiting.ticket.id)).map((child) => [child.title, child.status])).toEqual([
+			['Ohne Wahl', 'waiting'],
+			['Zurückgestellt', 'backlog']
+		]);
+		const done = await create(a, request({ title: 'Erledigt', status: 'done' }, { extras: { subtasks } }));
+		expect((await childrenOf(done.ticket.id)).map((child) => [child.title, child.status, child.completed_at])).toEqual([
+			['Ohne Wahl', 'open', ''],
+			['Zurückgestellt', 'backlog', '']
+		]);
+	});
+
+	it('take the due date and the kind of the ticket; none without one, and no assignee in the private area', async () => {
+		const due = addDays(today(), 3);
+		const dated = await create(a, request({ title: 'Mit Datum', due, kind: 'ongoing' }, { extras: { subtasks: [{ title: 'Teil', priority: 'medium' }] } }));
+		expect(await childrenOf(dated.ticket.id)).toEqual([
+			expect.objectContaining({ due: `${due} 00:00:00.000Z`, kind: 'ongoing', assignee: '', household: '' })
+		]);
+		const plain = await create(a, request({ title: 'Ohne Datum' }, { extras: { subtasks: [{ title: 'Teil', priority: 'medium' }] } }));
+		expect(await childrenOf(plain.ticket.id)).toEqual([expect.objectContaining({ due: '', kind: 'task', assignee: '' })]);
+	});
+
+	it('take the due date the ticket has after "Serie ab heute beginnen" (WH-2)', async () => {
+		const { outcome } = await create(
+			a,
+			request({ title: 'Serie mit Unteraufgaben', due: OLD_DUE }, { recurrence: weekly(OLD_DUE, 'today'), extras: { subtasks: [{ title: 'Vorbereiten', priority: 'medium' }] } })
+		);
+		const ticket = await superuser.collection('tickets').getOne(outcome.id);
+		expect(dateOf(ticket.due) >= today()).toBe(true);
+		const children = await childrenOf(ticket.id);
+		expect(children.map((child) => child.due)).toEqual([ticket.due]);
+		// Kept: the sub-tasks keep the old date as well.
+		const kept = await create(
+			a,
+			request({ title: 'Serie behalten', due: OLD_DUE }, { recurrence: weekly(OLD_DUE, 'keep'), extras: { subtasks: [{ title: 'Vorbereiten', priority: 'medium' }] } })
+		);
+		expect((await childrenOf(kept.outcome.id)).map((child) => dateOf(child.due))).toEqual([OLD_DUE]);
+	});
+
+	it('give the template of the series the status of a sub-task only where one was chosen', async () => {
+		const subtasks = [
+			{ title: 'Folgt dem Ticket', priority: 'medium' },
+			{ title: 'Immer zurückgestellt', priority: 'low', status: 'backlog' }
+		];
+		const recurrence = { ...weekly(today()), initial_status: 'waiting', template_subtasks: subtasks };
+		const { outcome } = await create(a, request({ title: 'Serie mit Vorlage', status: 'in_progress', due: today() }, { recurrence, extras: { subtasks } }));
+		const rule = await superuser.collection('recurrence_rules').getOne(outcome.rule);
+		expect(rule.template_subtasks).toEqual([
+			{ title: 'Folgt dem Ticket', priority: 'medium' },
+			{ title: 'Immer zurückgestellt', priority: 'low', status: 'backlog' }
+		]);
+		// The sub-tasks of this ticket start with its status, those of the next with "Wartet".
+		expect((await childrenOf(outcome.id)).map((child) => child.status)).toEqual(['in_progress', 'backlog']);
 	});
 });
 
@@ -409,6 +478,14 @@ describe('refusals leave nothing behind', () => {
 		});
 		const many = Array.from({ length: 21 }, (_, index) => ({ title: `U${index}`, priority: 'low' }));
 		expect(await refusedWithoutTrace(() => create(a, request({ title: 'T' }, { extras: { subtasks: many } })))).toMatchObject({ field: 'subtasks', code: 'validation_create_subtasks_max' });
+		// "Erledigt" is no status of a new sub-task (UT-1).
+		const done = [{ title: 'Eins', priority: 'low' }, { title: 'Zwei', priority: 'low', status: 'done' }];
+		expect(await refusedWithoutTrace(() => create(a, request({ title: 'T' }, { extras: { subtasks: done } })))).toMatchObject({
+			status: 400,
+			field: 'subtasks',
+			code: 'validation_create_subtask_status',
+			index: 1
+		});
 	});
 
 	it('keeps nothing when the very last write fails', async () => {
@@ -507,8 +584,13 @@ describe('the notice of an assignment (ADR-0068 §4)', () => {
 		await until(() => received.some((notice) => notice.ticket === ticket.id), 'notice at B');
 		expect(received.find((notice) => notice.ticket === ticket.id)).toMatchObject({ key: ticket.key, by: a.id, by_name: 'Anna Beispiel' });
 		expect(ticket.assignedAt).not.toBeNull();
-		// The sub-tasks have no assignee, so they tell nobody.
+		// The sub-tasks take B as well (UT-1), but B hears of the ticket once, not of every sub-task:
+		// a later marker arrives, and nothing about a sub-task came before it.
 		const subtaskIds = outcome.subtasks.map((child) => child.id);
+		expect((await superuser.collection('tickets').getOne(subtaskIds[0])).assignee).toBe(b.id);
+		const marker = await a.ticket({ household: householdId, title: 'Marke nach dem Anlegen' });
+		await a.client.collection('tickets').update(marker.id, { assignee: b.id });
+		await until(() => received.some((notice) => notice.ticket === marker.id), 'notice of the marker');
 		expect(received.filter((notice) => subtaskIds.includes(notice.ticket))).toEqual([]);
 	});
 

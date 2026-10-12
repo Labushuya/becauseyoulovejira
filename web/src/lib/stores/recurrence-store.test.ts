@@ -902,6 +902,78 @@ describe('RecurrenceStore: the sub-tasks of the template (plan WV-3)', () => {
 		expect(after.subtasksReady).toBe(false);
 	});
 
+	it('knows the status of the sub-tasks only with the list and the hooks of UT-1, and sends it only then', async () => {
+		const values = defaultFormValues('2026-10-05', '2026-09-25');
+		const subtasks = [
+			{ title: 'Folgt', priority: 'medium' as const },
+			{ title: 'Eigen', priority: 'low' as const, status: 'backlog' as const }
+		];
+		const after = new RecurrenceStore(
+			{ ...ready(fakeData([])), subtaskStatusReady: vi.fn(async () => true) },
+			session()
+		);
+		expect(after.subtaskStatusReady).toBe(false);
+		await after.load();
+		expect(after.subtaskStatusReady).toBe(true);
+		expect(after.ruleParams({ values, initialStatus: 'open' }, subtasks).template_subtasks).toEqual(
+			[
+				{ title: 'Folgt', priority: 'medium' },
+				{ title: 'Eigen', priority: 'low', status: 'backlog' }
+			]
+		);
+
+		// Before the restart (no flag of the route, a failed probe) or without the list: no status.
+		for (const data of [
+			{ ...ready(fakeData([])), subtaskStatusReady: vi.fn(async () => false) },
+			{
+				...ready(fakeData([])),
+				subtaskStatusReady: vi.fn(async () => Promise.reject(new Error('x')))
+			},
+			{ ...fakeData([]), subtaskStatusReady: vi.fn(async () => true) }
+		]) {
+			const before = new RecurrenceStore(data, session());
+			await before.load();
+			expect(before.subtaskStatusReady).toBe(false);
+		}
+		const plain = new RecurrenceStore(
+			{ ...ready(fakeData([])), subtaskStatusReady: vi.fn(async () => false) },
+			session()
+		);
+		await plain.load();
+		expect(plain.ruleParams({ values, initialStatus: 'open' }, subtasks).template_subtasks).toEqual(
+			[
+				{ title: 'Folgt', priority: 'medium' },
+				{ title: 'Eigen', priority: 'low' }
+			]
+		);
+		after.reset();
+		expect(after.subtaskStatusReady).toBe(false);
+	});
+
+	it('offers a sub-task to the template with its status only once the hooks take it (UT-1)', async () => {
+		const added = { title: 'Eigen', priority: 'low' as const, status: 'backlog' as const };
+		for (const [hooks, expected] of [
+			[true, [added]],
+			[false, [{ title: 'Eigen', priority: 'low' }]]
+		] as const) {
+			const data = fakeData([rule({ templateSubtasks: [] })]);
+			const { sink, flags } = flagLog();
+			const store = new RecurrenceStore(
+				{ ...ready(data), subtaskStatusReady: vi.fn(async () => hooks) },
+				session(),
+				sink
+			);
+			await store.load();
+			expect(store.offerSubtask(parent, added)).not.toBeNull();
+			flags.at(-1)?.action?.run();
+			await vi.waitFor(() =>
+				expect(data.updateRule).toHaveBeenCalledWith('rule00000000001', {
+					template_subtasks: expected
+				})
+			);
+		}
+	});
+
 	it('knows the charms only after their migration and sends a charm of the draft only then (ADR-0062)', async () => {
 		const ruleData = fakeData([rule()]);
 		const after = new RecurrenceStore(

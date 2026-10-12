@@ -1,5 +1,7 @@
 // Section "Unteraufgaben" (ADR-0033 section 4) on a real list store with a fake data layer:
-// list, progress, check mark, adding one after another with Enter, Escape and failures.
+// list, progress, check mark, adding one after another with Enter, Escape and failures; since UT-1
+// the status menu of each sub-task (the one of the table, "Erledigt" with "Rückgängig") and the
+// form with status and due date taken from the ticket in advance.
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
@@ -7,9 +9,13 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ResolvedPathname } from '$app/types';
 import { DataError } from '$lib/data/errors';
 import { EMPTY_LIST_QUERY } from '$lib/domain/list-query';
-import type { TicketDraft, TicketSummary } from '$lib/domain/ticket';
+import type { TicketDraft, TicketPatch, TicketSummary } from '$lib/domain/ticket';
+import { FlagStore } from '$lib/stores/flags.svelte';
 import { TicketListStore, type TicketListData } from '$lib/stores/ticket-list.svelte';
+import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import TicketSubtasks from './TicketSubtasks.svelte';
+
+useOverlayStubs();
 
 const PARENT_ID = 'parent000000001';
 let sequence = 0;
@@ -36,8 +42,8 @@ function ticket(overrides: Partial<TicketSummary> = {}): TicketSummary {
 	};
 }
 
-async function setup(subtasks: TicketSummary[] = []) {
-	const parent = ticket({ id: PARENT_ID, key: 'HAUS-12', title: 'Umzug' });
+async function setup(subtasks: TicketSummary[] = [], parentOverrides: Partial<TicketSummary> = {}) {
+	const parent = ticket({ id: PARENT_ID, key: 'HAUS-12', title: 'Umzug', ...parentOverrides });
 	const data = {
 		listOpen: vi.fn(async () => [parent, ...subtasks.filter((entry) => entry.status !== 'done')]),
 		listSubtasks: vi.fn(async () => subtasks),
@@ -47,12 +53,22 @@ async function setup(subtasks: TicketSummary[] = []) {
 			status: isDone ? ('done' as const) : ('open' as const),
 			updated: '2026-09-24 10:00:00.000Z'
 		})),
-		update: vi.fn(async () => parent),
+		update: vi.fn(async (id: string, patch: TicketPatch): Promise<TicketSummary> => ({
+			...(subtasks.find((entry) => entry.id === id) ?? parent),
+			...(patch.status !== undefined && { status: patch.status }),
+			updated: '2026-09-25 10:00:00.000Z'
+		})),
 		create: vi.fn(async (draft: TicketDraft) =>
-			ticket({ title: draft.title, parentId: draft.parent ?? null })
+			ticket({
+				title: draft.title,
+				parentId: draft.parent ?? null,
+				status: draft.status,
+				due: draft.due
+			})
 		)
 	} satisfies TicketListData;
-	const store = new TicketListStore(data, { ensureValid: () => true, logout: vi.fn() });
+	const flags = new FlagStore();
+	const store = new TicketListStore(data, { ensureValid: () => true, logout: vi.fn() }, { flags });
 	store.activate(EMPTY_LIST_QUERY);
 	await vi.waitFor(() => expect(store.openState).toBe('ready'));
 	render(TicketSubtasks, {
@@ -62,7 +78,26 @@ async function setup(subtasks: TicketSummary[] = []) {
 			hrefOf: (id: string) => `/tickets/${id}?erledigte=1` as ResolvedPathname
 		}
 	});
-	return { store, data, parent };
+	return { store, data, parent, flags };
+}
+
+/** Opens the status menu of a sub-task like a click would. */
+async function openStatus(key: string) {
+	const button = screen.getByRole('button', { name: new RegExp(`^Status von ${key}: `) });
+	await fireEvent.pointerEnter(button);
+	await fireEvent.click(button);
+	await tick();
+	return button;
+}
+
+/** Opens the form "Unteraufgabe hinzufügen". */
+async function openForm() {
+	await fireEvent.click(screen.getByRole('button', { name: 'Unteraufgabe hinzufügen' }));
+	return {
+		title: screen.getByRole('textbox', { name: 'Titel der Unteraufgabe' }) as HTMLInputElement,
+		status: screen.getByRole('combobox', { name: 'Status' }) as HTMLSelectElement,
+		due: screen.getByLabelText<HTMLInputElement>('Fälligkeit', { selector: 'input' })
+	};
 }
 
 const section = () => screen.getByRole('region', { name: 'Unteraufgaben' });
@@ -188,5 +223,168 @@ describe('section "Unteraufgaben"', () => {
 		await vi.waitFor(() => expect(screen.getByText('Das Projekt ist archiviert.')).toBeTruthy());
 		expect(input.value).toBe('Kartons');
 		expect(input.getAttribute('aria-invalid')).toBe('true');
+	});
+});
+
+describe('the status of a sub-task in the section (UT-1)', () => {
+	it('is the menu of the table: every status, the current one checked, a choice saves at once', async () => {
+		const child = ticket({ parentId: PARENT_ID, title: 'Küche packen' });
+		const { data, store } = await setup([child]);
+
+		// The pill stays visible as the value of the button; the check mark stays beside it.
+		const button = await openStatus(child.key);
+		expect(button.getAttribute('aria-label')).toBe(`Status von ${child.key}: Offen, ändern`);
+		expect(within(button).getByText('Offen')).toBeTruthy();
+		expect(screen.getByRole('checkbox', { name: `${child.key} erledigt` })).toBeTruthy();
+		const choices = screen.getAllByRole('menuitemradio', { hidden: true });
+		expect(choices.map((choice) => choice.textContent?.replace('✓', '').trim())).toEqual([
+			'Backlog',
+			'Offen',
+			'In Arbeit',
+			'Wartet',
+			'Erledigt'
+		]);
+		expect(choices.map((choice) => choice.getAttribute('aria-checked'))).toEqual([
+			'false',
+			'true',
+			'false',
+			'false',
+			'false'
+		]);
+
+		await fireEvent.click(screen.getByRole('menuitemradio', { hidden: true, name: /Wartet/ }));
+
+		await vi.waitFor(() => expect(store.find(child.id)?.status).toBe('waiting'));
+		expect(data.update).toHaveBeenCalledExactlyOnceWith(child.id, { status: 'waiting' });
+		expect(document.activeElement).toBe(button);
+		expect(
+			screen.getByRole('button', { name: `Status von ${child.key}: Wartet, ändern` })
+		).toBeTruthy();
+	});
+
+	it('completes through the check mark path with "Rückgängig", and choosing the same saves nothing', async () => {
+		const child = ticket({ parentId: PARENT_ID, status: 'in_progress', title: 'Bad' });
+		const { data, flags } = await setup([child]);
+
+		await openStatus(child.key);
+		await fireEvent.click(screen.getByRole('menuitemradio', { hidden: true, name: /In Arbeit/ }));
+		await tick();
+		expect(data.update).not.toHaveBeenCalled();
+
+		await openStatus(child.key);
+		await fireEvent.click(screen.getByRole('menuitemradio', { hidden: true, name: /Erledigt/ }));
+
+		await vi.waitFor(() => expect(data.setDone).toHaveBeenCalledWith(child.id, true));
+		const flag = await vi.waitFor(() => {
+			const shown = flags.flags.find((entry) => entry.title === `${child.key} erledigt.`);
+			expect(shown?.action?.label).toBe('Rückgängig');
+			return shown;
+		});
+		flags.act(flag?.id ?? '');
+		// "Rückgängig" restores the status before, not just "Offen".
+		await vi.waitFor(() =>
+			expect(data.update).toHaveBeenCalledWith(child.id, { status: 'in_progress' })
+		);
+	});
+
+	it('shows a done sub-task in the menu as "Erledigt" and reopens it with another status', async () => {
+		const child = ticket({ parentId: PARENT_ID, status: 'done', title: 'Kartons' });
+		const { data } = await setup([child]);
+
+		await openStatus(child.key);
+		const done = screen.getByRole('menuitemradio', { hidden: true, name: /Erledigt/ });
+		expect(done.getAttribute('aria-checked')).toBe('true');
+		await fireEvent.click(screen.getByRole('menuitemradio', { hidden: true, name: /Backlog/ }));
+
+		await vi.waitFor(() =>
+			expect(data.update).toHaveBeenCalledExactlyOnceWith(child.id, { status: 'backlog' })
+		);
+	});
+});
+
+describe('adding a sub-task with status and due date (UT-1)', () => {
+	it('offers every status but "Erledigt", the one of the ticket in advance, and its due date', async () => {
+		await setup([], { status: 'waiting', due: '2026-10-20' });
+
+		const form = await openForm();
+		expect([...form.status.options].map((option) => option.textContent)).toEqual([
+			'Backlog',
+			'Offen',
+			'In Arbeit',
+			'Wartet'
+		]);
+		expect(form.status.value).toBe('waiting');
+		expect(form.due.value).toBe('2026-10-20');
+		expect(screen.getByText(/Status und Fälligkeit sind nach dem Ticket vorbelegt/)).toBeTruthy();
+	});
+
+	it('starts with "Offen" under a done ticket and without a due date when the ticket has none', async () => {
+		await setup([], { status: 'done', due: null });
+
+		const form = await openForm();
+		expect(form.status.value).toBe('open');
+		expect(form.due.value).toBe('');
+	});
+
+	it('creates with the chosen status and due date, a cleared date as none, and keeps the choices', async () => {
+		const { data } = await setup([], { status: 'in_progress', due: '2026-10-20' });
+		const form = await openForm();
+
+		await fireEvent.input(form.title, { target: { value: 'Bad putzen' } });
+		await fireEvent.submit(form.title.form as HTMLFormElement);
+		await vi.waitFor(() => expect(data.create).toHaveBeenCalledTimes(1));
+		expect(data.create).toHaveBeenLastCalledWith(
+			expect.objectContaining({ title: 'Bad putzen', status: 'in_progress', due: '2026-10-20' })
+		);
+
+		await fireEvent.change(form.status, { target: { value: 'backlog' } });
+		await fireEvent.input(form.due, { target: { value: '' } });
+		await fireEvent.input(form.title, { target: { value: 'Keller' } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }));
+		await vi.waitFor(() => expect(data.create).toHaveBeenCalledTimes(2));
+		expect(data.create).toHaveBeenLastCalledWith(
+			expect.objectContaining({ title: 'Keller', status: 'backlog', due: null })
+		);
+		// The form stays for the next one, with the choices made.
+		expect(form.status.value).toBe('backlog');
+		expect(form.due.value).toBe('');
+	});
+
+	it('takes the kind and the assignee of the ticket without asking, and says so', async () => {
+		const { data } = await setup([], { kind: 'ongoing', assignee: 'user00000000002' });
+		const form = await openForm();
+		expect(
+			screen.getByText(/Projekt, Tags, Art und Zuständigkeit übernimmt sie vom Ticket/)
+		).toBeTruthy();
+
+		await fireEvent.input(form.title, { target: { value: 'Teil' } });
+		await fireEvent.submit(form.title.form as HTMLFormElement);
+
+		await vi.waitFor(() =>
+			expect(data.create).toHaveBeenCalledWith(
+				expect.objectContaining({ kind: 'ongoing', assignee: 'user00000000002' })
+			)
+		);
+	});
+
+	it('closes with Escape from the status and the date as well, and with "Schließen"', async () => {
+		await setup();
+		let form = await openForm();
+		await fireEvent.keyDown(form.status, { key: 'Escape' });
+		await tick();
+		expect(screen.queryByRole('textbox')).toBeNull();
+
+		form = await openForm();
+		await fireEvent.keyDown(form.due, { key: 'Escape' });
+		await tick();
+		expect(screen.queryByRole('textbox')).toBeNull();
+
+		await openForm();
+		await fireEvent.click(screen.getByRole('button', { name: 'Schließen' }));
+		await tick();
+		expect(screen.queryByRole('textbox')).toBeNull();
+		expect(document.activeElement).toBe(
+			screen.getByRole('button', { name: 'Unteraufgabe hinzufügen' })
+		);
 	});
 });

@@ -1,12 +1,15 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import {
+		TEMPLATE_STATUSES,
 		TEMPLATE_SUBTASKS_MAX,
+		isTemplateStatus,
 		moveSubtask,
 		subtaskCountText,
 		subtasksOfTicket,
 		takeSubtasks,
 		takenText,
+		type TemplateStatus,
 		type TemplateSubtask,
 		type TicketSubtask
 	} from '$lib/domain/series-template';
@@ -14,17 +17,20 @@
 	import { DEFAULT_PRIORITY, TITLE_MAX_LENGTH } from '$lib/domain/ticket';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import PrioritySelect from './PrioritySelect.svelte';
+	import StatusSelect from './StatusSelect.svelte';
 
 	// The list "Unteraufgaben" of the template of a rule (plan WV-3, ADR-0022 addendum 10): every
-	// next ticket of the series gets these entries as new, open sub-tasks. Each row has a title
-	// (required) and a priority; rows are added, removed and moved with named buttons, so keyboard
-	// and screen reader reach every step (no dragging), and a polite status says what happened. At
-	// most TEMPLATE_SUBTASKS_MAX rows. At a ticket of the series "Unteraufgaben dieses Tickets
-	// übernehmen" fills the list with its sub-tasks: at once into an empty list, otherwise after an
-	// inline question "Ergänzen" (default, nothing is lost) or "Ersetzen". No dialog: the list stands
-	// in the full view as well (ADR-0025 addendum 16). `subtasks` is replaced as a whole on every
-	// change, so a binding through getter and setter (a draft in a store) works. "Neues Ticket" (NT-1)
-	// uses the same list for the sub-tasks of the new ticket, with its own hint.
+	// next ticket of the series gets these entries as new sub-tasks. Each row has a title (required),
+	// since UT-1 a status (with `statusAvailable`: every one but "Erledigt", without an own choice
+	// `defaultStatus`, the "Status beim Anlegen"; choosing that one again follows it again) and a
+	// priority; rows are added, removed and moved with named buttons, so keyboard and screen reader
+	// reach every step (no dragging), and a polite status says what happened. At most
+	// TEMPLATE_SUBTASKS_MAX rows. At a ticket of the series "Unteraufgaben dieses Tickets übernehmen"
+	// fills the list with its sub-tasks: at once into an empty list, otherwise after an inline question
+	// "Ergänzen" (default, nothing is lost) or "Ersetzen". No dialog: the list stands in the full view
+	// as well (ADR-0025 addendum 16). `subtasks` is replaced as a whole on every change, so a binding
+	// through getter and setter (a draft in a store) works. "Neues Ticket" (NT-1) uses the same list
+	// for the sub-tasks of the new ticket, with its own hint and the status of the ticket as default.
 	let {
 		subtasks = $bindable(),
 		ticketSubtasks = [],
@@ -33,7 +39,9 @@
 		errorRow = null,
 		busy = false,
 		disabled = false,
-		hint = `Jedes neue Ticket der Serie bekommt sie als offene Unteraufgaben ohne Fälligkeit, höchstens ${TEMPLATE_SUBTASKS_MAX}.`
+		statusAvailable = false,
+		defaultStatus = 'open',
+		hint
 	}: {
 		subtasks: TemplateSubtask[];
 		/** Sub-tasks of the ticket the template is edited at; empty elsewhere (rule panel). */
@@ -47,9 +55,21 @@
 		busy?: boolean;
 		/** No rows can be added (the hint says why). */
 		disabled?: boolean;
-		/** What the list is for, below its legend. */
+		/** Each row offers its status (UT-1): the hooks know it (after the restart after UT-1). */
+		statusAvailable?: boolean;
+		/** The status a row without an own choice shows and starts with. */
+		defaultStatus?: TemplateStatus;
+		/** What the list is for, below its legend; without one the text of the template. */
 		hint?: string;
 	} = $props();
+
+	/** What the list of a template means, before and after the hooks of UT-1. */
+	const shownHint = $derived(
+		hint ??
+			(statusAvailable
+				? `Jedes neue Ticket der Serie bekommt sie als Unteraufgaben mit seiner Fälligkeit, Art und Zuständigkeit, höchstens ${TEMPLATE_SUBTASKS_MAX}. Ohne eigene Wahl starten sie mit dem „Status beim Anlegen“.`
+				: `Jedes neue Ticket der Serie bekommt sie als offene Unteraufgaben ohne Fälligkeit, höchstens ${TEMPLATE_SUBTASKS_MAX}.`)
+	);
 
 	const uid = $props.id();
 	const ids = {
@@ -59,6 +79,7 @@
 		question: `${uid}-question`
 	};
 	const titleId = (index: number) => `${uid}-title-${index}`;
+	const statusId = (index: number) => `${uid}-status-${index}`;
 	const priorityId = (index: number) => `${uid}-priority-${index}`;
 	const rowErrorId = (index: number) => `${uid}-row-error-${index}`;
 
@@ -86,6 +107,16 @@
 
 	function setRow(index: number, entry: TemplateSubtask) {
 		subtasks = subtasks.map((current, position) => (position === index ? entry : current));
+	}
+
+	/** The status of a row: the default again means "follow it" (no own status). */
+	function setStatus(index: number, entry: TemplateSubtask, value: string) {
+		if (!isTemplateStatus(value)) return;
+		setRow(index, {
+			title: entry.title,
+			priority: entry.priority,
+			...(value !== defaultStatus && { status: value })
+		});
 	}
 
 	async function add() {
@@ -156,7 +187,7 @@
 
 <fieldset class="subtasks" aria-describedby={error ? `${ids.hint} ${ids.error}` : ids.hint}>
 	<legend id={ids.legend}>Unteraufgaben</legend>
-	<p class="hint" id={ids.hint}>{hint}</p>
+	<p class="hint" id={ids.hint}>{shownHint}</p>
 	{#if subtasks.length > 0}
 		<ol class="list" aria-labelledby={ids.legend} bind:this={list}>
 			{#each subtasks as entry, index (index)}
@@ -181,6 +212,18 @@
 						aria-describedby={invalid ? rowErrorId(index) : refused ? ids.error : undefined}
 						oninput={(event) => setRow(index, { ...entry, title: event.currentTarget.value })}
 					/>
+					{#if statusAvailable}
+						<label class="visually-hidden" for={statusId(index)}>
+							Status der Unteraufgabe {index + 1}
+						</label>
+						<StatusSelect
+							id={statusId(index)}
+							value={entry.status ?? defaultStatus}
+							statuses={TEMPLATE_STATUSES}
+							errorId={`${statusId(index)}-error`}
+							onchoose={(value) => setStatus(index, entry, value)}
+						/>
+					{/if}
 					<label class="visually-hidden" for={priorityId(index)}>
 						Priorität der Unteraufgabe {index + 1}
 					</label>

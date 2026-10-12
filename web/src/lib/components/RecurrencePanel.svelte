@@ -82,6 +82,7 @@
 		eachAvailable = false,
 		statusAvailable = false,
 		subtasksAvailable = false,
+		subtaskStatusAvailable = false,
 		colorsAvailable = false,
 		charmsAvailable = false,
 		assignmentAvailable = false,
@@ -113,6 +114,8 @@
 		statusAvailable?: boolean;
 		/** Offer the sub-tasks of the template and send them (plan WV-3, RecurrenceStore.subtasksReady). */
 		subtasksAvailable?: boolean;
+		/** Offer the status of each sub-task (UT-1, RecurrenceStore.subtaskStatusReady). */
+		subtaskStatusAvailable?: boolean;
 		/** Offer the color of the template and send it (ADR-0052, CatalogStore.colorsReady). */
 		colorsAvailable?: boolean;
 		/** Offer the charm of the template and send it (ADR-0062, RecurrenceStore.charmsReady). */
@@ -614,6 +617,8 @@
 				{busy}
 				statusAvailable={statusAvailable && !askStatus}
 				{subtasksAvailable}
+				{subtaskStatusAvailable}
+				subtaskDefaultStatus={askStatus && chosenStatus !== '' ? chosenStatus : null}
 				{colorsAvailable}
 				{charmsAvailable}
 				{invalidSubtasks}

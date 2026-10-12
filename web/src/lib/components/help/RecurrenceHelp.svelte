@@ -220,9 +220,12 @@
 			Regel unter „Wiederholungen“. Kommentare und Quellen gehen nicht mit.
 		</li>
 		<li>
-			Unteraufgaben legst du in der Vorlage fest (Liste „Unteraufgaben“, höchstens 20, je mit Titel
-			und Priorität, sortierbar). Jedes neue Ticket der Serie bekommt sie als neue, offene
-			Unteraufgaben ohne Fälligkeit, auch beim Nachholen und mit „Verpasste Termine nachholen“. Am
+			Unteraufgaben legst du in der Vorlage fest (Liste „Unteraufgaben“, höchstens 20, je mit Titel,
+			Status und Priorität, sortierbar). Jedes neue Ticket der Serie bekommt sie als neue
+			Unteraufgaben mit seiner Fälligkeit, seiner Art und seiner Zuständigkeit, auch beim Nachholen
+			und mit „Verpasste Termine nachholen“. Ohne eigene Wahl starten sie mit dem „Status beim
+			Anlegen“ der Vorlage; „Erledigt“ geht nicht. Im Detail einer solchen Unteraufgabe steht „Teil
+			von … · wiederholt sich …“ und „aus der Vorlage – wird mit jedem Termin neu angelegt“. Am
 			Ticket füllt „Unteraufgaben dieses Tickets übernehmen“ die Liste mit seinen Unteraufgaben
 			(„Ergänzen“ oder „Ersetzen“, wenn schon welche darin stehen); von selbst kommen sie nicht in
 			die Vorlage. Änderungen gelten nur für künftige Tickets. Nimmt das Wiedereröffnen des zuletzt

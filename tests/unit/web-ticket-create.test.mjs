@@ -17,9 +17,11 @@ import {
 	toCreateOutcome,
 	toCreateSupport
 } from '../../web/src/lib/domain/ticket-create.ts';
+import { TEMPLATE_STATUSES } from '../../web/src/lib/domain/series-template.ts';
 import { fromDueInput } from '../../web/src/lib/domain/ticket.ts';
 
 const rules = loadHookLib('ticket-create-rules.js');
+const recurrenceRules = loadHookLib('recurrence-rules.js');
 
 const DRAFT = {
 	title: 'Heizung warten',
@@ -39,6 +41,62 @@ describe('limits and texts of the route', () => {
 		expect(CREATE_SUBTASKS_MAX).toBe(rules.SUBTASKS_MAX);
 		expect(CREATE_TICKET_SOURCES_MAX).toBe(rules.TICKET_SOURCES_MAX);
 		expect(CREATE_SOURCES_MAX).toBe(rules.SOURCES_MAX);
+	});
+
+	it('offer the same statuses of a new sub-task as the template of a rule (UT-1)', () => {
+		expect([...rules.SUBTASK_STATUSES]).toEqual(recurrenceRules.INITIAL_STATUSES);
+		expect([...rules.SUBTASK_STATUSES]).toEqual([...TEMPLATE_STATUSES]);
+		expect(CREATE_MESSAGES.validation_create_subtask_status).toBe(recurrenceRules.MESSAGES.validation_recurrence_subtask_status);
+	});
+});
+
+describe('the status of the sub-tasks (UT-1)', () => {
+	it('sends a chosen status and leaves it out without one; the server reads it the same way', () => {
+		const sent = body({
+			draft: DRAFT,
+			sourceItem: null,
+			recurrence: null,
+			extras: {
+				...NO_EXTRAS,
+				subtasks: [
+					{ title: 'Termin machen', priority: 'high', status: 'waiting' },
+					{ title: 'Filter kaufen', priority: 'medium' }
+				]
+			}
+		});
+		expect(sent.subtasks).toEqual([
+			{ title: 'Termin machen', priority: 'high', status: 'waiting' },
+			{ title: 'Filter kaufen', priority: 'medium' }
+		]);
+		expect(rules.parseRequest(sent).options.subtasks).toEqual([
+			{ title: 'Termin machen', priority: 'high', status: 'waiting' },
+			{ title: 'Filter kaufen', priority: 'medium' }
+		]);
+	});
+
+	it('takes every status but "done", an empty one as none', () => {
+		for (const status of ['backlog', 'open', 'in_progress', 'waiting']) {
+			expect(rules.parseRequest({ title: 'T', subtasks: [{ title: 'A', status }] }).options.subtasks, status).toEqual([
+				{ title: 'A', priority: 'medium', status }
+			]);
+		}
+		for (const status of ['', null, undefined]) {
+			expect(rules.parseRequest({ title: 'T', subtasks: [{ title: 'A', status }] }).options.subtasks, String(status)).toEqual([
+				{ title: 'A', priority: 'medium' }
+			]);
+		}
+	});
+
+	it.each([
+		[[{ title: 'A', status: 'done' }], 0],
+		[[{ title: 'A' }, { title: 'B', status: 'bald' }], 1],
+		[[{ title: 'A', status: 3 }], 0]
+	])('refuses the status of %j with the row', (subtasks, index) => {
+		expect(rules.parseRequest({ title: 'T', subtasks })).toEqual({
+			field: 'subtasks',
+			code: 'validation_create_subtask_status',
+			index
+		});
 	});
 });
 
@@ -190,7 +248,9 @@ describe('answers of the route', () => {
 	});
 
 	it('reads the answer of GET', () => {
-		expect(toCreateSupport({ recurrence: true, pin: true, day_plan: false, ticket_sources: true, kind: true, color: true, charm: false, assignee: true })).toEqual({
+		expect(
+			toCreateSupport({ recurrence: true, pin: true, day_plan: false, ticket_sources: true, kind: true, color: true, charm: false, assignee: true, subtask_status: true })
+		).toEqual({
 			recurrence: true,
 			pin: true,
 			dayPlan: false,
@@ -198,8 +258,11 @@ describe('answers of the route', () => {
 			kind: true,
 			color: true,
 			charm: false,
-			assignee: true
+			assignee: true,
+			subtaskStatus: true
 		});
+		// A server before UT-1 does not name the status of sub-tasks.
+		expect(toCreateSupport({ recurrence: true }).subtaskStatus).toBe(false);
 		expect(toCreateSupport('ok')).toBeNull();
 	});
 });

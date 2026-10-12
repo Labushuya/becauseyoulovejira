@@ -97,7 +97,9 @@ export const TICKET_LIST_FIELDS = [
 	'expand.tags.name',
 	'expand.parent.id',
 	'expand.parent.key',
-	'expand.parent.title'
+	'expand.parent.title',
+	// The series of the parent (UT-1), for the line "Teil von HAUS-7 · wiederholt sich …".
+	'expand.parent.recurrence'
 ].join(',');
 
 /**
@@ -142,7 +144,26 @@ export interface TicketRecord {
 	completed_at: string;
 	created: string;
 	updated: string;
-	expand?: { project?: ProjectRecord; tags?: TagRecord[]; parent?: ParentRef };
+	expand?: { project?: ProjectRecord; tags?: TagRecord[]; parent?: ParentRecord };
+}
+
+/** The expanded parent of a sub-task as the API returns it with the fields above. */
+interface ParentRecord {
+	id: string;
+	key: string;
+	title: string;
+	/** The rule of its series, '' without one. */
+	recurrence?: string;
+}
+
+/** The parent of a sub-task; the rule of its series only when the answer names it (UT-1). */
+function toParentRef(record: ParentRecord): ParentRef {
+	return {
+		id: record.id,
+		key: record.key,
+		title: record.title,
+		...(record.recurrence !== undefined && { recurrenceId: record.recurrence || null })
+	};
 }
 
 /** Maps a record of the list fields (API response or realtime event) to the domain type. */
@@ -167,13 +188,7 @@ export function toTicketSummary(record: TicketRecord): TicketSummary {
 		parentId: record.parent || null,
 		// The schema default is true (set by the create hook), so a missing value blocks.
 		blocksParent: record.blocks_parent ?? true,
-		parentRef: record.expand?.parent
-			? {
-					id: record.expand.parent.id,
-					key: record.expand.parent.key,
-					title: record.expand.parent.title
-				}
-			: null,
+		parentRef: record.expand?.parent ? toParentRef(record.expand.parent) : null,
 		source: isInboxChannel(record.source) ? record.source : null,
 		...(record.scope ? { scope: record.scope } : {}),
 		...(record.owner ? { owner: record.owner } : {}),
@@ -672,7 +687,9 @@ export function createTicket(
 				// A charm (ADR-0062); none sends no field, as before its migration.
 				...(draft.charm ? { charm: draft.charm } : {}),
 				// An assignee (ADR-0068), only in a household; nobody sends no field.
-				...(draft.assignee ? { assignee: draft.assignee } : {})
+				...(draft.assignee ? { assignee: draft.assignee } : {}),
+				// "Laufendes Vorhaben" (ADR-0065), e.g. a sub-task of one (UT-1); a task sends no field.
+				...(draft.kind && draft.kind !== 'task' ? { kind: draft.kind } : {})
 			},
 			{ fields: TICKET_DETAIL_FIELDS, expand: TICKET_EXPAND, signal }
 		);

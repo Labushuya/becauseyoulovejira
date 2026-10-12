@@ -465,6 +465,45 @@ describe('rules with an assignment', () => {
 		expect((await openOf(rotation.id))[0].assignee).toBe(b.id);
 	});
 
+	it('gives the sub-tasks of the template the person of their occurrence; the rotation moves once and goes back with them (UT-1)', async () => {
+		const childrenOf = (id) =>
+			superuser.collection('tickets').getFullList({ filter: superuser.filter('parent = {:id}', { id }), sort: 'created,id' });
+		const rotation = await dailyRule(
+			{ assignee_mode: 'rotate', assignees: [a.id, b.id] },
+			{ template_subtasks: [{ title: 'Tonne raus' }, { title: 'Tonne rein', status: 'waiting' }] }
+		);
+		const [first] = await openOf(rotation.id);
+		expect(first.assignee).toBe(a.id);
+		const firstChildren = await childrenOf(first.id);
+		expect(firstChildren.map((child) => [child.title, child.assignee, child.status, child.due, child.kind])).toEqual([
+			['Tonne raus', a.id, 'open', first.due, 'task'],
+			['Tonne rein', a.id, 'waiting', first.due, 'task']
+		]);
+		// The server assigns: no history entry "Zuständig", no `assigned_at`, still untouched.
+		for (const child of firstChildren) {
+			expect(child.assigned_at).toBe('');
+			expect(await assigneeHistory(child.id)).toEqual([]);
+			expect(child.updated).toBe(child.created);
+		}
+		// One step of the rotation per occurrence, not per sub-task.
+		expect((await ruleOf(rotation.id)).assignee_next).toBe(1);
+
+		await a.client.collection('tickets').update(first.id, { status: 'done', complete_children: true });
+		await until(async () => (await openOf(rotation.id)).length === 1, 'follow-up');
+		const [followUp] = await openOf(rotation.id);
+		expect(followUp.assignee).toBe(b.id);
+		const followChildren = await childrenOf(followUp.id);
+		expect(followChildren.map((child) => child.assignee)).toEqual([b.id, b.id]);
+		expect((await ruleOf(rotation.id)).assignee_next).toBe(0);
+
+		// Reopening removes the untouched follow-up with its sub-tasks; B is next again.
+		await a.client.collection('tickets').update(first.id, { status: 'open' });
+		for (const child of followChildren) {
+			await expect(superuser.collection('tickets').getOne(child.id)).rejects.toMatchObject({ status: 404 });
+		}
+		expect((await ruleOf(rotation.id)).assignee_next).toBe(1);
+	});
+
 	it('goes round with "Verpasste Termine nachholen": one person per missed date, in the order of the dates', async () => {
 		const rule = await dailyRule(
 			{ assignee_mode: 'rotate', assignees: [b.id, a.id] },

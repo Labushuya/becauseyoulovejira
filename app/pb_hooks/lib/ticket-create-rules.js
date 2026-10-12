@@ -72,6 +72,10 @@ var DESCRIPTION_MAX = 100000;
 var PRIORITIES = Object.freeze(['low', 'medium', 'high', 'urgent']);
 var DEFAULT_PRIORITY = 'medium';
 
+// Statuses a sub-task may start with (UT-1): every one but "done", the same list as INITIAL_STATUSES
+// of lib/recurrence-rules.js (tests/unit/web-ticket-create.test.mjs).
+var SUBTASK_STATUSES = Object.freeze(['backlog', 'open', 'in_progress', 'waiting']);
+
 var MESSAGES = Object.freeze({
   validation_create_format: 'Dieser Wert ist ungültig.',
   validation_create_title: 'Der Titel darf nicht leer sein.',
@@ -83,6 +87,7 @@ var MESSAGES = Object.freeze({
   validation_create_subtask_title: 'Jede Unteraufgabe braucht einen Titel.',
   validation_create_subtask_title_max: 'Der Titel einer Unteraufgabe hat höchstens 200 Zeichen.',
   validation_create_subtask_priority: 'Bitte für jede Unteraufgabe eine gültige Priorität wählen.',
+  validation_create_subtask_status: 'Als Status einer Unteraufgabe geht jeder Status außer „Erledigt“.',
   validation_create_subtasks_nested: 'Eine Unteraufgabe hat keine eigenen Unteraufgaben (nur eine Ebene).',
   validation_create_ticket_sources: 'Die Quell-Tickets sind ungültig.',
   validation_create_ticket_sources_max: 'Beim Anlegen gehen höchstens 20 Quell-Tickets.',
@@ -151,8 +156,10 @@ function idList(value, field, max, code) {
   return { ids: ids };
 }
 
-// The sub-tasks: missing is [], at most SUBTASKS_MAX entries { title, priority }, titles trimmed and
-// required, an empty priority "medium" (like a new ticket and the template of a rule).
+// The sub-tasks: missing is [], at most SUBTASKS_MAX entries { title, priority, status? }, titles
+// trimmed and required, an empty priority "medium" (like a new ticket and the template of a rule), a
+// status one of SUBTASK_STATUSES (UT-1); without one the sub-task starts with the status of the ticket
+// (lib/ticket-create-service.js, recurrence-rules.js subtaskStatusOf).
 function subtaskList(value) {
   if (isEmpty(value)) {
     return { subtasks: [] };
@@ -180,7 +187,14 @@ function subtaskList(value) {
     if (PRIORITIES.indexOf(priority) === -1) {
       return { failure: violation('subtasks', 'validation_create_subtask_priority', i) };
     }
-    subtasks.push({ title: title, priority: priority });
+    var subtask = { title: title, priority: priority };
+    if (!isEmpty(entry.status) && entry.status !== '') {
+      if (SUBTASK_STATUSES.indexOf(entry.status) === -1) {
+        return { failure: violation('subtasks', 'validation_create_subtask_status', i) };
+      }
+      subtask.status = entry.status;
+    }
+    subtasks.push(subtask);
   }
   return { subtasks: subtasks };
 }
@@ -229,7 +243,7 @@ function ruleOf(value) {
  *   ticket         the TEXT_FIELDS as texts ('' when missing; the title trimmed, 1 to 200
  *                  characters; the description at most 100 000), `tags` as a list of IDs and
  *                  `blocks_parent` (true when missing, like the request hook of tickets)
- *   subtasks       [{ title, priority }] (subtaskList)
+ *   subtasks       [{ title, priority, status? }] (subtaskList)
  *   ticketSources  IDs of the tickets the new one stems from (ADR-0067), each once
  *   sources        IDs of new entries of the inbox that become its sources (ADR-0031), each once
  *   rule           { fields, body } of the series (ruleOf) or null
@@ -330,6 +344,7 @@ module.exports = {
   DESCRIPTION_MAX: DESCRIPTION_MAX,
   PRIORITIES: PRIORITIES,
   DEFAULT_PRIORITY: DEFAULT_PRIORITY,
+  SUBTASK_STATUSES: SUBTASK_STATUSES,
   MESSAGES: MESSAGES,
   characterCount: characterCount,
   parseRequest: parseRequest,

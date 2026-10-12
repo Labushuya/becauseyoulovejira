@@ -322,7 +322,9 @@ export const RECURRENCE_MESSAGES: Readonly<Record<string, string>> = Object.free
 	validation_recurrence_subtask_title_max:
 		'Der Titel einer Unteraufgabe hat höchstens 200 Zeichen.',
 	validation_recurrence_subtask_priority:
-		'Bitte für jede Unteraufgabe eine gültige Priorität wählen.'
+		'Bitte für jede Unteraufgabe eine gültige Priorität wählen.',
+	validation_recurrence_subtask_status:
+		'Als Status einer Unteraufgabe geht jeder Status außer „Erledigt“.'
 });
 
 /**

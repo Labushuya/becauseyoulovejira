@@ -4,7 +4,7 @@
 	import { page } from '$app/state';
 	import { ticketColorOf } from '$lib/domain/colors';
 	import { openInstancesOf } from '$lib/domain/recurrence-rule';
-	import { parentOf } from '$lib/domain/subtasks';
+	import { parentOf, parentSeriesOf } from '$lib/domain/subtasks';
 	import { getCatalogStore } from '$lib/stores/catalog.svelte';
 	import { SILENT_FLAGS, findFlagStore } from '$lib/stores/flags.svelte';
 	import { getInboxStore } from '$lib/stores/inbox.svelte';
@@ -320,6 +320,7 @@
 						? openInstancesOf(tickets.open, ticket.recurrenceId)
 						: []}
 					subtasks={tickets.subtasksOf(ticket.id)}
+					parentSeries={parentSeriesOf(ticket, (parentId) => tickets.find(parentId))}
 					onticket={(changed) => {
 						detail.upsert(changed);
 						tickets.upsert(changed);
