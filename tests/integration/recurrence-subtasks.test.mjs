@@ -206,7 +206,7 @@ describe('the list "Unteraufgaben" of the template (plan WV-3)', () => {
 });
 
 describe('generation with the sub-tasks of the template (ADR-0022 addendum 10)', () => {
-	it('gives the new ticket the sub-tasks as new, open sub-tasks in its transaction, untouched', async () => {
+	it('gives the new ticket the sub-tasks of the template in its transaction, untouched (UT-1: status, due date and kind)', async () => {
 		const code = uniqueCode();
 		const project = await owner.pb.collection('projects').create({ owner: owner.id, name: 'Haus', code });
 		const tag = await owner.pb.collection('tags').create({ owner: owner.id, name: `t-${unique()}` });

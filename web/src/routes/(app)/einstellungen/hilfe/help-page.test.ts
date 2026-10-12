@@ -482,6 +482,40 @@ describe('help page (EH-9)', () => {
 		expect(content).toMatch(/die Hauptquelle steht immer zuerst auf Seite 1/);
 	});
 
+	it('explains status, due date and inheritance of new sub-tasks, the status menu and the series line (UT-1)', () => {
+		const { container } = render(Page);
+		const section = screen.getByRole('region', { name: 'Häufige Fragen' });
+		const question = [...section.querySelectorAll('details')].find(
+			(details) =>
+				details.querySelector('summary')?.textContent?.trim() ===
+				'Wie arbeite ich mit Unteraufgaben?'
+		);
+		const content = text(question as HTMLElement);
+		expect(content).toMatch(
+			/„Status“ \(jeder außer „Erledigt“, vorbelegt mit dem Status des Tickets, bei einem erledigten Ticket „Offen“\)/
+		);
+		expect(content).toMatch(
+			/„Fälligkeit“ \(vorbelegt mit der Fälligkeit des Tickets; ändern oder leeren geht dort\)/
+		);
+		expect(content).toMatch(/Projekt, Tags, Art und Zuständigkeit bekommen sie vom Ticket/);
+		expect(content).toMatch(/öffnet dasselbe Menü wie in der Tabelle „Aufgaben“/);
+		expect(content).toMatch(/„Erledigt“ wirkt wie das Häkchen davor, mit „Rückgängig“/);
+		expect(content).toMatch(/„Teil von HAUS-7 · wiederholt sich jeden Montag“/);
+		expect(content).toMatch(
+			/„aus der Vorlage – wird mit jedem Termin neu angelegt“ oder „nur für diesen Termin“/
+		);
+		expect(content).toMatch(/„Wiederholen…“ bleibt für die Unteraufgabe selbst/);
+		const recurrence = text(container.querySelector<HTMLElement>('section#wiederholungen')!);
+		expect(recurrence).toMatch(/je mit Titel,\s+Status und Priorität/);
+		expect(recurrence).toMatch(/mit seiner Fälligkeit, seiner Art und seiner Zuständigkeit/);
+		expect(recurrence).toMatch(
+			/Ohne eigene Wahl starten sie mit dem „Status beim\s+Anlegen“ der Vorlage/
+		);
+		const assignees = text(container.querySelector<HTMLElement>('section#zustaendigkeit')!);
+		expect(assignees).toMatch(/Neue Unteraufgaben übernehmen die Zuständigkeit ihres Tickets/);
+		expect(assignees).toMatch(/seine Unteraufgaben aus der Vorlage bekommen dieselbe Person/);
+	});
+
 	it('explains the parent above a sub-task in the day plan, without grouping (TP-2)', () => {
 		const { container } = render(Page);
 		const content = text(container.querySelector<HTMLElement>('section#tagesplan')!);
@@ -631,8 +665,8 @@ describe('help page (EH-9)', () => {
 		const content = text(screen.getByRole('region', { name: 'Wiederholungen' }));
 		for (const phrase of [
 			'Kommentare und Quellen gehen nicht mit.',
-			'Unteraufgaben legst du in der Vorlage fest (Liste „Unteraufgaben“, höchstens 20, je mit Titel und Priorität, sortierbar).',
-			'Jedes neue Ticket der Serie bekommt sie als neue, offene Unteraufgaben ohne Fälligkeit, auch beim Nachholen und mit „Verpasste Termine nachholen“.',
+			'Unteraufgaben legst du in der Vorlage fest (Liste „Unteraufgaben“, höchstens 20, je mit Titel, Status und Priorität, sortierbar).',
+			'Jedes neue Ticket der Serie bekommt sie als neue Unteraufgaben mit seiner Fälligkeit, seiner Art und seiner Zuständigkeit, auch beim Nachholen und mit „Verpasste Termine nachholen“.',
 			'„Unteraufgaben dieses Tickets übernehmen“',
 			'„Ergänzen“ oder „Ersetzen“',
 			'Nimmt das Wiedereröffnen des zuletzt erledigten Tickets ein unberührtes Folgeticket zurück, gehen seine Unteraufgaben mit',
