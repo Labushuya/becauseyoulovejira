@@ -9,6 +9,7 @@
 
 import { NO_PROJECT } from './list-query';
 import { projectPath } from './project-tree';
+import { UNKNOWN_PARENT_KEY } from './subtasks';
 import type { ProjectRef, TicketSummary } from './ticket';
 
 /** Entries of the group "Zuletzt angesehen oder bearbeitet" at most. */
@@ -69,6 +70,24 @@ export function matchesWords(
 	if (words.length === 0) return true;
 	const haystack = haystackOf(ticket);
 	return words.every((word) => haystack.includes(word));
+}
+
+/**
+ * True if every word occurs in key or title of the ticket or of its parent, the words spread over
+ * both as they come (the pool of the day plan, TP-3; "Aufgaben" and the picker keep
+ * `matchesWords`). `parent` is the object of the list or of the expand (`parentTicketOf`), null for
+ * a top-level ticket or an unknown parent; the fallback key "…" is no text. Each object has its own
+ * entry in the cache, so a renamed parent, a new object of the list, is read anew.
+ */
+export function matchesWordsWithParent(
+	ticket: Pick<TicketSummary, 'key' | 'title'>,
+	parent: Pick<TicketSummary, 'key' | 'title'> | null,
+	words: readonly string[]
+): boolean {
+	if (words.length === 0) return true;
+	const own = haystackOf(ticket);
+	const above = parent === null || parent.key === UNKNOWN_PARENT_KEY ? null : haystackOf(parent);
+	return words.every((word) => own.includes(word) || (above !== null && above.includes(word)));
 }
 
 /** Letters whose accented forms normalise to them: vowels, ç, ñ, ś and š, ý, ź and ž. */

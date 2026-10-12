@@ -244,10 +244,23 @@
 			du zum Vortag oder Folgetag: Vergangene Tage sind nur zu lesen, morgen kannst du schon planen.
 		</p>
 		<p>
-			Bei einer Unteraufgabe steht im Plan, im Pool und in den Vorschlägen klein darüber, zu welchem
-			Ticket sie gehört, etwa „HAUS-7 › Wochenputz“; ein Klick auf den Key öffnet dieses Ticket
-			neben dem Plan. Ein langer Titel wird gekürzt, der ganze steht im Tooltip. Unteraufgaben
-			stehen dabei einzeln an ihrem Platz, der Plan gruppiert sie nicht unter ihrem Ticket.
+			Unteraufgaben stehen im Pool und in den Vorschlägen wie in „Aufgaben“: direkt unter ihrem
+			Ticket, eingerückt mit einem kleinen Winkel, in derselben Reihenfolge. Das Ticket trägt wie in
+			der Tabelle den Fortschritt, etwa „1/4“ (erledigte von allen Unteraufgaben). Im Plan bleibt
+			die Reihenfolge deine: Steht eine Unteraufgabe dort direkt unter ihrem Ticket oder unter einer
+			eingerückten Unteraufgabe desselben Tickets, ist sie ebenso eingerückt. Steht ihr Ticket nicht
+			darüber (oder nicht im Pool bzw. nicht unter den Vorschlägen), steht klein über der
+			Unteraufgabe, zu welchem Ticket sie gehört, etwa „HAUS-7 › Wochenputz“; ein Klick auf den Key
+			öffnet dieses Ticket neben dem Plan. Ein langer Titel wird gekürzt, der ganze steht im
+			Tooltip. Jede Unteraufgabe kommt einzeln in den Plan: Ein Haken am Ticket in den Vorschlägen
+			wählt seine Unteraufgaben nicht mit, „Übernehmen“ nimmt die gewählten in der gezeigten
+			Reihenfolge, und ziehen kannst du jede Unteraufgabe wie jeden anderen Eintrag.
+		</p>
+		<p>
+			Die Suche des Pools findet eine Unteraufgabe auch über Key und Titel ihres Tickets; die Wörter
+			dürfen sich auf beide verteilen, etwa „wochenputz fenster“. Suchst du nach dem Ticket selbst,
+			passen auch seine Unteraufgaben, und es steht mit ihnen da. Die Suche in „Aufgaben“ und die
+			Auswahl eines Tickets bleiben beim Ticket allein.
 		</p>
 		<h4 id="tagesplan-haushalt">Im Haushalt</h4>
 		<p>

@@ -697,21 +697,27 @@ describe('sub-tasks with their parent (TP-2)', () => {
 		expect(entryKeys()).toEqual(['TASK-a1', 'HAUS-8']);
 	});
 
-	it('names the parent of a sub-task in the pool, and nothing at the parent itself', async () => {
-		await renderPlan({ tickets: subtaskTickets(), items: subtaskItems(), ongoing: [] });
+	it('names the parent of a sub-task in the pool whose parent is in the plan, and nothing at the parent', async () => {
+		await renderPlan({
+			tickets: subtaskTickets(),
+			items: [...subtaskItems(), planItem('item00000000003', PARENT, 2)],
+			ongoing: []
+		});
 
+		// The parent is in the plan, so its sub-tasks stand alone in the pool (TP-3).
 		expect(
 			within(pool())
 				.getAllByRole('listitem')
 				.map((item) => item.querySelector('.key')?.textContent)
-		).toEqual(['HAUS-7', 'HAUS-9', 'HAUS-10']);
+		).toEqual(['HAUS-9', 'HAUS-10']);
 		const sub = pool().querySelector(`[data-pool-ticket="${IN_POOL}"]`) as HTMLElement;
 		const context = contextIn(sub)!;
 		expect(context.visible).toBe('HAUS-7 › Wochenputz');
 		expect(context.hidden).toBe('Unteraufgabe von HAUS-7 Wochenputz:');
 		expect(context.link?.getAttribute('href')).toBe(parentHref);
+		expect(sub.classList.contains('nested')).toBe(false);
 		expect(within(sub).getByRole('button', { name: 'HAUS-9 zum Tagesplan' })).toBeTruthy();
-		expect(contextIn(pool().querySelector(`[data-pool-ticket="${PARENT}"]`)!)).toBeNull();
+		expect(contextIn(document.querySelector('[data-item-id="item00000000003"]')!)).toBeNull();
 	});
 
 	it('names the parent of a suggested sub-task outside the name of its check box', async () => {
@@ -802,6 +808,319 @@ describe('sub-tasks with their parent (TP-2)', () => {
 		expect(suggestions).toMatch(
 			/\.parent-line\s*\{[^}]*flex: 1 1 100%;[^}]*min-width: 0;[^}]*padding-left: 1\.5rem;/
 		);
+	});
+});
+
+describe('sub-tasks below their parent (TP-3)', () => {
+	const PARENT = 't000000000000p1';
+	const S1 = 't000000000000s1';
+	const S2 = 't000000000000s2';
+	const S3 = 't000000000000s3';
+	const DONE_SUB = 't000000000000s4';
+	const OTHER = 't000000000000p2';
+	const OTHER_SUB = 't000000000000s5';
+	const parentRef = { id: PARENT, key: 'HAUS-7', title: 'Wochenputz' };
+
+	/**
+	 * In the order of the list: a sub-task before its parent, a normal ticket, the parent
+	 * "Wochenputz" (in Arbeit) with three open sub-tasks (one due today) and a done one, and a second
+	 * parent with one sub-task.
+	 */
+	function familyTickets(): TicketSummary[] {
+		const sub = { parentId: PARENT, parentRef };
+		return [
+			planTicket(S2, { key: 'HAUS-9', title: 'Bad putzen', ...sub }),
+			planTicket(A1, { title: 'Steuer abgeben' }),
+			planTicket(PARENT, { key: 'HAUS-7', title: 'Wochenputz', status: 'in_progress' }),
+			planTicket(S1, { key: 'HAUS-8', title: 'Fenster putzen', ...sub }),
+			planTicket(S3, { key: 'HAUS-10', title: 'Böden wischen', due: TODAY, ...sub }),
+			planTicket(DONE_SUB, { key: 'HAUS-11', title: 'Müll trennen', status: 'done', ...sub }),
+			planTicket(OTHER, { key: 'HAUS-20', title: 'Umzug' }),
+			planTicket(OTHER_SUB, {
+				key: 'HAUS-21',
+				title: 'Kisten packen',
+				parentId: OTHER,
+				parentRef: { id: OTHER, key: 'HAUS-20', title: 'Umzug' }
+			})
+		];
+	}
+
+	const pool = () =>
+		screen.getByRole('heading', { name: 'Pool' }).closest('section') as HTMLElement;
+	const poolItem = (id: string) =>
+		pool().querySelector<HTMLElement>(`[data-pool-ticket="${id}"]`) as HTMLElement;
+	const planEntry = (id: string) =>
+		document.querySelector<HTMLElement>(`[data-item-id="${id}"]`) as HTMLElement;
+	/** Keys of a list, indented ones with two blanks before. */
+	const shapeOf = (items: Iterable<HTMLElement>) =>
+		[...items].map(
+			(item) =>
+				`${item.classList.contains('nested') ? '  ' : ''}${item.querySelector('.key')?.textContent}`
+		);
+	const poolRows = () => shapeOf(pool().querySelectorAll<HTMLElement>('[data-pool-ticket]'));
+	const planRows = () => shapeOf(document.querySelectorAll<HTMLElement>('[data-item-id]'));
+	const suggestionRows = () => shapeOf(document.querySelectorAll<HTMLElement>('li.suggestion'));
+	const searchFor = (value: string) =>
+		fireEvent.input(within(pool()).getByRole('searchbox', { name: 'Pool durchsuchen' }), {
+			target: { value }
+		});
+	const chipOf = (root: Element) =>
+		root.querySelector('.progress-chip [aria-hidden="true"]')?.textContent ?? null;
+	/** The visible line of context of a sub-task (TP-2), null without one. */
+	function contextOf(root: Element): string | null {
+		const line = root.querySelector<HTMLElement>('[data-subtask-path]');
+		if (line === null) return null;
+		const visible = line.cloneNode(true) as HTMLElement;
+		for (const hidden of visible.querySelectorAll('.visually-hidden')) hidden.remove();
+		return visible.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+	}
+	/** Indented like a row of the table: the corner, the parent for screen readers, no line. */
+	function expectIndented(root: Element, parentKey: string) {
+		expect(root.classList.contains('nested')).toBe(true);
+		expect(root.querySelector('.nest-icon')?.getAttribute('aria-hidden')).toBe('true');
+		expect(root.querySelector('.title-cell, .choice')?.textContent).toContain(
+			`Unteraufgabe von ${parentKey}:`
+		);
+		expect(root.querySelector('[data-subtask-path]')).toBeNull();
+	}
+
+	it('arranges the pool like "Aufgaben": the parent, directly below it its sub-tasks, with the chip', async () => {
+		const { data } = await renderPlan({ tickets: familyTickets(), items: [], ongoing: [] });
+
+		expect(poolRows()).toEqual([
+			'TASK-a1',
+			'HAUS-7',
+			'  HAUS-9',
+			'  HAUS-8',
+			'  HAUS-10',
+			'HAUS-20',
+			'  HAUS-21'
+		]);
+		expectIndented(poolItem(S1), 'HAUS-7');
+		expectIndented(poolItem(OTHER_SUB), 'HAUS-20');
+		// The corner stands before the key, like before the title in the table.
+		const corner = poolItem(S1).querySelector('.nest-icon') as Element;
+		expect(
+			corner.compareDocumentPosition(poolItem(S1).querySelector('.key')!) &
+				Node.DOCUMENT_POSITION_FOLLOWING
+		).toBeTruthy();
+		// The chip of the table at each parent: done and all of its sub-tasks, the done one too.
+		const chip = poolItem(PARENT).querySelector('.progress-chip');
+		expect(chip?.getAttribute('title')).toBe('1 von 4 Unteraufgaben erledigt');
+		expect(chipOf(poolItem(PARENT))).toBe('1/4');
+		expect(chipOf(poolItem(OTHER))).toBe('0/1');
+		expect(chipOf(poolItem(A1))).toBeNull();
+		expect(chipOf(poolItem(S1))).toBeNull();
+		// A sub-task still goes into the plan on its own, by "+" or by dragging.
+		expect(poolItem(S1).getAttribute('draggable')).toBe('true');
+		await fireEvent.click(
+			within(poolItem(S1)).getByRole('button', { name: 'HAUS-8 zum Tagesplan' })
+		);
+		await vi.waitFor(() =>
+			expect(data.add).toHaveBeenCalledWith({ ticket: S1, scope: 'u:user00000000001', date: TODAY })
+		);
+		await vi.waitFor(() => expect(planRows()).toEqual(['HAUS-8']));
+		expect(poolRows()).toEqual([
+			'TASK-a1',
+			'HAUS-7',
+			'  HAUS-9',
+			'  HAUS-10',
+			'HAUS-20',
+			'  HAUS-21'
+		]);
+	});
+
+	it('shows the first 60 tickets of the pool in whole blocks: a parent counts with its sub-tasks', async () => {
+		const singles = Array.from({ length: 58 }, (_, index) =>
+			planTicket(`t0000000000${String(index).padStart(4, '0')}`, { title: `Einzeln ${index}` })
+		);
+		const family = familyTickets().filter((ticket) => [PARENT, S1, S2, S3].includes(ticket.id));
+		await renderPlan({ tickets: [...singles, ...family], items: [], ongoing: [] });
+
+		// 58 single tickets and a block of four: the block would make 62 and stays out as a whole.
+		expect(poolRows()).toHaveLength(58);
+		expect(poolItem(PARENT)).toBeNull();
+		expect(within(pool()).getByText('4 weitere – die Suche grenzt ein.')).toBeTruthy();
+		await searchFor('wochenputz');
+		expect(poolRows()).toEqual(['HAUS-7', '  HAUS-9', '  HAUS-8', '  HAUS-10']);
+		expect(within(pool()).queryByText(/weitere – die Suche grenzt ein/)).toBeNull();
+	});
+
+	it('finds sub-tasks over key or title of their parent, the words spread over both', async () => {
+		await renderPlan({ tickets: familyTickets(), items: [], ongoing: [] });
+
+		const search = within(pool()).getByRole('searchbox', { name: 'Pool durchsuchen' });
+		expect(search.getAttribute('placeholder')).toBe('Key, Titel oder Hauptticket');
+		// A hit on the parent brings its open sub-tasks along: they match over the parent, too.
+		await searchFor('wochenputz');
+		expect(poolRows()).toEqual(['HAUS-7', '  HAUS-9', '  HAUS-8', '  HAUS-10']);
+		await searchFor('haus-20');
+		expect(poolRows()).toEqual(['HAUS-20', '  HAUS-21']);
+		// Every word somewhere: only the sub-task has both, so it stands alone with its line.
+		await searchFor('wochenputz fenster');
+		expect(poolRows()).toEqual(['HAUS-8']);
+		expect(contextOf(poolItem(S1))).toBe('HAUS-7 › Wochenputz');
+		// Its own key and title find a sub-task as before.
+		await searchFor('kisten');
+		expect(poolRows()).toEqual(['HAUS-21']);
+		await searchFor('haus-8');
+		expect(poolRows()).toEqual(['HAUS-8']);
+	});
+
+	it('searches a renamed parent by its new title and never the fallback "…" of an unknown one', async () => {
+		const ORPHAN = 't000000000000s9';
+		const { list } = await renderPlan({
+			tickets: [
+				...familyTickets(),
+				planTicket(ORPHAN, {
+					key: 'HAUS-30',
+					title: 'Waise',
+					parentId: 't000000000000g1',
+					parentRef: null
+				})
+			],
+			items: [],
+			ongoing: []
+		});
+
+		await searchFor('frühjahrsputz');
+		expect(within(pool()).getByText('Kein Ticket passt zu „frühjahrsputz“.')).toBeTruthy();
+		// Only the parent changes in the list; its sub-tasks are the same objects as before.
+		list.map.set(
+			PARENT,
+			planTicket(PARENT, { key: 'HAUS-7', title: 'Frühjahrsputz', status: 'in_progress' })
+		);
+		await tick();
+		expect(poolRows()).toEqual(['HAUS-7', '  HAUS-9', '  HAUS-8', '  HAUS-10']);
+		await searchFor('wochenputz');
+		expect(within(pool()).getByText('Kein Ticket passt zu „wochenputz“.')).toBeTruthy();
+		await searchFor('…');
+		expect(within(pool()).getByText('Kein Ticket passt zu „…“.')).toBeTruthy();
+		await searchFor('waise');
+		expect(poolRows()).toEqual(['HAUS-30']);
+		expect(contextOf(poolItem(ORPHAN))).toBe('… ›');
+	});
+
+	it('arranges the suggestions; choosing a parent chooses none of its sub-tasks; adopts in that order', async () => {
+		const { data } = await renderPlan({
+			tickets: [...familyTickets(), planTicket(A3, { title: 'Müll rausbringen', due: TODAY })],
+			items: [],
+			ongoing: []
+		});
+
+		// By the rules: TASK-a3 and HAUS-10 due today, then HAUS-7 in Arbeit; shown like "Aufgaben".
+		expect(suggestionRows()).toEqual(['TASK-a3', 'HAUS-7', '  HAUS-10']);
+		const sub = screen.getByRole<HTMLInputElement>('checkbox', {
+			name: /^Unteraufgabe von HAUS-7: HAUS-10 Böden wischen/
+		});
+		expectIndented(sub.closest('li') as HTMLElement, 'HAUS-7');
+		const parent = screen.getByRole<HTMLInputElement>('checkbox', { name: /^HAUS-7 Wochenputz/ });
+		expect(chipOf(parent.closest('li') as HTMLElement)).toBe('1/4');
+		expect(chipOf(sub.closest('li') as HTMLElement)).toBeNull();
+		await fireEvent.click(parent);
+		expect(parent.checked).toBe(true);
+		expect(sub.checked).toBe(false);
+		expect(screen.getByRole('button', { name: 'Übernehmen (1)' })).toBeTruthy();
+		// Chosen in another order, they go into the plan in the order shown.
+		await fireEvent.click(sub);
+		await fireEvent.click(screen.getByRole('checkbox', { name: /^TASK-a3 Müll rausbringen/ }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Übernehmen (3)' }));
+		await vi.waitFor(() =>
+			expect(data.adopt).toHaveBeenCalledWith('u:user00000000001', [A3, PARENT, S3])
+		);
+		await vi.waitFor(() => expect(planRows()).toEqual(['TASK-a3', 'HAUS-7', '  HAUS-10']));
+	});
+
+	it('keeps a suggested sub-task alone with its line when its parent is no suggestion', async () => {
+		await renderPlan({
+			tickets: familyTickets().map((ticket) =>
+				ticket.id === PARENT ? { ...ticket, status: 'open' as const } : ticket
+			),
+			items: [],
+			ongoing: []
+		});
+
+		expect(suggestionRows()).toEqual(['HAUS-10']);
+		const row = document.querySelector('li.suggestion') as HTMLElement;
+		expect(contextOf(row)).toBe('HAUS-7 › Wochenputz');
+		expect(row.querySelector('.nest-icon')).toBeNull();
+	});
+
+	it('indents a sub-task in the plan below its parent or an indented sibling; order and moving stay', async () => {
+		const { data } = await renderPlan({
+			tickets: familyTickets(),
+			items: [
+				planItem('item00000000001', PARENT, 0),
+				planItem('item00000000002', S1, 1),
+				planItem('item00000000003', S2, 2),
+				planItem('item00000000004', A1, 3),
+				planItem('item00000000005', S3, 4)
+			],
+			ongoing: []
+		});
+
+		// The order of the plan stays; only the display follows it.
+		expect(planRows()).toEqual(['HAUS-7', '  HAUS-8', '  HAUS-9', 'TASK-a1', 'HAUS-10']);
+		expectIndented(planEntry('item00000000002'), 'HAUS-7');
+		expectIndented(planEntry('item00000000003'), 'HAUS-7');
+		// Away from its parent a sub-task names it above its title (TP-2).
+		expect(contextOf(planEntry('item00000000005'))).toBe('HAUS-7 › Wochenputz');
+		expect(chipOf(planEntry('item00000000001'))).toBe('1/4');
+		expect(chipOf(planEntry('item00000000004'))).toBeNull();
+		// Check mark, buttons and menu of an indented entry stay as they were.
+		const sub = planEntry('item00000000002');
+		expect(screen.getByRole('checkbox', { name: 'HAUS-8 erledigt' })).toBeTruthy();
+		expect(within(sub).getByRole('button', { name: 'Weitere Aktionen für HAUS-8' })).toBeTruthy();
+		// Moved up to its siblings, the sub-task is indented there; only its place is stored.
+		await fireEvent.click(
+			within(planEntry('item00000000005')).getByRole('button', { name: 'HAUS-10 nach oben' })
+		);
+		await vi.waitFor(() => expect(data.move).toHaveBeenCalledWith('item00000000005', 3));
+		await vi.waitFor(() =>
+			expect(planRows()).toEqual(['HAUS-7', '  HAUS-8', '  HAUS-9', '  HAUS-10', 'TASK-a1'])
+		);
+		// Dragged to the end, the parent leaves its sub-tasks: they stand alone with their line.
+		layoutEntries();
+		const dataTransfer = transfer();
+		await fireEvent.dragStart(planEntry('item00000000001').querySelector('.handle') as Element, {
+			dataTransfer
+		});
+		const plan = screen.getByRole('group', { name: 'Einträge des Plans' });
+		await drag(plan, 'dragover', dataTransfer, 500);
+		await drag(plan, 'drop', dataTransfer, 500);
+		await vi.waitFor(() => expect(data.move).toHaveBeenCalledWith('item00000000001', 4));
+		await vi.waitFor(() =>
+			expect(planRows()).toEqual(['HAUS-8', 'HAUS-9', 'HAUS-10', 'TASK-a1', 'HAUS-7'])
+		);
+		expect(contextOf(planEntry('item00000000002'))).toBe('HAUS-7 › Wochenputz');
+		expect(contextOf(planEntry('item00000000003'))).toBe('HAUS-7 › Wochenputz');
+	});
+
+	it('indents with a margin of the whole entry, so nothing scrolls sideways on a phone', () => {
+		const read = (name: string) => readFileSync(join(import.meta.dirname, name), 'utf8');
+		expect(read('DayPlanList.svelte')).toMatch(/\.entry\.nested\s*\{\s*margin-left: 1\.5rem;\s*\}/);
+		expect(read('DayPlanPool.svelte')).toMatch(
+			/\.ticket\.nested\s*\{\s*margin-left: 1\.5rem;\s*\}/
+		);
+		expect(read('DayPlanSuggestions.svelte')).toMatch(
+			/\.suggestion\.nested\s*\{\s*padding-left: 1\.5rem;\s*\}/
+		);
+		// The entries are items of a grid of one column that is never wider than the list, and they
+		// may shrink: indented ones stay inside its width.
+		const lists: [file: string, list: string, item: string][] = [
+			['DayPlanList.svelte', 'entries', 'entry'],
+			['DayPlanPool.svelte', 'tickets', 'ticket'],
+			['DayPlanSuggestions.svelte', 'list', 'suggestion']
+		];
+		for (const [file, list, item] of lists) {
+			const source = read(file);
+			expect(source, file).toMatch(
+				new RegExp(
+					`\\.${list}\\s*\\{\\s*display: grid;\\s*grid-template-columns: minmax\\(0, 1fr\\);`
+				)
+			);
+			expect(source, file).toMatch(new RegExp(`\\.${item}\\s*\\{[^}]*min-width: 0;`));
+		}
 	});
 });
 

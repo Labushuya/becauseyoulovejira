@@ -6,6 +6,7 @@ import { vi } from 'vitest';
 import type { DayPlanAnswer, DayPlanItem, DayPlanMeta } from '$lib/data/day-plan';
 import { DEFAULT_SOURCES, type CheckMode, type DayPlanOrigin } from '$lib/domain/day-plan';
 import type { Status } from '$lib/domain/status';
+import { subtaskProgress } from '$lib/domain/subtasks';
 import type { TicketSummary } from '$lib/domain/ticket';
 import type { DayPlanData } from '$lib/stores/day-plan.svelte';
 import type { FlagInput, FlagSink } from '$lib/stores/flags.svelte';
@@ -98,6 +99,9 @@ export function fakeTickets(initial: TicketSummary[]) {
 		newInProjects: 0,
 		find: (id: string) => map.get(id) ?? null,
 		upsert: vi.fn((entry: TicketSummary) => void map.set(entry.id, entry)),
+		/** Like the list store: every sub-task of the map, open and done ones (TP-3). */
+		progressOf: (parentId: string) =>
+			subtaskProgress([...map.values()].filter((entry) => entry.parentId === parentId)),
 		loadOpen: vi.fn()
 	};
 }

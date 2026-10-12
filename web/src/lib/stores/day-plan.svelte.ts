@@ -8,7 +8,8 @@
 // - Suggestions and pool are computed here from the live open tickets of the list store, with the same
 //   rules as the server (domain/day-plan.ts): a ticket that becomes due, overdue or an ongoing project
 //   is suggested at once. When a ticket of an automatic source appears, the plan is asked for again, and
-//   the server takes it in (idempotent).
+//   the server takes it in (idempotent). Both are arranged like the table "Aufgaben": a sub-task
+//   below its parent when both are there (TP-3); the plan keeps its own order.
 // - Every change goes through a route; the answer is applied at once, realtime brings the same again
 //   (idempotent by `updated`). Results and "Rückgängig" go out as flags, failures as error flags.
 
@@ -61,7 +62,15 @@ import {
 	type TicketKind
 } from '$lib/domain/day-plan';
 import type { Status } from '$lib/domain/status';
-import { parentOf, type CompletionChoice } from '$lib/domain/subtasks';
+import {
+	arrangeBy,
+	parentOf,
+	parentTicketOf,
+	type ArrangedRow,
+	type ArrangedTicket,
+	type CompletionChoice,
+	type SubtaskProgress
+} from '$lib/domain/subtasks';
 import type { ParentRef, TicketSummary } from '$lib/domain/ticket';
 import { SILENT_FLAGS, type FlagSink } from './flags.svelte';
 import { hold, type LiveSource } from './realtime';
@@ -156,6 +165,8 @@ export interface DayPlanTickets {
 	readonly today: CalendarDate;
 	find(id: string): TicketSummary | null;
 	upsert(ticket: TicketSummary): void;
+	/** Done and all sub-tasks of a ticket, as the table counts them (the chip "2/5", TP-3). */
+	progressOf(parentId: string): SubtaskProgress;
 }
 
 /** An entry with its ticket as the plan shows it. */
@@ -360,10 +371,27 @@ export class DayPlanStore {
 		return this.#suggestions.filter((entry) => entry.mode === 'auto').map((entry) => entry.id);
 	}
 
+	/**
+	 * The suggestions arranged like the table "Aufgaben" (TP-3): a sub-task directly below its
+	 * parent when both are suggested, its siblings in the order of the suggestions; otherwise at its
+	 * place with its parent for the line of context. "Übernehmen" sends this order.
+	 */
+	get suggestionRows(): ArrangedRow<SuggestionRow>[] {
+		return this.arrange(this.suggestions, (row) => row.ticket);
+	}
+
 	/** The open tickets of the area that are not in the plan, in the default order of the list. */
 	get pool(): readonly TicketSummary[] {
 		const planned = this.#planned;
 		return this.#tickets.open.filter((ticket) => !planned.includes(ticket.id));
+	}
+
+	/**
+	 * Entries in their order, arranged like the table "Aufgaben" (TP-3): a sub-task follows its
+	 * parent directly when both are among them (the pool, the suggestions).
+	 */
+	arrange<E>(entries: readonly E[], ticketOf: (entry: E) => ArrangedTicket): ArrangedRow<E>[] {
+		return arrangeBy(entries, ticketOf, true, (id) => this.#tickets.find(id));
 	}
 
 	/**
@@ -372,6 +400,21 @@ export class DayPlanStore {
 	 */
 	parentOf(ticket: Pick<TicketSummary, 'parentId' | 'parentRef'>): ParentRef | null {
 		return parentOf(ticket, (id) => this.#tickets.find(id));
+	}
+
+	/**
+	 * The parent of a sub-task for the search of the pool (TP-3): the object of the list, else the
+	 * expanded one; null for a top-level ticket and an unknown parent.
+	 */
+	parentTicketOf(
+		ticket: Pick<TicketSummary, 'parentId' | 'parentRef'>
+	): Pick<TicketSummary, 'key' | 'title'> | null {
+		return parentTicketOf(ticket, (id) => this.#tickets.find(id));
+	}
+
+	/** Done and all sub-tasks of a ticket for the chip "2/5" (TP-3), the same as in the table. */
+	progressOf(ticketId: string): SubtaskProgress {
+		return this.#tickets.progressOf(ticketId);
 	}
 
 	get settings(): DayPlanSettings {
@@ -693,10 +736,15 @@ export class DayPlanStore {
 		}
 	}
 
-	/** "Übernehmen" of chosen suggestions, in the order of the suggestions. */
+	/**
+	 * "Übernehmen" of chosen suggestions, in the order they are shown: arranged, a sub-task below its
+	 * parent (TP-3). The server puts them at the end of the plan in this order.
+	 */
 	async adopt(ids: readonly string[]): Promise<boolean> {
 		if (!this.editable || ids.length === 0 || !this.#session.ensureValid()) return false;
-		const order = this.suggestions.map((row) => row.ticket.id).filter((id) => ids.includes(id));
+		const order = this.suggestionRows
+			.map((row) => row.entry.ticket.id)
+			.filter((id) => ids.includes(id));
 		for (const id of order) this.#pending.add(id);
 		try {
 			const answer = await this.#data.adopt(this.#area(), order);
@@ -718,9 +766,9 @@ export class DayPlanStore {
 		}
 	}
 
-	/** "Alle übernehmen". */
+	/** "Alle übernehmen", in the order they are shown. */
 	adoptAll(): Promise<boolean> {
-		return this.adopt(this.suggestions.map((row) => row.ticket.id));
+		return this.adopt(this.suggestionRows.map((row) => row.entry.ticket.id));
 	}
 
 	/**

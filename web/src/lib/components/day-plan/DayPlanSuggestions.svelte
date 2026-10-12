@@ -5,14 +5,19 @@
 	import { ticketLinks } from '$lib/stores/open-mode.svelte';
 	import CharmIcon from '../CharmIcon.svelte';
 	import KindBadge from '../KindBadge.svelte';
+	import SubtaskNestIcon from '../SubtaskNestIcon.svelte';
 	import SubtaskPath from '../SubtaskPath.svelte';
+	import SubtaskProgressChip from '../SubtaskProgressChip.svelte';
 	import DayPlanSettings from './DayPlanSettings.svelte';
 
 	// "Vorschläge" of the plan of today (ADR-0065 §3), a section that folds (the heading is the button,
 	// aria-expanded). Each suggestion names its reason ("heute fällig", "überfällig seit 05.10.", …);
-	// chosen ones go into the plan with "Übernehmen", all with "Alle übernehmen". What is in the plan is
-	// no suggestion any more. The sources are set next to the heading ("Einstellen"). A sub-task names
-	// its parent above its title (TP-2).
+	// chosen ones go into the plan with "Übernehmen", all with "Alle übernehmen", in the order shown.
+	// What is in the plan is no suggestion any more. The sources are set next to the heading
+	// ("Einstellen"). Arranged like the table "Aufgaben" (TP-3): a suggested sub-task stands indented
+	// with the corner directly below its suggested parent, the parent with the chip "2/5"; choosing
+	// the parent chooses none of its sub-tasks. A sub-task whose parent is no suggestion names it
+	// above its title (TP-2).
 	let {
 		store,
 		household = false,
@@ -25,12 +30,12 @@
 	const links = ticketLinks();
 	const chosen = new SvelteSet<string>();
 
-	const rows = $derived(store.suggestions);
+	const rows = $derived(store.suggestionRows);
 	/** Only suggestions that are still there count as chosen. */
 	const picked = $derived(
-		rows.filter((row) => chosen.has(row.ticket.id)).map((row) => row.ticket.id)
+		rows.filter((row) => chosen.has(row.entry.ticket.id)).map((row) => row.entry.ticket.id)
 	);
-	const busy = $derived(rows.some((row) => store.isPending(row.ticket.id)));
+	const busy = $derived(rows.some((row) => store.isPending(row.entry.ticket.id)));
 
 	function toggle(id: string, on: boolean) {
 		if (on) chosen.add(id);
@@ -78,11 +83,10 @@
 			<p class="hint">Keine Vorschläge für heute.</p>
 		{:else}
 			<ul class="list">
-				{#each rows as row (row.ticket.id)}
-					{@const ticket = row.ticket}
-					{@const parent = store.parentOf(ticket)}
-					<li class="suggestion">
-						{#if parent}
+				{#each rows as { entry, nested, parent } (entry.ticket.id)}
+					{@const ticket = entry.ticket}
+					<li class="suggestion" class:nested>
+						{#if parent && !nested}
 							<!-- A sub-task names its parent above its title (TP-2), outside the label: the
 							     link opens the parent and is no part of the name of the check box. -->
 							<span class="parent-line">
@@ -95,11 +99,18 @@
 								checked={chosen.has(ticket.id)}
 								onchange={(event) => toggle(ticket.id, event.currentTarget.checked)}
 							/>
+							{#if parent && nested}
+								<!-- Indented below its parent (TP-3): the corner; the name of the check box
+								     begins with "Unteraufgabe von HAUS-7:". -->
+								<SubtaskPath {parent} path={false} />
+								<SubtaskNestIcon />
+							{/if}
 							<CharmIcon charm={ticket.charm} />
 							<span class="key">{ticket.key}</span>
 							<span class="title">{ticket.title}</span>
 							<KindBadge kind={ticket.kind} />
-							<span class="reason">– {row.suggestion.reasons.join(' · ')}</span>
+							<SubtaskProgressChip progress={store.progressOf(ticket.id)} />
+							<span class="reason">– {entry.suggestion.reasons.join(' · ')}</span>
 						</label>
 						<a
 							class="button-icon open"
@@ -207,8 +218,10 @@
 		border-radius: var(--radius-pill);
 	}
 
+	/* One column never wider than the section, also with indented rows (TP-3). */
 	.list {
 		display: grid;
+		grid-template-columns: minmax(0, 1fr);
 		gap: 0.125rem;
 		margin: 0;
 		padding: 0;
@@ -221,6 +234,11 @@
 		gap: 0 0.5rem;
 		align-items: center;
 		min-width: 0;
+	}
+
+	/* A sub-task below its suggested parent (TP-3): the whole row indented, like in the pool. */
+	.suggestion.nested {
+		padding-left: 1.5rem;
 	}
 
 	/* The parent of a sub-task: a line of its own, in line with the title after the check box (1rem

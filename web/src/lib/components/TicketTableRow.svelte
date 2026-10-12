@@ -38,7 +38,7 @@
 	import { berlinDateOf, formatBerlinDateTime, formatCalendarDate } from '$lib/domain/format';
 	import { projectChoiceLabel, projectPath } from '$lib/domain/project-tree';
 	import { SOURCE_FAMILY_LABELS, sourceFamily } from '$lib/domain/source';
-	import { progressLabel, type SubtaskProgress } from '$lib/domain/subtasks';
+	import type { SubtaskProgress } from '$lib/domain/subtasks';
 	import type { ParentRef, ProjectRef, TagRef, TicketSummary } from '$lib/domain/ticket';
 	import { PRIORITY_LABELS } from '$lib/domain/labels';
 	import { PRIORITIES } from '$lib/domain/status';
@@ -53,7 +53,9 @@
 	import PriorityIcon from './PriorityIcon.svelte';
 	import SourceIcon from './SourceIcon.svelte';
 	import StatusPill from './StatusPill.svelte';
+	import SubtaskNestIcon from './SubtaskNestIcon.svelte';
 	import SubtaskPath from './SubtaskPath.svelte';
+	import SubtaskProgressChip from './SubtaskProgressChip.svelte';
 	import TagPicker from './TagPicker.svelte';
 	import DueEditor from './table/DueEditor.svelte';
 	import EditableCell from './table/EditableCell.svelte';
@@ -408,16 +410,7 @@
 				<SubtaskPath {parent} path={!nested} />
 				{#if nested}
 					<!-- Indented below its parent: a corner instead of the path. -->
-					<svg
-						class="nest-icon"
-						viewBox="0 0 16 16"
-						width="12"
-						height="12"
-						aria-hidden="true"
-						focusable="false"
-					>
-						<path d="M4 2.5v6.5h8.5M10 6.5l2.5 2.5L10 11.5" />
-					</svg>
+					<SubtaskNestIcon />
 				{/if}
 			{/if}
 			<SourceIcon source={ticket.source} />
@@ -459,12 +452,7 @@
 				<!-- The initials of the assignee (ADR-0068 §2), while the column "Zuständig" is off. -->
 				<AssigneeBadge assignee={ticket.assignee} context={assignees.context} />
 			{/if}
-			{#if progress && progress.total > 0}
-				<span class="progress-chip" title={progressLabel(progress)}>
-					<span aria-hidden="true">{progress.done}/{progress.total}</span>
-					<span class="visually-hidden">, {progressLabel(progress)}</span>
-				</span>
-			{/if}
+			<SubtaskProgressChip {progress} />
 		</div>
 		{#if pin}
 			<!-- The pin toggle (ADR-0064) at the end of the cell; the charm stays before the title. -->
@@ -751,34 +739,19 @@
 		color: var(--color-text-muted);
 	}
 
-	/* Sub-tasks (ADR-0033 section 5): indented below the parent, or the path (SubtaskPath). */
+	/* Sub-tasks (ADR-0033 section 5): indented below the parent with its corner (SubtaskNestIcon),
+	   or the path (SubtaskPath). */
 	.nested .title {
 		padding-left: 2rem;
 	}
 
-	.nest-icon {
+	.title-clamp :global(.nest-icon) {
 		margin-right: 0.25rem;
-		vertical-align: middle;
-		color: var(--color-text-muted);
-		fill: none;
-		stroke: currentColor;
-		stroke-width: 1.5;
-		stroke-linecap: round;
-		stroke-linejoin: round;
 	}
 
-	/* Progress of the sub-tasks of a parent: "2/5". */
-	.progress-chip {
-		display: inline-block;
+	/* Progress of the sub-tasks of a parent: "2/5" (SubtaskProgressChip). */
+	.title-clamp :global(.progress-chip) {
 		margin-left: 0.375rem;
-		padding: 0 0.375rem;
-		font-size: var(--font-size-small);
-		line-height: 1.125rem;
-		font-variant-numeric: tabular-nums;
-		vertical-align: middle;
-		color: var(--color-text-muted);
-		border: 1px solid var(--color-line);
-		border-radius: var(--radius-pill);
 	}
 
 	.parent {

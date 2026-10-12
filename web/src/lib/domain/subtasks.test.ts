@@ -7,16 +7,20 @@ import type { TicketSummary } from './ticket';
 import {
 	COMPLETION_CHOICES,
 	COMPLETION_LABELS,
+	arrangeBy,
 	arrangeRows,
 	compareSubtasks,
 	completionHint,
 	isKnownParent,
 	keysText,
+	limitBlocks,
+	nestedInOrder,
 	openBlocking,
 	openChildrenMessage,
 	openChildrenQuestion,
 	parentOf,
 	parentSeriesOf,
+	parentTicketOf,
 	parentSeriesText,
 	progressLabel,
 	progressPercent,
@@ -173,6 +177,112 @@ describe('arrangeRows (ADR-0033 section 5)', () => {
 		expect(shape(arrangeRows([row('x'), row('y')], true, find))).toEqual(['x', 'y']);
 		const rows = arrangeRows([row('a', 'gone')], true, () => null);
 		expect(rows[0]?.parent).toEqual({ id: 'gone', key: '…', title: '' });
+	});
+});
+
+describe('arrangeBy: any entry with a ticket (TP-3)', () => {
+	const ticket = (id: string, parentId: string | null = null) =>
+		({ id, key: id.toUpperCase(), title: `Titel ${id}`, parentId }) as TicketSummary;
+	const find = (id: string) => ({ id, key: id.toUpperCase(), title: `Titel ${id}` });
+	/** A suggestion of the day plan: the ticket and a reason. */
+	const entry = (id: string, parentId: string | null = null) => ({
+		ticket: ticket(id, parentId),
+		reason: `Grund ${id}`
+	});
+	const shape = (rows: ReturnType<typeof arrangeBy<ReturnType<typeof entry>>>) =>
+		rows.map(
+			(row) =>
+				`${row.nested ? '  ' : ''}${row.entry.ticket.id}${row.parent ? `<${row.parent.key}` : ''}`
+		);
+
+	it('arranges entries by the ticket it reads, the same as arrangeRows for the tickets', () => {
+		const list = [entry('a1', 'p'), entry('x'), entry('p'), entry('a2', 'p'), entry('b', 'q')];
+
+		const rows = arrangeBy(list, (item) => item.ticket, true, find);
+		expect(shape(rows)).toEqual(['x', 'p', '  a1<P', '  a2<P', 'b<Q']);
+		// The entries themselves come back, with all they carry.
+		expect(rows[2]?.entry).toBe(list[0]);
+		expect(rows[2]?.entry.reason).toBe('Grund a1');
+		const tickets = list.map((item) => item.ticket);
+		expect(
+			arrangeRows(tickets, true, find).map((row) => [row.ticket.id, row.nested, row.parent?.key])
+		).toEqual(rows.map((row) => [row.entry.ticket.id, row.nested, row.parent?.key]));
+	});
+
+	it('leaves every entry at its place without nesting', () => {
+		const list = [entry('a1', 'p'), entry('p')];
+
+		expect(shape(arrangeBy(list, (item) => item.ticket, false, find))).toEqual(['a1<P', 'p']);
+	});
+});
+
+describe('limitBlocks (TP-3)', () => {
+	const rows = (shape: string) =>
+		shape.split(' ').map((part) => ({ id: part.replace('>', ''), nested: part.startsWith('>') }));
+	const ids = (list: { id: string }[]) => list.map((row) => row.id).join(' ');
+
+	it('takes whole blocks of a row and the rows indented below it', () => {
+		const list = rows('a b >b1 >b2 c >c1');
+
+		expect(ids(limitBlocks(list, 6))).toBe('a b b1 b2 c c1');
+		expect(ids(limitBlocks(list, 5))).toBe('a b b1 b2');
+		expect(ids(limitBlocks(list, 4))).toBe('a b b1 b2');
+		// A block that does not fit counts not at all, and none after it follows.
+		expect(ids(limitBlocks(list, 3))).toBe('a');
+		expect(ids(limitBlocks(rows('a b >b1 >b2 c'), 3))).toBe('a');
+	});
+
+	it('shows the first block in full even when it alone is longer than the limit', () => {
+		expect(ids(limitBlocks(rows('p >p1 >p2 >p3 x'), 2))).toBe('p p1 p2 p3');
+		expect(ids(limitBlocks(rows('x y'), 1))).toBe('x');
+		expect(limitBlocks([], 3)).toEqual([]);
+	});
+});
+
+describe('nestedInOrder: the plan of a day (TP-3)', () => {
+	const ticket = (id: string, parentId: string | null = null) => ({ id, parentId });
+
+	it('indents a sub-task directly below its parent or an indented sibling', () => {
+		expect(
+			nestedInOrder([
+				ticket('p'),
+				ticket('a', 'p'),
+				ticket('b', 'p'),
+				ticket('x'),
+				ticket('c', 'p'),
+				ticket('q'),
+				ticket('d', 'p')
+			])
+		).toEqual([false, true, true, false, false, false, false]);
+	});
+
+	it('never indents below a sub-task of another parent, a missing ticket or at the top', () => {
+		expect(
+			nestedInOrder([ticket('a', 'p'), ticket('p'), ticket('b', 'q'), ticket('c', 'p')])
+		).toEqual([false, false, false, false]);
+		expect(nestedInOrder([ticket('p'), null, ticket('a', 'p')])).toEqual([false, false, false]);
+		expect(nestedInOrder([ticket('p'), ticket('a', 'p'), null, ticket('b', 'p')])).toEqual([
+			false,
+			true,
+			false,
+			false
+		]);
+		expect(nestedInOrder([])).toEqual([]);
+	});
+});
+
+describe('parentTicketOf (TP-3)', () => {
+	const PARENT = { id: 'parent000000001', key: 'HAUS-12', title: 'Umzug' };
+
+	it('gives the object of the list, else the expanded one, never a made-up one', () => {
+		const listed = { ...PARENT, title: 'Umzug nach Bonn' };
+		const expanded = { ...PARENT };
+		const ticket = { parentId: PARENT.id, parentRef: expanded };
+
+		expect(parentTicketOf(ticket, (id) => (id === PARENT.id ? listed : null))).toBe(listed);
+		expect(parentTicketOf(ticket, () => null)).toBe(expanded);
+		expect(parentTicketOf({ parentId: PARENT.id, parentRef: null }, () => null)).toBeNull();
+		expect(parentTicketOf({ parentId: null }, () => listed)).toBeNull();
 	});
 });
 

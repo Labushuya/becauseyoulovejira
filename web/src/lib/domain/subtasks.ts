@@ -128,36 +128,109 @@ export interface TicketRow<T> {
 	parent: ParentRef | null;
 }
 
+/** A row of any list whose entries carry a ticket (the day plan, TP-3), arranged like the table. */
+export interface ArrangedRow<E> {
+	entry: E;
+	/** Indented directly below its parent. */
+	nested: boolean;
+	/** The parent of a sub-task (for the path hint), else null. */
+	parent: ParentRef | null;
+}
+
+/** What arranging needs of the ticket of an entry. */
+export type ArrangedTicket = Pick<TicketSummary, 'id' | 'parentId' | 'parentRef'>;
+
+/**
+ * Order of entries given in the order of their sort (ADR-0033 section 5), each with a ticket that
+ * `ticketOf` names: with `nest` a sub-task follows its parent directly when both are among the
+ * entries, and sub-tasks of one parent keep their order among each other. Otherwise, and without
+ * `nest`, every entry stays at its place; a sub-task then carries its parent for the path hint.
+ * The table arranges tickets with it (`arrangeRows`), the day plan its pool and its suggestions
+ * (TP-3). Filters, search and counts are the caller's, per entry.
+ */
+export function arrangeBy<E>(
+	entries: readonly E[],
+	ticketOf: (entry: E) => ArrangedTicket,
+	nest: boolean,
+	find: (id: string) => Pick<TicketSummary, 'id' | 'key' | 'title'> | null
+): ArrangedRow<E>[] {
+	const shown = new Set(entries.map((entry) => ticketOf(entry).id));
+	const parentIdOf = (entry: E) => ticketOf(entry).parentId || null;
+	const follows = (entry: E) => {
+		const parentId = parentIdOf(entry);
+		return nest && parentId !== null && shown.has(parentId);
+	};
+	const children = new Map<string, E[]>();
+	for (const entry of entries) {
+		const parentId = parentIdOf(entry);
+		if (!follows(entry) || parentId === null) continue;
+		const list = children.get(parentId);
+		if (list === undefined) children.set(parentId, [entry]);
+		else list.push(entry);
+	}
+	const rows: ArrangedRow<E>[] = [];
+	for (const entry of entries) {
+		if (follows(entry)) continue;
+		rows.push({ entry, nested: false, parent: parentOf(ticketOf(entry), find) });
+		for (const child of children.get(ticketOf(entry).id) ?? []) {
+			rows.push({ entry: child, nested: true, parent: parentOf(ticketOf(child), find) });
+		}
+	}
+	return rows;
+}
+
 /**
  * Order of the rows of one section of the table (a group, the open or the done tickets), given in
- * the order of the sort (ADR-0033 section 5): with `nest` a sub-task follows its parent directly
- * when both are in `tickets`, and sub-tasks of one parent keep their order among each other.
- * Otherwise, and without `nest`, every ticket stays at its place; a sub-task then carries its
- * parent for the path hint. Filters, search and counts are the caller's, per ticket.
+ * the order of the sort (ADR-0033 section 5): `arrangeBy` with the tickets themselves as entries.
  */
 export function arrangeRows<T extends TicketSummary>(
 	tickets: readonly T[],
 	nest: boolean,
 	find: (id: string) => Pick<TicketSummary, 'id' | 'key' | 'title'> | null
 ): TicketRow<T>[] {
-	const shown = new Set(tickets.map((ticket) => ticket.id));
-	const follows = (ticket: T) => nest && !!ticket.parentId && shown.has(ticket.parentId);
-	const children = new Map<string, T[]>();
-	for (const ticket of tickets) {
-		if (!follows(ticket) || !ticket.parentId) continue;
-		const list = children.get(ticket.parentId);
-		if (list === undefined) children.set(ticket.parentId, [ticket]);
-		else list.push(ticket);
+	return arrangeBy(tickets, (ticket) => ticket, nest, find).map(({ entry, nested, parent }) => ({
+		ticket: entry,
+		nested,
+		parent
+	}));
+}
+
+/**
+ * The first arranged rows up to `limit`, in whole blocks (the pool of the day plan, TP-3): a block
+ * is a row with the rows indented below it, and it counts in full or not at all. The first block
+ * shows in full even when it alone is longer than `limit`; after a block that does not fit, none
+ * follows, so the order stays.
+ */
+export function limitBlocks<R extends { nested: boolean }>(rows: readonly R[], limit: number): R[] {
+	let end = 0;
+	while (end < rows.length) {
+		let next = end + 1;
+		while (next < rows.length && rows[next]?.nested === true) next += 1;
+		if (next > limit && end > 0) break;
+		end = next;
 	}
-	const rows: TicketRow<T>[] = [];
-	for (const ticket of tickets) {
-		if (follows(ticket)) continue;
-		rows.push({ ticket, nested: false, parent: parentOf(ticket, find) });
-		for (const child of children.get(ticket.id) ?? []) {
-			rows.push({ ticket: child, nested: true, parent: parentOf(child, find) });
-		}
-	}
-	return rows;
+	return rows.slice(0, end);
+}
+
+/**
+ * Indentation of a list whose order is the user's and never changes (the plan of a day, TP-3): an
+ * entry is indented when the entry directly above it is its parent or an indented sub-task of the
+ * same parent. An entry without a ticket (null) is never indented and ends such a run.
+ */
+export function nestedInOrder(
+	tickets: readonly (Pick<TicketSummary, 'id' | 'parentId'> | null)[]
+): boolean[] {
+	const nested: boolean[] = [];
+	tickets.forEach((ticket, index) => {
+		const parentId = ticket?.parentId || null;
+		const above = index > 0 ? (tickets[index - 1] ?? null) : null;
+		nested.push(
+			parentId !== null &&
+				above !== null &&
+				(above.id === parentId || (nested[index - 1] === true && above.parentId === parentId))
+		);
+	});
+	return nested;
 }
 
 /** Key of a parent that is neither in the list nor expanded (not loaded, no access). */
@@ -178,6 +251,22 @@ export function parentOf(
 	if (known !== null) return { id, key: known.key, title: known.title };
 	if (ticket.parentRef && ticket.parentRef.id === id) return ticket.parentRef;
 	return { id, key: UNKNOWN_PARENT_KEY, title: '' };
+}
+
+/**
+ * The parent of a sub-task as the object the list or the expand holds, null for a top-level ticket
+ * and for an unknown parent (TP-3). Unlike `parentOf` it makes no new object: a cache keyed by the
+ * object sees a renamed parent, which is a new object of the list, as new.
+ */
+export function parentTicketOf(
+	ticket: Pick<TicketSummary, 'parentId' | 'parentRef'>,
+	find: (id: string) => Pick<TicketSummary, 'key' | 'title'> | null
+): Pick<TicketSummary, 'key' | 'title'> | null {
+	const id = ticket.parentId || null;
+	if (id === null) return null;
+	const known = find(id);
+	if (known !== null) return known;
+	return ticket.parentRef && ticket.parentRef.id === id ? ticket.parentRef : null;
 }
 
 /** Whether the parent is resolved: only then its key opens it (TP-2). */
