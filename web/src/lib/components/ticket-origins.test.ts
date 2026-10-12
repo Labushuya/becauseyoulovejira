@@ -63,6 +63,24 @@ function origins(overrides: Partial<TicketOrigins> = {}): TicketOrigins {
 	};
 }
 
+/** `count` tickets HAUS-<from>, HAUS-<from + 1> … for long lists (TD-1). */
+function numbered(count: number, from: number): TicketOrigin[] {
+	return Array.from({ length: count }, (_, index) => {
+		const number = from + index;
+		return origin(`tick${String(number).padStart(11, '0')}`, `HAUS-${number}`);
+	});
+}
+
+/** The keys a list shows, in its order. */
+function keysIn(list: HTMLElement): string[] {
+	return [...list.querySelectorAll(':scope > li .key')].map((key) => key.textContent ?? '');
+}
+
+/** The text of an element with its white space folded. */
+function text(element: HTMLElement): string {
+	return (element.textContent ?? '').replace(/\s+/g, ' ');
+}
+
 const MAIL: InboxItemSummary = {
 	id: 'item00000000001',
 	channel: 'mail',
@@ -219,6 +237,42 @@ describe('section "Quellen" with source tickets', () => {
 		});
 		await vi.waitFor(() => expect(screen.getByRole('link', { name: 'HAUS-3' })).toBeTruthy());
 		expect(data.load).toHaveBeenCalledTimes(2);
+	});
+
+	it('pages the entries and the source tickets each on their own, five per page (TD-1)', async () => {
+		const mails = Array.from({ length: 6 }, (_, index) => ({
+			...MAIL,
+			id: `item${String(index + 1).padStart(11, '0')}`,
+			title: `Mail ${index + 1}`
+		}));
+		await setup(origins({ sources: numbered(7, 1) }), { items: mails });
+		const entries = screen.getByRole('list', { name: 'Quellen aus dem Eingang' });
+		const tickets = screen.getByRole('list', { name: 'Quell-Tickets' });
+		const entryPages = screen.getByRole('group', { name: 'Seiten der Quellen' });
+		const ticketPages = screen.getByRole('group', { name: 'Seiten der Quell-Tickets' });
+		expect(within(entries).getAllByRole('listitem')).toHaveLength(5);
+		expect(keysIn(tickets)).toEqual(['HAUS-1', 'HAUS-2', 'HAUS-3', 'HAUS-4', 'HAUS-5']);
+		expect(text(entryPages)).toContain('Seite 1 von 2 · 6 Quellen');
+		expect(text(ticketPages)).toContain('Seite 1 von 2 · 7 Quell-Tickets');
+		// The entries with their controls first, then the tickets with theirs.
+		const order = [entries, entryPages, tickets, ticketPages];
+		for (const [index, element] of order.slice(1).entries()) {
+			const before = order[index] as HTMLElement;
+			expect(
+				before.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING
+			).toBeTruthy();
+		}
+
+		await fireEvent.click(
+			within(ticketPages).getByRole('button', {
+				name: 'Weiter zur nächsten Seite der Quell-Tickets'
+			})
+		);
+		expect(keysIn(tickets)).toEqual(['HAUS-6', 'HAUS-7']);
+		await vi.waitFor(() => expect(document.activeElement?.textContent).toContain('HAUS-6'));
+		// The entries keep their own page.
+		expect(text(entryPages)).toContain('Seite 1 von 2 · 6 Quellen');
+		expect(within(entries).getAllByRole('listitem')[0]?.textContent).toContain('Mail 1');
 	});
 });
 
@@ -386,6 +440,25 @@ describe('section "Folge-Tickets"', () => {
 	it('is not there without follow-ups', async () => {
 		await followUps(origins({ sources: [origin('tick00000000001', 'HAUS-3')] }));
 		expect(screen.queryByRole('region', { name: 'Folge-Tickets' })).toBeNull();
+	});
+
+	it('shows five follow-ups per page with controls of their own (TD-1)', async () => {
+		await followUps(origins({ followUps: numbered(7, 20) }));
+		const section = screen.getByRole('region', { name: 'Folge-Tickets' });
+		const list = within(section).getByRole('list', { name: 'Folge-Tickets' });
+		expect(keysIn(list)).toEqual(['HAUS-20', 'HAUS-21', 'HAUS-22', 'HAUS-23', 'HAUS-24']);
+		expect(text(section)).toContain('Seite 1 von 2 · 7 Folge-Tickets');
+		const previous = within(section).getByRole('button', {
+			name: 'Zurück zur vorherigen Seite der Folge-Tickets'
+		});
+		expect(previous.getAttribute('aria-disabled')).toBe('true');
+
+		await fireEvent.click(
+			within(section).getByRole('button', { name: 'Weiter zur nächsten Seite der Folge-Tickets' })
+		);
+		expect(keysIn(list)).toEqual(['HAUS-25', 'HAUS-26']);
+		await vi.waitFor(() => expect(document.activeElement?.textContent).toContain('HAUS-25'));
+		expect(within(section).getByRole('status').textContent).toBe('Seite 2 von 2');
 	});
 });
 

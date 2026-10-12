@@ -27,9 +27,11 @@
 	import type { TicketSourcesStore } from '$lib/stores/ticket-sources.svelte';
 	import { insideModal } from '$lib/overlay/modal-context';
 	import { inboxItemHref } from '$lib/ticket-links';
+	import type { PagedNoun } from '$lib/domain/paged-list';
 	import AddSourcesDialog from './AddSourcesDialog.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import MoveSourceDialog from './MoveSourceDialog.svelte';
+	import PagedList from './PagedList.svelte';
 	import EmptyState from './guidance/EmptyState.svelte';
 	import type { GuidanceIconName } from './guidance/GuidanceIcon.svelte';
 	import Lozenge from './guidance/Lozenge.svelte';
@@ -54,6 +56,10 @@
 	// Papierkorb)" without a link), each with "… als Quelle entfernen", and "Quelle hinzufügen" is a
 	// menu with "Eintrag aus dem Eingang …" and "Ticket …". Before the migration (or without the store)
 	// it stays the button for entries of the inbox.
+	// Since TD-1 (ADR-0031 addendum L) the entries and the source tickets are two lists in pages of
+	// five (PagedList), each with its own page; the main source stands first on page 1 (the order of
+	// the store). While "Anderem Ticket zuordnen …" is open below an entry, that entry keeps its page
+	// in view; changing the page by hand closes it.
 	let {
 		ticket,
 		store,
@@ -73,6 +79,10 @@
 		/** Address of a source ticket in the remembered way; without it the key is no link. */
 		hrefOf?: (id: string) => ResolvedPathname;
 	} = $props();
+
+	/** Names of the entries of both lists, for their count and the buttons of their pages. */
+	const ENTRY_NOUN: PagedNoun = { one: 'Quelle', other: 'Quellen' };
+	const TICKET_NOUN: PagedNoun = { one: 'Quell-Ticket', other: 'Quell-Tickets' };
 
 	const uid = $props.id();
 	const headingId = `${uid}-heading`;
@@ -216,138 +226,211 @@
 				: 'Mails, Nachrichten oder Links aus dem Eingang lassen sich mit diesem Ticket verknüpfen.'}
 		/>
 	{:else}
-		<ul class="list">
-			{#each items as item (item.id)}
-				{@const copy = copyCompleteness(item)}
-				{@const origin = sourceOrigin(item)}
-				{@const copied = copiedFrom(item)}
-				{@const main = item.id === ticket.sourceItem}
-				{@const leaves = canLeaveTicket(item, main)}
-				<li class="source" aria-busy={store.isPending(item.id) ? 'true' : undefined}>
-					<div class="text">
-						<p class="line">
-							<span class="channel"
-								>{withConnectionName(
-									sourceChannelLabel(item),
-									connectionNames?.nameOf(item.connectionId) ?? null
-								)}</span
-							>
-							<span class="when">{sourceWhen(item)}</span>
-							{#if main}
-								<span class="main">Hauptquelle</span>
-							{/if}
-						</p>
-						<p class="title">{item.title}</p>
-						{#if origin !== ''}
-							<p class="origin">{origin}</p>
-						{/if}
-						{#if copied !== null}
-							<p class="origin">Kopie aus {copied.key}</p>
-						{/if}
-						<Lozenge
-							label={COPY_LABELS[copy]}
-							icon={LOZENGES[copy].icon}
-							tone={LOZENGES[copy].tone}
-						/>
-						{#if item.watch !== undefined}
-							<!-- Status of the watched source (ADR-0050 §5): only shown, the ticket never changes. -->
-							{@const watch = item.watch}
-							<p class="watch">
-								<Lozenge
-									label={WATCH_LABELS[watch.state]}
-									icon={WATCH_LOZENGES[watch.state].icon}
-									tone={WATCH_LOZENGES[watch.state].tone}
-								/>
-								{#if watch.since !== null}
-									<span class="origin">{watchText(watch)}</span>
+		{#if items.length > 0}
+			<PagedList
+				{items}
+				key={(item) => item.id}
+				label="Quellen aus dem Eingang"
+				noun={ENTRY_NOUN}
+				resetKey={ticket.id}
+				hold={moving?.id ?? null}
+				onpagechange={() => (moving = null)}
+			>
+				{#snippet row(item)}
+					{@const copy = copyCompleteness(item)}
+					{@const origin = sourceOrigin(item)}
+					{@const copied = copiedFrom(item)}
+					{@const main = item.id === ticket.sourceItem}
+					{@const leaves = canLeaveTicket(item, main)}
+					<div class="source" aria-busy={store.isPending(item.id) ? 'true' : undefined}>
+						<div class="text">
+							<p class="line">
+								<span class="channel"
+									>{withConnectionName(
+										sourceChannelLabel(item),
+										connectionNames?.nameOf(item.connectionId) ?? null
+									)}</span
+								>
+								<span class="when">{sourceWhen(item)}</span>
+								{#if main}
+									<span class="main">Hauptquelle</span>
 								{/if}
 							</p>
-						{/if}
-						{#if main}
-							<p class="origin">
-								Bleibt bei diesem Ticket, weil es aus ihr entstanden ist: kein Lösen, kein anderes
-								Ticket.
-							</p>
+							<p class="title">{item.title}</p>
+							{#if origin !== ''}
+								<p class="origin">{origin}</p>
+							{/if}
+							{#if copied !== null}
+								<p class="origin">Kopie aus {copied.key}</p>
+							{/if}
+							<Lozenge
+								label={COPY_LABELS[copy]}
+								icon={LOZENGES[copy].icon}
+								tone={LOZENGES[copy].tone}
+							/>
+							{#if item.watch !== undefined}
+								<!-- Status of the watched source (ADR-0050 §5): only shown, the ticket never changes. -->
+								{@const watch = item.watch}
+								<p class="watch">
+									<Lozenge
+										label={WATCH_LABELS[watch.state]}
+										icon={WATCH_LOZENGES[watch.state].icon}
+										tone={WATCH_LOZENGES[watch.state].tone}
+									/>
+									{#if watch.since !== null}
+										<span class="origin">{watchText(watch)}</span>
+									{/if}
+								</p>
+							{/if}
+							{#if main}
+								<p class="origin">
+									Bleibt bei diesem Ticket, weil es aus ihr entstanden ist: kein Lösen, kein anderes
+									Ticket.
+								</p>
+							{/if}
+						</div>
+						<div class="actions">
+							<a class="view" href={inboxItemHref(item.id)} aria-label={`„${item.title}“ ansehen`}>
+								Ansehen
+							</a>
+							{#if item.channel === 'folder' && viewer !== null && filesHere}
+								<button
+									class="button-icon"
+									type="button"
+									aria-label={`Datei von „${item.title}“ öffnen`}
+									title="Aktuelle Datei öffnen"
+									aria-busy={viewer.isBusy(item.id) ? 'true' : undefined}
+									onclick={() => void openFile(item)}
+								>
+									<svg
+										viewBox="0 0 16 16"
+										width="16"
+										height="16"
+										aria-hidden="true"
+										focusable="false"
+									>
+										<path d="M9 2.5h4.5V7M13.5 2.5 7.5 8.5M11.5 9.5v4h-9v-9h4" />
+									</svg>
+								</button>
+							{/if}
+							{#if item.original !== ''}
+								<button
+									class="button-icon"
+									type="button"
+									aria-label={`Originaldatei von „${item.title}“ herunterladen`}
+									title="Originaldatei herunterladen"
+									onclick={() => void download(item)}
+								>
+									<svg
+										viewBox="0 0 16 16"
+										width="16"
+										height="16"
+										aria-hidden="true"
+										focusable="false"
+									>
+										<path d="M8 2.5v8M4.5 7 8 10.5 11.5 7M3 13.5h10" />
+									</svg>
+								</button>
+							{/if}
+							{#if leaves}
+								<button
+									class="button-icon"
+									type="button"
+									aria-label={`„${item.title}“ anderem Ticket zuordnen …`}
+									title="Anderem Ticket zuordnen …"
+									aria-haspopup={inline ? undefined : 'dialog'}
+									aria-expanded={inline ? moving?.id === item.id : undefined}
+									aria-disabled={store.isPending(item.id) ? 'true' : undefined}
+									onclick={() => {
+										if (store.isPending(item.id)) return;
+										moving =
+											inline && moving?.id === item.id
+												? null
+												: { id: item.id, title: item.title, scope: item.scope };
+									}}
+								>
+									<svg
+										viewBox="0 0 16 16"
+										width="16"
+										height="16"
+										aria-hidden="true"
+										focusable="false"
+									>
+										<path d="M2.5 8h10M9.5 4.5 13 8l-3.5 3.5" />
+									</svg>
+								</button>
+								<button
+									class="button-icon"
+									type="button"
+									aria-label={`„${item.title}“ lösen`}
+									title="Lösen (zurück in den Eingang)"
+									aria-disabled={store.isPending(item.id) ? 'true' : undefined}
+									onclick={() => {
+										if (!store.isPending(item.id)) void release(item);
+									}}
+								>
+									<svg
+										viewBox="0 0 16 16"
+										width="16"
+										height="16"
+										aria-hidden="true"
+										focusable="false"
+									>
+										<path
+											d="M6.5 9.5 9.5 6.5M7 4.5l1-1a2.5 2.5 0 0 1 3.5 3.5l-1 1M9 11.5l-1 1a2.5 2.5 0 0 1-3.5-3.5l1-1M2.5 2.5l2 2M11.5 11.5l2 2"
+										/>
+									</svg>
+								</button>
+							{/if}
+						</div>
+						{#if inline && moving !== null && moving.id === item.id}
+							<div class="inline">{@render moveDialog(moving)}</div>
 						{/if}
 					</div>
-					<div class="actions">
-						<a class="view" href={inboxItemHref(item.id)} aria-label={`„${item.title}“ ansehen`}>
-							Ansehen
-						</a>
-						{#if item.channel === 'folder' && viewer !== null && filesHere}
+				{/snippet}
+			</PagedList>
+		{/if}
+		{#if ticketSources.length > 0}
+			<PagedList
+				items={ticketSources}
+				key={(origin) => origin.link}
+				label="Quell-Tickets"
+				noun={TICKET_NOUN}
+				resetKey={ticket.id}
+			>
+				{#snippet row(origin)}
+					<div
+						class="source"
+						data-ticket-source={origin.id}
+						aria-busy={origins?.isPending(origin.id) ? 'true' : undefined}
+					>
+						<div class="text">
+							<p class="line">
+								<span class="channel">Ticket</span>
+								<span class="when">seit {formatBerlinDateTime(origin.created)}</span>
+							</p>
+							<p class="title">
+								{#if origin.trashed || hrefOf === undefined}
+									<span class="key">{origin.key}</span>
+								{:else}
+									<a class="key" href={hrefOf(origin.id)} data-ticket-link>{origin.key}</a>
+								{/if}
+								{origin.title}
+								{#if origin.trashed}
+									<span class="origin">(im Papierkorb)</span>
+								{/if}
+							</p>
+							<StatusPill status={origin.status} />
+						</div>
+						<div class="actions">
 							<button
 								class="button-icon"
 								type="button"
-								aria-label={`Datei von „${item.title}“ öffnen`}
-								title="Aktuelle Datei öffnen"
-								aria-busy={viewer.isBusy(item.id) ? 'true' : undefined}
-								onclick={() => void openFile(item)}
-							>
-								<svg
-									viewBox="0 0 16 16"
-									width="16"
-									height="16"
-									aria-hidden="true"
-									focusable="false"
-								>
-									<path d="M9 2.5h4.5V7M13.5 2.5 7.5 8.5M11.5 9.5v4h-9v-9h4" />
-								</svg>
-							</button>
-						{/if}
-						{#if item.original !== ''}
-							<button
-								class="button-icon"
-								type="button"
-								aria-label={`Originaldatei von „${item.title}“ herunterladen`}
-								title="Originaldatei herunterladen"
-								onclick={() => void download(item)}
-							>
-								<svg
-									viewBox="0 0 16 16"
-									width="16"
-									height="16"
-									aria-hidden="true"
-									focusable="false"
-								>
-									<path d="M8 2.5v8M4.5 7 8 10.5 11.5 7M3 13.5h10" />
-								</svg>
-							</button>
-						{/if}
-						{#if leaves}
-							<button
-								class="button-icon"
-								type="button"
-								aria-label={`„${item.title}“ anderem Ticket zuordnen …`}
-								title="Anderem Ticket zuordnen …"
-								aria-haspopup={inline ? undefined : 'dialog'}
-								aria-expanded={inline ? moving?.id === item.id : undefined}
-								aria-disabled={store.isPending(item.id) ? 'true' : undefined}
+								aria-label={`${origin.key} als Quelle entfernen`}
+								title="Als Quelle entfernen"
+								aria-disabled={origins?.isPending(origin.id) ? 'true' : undefined}
 								onclick={() => {
-									if (store.isPending(item.id)) return;
-									moving =
-										inline && moving?.id === item.id
-											? null
-											: { id: item.id, title: item.title, scope: item.scope };
-								}}
-							>
-								<svg
-									viewBox="0 0 16 16"
-									width="16"
-									height="16"
-									aria-hidden="true"
-									focusable="false"
-								>
-									<path d="M2.5 8h10M9.5 4.5 13 8l-3.5 3.5" />
-								</svg>
-							</button>
-							<button
-								class="button-icon"
-								type="button"
-								aria-label={`„${item.title}“ lösen`}
-								title="Lösen (zurück in den Eingang)"
-								aria-disabled={store.isPending(item.id) ? 'true' : undefined}
-								onclick={() => {
-									if (!store.isPending(item.id)) void release(item);
+									if (!origins?.isPending(origin.id)) void removeSource(origin);
 								}}
 							>
 								<svg
@@ -362,58 +445,11 @@
 									/>
 								</svg>
 							</button>
-						{/if}
+						</div>
 					</div>
-					{#if inline && moving !== null && moving.id === item.id}
-						<div class="inline">{@render moveDialog(moving)}</div>
-					{/if}
-				</li>
-			{/each}
-			{#each ticketSources as origin (origin.link)}
-				<li
-					class="source"
-					data-ticket-source={origin.id}
-					aria-busy={origins?.isPending(origin.id) ? 'true' : undefined}
-				>
-					<div class="text">
-						<p class="line">
-							<span class="channel">Ticket</span>
-							<span class="when">seit {formatBerlinDateTime(origin.created)}</span>
-						</p>
-						<p class="title">
-							{#if origin.trashed || hrefOf === undefined}
-								<span class="key">{origin.key}</span>
-							{:else}
-								<a class="key" href={hrefOf(origin.id)} data-ticket-link>{origin.key}</a>
-							{/if}
-							{origin.title}
-							{#if origin.trashed}
-								<span class="origin">(im Papierkorb)</span>
-							{/if}
-						</p>
-						<StatusPill status={origin.status} />
-					</div>
-					<div class="actions">
-						<button
-							class="button-icon"
-							type="button"
-							aria-label={`${origin.key} als Quelle entfernen`}
-							title="Als Quelle entfernen"
-							aria-disabled={origins?.isPending(origin.id) ? 'true' : undefined}
-							onclick={() => {
-								if (!origins?.isPending(origin.id)) void removeSource(origin);
-							}}
-						>
-							<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
-								<path
-									d="M6.5 9.5 9.5 6.5M7 4.5l1-1a2.5 2.5 0 0 1 3.5 3.5l-1 1M9 11.5l-1 1a2.5 2.5 0 0 1-3.5-3.5l1-1M2.5 2.5l2 2M11.5 11.5l2 2"
-								/>
-							</svg>
-						</button>
-					</div>
-				</li>
-			{/each}
-		</ul>
+				{/snippet}
+			</PagedList>
+		{/if}
 	{/if}
 </section>
 
@@ -486,14 +522,6 @@
 	.hint {
 		font-size: var(--font-size-control);
 		color: var(--color-text-muted);
-	}
-
-	.list {
-		display: grid;
-		gap: 0.5rem;
-		margin: 0;
-		padding: 0;
-		list-style: none;
 	}
 
 	.source {
