@@ -1,6 +1,6 @@
 # ADR-0013: Filter, Suche, Sortierung und Gruppierung: was der Client und was der Server rechnet
 
-- **Status:** Angenommen; §3 seit Nachtrag E (ER-1) für die Ansicht „Erledigte“ ([ADR-0066](0066-ansicht-erledigte.md)); Nachtrag F (E7-5): „Zuständig“ im Haushalt ([ADR-0068](0068-zustaendigkeit.md))
+- **Status:** Angenommen; §3 seit Nachtrag E (ER-1) für die Ansicht „Erledigte“ ([ADR-0066](0066-ansicht-erledigte.md)); Nachtrag F (E7-5): „Zuständig“ im Haushalt ([ADR-0068](0068-zustaendigkeit.md)); Nachtrag G (VH-1): Filter und Gruppe „Art“ ([ADR-0065](0065-tagesplan.md))
 - **Datum:** 2026-09-25
 - **Entscheidung durch:** Advisor
 - **Ergänzt:** [ADR-0006](0006-frontend-zustand-und-datenzugriff.md) (dort §2 „Server-Sortierung wird in E3 je Variante neu bewertet“)
@@ -168,3 +168,11 @@ Ausgeführt in [ADR-0068](0068-zustaendigkeit.md) §3; der Text oben und die Nac
 1. **Sechste Karte „Mir zugewiesen“** (`mine`, Adresse `karte=mir`): Tickets, deren Zuständigkeit das ansehende Konto ist. Nur im Haushalt angeboten (`HOUSEHOLD_CARDS`), weil private Tickets keine Zuständigkeit haben; dieselbe Vereinigung wie die übrigen Karten (Nachtrag C), dieselbe Zählung über die Detailfilter. `matchesCard`, `matchesCards`, `countCards` und `matchesFilter` nehmen dafür das Konto (`selfId`) mit.
 2. **Filter „Zuständig“** (`zustaendig=<Konto-ID>` oder `zustaendig=niemand`): in „Aufgaben“ und im Kalender im Client wie die übrigen Filter (§2), in „Erledigte“ auf dem Server (`DONE_ASSIGNEE_FILTER`, nur mit gesetztem Filter) mit `matchesDoneQuery` als Gegenstück; Paritätstest in `tests/integration/web-filter-parity.test.mjs`, dort auch die Karte und der Filter der offenen Liste gegen dieselbe Frage an den Server, je Mitglied.
 3. **Gruppieren und Sortieren:** Gruppe „Nach Zuständigkeit“ (`gruppe=zustaendig`, auch zweite Ebene; eigenes Konto zuerst, die anderen nach Namen, „Niemand“ zuletzt) und Sortierung „Zuständig“ (`sort=zustaendig`, nach Namen, ohne Zuständigkeit immer zuletzt). Im Privaten bietet das Menü „Gruppieren“ die Gruppe nicht an, eine Adresse mit ihr wirkt trotzdem.
+
+## Nachtrag G (2026-10-13, Paket VH-1): Filter und Gruppe „Art“
+
+Ausgeführt in [ADR-0065](0065-tagesplan.md), Nachtrag VH-1; der Text oben und die Nachträge bleiben.
+
+1. **Filter „Art“** (`art=aufgabe` oder `art=vorhaben`, nach `wiederholung` und vor `projekt` in der festen Reihenfolge der Adresse): Chip-Gruppe „Art“ nach „Wiederkehrend“ mit „Alle“, „Aufgabe“ und „Laufendes Vorhaben“ (`KIND_FILTERS`, `ListQuery.kind`, `FILTER_KEYS`). Wie die übrigen Filter der offenen Liste rechnet ihn nur der Client (§2, `matchesFilter` mit `kindOf`): Die offenen Tickets sind geladen und tragen `kind`, ein Ticket ohne Art (vor der Migration von TP-1) ist eine Aufgabe. Darum braucht es weder einen Hook noch eine Serverklausel noch einen Paritätstest. „Zurücksetzen“ leert ihn mit den anderen; er schränkt die Karten ein wie jeder Detailfilter (UND).
+2. **Nur in „Aufgaben“:** Der Kalender zeigt die Chip-Gruppe nicht und lässt den Wert aus (`calendarListQuery`, wie „Fällig“, Suche und Karten), weil seine Ebene der erledigten Tickets auf dem Server gefiltert wird; „Erledigte“ kennt ihn nicht.
+3. **Gruppe „Nach Art“** (`gruppe=art`, auch zweite Ebene): „Laufendes Vorhaben“ vor „Aufgabe“, wie „Wiederkehrend“ vor „Einmalig“ (Nachtrag A); leere Gruppen fallen weg.
