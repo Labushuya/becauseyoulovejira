@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import {
 	columnOrder,
+	columnSort,
 	compareKeys,
 	compareTitles,
 	nextSort,
@@ -285,6 +286,31 @@ describe('columnOrder', () => {
 				expect(sorted([...tickets].reverse(), spec)).toEqual(expected);
 			}
 		}
+	});
+});
+
+describe('columnSort (TP-5)', () => {
+	it('breaks ties and orders empty values with its own tie-break, in both directions', () => {
+		// The tie-break of the day plan: the manual order, here the order of the list.
+		const tickets = [
+			row('z', { priority: 'high' }),
+			row('none2'),
+			row('y', { priority: 'high', due: '2026-09-30' }),
+			row('none1'),
+			row('x', { priority: 'low', due: '2026-09-30' })
+		];
+		const manual = (a: SortableTicket, b: SortableTicket) =>
+			tickets.indexOf(a) - tickets.indexOf(b);
+		const by = (spec: SortSpec) => ids([...tickets].sort(columnSort(spec, manual)));
+		expect(by(natural('priority'))).toEqual(['z', 'y', 'none2', 'none1', 'x']);
+		expect(by(reversed('priority'))).toEqual(['x', 'none2', 'none1', 'z', 'y']);
+		// Without a due date last and in the order of the tie-break, also reversed.
+		expect(by(natural('due'))).toEqual(['y', 'x', 'z', 'none2', 'none1']);
+		expect(by(reversed('due'))).toEqual(['y', 'x', 'z', 'none2', 'none1']);
+		// The default order breaks ties in the table, as before.
+		expect(ids([...tickets].sort(columnOrder(natural('priority'), TODAY)))).toEqual(
+			ids([...tickets].sort(columnSort(natural('priority'), ticketOrder(TODAY))))
+		);
 	});
 });
 

@@ -280,6 +280,20 @@ export function columnOrder<T extends SortableTicket>(
 ): (a: T, b: T) => number {
 	const fallback = ticketOrder(today);
 	if (spec === null) return fallback;
+	return columnSort(spec, fallback, resolveProject, assigneeName);
+}
+
+/**
+ * Comparator of a column sort with its own tie-break: the column in its natural or reversed
+ * direction, empty values last in both directions and compared only by `fallback`. The table
+ * breaks ties in the default order (`columnOrder`), the sorted day plan in its manual order (TP-5).
+ */
+export function columnSort<T extends SortableTicket>(
+	spec: SortSpec,
+	fallback: (a: T, b: T) => number,
+	resolveProject: ResolveProject<T> = (ticket) => ticket.project,
+	assigneeName: AssigneeNameOf = (id) => id
+): (a: T, b: T) => number {
 	const { compare, isEmpty } = column(spec.key, resolveProject, assigneeName);
 	const sign = spec.reversed ? -1 : 1;
 	return (a, b) => {

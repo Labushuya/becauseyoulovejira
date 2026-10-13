@@ -557,6 +557,28 @@ describe('help page (EH-9)', () => {
 		);
 	});
 
+	it('explains sorting the plan as a view, moving only in "Manuell" and adopting the order (TP-5)', () => {
+		const { container } = render(Page);
+		const section = container.querySelector<HTMLElement>('section#tagesplan')!;
+		expect(section.querySelector('h4#tagesplan-sortieren')?.textContent).toBe('Sortieren');
+		const content = text(section);
+		expect(content).toMatch(
+			/„Manuell“ \(die Reihenfolge des Plans, so wie zu Beginn\) oder nach Priorität, Status, Fälligkeit, Titel, Projekt und im Haushalt nach Zuständigkeit/
+		);
+		expect(content).toMatch(/in der Richtung des ersten Klicks dort/);
+		expect(content).toMatch(/„Aufsteigend“ und „Absteigend“ kehren sie um/);
+		expect(content).toMatch(/bei Gleichstand gilt die manuelle Reihenfolge/);
+		expect(content).toMatch(/Ein Ticket bleibt mit seinen Unteraufgaben im Plan beisammen/);
+		expect(content).toMatch(/abgehakt oder erledigt ist, steht in jeder Sortierung am Ende/);
+		expect(content).toMatch(/Sortieren ist nur eine Ansicht/);
+		expect(content).toMatch(/geht deshalb nur in „Manuell“/);
+		expect(content).toMatch(
+			/„Als manuelle Reihenfolge übernehmen“ sie zur Reihenfolge des Plans und stellt auf „Manuell“; „Rückgängig“/
+		);
+		expect(content).toMatch(/Die Sortierung merkt sich dieses Gerät für alle Tage/);
+		expect(content).toMatch(/Im Haushalt sieht jede Person ihre eigene Sortierung/);
+	});
+
 	it('explains the view "Erledigte": groups, loading more, filters and reopening (ADR-0066)', () => {
 		const { container } = render(Page);
 		const section = container.querySelector<HTMLElement>('section#erledigte')!;

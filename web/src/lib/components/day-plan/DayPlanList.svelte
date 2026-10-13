@@ -5,9 +5,15 @@
 
 	/** Whether a drag carries an entry or a ticket this list takes. */
 	export function carriesPlanData(types: readonly string[] | DOMStringList | undefined): boolean {
-		if (types === undefined) return false;
-		const list = [...(types as Iterable<string>)];
-		return list.includes(DRAG_ITEM) || list.includes(DRAG_TICKET);
+		return carries(types, DRAG_ITEM) || carries(types, DRAG_TICKET);
+	}
+
+	/** Whether a drag carries data of this type. */
+	export function carries(
+		types: readonly string[] | DOMStringList | undefined,
+		type: string
+	): boolean {
+		return types !== undefined && [...(types as Iterable<string>)].includes(type);
 	}
 </script>
 
@@ -44,14 +50,21 @@
 	// order stays); otherwise it names its parent above its title, the key a link as well (TP-2). A
 	// parent moves with this block (TP-4): dragged, all of it is dragged; "nach oben", "nach unten"
 	// and Alt+arrow take it past the whole neighbour. A sub-task moves alone and may leave its block.
+	// Sorted (TP-5) the list shows the order of the sort (store.shown, a parent with its sub-tasks as a
+	// unit, done entries last) and moves nothing: no handle, no "nach oben"/"nach unten", no Alt+arrow;
+	// the hint of the sort describes the list. A ticket of the pool dropped on a sorted plan comes in
+	// without a place, the server puts it (TP-4) and the sort shows it.
 	let {
 		store,
 		household = false,
+		describedby,
 		onfinish
 	}: {
 		store: DayPlanStore;
 		/** The plan of a household: who added and who checked an entry shows as initials. */
 		household?: boolean;
+		/** ID of the hint of a sorted plan (TP-5), the description of the list. */
+		describedby?: string;
 		/** "Vorhaben abschließen …": the view asks first. */
 		onfinish: (row: PlanRow) => void;
 	} = $props();
@@ -66,17 +79,24 @@
 	let dropIndex = $state<number | null>(null);
 	/** The entry being dragged. */
 	let dragging = $state<string | null>(null);
+	/** A ticket of the pool over a sorted plan (TP-5): it comes in without a place. */
+	let dropAnywhere = $state(false);
 
-	const rows = $derived(store.rows);
-	/** Per entry: indented below the entry above it (TP-3), derived from the order of the plan. */
-	const nested = $derived(store.nested);
+	/**
+	 * The entries in the order shown, each indented below its parent or not: in "Manuell" the order of
+	 * the plan (TP-3), sorted the order of the sort (TP-5).
+	 */
+	const shown = $derived(store.shown);
+	const sorted = $derived(store.sorted);
 	/** The entries that move with the dragged one (TP-4): a parent with its block. */
 	const draggedBlock = $derived(dragging === null ? [] : store.blockOf(dragging));
 	const editable = $derived(store.editable);
+	/** Only the manual order changes (TP-5, S3). */
+	const movable = $derived(editable && !sorted);
 
 	/** Whether an entry, a parent with its block (TP-4), stands at the bottom of the plan. */
 	function atBottom(row: PlanRow, index: number): boolean {
-		return index + store.blockOf(row.item.id).length >= rows.length;
+		return index + store.blockOf(row.item.id).length >= shown.length;
 	}
 
 	function keyOf(row: PlanRow): string {
@@ -165,7 +185,7 @@
 	}
 
 	function onRowKeydown(event: KeyboardEvent, row: PlanRow) {
-		if (!editable || !event.altKey || event.defaultPrevented) return;
+		if (!movable || !event.altKey || event.defaultPrevented) return;
 		if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
 		if (event.target instanceof Element && event.target.closest('[popover]') !== null) return;
 		event.preventDefault();
@@ -175,7 +195,7 @@
 	// --- Dragging (native, ADR-0065 §4) -----------------------------------------------------------
 
 	function onDragStart(event: DragEvent, row: PlanRow) {
-		if (!editable || event.dataTransfer === null) return;
+		if (!movable || event.dataTransfer === null) return;
 		event.dataTransfer.setData(DRAG_ITEM, row.item.id);
 		event.dataTransfer.effectAllowed = 'move';
 		const entry = (event.currentTarget as HTMLElement).closest('li');
@@ -186,6 +206,7 @@
 	function onDragEnd() {
 		dragging = null;
 		dropIndex = null;
+		dropAnywhere = false;
 	}
 
 	/** The place before which a drop at `clientY` goes: the first entry whose middle is below it. */
@@ -199,12 +220,16 @@
 	}
 
 	function onDragOver(event: DragEvent) {
-		if (!editable || !carriesPlanData(event.dataTransfer?.types)) return;
+		const types = event.dataTransfer?.types;
+		if (!editable || !carriesPlanData(types)) return;
+		// Sorted, only a ticket of the pool comes in, without a place (TP-5).
+		if (sorted && !carries(types, DRAG_TICKET)) return;
 		event.preventDefault();
 		if (event.dataTransfer !== null) {
 			event.dataTransfer.dropEffect = dragging !== null ? 'move' : 'copy';
 		}
-		dropIndex = indexAt(event.clientY);
+		if (sorted) dropAnywhere = true;
+		else dropIndex = indexAt(event.clientY);
 	}
 
 	function onDragLeave(event: DragEvent) {
@@ -216,19 +241,23 @@
 		)
 			return;
 		dropIndex = null;
+		dropAnywhere = false;
 	}
 
 	function onDrop(event: DragEvent) {
 		if (!editable || event.dataTransfer === null) return;
-		const itemId = event.dataTransfer.getData(DRAG_ITEM);
+		const itemId = sorted ? '' : event.dataTransfer.getData(DRAG_ITEM);
 		const ticketId = event.dataTransfer.getData(DRAG_TICKET);
 		if (itemId === '' && ticketId === '') return;
 		event.preventDefault();
 		const index = dropIndex ?? indexAt(event.clientY);
 		dropIndex = null;
+		dropAnywhere = false;
 		dragging = null;
 		if (itemId !== '') {
 			void store.drop(itemId, index);
+		} else if (sorted) {
+			void store.add(ticketId);
 		} else {
 			void store.add(ticketId, index);
 		}
@@ -237,13 +266,15 @@
 
 <div
 	class="plan"
+	class:drop-target={dropAnywhere}
 	role="group"
 	aria-label="Einträge des Plans"
+	aria-describedby={describedby}
 	ondragover={onDragOver}
 	ondragleave={onDragLeave}
 	ondrop={onDrop}
 >
-	{#if rows.length === 0}
+	{#if shown.length === 0}
 		<div class="drop-zone" class:drop-target={dropIndex !== null}>
 			<EmptyState
 				size="compact"
@@ -255,7 +286,7 @@
 		</div>
 	{:else}
 		<ol class="entries" bind:this={list}>
-			{#each rows as row, index (row.item.id)}
+			{#each shown as { entry: row, nested }, index (row.item.id)}
 				{@const ticket = row.ticket}
 				{@const key = keyOf(row)}
 				{@const pending = store.isPending(row.item.id)}
@@ -263,16 +294,16 @@
 				<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 				<li
 					class="entry"
-					class:nested={nested[index]}
+					class:nested
 					class:done={row.done}
 					class:dragging={draggedBlock.includes(row.item.id)}
 					class:drop-before={dropIndex === index}
-					class:drop-after={dropIndex === rows.length && index === rows.length - 1}
+					class:drop-after={dropIndex === shown.length && index === shown.length - 1}
 					data-item-id={row.item.id}
 					aria-busy={pending ? 'true' : undefined}
 					onkeydown={(event) => onRowKeydown(event, row)}
 				>
-					{#if editable}
+					{#if movable}
 						<span
 							class="handle"
 							draggable="true"
@@ -301,7 +332,7 @@
 					<span class="title-cell">
 						{#if ticket !== null}
 							{@const parent = store.parentOf(ticket)}
-							{#if parent && nested[index]}
+							{#if parent && nested}
 								<!-- Directly below its parent (TP-3): the corner, the parent only for screen readers. -->
 								<SubtaskPath {parent} path={false} />
 								<SubtaskNestIcon />
@@ -336,34 +367,36 @@
 					{/if}
 					{#if editable}
 						<span class="actions">
-							<button
-								class="button-icon"
-								type="button"
-								data-move="up"
-								aria-label={`${key} nach oben`}
-								title="Nach oben (Alt+Pfeil hoch)"
-								aria-keyshortcuts="Alt+ArrowUp"
-								aria-disabled={index === 0 || pending ? 'true' : undefined}
-								onclick={() => void move(row, -1)}
-							>
-								<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-									<path d="M8 12.5v-9M4 7l4-4 4 4" />
-								</svg>
-							</button>
-							<button
-								class="button-icon"
-								type="button"
-								data-move="down"
-								aria-label={`${key} nach unten`}
-								title="Nach unten (Alt+Pfeil runter)"
-								aria-keyshortcuts="Alt+ArrowDown"
-								aria-disabled={atBottom(row, index) || pending ? 'true' : undefined}
-								onclick={() => void move(row, 1)}
-							>
-								<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-									<path d="M8 3.5v9M4 9l4 4 4-4" />
-								</svg>
-							</button>
+							{#if movable}
+								<button
+									class="button-icon"
+									type="button"
+									data-move="up"
+									aria-label={`${key} nach oben`}
+									title="Nach oben (Alt+Pfeil hoch)"
+									aria-keyshortcuts="Alt+ArrowUp"
+									aria-disabled={index === 0 || pending ? 'true' : undefined}
+									onclick={() => void move(row, -1)}
+								>
+									<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+										<path d="M8 12.5v-9M4 7l4-4 4 4" />
+									</svg>
+								</button>
+								<button
+									class="button-icon"
+									type="button"
+									data-move="down"
+									aria-label={`${key} nach unten`}
+									title="Nach unten (Alt+Pfeil runter)"
+									aria-keyshortcuts="Alt+ArrowDown"
+									aria-disabled={atBottom(row, index) || pending ? 'true' : undefined}
+									onclick={() => void move(row, 1)}
+								>
+									<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+										<path d="M8 3.5v9M4 9l4 4 4-4" />
+									</svg>
+								</button>
+							{/if}
 							<ActionsMenu
 								label={`Aktionen für ${key}`}
 								buttonLabel={`Weitere Aktionen für ${key}`}
@@ -429,6 +462,8 @@
 		border-bottom: 2px solid var(--color-brand);
 	}
 
+	/* A ticket of the pool over a sorted plan (TP-5): the whole plan takes it, without a place. */
+	.plan.drop-target,
 	.drop-zone.drop-target {
 		outline: 2px dashed var(--color-brand);
 		outline-offset: 2px;

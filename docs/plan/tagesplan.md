@@ -1,6 +1,6 @@
 # Plan: Tagesplan (TP-1)
 
-Stand: 2026-10-05 · Entscheidung: [ADR-0065](../adr/0065-tagesplan.md) · Test-Manifest: Paket „TP-1“ (BYL-E6-1530 bis BYL-E6-1538, manuell BYL-E6-1540 bis BYL-E6-1549)
+Stand: 2026-10-13 (TP-5) · Entscheidung: [ADR-0065](../adr/0065-tagesplan.md) · Test-Manifest: Paket „TP-1“ (BYL-E6-1530 bis BYL-E6-1538, manuell BYL-E6-1540 bis BYL-E6-1549)
 
 ## Zweck
 
@@ -64,7 +64,22 @@ Bis TP-4 hängte der Server jeden neuen Eintrag ans Ende, und ein gezogenes Haup
 | Einordnen | Eine Unteraufgabe, deren Hauptticket im Plan steht, kommt in dessen Block (Hauptticket mit den eingerückten Unteraufgaben direkt darunter) an die Stelle, die ihr unter den Geschwistern nach der Reihenfolge von „Aufgaben“ zukommt; ohne Block hinter die letzte Schwester unter dem Hauptticket, sonst direkt hinter das Hauptticket. Ein Hauptticket, dessen Unteraufgaben im Plan stehen, kommt direkt vor die erste davon. Alles andere kommt ans Ende. Nur eingefügt, nichts umsortiert. |
 | Geltung | „+“ und „Zum Tagesplan“ (auch in „Neues Ticket“), „Übernehmen“ (nacheinander in der gezeigten Reihenfolge), „Automatisch übernehmen“ und „Auf morgen schieben“. Ein Ablegen an einer Stelle gewinnt immer. |
 | Block ziehen | Ein Hauptticket wandert mit seinen eingerückten Unteraufgaben, per Griff, „nach oben“, „nach unten“ und `Alt`+Pfeil; Knöpfe und Tastatur heben es über den ganzen Nachbarn. Eine Unteraufgabe bewegt sich einzeln und darf ihren Block verlassen. Ansage etwa „HAUS-7 mit 2 Unteraufgaben an Stelle 3 von 7 verschoben.“ |
-| Server | Neue Route `POST /api/byl/dayplan/order` (mehrere Einträge in einer Transaktion, nicht genannte behalten ihren Platz; später auch für TP-5 „Als manuelle Reihenfolge übernehmen“). `items`, `adopt` und `tomorrow` antworten mit allen Positionen. Der Plan nennt `supports.order`. |
+| Server | Neue Route `POST /api/byl/dayplan/order` (mehrere Einträge in einer Transaktion, nicht genannte behalten ihren Platz; seit TP-5 auch für „Als manuelle Reihenfolge übernehmen“). `items`, `adopt` und `tomorrow` antworten mit allen Positionen. Der Plan nennt `supports.order`. |
 | Vor dem Neustart | Ohne `supports.order` bewegt sich ein Hauptticket einzeln wie bisher, ohne Fehler; ohne Positionen in den Antworten landen neue Einträge am Ende wie bisher. |
 
 Entscheidung in [ADR-0065](../adr/0065-tagesplan.md), Nachtrag TP-4; Test-Manifest: Paket „TP-4“ (BYL-E6-1726 bis BYL-E6-1731, manuell BYL-E6-1732 bis BYL-E6-1736). Keine Migration; **Neustart nötig** (Hooks), die Oberfläche nach dem Build mit F5.
+
+## TP-5 (umgesetzt): Sortieren wie in „Aufgaben“
+
+Nutzerwunsch: Im Tagesplan einfach nach Priorität, Status, Fälligkeit usw. sortieren können wie in „Aufgaben“; die manuelle Reihenfolge bleibt erhalten und lässt sich weiter anpassen. Sortieren ist eine **Ansicht**, kein Umschreiben: Das verträgt sich mit dem Ziehen und mit dem gemeinsamen Plan im Haushalt.
+
+| Bereich | Inhalt |
+|---|---|
+| Steuerelement | „Sortierung“ im Kopf des Plans (Menü): „Manuell“ (Standard), „Priorität“, „Status“, „Fälligkeit“, „Titel“, „Projekt“, im Haushalt „Zuständigkeit“. Sortiert daneben „Aufsteigend \| Absteigend“; jedes Kriterium beginnt mit der Richtung des ersten Klicks in „Aufgaben“ (Priorität: dringende zuerst). Am Handy 44 px. |
+| Hierarchie | Hauptticket und seine Unteraufgaben im Plan bleiben eine Einheit, sortiert nach dem Hauptticket, die Unteraufgaben eingerückt darunter und untereinander genauso sortiert; eine Unteraufgabe ohne Hauptticket im Plan steht für sich mit Kontextzeile. Gleichstand: die manuelle Reihenfolge; ohne Wert (Fälligkeit, Projekt, Zuständigkeit) zuletzt. Abgehaktes und Erledigtes steht in jeder Sortierung am Ende, untereinander ebenfalls sortiert. |
+| Ziehen | Nur in „Manuell“: Sortiert sind Griff, „nach oben“, „nach unten“ und `Alt`+Pfeil weg, der Hinweis sagt „Zum Verschieben auf „Manuell“ umstellen.“; „Manuell“ zeigt die gespeicherte Reihenfolge sofort wieder. Ein Ticket aus dem Pool kommt auch in den sortierten Plan, ohne Stelle. |
+| Übernehmen | „Als manuelle Reihenfolge übernehmen“ schreibt die angezeigte Reihenfolge über die Route `order` (ganzer Plan) und stellt auf „Manuell“; „Rückgängig“ holt die Reihenfolge von vorher zurück. Nur in einem änderbaren Plan und mit `supports.order` (nach dem Neustart nach TP-4). Fehler setzen zurück, mit Meldung. |
+| Speichern | Je Gerät in `localStorage` `byl-dayplan-sort`, für alle Tage; im Haushalt sieht jede Person ihre eigene Ansicht. |
+| Nicht betroffen | Pool und Vorschläge bleiben wie in TP-3. |
+
+Entscheidung in [ADR-0065](../adr/0065-tagesplan.md), Nachtrag TP-5; Test-Manifest: Paket „TP-5“ (BYL-E6-1737 bis BYL-E6-1742, manuell BYL-E6-1743 bis BYL-E6-1747). Nur Oberfläche, kein Hook, keine Migration: nach dem Build F5.

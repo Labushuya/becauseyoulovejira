@@ -3,7 +3,8 @@
 // texts, and compute the same suggestions, check actions, days and orders. The suggestions are
 // compared on many generated plans, so a change on one side alone fails here. Since TP-4 the hook
 // places a sub-task among its siblings by the order of "Aufgaben": its ticketOrder must sort like
-// ticketOrder of web/src/lib/domain/ordering.ts, compared on many generated tickets as well.
+// ticketOrder of web/src/lib/domain/ordering.ts, compared on many generated tickets as well. Since
+// TP-5 the SPA shows the merge of the route `order` at once (withOrder against orderedIds).
 
 import { describe, expect, it } from 'vitest';
 import { loadHookLib } from '../support/hook-lib.mjs';
@@ -142,6 +143,15 @@ describe('the other rules of the SPA and of the hook', () => {
 		}
 		expect(web.kindOf('ongoing')).toBe(hook.kindOf('ongoing'));
 		expect(web.kindOf('')).toBe(hook.kindOf(''));
+	});
+
+	it('show the order of a request of the order at once as the hook merges it (TP-5)', () => {
+		// "Als manuelle Reihenfolge übernehmen" and its "Rückgängig": withOrder of the SPA is
+		// orderedIds of the route `order` for every valid request, a part or the whole plan.
+		const current = ['a', 'b', 'c', 'd', 'e'];
+		for (const named of [['e', 'd', 'c', 'b', 'a'], ['d', 'b'], ['c'], ['b', 'e', 'a'], current]) {
+			expect(web.withOrder(current, named), named.join()).toEqual(hook.orderedIds(current, named));
+		}
 	});
 });
 
