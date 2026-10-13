@@ -1170,6 +1170,7 @@ describe('TP-1 hooks before the migration of the day plan (ADR-0065)', () => {
 			['POST', '/api/byl/dayplan/items'],
 			['POST', '/api/byl/dayplan/adopt'],
 			['POST', '/api/byl/dayplan/settings'],
+			['POST', '/api/byl/dayplan/order'],
 			['POST', '/api/byl/dayplan/items/abcdefghijklmno/check']
 		]) {
 			const response = await fetch(`${before.url}${path}`, {

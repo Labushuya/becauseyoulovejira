@@ -133,6 +133,16 @@ routerAdd(
   $apis.requireAuth('users')
 );
 
+// The order of several entries at once (TP-4: a parent with its block): { plan, ids }.
+routerAdd(
+  'POST',
+  '/api/byl/dayplan/order',
+  function (e) {
+    return require(`${__hooks}/lib/day-plan-service.js`).order(e);
+  },
+  $apis.requireAuth('users')
+);
+
 // The modes of the sources of an area: { scope?, sources }.
 routerAdd(
   'POST',

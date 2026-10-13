@@ -47,10 +47,24 @@ Nutzerwunsch vom 2026-10-12: Unteraufgaben sollen im Tagesplan so stehen wie in 
 |---|---|
 | Pool | Angeordnet wie „Aufgaben“: Hauptticket, darunter eingerückt mit Ecke seine Unteraufgaben im Pool; steht das Hauptticket nicht im Pool, die Unteraufgabe einzeln mit der Kontextzeile aus TP-2. Die Grenze von 60 Einträgen nimmt ein Hauptticket mit seinen Unteraufgaben ganz oder gar nicht. |
 | Vorschläge | Ebenso angeordnet, wenn Hauptticket und Unteraufgabe vorgeschlagen sind; der Haken am Hauptticket wählt keine Unteraufgabe mit; „Übernehmen“ und „Alle übernehmen“ in der gezeigten Reihenfolge. |
-| Plan | Nur Anzeige: Die Reihenfolge bleibt die des Nutzers; eine Unteraufgabe direkt unter ihrem Hauptticket oder einer eingerückten Schwester steht eingerückt, sonst mit Kontextzeile. Ziehen, Knöpfe und `Alt`+Pfeil wie bisher. |
+| Plan | Nur Anzeige: Die Reihenfolge bleibt die des Nutzers; eine Unteraufgabe direkt unter ihrem Hauptticket oder einer eingerückten Schwester steht eingerückt, sonst mit Kontextzeile. Ziehen, Knöpfe und `Alt`+Pfeil wie bisher (seit TP-4 wandert ein Hauptticket mit seinem Block). |
 | Fortschritt | Der Chip „1/4“ der Tabelle an jedem Hauptticket in Plan, Pool und Vorschlägen, mit demselben Baustein und denselben Zahlen. |
 | Suche | Jedes Wort in Key oder Titel des Tickets oder seines Haupttickets, verteilt erlaubt; „…“ zählt nicht; ein umbenanntes Hauptticket wirkt sofort. „Aufgaben“ und die Ticket-Auswahl suchen weiter nur im Ticket. |
 
 Entscheidung in [ADR-0065](../adr/0065-tagesplan.md), Nachtrag TP-3, und [ADR-0033](../adr/0033-unteraufgaben.md), Nachtrag TP-3; Test-Manifest: Paket „TP-3“ (BYL-E6-1715 bis BYL-E6-1720, manuell BYL-E6-1721 bis BYL-E6-1725). Nur Oberfläche: nach dem Build F5.
 
-**Folgt mit TP-4 (Server):** wie der Server einen neuen Eintrag im Plan einordnet (etwa eine Unteraufgabe direkt unter ihr Hauptticket, das schon im Plan steht) und in welcher Reihenfolge „Automatisch übernehmen“ einfügt. Bis dahin hängt der Server übernommene Einträge in der gesendeten Reihenfolge ans Ende.
+~~**Folgt mit TP-4 (Server):** wie der Server einen neuen Eintrag im Plan einordnet (etwa eine Unteraufgabe direkt unter ihr Hauptticket, das schon im Plan steht) und in welcher Reihenfolge „Automatisch übernehmen“ einfügt.~~ Umgesetzt mit TP-4 (unten).
+
+## TP-4 (umgesetzt): Unteraufgaben landen unter ihrem Hauptticket, das Hauptticket zieht seinen Block mit
+
+Bis TP-4 hängte der Server jeden neuen Eintrag ans Ende, und ein gezogenes Hauptticket ließ seine Unteraufgaben stehen. Jetzt ordnet der Server neue Einträge ein, und das Hauptticket nimmt seine Unteraufgaben mit.
+
+| Bereich | Inhalt |
+|---|---|
+| Einordnen | Eine Unteraufgabe, deren Hauptticket im Plan steht, kommt in dessen Block (Hauptticket mit den eingerückten Unteraufgaben direkt darunter) an die Stelle, die ihr unter den Geschwistern nach der Reihenfolge von „Aufgaben“ zukommt; ohne Block hinter die letzte Schwester unter dem Hauptticket, sonst direkt hinter das Hauptticket. Ein Hauptticket, dessen Unteraufgaben im Plan stehen, kommt direkt vor die erste davon. Alles andere kommt ans Ende. Nur eingefügt, nichts umsortiert. |
+| Geltung | „+“ und „Zum Tagesplan“ (auch in „Neues Ticket“), „Übernehmen“ (nacheinander in der gezeigten Reihenfolge), „Automatisch übernehmen“ und „Auf morgen schieben“. Ein Ablegen an einer Stelle gewinnt immer. |
+| Block ziehen | Ein Hauptticket wandert mit seinen eingerückten Unteraufgaben, per Griff, „nach oben“, „nach unten“ und `Alt`+Pfeil; Knöpfe und Tastatur heben es über den ganzen Nachbarn. Eine Unteraufgabe bewegt sich einzeln und darf ihren Block verlassen. Ansage etwa „HAUS-7 mit 2 Unteraufgaben an Stelle 3 von 7 verschoben.“ |
+| Server | Neue Route `POST /api/byl/dayplan/order` (mehrere Einträge in einer Transaktion, nicht genannte behalten ihren Platz; später auch für TP-5 „Als manuelle Reihenfolge übernehmen“). `items`, `adopt` und `tomorrow` antworten mit allen Positionen. Der Plan nennt `supports.order`. |
+| Vor dem Neustart | Ohne `supports.order` bewegt sich ein Hauptticket einzeln wie bisher, ohne Fehler; ohne Positionen in den Antworten landen neue Einträge am Ende wie bisher. |
+
+Entscheidung in [ADR-0065](../adr/0065-tagesplan.md), Nachtrag TP-4; Test-Manifest: Paket „TP-4“ (BYL-E6-1726 bis BYL-E6-1731, manuell BYL-E6-1732 bis BYL-E6-1736). Keine Migration; **Neustart nötig** (Hooks), die Oberfläche nach dem Build mit F5.

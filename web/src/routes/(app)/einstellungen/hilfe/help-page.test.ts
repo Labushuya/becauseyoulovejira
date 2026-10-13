@@ -538,6 +538,25 @@ describe('help page (EH-9)', () => {
 		expect(content).toMatch(/Die Suche in „Aufgaben“ und die Auswahl eines Tickets bleiben/);
 	});
 
+	it('explains where the plan puts new entries and that a parent moves with its block (TP-4)', () => {
+		const { container } = render(Page);
+		const content = text(container.querySelector<HTMLElement>('section#tagesplan')!);
+		expect(content).toMatch(
+			/Eine Unteraufgabe, deren Ticket schon im Plan steht, kommt unter dieses Ticket zu ihren Geschwistern, an die Stelle, die sie in „Aufgaben“ hätte/
+		);
+		expect(content).toMatch(/kommt direkt vor die erste davon\. Alles andere kommt ans Ende/);
+		expect(content).toMatch(
+			/„\+“, „Zum Tagesplan“, „Übernehmen“, „Auf morgen schieben“ und für alles, was automatisch/
+		);
+		expect(content).toMatch(/ziehst du ein Ticket an eine bestimmte Stelle, bleibt es dort/);
+		expect(content).toMatch(/Verschiebst du ein Ticket mit eingerückten Unteraufgaben/);
+		expect(content).toMatch(/wandern sie mit/);
+		expect(content).toMatch(/über den ganzen Nachbarn samt dessen Unteraufgaben/);
+		expect(content).toMatch(
+			/Eine Unteraufgabe verschiebst du einzeln, auch aus ihrem Block heraus/
+		);
+	});
+
 	it('explains the view "Erledigte": groups, loading more, filters and reopening (ADR-0066)', () => {
 		const { container } = render(Page);
 		const section = container.querySelector<HTMLElement>('section#erledigte')!;

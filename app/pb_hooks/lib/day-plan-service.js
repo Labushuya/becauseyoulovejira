@@ -15,6 +15,9 @@
 //   transaction with every check before the first write; realtime reaches every tab that sees the plan.
 // - A ticket that goes to the trash or into another area loses its entries in the same transaction
 //   (ticketChanged); one deleted for good takes them along by the cascade of the relation.
+// - A new entry goes where it belongs (TP-4, insertItem with placementOf of the rules): a sub-task
+//   into the block of its parent, a parent before its sub-tasks, the rest at the end; a place the
+//   request names wins. The answers name every position, and `order` sets several at once.
 'use strict';
 
 var rules = require(__hooks + '/lib/day-plan-rules.js');
@@ -29,6 +32,7 @@ var TICKETS = 'tickets';
 var MEMBERS = 'household_members';
 var UNAVAILABLE = 'Der Tagesplan steht nach dem nächsten Neustart der App bereit.';
 var NOT_FOUND = 'Eintrag nicht gefunden.';
+var PLAN_NOT_FOUND = 'Tagesplan nicht gefunden.';
 var REOPEN_STATUSES = ['backlog', 'open', 'in_progress', 'waiting'];
 var COMPLETIONS = ['force', 'complete_children'];
 
@@ -263,17 +267,44 @@ function savePositions(txApp, items, ids) {
   }
 }
 
-/** Puts a new entry at `index` of its plan (the end without one). */
-function placeAt(txApp, plan, item, index) {
-  if (typeof index !== 'number' || !isFinite(index)) {
-    return;
-  }
-  var items = itemsOf(txApp, plan.id);
+function idsOf(items) {
   var ids = [];
   for (var i = 0; i < items.length; i++) {
     ids.push(items[i].id);
   }
-  savePositions(txApp, items, rules.moved(ids, item.id, index));
+  return ids;
+}
+
+/** The tickets of the entries in their order, as placementOf reads them (null for a missing one). */
+function entriesOf(app, items) {
+  var entries = [];
+  for (var i = 0; i < items.length; i++) {
+    var ticket = findById(app, TICKETS, items[i].getString('ticket'));
+    entries.push(ticket === null ? null : factsOf(ticket));
+  }
+  return entries;
+}
+
+/**
+ * Puts a new entry of `ticket` into `plan` (TP-4): at `index` when the request names one (dropped at a
+ * place, it always wins), else where placementOf says (a sub-task into the block of its parent, a
+ * parent before its sub-tasks, everything else at the end), with the order of "Aufgaben" of `today`.
+ * Only the new entry is inserted; the entries after it move on by one place.
+ */
+function insertItem(txApp, plan, ticket, origin, actor, index, today) {
+  var items = itemsOf(txApp, plan.id);
+  var given = typeof index === 'number' && isFinite(index);
+  var target = given
+    ? Math.min(Math.max(Math.floor(index), 0), items.length)
+    : rules.placementOf(entriesOf(txApp, items), factsOf(ticket), today);
+  if (!given && target >= items.length) {
+    return newItem(txApp, plan, ticket.id, origin, nextPosition(items), actor);
+  }
+  var item = newItem(txApp, plan, ticket.id, origin, target, actor);
+  var ids = idsOf(items);
+  ids.splice(target, 0, item.id);
+  savePositions(txApp, items, ids);
+  return item;
 }
 
 // --- Tickets and sources -----------------------------------------------------------------------
@@ -297,7 +328,9 @@ function factsOf(ticket) {
     // "Mir zugewiesen" (ADR-0068 §8); '' before the migration 1790204900, so it never matches then.
     assignee: ticket.getString('assignee'),
     priority: ticket.getString('priority'),
-    created: ticket.getString('created')
+    created: ticket.getString('created'),
+    // The parent of a sub-task, for its place in the plan (TP-4).
+    parent: ticket.getString('parent')
   };
 }
 
@@ -370,17 +403,22 @@ function suggestionsFor(app, plan, scope, days, viewer) {
   });
 }
 
-/** Takes the tickets of the automatic sources into the plan of today; returns how many. */
+/**
+ * Takes the tickets of the automatic sources into the plan of today, one after the other in the order
+ * of the suggestions, each at its place (TP-4); returns how many.
+ */
 function adoptAutomatic(txApp, plan, scope, days, viewer) {
   var suggestions = suggestionsFor(txApp, plan, scope, days, viewer);
-  var position = nextPosition(itemsOf(txApp, plan.id));
   var count = 0;
   for (var i = 0; i < suggestions.length; i++) {
     if (suggestions[i].mode !== 'auto' || itemOf(txApp, plan.id, suggestions[i].id) !== null) {
       continue;
     }
-    newItem(txApp, plan, suggestions[i].id, suggestions[i].origin, position, '');
-    position += 1;
+    var ticket = findById(txApp, TICKETS, suggestions[i].id);
+    if (ticket === null) {
+      continue;
+    }
+    insertItem(txApp, plan, ticket, suggestions[i].origin, '', null, days.today);
     count += 1;
   }
   return count;
@@ -402,6 +440,15 @@ function itemJson(item) {
     created: item.getString('created'),
     updated: item.getString('updated')
   };
+}
+
+/** Every entry of a plan with its position, in their order (answers of add, adopt, move, order). */
+function positionsJson(items) {
+  var result = [];
+  for (var i = 0; i < items.length; i++) {
+    result.push({ id: items[i].id, position: items[i].getInt('position') });
+  }
+  return result;
 }
 
 function planJson(plan) {
@@ -486,8 +533,9 @@ function visibleTicket(e, app, id) {
  * when missing; today also takes the tickets of the automatic sources in. Days before today are read
  * only and never created. Answers the plan (null for a day before without one), whether it can change,
  * for today the suggestions that are left and the tickets left over from yesterday, the settings of
- * the sources and the plan of today of the other area of the account (only how many entries, none of
- * their content).
+ * the sources, the plan of today of the other area of the account (only how many entries, none of
+ * their content) and what this server can (`supports`): `order` is POST /api/byl/dayplan/order
+ * (TP-4); a server before its restart does not name it, and the SPA moves every entry alone then.
  */
 function fetch(e) {
   if (!ready(e.app)) {
@@ -523,7 +571,8 @@ function fetch(e) {
     leftover: isToday ? leftoverOf(e.app, area.scope, days.yesterday) : [],
     settings: settingsFor(e.app, area.scope),
     other: otherOf(e.app, area, days.today),
-    adopted: outcome.adopted
+    adopted: outcome.adopted,
+    supports: { order: true }
   });
 }
 
@@ -531,7 +580,8 @@ function fetch(e) {
  * POST /api/byl/dayplan/items { ticket, scope?, date?, index? }: puts a ticket into the plan of its
  * area ("Zum Tagesplan", "+" and dragging from the pool). Without `scope` the area of the ticket,
  * without `date` today; a ticket of another area than `scope` is refused (validation_scope_mismatch),
- * a done one as well. An entry that is there already stays (`already`).
+ * a done one as well. An entry that is there already stays (`already`). Answers the entry, the plan
+ * and every entry of the plan with its position (TP-4: a new one may go between others).
  */
 function add(e) {
   if (!ready(e.app)) {
@@ -542,7 +592,7 @@ function add(e) {
   var days = daysOf(e.app);
   var date = dateOf(body.date, days);
   assertEditable(date, days);
-  var outcome = { item: null, plan: null, already: false };
+  var outcome = { item: null, plan: null, already: false, items: [] };
   e.app.runInTransaction(function (txApp) {
     var ticket = visibleTicket(e, txApp, typeof body.ticket === 'string' ? body.ticket : '');
     if (ticket === null) {
@@ -560,15 +610,22 @@ function add(e) {
     outcome.already = added.already;
     outcome.item = findById(txApp, ITEMS, added.item.id);
     outcome.plan = findById(txApp, PLANS, added.plan.id);
+    outcome.items = itemsOf(txApp, added.plan.id);
   });
-  return answer(e, { item: itemJson(outcome.item), plan: planJson(outcome.plan), already: outcome.already });
+  return answer(e, {
+    item: itemJson(outcome.item),
+    plan: planJson(outcome.plan),
+    already: outcome.already,
+    positions: positionsJson(outcome.items)
+  });
 }
 
 /**
  * Puts a ticket into the plan of `area` and `date` in the transaction of the caller, by hand
- * (`manual`), at `index` or at the end; the plan is created when it is missing. An entry that is
- * there already stays. The route above and "Neues Ticket" with "Zum Tagesplan" (NT-1,
- * lib/ticket-create-service.js) check area, day and status first. Returns { item, plan, already }.
+ * (`manual`), at `index` or where it belongs (insertItem, TP-4); the plan is created when it is
+ * missing. An entry that is there already stays. The route above and "Neues Ticket" with "Zum
+ * Tagesplan" (NT-1, lib/ticket-create-service.js) check area, day and status first. Returns { item,
+ * plan, already }.
  */
 function addToPlan(txApp, area, date, ticket, actor, index) {
   var plan = ensurePlan(txApp, area, date, actor);
@@ -576,17 +633,17 @@ function addToPlan(txApp, area, date, ticket, actor, index) {
   if (item !== null) {
     return { item: item, plan: plan, already: true };
   }
-  item = newItem(txApp, plan, ticket.id, 'manual', nextPosition(itemsOf(txApp, plan.id)), actor);
-  placeAt(txApp, plan, item, index);
+  item = insertItem(txApp, plan, ticket, 'manual', actor, index, daysOf(txApp).today);
   undismiss(txApp, plan, ticket.id);
   return { item: item, plan: plan, already: false };
 }
 
 /**
  * POST /api/byl/dayplan/adopt { scope?, tickets }: "Übernehmen" of chosen suggestions into the plan of
- * today, at the end in the given order, each with the source it is suggested for (by hand when it is
- * no suggestion any more). Tickets of another area are refused, done ones and those in the plan are
- * left out.
+ * today, one after the other in the given order, each at its place (insertItem, TP-4) with the source
+ * it is suggested for (by hand when it is no suggestion any more). Tickets of another area are
+ * refused, done ones and those in the plan are left out. Answers the new entries, the plan and every
+ * entry of the plan with its position.
  */
 function adopt(e) {
   if (!ready(e.app)) {
@@ -603,7 +660,7 @@ function adopt(e) {
   }
   var days = daysOf(e.app);
   var area = areaOf(e.app, actor, body.scope);
-  var outcome = { items: [], plan: null };
+  var outcome = { items: [], plan: null, all: [] };
   e.app.runInTransaction(function (txApp) {
     var plan = ensurePlan(txApp, area, days.today, actor);
     var origins = {};
@@ -611,7 +668,7 @@ function adopt(e) {
     for (var i = 0; i < suggestions.length; i++) {
       origins[suggestions[i].id] = suggestions[i].origin;
     }
-    var position = nextPosition(itemsOf(txApp, plan.id));
+    var added = [];
     for (var j = 0; j < ids.length; j++) {
       var ticket = visibleTicket(e, txApp, typeof ids[j] === 'string' ? ids[j] : '');
       if (ticket === null) {
@@ -624,17 +681,21 @@ function adopt(e) {
         continue;
       }
       var origin = Object.prototype.hasOwnProperty.call(origins, ticket.id) ? origins[ticket.id] : 'manual';
-      outcome.items.push(newItem(txApp, plan, ticket.id, origin, position, actor));
-      position += 1;
+      added.push(insertItem(txApp, plan, ticket, origin, actor, null, days.today).id);
       undismiss(txApp, plan, ticket.id);
     }
+    // Read again: a later entry may have moved an earlier one on.
+    for (var k = 0; k < added.length; k++) {
+      outcome.items.push(findById(txApp, ITEMS, added[k]));
+    }
     outcome.plan = findById(txApp, PLANS, plan.id);
+    outcome.all = itemsOf(txApp, plan.id);
   });
   var items = [];
-  for (var k = 0; k < outcome.items.length; k++) {
-    items.push(itemJson(outcome.items[k]));
+  for (var m = 0; m < outcome.items.length; m++) {
+    items.push(itemJson(outcome.items[m]));
   }
-  return answer(e, { items: items, plan: planJson(outcome.plan) });
+  return answer(e, { items: items, plan: planJson(outcome.plan), positions: positionsJson(outcome.all) });
 }
 
 function ticketJson(ticket, previous) {
@@ -754,7 +815,8 @@ function uncheck(e, id) {
 
 /**
  * POST /api/byl/dayplan/items/{id}/tomorrow: "Auf morgen schieben" takes the entry out of the plan of
- * today (the sources leave the ticket out today) and puts it at the end of the plan of tomorrow.
+ * today (the sources leave the ticket out today) and puts it into the plan of tomorrow where it
+ * belongs (insertItem, TP-4). Answers the entry, the plan of tomorrow and its positions.
  */
 function tomorrow(e, id) {
   if (!ready(e.app)) {
@@ -762,7 +824,7 @@ function tomorrow(e, id) {
   }
   var actor = actorOf(e);
   var days = daysOf(e.app);
-  var outcome = { item: null, plan: null };
+  var outcome = { item: null, plan: null, items: [] };
   e.app.runInTransaction(function (txApp) {
     var entry = entryOf(txApp, actor, id);
     if (entry.plan.getString('date') !== days.today) {
@@ -777,13 +839,22 @@ function tomorrow(e, id) {
     var next = ensurePlan(txApp, area, days.tomorrow, actor);
     var item = itemOf(txApp, next.id, ticketId);
     if (item === null) {
-      item = newItem(txApp, next, ticketId, origin, nextPosition(itemsOf(txApp, next.id)), actor);
+      var ticket = findById(txApp, TICKETS, ticketId);
+      if (ticket === null) {
+        throw fail('ticket', 'validation_dayplan_ticket_missing');
+      }
+      item = insertItem(txApp, next, ticket, origin, actor, null, days.today);
       undismiss(txApp, next, ticketId);
     }
-    outcome.item = item;
+    outcome.item = findById(txApp, ITEMS, item.id);
     outcome.plan = findById(txApp, PLANS, next.id);
+    outcome.items = itemsOf(txApp, next.id);
   });
-  return answer(e, { item: itemJson(outcome.item), plan: planJson(outcome.plan) });
+  return answer(e, {
+    item: itemJson(outcome.item),
+    plan: planJson(outcome.plan),
+    positions: positionsJson(outcome.items)
+  });
 }
 
 /** POST /api/byl/dayplan/items/{id}/remove: "Entfernen"; the sources leave the ticket out that day. */
@@ -826,18 +897,48 @@ function move(e, id) {
     var entry = entryOf(txApp, actor, id);
     assertEditable(entry.plan.getString('date'), days);
     var items = itemsOf(txApp, entry.plan.id);
-    var ids = [];
-    for (var i = 0; i < items.length; i++) {
-      ids.push(items[i].id);
-    }
-    savePositions(txApp, items, rules.moved(ids, entry.item.id, index));
+    savePositions(txApp, items, rules.moved(idsOf(items), entry.item.id, index));
     outcome.items = itemsOf(txApp, entry.plan.id);
   });
-  var result = [];
-  for (var j = 0; j < outcome.items.length; j++) {
-    result.push({ id: outcome.items[j].id, position: outcome.items[j].getInt('position') });
+  return answer(e, { items: positionsJson(outcome.items) });
+}
+
+/**
+ * POST /api/byl/dayplan/order { plan, ids }: the order of several entries of a plan at once (TP-4: a
+ * parent with its block; later "Als manuelle Reihenfolge übernehmen"), in one transaction. The rights
+ * of `move`: a plan the account sees (else 404) that can change (else validation_dayplan_readonly).
+ * `ids`: 1 to ORDER_MAX different entries of this plan (else validation_dayplan_order or
+ * validation_dayplan_order_max); they take the places they hold together, in this order, and every
+ * entry the request does not name keeps its place (one added meanwhile, for instance). Answers every
+ * entry with its position.
+ */
+function order(e) {
+  if (!ready(e.app)) {
+    return unavailable(e);
   }
-  return answer(e, { items: result });
+  var actor = actorOf(e);
+  var body = bodyOf(e);
+  var code = rules.orderViolation(body.ids);
+  if (code !== '') {
+    throw fail('ids', code);
+  }
+  var days = daysOf(e.app);
+  var outcome = { items: [] };
+  e.app.runInTransaction(function (txApp) {
+    var plan = findById(txApp, PLANS, typeof body.plan === 'string' ? body.plan : '');
+    if (plan === null || !sees(txApp, actor, plan.getString('scope'))) {
+      throw new NotFoundError(PLAN_NOT_FOUND);
+    }
+    assertEditable(plan.getString('date'), days);
+    var items = itemsOf(txApp, plan.id);
+    var ids = rules.orderedIds(idsOf(items), body.ids);
+    if (ids === null) {
+      throw fail('ids', 'validation_dayplan_order');
+    }
+    savePositions(txApp, items, ids);
+    outcome.items = itemsOf(txApp, plan.id);
+  });
+  return answer(e, { items: positionsJson(outcome.items) });
 }
 
 /**
@@ -953,6 +1054,7 @@ module.exports = {
   tomorrow: tomorrow,
   remove: remove,
   move: move,
+  order: order,
   saveSettings: saveSettings,
   defaultKind: defaultKind,
   placeOf: placeOf,

@@ -1,7 +1,8 @@
 // Pure rules of the day plan (TP-1, ADR-0065, app/pb_hooks/lib/day-plan-rules.js): the kind of a
 // ticket, the modes of the sources with their defaults, which source a ticket matches, the suggestions
 // with mode, origin and reasons in their order, what a check mark means, which days can be planned
-// and the order of the entries.
+// and the order of the entries; since TP-4 the order of "Aufgaben", the place of a new entry and the
+// order of a plan as one request.
 
 import { describe, expect, it } from 'vitest';
 import { loadHookLib } from '../support/hook-lib.mjs';
@@ -218,5 +219,107 @@ describe('order of the entries', () => {
 		expect(rules.moved(['a', 'b', 'c'], 'b', -3)).toEqual(['b', 'a', 'c']);
 		expect(rules.moved(['a', 'b', 'c'], 'b', 1.7)).toEqual(['a', 'b', 'c']);
 		expect(rules.moved(['a', 'b', 'c'], 'x', 0)).toBeNull();
+	});
+});
+
+describe('the order of "Aufgaben" (TP-4, mirror of ticketOrder)', () => {
+	const order = rules.ticketOrder(TODAY);
+	const sorted = (list) => [...list].sort(order).map((entry) => entry.id);
+	const t = (id, due, priority = 'medium', created = '2031-05-01 10:00:00.000Z') => ({ id, due, priority, created });
+
+	it('puts what is due until today + 7 days first, by date, then the rest by priority', () => {
+		expect(
+			sorted([
+				t('later-urgent', '2031-05-22', 'urgent'),
+				t('none-high', '', 'high'),
+				t('soon-low', '2031-05-21', 'low'),
+				t('overdue', '2031-05-01', 'low'),
+				t('today', TODAY, 'medium')
+			])
+		).toEqual(['overdue', 'today', 'soon-low', 'later-urgent', 'none-high']);
+	});
+
+	it('takes the priority within the same due date, then the newest, last the ID', () => {
+		expect(
+			sorted([
+				t('b', '', 'medium', '2031-05-01 10:00:00.000Z'),
+				t('a', '', 'medium', '2031-05-01 10:00:00.000Z'),
+				t('newer', '', 'medium', '2031-05-02 10:00:00.000Z'),
+				t('high', TODAY, 'high'),
+				t('low', TODAY, 'low')
+			])
+		).toEqual(['high', 'low', 'newer', 'a', 'b']);
+	});
+});
+
+describe('placing a new entry (TP-4)', () => {
+	/** A ticket of an entry: a parent ('' for none), no due date, priority medium. */
+	const e = (id, parent = '', data = {}) => ({ id, parent, due: '', priority: 'medium', created: '2031-05-01 10:00:00.000Z', ...data });
+	const place = (entries, ticket) => rules.placementOf(entries, ticket, TODAY);
+
+	it('puts a sub-task into the block of its parent, at its place by the order of "Aufgaben"', () => {
+		const plan = [e('a'), e('p'), e('s1', 'p', { due: '2031-05-20' }), e('s3', 'p'), e('b')];
+		// Due earlier than the first sibling: before it.
+		expect(place(plan, e('s2', 'p', { due: '2031-05-16' }))).toBe(2);
+		// Between the two: due later than s1, before s3 without a due date.
+		expect(place(plan, e('s4', 'p', { due: '2031-05-25' }))).toBe(3);
+		// After every sibling: at the end of the block, before the next entry.
+		expect(place(plan, e('s5', 'p', { priority: 'low' }))).toBe(4);
+		// Equal siblings: the newest first, as in "Aufgaben".
+		expect(place([e('p'), e('s1', 'p'), e('s2', 'p')], e('s3', 'p', { created: '2031-05-09 10:00:00.000Z' }))).toBe(1);
+	});
+
+	it('puts a sub-task of a parent without a block after its last sibling below the parent, else after the parent', () => {
+		// Scattered: the siblings stand apart from the parent.
+		expect(place([e('p'), e('x'), e('s1', 'p'), e('y'), e('s2', 'p'), e('z')], e('s3', 'p'))).toBe(5);
+		// A sibling above the parent does not count.
+		expect(place([e('s1', 'p'), e('a'), e('p'), e('b')], e('s2', 'p'))).toBe(3);
+		// No sibling: directly after the parent.
+		expect(place([e('a'), e('p'), e('b')], e('s1', 'p'))).toBe(2);
+		// An entry without a ticket ends a block like in the display.
+		expect(place([e('p'), null, e('s1', 'p'), e('b')], e('s2', 'p'))).toBe(3);
+	});
+
+	it('puts a parent directly before the first of its sub-tasks in the plan', () => {
+		expect(place([e('a'), e('s1', 'p'), e('b'), e('s2', 'p')], e('p'))).toBe(1);
+		expect(place([e('s1', 'p')], e('p'))).toBe(0);
+	});
+
+	it('puts everything else at the end: no parent in the plan, no sub-task, an empty plan', () => {
+		expect(place([e('s1', 'p'), e('a')], e('s2', 'p'))).toBe(2);
+		expect(place([e('a'), e('b')], e('c'))).toBe(2);
+		expect(place([e('a'), null], e('c'))).toBe(2);
+		expect(place([], e('s1', 'p'))).toBe(0);
+		expect(place([], e('c'))).toBe(0);
+	});
+});
+
+describe('the order of a plan as one request (TP-4)', () => {
+	it('takes 1 to 500 different IDs', () => {
+		expect(rules.ORDER_MAX).toBe(500);
+		expect(rules.orderViolation(['a'])).toBe('');
+		expect(rules.orderViolation(Array.from({ length: 500 }, (_, index) => `i${index}`))).toBe('');
+		expect(rules.orderViolation(Array.from({ length: 501 }, (_, index) => `i${index}`))).toBe('validation_dayplan_order_max');
+		for (const ids of [undefined, null, 'a', {}, [], ['a', 'a'], ['a', 1], ['a', ''], [null]]) {
+			expect(rules.orderViolation(ids), JSON.stringify(ids)).toBe('validation_dayplan_order');
+		}
+	});
+
+	it('puts the named entries in their order on the places they hold together; every other one stays', () => {
+		const plan = ['a', 'p', 's1', 's2', 'b', 'c'];
+		// A parent with its block before "a": the client names the part that changed.
+		expect(rules.orderedIds(plan, ['p', 's1', 's2', 'a'])).toEqual(['p', 's1', 's2', 'a', 'b', 'c']);
+		// The whole plan in a new order.
+		expect(rules.orderedIds(plan, ['c', 'b', 'a', 'p', 's1', 's2'])).toEqual(['c', 'b', 'a', 'p', 's1', 's2']);
+		// Added meanwhile (x at the end, y in the block): unnamed, they keep their places.
+		const now = ['a', 'p', 's1', 'y', 's2', 'b', 'c', 'x'];
+		expect(rules.orderedIds(now, ['b', 'c', 'a', 'p', 's1', 's2'])).toEqual(['b', 'c', 'a', 'y', 'p', 's1', 's2', 'x']);
+	});
+
+	it('refuses an entry of another plan, one removed meanwhile and one named twice', () => {
+		expect(rules.orderedIds(['a', 'b'], ['b', 'z'])).toBeNull();
+		expect(rules.orderedIds(['a', 'b'], ['b', 'b'])).toBeNull();
+		expect(rules.MESSAGES.validation_dayplan_order).toBe('Die Reihenfolge passt nicht zu den Einträgen dieses Plans.');
+		expect(rules.MESSAGES.validation_dayplan_order_max).toBe('Bitte höchstens 500 Einträge auf einmal ordnen.');
 	});
 });

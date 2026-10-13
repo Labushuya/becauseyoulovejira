@@ -9,7 +9,9 @@
 //   rules as the server (domain/day-plan.ts): a ticket that becomes due, overdue or an ongoing project
 //   is suggested at once. When a ticket of an automatic source appears, the plan is asked for again, and
 //   the server takes it in (idempotent). Both are arranged like the table "Aufgaben": a sub-task
-//   below its parent when both are there (TP-3); the plan keeps its own order.
+//   below its parent when both are there (TP-3); the plan keeps its own order. Since TP-4 the server
+//   puts a new entry where it belongs (a sub-task below its parent) and answers every position, and a
+//   parent moves with its block (the order route); before its restart both work as before.
 // - Every change goes through a route; the answer is applied at once, realtime brings the same again
 //   (idempotent by `updated`). Results and "Rückgängig" go out as flags, failures as error flags.
 
@@ -24,6 +26,7 @@ import {
 	listDayPlanItems,
 	moveDayPlanItem,
 	moveDayPlanItemToTomorrow,
+	orderDayPlan,
 	removeDayPlanItem,
 	saveDayPlanSettings,
 	subscribeDayPlan,
@@ -31,12 +34,14 @@ import {
 	subscribeDayPlanSettings,
 	uncheckDayPlanItem,
 	type AddAnswer,
+	type AdoptAnswer,
 	type CheckedTicket,
 	type DayPlanAnswer,
 	type DayPlanItem,
 	type DayPlanMeta,
 	type DayPlanResult,
 	type DayPlanSettingsRecord,
+	type ItemPosition,
 	type OtherAreaPlan
 } from '$lib/data/day-plan';
 import { toDataError } from '$lib/data/errors';
@@ -47,9 +52,12 @@ import { addDays, type CalendarDate } from '$lib/domain/berlin-date';
 import {
 	DAY_PLAN_SOURCES,
 	DEFAULT_SOURCES,
+	blockSize,
+	blockStep,
+	changedRange,
 	isDone,
 	kindOf,
-	moved,
+	movedBlock,
 	seriesKeyOf,
 	suggestionsOf,
 	type CheckAction,
@@ -64,8 +72,10 @@ import {
 import type { Status } from '$lib/domain/status';
 import {
 	arrangeBy,
+	nestedInOrder,
 	parentOf,
 	parentTicketOf,
+	subtaskCountText,
 	type ArrangedRow,
 	type ArrangedTicket,
 	type CompletionChoice,
@@ -97,10 +107,7 @@ export interface DayPlanData {
 		date?: CalendarDate;
 		index?: number;
 	}): Promise<AddAnswer>;
-	adopt(
-		scope: string,
-		tickets: readonly string[]
-	): Promise<{ items: DayPlanItem[]; plan: DayPlanMeta }>;
+	adopt(scope: string, tickets: readonly string[]): Promise<AdoptAnswer>;
 	check(
 		id: string,
 		mode: CheckMode,
@@ -112,7 +119,9 @@ export interface DayPlanData {
 	): Promise<{ item: DayPlanItem; ticket: CheckedTicket }>;
 	tomorrow(id: string): Promise<{ item: DayPlanItem; plan: DayPlanMeta }>;
 	remove(id: string): Promise<{ plan: DayPlanMeta }>;
-	move(id: string, index: number): Promise<{ id: string; position: number }[]>;
+	move(id: string, index: number): Promise<ItemPosition[]>;
+	/** Several entries at once (TP-4): only when the plan names `supportsOrder`. */
+	order(planId: string, ids: readonly string[]): Promise<ItemPosition[]>;
 	saveSettings(
 		scope: string,
 		sources: Partial<Record<DayPlanSource, SourceMode>>
@@ -131,6 +140,7 @@ export function dayPlanData(pb: PocketBase): DayPlanData {
 		tomorrow: (id) => moveDayPlanItemToTomorrow(pb, id),
 		remove: (id) => removeDayPlanItem(pb, id),
 		move: (id, index) => moveDayPlanItem(pb, id, index),
+		order: (planId, ids) => orderDayPlan(pb, planId, ids),
 		saveSettings: (scope, sources) => saveDayPlanSettings(pb, scope, sources),
 		setKind: (ticketId, kind) => updateTicket(pb, ticketId, { kind })
 	};
@@ -272,6 +282,19 @@ export class DayPlanStore {
 		})
 	);
 
+	/** Per entry: indented below the entry above it (TP-3), derived from the order of the plan. */
+	#nested = $derived(nestedInOrder(this.#rows.map((row) => row.ticket)));
+
+	/**
+	 * Per entry: how many entries move with it (TP-4), a parent with its indented sub-tasks; 1 for
+	 * every entry while the server does not know the route of the order (before its restart).
+	 */
+	#blockSizes = $derived(
+		this.#nested.map((_, index) =>
+			this.#answer?.supportsOrder === true ? blockSize(this.#nested, index) : 1
+		)
+	);
+
 	/** Ticket IDs in the plan. */
 	#planned = $derived(this.#ordered.map((item) => item.ticketId));
 
@@ -349,6 +372,23 @@ export class DayPlanStore {
 
 	get rows(): readonly PlanRow[] {
 		return this.#rows;
+	}
+
+	/** Per row: indented directly below its parent or an indented sibling (TP-3). */
+	get nested(): readonly boolean[] {
+		return this.#nested;
+	}
+
+	/**
+	 * The entries that move with an entry (TP-4): a parent with the sub-tasks indented directly below
+	 * it, else the entry alone (also before the restart, when the server cannot move a block).
+	 */
+	blockOf(itemId: string): readonly string[] {
+		const start = this.#ordered.findIndex((item) => item.id === itemId);
+		if (start === -1) return [];
+		return this.#ordered
+			.slice(start, start + (this.#blockSizes[start] ?? 1))
+			.map((item) => item.id);
 	}
 
 	get progress(): { done: number; total: number } {
@@ -714,7 +754,9 @@ export class DayPlanStore {
 			});
 			if (answer.plan.id === this.#plan?.id) this.#plan = answer.plan;
 			this.#upsertItem({ ...answer.item, ticket: answer.item.ticket ?? ticket });
-			if (index !== undefined) await this.#refreshPositions();
+			// The server may put it between others (TP-4); before its restart only a place moves them.
+			if (answer.positions !== null) this.#applyPositions(answer.positions);
+			else if (index !== undefined) await this.#refreshPositions();
 			this.#announce(`${ticket?.key ?? 'Ticket'} im Tagesplan.`);
 			return true;
 		} catch (error) {
@@ -722,6 +764,15 @@ export class DayPlanStore {
 			return false;
 		} finally {
 			this.#pending.delete(ticketId);
+		}
+	}
+
+	/** The positions of an answer of the server for the entries of the shown plan. */
+	#applyPositions(positions: readonly ItemPosition[]): void {
+		for (const { id, position } of positions) {
+			const item = this.#items.get(id);
+			if (item !== undefined && item.position !== position)
+				this.#items.set(id, { ...item, position });
 		}
 	}
 
@@ -738,7 +789,8 @@ export class DayPlanStore {
 
 	/**
 	 * "Übernehmen" of chosen suggestions, in the order they are shown: arranged, a sub-task below its
-	 * parent (TP-3). The server puts them at the end of the plan in this order.
+	 * parent (TP-3). The server places them one after the other in this order (TP-4: a sub-task into
+	 * the block of its parent, else at the end; before its restart all at the end).
 	 */
 	async adopt(ids: readonly string[]): Promise<boolean> {
 		if (!this.editable || ids.length === 0 || !this.#session.ensureValid()) return false;
@@ -752,6 +804,7 @@ export class DayPlanStore {
 			for (const item of answer.items) {
 				this.#upsertItem({ ...item, ticket: item.ticket ?? this.#tickets.find(item.ticketId) });
 			}
+			if (answer.positions !== null) this.#applyPositions(answer.positions);
 			const count = answer.items.length;
 			this.#flags.show({
 				tone: 'success',
@@ -955,50 +1008,83 @@ export class DayPlanStore {
 		}
 	}
 
-	/** Puts an entry at `index` (dragging, "Nach oben", "Nach unten", Alt+arrow). */
+	/**
+	 * Puts an entry at `index` among the other entries (dragging, "Nach oben", "Nach unten",
+	 * Alt+arrow). A parent takes its block along (TP-4: the sub-tasks indented directly below it) in
+	 * one request of the order; every other entry moves alone (`move`), a sub-task out of its block as
+	 * well, and so does a parent while the server does not know the order (before its restart). The
+	 * list changes at once and goes back when the server refuses.
+	 */
 	async moveTo(itemId: string, index: number): Promise<boolean> {
 		if (!this.editable || this.#pending.has(itemId) || !this.#session.ensureValid()) return false;
+		const planId = this.#plan?.id;
 		const ids = this.#ordered.map((item) => item.id);
-		const order = moved(ids, itemId, index);
-		if (order === null || order.join() === ids.join()) return false;
+		const start = ids.indexOf(itemId);
+		if (planId === undefined || start === -1) return false;
+		const size = this.#blockSizes[start] ?? 1;
+		const order = movedBlock(ids, start, size, index);
+		if (order.join() === ids.join()) return false;
 		const before = [...this.#ordered];
+		const block = ids.slice(start, start + size);
+		const key = this.#keyOf(this.#row(itemId));
 		// At once in the list; the answer brings the positions of the server.
-		order.forEach((id, position) => {
-			const item = before.find((entry) => entry.id === id);
-			if (item !== undefined && item.position !== position)
-				this.#items.set(id, { ...item, position });
-		});
-		this.#pending.add(itemId);
+		this.#applyPositions(order.map((id, position) => ({ id, position })));
+		for (const id of block) this.#pending.add(id);
 		try {
-			const positions = await this.#data.move(itemId, index);
-			for (const { id, position } of positions) {
-				const item = this.#items.get(id);
-				if (item !== undefined && item.position !== position)
-					this.#items.set(id, { ...item, position });
-			}
-			const row = this.#row(itemId);
-			const place = order.indexOf(itemId) + 1;
-			this.#announce(`${this.#keyOf(row)} steht jetzt an Stelle ${place} von ${order.length}.`);
+			this.#applyPositions(
+				size > 1
+					? await this.#data.order(planId, changedRange(ids, order))
+					: await this.#data.move(itemId, index)
+			);
+			const place = `Stelle ${order.indexOf(itemId) + 1} von ${order.length}`;
+			this.#announce(
+				size > 1
+					? `${key} mit ${subtaskCountText(size - 1)} an ${place} verschoben.`
+					: `${key} steht jetzt an ${place}.`
+			);
 			return true;
 		} catch (error) {
 			for (const item of before) this.#items.set(item.id, item);
 			this.#fail(error, 'Die Reihenfolge wurde nicht gespeichert.');
 			return false;
 		} finally {
-			this.#pending.delete(itemId);
+			for (const id of block) this.#pending.delete(id);
 		}
 	}
 
-	moveUp(itemId: string): Promise<boolean> {
-		const index = this.#ordered.findIndex((item) => item.id === itemId);
-		return index <= 0 ? Promise.resolve(false) : this.moveTo(itemId, index - 1);
+	/**
+	 * A dragged entry dropped before the entry at `before` (the number of entries for the end): a
+	 * parent with its block (TP-4). A drop on the moved entries themselves changes nothing.
+	 */
+	drop(itemId: string, before: number): Promise<boolean> {
+		const start = this.#ordered.findIndex((item) => item.id === itemId);
+		const size = this.#blockSizes[start] ?? 1;
+		if (start === -1 || (before >= start && before <= start + size)) return Promise.resolve(false);
+		return this.moveTo(itemId, before > start ? before - size : before);
 	}
 
+	/** "Nach oben" and Alt+arrow up: a block past the whole neighbour (TP-4), else one place. */
+	moveUp(itemId: string): Promise<boolean> {
+		return this.#step(itemId, -1);
+	}
+
+	/** "Nach unten" and Alt+arrow down: a block past the whole neighbour (TP-4), else one place. */
 	moveDown(itemId: string): Promise<boolean> {
-		const index = this.#ordered.findIndex((item) => item.id === itemId);
-		return index === -1 || index >= this.#ordered.length - 1
-			? Promise.resolve(false)
-			: this.moveTo(itemId, index + 1);
+		return this.#step(itemId, 1);
+	}
+
+	#step(itemId: string, direction: -1 | 1): Promise<boolean> {
+		const start = this.#ordered.findIndex((item) => item.id === itemId);
+		if (start === -1) return Promise.resolve(false);
+		const size = this.#blockSizes[start] ?? 1;
+		const next = start + direction;
+		const target =
+			size > 1
+				? blockStep(this.#nested, start, size, direction)
+				: next >= 0 && next < this.#ordered.length
+					? next
+					: null;
+		return target === null ? Promise.resolve(false) : this.moveTo(itemId, target);
 	}
 
 	/** "Als laufendes Vorhaben markieren" or "Als Aufgabe markieren" (ADR-0065 §1). */

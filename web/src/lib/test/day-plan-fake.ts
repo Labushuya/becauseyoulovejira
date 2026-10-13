@@ -4,6 +4,7 @@
 import { SvelteMap } from 'svelte/reactivity';
 import { vi } from 'vitest';
 import type { DayPlanAnswer, DayPlanItem, DayPlanMeta } from '$lib/data/day-plan';
+import { DataError } from '$lib/data/errors';
 import { DEFAULT_SOURCES, type CheckMode, type DayPlanOrigin } from '$lib/domain/day-plan';
 import type { Status } from '$lib/domain/status';
 import { subtaskProgress } from '$lib/domain/subtasks';
@@ -83,6 +84,8 @@ export function planAnswer(overrides: Partial<DayPlanAnswer> = {}): DayPlanAnswe
 		settings: DEFAULT_SOURCES,
 		other: null,
 		adopted: 0,
+		// A server before its restart after TP-4 unless a test names it.
+		supportsOrder: false,
 		...overrides
 	};
 }
@@ -127,17 +130,31 @@ export function fakeSession() {
 
 /**
  * A fake server: a plan with its entries; every route changes them like the hooks. `ongoing` names
- * the tickets that are ongoing projects, whose check mark is only for the day.
+ * the tickets that are ongoing projects, whose check mark is only for the day. A plan that names
+ * `supportsOrder` is a server after TP-4: add and adopt answer every position, a new entry without a
+ * place goes where `place` says (the end without it), and `order` works like the hook; otherwise a
+ * server before its restart (no positions, new entries at the end, no route of the order).
  */
 export function fakeDayPlanData(
 	items: DayPlanItem[] = [],
 	first: DayPlanAnswer = planAnswer(),
-	ongoing: string[] = []
+	ongoing: string[] = [],
+	place: (ticketId: string, entries: readonly DayPlanItem[]) => number = (_, list) => list.length
 ) {
 	let entries = items.map((entry) => ({ ...entry }));
 	let clock = 1;
 	let created = 0;
 	const stamp = () => `2031-05-14 10:00:${String((clock += 1)).padStart(2, '0')}.000Z`;
+	const placed = first.supportsOrder;
+	const positions = () =>
+		placed ? entries.map((entry) => ({ id: entry.id, position: entry.position })) : null;
+	/** Puts a new entry at `index` (the end for none) and numbers the plan again. */
+	const insert = (made: DayPlanItem, index: number | undefined) => {
+		const at = Math.min(Math.max(index ?? entries.length, 0), entries.length);
+		entries.splice(at, 0, made);
+		entries = entries.map((entry, position) => ({ ...entry, position }));
+		return { ...(entries[at] as DayPlanItem) };
+	};
 	const checked = (ticketId: string, status: Status, previous: Status) => ({
 		id: ticketId,
 		key: `TASK-${ticketId.slice(-2)}`,
@@ -157,23 +174,30 @@ export function fakeDayPlanData(
 					updated: stamp()
 				}
 			);
-			entries.push(made);
-			return { item: made, plan: PLAN, already: false };
+			const item = insert(
+				made,
+				input.index ?? (placed ? place(input.ticket, entries) : entries.length)
+			);
+			return { item, plan: PLAN, already: false, positions: positions() };
 		}),
 		adopt: vi.fn(async (_scope: string, tickets: readonly string[]) => {
-			const made = tickets.map((id, index) =>
-				planItem(
+			const made = tickets.map((id) => {
+				const item = planItem(
 					`adopt00000${String((created += 1)).padStart(5, '0')}`,
 					id,
-					entries.length + index,
+					entries.length,
 					{
 						origin: 'due_today' as DayPlanOrigin,
 						updated: stamp()
 					}
-				)
-			);
-			entries = [...entries, ...made];
-			return { items: made, plan: PLAN };
+				);
+				return insert(item, placed ? place(id, entries) : entries.length).id;
+			});
+			return {
+				items: made.map((id) => ({ ...find(id) })),
+				plan: PLAN,
+				positions: positions()
+			};
 		}),
 		check: vi.fn(async (id: string, mode: CheckMode) => {
 			const entry = find(id);
@@ -211,6 +235,22 @@ export function fakeDayPlanData(
 			const ids = entries.map((entry) => entry.id).filter((candidate) => candidate !== id);
 			ids.splice(index, 0, id);
 			entries = ids.map((candidate, position) => ({ ...find(candidate), position }));
+			return entries.map((entry) => ({ id: entry.id, position: entry.position }));
+		}),
+		/** Like the hook (TP-4): the named entries take their places in this order, the rest stay. */
+		order: vi.fn(async (planId: string, ids: readonly string[]) => {
+			if (!placed) throw new DataError('server');
+			const current = entries.map((entry) => entry.id);
+			if (planId !== PLAN.id || ids.some((id) => !current.includes(id))) {
+				const message = 'Die Reihenfolge passt nicht zu den Einträgen dieses Plans.';
+				throw new DataError('validation', {
+					status: 400,
+					fields: { ids: { code: 'validation_dayplan_order', message } }
+				});
+			}
+			let next = 0;
+			const order = current.map((id) => (ids.includes(id) ? (ids[next++] as string) : id));
+			entries = order.map((candidate, position) => ({ ...find(candidate), position }));
 			return entries.map((entry) => ({ id: entry.id, position: entry.position }));
 		}),
 		saveSettings: vi.fn(async (_scope: string, sources: object) => ({

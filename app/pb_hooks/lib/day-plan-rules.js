@@ -1,7 +1,10 @@
 // Pure rules of the day plan (TP-1, ADR-0065): the kind of a ticket, the sources of suggestions with
 // their modes, the suggestions of a day, what a check mark means, which days can be planned and the
-// order of the entries. CommonJS module, ES5 only, no dependencies (Goja runtime and Vitest); the
-// SPA mirrors it in web/src/lib/domain/day-plan.ts (tests/unit/web-day-plan.test.mjs keeps both equal).
+// order of the entries; since TP-4 the default order of the list "Aufgaben", the place of a new entry
+// and the order of a plan as one request. CommonJS module, ES5 only, no dependencies (Goja runtime and
+// Vitest); the SPA mirrors it in web/src/lib/domain/day-plan.ts and the order of "Aufgaben" in
+// web/src/lib/domain/ordering.ts (tests/unit/web-day-plan.test.mjs keeps both equal). Placing and the
+// order request are the server's alone: the SPA takes the positions of its answers.
 //
 // Calendar dates are `YYYY-MM-DD` strings of the Berlin day (ADR-0005); the caller passes "today" as
 // lib/berlin-time.js computes it, the same function and zone as "Heute fällig" of the list.
@@ -97,16 +100,16 @@ function utcOf(date) {
   return match ? Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])) : NaN;
 }
 
-function isCalendarDate(value) {
-  var ms = utcOf(value);
-  if (!isFinite(ms)) {
-    return false;
-  }
+function formatUtc(ms) {
   var date = new Date(ms);
   var month = date.getUTCMonth() + 1;
   var day = date.getUTCDate();
-  var text = date.getUTCFullYear() + '-' + (month < 10 ? '0' : '') + month + '-' + (day < 10 ? '0' : '') + day;
-  return text === value;
+  return date.getUTCFullYear() + '-' + (month < 10 ? '0' : '') + month + '-' + (day < 10 ? '0' : '') + day;
+}
+
+function isCalendarDate(value) {
+  var ms = utcOf(value);
+  return isFinite(ms) && formatUtc(ms) === value;
 }
 
 function contains(list, value) {
@@ -379,6 +382,176 @@ function moved(ids, id, index) {
   return rest.slice(0, target).concat([id], rest.slice(target));
 }
 
+// --- The default order of the list "Aufgaben" (TP-4) -----------------------------------------------
+
+// "Soon due" horizon in days after today, SOON_DAYS of web/src/lib/domain/ordering.ts.
+var SOON_DAYS = 7;
+
+function compareText(a, b) {
+  if (a === b) {
+    return 0;
+  }
+  return a < b ? -1 : 1;
+}
+
+/** Due dates as calendar dates, '' (none) last. */
+function compareDue(a, b) {
+  if (a === b) {
+    return 0;
+  }
+  if (a === '') {
+    return 1;
+  }
+  if (b === '') {
+    return -1;
+  }
+  return compareText(a, b);
+}
+
+function priorityRank(value) {
+  return has(PRIORITY_RANK, value) ? PRIORITY_RANK[value] : 2;
+}
+
+/**
+ * The default order of the list "Aufgaben" at the Berlin day `today`, the mirror of ticketOrder in
+ * web/src/lib/domain/ordering.ts (tests/unit/web-day-plan.test.mjs keeps both equal). Group 1, due
+ * until today + 7 days (overdue included): by due date, then priority. Group 2, the rest: by
+ * priority, then due date ('' last). Then the newest first, last the ID. A ticket: { id, due ('' or
+ * a calendar date), priority, created }.
+ */
+function ticketOrder(today) {
+  var horizon = formatUtc(utcOf(today) + SOON_DAYS * 86400000);
+  function isUrgent(ticket) {
+    var due = ticket.due || '';
+    return due !== '' && due <= horizon;
+  }
+  return function (a, b) {
+    var urgentA = isUrgent(a);
+    var urgentB = isUrgent(b);
+    if (urgentA !== urgentB) {
+      return urgentA ? -1 : 1;
+    }
+    var byPriority = priorityRank(a.priority) - priorityRank(b.priority);
+    var byDue = compareDue(a.due || '', b.due || '');
+    var primary = urgentA ? byDue || byPriority : byPriority || byDue;
+    return primary || compareText(b.created || '', a.created || '') || compareText(a.id, b.id);
+  };
+}
+
+// --- Placing a new entry (TP-4) ----------------------------------------------------------------------
+
+function parentOf(entry) {
+  return entry ? entry.parent || '' : '';
+}
+
+/**
+ * The place of a new entry in a plan (TP-4, ADR-0065 addendum TP-4) when no place is given: its index
+ * in `entries` (entries.length is the end); the entries keep their order, the new one is inserted.
+ * `entries`: the tickets of the entries in the order of the plan, each { id, parent ('' for none), due,
+ * priority, created } or null for an entry without a ticket; `ticket`: the same of the new one;
+ * `today`: the Berlin day of the order of "Aufgaben".
+ * - A sub-task whose parent is in the plan goes into the block of its parent, the parent with the
+ *   sub-tasks directly below it (the indented ones of the plan): there at the place the order of
+ *   "Aufgaben" gives it among them (before the first one that comes after it). Without such a block it
+ *   goes directly after the last of its siblings below the parent, else directly after the parent.
+ * - A parent whose sub-tasks are in the plan goes directly before the first of them.
+ * - Everything else goes to the end.
+ */
+function placementOf(entries, ticket, today) {
+  var parent = parentOf(ticket);
+  if (parent === '') {
+    for (var i = 0; i < entries.length; i++) {
+      if (parentOf(entries[i]) === ticket.id) {
+        return i;
+      }
+    }
+    return entries.length;
+  }
+  var at = -1;
+  for (var j = 0; j < entries.length; j++) {
+    if (entries[j] && entries[j].id === parent) {
+      at = j;
+      break;
+    }
+  }
+  if (at === -1) {
+    return entries.length;
+  }
+  var end = at + 1;
+  while (end < entries.length && parentOf(entries[end]) === parent) {
+    end += 1;
+  }
+  if (end > at + 1) {
+    var compare = ticketOrder(today);
+    for (var k = at + 1; k < end; k++) {
+      if (compare(ticket, entries[k]) < 0) {
+        return k;
+      }
+    }
+    return end;
+  }
+  var last = at;
+  for (var m = at + 1; m < entries.length; m++) {
+    if (parentOf(entries[m]) === parent) {
+      last = m;
+    }
+  }
+  return last + 1;
+}
+
+// --- The order of a plan as one request (TP-4) -------------------------------------------------------
+
+// At most this many entries in one request of POST /api/byl/dayplan/order.
+var ORDER_MAX = 500;
+
+/**
+ * The entries a request of the order names: a list of 1 to ORDER_MAX different IDs. Returns '' or the
+ * code of the problem.
+ */
+function orderViolation(ids) {
+  if (Object.prototype.toString.call(ids) !== '[object Array]' || ids.length === 0) {
+    return 'validation_dayplan_order';
+  }
+  if (ids.length > ORDER_MAX) {
+    return 'validation_dayplan_order_max';
+  }
+  var seen = {};
+  for (var i = 0; i < ids.length; i++) {
+    if (typeof ids[i] !== 'string' || ids[i] === '' || has(seen, ids[i])) {
+      return 'validation_dayplan_order';
+    }
+    seen[ids[i]] = true;
+  }
+  return '';
+}
+
+/**
+ * The order of a plan after a request (TP-4): the entries `ids` names take the places they hold
+ * together in `current` (the IDs of the plan in its order), in the order of `ids`; every other entry,
+ * one added meanwhile for instance, keeps its place. Null when `ids` names an entry that is not in
+ * `current` or one twice.
+ */
+function orderedIds(current, ids) {
+  var named = {};
+  for (var i = 0; i < ids.length; i++) {
+    if (current.indexOf(ids[i]) === -1 || has(named, ids[i])) {
+      return null;
+    }
+    named[ids[i]] = true;
+  }
+  var result = [];
+  var next = 0;
+  for (var j = 0; j < current.length; j++) {
+    if (has(named, current[j])) {
+      result.push(ids[next]);
+      next += 1;
+    } else {
+      result.push(current[j]);
+    }
+  }
+  return result;
+}
+
 // --- Texts ---------------------------------------------------------------------------------------
 
 // Texts of the codes of the routes, the same in web/src/lib/domain/day-plan.ts.
@@ -394,7 +567,9 @@ var MESSAGES = Object.freeze({
   validation_dayplan_index: 'Ungültige Stelle im Plan.',
   validation_dayplan_sources: 'Ungültige Einstellung der Vorschläge.',
   validation_dayplan_tomorrow: 'Auf morgen schieben geht nur im Plan von heute.',
-  validation_dayplan_tickets: 'Bitte höchstens 200 Tickets auf einmal übernehmen.'
+  validation_dayplan_tickets: 'Bitte höchstens 200 Tickets auf einmal übernehmen.',
+  validation_dayplan_order: 'Die Reihenfolge passt nicht zu den Einträgen dieses Plans.',
+  validation_dayplan_order_max: 'Bitte höchstens 500 Einträge auf einmal ordnen.'
 });
 
 // Text of `validation_scope_mismatch` at the field `ticket` (ADR-0059 §4): a ticket goes only into
@@ -428,6 +603,12 @@ module.exports = {
   dateViolation: dateViolation,
   isEditable: isEditable,
   moved: moved,
+  SOON_DAYS: SOON_DAYS,
+  ticketOrder: ticketOrder,
+  placementOf: placementOf,
+  ORDER_MAX: ORDER_MAX,
+  orderViolation: orderViolation,
+  orderedIds: orderedIds,
   MESSAGES: MESSAGES,
   SCOPE_TEXT: SCOPE_TEXT,
   ADOPT_MAX: ADOPT_MAX

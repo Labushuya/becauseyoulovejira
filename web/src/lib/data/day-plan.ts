@@ -4,7 +4,9 @@
 // instance. The plan of the area of the client is asked for with its scope (data/area.ts); without an
 // area the server takes the private one. Before the restart after the migration the plan answers
 // `missing` (503, or 404 without the route); every other failure is a DataError with the field errors
-// of the hook (texts in domain/day-plan.ts).
+// of the hook (texts in domain/day-plan.ts). Since TP-4 add, adopt, move and order answer every
+// position of the plan, and the plan names `supports.order`; a server before its restart names
+// neither, and the store keeps to the way before.
 
 import type PocketBase from 'pocketbase';
 import type { CalendarDate } from '../domain/berlin-date';
@@ -67,6 +69,17 @@ export interface DayPlanAnswer {
 	other: OtherAreaPlan | null;
 	/** Tickets of automatic sources this request took in. */
 	adopted: number;
+	/**
+	 * The server knows POST /api/byl/dayplan/order (TP-4, `supports.order`): a parent moves with its
+	 * block. A server before its restart does not name it; then every entry moves alone, as before.
+	 */
+	supportsOrder: boolean;
+}
+
+/** An entry with its position, as add, adopt, move and order answer for every entry of a plan. */
+export interface ItemPosition {
+	id: string;
+	position: number;
 }
 
 /** An entry of a plan. `ticket` is its ticket as the Record API expanded it (null when not given). */
@@ -152,8 +165,18 @@ export function toDayPlanAnswer(value: unknown): DayPlanAnswer | null {
 		leftover: strings(value.leftover),
 		settings: settingsOf(value.settings),
 		other,
-		adopted: typeof value.adopted === 'number' ? value.adopted : 0
+		adopted: typeof value.adopted === 'number' ? value.adopted : 0,
+		supportsOrder: isRecord(value.supports) && value.supports.order === true
 	};
+}
+
+/** The positions of an answer; null when it names none (a server before its restart after TP-4). */
+function positionsOf(value: unknown): ItemPosition[] | null {
+	if (!Array.isArray(value)) return null;
+	return value.filter(isRecord).map((entry) => ({
+		id: text(entry.id),
+		position: typeof entry.position === 'number' ? entry.position : 0
+	}));
 }
 
 /** An entry as the Record API (with the expanded ticket) or a route (without) returns it. */
@@ -366,16 +389,21 @@ export function subscribeDayPlanSettings(
 	);
 }
 
-/** Answer of putting a ticket into a plan; `already`: it was there. */
+/**
+ * Answer of putting a ticket into a plan; `already`: it was there. `positions`: every entry of the plan
+ * with its position (TP-4, a new one may go between others), null from a server before its restart.
+ */
 export interface AddAnswer {
 	item: DayPlanItem;
 	plan: DayPlanMeta;
 	already: boolean;
+	positions: ItemPosition[] | null;
 }
 
 /**
  * "Zum Tagesplan", "+" of the pool and dragging: the ticket into the plan of `scope` and `date` (its own
- * area and today without them), at `index` or at the end.
+ * area and today without them), at `index` or where the server puts it (TP-4: a sub-task below its
+ * parent, a parent before its sub-tasks, else at the end).
  */
 export async function addToDayPlan(
 	pb: PocketBase,
@@ -384,16 +412,28 @@ export async function addToDayPlan(
 ): Promise<AddAnswer> {
 	const answer = await sendJson(pb, `${ROUTE}/items`, input, options);
 	if (!isRecord(answer)) throw new DataError('server');
-	return { item: itemOf(answer.item), plan: metaOf(answer.plan), already: answer.already === true };
+	return {
+		item: itemOf(answer.item),
+		plan: metaOf(answer.plan),
+		already: answer.already === true,
+		positions: positionsOf(answer.positions)
+	};
 }
 
-/** "Übernehmen": the tickets into the plan of today of `scope`. */
+/** Answer of "Übernehmen": the new entries, the plan and (TP-4) every position, null before. */
+export interface AdoptAnswer {
+	items: DayPlanItem[];
+	plan: DayPlanMeta;
+	positions: ItemPosition[] | null;
+}
+
+/** "Übernehmen": the tickets into the plan of today of `scope`, one after the other in this order. */
 export async function adoptIntoDayPlan(
 	pb: PocketBase,
 	scope: string,
 	tickets: readonly string[],
 	options: RequestOptions = {}
-): Promise<{ items: DayPlanItem[]; plan: DayPlanMeta }> {
+): Promise<AdoptAnswer> {
 	const answer = await sendJson(
 		pb,
 		`${ROUTE}/adopt`,
@@ -401,7 +441,11 @@ export async function adoptIntoDayPlan(
 		options
 	);
 	if (!isRecord(answer) || !Array.isArray(answer.items)) throw new DataError('server');
-	return { items: answer.items.map(itemOf), plan: metaOf(answer.plan) };
+	return {
+		items: answer.items.map(itemOf),
+		plan: metaOf(answer.plan),
+		positions: positionsOf(answer.positions)
+	};
 }
 
 /** The ticket of a check answer with its status before. */
@@ -466,7 +510,7 @@ export async function uncheckDayPlanItem(
 	return { item: itemOf(answer.item), ticket: checkedTicketOf(answer.ticket) };
 }
 
-/** "Auf morgen schieben": the entry leaves today and stands at the end of tomorrow. */
+/** "Auf morgen schieben": the entry leaves today and stands in the plan of tomorrow. */
 export async function moveDayPlanItemToTomorrow(
 	pb: PocketBase,
 	id: string,
@@ -499,18 +543,33 @@ export async function moveDayPlanItem(
 	id: string,
 	index: number,
 	options: RequestOptions = {}
-): Promise<{ id: string; position: number }[]> {
+): Promise<ItemPosition[]> {
 	const answer = await sendJson(
 		pb,
 		`${ROUTE}/items/${encodeURIComponent(id)}/move`,
 		{ index },
 		options
 	);
-	if (!isRecord(answer) || !Array.isArray(answer.items)) throw new DataError('server');
-	return answer.items.filter(isRecord).map((entry) => ({
-		id: text(entry.id),
-		position: typeof entry.position === 'number' ? entry.position : 0
-	}));
+	const positions = isRecord(answer) ? positionsOf(answer.items) : null;
+	if (positions === null) throw new DataError('server');
+	return positions;
+}
+
+/**
+ * The order of several entries of a plan at once (TP-4, a parent with its block): they take the
+ * places they hold together, in the order of `ids`; every other entry keeps its place. Answers every
+ * entry with its position. Only for a server that names `supports.order`.
+ */
+export async function orderDayPlan(
+	pb: PocketBase,
+	planId: string,
+	ids: readonly string[],
+	options: RequestOptions = {}
+): Promise<ItemPosition[]> {
+	const answer = await sendJson(pb, `${ROUTE}/order`, { plan: planId, ids }, options);
+	const positions = isRecord(answer) ? positionsOf(answer.items) : null;
+	if (positions === null) throw new DataError('server');
+	return positions;
 }
 
 /** The modes of the sources of an area; missing sources keep their mode. */

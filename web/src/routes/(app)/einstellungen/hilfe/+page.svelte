@@ -257,6 +257,17 @@
 			Reihenfolge, und ziehen kannst du jede Unteraufgabe wie jeden anderen Eintrag.
 		</p>
 		<p>
+			Neue Einträge ordnet der Plan selbst ein: Eine Unteraufgabe, deren Ticket schon im Plan steht,
+			kommt unter dieses Ticket zu ihren Geschwistern, an die Stelle, die sie in „Aufgaben“ hätte.
+			Ein Ticket, dessen Unteraufgaben schon im Plan stehen, kommt direkt vor die erste davon. Alles
+			andere kommt ans Ende. Das gilt für „+“, „Zum Tagesplan“, „Übernehmen“, „Auf morgen schieben“
+			und für alles, was automatisch in den Plan kommt; ziehst du ein Ticket an eine bestimmte
+			Stelle, bleibt es dort. Verschiebst du ein Ticket mit eingerückten Unteraufgaben (Griff, „nach
+			oben“, „nach unten“ oder <kbd>Alt</kbd>+Pfeil), wandern sie mit; die Knöpfe und
+			<kbd>Alt</kbd>+Pfeil heben es dabei über den ganzen Nachbarn samt dessen Unteraufgaben. Eine
+			Unteraufgabe verschiebst du einzeln, auch aus ihrem Block heraus.
+		</p>
+		<p>
 			Die Suche des Pools findet eine Unteraufgabe auch über Key und Titel ihres Tickets; die Wörter
 			dürfen sich auf beide verteilen, etwa „wochenputz fenster“. Suchst du nach dem Ticket selbst,
 			passen auch seine Unteraufgaben, und es steht mit ihnen da. Die Suche in „Aufgaben“ und die

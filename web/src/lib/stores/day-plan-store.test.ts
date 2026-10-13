@@ -469,6 +469,158 @@ describe('changing the plan', () => {
 	});
 });
 
+describe('blocks of the plan (TP-4)', () => {
+	const A1 = 't000000000000a1';
+	const A2 = 't000000000000a2';
+	const P = 't000000000000p1';
+	const Q = 't000000000000q1';
+	const S1 = 't000000000000s1';
+	const S2 = 't000000000000s2';
+	const T1 = 't000000000000t1';
+	const of = (parentId: string) => ({ parentId });
+	/** Entries in this order, each named after its ticket: item0000000000a1 for A1 and so on. */
+	const entries = (...tickets: string[]) =>
+		tickets.map((id, position) => item(`item0000000000${id.slice(-2)}`, id, position));
+	const entryOf = (id: string) => `item0000000000${id.slice(-2)}`;
+	const family = () =>
+		fakeTickets([
+			ticket(A1),
+			ticket(P),
+			ticket(S1, of(P)),
+			ticket(S2, of(P)),
+			ticket(A2),
+			ticket(Q),
+			ticket(T1, of(Q))
+		]);
+	const tp4 = answer({ supportsOrder: true });
+
+	it('moves a parent with its block in one request of the order: up, down and dropped at a place', async () => {
+		const data = fakeData(entries(A1, P, S1, S2, A2), tp4);
+		const store = await loaded(data, family());
+		expect(store.nested).toEqual([false, false, true, true, false]);
+		expect(store.blockOf(entryOf(P))).toEqual([entryOf(P), entryOf(S1), entryOf(S2)]);
+		expect(store.blockOf(entryOf(S1))).toEqual([entryOf(S1)]);
+		expect(store.blockOf(entryOf(A1))).toEqual([entryOf(A1)]);
+
+		expect(await store.moveUp(entryOf(P))).toBe(true);
+		// Only the part that changed goes to the server.
+		expect(data.order).toHaveBeenLastCalledWith(PLAN.id, [
+			entryOf(P),
+			entryOf(S1),
+			entryOf(S2),
+			entryOf(A1)
+		]);
+		expect(data.move).not.toHaveBeenCalled();
+		expect(ids(store)).toEqual([P, S1, S2, A1, A2]);
+		expect(store.announcement).toBe('TASK-p1 mit 2 Unteraufgaben an Stelle 1 von 5 verschoben.');
+		expect(await store.moveUp(entryOf(P))).toBe(false);
+
+		await store.moveDown(entryOf(P));
+		expect(ids(store)).toEqual([A1, P, S1, S2, A2]);
+		await store.moveDown(entryOf(P));
+		expect(ids(store)).toEqual([A1, A2, P, S1, S2]);
+		expect(await store.moveDown(entryOf(P))).toBe(false);
+		expect(store.announcement).toBe('TASK-p1 mit 2 Unteraufgaben an Stelle 3 von 5 verschoben.');
+
+		// Dropped before the first entry; dropped into its own block, nothing changes.
+		expect(await store.drop(entryOf(P), 4)).toBe(false);
+		expect(await store.drop(entryOf(P), 0)).toBe(true);
+		expect(ids(store)).toEqual([P, S1, S2, A1, A2]);
+		expect(await store.drop(entryOf(P), 5)).toBe(true);
+		expect(ids(store)).toEqual([A1, A2, P, S1, S2]);
+		expect(data.order).toHaveBeenCalledTimes(5);
+	});
+
+	it('moves a sub-task alone, also out of its block; the block follows the new order', async () => {
+		const data = fakeData(entries(A1, P, S1, S2, A2), tp4);
+		const store = await loaded(data, family());
+		expect(await store.moveDown(entryOf(S2))).toBe(true);
+		expect(data.move).toHaveBeenLastCalledWith(entryOf(S2), 4);
+		expect(data.order).not.toHaveBeenCalled();
+		expect(ids(store)).toEqual([A1, P, S1, A2, S2]);
+		expect(store.announcement).toBe('TASK-s2 steht jetzt an Stelle 5 von 5.');
+		expect(store.blockOf(entryOf(P))).toEqual([entryOf(P), entryOf(S1)]);
+		// A parent without a sub-task below it moves alone as well.
+		await store.drop(entryOf(S1), 5);
+		expect(ids(store)).toEqual([A1, P, A2, S2, S1]);
+		expect(store.blockOf(entryOf(P))).toEqual([entryOf(P)]);
+		await store.moveUp(entryOf(P));
+		expect(data.move).toHaveBeenLastCalledWith(entryOf(P), 0);
+	});
+
+	it('takes a block past the whole block next to it, so neither is torn apart', async () => {
+		const data = fakeData(entries(Q, T1, P, S1, S2), tp4);
+		const store = await loaded(data, family());
+		await store.moveUp(entryOf(P));
+		expect(ids(store)).toEqual([P, S1, S2, Q, T1]);
+		await store.moveDown(entryOf(P));
+		expect(ids(store)).toEqual([Q, T1, P, S1, S2]);
+		expect(store.nested).toEqual([false, true, false, true, true]);
+	});
+
+	it('sets the block back and says so when the server refuses', async () => {
+		const data = fakeData(entries(A1, P, S1, S2, A2), tp4);
+		const { flags, last } = fakeFlags();
+		const store = await loaded(data, family(), flags);
+		data.order.mockRejectedValueOnce(new DataError('network'));
+		expect(await store.moveUp(entryOf(P))).toBe(false);
+		expect(ids(store)).toEqual([A1, P, S1, S2, A2]);
+		expect(last()).toMatchObject({
+			tone: 'error',
+			title: 'Die Reihenfolge wurde nicht gespeichert.'
+		});
+		expect(store.isPending(entryOf(S1))).toBe(false);
+	});
+
+	it('moves a parent alone like before while the server does not know the order (before its restart)', async () => {
+		const data = fakeData(entries(A1, P, S1, S2, A2));
+		const store = await loaded(data, family());
+		expect(store.nested).toEqual([false, false, true, true, false]);
+		expect(store.blockOf(entryOf(P))).toEqual([entryOf(P)]);
+		expect(await store.moveUp(entryOf(P))).toBe(true);
+		expect(data.move).toHaveBeenLastCalledWith(entryOf(P), 0);
+		expect(data.order).not.toHaveBeenCalled();
+		expect(ids(store)).toEqual([P, A1, S1, S2, A2]);
+		expect(store.announcement).toBe('TASK-p1 steht jetzt an Stelle 1 von 5.');
+	});
+
+	it('takes the places of add and adopt from the answer of the server', async () => {
+		// The server puts a sub-task directly after its parent (the rule of the hook is tested there).
+		const place = (ticketId: string, list: readonly DayPlanItem[]) => {
+			const parent = list.findIndex((entry) => entry.ticketId === P);
+			return ticketId.startsWith('t000000000000s') && parent !== -1 ? parent + 1 : list.length;
+		};
+		// S2 due today: a suggestion to adopt.
+		const tickets = fakeTickets([
+			ticket(A1),
+			ticket(P),
+			ticket(S1, of(P)),
+			ticket(S2, { ...of(P), due: TODAY }),
+			ticket(A2)
+		]);
+		const data = fakeData(entries(A1, P, A2), tp4, [], place);
+		const store = await loaded(data, tickets);
+		await store.add(S1);
+		expect(ids(store)).toEqual([A1, P, S1, A2]);
+		expect(store.nested).toEqual([false, false, true, false]);
+		await store.adopt([S2]);
+		expect(ids(store)).toEqual([A1, P, S2, S1, A2]);
+		// The answers named every place: the entries were not read again.
+		expect(data.listItems).toHaveBeenCalledTimes(1);
+	});
+
+	it('keeps to the end and reads the places of a drop again without positions in the answer', async () => {
+		const data = fakeData(entries(A1, P, A2));
+		const store = await loaded(data, family());
+		await store.add(S1);
+		expect(ids(store)).toEqual([A1, P, A2, S1]);
+		expect(data.listItems).toHaveBeenCalledTimes(1);
+		await store.add(S2, 0);
+		await vi.waitFor(() => expect(ids(store)).toEqual([S2, A1, P, A2, S1]));
+		expect(data.listItems).toHaveBeenCalledTimes(2);
+	});
+});
+
 describe('realtime', () => {
 	function fakeLiveSources() {
 		let onItem: ((change: RecordChange<DayPlanItem>) => void) | null = null;
@@ -587,7 +739,8 @@ describe('"Zum Tagesplan" in the menus of a ticket', () => {
 		const add = vi.fn(async () => ({
 			item: item('item00000000001', 't000000000000a1', 0),
 			plan: PLAN,
-			already: false
+			already: false,
+			positions: null
 		}));
 		const open = vi.fn();
 		const { flags, last } = fakeFlags();
@@ -601,7 +754,8 @@ describe('"Zum Tagesplan" in the menus of a ticket', () => {
 		add.mockResolvedValueOnce({
 			item: item('item00000000001', 't000000000000a1', 0),
 			plan: PLAN,
-			already: true
+			already: true,
+			positions: null
 		});
 		await store.add({ id: 't000000000000a1', key: 'TASK-a1' });
 		expect(last()?.title).toBe('TASK-a1 steht schon im Tagesplan.');
