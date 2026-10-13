@@ -1,10 +1,12 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import { KIND_LABELS, type TicketKind } from '$lib/domain/day-plan';
 	import { PRIORITY_LABELS, STATUS_LABELS } from '$lib/domain/labels';
 	import { projectChoiceLabel, treeOrder } from '$lib/domain/project-tree';
 	import {
 		DUE_FILTERS,
+		KIND_FILTERS,
 		NO_PROJECT,
 		RECURRING_FILTERS,
 		SEARCH_MAX_LENGTH,
@@ -42,7 +44,8 @@
 	// choices switches that off (`unterprojekte=0`). It is locked without sub projects.
 	// The calendar (ADR-0053 §3) uses the same bar with the same parameters, without "Fällig" (its
 	// grid is the axis of the due date) and without the search (the server answers it for the list);
-	// only there the status "Erledigt" is a chip (ADR-0066 §5).
+	// only there the status "Erledigt" is a chip (ADR-0066 §5). "Art" (VH-1, `art=aufgabe|vorhaben`)
+	// chooses tasks or ongoing projects after "Wiederkehrend", only in "Aufgaben".
 	// "Zuständig" (E7-5, ADR-0068 §3) is a popover like "Tag", only in a household: "Niemand" and the
 	// members, the own account first.
 	let {
@@ -105,6 +108,7 @@
 		value,
 		label: RECURRING_LABELS[value]
 	}));
+	const kindOptions = KIND_FILTERS.map((value) => ({ value, label: KIND_LABELS[value] }));
 
 	const query = $derived(parseListQuery(page.url.searchParams));
 	const filtered = $derived(hasFilters(query));
@@ -250,6 +254,15 @@
 		value={query.recurring}
 		onchange={(value: RecurringFilter | null) => setFilter('recurring', value)}
 	/>
+	{#if !calendar}
+		<ChipGroup
+			legend="Art"
+			name={`${uid}-kind`}
+			options={kindOptions}
+			value={query.kind}
+			onchange={(value: TicketKind | null) => setFilter('kind', value)}
+		/>
+	{/if}
 
 	<div class="selects">
 		{#if !calendar}

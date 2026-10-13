@@ -265,6 +265,33 @@ describe('matchesFilter: recurring (plan OR-2)', () => {
 	});
 });
 
+describe('matchesFilter: kind "Art" (VH-1)', () => {
+	it('takes only tasks or only ongoing projects, both without the filter; no kind is a task', () => {
+		const project = ticket({ kind: 'ongoing' });
+		const task = ticket({ kind: 'task' });
+		const before = ticket();
+		expect(matchesFilter(project, query({ kind: 'ongoing' }), TODAY)).toBe(true);
+		expect(matchesFilter(task, query({ kind: 'ongoing' }), TODAY)).toBe(false);
+		expect(matchesFilter(before, query({ kind: 'ongoing' }), TODAY)).toBe(false);
+		expect(matchesFilter(project, query({ kind: 'task' }), TODAY)).toBe(false);
+		expect(matchesFilter(task, query({ kind: 'task' }), TODAY)).toBe(true);
+		expect(matchesFilter(before, query({ kind: 'task' }), TODAY)).toBe(true);
+		for (const entry of [project, task, before]) {
+			expect(matchesFilter(entry, query({ kind: null }), TODAY)).toBe(true);
+		}
+	});
+
+	it('combines with the other filters and the cards (AND)', () => {
+		const urgent = ticket({ kind: 'ongoing', priority: 'urgent', tagIds: [SHOP.id] });
+		expect(
+			matchesFilter(urgent, query({ kind: 'ongoing', priority: 'urgent', tag: SHOP.id }), TODAY)
+		).toBe(true);
+		expect(matchesFilter(urgent, query({ kind: 'ongoing', tag: CALL.id }), TODAY)).toBe(false);
+		expect(matchesFilter(urgent, query({ kind: 'ongoing', cards: ['urgent'] }), TODAY)).toBe(true);
+		expect(matchesFilter(urgent, query({ kind: 'task', cards: ['urgent'] }), TODAY)).toBe(false);
+	});
+});
+
 describe('matchesFilter: filter cards (FI-1)', () => {
 	const working = ticket({ status: 'in_progress', projectId: HOUSE.id });
 	const urgentDue = ticket({ priority: 'urgent', due: TODAY });

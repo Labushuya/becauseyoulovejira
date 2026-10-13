@@ -9,9 +9,12 @@
 // "Wiederkehrend" (plan OR-2) compares `recurring`, i.e. `recurrence != ""` on the server.
 // "Zuständig" (E7-5, ADR-0068 §3) compares `assignee` with the chosen account, "Niemand" an empty one;
 // the card "Mir zugewiesen" needs the signed-in account (`selfId`).
+// "Art" (VH-1) compares the kind; a ticket without one (before the migration) is a task. Only the
+// open list knows it: the calendar leaves it out (calendarListQuery), the server never sees it.
 
 import { matchesAssignee } from './assignee';
 import { addDays, type CalendarDate } from './berlin-date';
+import { kindOf } from './day-plan';
 import { matchesCards } from './filter-cards';
 import { NO_PROJECT, type ListQuery } from './list-query';
 import { SOON_DAYS } from './ordering';
@@ -35,7 +38,7 @@ export type FilterableTicket = Pick<
 	TicketSummary,
 	'status' | 'priority' | 'due' | 'projectId' | 'tagIds' | 'source' | 'recurring'
 > &
-	Partial<Pick<TicketSummary, 'assignee'>>;
+	Partial<Pick<TicketSummary, 'assignee' | 'kind'>>;
 
 function matchesRecurring(ticket: FilterableTicket, filter: ListQuery['recurring']): boolean {
 	if (filter === null) return true;
@@ -96,6 +99,7 @@ export function matchesFilter(
 		matchesDue(ticket, query.due, today) &&
 		(query.source === null || sourceFamily(ticket.source) === query.source) &&
 		matchesRecurring(ticket, query.recurring) &&
+		(query.kind === null || kindOf(ticket.kind) === query.kind) &&
 		matchesProject(ticket, query, subProjectsOf) &&
 		(query.tag === null || ticket.tagIds.includes(query.tag)) &&
 		matchesAssignee(ticket, query.assignee)

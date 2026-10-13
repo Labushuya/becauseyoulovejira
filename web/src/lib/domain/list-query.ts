@@ -3,6 +3,7 @@
 // module does not know stay untouched when writing.
 
 import { NOBODY } from './assignee';
+import { TICKET_KINDS, type TicketKind } from './day-plan';
 import { cardsFromUrl, cardsToUrl, type FilterCard } from './filter-cards';
 import { SORT_KEYS, type SortKey, type SortSpec } from './ordering';
 import { SOURCE_FAMILIES, SOURCE_FAMILY_VALUES, type SourceFamily } from './source';
@@ -20,8 +21,14 @@ export const RECURRING_FILTERS = ['recurring', 'once'] as const;
 export type RecurringFilter = (typeof RECURRING_FILTERS)[number];
 
 /**
+ * Filter "Art" (VH-1, ADR-0065 addendum VH-1): only tasks or only ongoing projects; null shows both.
+ * A ticket without a kind (before the migration) is a task.
+ */
+export const KIND_FILTERS: readonly TicketKind[] = TICKET_KINDS;
+
+/**
  * Groupings of the table (T-7); domain/grouping.ts groups by them. "Nach Zuständigkeit" since E7-5
- * (ADR-0068 §3), offered only in a household.
+ * (ADR-0068 §3), offered only in a household; "Nach Art" since VH-1 (ongoing projects first).
  */
 export const GROUPINGS = [
 	'status',
@@ -30,6 +37,7 @@ export const GROUPINGS = [
 	'due',
 	'source',
 	'recurrence',
+	'kind',
 	'assignee'
 ] as const;
 export type Grouping = (typeof GROUPINGS)[number];
@@ -66,6 +74,8 @@ export interface ListQuery {
 	source: SourceFamily | null;
 	/** Tickets of a series or single ones (plan OR-2); null: both. */
 	recurring: RecurringFilter | null;
+	/** Tasks or ongoing projects (VH-1); null: both. */
+	kind: TicketKind | null;
 	/** Project record ID or NO_PROJECT. */
 	project: string | null;
 	/**
@@ -104,6 +114,7 @@ export const FILTER_KEYS = [
 	'due',
 	'source',
 	'recurring',
+	'kind',
 	'project',
 	'tag',
 	'assignee',
@@ -118,6 +129,7 @@ export const EMPTY_LIST_QUERY: Readonly<ListQuery> = Object.freeze({
 	due: null,
 	source: null,
 	recurring: null,
+	kind: null,
 	project: null,
 	subProjects: true,
 	tag: null,
@@ -139,6 +151,7 @@ export const LIST_PARAMS = Object.freeze({
 	due: 'faellig',
 	source: 'quelle',
 	recurring: 'wiederholung',
+	kind: 'art',
 	project: 'projekt',
 	subProjects: 'unterprojekte',
 	tag: 'tag',
@@ -175,6 +188,11 @@ const RECURRING_VALUES: Readonly<Record<RecurringFilter, string>> = Object.freez
 	once: 'einmalig'
 });
 
+const KIND_VALUES: Readonly<Record<TicketKind, string>> = Object.freeze({
+	task: 'aufgabe',
+	ongoing: 'vorhaben'
+});
+
 const GROUPING_VALUES: Readonly<Record<Grouping, string>> = Object.freeze({
 	status: 'status',
 	priority: 'prio',
@@ -182,6 +200,7 @@ const GROUPING_VALUES: Readonly<Record<Grouping, string>> = Object.freeze({
 	due: 'faellig',
 	source: 'quelle',
 	recurrence: 'wiederholung',
+	kind: 'art',
 	assignee: 'zustaendig'
 });
 
@@ -241,6 +260,7 @@ export function parseListQuery(params: URLSearchParams): ListQuery {
 		due: keyOf(DUE_FILTERS, DUE_VALUES, single(params, LIST_PARAMS.due)),
 		source: keyOf(SOURCE_FAMILIES, SOURCE_FAMILY_VALUES, single(params, LIST_PARAMS.source)),
 		recurring: keyOf(RECURRING_FILTERS, RECURRING_VALUES, single(params, LIST_PARAMS.recurring)),
+		kind: keyOf(KIND_FILTERS, KIND_VALUES, single(params, LIST_PARAMS.kind)),
 		project: project === NO_PROJECT ? NO_PROJECT : parseRecordId(project),
 		subProjects: single(params, LIST_PARAMS.subProjects) !== '0',
 		tag: parseRecordId(single(params, LIST_PARAMS.tag)),
@@ -281,6 +301,7 @@ function queryEntries(query: ListQuery): [string, string][] {
 		[LIST_PARAMS.due, query.due === null ? null : DUE_VALUES[query.due]],
 		[LIST_PARAMS.source, query.source === null ? null : SOURCE_FAMILY_VALUES[query.source]],
 		[LIST_PARAMS.recurring, query.recurring === null ? null : RECURRING_VALUES[query.recurring]],
+		[LIST_PARAMS.kind, query.kind === null ? null : KIND_VALUES[query.kind]],
 		[LIST_PARAMS.project, query.project],
 		// Only the exception is written, and only where it means something: with a project.
 		[
@@ -341,6 +362,7 @@ export function resetFilters(query: ListQuery): ListQuery {
 		due: null,
 		source: null,
 		recurring: null,
+		kind: null,
 		project: null,
 		subProjects: true,
 		tag: null,

@@ -2,7 +2,8 @@
 // order of the domain, not the alphabet; empty groups do not appear. Within a group the tickets
 // keep the order they come in (the current sort). Since plan OR-3 on up to two levels, with the
 // folded groups of a tab in sessionStorage. "Nach Zuständigkeit" (E7-5, ADR-0068 §3): the own account
-// first, then the other members by name, "Niemand" last.
+// first, then the other members by name, "Niemand" last. "Nach Art" (VH-1): the ongoing projects
+// before the tasks, like the tickets of a series before the single ones.
 
 import {
 	NOBODY,
@@ -12,6 +13,7 @@ import {
 	type AssigneeContext
 } from './assignee';
 import type { CalendarDate } from './berlin-date';
+import { KIND_LABELS, kindOf, type TicketKind } from './day-plan';
 import { dueBucket, type DueBucket } from './filter';
 import { PRIORITY_LABELS, STATUS_LABELS } from './labels';
 import { NO_PROJECT, RECURRING_FILTERS, type Grouping, type RecurringFilter } from './list-query';
@@ -32,6 +34,7 @@ export const GROUPING_LABELS: Readonly<Record<Grouping, string>> = Object.freeze
 	due: 'Fälligkeit',
 	source: 'Quelle',
 	recurrence: 'Wiederholung',
+	kind: 'Art',
 	assignee: 'Zuständigkeit'
 });
 
@@ -47,6 +50,9 @@ export const RECURRENCE_GROUP_LABELS: Readonly<Record<RecurringFilter, string>> 
 	recurring: 'Wiederkehrend',
 	once: 'Einmalig'
 });
+
+/** Groups of "Nach Art" (VH-1): the ongoing projects first, named as the kind is everywhere. */
+const KIND_GROUP_ORDER: readonly TicketKind[] = ['ongoing', 'task'];
 
 /** Group of tickets without a project; always last. */
 export const NO_PROJECT_LABEL = 'Ohne Projekt';
@@ -77,7 +83,7 @@ export type GroupableTicket = Pick<
 	TicketSummary,
 	'status' | 'priority' | 'due' | 'project' | 'source' | 'recurring'
 > &
-	Partial<Pick<TicketSummary, 'assignee'>>;
+	Partial<Pick<TicketSummary, 'assignee' | 'kind'>>;
 
 /** Tickets per key in the input order. */
 function collect<T>(tickets: readonly T[], keyOf: (ticket: T) => string): Map<string, T[]> {
@@ -140,8 +146,9 @@ function assigneeGroups<T extends GroupableTicket>(
  * Splits already sorted tickets into groups (T-7): status in the order of work, priority urgent
  * first, project by name with "Ohne Projekt" last, due date overdue · today · next 7 days ·
  * later · without date, source in the order of the families (ADR-0019 section 3), recurrence
- * "Wiederkehrend" before "Einmalig" (plan OR-2), assignee with the own account first and "Niemand"
- * last (ADR-0068). `today` is the Berlin calendar date.
+ * "Wiederkehrend" before "Einmalig" (plan OR-2), kind "Laufendes Vorhaben" before "Aufgabe" (VH-1),
+ * assignee with the own account first and "Niemand" last (ADR-0068). `today` is the Berlin
+ * calendar date.
  */
 export function groupTickets<T extends GroupableTicket>(
 	tickets: readonly T[],
@@ -182,6 +189,12 @@ export function groupTickets<T extends GroupableTicket>(
 				collect(tickets, (ticket): RecurringFilter => (ticket.recurring ? 'recurring' : 'once')),
 				RECURRING_FILTERS,
 				(key) => RECURRENCE_GROUP_LABELS[key as RecurringFilter]
+			);
+		case 'kind':
+			return inOrder(
+				collect(tickets, (ticket) => kindOf(ticket.kind)),
+				KIND_GROUP_ORDER,
+				(key) => KIND_LABELS[key as TicketKind]
 			);
 		case 'assignee':
 			return assigneeGroups(tickets, assignees);
