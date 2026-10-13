@@ -15,6 +15,7 @@ import type { DayPlanAnswer, DayPlanItem } from '$lib/data/day-plan';
 import type { TicketSummary } from '$lib/domain/ticket';
 import type { AreaStore } from '$lib/stores/area.svelte';
 import { DayPlanStore } from '$lib/stores/day-plan.svelte';
+import { DayPlanSortStore, type DayPlanSorting } from '$lib/stores/day-plan-sort.svelte';
 import {
 	PLAN,
 	SELF,
@@ -99,6 +100,8 @@ interface Setup {
 	ongoing?: string[];
 	/** The account that looks at the plan (source "Mir zugewiesen", ADR-0068 §8). */
 	viewer?: string | null;
+	/** The sort of this device (TP-5); without it a choice lasts for the store. */
+	sorting?: DayPlanSorting;
 }
 
 async function renderPlan({
@@ -108,7 +111,8 @@ async function renderPlan({
 	date = null,
 	area = null,
 	ongoing = [A2],
-	viewer = null
+	viewer = null,
+	sorting = new DayPlanSortStore()
 }: Setup = {}) {
 	mocks.page.url = new URL(
 		date === null ? '/tagesplan' : `/tagesplan?tag=${date}`,
@@ -120,15 +124,16 @@ async function renderPlan({
 	const store = new DayPlanStore(data, list, fakeSession(), {
 		flags,
 		scope: () => answer.scope,
-		viewer: () => viewer
+		viewer: () => viewer,
+		sorting
 	});
 	store.show(date);
 	await vi.waitFor(() => expect(store.state).toBe('ready'));
-	render(TicketHostHarness, {
+	const view = render(TicketHostHarness, {
 		props: { host: DAY_PLAN_HOST, component: DayPlanView, props: { store, area } }
 	});
 	await tick();
-	return { store, data, list, last };
+	return { store, data, list, last, view };
 }
 
 const entry = (key: string) => screen.getByText(key).closest('li') as HTMLElement;
@@ -1260,6 +1265,316 @@ describe('a parent moves with its block (TP-4)', () => {
 	});
 });
 
+describe('sorting the plan (TP-5)', () => {
+	const P = 't000000000000p1';
+	const S1 = 't000000000000s1';
+	const D = 't000000000000d1';
+	const HOUSE = 'h:house0000000001';
+	const sub = { parentId: P, parentRef: { id: P, key: 'HAUS-7', title: 'Wochenputz' } };
+	const ID = {
+		a1: 'item00000000001',
+		s1: 'item00000000002',
+		p: 'item00000000003',
+		a2: 'item00000000004',
+		d: 'item00000000005'
+	};
+	const MANUAL_ROWS = ['TASK-a1', 'HAUS-8', 'HAUS-7', 'TASK-a2', 'HAUS-9'];
+	/** Priority, urgent first: the parent with its sub-task as a unit, the checked entry last. */
+	const PRIORITY_ROWS = ['TASK-a1', 'HAUS-7', '  HAUS-8', 'TASK-a2', 'HAUS-9'];
+
+	/**
+	 * Plan in this order: TASK-a1 (high), HAUS-8 (urgent, a sub-task of HAUS-7), HAUS-7 (medium),
+	 * TASK-a2 (low, an ongoing project), HAUS-9 (urgent, checked for today); TASK-a3 in the pool.
+	 */
+	function renderSortable(setup: Setup = {}) {
+		return renderPlan({
+			tickets: [
+				planTicket(A1, { title: 'Steuer abgeben', priority: 'high' }),
+				planTicket(S1, { key: 'HAUS-8', title: 'Bad putzen', priority: 'urgent', ...sub }),
+				planTicket(P, { key: 'HAUS-7', title: 'Wochenputz', priority: 'medium' }),
+				planTicket(A2, { title: 'Spanisch lernen', kind: 'ongoing', priority: 'low' }),
+				planTicket(D, { key: 'HAUS-9', title: 'Anruf', priority: 'urgent' }),
+				planTicket(A3, { title: 'Müll rausbringen' })
+			],
+			items: [
+				planItem(ID.a1, A1, 0),
+				planItem(ID.s1, S1, 1),
+				planItem(ID.p, P, 2),
+				planItem(ID.a2, A2, 3),
+				planItem(ID.d, D, 4, { doneToday: true })
+			],
+			answer: planAnswer({ supportsOrder: true }),
+			...setup
+		});
+	}
+
+	const planEntry = (id: string) =>
+		document.querySelector<HTMLElement>(`[data-item-id="${id}"]`) as HTMLElement;
+	/** Keys of the plan, indented ones with two blanks before. */
+	const planRows = () =>
+		[...document.querySelectorAll<HTMLElement>('[data-item-id]')].map(
+			(item) =>
+				`${item.classList.contains('nested') ? '  ' : ''}${item.querySelector('.key')?.textContent}`
+		);
+	const status = () => screen.getByRole('status', { hidden: true }).textContent ?? '';
+	const sortButton = () => screen.getByRole('button', { name: /^Sortierung: / });
+
+	/** The menu "Sortierung" opened, with its choices. */
+	async function openSort() {
+		const trigger = sortButton();
+		trigger.focus();
+		await fireEvent.click(trigger);
+		await tick();
+		const menu = document.getElementById(
+			trigger.getAttribute('aria-controls') ?? ''
+		) as HTMLElement;
+		/** The name of a choice: its text without the check mark, which is hidden for screen readers. */
+		const nameOf = (item: HTMLElement) =>
+			[...item.childNodes]
+				.filter((node) => !(node instanceof HTMLElement && node.getAttribute('aria-hidden')))
+				.map((node) => node.textContent)
+				.join('')
+				.trim();
+		const items = () => within(menu).getAllByRole('menuitemradio', { hidden: true });
+		return {
+			trigger,
+			menu,
+			choices: () => items().map(nameOf),
+			checked: () =>
+				items()
+					.filter((item) => item.getAttribute('aria-checked') === 'true')
+					.map(nameOf)
+		};
+	}
+
+	/** Indented below its parent like a row of the table (TP-3): the corner, no line of context. */
+	function expectIndented(root: Element) {
+		expect(root.classList.contains('nested')).toBe(true);
+		expect(root.querySelector('.nest-icon')?.getAttribute('aria-hidden')).toBe('true');
+		expect(root.querySelector('.title-cell')?.textContent).toContain('Unteraufgabe von HAUS-7:');
+		expect(root.querySelector('[data-subtask-path]')).toBeNull();
+	}
+
+	/** The hint below the controls of a sorted plan. */
+	const sortHint = () => screen.getByText(/^Sortiert nach \S+ \(/);
+
+	async function chooseSort(name: string) {
+		const { menu } = await openSort();
+		await fireEvent.click(within(menu).getByRole('menuitemradio', { name, hidden: true }));
+		await tick();
+	}
+
+	afterEach(() => {
+		window.localStorage.removeItem('byl-dayplan-sort');
+	});
+
+	it('offers "Sortierung" as a menu with "Manuell" chosen and the criteria of the private plan', async () => {
+		await renderSortable();
+		expect(sortButton().textContent?.trim()).toBe('Sortierung: Manuell');
+		const { menu, choices, checked } = await openSort();
+		expect(menu.getAttribute('role')).toBe('menu');
+		expect(menu.getAttribute('aria-label')).toBe('Sortierung');
+		expect(choices()).toEqual(['Manuell', 'Priorität', 'Status', 'Fälligkeit', 'Titel', 'Projekt']);
+		expect(checked()).toEqual(['Manuell']);
+		// "Manuell" has no direction and no hint.
+		expect(screen.queryByRole('group', { name: 'Richtung' })).toBeNull();
+		expect(screen.queryByText(/Zum Verschieben/)).toBeNull();
+		expect(planRows()).toEqual(MANUAL_ROWS);
+	});
+
+	it('offers "Zuständigkeit" in the shared plan of a household', async () => {
+		await renderSortable({
+			answer: planAnswer({ supportsOrder: true, scope: HOUSE, plan: { ...PLAN, scope: HOUSE } })
+		});
+		const { choices } = await openSort();
+		expect(choices()).toContain('Zuständigkeit');
+	});
+
+	it('sorts by a criterion with its first direction, turns the direction and says so', async () => {
+		await renderSortable();
+		await chooseSort('Priorität');
+		// The choice closes the menu; the focus is back on the button, which names the sort.
+		expect(document.activeElement).toBe(sortButton());
+		expect(sortButton().textContent?.trim()).toBe('Sortierung: Priorität');
+		expect(sortButton().classList.contains('active')).toBe(true);
+		expect(planRows()).toEqual(PRIORITY_ROWS);
+		// Indented below its parent: the corner, no line of context.
+		expectIndented(planEntry(ID.s1));
+		expect(status()).toBe('Sortiert nach Priorität, absteigend: Dringende zuerst.');
+		const direction = within(screen.getByRole('group', { name: 'Richtung' }));
+		const descending = direction.getByRole('button', { name: 'Absteigend' });
+		expect(descending.getAttribute('aria-pressed')).toBe('true');
+		expect(descending.getAttribute('title')).toBe('Dringende zuerst');
+		const ascending = direction.getByRole('button', { name: 'Aufsteigend' });
+		expect(ascending.getAttribute('aria-pressed')).toBe('false');
+		expect(ascending.getAttribute('title')).toBe('Niedrige zuerst');
+		// The hint describes the list.
+		const hint = sortHint();
+		expect(hint.textContent?.trim()).toBe(
+			'Sortiert nach Priorität (Dringende zuerst). Abgehaktes steht am Ende. Zum Verschieben auf „Manuell“ umstellen.'
+		);
+		expect(
+			screen.getByRole('group', { name: 'Einträge des Plans' }).getAttribute('aria-describedby')
+		).toBe(hint.id);
+
+		await fireEvent.click(ascending);
+		expect(ascending.getAttribute('aria-pressed')).toBe('true');
+		expect(planRows()).toEqual(['TASK-a2', 'HAUS-7', '  HAUS-8', 'TASK-a1', 'HAUS-9']);
+		expect(status()).toBe('Sortiert nach Priorität, aufsteigend: Niedrige zuerst.');
+
+		// Another criterion starts with its own first direction (A to Z).
+		await chooseSort('Titel');
+		expect(planRows()).toEqual(['TASK-a2', 'TASK-a1', 'HAUS-7', '  HAUS-8', 'HAUS-9']);
+		expect(
+			within(screen.getByRole('group', { name: 'Richtung' }))
+				.getByRole('button', { name: 'Aufsteigend' })
+				.getAttribute('aria-pressed')
+		).toBe('true');
+	});
+
+	it('moves nothing while sorted: no handle, no buttons, no Alt+arrow; "Manuell" brings the order and the ways back', async () => {
+		const { data } = await renderSortable();
+		await chooseSort('Priorität');
+		expect(document.querySelector('.handle')).toBeNull();
+		expect(screen.queryByRole('button', { name: /nach oben$/ })).toBeNull();
+		expect(screen.queryByRole('button', { name: /nach unten$/ })).toBeNull();
+		// The other actions of an entry stay.
+		expect(
+			within(planEntry(ID.a1)).getByRole('button', { name: 'Weitere Aktionen für TASK-a1' })
+		).toBeTruthy();
+		const check = screen.getByRole('checkbox', { name: 'TASK-a2 für heute erledigt' });
+		check.focus();
+		await fireEvent.keyDown(check, { key: 'ArrowUp', altKey: true });
+		await tick();
+		expect(data.move).not.toHaveBeenCalled();
+		expect(data.order).not.toHaveBeenCalled();
+
+		await chooseSort('Manuell');
+		expect(status()).toBe('Manuelle Reihenfolge.');
+		expect(planRows()).toEqual(MANUAL_ROWS);
+		expect(screen.queryByRole('group', { name: 'Richtung' })).toBeNull();
+		expect(
+			screen.getByRole('group', { name: 'Einträge des Plans' }).getAttribute('aria-describedby')
+		).toBeNull();
+		expect(planEntry(ID.a1).querySelector('.handle')).not.toBeNull();
+		await fireEvent.click(
+			within(planEntry(ID.a1)).getByRole('button', { name: 'TASK-a1 nach unten' })
+		);
+		await vi.waitFor(() => expect(data.move).toHaveBeenCalledWith(ID.a1, 1));
+	});
+
+	it('adopts the order shown with "Als manuelle Reihenfolge übernehmen", then shows "Manuell" with the focus on "Sortierung"', async () => {
+		const { data, last } = await renderSortable();
+		await chooseSort('Priorität');
+		await fireEvent.click(
+			screen.getByRole('button', { name: 'Als manuelle Reihenfolge übernehmen' })
+		);
+		await vi.waitFor(() =>
+			expect(data.order).toHaveBeenCalledWith(PLAN.id, [ID.a1, ID.p, ID.s1, ID.a2, ID.d])
+		);
+		await vi.waitFor(() => expect(sortButton().textContent?.trim()).toBe('Sortierung: Manuell'));
+		await vi.waitFor(() => expect(document.activeElement).toBe(sortButton()));
+		expect(
+			screen.queryByRole('button', { name: 'Als manuelle Reihenfolge übernehmen' })
+		).toBeNull();
+		// The same order, now stored: the sub-task stands directly below its parent.
+		expect(planRows()).toEqual(PRIORITY_ROWS);
+		expect(planEntry(ID.a1).querySelector('.handle')).not.toBeNull();
+		expect(status()).toBe('Als manuelle Reihenfolge übernommen. Sortierung: Manuell.');
+		const flag = last();
+		expect(flag).toMatchObject({ tone: 'success', title: 'Als manuelle Reihenfolge übernommen.' });
+		expect(flag?.action?.label).toBe('Rückgängig');
+		flag?.action?.run();
+		await vi.waitFor(() =>
+			expect(data.order).toHaveBeenLastCalledWith(PLAN.id, [ID.a1, ID.s1, ID.p, ID.a2, ID.d])
+		);
+		await vi.waitFor(() => expect(planRows()).toEqual(MANUAL_ROWS));
+	});
+
+	it('sets the order back with a message when the server refuses, and stays sorted', async () => {
+		const { data, last } = await renderSortable();
+		await chooseSort('Priorität');
+		data.order.mockRejectedValueOnce(new DataError('network'));
+		await fireEvent.click(
+			screen.getByRole('button', { name: 'Als manuelle Reihenfolge übernehmen' })
+		);
+		await vi.waitFor(() =>
+			expect(last()).toMatchObject({
+				tone: 'error',
+				title: 'Die Reihenfolge wurde nicht übernommen.'
+			})
+		);
+		expect(sortButton().textContent?.trim()).toBe('Sortierung: Priorität');
+		expect(
+			screen
+				.getByRole('button', { name: 'Als manuelle Reihenfolge übernehmen' })
+				.getAttribute('aria-busy')
+		).toBeNull();
+		await chooseSort('Manuell');
+		expect(planRows()).toEqual(MANUAL_ROWS);
+	});
+
+	it('hides "Als manuelle Reihenfolge übernehmen" without the route of the order and on a day before', async () => {
+		const before = await renderSortable({ answer: planAnswer() });
+		await chooseSort('Priorität');
+		expect(sortHint().textContent).toContain('Zum Verschieben auf „Manuell“ umstellen.');
+		expect(
+			screen.queryByRole('button', { name: 'Als manuelle Reihenfolge übernehmen' })
+		).toBeNull();
+		before.view.unmount();
+
+		await renderSortable({
+			date: '2031-05-12',
+			answer: planAnswer({ date: '2031-05-12', editable: false, supportsOrder: true })
+		});
+		await chooseSort('Priorität');
+		expect(planRows()).toEqual(PRIORITY_ROWS);
+		// Nothing to move on a day before: the hint names only the sort.
+		expect(sortHint().textContent?.trim()).toBe(
+			'Sortiert nach Priorität (Dringende zuerst). Abgehaktes steht am Ende.'
+		);
+		expect(
+			screen.queryByRole('button', { name: 'Als manuelle Reihenfolge übernehmen' })
+		).toBeNull();
+	});
+
+	it('remembers the sort on this device in localStorage, for the next plan as well', async () => {
+		const first = await renderSortable({ sorting: new DayPlanSortStore(window) });
+		await chooseSort('Fälligkeit');
+		expect(window.localStorage.getItem('byl-dayplan-sort')).toBe('due:ascending');
+		await fireEvent.click(
+			within(screen.getByRole('group', { name: 'Richtung' })).getByRole('button', {
+				name: 'Absteigend'
+			})
+		);
+		expect(window.localStorage.getItem('byl-dayplan-sort')).toBe('due:descending');
+		first.view.unmount();
+
+		await renderSortable({ sorting: new DayPlanSortStore(window) });
+		expect(sortButton().textContent?.trim()).toBe('Sortierung: Fälligkeit');
+		await chooseSort('Manuell');
+		expect(window.localStorage.getItem('byl-dayplan-sort')).toBeNull();
+	});
+
+	it('takes a ticket of the pool dropped on a sorted plan without a place', async () => {
+		const { data } = await renderSortable();
+		await chooseSort('Priorität');
+		layoutEntries();
+		const dataTransfer = transfer();
+		const ticket = document.querySelector(`[data-pool-ticket="${A3}"]`) as HTMLElement;
+		await fireEvent.dragStart(ticket, { dataTransfer });
+		const plan = screen.getByRole('group', { name: 'Einträge des Plans' });
+		await drag(plan, 'dragover', dataTransfer, 45);
+		expect(plan.classList.contains('drop-target')).toBe(true);
+		expect(document.querySelector('.drop-before, .drop-after')).toBeNull();
+		await drag(plan, 'drop', dataTransfer, 45);
+		await vi.waitFor(() =>
+			expect(data.add).toHaveBeenCalledWith({ ticket: A3, scope: 'u:user00000000001', date: TODAY })
+		);
+		expect(plan.classList.contains('drop-target')).toBe(false);
+	});
+});
+
 describe('on a phone', () => {
 	const read = (name: string) => readFileSync(join(import.meta.dirname, name), 'utf8');
 
@@ -1268,7 +1583,8 @@ describe('on a phone', () => {
 			'DayPlanList.svelte',
 			'DayPlanPool.svelte',
 			'DayPlanView.svelte',
-			'DayPlanSuggestions.svelte'
+			'DayPlanSuggestions.svelte',
+			'DayPlanSort.svelte'
 		]) {
 			expect(read(file), file).toMatch(/@media \(pointer: coarse\)[\s\S]*--control-height-touch/);
 		}

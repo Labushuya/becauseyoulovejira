@@ -59,6 +59,7 @@ import {
 import {
 	DEFAULT_PRIORITY,
 	REOPEN_STATUS,
+	type ProjectRef,
 	type TicketDraft,
 	type TicketPatch,
 	type TicketSummary
@@ -476,6 +477,14 @@ export class TicketListStore {
 	/** The signed-in account and the names of the accounts (ADR-0068), for rows and groups. */
 	get assigneeContext(): AssigneeContext {
 		return this.#assignees();
+	}
+
+	/**
+	 * The project of a ticket as the column sort "Projekt" resolves it (the catalog, else the
+	 * expanded one); the sort "Projekt" of the day plan uses the same (TP-5).
+	 */
+	projectOf(ticket: TicketSummary): ProjectRef | null {
+		return this.#projectOf(ticket);
 	}
 
 	/** New tickets that are not done (button "Alle als gelesen markieren"). */

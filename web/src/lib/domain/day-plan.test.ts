@@ -1,6 +1,7 @@
 // Texts and helpers of the day plan in the SPA (TP-1, ADR-0065): the kind, the names of sources and
 // modes, the title of a day, the progress, the hint at the other area and initials; since TP-4 the
-// blocks of the plan. The rules shared with the hook are compared in tests/unit/web-day-plan.test.mjs.
+// blocks of the plan, since TP-5 the order of a request of the order. The rules shared with the hook
+// are compared in tests/unit/web-day-plan.test.mjs.
 
 import { describe, expect, it } from 'vitest';
 import {
@@ -18,7 +19,8 @@ import {
 	kindOf,
 	movedBlock,
 	otherAreaText,
-	progressText
+	progressText,
+	withOrder
 } from './day-plan';
 
 describe('blocks of the plan (TP-4)', () => {
@@ -55,6 +57,20 @@ describe('blocks of the plan (TP-4)', () => {
 		expect(changedRange(ids, movedBlock(ids, 2, 3, 3))).toEqual(['a', 'p', 'p1', 'p2']);
 		expect(changedRange(['a', 'b'], ['b', 'a'])).toEqual(['b', 'a']);
 		expect(changedRange(ids, ids)).toEqual([]);
+	});
+});
+
+describe('the order of a request of the order in the list (TP-5)', () => {
+	it('puts the named entries on the places they hold together; every other one keeps its place', () => {
+		const current = ['a', 'b', 'c', 'd', 'e'];
+		// The whole plan: the order named.
+		expect(withOrder(current, ['e', 'd', 'c', 'b', 'a'])).toEqual(['e', 'd', 'c', 'b', 'a']);
+		// A part: b and d swap, the rest stays.
+		expect(withOrder(current, ['d', 'b'])).toEqual(['a', 'd', 'c', 'b', 'e']);
+		// An entry added meanwhile (x) keeps its place; one removed meanwhile (z) is left out.
+		expect(withOrder(['x', 'a', 'b'], ['b', 'z', 'a'])).toEqual(['x', 'b', 'a']);
+		expect(withOrder(current, ['b', 'b', 'a'])).toEqual(['b', 'a', 'c', 'd', 'e']);
+		expect(withOrder(current, [])).toEqual(current);
 	});
 });
 

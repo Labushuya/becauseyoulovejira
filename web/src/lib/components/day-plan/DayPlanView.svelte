@@ -13,6 +13,7 @@
 	import ViewSwitch from '../ViewSwitch.svelte';
 	import DayPlanList from './DayPlanList.svelte';
 	import DayPlanPool from './DayPlanPool.svelte';
+	import DayPlanSort from './DayPlanSort.svelte';
 	import DayPlanSuggestions from './DayPlanSuggestions.svelte';
 
 	// View "Tagesplan" (TP-1, ADR-0065 §4): the bridge between what is due today and long-running
@@ -22,7 +23,8 @@
 	// fold), the plan and the pool, on a wide screen next to the plan, on a narrow one below it. Days
 	// before are read-only, tomorrow can be planned; later days are not offered. A ticket opens next to
 	// the plan (DAY_PLAN_HOST). The questions of a check mark (open blocking sub-tasks, "Vorhaben
-	// abschließen …") are confirmations of the app (ADR-0025 §4).
+	// abschließen …") are confirmations of the app (ADR-0025 §4). Next to the heading "Plan" stands
+	// "Sortierung" (TP-5): a view of this device; sorted, the list names the hint as its description.
 	let {
 		store,
 		area = null,
@@ -39,6 +41,7 @@
 	const uid = $props.id();
 	const headingId = `${uid}-heading`;
 	const dayId = `${uid}-day`;
+	const sortHintId = `${uid}-sort-hint`;
 
 	let heading = $state<HTMLElement>();
 	let suggestionsOpen = $state(true);
@@ -147,8 +150,16 @@
 					<DayPlanSuggestions {store} {household} bind:open={suggestionsOpen} />
 				{/if}
 				<section class="plan" aria-labelledby={`${uid}-plan`}>
-					<h3 id={`${uid}-plan`} class="plan-heading">Plan</h3>
-					<DayPlanList {store} {household} onfinish={(row) => (finishing = row)} />
+					<div class="plan-head">
+						<h3 id={`${uid}-plan`} class="plan-heading">Plan</h3>
+						<DayPlanSort {store} {household} hintId={sortHintId} />
+					</div>
+					<DayPlanList
+						{store}
+						{household}
+						describedby={store.sorted ? sortHintId : undefined}
+						onfinish={(row) => (finishing = row)}
+					/>
 				</section>
 			</div>
 			{#if store.editable}
@@ -262,6 +273,15 @@
 	.plan {
 		display: grid;
 		gap: 0.5rem;
+		min-width: 0;
+	}
+
+	/* The heading and "Sortierung" in one row; the hint of a sorted plan below (DayPlanSort). */
+	.plan-head {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem 0.75rem;
+		align-items: center;
 		min-width: 0;
 	}
 

@@ -8,6 +8,7 @@
 	import { pb } from '$lib/pocketbase';
 	import { findAreaStore } from '$lib/stores/area.svelte';
 	import { DayPlanStore, dayPlanData, dayPlanLive } from '$lib/stores/day-plan.svelte';
+	import { DayPlanSortStore } from '$lib/stores/day-plan-sort.svelte';
 	import { getFlagStore } from '$lib/stores/flags.svelte';
 	import { getInboxStore } from '$lib/stores/inbox.svelte';
 	import { liveSource } from '$lib/stores/realtime';
@@ -22,7 +23,8 @@
 	// link below it stay here (ADR-0054); closing a ticket gives the focus back to its link. The open
 	// tickets come from the list store of the app layout, which follows them live; the plan, its
 	// entries and its suggestions live with this layout and follow the area of the tab, the day of the
-	// address and the clock of the list (midnight).
+	// address and the clock of the list (midnight). The sort of the plan (TP-5) is a preference of this
+	// device for every day and area, in localStorage, and follows the other tabs.
 	let { children } = $props();
 
 	setTicketHost(DAY_PLAN_HOST);
@@ -32,11 +34,13 @@
 	const inbox = getInboxStore();
 	const flags = getFlagStore();
 	const area = findAreaStore();
+	const sorting = new DayPlanSortStore(window);
 	const store = new DayPlanStore(dayPlanData(pb), tickets, auth, {
 		flags,
 		scope: () => clientArea(pb),
 		// "Mir zugewiesen" (ADR-0068 §8): the tickets of the account that looks at the plan.
-		viewer: () => auth.userId
+		viewer: () => auth.userId,
+		sorting
 	});
 
 	const withPanel = $derived(page.route.id === DAY_PLAN_HOST.panelRoute);
@@ -45,6 +49,7 @@
 	// The open tickets feed the suggestions and the pool, also when the app starts here.
 	$effect(() => untrack(() => tickets.loadOpen()));
 	$effect(() => untrack(() => store.connect(liveSource(pb), dayPlanLive(pb))));
+	$effect(() => untrack(() => sorting.connect()));
 
 	// The day of the address; without one today, which follows the clock of the list at midnight.
 	let shownToday: string | null = null;

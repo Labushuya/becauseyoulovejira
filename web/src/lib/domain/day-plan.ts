@@ -450,6 +450,20 @@ export function changedRange(before: readonly string[], after: readonly string[]
 	return after.slice(first, last + 1);
 }
 
+/**
+ * The order of the plan after a request of the order (TP-5), as the hook merges it (`orderedIds`):
+ * the named entries take the places they hold together, in the order of `named`; every other entry
+ * keeps its place. Named IDs that are not in `current` are left out, so the list shows at once what
+ * the server will answer.
+ */
+export function withOrder(current: readonly string[], named: readonly string[]): string[] {
+	const known = new Set(current);
+	const queue = [...new Set(named)].filter((id) => known.has(id));
+	const chosen = new Set(queue);
+	let next = 0;
+	return current.map((id) => (chosen.has(id) ? (queue[next++] ?? id) : id));
+}
+
 // --- Texts ---------------------------------------------------------------------------------------
 
 /** Texts of the codes of the routes, the same as MESSAGES of the hook. */

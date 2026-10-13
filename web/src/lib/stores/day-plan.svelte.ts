@@ -12,6 +12,9 @@
 //   below its parent when both are there (TP-3); the plan keeps its own order. Since TP-4 the server
 //   puts a new entry where it belongs (a sub-task below its parent) and answers every position, and a
 //   parent moves with its block (the order route); before its restart both work as before.
+// - Since TP-5 the plan can be shown sorted (a preference of this device, DayPlanSorting): a view
+//   only, nothing moves then; "Als manuelle Reihenfolge übernehmen" writes the order shown through
+//   the order route, with "Rückgängig".
 // - Every change goes through a route; the answer is applied at once, realtime brings the same again
 //   (idempotent by `updated`). Results and "Rückgängig" go out as flags, failures as error flags.
 
@@ -48,6 +51,7 @@ import { toDataError } from '$lib/data/errors';
 import type { RequestOptions } from '$lib/data/options';
 import type { RecordChange, Unsubscribe } from '$lib/data/realtime';
 import { updateTicket } from '$lib/data/tickets';
+import { assigneeName, type AssigneeContext } from '$lib/domain/assignee';
 import { addDays, type CalendarDate } from '$lib/domain/berlin-date';
 import {
 	DAY_PLAN_SOURCES,
@@ -60,6 +64,7 @@ import {
 	movedBlock,
 	seriesKeyOf,
 	suggestionsOf,
+	withOrder,
 	type CheckAction,
 	type CheckMode,
 	type DayPlanSettings,
@@ -69,6 +74,14 @@ import {
 	type Suggestion,
 	type TicketKind
 } from '$lib/domain/day-plan';
+import {
+	MANUAL_SORT,
+	effectiveSort,
+	sortAnnouncement,
+	sortPlanEntries,
+	type DayPlanSort,
+	type ShownEntry
+} from '$lib/domain/day-plan-sort';
 import type { Status } from '$lib/domain/status';
 import {
 	arrangeBy,
@@ -81,7 +94,8 @@ import {
 	type CompletionChoice,
 	type SubtaskProgress
 } from '$lib/domain/subtasks';
-import type { ParentRef, TicketSummary } from '$lib/domain/ticket';
+import type { ParentRef, ProjectRef, TicketSummary } from '$lib/domain/ticket';
+import { DayPlanSortStore, type DayPlanSorting } from './day-plan-sort.svelte';
 import { SILENT_FLAGS, type FlagSink } from './flags.svelte';
 import { hold, type LiveSource } from './realtime';
 import {
@@ -177,7 +191,17 @@ export interface DayPlanTickets {
 	upsert(ticket: TicketSummary): void;
 	/** Done and all sub-tasks of a ticket, as the table counts them (the chip "2/5", TP-3). */
 	progressOf(parentId: string): SubtaskProgress;
+	/**
+	 * The project of a ticket as the column sort "Projekt" of the list resolves it (the catalog), for
+	 * the sort "Projekt" of the plan (TP-5); without it the expanded project.
+	 */
+	projectOf?(ticket: TicketSummary): ProjectRef | null;
+	/** The names of the accounts for the sort "Zuständigkeit" (TP-5); without it their IDs. */
+	readonly assigneeContext?: AssigneeContext;
 }
+
+/** An entry of the plan as the sort shows it (TP-5): indented below its parent or not. */
+export type ShownRow = ShownEntry<PlanRow>;
 
 /** An entry with its ticket as the plan shows it. */
 export interface PlanRow {
@@ -234,6 +258,10 @@ export class DayPlanStore {
 	readonly #session: SessionGuard;
 	readonly #flags: FlagSink;
 	readonly #scope: AreaScope;
+	/** The sort of this device (TP-5): a view; the stored order changes only on request. */
+	readonly #sorting: DayPlanSorting;
+	/** "Als manuelle Reihenfolge übernehmen" runs (TP-5, S4). */
+	#adopting = $state(false);
 
 	/** The shown day; null follows today. */
 	#date = $state<CalendarDate | null>(null);
@@ -295,6 +323,27 @@ export class DayPlanStore {
 		)
 	);
 
+	/**
+	 * The entries as the sort of this device shows them (TP-5): in "Manuell" the order of the plan
+	 * with the indentation above, else sorted by the criterion with every parent and its sub-tasks as
+	 * a unit and the done entries last (sortPlanEntries in domain/day-plan-sort.ts).
+	 */
+	#shown = $derived.by((): ShownRow[] => {
+		const sort = this.sort;
+		if (sort.key === 'manual') {
+			return this.#rows.map((row, index) => ({ entry: row, nested: this.#nested[index] === true }));
+		}
+		const tickets = this.#tickets;
+		const context = tickets.assigneeContext;
+		return sortPlanEntries(
+			this.#rows,
+			sort,
+			{ ticketOf: (row) => row.ticket, doneOf: (row) => row.done },
+			(ticket) => (tickets.projectOf ? tickets.projectOf(ticket) : ticket.project),
+			(id) => (context ? assigneeName(id, context) : id)
+		);
+	});
+
 	/** Ticket IDs in the plan. */
 	#planned = $derived(this.#ordered.map((item) => item.ticketId));
 
@@ -322,8 +371,15 @@ export class DayPlanStore {
 		{
 			flags = SILENT_FLAGS,
 			scope = () => null,
-			viewer = () => null
-		}: { flags?: FlagSink; scope?: AreaScope; viewer?: PlanViewer } = {}
+			viewer = () => null,
+			sorting = new DayPlanSortStore()
+		}: {
+			flags?: FlagSink;
+			scope?: AreaScope;
+			viewer?: PlanViewer;
+			/** The sort of this device (TP-5); without it a choice lasts for the store. */
+			sorting?: DayPlanSorting;
+		} = {}
 	) {
 		this.#data = data;
 		this.#tickets = tickets;
@@ -331,6 +387,7 @@ export class DayPlanStore {
 		this.#flags = flags;
 		this.#scope = scope;
 		this.#viewer = viewer;
+		this.#sorting = sorting;
 	}
 
 	// --- State -----------------------------------------------------------------------------------
@@ -389,6 +446,40 @@ export class DayPlanStore {
 		return this.#ordered
 			.slice(start, start + (this.#blockSizes[start] ?? 1))
 			.map((item) => item.id);
+	}
+
+	/** The plan belongs to a household: only there it sorts by "Zuständigkeit" (TP-5). */
+	get household(): boolean {
+		return (this.#plan?.scope ?? this.#answer?.scope ?? this.#scope() ?? '').startsWith('h:');
+	}
+
+	/** The sort that applies (TP-5): the choice of this device, "Zuständigkeit" only in a household. */
+	get sort(): DayPlanSort {
+		return effectiveSort(this.#sorting.sort, this.household);
+	}
+
+	/** Sorted by a criterion: the plan shows another order than it stores, and nothing moves (S3). */
+	get sorted(): boolean {
+		return this.sort.key !== 'manual';
+	}
+
+	/** The entries in the order of the sort, each indented below its parent or not (TP-5). */
+	get shown(): readonly ShownRow[] {
+		return this.#shown;
+	}
+
+	/**
+	 * "Als manuelle Reihenfolge übernehmen" (TP-5, S4): in a sorted plan that can change, with at
+	 * least two entries, and only when the server knows the route of the order (after its restart).
+	 */
+	get canAdoptOrder(): boolean {
+		return (
+			this.sorted && this.editable && this.#answer?.supportsOrder === true && this.#rows.length > 1
+		);
+	}
+
+	get adopting(): boolean {
+		return this.#adopting;
 	}
 
 	get progress(): { done: number; total: number } {
@@ -1013,10 +1104,18 @@ export class DayPlanStore {
 	 * Alt+arrow). A parent takes its block along (TP-4: the sub-tasks indented directly below it) in
 	 * one request of the order; every other entry moves alone (`move`), a sub-task out of its block as
 	 * well, and so does a parent while the server does not know the order (before its restart). The
-	 * list changes at once and goes back when the server refuses.
+	 * list changes at once and goes back when the server refuses. A sorted plan moves nothing (TP-5,
+	 * S3): its order is a view, the stored one changes only with "Manuell".
 	 */
 	async moveTo(itemId: string, index: number): Promise<boolean> {
-		if (!this.editable || this.#pending.has(itemId) || !this.#session.ensureValid()) return false;
+		if (
+			!this.editable ||
+			this.sorted ||
+			this.#pending.has(itemId) ||
+			!this.#session.ensureValid()
+		) {
+			return false;
+		}
 		const planId = this.#plan?.id;
 		const ids = this.#ordered.map((item) => item.id);
 		const start = ids.indexOf(itemId);
@@ -1085,6 +1184,87 @@ export class DayPlanStore {
 					? next
 					: null;
 		return target === null ? Promise.resolve(false) : this.moveTo(itemId, target);
+	}
+
+	// --- Sorting (TP-5) --------------------------------------------------------------------------
+
+	/** Shows the plan sorted, or in its manual order, on this device; the stored order stays. */
+	setSort(sort: DayPlanSort): void {
+		this.#sorting.choose(sort);
+		this.#announce(sortAnnouncement(this.sort));
+	}
+
+	/**
+	 * "Als manuelle Reihenfolge übernehmen" (S4): the order shown becomes the order of the plan in one
+	 * request of the order with every entry, then the plan shows "Manuell". The flag offers
+	 * "Rückgängig", which puts the manual order of before back the same way. The positions change at
+	 * once and go back when the server refuses; the plan then stays sorted.
+	 */
+	async adoptOrder(): Promise<boolean> {
+		const planId = this.#plan?.id;
+		if (
+			planId === undefined ||
+			!this.canAdoptOrder ||
+			this.#adopting ||
+			!this.#session.ensureValid()
+		) {
+			return false;
+		}
+		const before = [...this.#ordered];
+		const previous = before.map((item) => item.id);
+		const ids = this.#shown.map(({ entry }) => entry.item.id);
+		this.#adopting = true;
+		this.#applyPositions(withOrder(previous, ids).map((id, position) => ({ id, position })));
+		try {
+			this.#applyPositions(await this.#data.order(planId, ids));
+			this.#sorting.choose(MANUAL_SORT);
+			const title = 'Als manuelle Reihenfolge übernommen.';
+			this.#flags.show({
+				tone: 'success',
+				title,
+				action: { label: 'Rückgängig', run: () => void this.#restoreOrder(planId, previous) }
+			});
+			this.#announce(`${title} Sortierung: Manuell.`);
+			return true;
+		} catch (error) {
+			for (const item of before) this.#items.set(item.id, item);
+			this.#fail(error, 'Die Reihenfolge wurde nicht übernommen.');
+			return false;
+		} finally {
+			this.#adopting = false;
+		}
+	}
+
+	/**
+	 * "Rückgängig" of "Als manuelle Reihenfolge übernehmen": the manual order of before, through the
+	 * order route again. An entry removed meanwhile is left out, one added meanwhile keeps its place
+	 * (the server merges the same way). Shows the plan another day by now, only the server changes.
+	 */
+	async #restoreOrder(planId: string, previous: readonly string[]): Promise<void> {
+		if (!this.#session.ensureValid()) return;
+		const shown = this.#plan?.id === planId;
+		const before = shown ? [...this.#ordered] : [];
+		const ids = shown ? previous.filter((id) => this.#items.has(id)) : [...previous];
+		if (ids.length === 0) return;
+		if (shown) {
+			const order = withOrder(
+				before.map((item) => item.id),
+				ids
+			);
+			this.#applyPositions(order.map((id, position) => ({ id, position })));
+		}
+		try {
+			const positions = await this.#data.order(planId, ids);
+			if (this.#plan?.id === planId) this.#applyPositions(positions);
+			const title = 'Vorherige Reihenfolge wiederhergestellt.';
+			this.#flags.show({ tone: 'success', title });
+			this.#announce(title);
+		} catch (error) {
+			if (shown && this.#plan?.id === planId) {
+				for (const item of before) this.#items.set(item.id, item);
+			}
+			this.#fail(error, 'Die vorherige Reihenfolge wurde nicht wiederhergestellt.');
+		}
 	}
 
 	/** "Als laufendes Vorhaben markieren" or "Als Aufgabe markieren" (ADR-0065 §1). */

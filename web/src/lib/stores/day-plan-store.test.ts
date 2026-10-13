@@ -31,6 +31,7 @@ import {
 	type DayPlanLive,
 	type DayPlanTickets
 } from './day-plan.svelte';
+import { DayPlanSortStore } from './day-plan-sort.svelte';
 import type { FlagSink } from './flags.svelte';
 import { PinStore } from './pins.svelte';
 import type { LiveSource } from './realtime';
@@ -618,6 +619,249 @@ describe('blocks of the plan (TP-4)', () => {
 		await store.add(S2, 0);
 		await vi.waitFor(() => expect(ids(store)).toEqual([S2, A1, P, A2, S1]));
 		expect(data.listItems).toHaveBeenCalledTimes(2);
+	});
+});
+
+describe('sorting the plan (TP-5)', () => {
+	const A1 = 't000000000000a1';
+	const A2 = 't000000000000a2';
+	const D1 = 't000000000000d1';
+	const P = 't000000000000p1';
+	const S1 = 't000000000000s1';
+	const S2 = 't000000000000s2';
+	const HOUSE = 'h:house0000000001';
+	const entryOf = (id: string) => `item0000000000${id.slice(-2)}`;
+	/** Manual order: S2, A1, P, D1 (checked for today), S1, A2. */
+	const entries = () => [
+		item(entryOf(S2), S2, 0),
+		item(entryOf(A1), A1, 1),
+		item(entryOf(P), P, 2),
+		item(entryOf(D1), D1, 3, { doneToday: true }),
+		item(entryOf(S1), S1, 4),
+		item(entryOf(A2), A2, 5)
+	];
+	const family = () =>
+		fakeTickets([
+			ticket(A1, { priority: 'low', title: 'Zelt' }),
+			ticket(A2, { priority: 'urgent', title: 'Brief' }),
+			ticket(D1, { priority: 'urgent', title: 'Anruf' }),
+			ticket(P, { priority: 'medium', title: 'Wochenputz' }),
+			ticket(S1, { priority: 'urgent', title: 'Fenster', parentId: P }),
+			ticket(S2, { priority: 'high', title: 'Bad', parentId: P })
+		]);
+	const tp4 = answer({ supportsOrder: true });
+	const shownIds = (store: DayPlanStore) =>
+		store.shown.map(({ entry, nested }) => `${nested ? '  ' : ''}${entry.item.ticketId}`);
+
+	async function sortable(
+		data: ReturnType<typeof fakeData>,
+		tickets: DayPlanTickets = family(),
+		flags: FlagSink = fakeFlags().flags
+	) {
+		const sorting = new DayPlanSortStore();
+		const store = new DayPlanStore(data, tickets, session(), {
+			flags,
+			scope: () => SCOPE,
+			sorting
+		});
+		store.show(null);
+		await vi.waitFor(() => expect(store.state).toBe('ready'));
+		return { store, sorting };
+	}
+
+	it('shows the plan sorted as a view: the stored order stays and nothing moves (S1, S3)', async () => {
+		const data = fakeData(entries(), tp4);
+		const { store, sorting } = await sortable(data);
+		expect(store.sorted).toBe(false);
+		// "Manuell" indents only directly below the parent (TP-3): none here.
+		expect(shownIds(store)).toEqual([S2, A1, P, D1, S1, A2]);
+
+		store.setSort({ key: 'priority', direction: 'descending' });
+		expect(sorting.sort).toEqual({ key: 'priority', direction: 'descending' });
+		expect(store.sorted).toBe(true);
+		// The parent with both sub-tasks as a unit (by the parent), the entry checked for today last.
+		expect(shownIds(store)).toEqual([A2, P, `  ${S1}`, `  ${S2}`, A1, D1]);
+		expect(store.announcement).toBe('Sortiert nach Priorität, absteigend: Dringende zuerst.');
+		// The stored order is the same, and no way of moving changes it.
+		expect(ids(store)).toEqual([S2, A1, P, D1, S1, A2]);
+		expect(await store.moveUp(entryOf(A2))).toBe(false);
+		expect(await store.moveDown(entryOf(S2))).toBe(false);
+		expect(await store.drop(entryOf(A2), 0)).toBe(false);
+		expect(await store.moveTo(entryOf(A1), 0)).toBe(false);
+		expect(data.move).not.toHaveBeenCalled();
+		expect(data.order).not.toHaveBeenCalled();
+
+		store.setSort({ key: 'priority', direction: 'ascending' });
+		expect(shownIds(store)).toEqual([A1, P, `  ${S2}`, `  ${S1}`, A2, D1]);
+
+		// Back to "Manuell": the order of before at once, moving works again.
+		store.setSort({ key: 'manual', direction: 'ascending' });
+		expect(store.announcement).toBe('Manuelle Reihenfolge.');
+		expect(shownIds(store)).toEqual([S2, A1, P, D1, S1, A2]);
+		expect(await store.moveUp(entryOf(A1))).toBe(true);
+		expect(data.move).toHaveBeenCalledWith(entryOf(A1), 0);
+	});
+
+	it('follows a check mark at once in the sorted plan: the entry goes to the end', async () => {
+		const data = fakeData(entries(), tp4);
+		const { store } = await sortable(data);
+		store.setSort({ key: 'title', direction: 'ascending' });
+		// Open: Brief, Wochenputz (Bad, Fenster below), Zelt; checked: Anruf.
+		expect(shownIds(store)).toEqual([A2, P, `  ${S2}`, `  ${S1}`, A1, D1]);
+		await store.toggle(entryOf(A2));
+		expect(shownIds(store)).toEqual([P, `  ${S2}`, `  ${S1}`, A1, D1, A2]);
+	});
+
+	it('sorts by "Zuständigkeit" only in a household, by the names of the accounts, and "Projekt" through the catalog', async () => {
+		const context = {
+			selfId: 'user00000000001',
+			selfName: 'Anna Beispiel',
+			names: { nameOf: (id: string) => ({ user00000000002: 'Bert Beispiel' })[id] ?? null }
+		};
+		const house = { id: 'p00000000000001', name: 'Haus', code: 'HAUS', archived: false };
+		const car = { id: 'p00000000000002', name: 'Auto', code: 'AUTO', archived: false };
+		const tickets = Object.assign(
+			fakeTickets([
+				ticket(A1, { assignee: 'user00000000002', projectId: house.id, project: car }),
+				ticket(A2, { assignee: 'user00000000001', projectId: car.id, project: house }),
+				ticket(P)
+			]),
+			{
+				assigneeContext: context,
+				// The catalog knows the projects under other names than the expanded ones.
+				projectOf: (entry: TicketSummary) =>
+					entry.projectId === house.id ? house : entry.projectId === car.id ? car : null
+			}
+		);
+		const items = [item(entryOf(P), P, 0), item(entryOf(A1), A1, 1), item(entryOf(A2), A2, 2)];
+		const shared = answer({ scope: HOUSE, plan: { ...PLAN, scope: HOUSE } });
+		const { store } = await sortable(fakeData(items, shared), tickets);
+		expect(store.household).toBe(true);
+		store.setSort({ key: 'assignee', direction: 'ascending' });
+		// Anna before Bert, nobody last.
+		expect(shownIds(store)).toEqual([A2, A1, P]);
+		store.setSort({ key: 'project', direction: 'ascending' });
+		// Auto (A2) before Haus (A1) as the catalog names them, no project last.
+		expect(shownIds(store)).toEqual([A2, A1, P]);
+
+		// Privately nobody is assigned: the choice applies as "Manuell" and stays for the household.
+		const own = await sortable(fakeData(items), tickets);
+		own.store.setSort({ key: 'assignee', direction: 'ascending' });
+		expect(own.sorting.sort.key).toBe('assignee');
+		expect(own.store.sort.key).toBe('manual');
+		expect(own.store.sorted).toBe(false);
+		expect(shownIds(own.store)).toEqual([P, A1, A2]);
+	});
+
+	it('adopts the order shown as the manual one in one request, then shows "Manuell"; "Rückgängig" puts the order of before back (S4)', async () => {
+		const data = fakeData(entries(), tp4);
+		const { flags, last } = fakeFlags();
+		const { store, sorting } = await sortable(data, family(), flags);
+		store.setSort({ key: 'priority', direction: 'descending' });
+		expect(store.canAdoptOrder).toBe(true);
+		expect(await store.adoptOrder()).toBe(true);
+		// The whole plan in the order shown.
+		expect(data.order).toHaveBeenCalledWith(
+			PLAN.id,
+			[A2, P, S1, S2, A1, D1].map((id) => entryOf(id))
+		);
+		expect(ids(store)).toEqual([A2, P, S1, S2, A1, D1]);
+		expect(store.sort.key).toBe('manual');
+		expect(sorting.sort.key).toBe('manual');
+		expect(shownIds(store)).toEqual([A2, P, `  ${S1}`, `  ${S2}`, A1, D1]);
+		expect(store.announcement).toBe('Als manuelle Reihenfolge übernommen. Sortierung: Manuell.');
+		const flag = last();
+		expect(flag).toMatchObject({ tone: 'success', title: 'Als manuelle Reihenfolge übernommen.' });
+		expect(flag?.action?.label).toBe('Rückgängig');
+
+		flag?.action?.run();
+		await vi.waitFor(() =>
+			expect(last()).toMatchObject({
+				tone: 'success',
+				title: 'Vorherige Reihenfolge wiederhergestellt.'
+			})
+		);
+		expect(ids(store)).toEqual([S2, A1, P, D1, S1, A2]);
+		expect(data.order).toHaveBeenLastCalledWith(
+			PLAN.id,
+			[S2, A1, P, D1, S1, A2].map((id) => entryOf(id))
+		);
+		expect(store.announcement).toBe('Vorherige Reihenfolge wiederhergestellt.');
+		expect(store.sort.key).toBe('manual');
+	});
+
+	it('"Rückgängig" leaves out an entry removed meanwhile; one added meanwhile keeps its place', async () => {
+		const data = fakeData(entries(), tp4);
+		const { flags, shown } = fakeFlags();
+		const { store } = await sortable(data, family(), flags);
+		store.setSort({ key: 'priority', direction: 'descending' });
+		await store.adoptOrder();
+		const undo = shown.find((entry) => entry.title === 'Als manuelle Reihenfolge übernommen.');
+		await store.remove(entryOf(A1));
+		await store.add('t000000000000n1');
+		expect(ids(store)).toEqual([A2, P, S1, S2, D1, 't000000000000n1']);
+		undo?.action?.run();
+		await vi.waitFor(() =>
+			expect(data.order).toHaveBeenLastCalledWith(
+				PLAN.id,
+				[S2, P, D1, S1, A2].map((id) => entryOf(id))
+			)
+		);
+		await vi.waitFor(() => expect(ids(store)).toEqual([S2, P, D1, S1, A2, 't000000000000n1']));
+	});
+
+	it('sets the order back and stays sorted when the server refuses, and so does "Rückgängig"', async () => {
+		const data = fakeData(entries(), tp4);
+		const { flags, last } = fakeFlags();
+		const { store } = await sortable(data, family(), flags);
+		store.setSort({ key: 'title', direction: 'ascending' });
+		data.order.mockRejectedValueOnce(new DataError('network'));
+		expect(await store.adoptOrder()).toBe(false);
+		expect(ids(store)).toEqual([S2, A1, P, D1, S1, A2]);
+		expect(store.sort).toEqual({ key: 'title', direction: 'ascending' });
+		expect(store.adopting).toBe(false);
+		expect(last()).toMatchObject({
+			tone: 'error',
+			title: 'Die Reihenfolge wurde nicht übernommen.'
+		});
+
+		expect(await store.adoptOrder()).toBe(true);
+		const adopted = [A2, P, S2, S1, A1, D1];
+		expect(ids(store)).toEqual(adopted);
+		const undo = last()?.action;
+		data.order.mockRejectedValueOnce(new DataError('network'));
+		undo?.run();
+		await vi.waitFor(() =>
+			expect(last()).toMatchObject({
+				tone: 'error',
+				title: 'Die vorherige Reihenfolge wurde nicht wiederhergestellt.'
+			})
+		);
+		expect(ids(store)).toEqual(adopted);
+	});
+
+	it('offers "Als manuelle Reihenfolge übernehmen" only sorted, in a plan that can change, with two entries and the route of the order', async () => {
+		const sorted = { key: 'priority', direction: 'descending' } as const;
+		// Manual: nothing to adopt.
+		const manual = await sortable(fakeData(entries(), tp4));
+		expect(manual.store.canAdoptOrder).toBe(false);
+		// Before the restart after TP-4 the server does not know the route.
+		const before = await sortable(fakeData(entries()));
+		before.store.setSort(sorted);
+		expect(before.store.canAdoptOrder).toBe(false);
+		expect(await before.store.adoptOrder()).toBe(false);
+		// A day before is read-only.
+		const old = await sortable(
+			fakeData(entries(), answer({ supportsOrder: true, date: '2031-05-13', editable: false }))
+		);
+		old.store.setSort(sorted);
+		expect(old.store.sorted).toBe(true);
+		expect(old.store.canAdoptOrder).toBe(false);
+		// One entry has no other order.
+		const one = await sortable(fakeData([item(entryOf(A1), A1, 0)], tp4));
+		one.store.setSort(sorted);
+		expect(one.store.canAdoptOrder).toBe(false);
+		for (const data of [before, old, one]) expect(await data.store.adoptOrder()).toBe(false);
 	});
 });
 

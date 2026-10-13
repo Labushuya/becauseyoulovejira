@@ -273,6 +273,27 @@
 			passen auch seine Unteraufgaben, und es steht mit ihnen da. Die Suche in „Aufgaben“ und die
 			Auswahl eines Tickets bleiben beim Ticket allein.
 		</p>
+		<h4 id="tagesplan-sortieren">Sortieren</h4>
+		<p>
+			Über dem Plan wählst du unter „Sortierung“, wie du ihn ansiehst: „Manuell“ (die Reihenfolge
+			des Plans, so wie zu Beginn) oder nach Priorität, Status, Fälligkeit, Titel, Projekt und im
+			Haushalt nach Zuständigkeit, wie die Spalten in „Aufgaben“. Jedes Kriterium beginnt in der
+			Richtung des ersten Klicks dort, etwa die dringenden oder die frühesten zuerst; „Aufsteigend“
+			und „Absteigend“ kehren sie um. Was keine Fälligkeit, kein Projekt oder niemanden zuständig
+			hat, steht immer zuletzt, und bei Gleichstand gilt die manuelle Reihenfolge. Ein Ticket bleibt
+			mit seinen Unteraufgaben im Plan beisammen: Es wird nach dem Ticket einsortiert, die
+			Unteraufgaben stehen eingerückt darunter, untereinander genauso sortiert. Was für heute
+			abgehakt oder erledigt ist, steht in jeder Sortierung am Ende.
+		</p>
+		<p>
+			Sortieren ist nur eine Ansicht: Die Reihenfolge des Plans bleibt, wie sie ist, und mit
+			„Manuell“ ist sie sofort wieder da. Verschieben (Griff, „nach oben“, „nach unten“,
+			<kbd>Alt</kbd>+Pfeil) geht deshalb nur in „Manuell“. Willst du die sortierte Reihenfolge
+			behalten, macht „Als manuelle Reihenfolge übernehmen“ sie zur Reihenfolge des Plans und stellt
+			auf „Manuell“; „Rückgängig“ in der Meldung holt die Reihenfolge von vorher zurück. Die
+			Sortierung merkt sich dieses Gerät für alle Tage. Im Haushalt sieht jede Person ihre eigene
+			Sortierung; den gemeinsamen Plan ändert nur das Übernehmen.
+		</p>
 		<h4 id="tagesplan-haushalt">Im Haushalt</h4>
 		<p>
 			Privat hast du deinen eigenen Plan, im Haushalt gibt es einen gemeinsamen für alle Mitglieder;
