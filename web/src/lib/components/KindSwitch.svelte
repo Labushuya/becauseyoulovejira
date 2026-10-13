@@ -1,10 +1,14 @@
 <script lang="ts">
+	import { helpHref } from '$lib/settings-sections';
 	import ErrorIcon from './ErrorIcon.svelte';
+	import NewTabHint from './guidance/NewTabHint.svelte';
 
 	// The switch "Laufendes Vorhaben" (ADR-0065): the kind decides what the check mark of the day plan
 	// means, said in the hint below it. One building block for the fields of a ticket (it saves at once
 	// there) and "Neues Ticket" (NT-1, it is part of the request there). After a change the switch shows
 	// `ongoing` again, so a refusal of the owner sets it back. Name left, switch right (ADR-0029 G-5).
+	// Since VH-1 a second hint says when an ongoing project fits rather than a recurrence, with the
+	// way to the comparison in the help; a new tab, so nothing typed in "Neues Ticket" is lost.
 	let {
 		ongoing,
 		busy = false,
@@ -22,7 +26,8 @@
 	} = $props();
 
 	const uid = $props.id();
-	const ids = { hint: `${uid}-hint`, error: `${uid}-error` };
+	const ids = { hint: `${uid}-hint`, choice: `${uid}-choice`, error: `${uid}-error` };
+	const describedby = $derived([ids.hint, ids.choice, ...(error ? [ids.error] : [])].join(' '));
 
 	async function change(event: Event & { currentTarget: HTMLInputElement }) {
 		const input = event.currentTarget;
@@ -41,7 +46,7 @@
 			{disabled}
 			aria-busy={busy ? 'true' : undefined}
 			aria-invalid={error ? 'true' : undefined}
-			aria-describedby={error ? `${ids.hint} ${ids.error}` : ids.hint}
+			aria-describedby={describedby}
 			onchange={change}
 		/>
 	</label>
@@ -49,6 +54,13 @@
 		{ongoing
 			? 'Im Tagesplan heißt der Haken „für heute erledigt“; das Ticket bleibt offen.'
 			: 'Im Tagesplan erledigt der Haken dieses Ticket.'}
+	</p>
+	<p class="hint" id={ids.choice}>
+		Für eine Sache, an der du länger arbeitest. Musst du etwas jedes Mal einzeln erledigen, passt
+		eine Wiederholung besser.
+		<a href={helpHref('vorhaben-oder-wiederholung')} target="_blank" rel="noopener"
+			>Vorhaben oder Wiederholung?<NewTabHint /></a
+		>
 	</p>
 	{#if error}
 		<p class="field-error" id={ids.error}><ErrorIcon /><span>{error}</span></p>
@@ -74,5 +86,9 @@
 	.hint {
 		font-size: var(--font-size-small);
 		color: var(--color-text-muted);
+	}
+
+	.hint a {
+		color: var(--color-brand-text);
 	}
 </style>

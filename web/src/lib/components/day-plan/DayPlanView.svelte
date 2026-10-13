@@ -1,14 +1,15 @@
 <script lang="ts">
 	import { addDays } from '$lib/domain/berlin-date';
 	import { dayTitle, otherAreaText, progressText } from '$lib/domain/day-plan';
+	import { ongoingFinishOf } from '$lib/domain/ongoing-finish';
 	import { restartNeeded } from '$lib/guidance/texts';
 	import type { AreaStore } from '$lib/stores/area.svelte';
 	import type { DayPlanStore, PlanRow } from '$lib/stores/day-plan.svelte';
 	import { dayPlanDateHref } from '$lib/ticket-links';
 	import CompletionDialog from '../CompletionDialog.svelte';
 	import ErrorIcon from '../ErrorIcon.svelte';
+	import OngoingFinishDialog from '../OngoingFinishDialog.svelte';
 	import SectionMessage from '../guidance/SectionMessage.svelte';
-	import ConfirmDialog from '../overlay/ConfirmDialog.svelte';
 	import SectionBar from '../SectionBar.svelte';
 	import ViewSwitch from '../ViewSwitch.svelte';
 	import DayPlanList from './DayPlanList.svelte';
@@ -23,8 +24,10 @@
 	// fold), the plan and the pool, on a wide screen next to the plan, on a narrow one below it. Days
 	// before are read-only, tomorrow can be planned; later days are not offered. A ticket opens next to
 	// the plan (DAY_PLAN_HOST). The questions of a check mark (open blocking sub-tasks, "Vorhaben
-	// abschließen …") are confirmations of the app (ADR-0025 §4). Next to the heading "Plan" stands
-	// "Sortierung" (TP-5): a view of this device; sorted, the list names the hint as its description.
+	// abschließen …") are confirmations of the app (ADR-0025 §4); since VH-1 the latter is the one
+	// question of every way to complete an ongoing project (OngoingFinishDialog). Next to the heading
+	// "Plan" stands "Sortierung" (TP-5): a view of this device; sorted, the list names the hint as its
+	// description.
 	let {
 		store,
 		area = null,
@@ -48,6 +51,8 @@
 	/** The ongoing project whose "Vorhaben abschließen …" asks. */
 	let finishing = $state<PlanRow | null>(null);
 	let finishBusy = $state(false);
+	/** The question of "Vorhaben abschließen …", the same on every way (VH-1). */
+	const finishQuestion = $derived(finishing?.ticket ? ongoingFinishOf(finishing.ticket) : null);
 
 	const date = $derived(store.date);
 	const today = $derived(store.today);
@@ -183,20 +188,13 @@
 	/>
 {/if}
 
-{#if finishing !== null}
-	<ConfirmDialog
-		open
-		title={`${finishing.ticket?.key ?? 'Vorhaben'} abschließen?`}
-		confirmLabel="Abschließen"
+{#if finishQuestion !== null}
+	<OngoingFinishDialog
+		question={finishQuestion}
 		busy={finishBusy}
 		onconfirm={() => void finish()}
 		oncancel={() => (finishing = null)}
-	>
-		<p>
-			Das laufende Vorhaben „{finishing.ticket?.title ?? ''}“ wird erledigt und kommt nicht mehr in
-			den Tagesplan. Für einen Tag allein reicht der Haken.
-		</p>
-	</ConfirmDialog>
+	/>
 {/if}
 
 <style>

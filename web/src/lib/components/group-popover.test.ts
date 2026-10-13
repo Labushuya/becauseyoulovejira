@@ -53,7 +53,7 @@ describe('group popover', () => {
 		expect(field().tagName).toBe('FIELDSET');
 	});
 
-	it('offers "Keine" and the six groupings as radios, the current one checked', () => {
+	it('offers "Keine" and the seven groupings as radios, the current one checked', () => {
 		show('/?gruppe=projekt');
 
 		expect(
@@ -67,7 +67,8 @@ describe('group popover', () => {
 			'Nach Projekt',
 			'Nach Fälligkeit',
 			'Nach Quelle',
-			'Nach Wiederholung'
+			'Nach Wiederholung',
+			'Nach Art'
 		]);
 		expect(choice('Nach Projekt').checked).toBe(true);
 		expect(choice('Keine').checked).toBe(false);
@@ -174,8 +175,8 @@ describe('group popover: second level (plan OR-3)', () => {
 		expect(fieldset.disabled).toBe(true);
 		const hint = document.getElementById(String(fieldset.getAttribute('aria-describedby')));
 		expect(hint?.textContent).toBe('Erst eine erste Ebene wählen.');
-		// The first level keeps its seven choices; the second is a fieldset of its own.
-		expect(within(field()).getAllByRole('radio', { hidden: true })).toHaveLength(7);
+		// The first level keeps its eight choices; the second is a fieldset of its own.
+		expect(within(field()).getAllByRole('radio', { hidden: true })).toHaveLength(8);
 	});
 
 	it('offers "Keine" and every grouping except the first level', () => {
@@ -191,7 +192,8 @@ describe('group popover: second level (plan OR-3)', () => {
 			'Nach Priorität',
 			'Nach Fälligkeit',
 			'Nach Quelle',
-			'Nach Wiederholung'
+			'Nach Wiederholung',
+			'Nach Art'
 		]);
 		expect(secondChoice('Keine').checked).toBe(true);
 	});

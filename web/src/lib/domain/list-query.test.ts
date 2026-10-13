@@ -101,6 +101,7 @@ describe('parseListQuery', () => {
 			due: 'soon',
 			source: 'chat',
 			recurring: null,
+			kind: null,
 			project: PROJECT_ID,
 			subProjects: false,
 			tag: TAG_ID,
@@ -163,6 +164,7 @@ describe('serializeListQuery', () => {
 			tag: TAG_ID,
 			subProjects: true,
 			project: NO_PROJECT,
+			kind: 'ongoing',
 			recurring: 'once',
 			source: 'calendar',
 			due: 'overdue',
@@ -173,14 +175,14 @@ describe('serializeListQuery', () => {
 		expect(serializeListQuery(full)).toBe(
 			'?karte=in-arbeit&karte=dringend' +
 				'&status=backlog&prio=urgent&faellig=ueberfaellig&quelle=kalender&wiederholung=einmalig' +
-				`&projekt=ohne&tag=${TAG_ID}&q=%C3%96l+wechseln&sort=erstellt&gruppe=faellig` +
+				`&art=vorhaben&projekt=ohne&tag=${TAG_ID}&q=%C3%96l+wechseln&sort=erstellt&gruppe=faellig` +
 				'&untergruppe=prio'
 		);
 		expect(serializeListQuery({ ...full, project: PROJECT_ID, subProjects: false })).toBe(
 			'?karte=in-arbeit&karte=dringend' +
 				'&status=backlog&prio=urgent&faellig=ueberfaellig&quelle=kalender&wiederholung=einmalig' +
-				`&projekt=${PROJECT_ID}&unterprojekte=0&tag=${TAG_ID}&q=%C3%96l+wechseln&sort=erstellt` +
-				'&gruppe=faellig&untergruppe=prio'
+				`&art=vorhaben&projekt=${PROJECT_ID}&unterprojekte=0&tag=${TAG_ID}&q=%C3%96l+wechseln` +
+				'&sort=erstellt&gruppe=faellig&untergruppe=prio'
 		);
 	});
 
@@ -276,6 +278,7 @@ describe('withFilter, resetFilters, hasFilters', () => {
 		due: 'today',
 		source: 'link',
 		recurring: 'recurring',
+		kind: 'task',
 		project: PROJECT_ID,
 		subProjects: false,
 		tag: TAG_ID,
@@ -367,6 +370,41 @@ describe('list query: filter cards (FI-1)', () => {
 		expect(resetFilters(query({ cards: ['overdue'], grouping: 'due' }))).toEqual(
 			query({ grouping: 'due' })
 		);
+	});
+});
+
+describe('list query: kind "Art" (VH-1)', () => {
+	it('reads art=aufgabe and art=vorhaben and ignores unknown, empty or repeated values', () => {
+		expect(parse('art=aufgabe')).toEqual(query({ kind: 'task' }));
+		expect(parse('art=vorhaben')).toEqual(query({ kind: 'ongoing' }));
+		for (const value of [
+			'art=task',
+			'art=ongoing',
+			'art=',
+			'art=Vorhaben',
+			'art=aufgabe&art=aufgabe'
+		]) {
+			expect(parse(value).kind, value).toBeNull();
+		}
+	});
+
+	it('writes "art" after "wiederholung" and before the project, and groups by it with "gruppe=art"', () => {
+		expect(normalize(`projekt=${PROJECT_ID}&art=vorhaben&wiederholung=wiederkehrend`)).toBe(
+			`?wiederholung=wiederkehrend&art=vorhaben&projekt=${PROJECT_ID}`
+		);
+		expect(serializeListQuery(query({ kind: 'task' }))).toBe('?art=aufgabe');
+		expect(parse('gruppe=art&untergruppe=status')).toEqual(
+			query({ grouping: 'kind', subGrouping: 'status' })
+		);
+		expect(normalize('untergruppe=art&gruppe=prio')).toBe('?gruppe=prio&untergruppe=art');
+	});
+
+	it('counts as a filter that "Zurücksetzen" clears, together with the others', () => {
+		const chosen = query({ kind: 'ongoing', priority: 'high', grouping: 'kind' });
+		expect(hasFilters(query({ kind: 'ongoing' }))).toBe(true);
+		expect(hasDetailFilters(query({ kind: 'task' }))).toBe(true);
+		expect(withFilter(chosen, 'kind', null)).toEqual(query({ priority: 'high', grouping: 'kind' }));
+		expect(resetFilters(chosen)).toEqual(query({ grouping: 'kind' }));
 	});
 });
 

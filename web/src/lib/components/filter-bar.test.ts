@@ -355,8 +355,8 @@ describe('filter bar', () => {
 		const names = new Set(
 			(screen.getAllByRole('radio') as HTMLInputElement[]).map((radio) => radio.name)
 		);
-		// Status, Priorität, Fällig, Quelle and Wiederkehrend (plan OR-2).
-		expect(names.size).toBe(5);
+		// Status, Priorität, Fällig, Quelle, Wiederkehrend (plan OR-2) and Art (VH-1).
+		expect(names.size).toBe(6);
 	});
 });
 
@@ -613,6 +613,54 @@ describe('filter bar: recurring (plan OR-2)', () => {
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Zurücksetzen' }));
 		expect(lastTarget()).toBe('/?gruppe=wiederholung');
+	});
+});
+
+describe('filter bar: kind "Art" (VH-1)', () => {
+	it('offers "Art" after "Wiederkehrend" with "Alle", "Aufgabe" and "Laufendes Vorhaben"', async () => {
+		await showBar();
+		const legends = screen
+			.getAllByRole('group')
+			.map((entry) => entry.querySelector('legend')?.textContent);
+		expect(legends.indexOf('Art')).toBe(legends.indexOf('Wiederkehrend') + 1);
+		expect(
+			within(group('Art'))
+				.getAllByRole('radio')
+				.map((radio) => radio.parentElement?.textContent?.trim())
+		).toEqual(['Alle', 'Aufgabe', 'Laufendes Vorhaben']);
+		expect(within(group('Art')).getByRole('radio', { name: 'Alle' })).toHaveProperty(
+			'checked',
+			true
+		);
+	});
+
+	it.each([
+		['Aufgabe', '/?status=open&art=aufgabe&gruppe=projekt'],
+		['Laufendes Vorhaben', '/?status=open&art=vorhaben&gruppe=projekt']
+	])('chip %s sets the URL and keeps the other filters', async (chip, target) => {
+		await showBar('/?status=open&gruppe=projekt');
+		await fireEvent.click(within(group('Art')).getByRole('radio', { name: chip }));
+		expect(lastTarget()).toBe(target);
+	});
+
+	it('combines with the other chips, "Alle" removes it and "Zurücksetzen" clears it', async () => {
+		await showBar('/?prio=high&wiederholung=wiederkehrend&art=vorhaben&gruppe=art');
+		const kind = within(group('Art'));
+		expect(kind.getByRole('radio', { name: 'Laufendes Vorhaben' })).toHaveProperty('checked', true);
+
+		await fireEvent.click(within(group('Wiederkehrend')).getByRole('radio', { name: 'Alle' }));
+		expect(lastTarget()).toBe('/?prio=high&art=vorhaben&gruppe=art');
+
+		await fireEvent.click(kind.getByRole('radio', { name: 'Alle' }));
+		expect(lastTarget()).toBe('/?prio=high&wiederholung=wiederkehrend&gruppe=art');
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Zurücksetzen' }));
+		expect(lastTarget()).toBe('/?gruppe=art');
+	});
+
+	it('is not part of the calendar, which shows every kind', async () => {
+		await showBar('/kalender?art=vorhaben', [GARDEN], true);
+		expect(screen.queryByRole('group', { name: 'Art' })).toBeNull();
 	});
 });
 

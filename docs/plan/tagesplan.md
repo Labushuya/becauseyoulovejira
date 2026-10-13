@@ -1,6 +1,6 @@
 # Plan: Tagesplan (TP-1)
 
-Stand: 2026-10-13 (TP-5) · Entscheidung: [ADR-0065](../adr/0065-tagesplan.md) · Test-Manifest: Paket „TP-1“ (BYL-E6-1530 bis BYL-E6-1538, manuell BYL-E6-1540 bis BYL-E6-1549)
+Stand: 2026-10-13 (VH-1) · Entscheidung: [ADR-0065](../adr/0065-tagesplan.md) · Test-Manifest: Paket „TP-1“ (BYL-E6-1530 bis BYL-E6-1538, manuell BYL-E6-1540 bis BYL-E6-1549)
 
 ## Zweck
 
@@ -83,3 +83,15 @@ Nutzerwunsch: Im Tagesplan einfach nach Priorität, Status, Fälligkeit usw. sor
 | Nicht betroffen | Pool und Vorschläge bleiben wie in TP-3. |
 
 Entscheidung in [ADR-0065](../adr/0065-tagesplan.md), Nachtrag TP-5; Test-Manifest: Paket „TP-5“ (BYL-E6-1737 bis BYL-E6-1742, manuell BYL-E6-1743 bis BYL-E6-1747). Nur Oberfläche, kein Hook, keine Migration: nach dem Build F5.
+
+## VH-1 (umgesetzt): Laufende Vorhaben – Rückfrage beim Abschließen, Filter, Erklärung
+
+Aus der Analyse: Im Tagesplan schließt ein Vorhaben nur über „Vorhaben abschließen …“ mit Rückfrage ab, in „Aufgaben“ schloss der Haken es ohne Rückfrage ab; ein Filter nach der Art fehlte, und der Unterschied zur täglichen Wiederholung war nicht erklärt.
+
+| Bereich | Inhalt |
+|---|---|
+| Rückfrage (V1) | Jeder Weg auf „Erledigt“ fragt bei einem offenen Vorhaben „Vorhaben HAUS-7 abschließen?“ wie der Tagesplan: Haken und Statuszelle in „Aufgaben“, Haken und Statusmenü der Unteraufgaben, Status im Detail (in der Vollansicht inline), Sammelaktionen „Erledigen“ und „Status“, „Vorhaben abschließen …“ im Tagesplan. „Abschließen“ und „Abbrechen“; „Abbrechen“ ändert nichts, Aufgaben fragen nie. Die Sammelbearbeitung fragt einmal und nennt die Zahl der Vorhaben. Ein Baustein `OngoingFinishDialog` für alle. |
+| Filter (V2) | „Art“ in „Aufgaben“ mit „Aufgabe“ und „Laufendes Vorhaben“, Adresse `art=aufgabe\|vorhaben`, „Zurücksetzen“, mit allen anderen Filtern kombinierbar; nur im Client, ohne Hook. Dazu „Nach Art“ im Gruppieren. Nicht im Kalender. |
+| Erklärung (V3) | Hilfe-Abschnitt „Laufendes Vorhaben oder Wiederholung?“ mit dem Vergleich (Tickets, Tagesplan, Haken, verpasster Tag, Abschluss) und der Faustregel; ein zweiter Hinweis am Schalter „Laufendes Vorhaben“ mit Link dorthin. |
+
+Entscheidung in [ADR-0065](../adr/0065-tagesplan.md), Nachtrag VH-1 (Filter auch in [ADR-0013](../adr/0013-filter-suche-sortierung-gruppierung.md) Nachtrag G); Test-Manifest: Paket „VH-1“ (BYL-E6-1748 bis BYL-E6-1756, manuell BYL-E6-1757 bis BYL-E6-1761). Nur Oberfläche, kein Hook, keine Migration: nach dem Build F5.

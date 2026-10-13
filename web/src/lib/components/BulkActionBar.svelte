@@ -8,6 +8,7 @@
 	import type { TicketSummary } from '$lib/domain/ticket';
 	import { progressText, type BulkEditStore } from '$lib/stores/bulk-edit.svelte';
 	import type { CatalogStore } from '$lib/stores/catalog.svelte';
+	import { OngoingFinishAsk } from '$lib/stores/ongoing-finish.svelte';
 	import BulkDueDialog from './BulkDueDialog.svelte';
 	import BulkTagsDialog from './BulkTagsDialog.svelte';
 	import ColorMark from './ColorMark.svelte';
@@ -16,6 +17,7 @@
 	import ConfirmDialog from './overlay/ConfirmDialog.svelte';
 	import Modal from './overlay/Modal.svelte';
 	import Popover from './overlay/Popover.svelte';
+	import OngoingFinishDialog from './OngoingFinishDialog.svelte';
 	import ProjectSelect from './ProjectSelect.svelte';
 	import SelectionBar from './SelectionBar.svelte';
 	import SourceHandlingChoice from './SourceHandlingChoice.svelte';
@@ -36,6 +38,9 @@
 	// or was skipped (neutral). Since E7-4 (ADR-0061) "In den Haushalt verschieben …" or "Ins Private
 	// verschieben …" moves the chosen tickets with their sub-tasks, only when the account may move
 	// every one of them (lib/area-move-entry.ts); the dialog of the layout shows the preview.
+	// "Erledigen" and the status "Erledigt" ask "Vorhaben abschließen?" once when the chosen tickets
+	// hold open ongoing projects, with their number (VH-1); "Abbrechen" changes no ticket. The
+	// question about open sub-tasks follows after it.
 	let {
 		tickets,
 		store,
@@ -64,6 +69,8 @@
 
 	const trash = findTrashStore();
 	const mover = areaMover();
+	/** "Vorhaben abschließen?" before the chosen ongoing projects are completed (VH-1). */
+	const finishing = new OngoingFinishAsk();
 
 	let dialog = $state<Dialog | null>(null);
 	let project = $state('');
@@ -106,7 +113,12 @@
 		}
 	}
 
+	/** "Erledigen": open ongoing projects among the chosen ones ask first, once for all. */
 	function complete() {
+		void finishing.run(tickets, completeChosen, count);
+	}
+
+	function completeChosen() {
 		if (blocked.length > 0) {
 			withChildren = true;
 			dialog = 'complete';
@@ -310,6 +322,14 @@
 			</button>
 		{/snippet}
 	</Modal>
+{/if}
+
+{#if finishing.question}
+	<OngoingFinishDialog
+		question={finishing.question}
+		onconfirm={() => finishing.accept()}
+		oncancel={() => finishing.cancel()}
+	/>
 {/if}
 
 <ConfirmDialog

@@ -390,6 +390,17 @@ describe('entries of the days', () => {
 		expect(calendarListQuery(EMPTY_LIST_QUERY)).toBe(EMPTY_LIST_QUERY);
 	});
 
+	it('leaves the filter "Art" out, which only "Aufgaben" shows (VH-1)', () => {
+		const task: TicketSummary = { ...ticket(TODAY), kind: 'task' };
+		const project: TicketSummary = { ...ticket(TODAY), kind: 'ongoing' };
+		const sources = { open: [task, project], done: [], planned: [], inbox: [] };
+		const keysOf = (query: Partial<ListQuery>) =>
+			(entriesByDay(OCTOBER, sources, filter(query)).get(TODAY) ?? []).map((entry) => entry.key);
+		expect(keysOf({ kind: 'ongoing' })).toHaveLength(2);
+		expect(keysOf({ kind: 'task', priority: 'medium' })).toHaveLength(2);
+		expect(calendarListQuery({ ...EMPTY_LIST_QUERY, kind: 'ongoing' }).kind).toBeNull();
+	});
+
 	it('leaves the filter cards out, which only "Aufgaben" shows (FI-1)', () => {
 		const house = ticket(TODAY, { priority: 'high' });
 		const working = ticket(TODAY, { status: 'in_progress' });

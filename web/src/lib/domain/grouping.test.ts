@@ -204,6 +204,7 @@ describe('groupTickets', () => {
 			due: 'Fälligkeit',
 			source: 'Quelle',
 			recurrence: 'Wiederholung',
+			kind: 'Art',
 			assignee: 'Zuständigkeit'
 		});
 	});
@@ -376,6 +377,36 @@ describe('groupTickets: recurrence (plan OR-2)', () => {
 	it('leaves out an empty group', () => {
 		expect(shape(groupTickets([row('a'), row('b')], 'recurrence', TODAY))).toEqual([
 			['once', 'Einmalig', ['a', 'b']]
+		]);
+	});
+});
+
+describe('groupTickets: kind (VH-1)', () => {
+	it('puts the ongoing projects before the tasks, a ticket without a kind among the tasks', () => {
+		const tickets = [
+			row('a', { kind: 'task' }),
+			row('v1', { kind: 'ongoing' }),
+			row('b'),
+			row('v2', { kind: 'ongoing' })
+		];
+		expect(shape(groupTickets(tickets, 'kind', TODAY))).toEqual([
+			['ongoing', 'Laufendes Vorhaben', ['v1', 'v2']],
+			['task', 'Aufgabe', ['a', 'b']]
+		]);
+	});
+
+	it('leaves out an empty group and works as the second level', () => {
+		expect(shape(groupTickets([row('a'), row('b')], 'kind', TODAY))).toEqual([
+			['task', 'Aufgabe', ['a', 'b']]
+		]);
+		const levels = groupTicketLevels(
+			[row('a', { priority: 'high', kind: 'ongoing' }), row('b', { priority: 'high' })],
+			'priority',
+			'kind',
+			TODAY
+		);
+		expect(levels.map((group) => group.subgroups?.map((sub) => sub.path))).toEqual([
+			['priority:high/kind:ongoing', 'priority:high/kind:task']
 		]);
 	});
 });

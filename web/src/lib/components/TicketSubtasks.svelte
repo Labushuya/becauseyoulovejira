@@ -11,9 +11,11 @@
 	import { joinWords } from '$lib/domain/recurrence-text';
 	import { progressLabel, progressPercent, progressText } from '$lib/domain/subtasks';
 	import { TITLE_MAX_LENGTH, type TicketSummary } from '$lib/domain/ticket';
+	import { OngoingFinishAsk } from '$lib/stores/ongoing-finish.svelte';
 	import type { TicketListStore } from '$lib/stores/ticket-list.svelte';
 	import DoneToggle from './DoneToggle.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
+	import OngoingFinishDialog from './OngoingFinishDialog.svelte';
 	import StatusSelect from './StatusSelect.svelte';
 	import StatusMenu from './table/StatusMenu.svelte';
 
@@ -27,7 +29,10 @@
 	// due date (the one of the ticket in advance, to change or clear). Enter or "Anlegen" creates one
 	// (project, tags, kind and assignee of the ticket) and keeps the form for the next with its choices;
 	// Escape or "Schließen" closes it, Escape is consumed, so neither the panel nor the full view
-	// closes. Everything comes from the list store and follows realtime.
+	// closes. Everything comes from the list store and follows realtime. A sub-task that is an ongoing
+	// project (it takes the kind of its ticket) asks "Vorhaben abschließen?" before its check mark or
+	// "Erledigt" of its status menu completes it (VH-1); in the full view the question stands inline
+	// in this section.
 	let {
 		ticket,
 		list,
@@ -85,6 +90,22 @@
 	let input = $state<HTMLInputElement>();
 	let dueInput = $state<HTMLInputElement>();
 	let addButton = $state<HTMLButtonElement>();
+
+	/** "Vorhaben abschließen?" before a sub-task that is an ongoing project is completed (VH-1). */
+	const finishing = new OngoingFinishAsk();
+
+	/** The check mark of a sub-task; an open ongoing project asks first. */
+	function toggleDone(child: TicketSummary, done: boolean) {
+		if (!done) return void list.setDone(child.id, false);
+		void finishing.run([child], () => list.setDone(child.id, true));
+	}
+
+	/** A status of the menu; "Erledigt" of an open ongoing project asks first. */
+	function chooseStatus(child: TicketSummary, value: TicketSummary['status']) {
+		if (value === child.status) return;
+		if (value !== 'done') return void list.changeField(child.id, { status: value });
+		void finishing.run([child], () => list.changeField(child.id, { status: value }));
+	}
 
 	async function open() {
 		adding = true;
@@ -165,7 +186,7 @@
 						key={child.key}
 						checked={list.isChecked(child)}
 						pending={list.isPending(child.id)}
-						onchange={(done) => list.setDone(child.id, done)}
+						onchange={(done) => toggleDone(child, done)}
 					/>
 					<span class="key">{child.key}</span>
 					<a class="child-title" href={hrefOf(child.id)}>{child.title}</a>
@@ -174,9 +195,7 @@
 							ticketKey={child.key}
 							status={child.status}
 							busy={list.isPending(child.id)}
-							onchoose={(value) => {
-								if (value !== child.status) void list.changeField(child.id, { status: value });
-							}}
+							onchoose={(value) => chooseStatus(child, value)}
 						/>
 					</span>
 				</li>
@@ -184,6 +203,15 @@
 		</ul>
 	{:else if !adding}
 		<p class="muted">Keine Unteraufgaben.</p>
+	{/if}
+
+	<!-- Completing a sub-task that is an ongoing project asks first (VH-1); inline in the full view. -->
+	{#if finishing.question}
+		<OngoingFinishDialog
+			question={finishing.question}
+			onconfirm={() => finishing.accept()}
+			oncancel={() => finishing.cancel()}
+		/>
 	{/if}
 
 	{#if adding}

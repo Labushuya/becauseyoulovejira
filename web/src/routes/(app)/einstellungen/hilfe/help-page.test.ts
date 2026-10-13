@@ -56,6 +56,7 @@ describe('help page (EH-9)', () => {
 			'Wiederholungen',
 			'Kalender',
 			'Tagesplan',
+			'Laufendes Vorhaben oder Wiederholung?',
 			'Erledigte',
 			'Kanäle und Zugangsdaten',
 			'Eigener Eingang (API)',
@@ -577,6 +578,88 @@ describe('help page (EH-9)', () => {
 		);
 		expect(content).toMatch(/Die Sortierung merkt sich dieses Gerät für alle Tage/);
 		expect(content).toMatch(/Im Haushalt sieht jede Person ihre eigene Sortierung/);
+	});
+
+	it('compares an ongoing project with a daily recurrence point by point, with the rule of thumb (VH-1)', () => {
+		const { container } = render(Page);
+		const section = container.querySelector<HTMLElement>('section#vorhaben-oder-wiederholung')!;
+		expect(section.getAttribute('aria-labelledby')).toBe('vorhaben-oder-wiederholung-title');
+		expect(helpHref('vorhaben-oder-wiederholung')).toBe(
+			'/einstellungen/hilfe#vorhaben-oder-wiederholung'
+		);
+		// Like the whole help no table: a description list, one row per point, each value with its side.
+		expect(section.querySelectorAll('table')).toHaveLength(0);
+		const rows = [...section.querySelectorAll('dl > div')].map((row) => ({
+			point: row.querySelector('dt')?.textContent?.trim(),
+			values: [...row.querySelectorAll('dd')].map((value) => text(value).trim())
+		}));
+		expect(rows).toEqual([
+			{
+				point: 'Tickets',
+				values: [
+					'Laufendes Vorhaben: Ein Ticket bleibt offen; Notizen und Kommentare sammeln sich darin.',
+					'Tägliche Wiederholung: Jeden Tag ein neues Ticket.'
+				]
+			},
+			{
+				point: 'Tagesplan',
+				values: [
+					'Laufendes Vorhaben: Steht jeden Tag automatisch im Plan.',
+					'Tägliche Wiederholung: Wird vorgeschlagen, wenn das Ticket fällig ist.'
+				]
+			},
+			{
+				point: 'Haken',
+				values: [
+					'Laufendes Vorhaben: „Heute daran gearbeitet“; das Ticket bleibt offen.',
+					'Tägliche Wiederholung: Erledigt das Ticket; das nächste entsteht.'
+				]
+			},
+			{
+				point: 'Verpasster Tag',
+				values: [
+					'Laufendes Vorhaben: Nichts bleibt liegen.',
+					'Tägliche Wiederholung: Das Ticket bleibt stehen, „überfällig seit …“.'
+				]
+			},
+			{
+				point: 'Abschluss',
+				values: [
+					'Laufendes Vorhaben: Einmal, wenn es fertig ist.',
+					'Tägliche Wiederholung: Jedes Vorkommen für sich.'
+				]
+			}
+		]);
+		// The heading row is for the eye only; screen readers hear the side with every value.
+		const head = section.querySelector('.compare-head');
+		expect(head?.getAttribute('aria-hidden')).toBe('true');
+		expect(text(head!).trim()).toBe('Laufendes Vorhaben Tägliche Wiederholung');
+		const content = text(section);
+		expect(content).toMatch(
+			/Faustregel: Musst du es jedes Mal einzeln erledigen →, dann Wiederholung\. Arbeitest du über längere Zeit an einer Sache und willst täglich erinnert werden →, dann Laufendes Vorhaben\./
+		);
+		expect(content).toMatch(/Filter „Art“ nur Aufgaben oder nur laufende Vorhaben/);
+		expect(content).toMatch(/„Gruppieren“ bietet „Nach Art“/);
+		expect(content).toMatch(
+			/fragt die App jedes Mal „Vorhaben abschließen\?“, in der Sammelbearbeitung einmal mit der Zahl der Vorhaben; „Abbrechen“ ändert nichts/
+		);
+		expect(
+			within(section).getByRole('link', { name: 'mehr zu Wiederholungen' }).getAttribute('href')
+		).toBe('/einstellungen/hilfe#wiederholungen');
+		expect(within(section).getByRole('link', { name: 'Tagesplan' }).getAttribute('href')).toBe(
+			'/einstellungen/hilfe#tagesplan'
+		);
+		// The section "Tagesplan" says that the question comes everywhere and leads here.
+		const plan = container.querySelector<HTMLElement>('section#tagesplan')!;
+		expect(text(plan)).toMatch(/Dieselbe Rückfrage kommt überall, wo ein Vorhaben erledigt würde/);
+		expect(
+			within(plan)
+				.getByRole('link', { name: 'Laufendes Vorhaben oder Wiederholung?' })
+				.getAttribute('href')
+		).toBe('/einstellungen/hilfe#vorhaben-oder-wiederholung');
+		// The calendar leaves the filter out.
+		const calendar = container.querySelector<HTMLElement>('section#kalender')!;
+		expect(text(calendar)).toMatch(/die von „Aufgaben“ ohne „Fällig“, „Art“ und Suche/);
 	});
 
 	it('explains the view "Erledigte": groups, loading more, filters and reopening (ADR-0066)', () => {
