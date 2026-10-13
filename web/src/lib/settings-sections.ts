@@ -217,6 +217,8 @@ export const HELP_SECTIONS = [
 	{ id: 'kalender', label: 'Kalender' },
 	// The day plan (ADR-0065): kinds, sources, the shared plan of a household.
 	{ id: 'tagesplan', label: 'Tagesplan' },
+	// Ongoing project or recurrence (VH-1): linked from the switch "Laufendes Vorhaben".
+	{ id: 'vorhaben-oder-wiederholung', label: 'Laufendes Vorhaben oder Wiederholung?' },
 	// The view "Erledigte" (ADR-0066): groups, loading more, filters, reopening.
 	{ id: 'erledigte', label: 'Erledigte' },
 	{ id: 'zugangsdaten', label: 'Kanäle und Zugangsdaten' },

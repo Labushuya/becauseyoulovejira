@@ -15,6 +15,7 @@
 	import HostPlatformNote from '$lib/components/guidance/HostPlatformNote.svelte';
 	import PcOnly from '$lib/components/guidance/PcOnly.svelte';
 	import SectionMessage from '$lib/components/guidance/SectionMessage.svelte';
+	import OngoingOrRecurrenceHelp from '$lib/components/help/OngoingOrRecurrenceHelp.svelte';
 	import RecurrenceHelp from '$lib/components/help/RecurrenceHelp.svelte';
 	import ScriptProblemsHelp from '$lib/components/help/ScriptProblemsHelp.svelte';
 	import ShortcutList from '$lib/components/help/ShortcutList.svelte';
@@ -163,9 +164,9 @@
 		</p>
 		<p>
 			Unter „Ebenen“ blendest du jede dieser Arten ein und aus; das merkt sich dieses Gerät. Die
-			Filter sind die von „Aufgaben“ ohne „Fällig“ und Suche. Ein Projekt zeigt auch die Termine des
-			Eingangs mit diesem Zielprojekt; Status, Priorität, Tag und „Wiederkehrend“ blenden die
-			Termine des Eingangs aus, weil sie keine haben.
+			Filter sind die von „Aufgaben“ ohne „Fällig“, „Art“ und Suche. Ein Projekt zeigt auch die
+			Termine des Eingangs mit diesem Zielprojekt; Status, Priorität, Tag und „Wiederkehrend“
+			blenden die Termine des Eingangs aus, weil sie keine haben.
 		</p>
 		<p>
 			Die Farbe eines Tickets steht als Streifen vor dem Titel, wie in „Aufgaben“. Ein Tag zeigt im
@@ -217,7 +218,10 @@
 			„Vorhaben“. Die Art allein bestimmt, was der Haken im Plan bedeutet: Bei einer Aufgabe ist das
 			Ticket erledigt, mit „Rückgängig“ in der Meldung. Bei einem Vorhaben heißt der Haken „für
 			heute erledigt“; das Ticket bleibt offen. Im Menü steht jeweils die andere Variante: „Nur für
-			heute abhaken“ bei Aufgaben, „Vorhaben abschließen …“ mit Rückfrage bei Vorhaben.
+			heute abhaken“ bei Aufgaben, „Vorhaben abschließen …“ mit Rückfrage bei Vorhaben. Dieselbe
+			Rückfrage kommt überall, wo ein Vorhaben erledigt würde, etwa beim Haken in „Aufgaben“. Wann
+			ein Vorhaben passt und wann eine Wiederholung, steht unter
+			<a href={helpHref('vorhaben-oder-wiederholung')}>Laufendes Vorhaben oder Wiederholung?</a>
 		</p>
 		<h4 id="tagesplan-vorschlaege">Vorschläge</h4>
 		<p>
@@ -303,6 +307,11 @@
 			Ein Ticket, das in den anderen Bereich oder in den Papierkorb wandert, verschwindet aus den
 			Plänen.
 		</p>
+	</section>
+
+	<section id="vorhaben-oder-wiederholung" aria-labelledby="vorhaben-oder-wiederholung-title">
+		<h3 id="vorhaben-oder-wiederholung-title">Laufendes Vorhaben oder Wiederholung?</h3>
+		<OngoingOrRecurrenceHelp />
 	</section>
 
 	<section id="erledigte" aria-labelledby="erledigte-title">
