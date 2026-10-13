@@ -415,18 +415,20 @@ describe('entries of the plan', () => {
 	it('asks before "Vorhaben abschließen" and completes the project only then', async () => {
 		const { data } = await renderPlan();
 		await choose('TASK-a2', 'Vorhaben abschließen …');
-		const dialog = await screen.findByRole('dialog', { name: 'TASK-a2 abschließen?' });
+		// The one question of every way to complete an ongoing project (VH-1, OngoingFinishDialog).
+		const dialog = await screen.findByRole('dialog', { name: 'Vorhaben TASK-a2 abschließen?' });
 		expect(within(dialog).getByText(/Spanisch lernen/)).toBeTruthy();
+		expect(within(dialog).getByText(/erscheint nicht mehr täglich im Tagesplan/)).toBeTruthy();
+		expect(
+			within(dialog).getByText('Für heute allein reicht der Haken im Tagesplan.')
+		).toBeTruthy();
 		await fireEvent.click(within(dialog).getByRole('button', { name: 'Abbrechen' }));
 		expect(data.check).not.toHaveBeenCalled();
 		await choose('TASK-a2', 'Vorhaben abschließen …');
 		await fireEvent.click(
-			within(await screen.findByRole('dialog', { name: 'TASK-a2 abschließen?' })).getByRole(
-				'button',
-				{
-					name: 'Abschließen'
-				}
-			)
+			within(
+				await screen.findByRole('dialog', { name: 'Vorhaben TASK-a2 abschließen?' })
+			).getByRole('button', { name: 'Abschließen' })
 		);
 		await vi.waitFor(() =>
 			expect(data.check).toHaveBeenCalledWith('item00000000002', 'complete', null)

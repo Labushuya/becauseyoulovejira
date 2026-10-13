@@ -6,6 +6,7 @@
 	import type { Ticket } from '$lib/domain/ticket';
 	import { findAssignees, type AssigneeSource } from '$lib/stores/assignees.svelte';
 	import type { CatalogStore } from '$lib/stores/catalog.svelte';
+	import { OngoingFinishAsk } from '$lib/stores/ongoing-finish.svelte';
 	import type { TicketDetailStore } from '$lib/stores/ticket-detail.svelte';
 	import AssigneeField from './AssigneeField.svelte';
 	import CharmPicker from './CharmPicker.svelte';
@@ -13,6 +14,7 @@
 	import DueInput from './DueInput.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import KindSwitch from './KindSwitch.svelte';
+	import OngoingFinishDialog from './OngoingFinishDialog.svelte';
 	import PrioritySelect from './PrioritySelect.svelte';
 	import ProjectSelect from './ProjectSelect.svelte';
 	import StatusSelect from './StatusSelect.svelte';
@@ -35,7 +37,9 @@
 	// after the priority, only at a ticket of the household and only when the server knows the field:
 	// "Niemand" or a member, saved at once, with "Ich übernehme". Every option carries its key of the
 	// registry domain/ticket-options.ts at its control (`data-ticket-option`): "Neues Ticket" offers
-	// the same options (NT-1, ADR-0069, parity test ticket-options-parity.test.ts).
+	// the same options (NT-1, ADR-0069, parity test ticket-options-parity.test.ts). The status
+	// "Erledigt" of an open ongoing project asks "Vorhaben abschließen?" first, the question of the
+	// day plan (VH-1): in the panel as a confirmation, in the full view inline below the status.
 	let {
 		store,
 		catalog,
@@ -109,6 +113,17 @@
 		return store.addTag(result.tag.id);
 	}
 
+	/** "Vorhaben abschließen?" before the status completes an ongoing project (VH-1). */
+	const finishing = new OngoingFinishAsk();
+
+	/** A status of the select; "Erledigt" of an open ongoing project asks first. */
+	function chooseStatus(value: string) {
+		if (value !== 'done') return void store.choose('status', value);
+		void finishing.run([{ ...ticket, kind: store.value('kind') }], () =>
+			store.choose('status', value)
+		);
+	}
+
 	/** After the question about open sub-tasks the focus goes back to the status (ADR-0033). */
 	async function endCompletion(choice: CompletionChoice | null) {
 		if (choice === null) store.cancelCompletion();
@@ -142,9 +157,16 @@
 			busy={store.isSaving('status')}
 			error={store.fieldError('status')}
 			errorId={errorIdOf('status')}
-			onchoose={(value) => store.choose('status', value)}
+			onchoose={chooseStatus}
 		/>
 		{@render fieldError('status')}
+		{#if finishing.question}
+			<OngoingFinishDialog
+				question={finishing.question}
+				onconfirm={() => finishing.accept()}
+				oncancel={() => finishing.cancel()}
+			/>
+		{/if}
 		{#if store.completionQuestion}
 			<TicketCompletionQuestion
 				question={store.completionQuestion}

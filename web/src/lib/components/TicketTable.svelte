@@ -34,11 +34,12 @@
 		writePinnedFolded
 	} from '$lib/domain/pins';
 	import { parentOf } from '$lib/domain/subtasks';
-	import type { TicketSummary } from '$lib/domain/ticket';
+	import type { TicketPatch, TicketSummary } from '$lib/domain/ticket';
 	import { findAssignees, type AssigneeSource } from '$lib/stores/assignees.svelte';
 	import type { CatalogStore } from '$lib/stores/catalog.svelte';
 	import { getColumnPrefs } from '$lib/stores/column-prefs.svelte';
 	import { SILENT_FLAGS } from '$lib/stores/flags.svelte';
+	import { OngoingFinishAsk } from '$lib/stores/ongoing-finish.svelte';
 	import { findPinStore, type PinStore } from '$lib/stores/pins.svelte';
 	import type { TicketDuplicateStore } from '$lib/stores/ticket-duplicate.svelte';
 	import {
@@ -77,6 +78,7 @@
 	import EmptyState from './guidance/EmptyState.svelte';
 	import FilterSummary from './FilterSummary.svelte';
 	import GroupPopover from './GroupPopover.svelte';
+	import OngoingFinishDialog from './OngoingFinishDialog.svelte';
 	import PinIcon from './PinIcon.svelte';
 	import SectionBar from './SectionBar.svelte';
 	import { CELL_PADDING_REM, CHIP_GAP_REM, createChipMeasure, remPx } from './table/chip-measure';
@@ -128,6 +130,8 @@
 	// tickets of the area in the order of pinning, whatever the filters, the search and the sort; they
 	// do not stand again below, and the number of the heading says "+ N angeheftet". Its head folds
 	// like a group, kept on this device. Every row has the pin toggle at the end of its title.
+	// Ongoing projects (VH-1, ADR-0065 addendum VH-1): the check mark and "Erledigt" of the status cell
+	// ask "Vorhaben abschließen?" first, the question of the day plan; "Abbrechen" changes nothing.
 	let {
 		store,
 		catalog,
@@ -206,6 +210,21 @@
 
 	/** Quick entry of the (app) layout for the empty state; undefined outside it (plan EH-11). */
 	const openQuickCapture = getQuickCaptureOpener();
+
+	/** "Vorhaben abschließen?" before the check mark or the status cell completes one (VH-1). */
+	const finishing = new OngoingFinishAsk();
+
+	/** The check mark of a row; an open ongoing project asks first. */
+	function toggleDone(ticket: TicketSummary, done: boolean) {
+		if (!done) return void store.setDone(ticket.id, false);
+		void finishing.run([ticket], () => store.setDone(ticket.id, true));
+	}
+
+	/** A cell edited in place; "Erledigt" of an open ongoing project asks first. */
+	async function saveCell(ticket: TicketSummary, patch: TicketPatch): Promise<boolean> {
+		if (patch.status !== 'done') return store.changeField(ticket.id, patch);
+		return (await finishing.run([ticket], () => store.changeField(ticket.id, patch))) ?? false;
+	}
 
 	let root = $state<HTMLElement>();
 	let heading = $state<HTMLElement>();
@@ -542,7 +561,7 @@
 				projects: catalog.activeProjects,
 				tags: catalog.tags,
 				busy: store.isPending(ticket.id),
-				save: (patch) => store.changeField(ticket.id, patch),
+				save: (patch) => saveCell(ticket, patch),
 				createTag: (name) => catalog.ensureTag(name)
 			}}
 			assignees={assigneesShown ? assignees : null}
@@ -551,7 +570,7 @@
 			pin={pins?.available && (ticket.status !== 'done' || pins.isPinned(ticket.id))
 				? pinToggle
 				: undefined}
-			ontoggle={(done) => store.setDone(ticket.id, done)}
+			ontoggle={(done) => toggleDone(ticket, done)}
 		/>
 	{/each}
 {/snippet}
@@ -944,6 +963,15 @@
 			oncancel={() => store.cancelCompletion()}
 		/>
 	{/key}
+{/if}
+
+<!-- Completing an ongoing project asks first, as in the day plan (VH-1). -->
+{#if finishing.question}
+	<OngoingFinishDialog
+		question={finishing.question}
+		onconfirm={() => finishing.accept()}
+		oncancel={() => finishing.cancel()}
+	/>
 {/if}
 
 <style>
