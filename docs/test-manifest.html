@@ -340,8 +340,8 @@
 {
   "meta": {
     "projekt": "becauseyoulovejira",
-    "stand": "2026-10-13",
-    "commit": "c7718b4"
+    "stand": "2026-10-14",
+    "commit": "8796ca2"
   },
   "bereiche": [
     { "id": "betrieb", "titel": "Betrieb: Start, Stopp, Skripte und Daten" },
@@ -629,6 +629,8 @@
       "vermerk": "Nur Oberfläche, kein Hook, keine Migration: nach dem Build F5. „Als manuelle Reihenfolge übernehmen“ erst nach dem Neustart nach TP-4 (supports.order). Fünf manuelle Fälle (BYL-E6-1743 bis BYL-E6-1747), einer im Haushalt mit zwei Personen." },
     { "id": "VH-1", "vorhaben": "Tagesplan", "titel": "Laufende Vorhaben: Rückfrage „Vorhaben abschließen?“ auf jedem Weg nach „Erledigt“ (Haken, Statuszelle, Unteraufgaben, Detail, Sammelbearbeitung einmal mit Zahl), Filter und Gruppe „Art“ in „Aufgaben“, Hilfe „Laufendes Vorhaben oder Wiederholung?“ mit Hinweis am Schalter", "bereich": "aufgaben", "quelle": "Nutzerentscheidung", "datum": "2026-10-13", "adr": ["0065-tagesplan.md, Nachtrag VH-1", "0013-filter-suche-sortierung-gruppierung.md, Nachtrag G"], "plan": "tagesplan.md", "faelle": ["BYL-E6-1748..BYL-E6-1761"],
       "vermerk": "Nur Oberfläche, kein Hook, keine Migration: nach dem Build F5, kein Neustart. Fünf manuelle Fälle (BYL-E6-1757 bis BYL-E6-1761)." },
+    { "id": "DEP-2", "vorhaben": "Abhängigkeiten", "titel": "Testumgebung für jsdom 30.1.2: offene Popover der Attrappe sichtbar wie im Browser, Gruppen-Popover-Test ohne Fokus ins geschlossene Popover; Grenze aus timing.mjs für die Runspace-Probe; Dependabot auch für extensions/whatsapp-web", "bereich": "entwicklung", "quelle": "Befund", "datum": "2026-10-14", "plan": "test-haertung.md", "faelle": ["BYL-X-006"],
+      "vermerk": "Nur Tests und Konfiguration, kein Produktivcode, kein Neustart. Macht den Weg frei für die Dependabot-Gruppe #276 (jsdom 30.1.2); Dependabot erfasst die Erweiterung nach dem Merge mit seinem nächsten Lauf." },
     { "id": "querschnitt", "vorhaben": "Querschnitt", "titel": "Testumgebung, Regeln der Datenschicht, Hook-Module und dieses Manifest", "bereich": "entwicklung", "faelle": ["BYL-X-001..BYL-X-004"] }
   ],
   "zurueckgestellt": [
@@ -7218,7 +7220,11 @@
         { "id": "BYL-X-005", "title": "CI und Ruleset für main", "art": ["unit", "manuell"], "status": "bestanden",
           "pre": ".github/workflows/ci.yml mit dem Job „Detect code changes“, Ruleset „main“ nach .github/rulesets/main.json auf GitHub aktiv. Statisch geprüft von tests/unit/ci-ruleset.test.mjs, auf GitHub nur lesend per gh belegt.", "steps": ["npm run test:unit", "Einen PR öffnen, der nur eine Datei unter docs/ (nicht docs/test-manifest.html) oder eine Markdown-Datei ändert: „Detect code changes“ meldet „Code changed: false“, „Check, lint, build and test“ und (seit AR-3 ebenfalls Pflicht) „Linux build and test“ stehen auf „übersprungen“, und gh pr merge --squash geht durch.", "Einen PR mit Code oder mit docs/test-manifest.html öffnen: der Build läuft; zwei schnelle Pushes hintereinander brechen den ersten Durchgang ab.", "Einen Merge ohne Squash, einen Push direkt auf main und einen Merge bei rotem Check versuchen: alle drei lehnt GitHub ab."],
           "expect": "Doku-PRs kosten keinen Windows-Durchgang und blockieren trotzdem nicht; Code-PRs laufen voll; main bleibt nur per Squash-Merge mit grünem Check erreichbar. Der Test prüft: jeder Pflicht-Check ist ein Job von ci.yml (GitHub Actions), jeder Pflicht-Job hängt an „Detect code changes“ und wird nur für reine Doku-PRs übersprungen, docs/test-manifest.html zählt als Code, ein neuer Push bricht den laufenden Durchgang ab; das Ruleset erlaubt nur PRs mit Squash, ohne Ausnahmen, ohne Force-Push und ohne Löschen. Belege vom 2026-09-28 (gh, nur lesend): #123 und #136 (nur Doku) mit „Code changed: false“ (Lauf 36392027521) und übersprungenem Pflicht-Check squash-gemergt; Code-PRs #157 und #159 bis #162 mit beiden Jobs grün; abgebrochene Läufe nach einem zweiten Push (36451255721 in #160, 36411447282, 36370102824); GET repos/…/rules/branches/main liefert deletion, non_fast_forward, pull_request (nur squash) und required_status_checks, bypass_actors leer, current_user_can_bypass „never“; das Repo erlaubt nur Squash-Merges; alle 87 Commits auf main seit dem Anlegen des Rulesets (2026-09-26) sind Squash-Merges eines PR (ein Elternteil, „(#NNN)“ im Titel). Nicht selbst versucht (Schreibzugriff): Merge ohne Squash, direkter Push, Merge bei rotem Check; belegt ist hier die aktive Regel.",
-          "tests": ["tests/unit/ci-ruleset.test.mjs"] }
+          "tests": ["tests/unit/ci-ruleset.test.mjs"] },
+        { "id": "BYL-X-006", "title": "Popover-Attrappe wie im Browser sichtbar, stabile Prozess-Probe", "art": ["unit"], "status": "bestanden",
+          "pre": "Plan Test-Härtung, DEP-2: jsdom versteckt jedes Popover per Standard-Stylesheet und überspringt seit 30.1.2 beim Fokus versteckte Elemente.", "steps": ["npm run test:web, mit der jsdom-Version des Lockfiles und mit jsdom 30.1.2", "npm run test:unit"],
+          "expect": "Ein Popover, das die Attrappe aus web/src/lib/test/overlay-stubs.ts öffnet (showPopover, togglePopover, Knopf mit popovertarget), ist sichtbar (display block), und der Fokus erreicht seinen Inhalt; ein geschlossenes bleibt versteckt (display none), bei mehreren auto-Popovern nur das zuletzt geöffnete sichtbar. Nach dem Zurücksetzen sind Regel und Markierung weg. Der Gruppen-Popover-Test setzt den Fokus nur in das geöffnete Popover. Der Fall „starts the script in a runspace of its own“ hat die Grenze eines Tests mit Prozessen aus tests/support/timing.mjs statt der 5 s von Vitest.",
+          "tests": ["web/src/lib/test/overlay-stubs.test.ts::shows an open popover and hides a closed one", "web/src/lib/components/group-popover.test.ts::returns the focus to the button after a pointer click or Enter", "tests/unit/lan-control-logic.test.mjs::starts the script in a runspace of its own"] }
       ]
     }
   ]
