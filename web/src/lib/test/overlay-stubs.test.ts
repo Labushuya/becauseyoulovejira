@@ -3,7 +3,7 @@
 // the prototypes as they were.
 
 import { afterEach, describe, expect, it } from 'vitest';
-import { installOverlayStubs } from './overlay-stubs';
+import { OPEN_ATTRIBUTE, installOverlayStubs } from './overlay-stubs';
 
 let restore: (() => void) | undefined;
 
@@ -63,6 +63,28 @@ describe('overlay stubs', () => {
 		expect(element.matches('div')).toBe(true);
 	});
 
+	// DEP-2: jsdom hides every popover by its default stylesheet and, since 30.1.2, focus() skips
+	// hidden elements; focus has to reach the content of an open popover, as in the browser.
+	it('shows an open popover and hides a closed one, so focus reaches only the open one', () => {
+		restore = installOverlayStubs();
+		const element = popover('panel');
+		const button = document.createElement('button');
+		button.textContent = 'Übernehmen';
+		element.append(button);
+		const display = () => getComputedStyle(element).display;
+
+		expect(display()).toBe('none');
+		element.showPopover();
+		expect(display()).toBe('block');
+		button.focus();
+		expect(document.activeElement).toBe(button);
+
+		element.hidePopover();
+		expect(display()).toBe('none');
+		element.togglePopover();
+		expect(display()).toBe('block');
+	});
+
 	it('keeps only one auto popover open, as the browser does', () => {
 		restore = installOverlayStubs();
 		const first = popover('first');
@@ -76,6 +98,11 @@ describe('overlay stubs', () => {
 		expect(first.matches(':popover-open')).toBe(false);
 		expect(second.matches(':popover-open')).toBe(true);
 		expect(manual.matches(':popover-open')).toBe(true);
+		expect([first, second, manual].map((element) => getComputedStyle(element).display)).toEqual([
+			'none',
+			'block',
+			'block'
+		]);
 	});
 
 	it('toggles the popover of a button with popovertarget on click', () => {
@@ -96,13 +123,19 @@ describe('overlay stubs', () => {
 		const before = {
 			showModal: HTMLDialogElement.prototype.showModal,
 			showPopover: HTMLElement.prototype.showPopover,
-			matches: Element.prototype.matches
+			matches: Element.prototype.matches,
+			styles: document.head.querySelectorAll('style').length
 		};
-		installOverlayStubs()();
+		const shown = popover('shown');
+		const undo = installOverlayStubs();
+		shown.showPopover();
+		undo();
 
 		expect(HTMLDialogElement.prototype.showModal).toBe(before.showModal);
 		expect(HTMLElement.prototype.showPopover).toBe(before.showPopover);
 		expect(Element.prototype.matches).toBe(before.matches);
+		expect(document.head.querySelectorAll('style')).toHaveLength(before.styles);
+		expect(shown.hasAttribute(OPEN_ATTRIBUTE)).toBe(false);
 		const element = popover('after');
 		const button = document.createElement('button');
 		button.setAttribute('popovertarget', 'after');
