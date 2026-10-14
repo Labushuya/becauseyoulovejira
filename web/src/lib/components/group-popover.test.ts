@@ -116,15 +116,25 @@ describe('group popover', () => {
 	it('returns the focus to the button after a pointer click or Enter, not after arrow keys', async () => {
 		show();
 		const button = screen.getByRole('button', { name: 'Gruppieren' });
+		// Focus reaches a choice only while the popover is open, as in the browser (jsdom since
+		// 30.1.2, DEP-2).
+		const open = async () => {
+			await fireEvent.click(button);
+			await tick();
+		};
 
+		await open();
 		choice('Nach Status').focus();
 		await fireEvent.click(choice('Nach Status'), { detail: 0 });
 		expect(document.activeElement).toBe(choice('Nach Status'));
 
 		await fireEvent.click(choice('Nach Priorität'), { detail: 1 });
 		expect(document.activeElement).toBe(button);
+		expect(button.getAttribute('aria-expanded')).toBe('false');
 
+		await open();
 		choice('Nach Projekt').focus();
+		expect(document.activeElement).toBe(choice('Nach Projekt'));
 		await fireEvent.keyDown(choice('Nach Projekt'), { key: 'Enter' });
 		expect(document.activeElement).toBe(button);
 	});

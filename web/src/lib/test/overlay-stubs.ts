@@ -1,9 +1,10 @@
 // Stand-ins for the dialog and popover APIs that jsdom lacks (ADR-0025; plan UI-Konsistenz,
 // package UI-1). One place instead of the showModal copies in the component tests. Only what the
 // overlay building blocks use: showModal/close with the close event, showPopover/hidePopover/
-// togglePopover with the toggle event, the selector :popover-open and the popovertarget button.
-// Browser behaviour beyond that (top layer, inert, light dismiss, layout) stays on the browser
-// checklist of the test manifest.
+// togglePopover with the toggle event, the selector :popover-open, the popovertarget button and,
+// since DEP-2, an open popover that is shown (a closed one stays hidden). Browser behaviour beyond
+// that (top layer, inert, light dismiss, layout) stays on the browser checklist of the test
+// manifest.
 
 import { afterAll, beforeAll } from 'vitest';
 
@@ -22,6 +23,20 @@ function toggleEvent(oldState: ToggleState, newState: ToggleState): Event {
 /** Popovers the stand-in shows; :popover-open matches exactly these. */
 const openPopovers = new WeakSet<Element>();
 
+/** Marks the popovers in openPopovers for OPEN_RULE; no attribute of the browser. */
+export const OPEN_ATTRIBUTE = 'data-stub-popover-open';
+
+/**
+ * Shows the popovers the stand-in opened. The default stylesheet of jsdom hides every popover
+ * ([popover]:not(:popover-open):not(dialog[open]) { display: none }), and its selector engine
+ * never matches :popover-open, so an open popover stayed hidden for jsdom. Since jsdom 30.1.2,
+ * focus() skips elements under display: none, and focus no longer reached an open popover. jsdom
+ * cascades by specificity alone, without the origins of the browser, where any rule of the page
+ * beats the default stylesheet; !important stands in for that. block is what the browser gives
+ * the elements the overlay building blocks make popovers (div, ul, dialog:popover-open).
+ */
+const OPEN_RULE = `[popover][${OPEN_ATTRIBUTE}] { display: block !important; }`;
+
 function showPopover(this: HTMLElement) {
 	if (openPopovers.has(this)) return;
 	if (this.getAttribute('popover') === 'auto') {
@@ -31,12 +46,14 @@ function showPopover(this: HTMLElement) {
 		}
 	}
 	openPopovers.add(this);
+	this.setAttribute(OPEN_ATTRIBUTE, '');
 	this.dispatchEvent(toggleEvent('closed', 'open'));
 }
 
 function hidePopover(this: HTMLElement) {
 	if (!openPopovers.has(this)) return;
 	openPopovers.delete(this);
+	this.removeAttribute(OPEN_ATTRIBUTE);
 	this.dispatchEvent(toggleEvent('open', 'closed'));
 }
 
@@ -87,6 +104,7 @@ export function installOverlayStubs(): () => void {
 		};
 	}
 	const popoverApi = typeof saved.showPopover !== 'function';
+	const openStyle = document.createElement('style');
 	if (popoverApi) {
 		element.showPopover = showPopover;
 		element.hidePopover = hidePopover;
@@ -97,6 +115,8 @@ export function installOverlayStubs(): () => void {
 		};
 		Element.prototype.matches = matches as typeof Element.prototype.matches;
 		document.addEventListener('click', onDocumentClick);
+		openStyle.textContent = OPEN_RULE;
+		document.head.append(openStyle);
 	}
 
 	return () => {
@@ -108,6 +128,11 @@ export function installOverlayStubs(): () => void {
 			element.togglePopover = saved.togglePopover;
 			Element.prototype.matches = saved.matches;
 			document.removeEventListener('click', onDocumentClick);
+			openStyle.remove();
+			for (const open of document.querySelectorAll(`[${OPEN_ATTRIBUTE}]`)) {
+				openPopovers.delete(open);
+				open.removeAttribute(OPEN_ATTRIBUTE);
+			}
 		}
 	};
 }

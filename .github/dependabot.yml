@@ -6,6 +6,8 @@ updates:
       - /web
       - /helpers/mail
       - /helpers/backup
+      # Exact pins (CLAUDE.md section 3); Dependabot keeps them exact.
+      - /extensions/whatsapp-web
     schedule:
       interval: weekly
       day: monday
@@ -16,7 +18,7 @@ updates:
       - dependency-name: '@types/node'
         update-types: ['version-update:semver-major']
       # A TypeScript major needs its own evaluation (svelte-check, typescript-eslint);
-      # applies to both directories above.
+      # applies to all directories above.
       - dependency-name: 'typescript'
         update-types: ['version-update:semver-major']
     commit-message:

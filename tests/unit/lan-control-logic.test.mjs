@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { loadHookLib } from '../support/hook-lib.mjs';
 import { runPowerShellJson } from '../support/powershell.mjs';
-import { scaled } from '../support/timing.mjs';
+import { PROCESS_TEST_MS, scaled } from '../support/timing.mjs';
 
 const ROOT_DIR = resolve(fileURLToPath(new URL('../..', import.meta.url)));
 const FUNCTIONS_FILE = join(ROOT_DIR, 'app', 'byl-functions.ps1');
@@ -601,6 +601,10 @@ describe('a change of the firewall rule', () => {
 		expect([...outcomes].sort()).toEqual([...lan.FIREWALL_OUTCOMES].sort());
 	});
 
+	// The limit of a test with processes (timing.mjs), the same as the start of PowerShell in
+	// runPowerShellJson, instead of the 5 s of Vitest: Windows PowerShell ends only after the slow
+	// program of the last probe (about 2 s of ping), so the test took 2.7 to 2.8 s alone on the
+	// development machine (2026-10-14), 3 s beside the other unit files and once more than 5 s (DEP-2).
 	it('starts the script in a runspace of its own: exit code, code of Windows of a failed start, and it gives up after the time (verb runas taken out, never elevated)', () => {
 		// The start of byl-control.ps1 itself, with the one line of the verb taken out: harmless
 		// programs instead of the elevated Windows PowerShell, so nothing asks and nothing changes.
@@ -633,5 +637,5 @@ $cmd = [System.IO.Path]::Combine([Environment]::SystemDirectory, 'cmd.exe')
 			{ BYL_FUNCTIONS: FUNCTIONS_FILE, BYL_CONTROL: join(ROOT_DIR, 'app', 'byl-control.ps1') }
 		);
 		expect(probe).toEqual({ removed: true, exit: 3, missing: 2, slow: 'timeout' });
-	});
+	}, PROCESS_TEST_MS);
 });
