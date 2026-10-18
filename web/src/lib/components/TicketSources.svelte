@@ -3,17 +3,26 @@
 	import { withConnectionName } from '$lib/domain/connections';
 	import { formatBerlinDateTime } from '$lib/domain/format';
 	import type { InboxItemSummary } from '$lib/domain/inbox';
-	import type { TicketOrigin } from '$lib/domain/ticket-origins';
+	import type { ListOrder } from '$lib/domain/list-order';
+	import { orderOrigins, type TicketOrigin } from '$lib/domain/ticket-origins';
+	import {
+		findSourceOrder,
+		sourceOrderStore,
+		type ListOrderStore
+	} from '$lib/stores/list-order.svelte';
 	import type { TicketOriginsStore } from '$lib/stores/ticket-origins.svelte';
 	import ActionsMenu, { type MenuAction } from './ActionsMenu.svelte';
 	import AddTicketSourceDialog from './AddTicketSourceDialog.svelte';
+	import OrderSwitch from './OrderSwitch.svelte';
 	import StatusPill from './StatusPill.svelte';
 	import {
 		COPY_LABELS,
 		canLeaveTicket,
 		copiedFrom,
 		copyCompleteness,
+		orderSources,
 		sourceChannelLabel,
+		sourceOrderAnnouncement,
 		sourceOrigin,
 		sourceWhen,
 		type CopyCompleteness
@@ -57,16 +66,24 @@
 	// menu with "Eintrag aus dem Eingang …" and "Ticket …". Before the migration (or without the store)
 	// it stays the button for entries of the inbox.
 	// Since TD-1 (ADR-0031 addendum L) the entries and the source tickets are two lists in pages of
-	// five (PagedList), each with its own page; the main source stands first on page 1 (the order of
-	// the store). While "Anderem Ticket zuordnen …" is open below an entry, that entry keeps its page
-	// in view; changing the page by hand closes it.
+	// five (PagedList), each with its own page; the main source stands first on page 1
+	// (`orderSources`). While "Anderem Ticket zuordnen …" is open below an entry, that entry keeps
+	// its page in view; changing the page by hand closes it.
+	// Since QS-1 (ADR-0031 addendum M) the entries stand by the time they show (`sourceTime`: the
+	// date at the sender, else the arrival), the source tickets by the time of their link. From two
+	// sources the switch "Neueste zuerst | Älteste zuerst" (default newest, remembered on this device,
+	// the same building block as for the comments) orders both lists and the follow-ups; the main
+	// source stays first. Changing it starts every list on page 1 again and closes an open
+	// "Anderem Ticket zuordnen …"; a source arriving through realtime takes its place in the order
+	// while the page stays.
 	let {
 		ticket,
 		store,
 		candidates,
 		picker,
 		origins = null,
-		hrefOf
+		hrefOf,
+		order: givenOrder
 	}: {
 		ticket: Pick<Ticket, 'id' | 'key' | 'sourceItem' | 'scope'>;
 		store: TicketSourcesStore;
@@ -78,7 +95,14 @@
 		origins?: TicketOriginsStore | null;
 		/** Address of a source ticket in the remembered way; without it the key is no link. */
 		hrefOf?: (id: string) => ResolvedPathname;
+		/** Order of the lists; without it the store of the (app) layout. */
+		order?: ListOrderStore;
 	} = $props();
+
+	const orderFromContext = findSourceOrder() ?? sourceOrderStore(null);
+	const view = $derived(givenOrder ?? orderFromContext);
+	/** The lists belong to the ticket and the order: changing either starts on page 1 again. */
+	const listKey = $derived(`${ticket.id}:${view.order}`);
 
 	/** Names of the entries of both lists, for their count and the buttons of their pages. */
 	const ENTRY_NOUN: PagedNoun = { one: 'Quelle', other: 'Quellen' };
@@ -98,7 +122,9 @@
 	/** Tickets as sources are known on the server (ADR-0067). */
 	const ticketsOn = $derived(origins !== null && origins.available);
 	const ticketSources = $derived(
-		origins !== null && origins.available && origins.ticketId === ticket.id ? origins.sources : []
+		origins !== null && origins.available && origins.ticketId === ticket.id
+			? orderOrigins(origins.sources, view.order)
+			: []
 	);
 	/** "Quelle hinzufügen" with tickets: a menu with both ways. */
 	const addItems = $derived.by((): MenuAction[] => [
@@ -127,6 +153,15 @@
 	/** Entry of the dialog "Anderem Ticket zuordnen …", null while it is closed. */
 	let moving = $state<Pick<InboxItemSummary, 'id' | 'title' | 'scope'> | null>(null);
 	let message = $state<string | null>(null);
+	/** The last change of the order, said in the polite region of the section. */
+	let orderSaid = $state('');
+
+	function chooseOrder(order: ListOrder) {
+		// The entry of an open "Anderem Ticket zuordnen …" leaves the view like after paging.
+		moving = null;
+		view.setOrder(order);
+		orderSaid = sourceOrderAnnouncement(order);
+	}
 
 	const LOZENGES: Readonly<
 		Record<CopyCompleteness, { icon: GuidanceIconName; tone: 'brand' | 'neutral' }>
@@ -150,7 +185,9 @@
 		viewNote = await viewer.open(item.id);
 	}
 
-	const items = $derived(store.ticketId === ticket.id ? store.items : []);
+	const items = $derived(
+		store.ticketId === ticket.id ? orderSources(store.items, ticket.sourceItem, view.order) : []
+	);
 
 	async function download(item: InboxItemSummary) {
 		message = null;
@@ -198,6 +235,7 @@
 	{/if}
 
 	<div aria-live="polite">
+		<p class="visually-hidden">{orderSaid}</p>
 		{#if message}
 			<p class="alert-error"><ErrorIcon /><span>{message}</span></p>
 		{/if}
@@ -226,13 +264,16 @@
 				: 'Mails, Nachrichten oder Links aus dem Eingang lassen sich mit diesem Ticket verknüpfen.'}
 		/>
 	{:else}
+		{#if items.length + ticketSources.length > 1}
+			<OrderSwitch label="Reihenfolge der Quellen" order={view.order} onchange={chooseOrder} />
+		{/if}
 		{#if items.length > 0}
 			<PagedList
 				{items}
 				key={(item) => item.id}
 				label="Quellen aus dem Eingang"
 				noun={ENTRY_NOUN}
-				resetKey={ticket.id}
+				resetKey={listKey}
 				hold={moving?.id ?? null}
 				onpagechange={() => (moving = null)}
 			>
@@ -396,7 +437,7 @@
 				key={(origin) => origin.link}
 				label="Quell-Tickets"
 				noun={TICKET_NOUN}
-				resetKey={ticket.id}
+				resetKey={listKey}
 			>
 				{#snippet row(origin)}
 					<div

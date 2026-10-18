@@ -3,14 +3,11 @@
 import { describe, expect, it } from 'vitest';
 import {
 	COMMENT_COLLAPSE_LINES,
-	COMMENT_ORDER_LABELS,
 	EXPANDED_COMMENTS_MAX,
 	arrangeComments,
 	collapseLimit,
 	commentOrderAnnouncement,
-	parseCommentOrder,
 	parseExpandedComments,
-	serializeCommentOrder,
 	withExpanded
 } from './comments';
 
@@ -52,21 +49,9 @@ describe('arrangeComments (ADR-0044 sections 1 and 2)', () => {
 	});
 });
 
-describe('stored order', () => {
-	it('reads only "oldest"; everything else is the default', () => {
-		expect(parseCommentOrder('oldest')).toBe('oldest');
-		for (const raw of [null, undefined, '', 'newest', 'OLDEST', 'x']) {
-			expect(parseCommentOrder(raw), String(raw)).toBe('newest');
-		}
-	});
-
-	it('stores only "oldest" and removes the key for the default', () => {
-		expect(serializeCommentOrder('oldest')).toBe('oldest');
-		expect(serializeCommentOrder('newest')).toBeNull();
-	});
-
-	it('names both orders and announces a change', () => {
-		expect(COMMENT_ORDER_LABELS).toEqual({ newest: 'Neueste zuerst', oldest: 'Älteste zuerst' });
+// Labels and stored value of the order: domain/list-order.test.ts (shared with the sources, QS-1).
+describe('order', () => {
+	it('announces a change', () => {
 		expect(commentOrderAnnouncement('newest')).toBe('Neueste Kommentare zuerst.');
 		expect(commentOrderAnnouncement('oldest')).toBe('Älteste Kommentare zuerst.');
 	});

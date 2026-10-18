@@ -10,6 +10,7 @@ import {
 	type InboxItemSummary
 } from './inbox';
 import { formatBerlinDateTime } from './format';
+import { compareIds, compareTimestamps, type ListOrder } from './list-order';
 import { notionContentOf } from './notion';
 
 /**
@@ -155,11 +156,22 @@ export function sourceOrigin(item: Pick<InboxItemSummary, 'sourceMeta' | 'source
 	);
 }
 
-/** Date of a source for the list: the date at the sender, else the arrival in the inbox. */
+/**
+ * The point in time a source stands for (QS-1, ADR-0031 addendum M): the date at the sender, else
+ * the arrival in the inbox. The list shows it (`sourceWhen`) and orders by it (`orderSources`), so
+ * what is seen and where it stands never disagree.
+ */
+export function sourceTime(item: Pick<InboxItemSummary, 'sourceDate' | 'created'>): string {
+	return item.sourceDate ?? item.created;
+}
+
+/** Date of a source for the list: its `sourceTime`, a whole day at the sender as a date only. */
 export function sourceWhen(
 	item: Pick<InboxItemSummary, 'sourceDate' | 'sourceMeta' | 'created'>
 ): string {
-	return item.sourceDate === null ? formatBerlinDateTime(item.created) : sourceDateText(item);
+	const time = sourceTime(item);
+	// Only the date at the sender can be a whole day (source_meta.all_day); the arrival is a time.
+	return time === item.sourceDate ? sourceDateText(item) : formatBerlinDateTime(time);
 }
 
 /** Label of the channel of a source ("Mail-Datei", "Telegram", …). */
@@ -167,20 +179,35 @@ export function sourceChannelLabel(item: Pick<InboxItemSummary, 'channel'>): str
 	return CHANNEL_LABELS[item.channel];
 }
 
+/** localStorage key of the order of the sources on this device (QS-1); only "oldest" is stored. */
+export const SOURCE_ORDER_STORAGE_KEY = 'byl-sources-order';
+
+/** What the live region says after a change of the order of the sources. */
+export function sourceOrderAnnouncement(order: ListOrder): string {
+	return order === 'oldest' ? 'Älteste Quellen zuerst.' : 'Neueste Quellen zuerst.';
+}
+
 /**
- * The sources of a ticket in their order: the main source first, then the others as they were
- * linked (oldest first; equal times by ID).
+ * The sources of a ticket in their order (QS-1, ADR-0031 addendum M): the main source always
+ * first, the others by the time the list shows (`sourceTime`), equal times by the arrival in the
+ * inbox and then by ID; "Älteste zuerst" ascending, "Neueste zuerst" the exact reverse. When an
+ * entry was linked or moved (`handled_at`) does not count, so an old mail linked late stands at its
+ * own date.
  */
 export function orderSources(
 	items: readonly InboxItemSummary[],
-	mainSource: string | null
+	mainSource: string | null,
+	order: ListOrder
 ): InboxItemSummary[] {
-	const when = (item: InboxItemSummary) => item.handledAt ?? item.created;
+	const direction = order === 'oldest' ? 1 : -1;
 	return [...items].sort((a, b) => {
 		if (a.id === mainSource) return -1;
 		if (b.id === mainSource) return 1;
-		const byTime = when(a).localeCompare(when(b));
-		return byTime !== 0 ? byTime : a.id.localeCompare(b.id);
+		const ascending =
+			compareTimestamps(sourceTime(a), sourceTime(b)) ||
+			compareTimestamps(a.created, b.created) ||
+			compareIds(a.id, b.id);
+		return direction * ascending;
 	});
 }
 

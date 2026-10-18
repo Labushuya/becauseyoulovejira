@@ -11,6 +11,7 @@ import {
 	followUpFlag,
 	followUpTitle,
 	followUpTitleError,
+	orderOrigins,
 	originHistoryText,
 	originLabel,
 	sourcePickerRules,
@@ -156,6 +157,33 @@ function toOrigin(id: string) {
 		createdBy: ''
 	};
 }
+
+describe('orderOrigins (QS-1, ADR-0031 addendum M)', () => {
+	const linked = (id: string, created: string, link = `link-${id}`) => ({
+		...toOrigin(id),
+		link,
+		created
+	});
+	const ids = (list: readonly { id: string }[]) => list.map((origin) => origin.id);
+
+	it('orders source tickets and follow-ups by the time of their link, newest or oldest first', () => {
+		const list = [
+			linked('b', '2026-10-02 08:00:00.000Z'),
+			linked('c', '2026-10-03 08:00:00.000Z'),
+			linked('a', '2026-10-01 08:00:00.000Z')
+		];
+		expect(ids(orderOrigins(list, 'oldest'))).toEqual(['a', 'b', 'c']);
+		expect(ids(orderOrigins(list, 'newest'))).toEqual(['c', 'b', 'a']);
+		expect(ids(list)).toEqual(['b', 'c', 'a']);
+	});
+
+	it('orders links of the same time by the link, as the server does, and reverses that too', () => {
+		const at = '2026-10-01 08:00:00.000Z';
+		const list = [linked('y', at, 'link2'), linked('x', at, 'link1'), linked('z', at, 'link3')];
+		expect(ids(orderOrigins(list, 'oldest'))).toEqual(['x', 'y', 'z']);
+		expect(ids(orderOrigins(list, 'newest'))).toEqual(['z', 'y', 'x']);
+	});
+});
 
 describe('texts', () => {
 	it('names the chain of a refused circle', () => {

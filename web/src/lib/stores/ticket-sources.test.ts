@@ -129,9 +129,10 @@ describe('TicketSourcesStore', () => {
 		const stop = store.connect(live.source);
 		await vi.waitFor(() => expect(live.inbox).toHaveLength(1));
 
-		live.send({ action: 'update', record: item('b') });
+		live.send({ action: 'update', record: item('b', { created: '2026-09-25 08:30:00.000Z' }) });
 		live.send({ action: 'update', record: item('c', { ticketId: 'ticket000000002' }) });
-		expect(store.items.map((entry) => entry.id)).toEqual(['a', 'b']);
+		// Newest first by default (QS-1): b arrived after a.
+		expect(store.items.map((entry) => entry.id)).toEqual(['b', 'a']);
 		live.send({ action: 'update', record: released(item('a')) });
 		live.send({ action: 'delete', id: 'b' });
 		expect(store.items).toEqual([]);
@@ -167,7 +168,32 @@ describe('TicketSourcesStore', () => {
 		expect(flags.flags.map(({ tone, title }) => ({ tone, title }))).toEqual([
 			{ tone: 'info', title: '2 Einträge mit TASK-4 verknüpft.' }
 		]);
-		await vi.waitFor(() => expect(store.items.map((entry) => entry.id)).toEqual(['a', 'c']));
+		// Both with the same times: newest first is the reverse of the ID order (QS-1).
+		await vi.waitFor(() => expect(store.items.map((entry) => entry.id)).toEqual(['c', 'a']));
+	});
+
+	it('puts a source from realtime at its place by the time it shows, the main source first (QS-1)', async () => {
+		const main = item('m', { created: '2026-09-01 08:00:00.000Z' });
+		const { store } = setup([main, item('a', { created: '2026-09-20 08:00:00.000Z' })]);
+		store.open(TICKET, 'm');
+		await vi.waitFor(() => expect(store.state).toBe('ready'));
+		const live = fakeLive();
+		const stop = store.connect(live.source);
+		await vi.waitFor(() => expect(live.inbox).toHaveLength(1));
+
+		// An old mail linked just now: its date at the sender, not the linking, gives its place.
+		live.send({
+			action: 'update',
+			record: item('old', {
+				sourceDate: '2026-09-10 08:00:00.000Z',
+				created: '2026-09-29 08:00:00.000Z',
+				handledAt: '2026-09-30 08:00:00.000Z'
+			})
+		});
+		expect(store.items.map((entry) => entry.id)).toEqual(['m', 'a', 'old']);
+		live.send({ action: 'update', record: item('new', { created: '2026-09-28 08:00:00.000Z' }) });
+		expect(store.items.map((entry) => entry.id)).toEqual(['m', 'new', 'a', 'old']);
+		stop();
 	});
 
 	it('stops linking when the session is gone', async () => {

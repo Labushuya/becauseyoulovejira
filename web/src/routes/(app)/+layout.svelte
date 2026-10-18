@@ -26,6 +26,7 @@
 	import { CatalogStore, catalogData, setCatalogStore } from '$lib/stores/catalog.svelte';
 	import { ColumnPrefsRegistry, setColumnPrefsRegistry } from '$lib/stores/column-prefs.svelte';
 	import { CommentViewStore, setCommentView } from '$lib/stores/comment-view.svelte';
+	import { setSourceOrder, sourceOrderStore } from '$lib/stores/list-order.svelte';
 	import {
 		ConnectionNamesStore,
 		connectionNamesData,
@@ -184,6 +185,10 @@
 	// same in panel and full view; other tabs follow the order through the storage event.
 	const commentView = setCommentView(new CommentViewStore(window));
 	$effect(() => untrack(() => commentView.connect()));
+	// Order of the sources, source tickets and follow-ups on this device (QS-1, ADR-0031 addendum
+	// M), the same in panel and full view; other tabs follow through the storage event.
+	const sourceOrder = setSourceOrder(sourceOrderStore(window));
+	$effect(() => untrack(() => sourceOrder.connect()));
 	// The last view outside the settings, for "Zurück zu …" there (ADR-0026 section 1, EH-1): every
 	// shown address is offered, the store keeps only views (no settings, no full view).
 	const lastView = setLastViewStore(new LastViewStore(sessionStore, () => page.url.origin));
