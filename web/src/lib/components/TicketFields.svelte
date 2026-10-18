@@ -3,7 +3,9 @@
 	import type { CalendarDate } from '$lib/domain/berlin-date';
 	import { colorOf, inheritLabel, projectColorOf } from '$lib/domain/colors';
 	import { overdueSinceText } from '$lib/domain/due-label';
+	import type { OngoingFinishQuestion } from '$lib/domain/ongoing-finish';
 	import type { Ticket } from '$lib/domain/ticket';
+	import { insideModal } from '$lib/overlay/modal-context';
 	import { findAssignees, type AssigneeSource } from '$lib/stores/assignees.svelte';
 	import type { CatalogStore } from '$lib/stores/catalog.svelte';
 	import { OngoingFinishAsk } from '$lib/stores/ongoing-finish.svelte';
@@ -40,6 +42,10 @@
 	// the same options (NT-1, ADR-0069, parity test ticket-options-parity.test.ts). The status
 	// "Erledigt" of an open ongoing project asks "Vorhaben abschließen?" first, the question of the
 	// day plan (VH-1): in the panel as a confirmation, in the full view inline below the status.
+	// The inline questions of the status (open sub-tasks, "Vorhaben abschließen?" in the full view,
+	// a refused reopening) stand in a row of their own right after the status, over both columns
+	// of the grid (QB-1, ADR-0025 addendum 19): in the value column of the narrow right column of the
+	// full view only about 120 px were left. The order in the DOM, and so the tab order, stays.
 	let {
 		store,
 		catalog,
@@ -115,6 +121,14 @@
 
 	/** "Vorhaben abschließen?" before the status completes an ongoing project (VH-1). */
 	const finishing = new OngoingFinishAsk();
+	/** In a modal (the full view) it stands inline; in the panel it is a dialog of its own. */
+	const finishInline = insideModal();
+	/** A question stands inline below the status: its row over both columns is shown (QB-1). */
+	const questionShown = $derived(
+		(finishInline && finishing.question !== null) ||
+			store.completionQuestion !== null ||
+			store.reopenQuestion !== null
+	);
 
 	/** A status of the select; "Erledigt" of an open ongoing project asks first. */
 	function chooseStatus(value: string) {
@@ -148,6 +162,14 @@
 	{/if}
 {/snippet}
 
+{#snippet finishQuestion(question: OngoingFinishQuestion)}
+	<OngoingFinishDialog
+		{question}
+		onconfirm={() => finishing.accept()}
+		oncancel={() => finishing.cancel()}
+	/>
+{/snippet}
+
 <div class="fields">
 	<label for={ids.status}>Status</label>
 	<div class="control" data-ticket-option="status">
@@ -160,30 +182,35 @@
 			onchoose={chooseStatus}
 		/>
 		{@render fieldError('status')}
-		{#if finishing.question}
-			<OngoingFinishDialog
-				question={finishing.question}
-				onconfirm={() => finishing.accept()}
-				oncancel={() => finishing.cancel()}
-			/>
-		{/if}
-		{#if store.completionQuestion}
-			<TicketCompletionQuestion
-				question={store.completionQuestion}
-				busy={store.isSaving('status')}
-				onconfirm={(choice) => void endCompletion(choice)}
-				oncancel={() => void endCompletion(null)}
-			/>
-		{/if}
-		{#if store.reopenQuestion}
-			<TicketReopenQuestion
-				question={store.reopenQuestion}
-				busy={store.isSaving('status')}
-				onconfirm={() => void endReopen(true)}
-				oncancel={() => void endReopen(false)}
-			/>
-		{/if}
 	</div>
+	{#if finishing.question && !finishInline}
+		<!-- The panel: a dialog of its own in the top layer, outside the flow of the grid. -->
+		{@render finishQuestion(finishing.question)}
+	{/if}
+	{#if questionShown}
+		<!-- The questions of the status in a row of their own over both columns (QB-1). -->
+		<div class="questions" data-status-questions>
+			{#if finishing.question && finishInline}
+				{@render finishQuestion(finishing.question)}
+			{/if}
+			{#if store.completionQuestion}
+				<TicketCompletionQuestion
+					question={store.completionQuestion}
+					busy={store.isSaving('status')}
+					onconfirm={(choice) => void endCompletion(choice)}
+					oncancel={() => void endCompletion(null)}
+				/>
+			{/if}
+			{#if store.reopenQuestion}
+				<TicketReopenQuestion
+					question={store.reopenQuestion}
+					busy={store.isSaving('status')}
+					onconfirm={() => void endReopen(true)}
+					oncancel={() => void endReopen(false)}
+				/>
+			{/if}
+		</div>
+	{/if}
 
 	<label for={ids.priority}>Priorität</label>
 	<div class="control" data-ticket-option="priority">
@@ -351,6 +378,14 @@
 	.control {
 		display: grid;
 		gap: 0.25rem;
+		min-width: 0;
+	}
+
+	/* The questions of the status: a row of their own over both columns of the grid (QB-1). */
+	.questions {
+		display: grid;
+		grid-column: 1 / -1;
+		gap: 0.5rem;
 		min-width: 0;
 	}
 

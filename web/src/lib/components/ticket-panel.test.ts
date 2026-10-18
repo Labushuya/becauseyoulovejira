@@ -35,6 +35,7 @@ import { fakePins, pinOf } from '$lib/test/fake-pins';
 import PinContextHarness from '$lib/test/PinContextHarness.svelte';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import { typeText, useProseMirrorStubs } from '$lib/test/prosemirror-stubs';
+import { expectNoStatusQuestions, expectRowBelowStatus } from '$lib/test/status-questions';
 import TicketPanel from './TicketPanel.svelte';
 import TicketLayout from '../../routes/(app)/(tickets)/tickets/[id]/+layout.svelte';
 
@@ -279,7 +280,8 @@ function applyPatch(current: Ticket, { project, tags, ...fields }: TicketPatch):
 	};
 }
 
-function createStore(initial: Ticket = ticket()) {
+/** The detail store on a fake data layer; `subtasks` are the sub-tasks the list knows of it. */
+function createStore(initial: Ticket = ticket(), subtasks: readonly TicketSummary[] = []) {
 	let current = initial;
 	let clock = 0;
 	const data = {
@@ -298,14 +300,25 @@ function createStore(initial: Ticket = ticket()) {
 		upsert: vi.fn((summary: TicketSummary) => listTickets.set(summary.id, summary)),
 		completed: vi.fn((summary: TicketSummary) => listTickets.set(summary.id, summary)),
 		remove: vi.fn((id: string) => listTickets.delete(id)),
-		announce: vi.fn()
+		announce: vi.fn(),
+		subtasksOf: () => subtasks
 	} satisfies TicketListSync;
 	const store = new TicketDetailStore(data, { ensureValid: () => true, logout: vi.fn() }, list);
 	return { store, data, list };
 }
 
-async function renderPanel(initial?: Ticket, props: Record<string, unknown> = {}) {
-	const context = createStore(initial);
+/** Two open sub-tasks of the ticket that block it (ADR-0033 section 2). */
+const OPEN_SUBTASKS: readonly TicketSummary[] = [
+	ticket({ id: 'child0000000001', key: 'TASK-4', title: 'Belege', parentId: ID, status: 'open' }),
+	ticket({ id: 'child0000000002', key: 'TASK-5', title: 'Formular', parentId: ID, status: 'open' })
+];
+
+async function renderPanel(
+	initial?: Ticket,
+	props: Record<string, unknown> = {},
+	subtasks: readonly TicketSummary[] = []
+) {
+	const context = createStore(initial, subtasks);
 	const onclose = vi.fn();
 	context.store.open(ID);
 	const result = render(TicketPanel, {
@@ -741,6 +754,32 @@ describe('ticket panel', () => {
 		await renderPanel(undefined, { activity });
 
 		expect(screen.getByText('Aktivität')).toBeTruthy();
+	});
+
+	it('asks about open sub-tasks in a row of its own below the status, over both columns (QB-1)', async () => {
+		const { data } = await renderPanel(undefined, {}, OPEN_SUBTASKS);
+		const select = screen.getByLabelText<HTMLSelectElement>('Status');
+
+		await fireEvent.change(select, { target: { value: 'done' } });
+		await tick();
+
+		const row = expectRowBelowStatus(
+			screen.getByRole('heading', { name: /2 Unteraufgaben sind noch offen/ })
+		);
+		expect(screen.getByRole('complementary').contains(row)).toBe(true);
+		expect(document.activeElement).toBe(within(row).getByRole('button', { name: 'Abbrechen' }));
+
+		await fireEvent.click(within(row).getByRole('button', { name: 'Erledigen' }));
+
+		await vi.waitFor(() =>
+			expect(data.update).toHaveBeenCalledWith(
+				ID,
+				{ status: 'done' },
+				{ completion: 'complete_children' }
+			)
+		);
+		await vi.waitFor(() => expect(document.activeElement).toBe(select));
+		expectNoStatusQuestions();
 	});
 });
 
@@ -1339,6 +1378,30 @@ describe('ticket route: sub-tasks (ADR-0033)', () => {
 		expect(within(row).getByRole('button', { name: 'Festlegen …' })).toBeTruthy();
 	});
 
+	it('chooses the parent over both columns of the fields in the panel (QB-1)', async () => {
+		const context = createStore();
+		mocks.detail = context.store;
+		mocks.catalog = catalogOf();
+		mocks.activity = activityStore();
+		renderTicketRoute();
+		await vi.waitFor(() => expect(context.store.state).toBe('ready'));
+		const panel = within(screen.getByRole('complementary'));
+		const group = panel.getByRole('group', { name: 'Übergeordnet' });
+		const term = panel.getByText('Übergeordnet');
+
+		await fireEvent.click(within(group).getByRole('button', { name: 'Festlegen …' }));
+
+		// Label above, picker and buttons below: both cells of the grid span its two columns.
+		expect(term.parentElement?.classList.contains('fields')).toBe(true);
+		expect(term.nextElementSibling).toBe(group);
+		expect(term.classList.contains('wide')).toBe(true);
+		expect(group.classList.contains('wide')).toBe(true);
+		await fireEvent.click(within(group).getByRole('button', { name: 'Abbrechen' }));
+		await tick();
+		expect(group.classList.contains('wide')).toBe(false);
+		expect(document.activeElement).toBe(within(group).getByRole('button', { name: 'Festlegen …' }));
+	});
+
 	it('shows the path of a sub-task with a link to its parent and no section', async () => {
 		const context = createStore(ticket({ parentId: PARENT.id, parentRef: PARENT }));
 		mocks.detail = context.store;
@@ -1935,11 +1998,12 @@ describe('ticket route: full view (ADR-0025 section 7, UI-7)', () => {
 	async function renderFullView(
 		initial?: Ticket,
 		openMode?: TicketOpenModeStore,
-		activity: TicketActivityStore = activityStore()
+		activity: TicketActivityStore = activityStore(),
+		subtasks: readonly TicketSummary[] = []
 	) {
 		mocks.page.url = new URL(`http://localhost:3000/tickets/${ID}/voll?erledigte=1`);
 		mocks.page.route = { id: FULL_ROUTE };
-		const context = createStore(initial);
+		const context = createStore(initial, subtasks);
 		mocks.detail = context.store;
 		mocks.activity = activity;
 		mocks.beforeNavigate.mockClear();
@@ -2014,6 +2078,63 @@ describe('ticket route: full view (ADR-0025 section 7, UI-7)', () => {
 		await vi.waitFor(() =>
 			expect(data.update).toHaveBeenCalledWith(ID, expect.objectContaining({ status: 'waiting' }))
 		);
+	});
+
+	it('asks about open sub-tasks over the whole width of the card "Details", inline (QB-1)', async () => {
+		const { dialog, data } = await renderFullView(undefined, undefined, undefined, OPEN_SUBTASKS);
+		const details = within(dialog).getByRole('region', { name: 'Details' });
+		const select = within(details).getByLabelText<HTMLSelectElement>('Status');
+
+		await fireEvent.change(select, { target: { value: 'done' } });
+		await tick();
+
+		// No dialog from the dialog: the question stands inline in its own row of the card.
+		expect(screen.getAllByRole('dialog')).toEqual([dialog]);
+		const row = expectRowBelowStatus(
+			within(details).getByRole('heading', { name: /2 Unteraufgaben sind noch offen/ })
+		);
+		expect(details.contains(row)).toBe(true);
+		expect(
+			within(row).getByRole<HTMLInputElement>('radio', { name: /Unteraufgaben mit erledigen/ })
+				.checked
+		).toBe(true);
+		expect(document.activeElement).toBe(within(row).getByRole('button', { name: 'Abbrechen' }));
+
+		await fireEvent.click(within(row).getByRole('button', { name: 'Erledigen' }));
+
+		await vi.waitFor(() =>
+			expect(data.update).toHaveBeenCalledWith(
+				ID,
+				{ status: 'done' },
+				{ completion: 'complete_children' }
+			)
+		);
+		await vi.waitFor(() => expect(document.activeElement).toBe(select));
+		expectNoStatusQuestions();
+	});
+
+	it('chooses the parent over the whole width of the card "Details" (QB-1)', async () => {
+		const { dialog } = await renderFullView();
+		const details = within(within(dialog).getByRole('region', { name: 'Details' }));
+		const group = details.getByRole('group', { name: 'Übergeordnet' });
+		const term = details.getByText('Übergeordnet');
+
+		await fireEvent.click(within(group).getByRole('button', { name: 'Festlegen …' }));
+
+		expect(term.parentElement?.classList.contains('fields')).toBe(true);
+		expect(term.nextElementSibling).toBe(group);
+		expect(term.classList.contains('wide')).toBe(true);
+		expect(group.classList.contains('wide')).toBe(true);
+		// Escape ends choosing and is consumed: the full view stays open.
+		const passedOn = await fireEvent.keyDown(
+			within(group).getByRole('button', { name: 'Übernehmen' }),
+			{ key: 'Escape' }
+		);
+		await tick();
+		expect(passedOn).toBe(false);
+		expect(dialog.open).toBe(true);
+		expect(group.classList.contains('wide')).toBe(false);
+		expect(document.activeElement).toBe(within(group).getByRole('button', { name: 'Festlegen …' }));
 	});
 
 	it.each([

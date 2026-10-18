@@ -1,6 +1,6 @@
 # ADR-0025: UI-Konsistenz – ein Overlay-System, Theme-Umschalter und angeglichene Projekt-UI
 
-- **Status:** Angenommen; §2 („Kein Schatten-Token“) teilweise ersetzt durch [ADR-0029](0029-glas-materialien.md), siehe Nachtrag 13; §11 präzisiert durch [ADR-0030](0030-spalten-breiten-und-kompakte-zeilen.md), siehe Nachtrag 14; §7 präzisiert durch [ADR-0036](0036-sammelbearbeitung-inline-und-oeffnungsmodus.md), siehe Nachtrag 15; §3 und §4 („kein Dialog aus einem Dialog“) präzisiert durch Nachtrag 16; §6 und §7 (Schließen eines Tickets in Projekten, Eingang und Wiederholungen) präzisiert durch Nachtrag 17 ([ADR-0054](0054-tickets-im-kontext-oeffnen.md)); §5 (Positionierung) ergänzt durch den Nachtrag „Rechtsklick“ in [ADR-0036](0036-sammelbearbeitung-inline-und-oeffnungsmodus.md): ein Popover öffnet per Code auch am Mauszeiger oder unter einem anderen Element; §8 (Pause bei offenem Modal) ersetzt und §3 (Darstellung) präzisiert durch Nachtrag 18 (FL-1): Flags stehen vor geöffneten Dialogen
+- **Status:** Angenommen; §2 („Kein Schatten-Token“) teilweise ersetzt durch [ADR-0029](0029-glas-materialien.md), siehe Nachtrag 13; §11 präzisiert durch [ADR-0030](0030-spalten-breiten-und-kompakte-zeilen.md), siehe Nachtrag 14; §7 präzisiert durch [ADR-0036](0036-sammelbearbeitung-inline-und-oeffnungsmodus.md), siehe Nachtrag 15; §3 und §4 („kein Dialog aus einem Dialog“) präzisiert durch Nachtrag 16; §6 und §7 (Schließen eines Tickets in Projekten, Eingang und Wiederholungen) präzisiert durch Nachtrag 17 ([ADR-0054](0054-tickets-im-kontext-oeffnen.md)); §5 (Positionierung) ergänzt durch den Nachtrag „Rechtsklick“ in [ADR-0036](0036-sammelbearbeitung-inline-und-oeffnungsmodus.md): ein Popover öffnet per Code auch am Mauszeiger oder unter einem anderen Element; §8 (Pause bei offenem Modal) ersetzt und §3 (Darstellung) präzisiert durch Nachtrag 18 (FL-1): Flags stehen vor geöffneten Dialogen; Nachtrag 16 für die Felder eines Tickets präzisiert durch Nachtrag 19 (QB-1): Rückfragen unter dem Status in voller Breite
 - **Datum:** 2026-09-25
 - **Entscheidung durch:** Nutzer (Fragen 1 bis 4 in Abschnitt 9, 2026-09-25), Advisor (übrige Festlegungen)
 - **Ersetzt teilweise:** [ADR-0010](0010-layout-nach-task-board.md) §1 (Reihenfolge der Leisten, 5 s „Rückgängig“ in der Zeile) und §2 (Aufbau des Detail-Panels, Vollansicht)
@@ -244,6 +244,29 @@ Ersetzt in §8 „Pause … bei offenem Modal“ und präzisiert §3 (Darstellun
 - **Die Flags als eigenes Popover im Top Layer:** Außerhalb des modalen Dialogs bleibt es inert, also weder klickbar noch für Screenreader zugänglich.
 - **Eine Ausgabe, deren Knoten per Code in den Dialog verschoben werden (Portal):** Svelte entfernt beim Aushängen die Knoten seines Bereichs der Reihe nach; verschobene Knoten brechen das. Eine verschobene Region mit Text würde zudem erneut angesagt.
 - **Weiter pausieren, solange ein Dialog offen ist:** Die Flags sind jetzt sichtbar; ein Flag, das stehen bleibt, solange der Nutzer in der Vollansicht arbeitet, widerspricht §8 und der Nutzerentscheidung 3 (8 s). Für das Angebot einer Serie gilt dafür D3.
+
+### 19. Nachtrag (2026-10-18, Paket QB-1): Rückfragen unter dem Status in voller Breite
+
+Präzisiert Nachtrag 16 („Inline-Frage … wo der Besitzer sie rendert“) für die Felder eines Tickets (`TicketFields`, §7). **Anlass** (Fehlerbericht des Nutzers): Wird in der Vollansicht ein Hauptticket über den Status in der rechten Spalte erledigt, stand „N Unteraufgaben sind noch offen – trotzdem erledigen?“ weit eingerückt, schmal und mitten im Wort umbrochen.
+
+**Ursache:** `TicketFields` renderte die drei Inline-Fragen des Status (`OngoingFinishDialog` in der Vollansicht, `TicketCompletionQuestion`, `TicketReopenQuestion`) in der Wertspalte (`div.control`) der Status-Zeile. Das Raster `.fields` hat `7rem minmax(0, 1fr)` mit `1rem` Abstand, die rechte Spalte der Vollansicht ist `--full-view-sidebar` (21.25rem) breit; nach Rand und Innenabstand der Karte und der `SectionMessage` blieben für den Text etwa 120 px. `overflow-wrap: anywhere` der `SectionMessage` trennte dort Wörter mitten im Wort. Dasselbe galt für „Übergeordnet“ beim Wählen (`TicketParentField` mit `TicketPicker` und Knöpfen in der Wertspalte).
+
+**Entscheidungen des Auftrags (2026-10-18):**
+
+- **B1 – eigene Zeile:** Die Fragen des Status stehen nicht mehr in `.control`, sondern in einer eigenen Rasterzeile direkt nach der Status-Zeile über beide Spalten (`div.questions` mit `data-status-questions`, `grid-column: 1 / -1; min-width: 0`), im Seitenpanel und in der Vollansicht gleich. Die Zeile gibt es nur, solange eine Frage inline steht. Die Reihenfolge im DOM bleibt (Status, Frage, „Priorität“), damit auch die Tab-Reihenfolge; der Fokus startet weiter auf „Abbrechen“ und kehrt danach an das Status-Feld (`ids.status`) bzw. bei der Inline-Bestätigung an den Auslöser zurück. „Vorhaben abschließen?“ bleibt im Panel ein eigener Dialog (§4); `TicketFields` fragt dafür selbst `insideModal()` und rendert den Dialog dort ohne Rasterzeile direkt nach dem Status (im Top Layer, außerhalb des Rasters).
+- **B2 – „Übergeordnet“ beim Wählen:** Beide Zellen der Zeile (`.term` und `.control`) bekommen beim Wählen `grid-column: 1 / -1` (Klasse `wide`): die Beschriftung darüber, Picker und Knöpfe darunter über die volle Breite. Angezeigt bleibt die Zeile zweispaltig.
+- **B3 – `SectionMessage` unverändert:** Mit der vollen Breite (in der Vollansicht etwa 250 px Text statt 120 px) trennt `overflow-wrap: anywhere` nur noch Wörter, die allein breiter als die Zeile sind; `break-word` täte dort dasselbe, der Unterschied liegt nur in der min-content-Breite, und die Breite der Zeile legt das Raster fest. Eine lokale Ausnahme war deshalb nicht nötig.
+- **B4:** Texte und Verhalten der Fragen bleiben unverändert.
+
+**Regel:** Rückfragen und Auswahlbereiche im Feldraster von `TicketFields` stehen in einer eigenen Zeile über beide Spalten, nie in der schmalen Wertspalte.
+
+**Verworfen:**
+
+- **Die Wertspalte in der Vollansicht verbreitern** (schmalere Beschriftungsspalte): hilft nur wenig und kostet die Ausrichtung der Felder.
+- **`SectionMessage` global auf `overflow-wrap: break-word`:** betrifft alle Hinweise der App und behebt nicht die Ursache (die Enge).
+- **Die Frage unter das ganze Feldraster:** trennt sie vom Status, der sie ausgelöst hat; Tab-Reihenfolge und Lesefolge würden springen.
+
+Belegt in `ticket-completion.test.ts`, `ongoing-finish.test.ts`, `ticket-parent-field.test.ts` und `ticket-panel.test.ts` (Panel und Vollansicht über die Routen) mit dem Prüfhelfer `lib/test/status-questions.ts`; Test-Manifest Paket „QB-1“ (BYL-E6-1762 bis BYL-E6-1770).
 
 ## Alternativen
 

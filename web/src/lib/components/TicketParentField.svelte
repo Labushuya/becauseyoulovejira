@@ -20,7 +20,9 @@
 	// is hidden, its current parent, sub-tasks and tickets of another area stay visible with the
 	// reason; the hook checks the rest. Escape while choosing ends it (after the list and the text
 	// of the picker) and is consumed, so neither the panel nor the full view closes. The row
-	// consists of two cells of the grid of TicketFields.
+	// consists of two cells of the grid of TicketFields. While choosing, both cells span the two
+	// columns (QB-1, ADR-0025 addendum 19): the label stands above, the picker and its buttons below
+	// over the full width, instead of in the narrow value column of the full view.
 	let {
 		store,
 		ticket,
@@ -105,8 +107,14 @@
 	}
 </script>
 
-<span class="term" id={ids.term}>Übergeordnet</span>
-<div class="control" aria-labelledby={ids.term} role="group" data-ticket-option="parent">
+<span class="term" class:wide={choosing} id={ids.term}>Übergeordnet</span>
+<div
+	class="control"
+	class:wide={choosing}
+	aria-labelledby={ids.term}
+	role="group"
+	data-ticket-option="parent"
+>
 	{#if choosing}
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div class="choose" bind:this={area} {onkeydown}>
@@ -203,6 +211,11 @@
 		display: grid;
 		gap: 0.25rem;
 		min-width: 0;
+	}
+
+	/* Choosing: label above, picker and buttons below, over both columns of the fields (QB-1). */
+	.wide {
+		grid-column: 1 / -1;
 	}
 
 	.choose {

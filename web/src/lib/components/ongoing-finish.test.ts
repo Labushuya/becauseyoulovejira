@@ -22,6 +22,7 @@ import {
 import { TicketListStore, type TicketListData } from '$lib/stores/ticket-list.svelte';
 import InModalHarness from '$lib/test/InModalHarness.svelte';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
+import { expectNoStatusQuestions, expectRowBelowStatus } from '$lib/test/status-questions';
 import FlagGroup from './overlay/FlagGroup.svelte';
 import TicketFields from './TicketFields.svelte';
 import TicketSubtasks from './TicketSubtasks.svelte';
@@ -355,6 +356,8 @@ describe('status of the detail (VH-1)', () => {
 		await tick();
 
 		expect(dialog()).toBeTruthy();
+		// A dialog of its own in the top layer: no row below the status (QB-1).
+		expectNoStatusQuestions();
 		expect(select.value).toBe('in_progress');
 		await fireEvent.click(within(dialog()).getByRole('button', { name: 'Abbrechen' }));
 		await tick();
@@ -379,11 +382,33 @@ describe('status of the detail (VH-1)', () => {
 
 		expect(screen.queryByRole('dialog', { name: QUESTION })).toBeNull();
 		const inline = screen.getByRole('group', { name: QUESTION });
+		expectRowBelowStatus(inline);
 		expect(within(inline).getByText(/erscheint nicht mehr täglich im Tagesplan/)).toBeTruthy();
 		await fireEvent.click(within(inline).getByRole('button', { name: 'Abschließen' }));
 		await vi.waitFor(() =>
 			expect(data.update).toHaveBeenCalledWith(PROJECT.id, { status: 'done' })
 		);
+	});
+
+	it('asks in a row of its own over both columns in the full view; "Abbrechen" gives the focus back to the status (QB-1)', async () => {
+		const { data } = await showFields(PROJECT, true);
+		const select = screen.getByLabelText<HTMLSelectElement>('Status');
+		select.focus();
+		await fireEvent.change(select, { target: { value: 'done' } });
+		await tick();
+		await tick();
+
+		const inline = screen.getByRole('group', { name: QUESTION });
+		expectRowBelowStatus(inline);
+		const cancel = within(inline).getByRole('button', { name: 'Abbrechen' });
+		expect(document.activeElement).toBe(cancel);
+
+		await fireEvent.click(cancel);
+
+		await vi.waitFor(() => expect(document.activeElement).toBe(select));
+		expectNoStatusQuestions();
+		expect(select.value).toBe('in_progress');
+		expect(data.update).not.toHaveBeenCalled();
 	});
 
 	it('saves "Erledigt" of a task at once, without a question', async () => {
