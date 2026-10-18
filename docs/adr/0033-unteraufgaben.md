@@ -1,6 +1,6 @@
 # ADR-0033: Unteraufgaben: eine Ebene, Fortschritt, Einrücken in der Tabelle und „blockiert das übergeordnete Ticket“
 
-- **Status:** Angenommen und umgesetzt in den Paketen UA-1 bis UA-5 nach [docs/plan/unteraufgaben.md](../plan/unteraufgaben.md) (#118 bis #122); manuelle Browser-Prüfungen stehen im Test-Manifest; Nachtrag UT-1: Status beim Anlegen, Statusmenü, Vererbung und Serienbezug; Nachtrag TP-3: Anordnung wie §5 auch im Tagesplan, Ecke und Chip als Bausteine
+- **Status:** Angenommen und umgesetzt in den Paketen UA-1 bis UA-5 nach [docs/plan/unteraufgaben.md](../plan/unteraufgaben.md) (#118 bis #122); manuelle Browser-Prüfungen stehen im Test-Manifest; Nachtrag UT-1: Status beim Anlegen, Statusmenü, Vererbung und Serienbezug; Nachtrag TP-3: Anordnung wie §5 auch im Tagesplan, Ecke und Chip als Bausteine; Nachtrag QB-1: Frage aus §2 und Auswahl aus §4 in voller Breite
 - **Datum:** 2026-09-28
 - **Entscheidung durch:** Nutzer (Freigabe der Unteraufgaben am 2026-09-28 als ausdrückliche Anweisung nach CLAUDE.md §10), Advisor (Umfang und Bausteine), Executor (Regeln für Einrücken, Wiederholungen und Erledigen, Einzelheiten)
 - **Ergänzt:** [ADR-0012](0012-plain-ticketing.md) und [ADR-0011](0011-roadmap-e3-bis-e7.md) (je ein Nachtrag), [ADR-0030](0030-spalten-breiten-und-kompakte-zeilen.md) (Spalte „Übergeordnet“, Vorliebe „Unteraufgaben einrücken“), [ADR-0023](0023-lebenszyklus-von-regeln-und-instanzen.md) (Folgetickets)
@@ -130,3 +130,11 @@ Nutzerwunsch vom 2026-10-12. §5 gilt unverändert für die Tabelle „Aufgaben�
 - **Bausteine:** Die Ecke einer eingerückten Unteraufgabe (`SubtaskNestIcon`) und der Chip „2/5“ (`SubtaskProgressChip`, Name „2 von 5 Unteraufgaben erledigt“) sind aus `TicketTableRow` herausgelöst; die Tabelle sieht und klingt wie vorher, der Tagesplan nutzt dieselben Bausteine mit denselben Zahlen (`progressOf` der Liste). Eingerückt hören Screenreader wie in der Tabelle „Unteraufgabe von HAUS-7:“.
 - **Suche:** Filter und Suche der Tabelle bleiben bei §5 Regel 1 (jedes Ticket einzeln, ohne Hauptticket). Nur der Pool des Tagesplans sucht zusätzlich über Key und Titel des Haupttickets.
 - Einzelheiten in [ADR-0065](0065-tagesplan.md), Nachtrag TP-3; Test-Manifest Paket „TP-3“.
+
+## Nachtrag QB-1 (2026-10-18, Fehlerbericht): Frage aus §2 und Auswahl aus §4 in voller Breite
+
+Fehlerbericht des Nutzers vom 2026-10-18: In der rechten Spalte der Vollansicht stand die Frage „N Unteraufgaben sind noch offen – trotzdem erledigen?“ schmal in der Wertspalte des Status und brach mitten im Wort um. §2 und §4 gelten unverändert in Texten und Verhalten; nur der Platz ändert sich:
+
+- **Frage aus §2 (Status „Erledigt“ im Detail):** steht „inline unter dem Status“ jetzt in einer eigenen Zeile des Feldrasters direkt nach dem Status, über beide Spalten, in Panel und Vollansicht gleich. Dasselbe gilt für „Vorhaben abschließen?“ in der Vollansicht ([ADR-0065](0065-tagesplan.md), Nachtrag VH-1) und für „Nicht wieder in die Serie“ ([ADR-0023](0023-lebenszyklus-von-regeln-und-instanzen.md), Nachtrag 4). Fokus auf „Abbrechen“, Esc, Rückgabe des Fokus an den Status und die Tab-Reihenfolge bleiben.
+- **Auswahl aus §4 („Übergeordnet“, „Festlegen …“ bzw. „Ändern“):** Beim Wählen stehen die Beschriftung darüber, `TicketPicker` und „Übernehmen“ | „Abbrechen“ darunter über beide Spalten; angezeigt bleibt die Zeile zweispaltig.
+- Einzelheiten in [ADR-0025](0025-ui-konsistenz-overlay-system.md), Nachtrag 19; Test-Manifest Paket „QB-1“.
