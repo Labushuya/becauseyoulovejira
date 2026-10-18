@@ -2,7 +2,7 @@
 // parent with "Ändern", "Lösen" and the switch "Blockiert das übergeordnete Ticket", choosing a
 // parent inline with the ticket picker (ADR-0042: the list opens at once, the ticket itself is
 // hidden, sub-tasks and the current parent are greyed with the reason), Escape, and the refusals
-// of the hook.
+// of the hook. While choosing, the label and the picker span both columns of the fields (QB-1).
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
@@ -20,6 +20,7 @@ import {
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import { fakePickerSource, pickerTicket } from '$lib/test/ticket-picker-fake';
 import TicketParentField from './TicketParentField.svelte';
+import parentFieldSource from './TicketParentField.svelte?raw';
 
 useOverlayStubs();
 
@@ -263,5 +264,55 @@ describe('row "Übergeordnet"', () => {
 
 		expect(screen.getByText('Keins – hat selbst Unteraufgaben')).toBeTruthy();
 		expect(screen.queryByRole('button', { name: 'Festlegen …' })).toBeNull();
+	});
+
+	it.each([
+		['"Festlegen …"', null, 'Festlegen …'],
+		['"Ändern"', PARENT.id, 'Übergeordnetes Ticket ändern']
+	])(
+		'spans both columns while choosing after %s: the label above, picker and buttons below (QB-1)',
+		async (_way, parentId, start) => {
+			const { container } = await setup(ticket({ parentId }));
+			const term = () => screen.getByText('Übergeordnet');
+			const group = () => screen.getByRole('group', { name: 'Übergeordnet' });
+			// Shown, the row keeps its two cells: label and value side by side.
+			expect(term().classList.contains('wide')).toBe(false);
+			expect(group().classList.contains('wide')).toBe(false);
+
+			await fireEvent.click(screen.getByRole('button', { name: start }));
+
+			expect(term().classList.contains('wide')).toBe(true);
+			expect(group().classList.contains('wide')).toBe(true);
+			// The label first, then the picker and the buttons in the order of before.
+			expect(term().nextElementSibling).toBe(group());
+			const inGroup = within(group());
+			const order = [
+				picker(),
+				inGroup.getByRole('button', { name: 'Übernehmen' }),
+				inGroup.getByRole('button', { name: 'Abbrechen' })
+			];
+			const controls = [...group().querySelectorAll<HTMLElement>('input[role="combobox"], button')];
+			const positions = order.map((element) => controls.indexOf(element));
+			expect(positions).toEqual([...positions].sort((a, b) => a - b));
+			expect(positions[0]).toBeGreaterThanOrEqual(0);
+			expect(document.activeElement).toBe(picker());
+
+			await fireEvent.click(inGroup.getByRole('button', { name: 'Abbrechen' }));
+			await tick();
+
+			expect(term().classList.contains('wide')).toBe(false);
+			expect(group().classList.contains('wide')).toBe(false);
+			expect(document.activeElement).toBe(screen.getByRole('button', { name: start }));
+			expect(container.querySelector('.wide')).toBeNull();
+		}
+	);
+
+	it('gives the cells both columns of the grid only while choosing (QB-1)', () => {
+		const rule = /\.wide\s*\{([^}]*)\}/.exec(parentFieldSource)?.[1] ?? '';
+		expect(rule).toMatch(/grid-column:\s*1\s*\/\s*-1;/);
+		expect(parentFieldSource).toMatch(/<span class="term" class:wide=\{choosing\}/);
+		expect(parentFieldSource).toMatch(/class="control"\s+class:wide=\{choosing\}/);
+		// The value cell may shrink below the width of the picker (no overflow of the grid).
+		expect(/\.control\s*\{([^}]*)\}/.exec(parentFieldSource)?.[1]).toMatch(/min-width:\s*0;/);
 	});
 });
