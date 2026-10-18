@@ -59,3 +59,12 @@
 - **Neustart nötig** (Migration `1790202600`): bis dahin kein Anpinnen; Reihenfolge und Einklappen wirken nach dem Neuladen der Oberfläche sofort.
 - Ein Pin ändert `updated` des Tickets. Eine gleichzeitig gespeicherte Beschreibung mit `expected_updated` sendet der `TicketDetailStore` deshalb einmal erneut ([ADR-0032](0032-editor-tiptap-markdown.md) §6), wie bei jeder anderen Änderung.
 - CLAUDE.md §5 (Datenmodell, API-Regeln) und §7 (Kommentare) sowie README und Hilfe beschreiben Reihenfolge, Pin und Einklappen.
+
+## Nachtrag QS-1 (2026-10-18): Der Umschalter ist ein gemeinsamer Baustein
+
+Seit QS-1 ordnen auch die Quellen eines Tickets mit „Neueste zuerst“ | „Älteste zuerst“ ([ADR-0031](0031-herkunft-sichern.md), Nachtrag M). Damit beide gleich aussehen und sich gleich verhalten, sind die Teile von §1 gemeinsam:
+
+- **Baustein `OrderSwitch`** (`components/OrderSwitch.svelte`): die Gruppe mit den zwei Knöpfen (`.segmented`, `aria-pressed`, Name der Gruppe als Prop, rechtsbündig). Die Ansage bleibt beim Besitzer, weil nur er das Wort kennt („Älteste Kommentare zuerst.“ bzw. „Älteste Quellen zuerst.“).
+- **Regeln** in `domain/list-order.ts`: `ListOrder` (`CommentOrder` ist derselbe Typ), Beschriftungen, Standard „Neueste zuerst“, Lesen und Speichern (nur `oldest`) sowie der Vergleich von Zeitstempeln.
+- **Store `ListOrderStore`** (`stores/list-order.svelte.ts`) mit dem Schlüssel als Parameter; der `CommentViewStore` nutzt ihn für `byl-comments-order`, die Quellen für `byl-sources-order`. Beide Wahlen bleiben getrennt.
+- Verhalten, Texte und Schlüssel der Kommentare ändern sich nicht.
