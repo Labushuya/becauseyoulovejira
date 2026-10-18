@@ -14,6 +14,7 @@ import { toDataError } from '$lib/data/errors';
 import { assignToTicket, listTicketSources, originalFileUrl, releaseItem } from '$lib/data/inbox';
 import type { RequestOptions } from '$lib/data/options';
 import type { InboxItemSummary } from '$lib/domain/inbox';
+import { DEFAULT_LIST_ORDER } from '$lib/domain/list-order';
 import { linkSummary, orderSources, type LinkOutcome } from '$lib/domain/sources';
 import { SILENT_FLAGS, type FlagSink } from './flags.svelte';
 import { hold, type LiveSource } from './realtime';
@@ -59,7 +60,7 @@ export class TicketSourcesStore {
 	#state = $state<LoadState>('idle');
 	#error = $state<string | null>(null);
 
-	#sorted = $derived(orderSources([...this.#items.values()], this.#mainSource));
+	#sorted = $derived(orderSources([...this.#items.values()], this.#mainSource, DEFAULT_LIST_ORDER));
 
 	constructor(
 		data: TicketSourcesData,
@@ -78,7 +79,10 @@ export class TicketSourcesStore {
 		return this.#ticketId;
 	}
 
-	/** Sources of the open ticket: the main source first. */
+	/**
+	 * Sources of the open ticket: the main source first, the others newest first (QS-1); the
+	 * section "Quellen" arranges them by the switch of this device.
+	 */
 	get items(): readonly InboxItemSummary[] {
 		return this.#sorted;
 	}

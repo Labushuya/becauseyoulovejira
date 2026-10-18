@@ -1,8 +1,6 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import {
-		COMMENT_ORDERS,
-		COMMENT_ORDER_LABELS,
 		arrangeComments,
 		commentOrderAnnouncement,
 		type CommentOrder,
@@ -13,6 +11,7 @@
 	import CommentForm from './CommentForm.svelte';
 	import CommentItem from './CommentItem.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
+	import OrderSwitch from './OrderSwitch.svelte';
 	import EmptyState from './guidance/EmptyState.svelte';
 
 	// Comments of the open ticket (E2 plan, T-11; ADR-0044): the switch "Neueste zuerst | Älteste
@@ -74,13 +73,7 @@
 		</div>
 	{:else}
 		{#if store.comments.length > 1}
-			<div class="order segmented" role="group" aria-label="Reihenfolge der Kommentare">
-				{#each COMMENT_ORDERS as order (order)}
-					<button type="button" aria-pressed={view.order === order} onclick={() => choose(order)}>
-						{COMMENT_ORDER_LABELS[order]}
-					</button>
-				{/each}
-			</div>
+			<OrderSwitch label="Reihenfolge der Kommentare" order={view.order} onchange={choose} />
 		{/if}
 		<p class="visually-hidden" role="status">{announcement}</p>
 
@@ -107,10 +100,6 @@
 	.comments {
 		display: grid;
 		gap: 0.5rem;
-	}
-
-	.order {
-		justify-self: end;
 	}
 
 	.list {

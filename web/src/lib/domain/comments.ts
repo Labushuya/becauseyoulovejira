@@ -2,32 +2,17 @@
 // the rule of folding long comments, the remembered choices and the texts of the pinned comment,
 // the latter shared with the hook.
 
-/** Order of the comments below the pinned one (ADR-0044 section 1). */
-export type CommentOrder = 'newest' | 'oldest';
+import type { ListOrder } from './list-order';
 
-/** The default: the newest comment directly below the input field, as in Jira. */
-export const DEFAULT_COMMENT_ORDER: CommentOrder = 'newest';
+/**
+ * Order of the comments below the pinned one (ADR-0044 section 1); the default "Neueste zuerst"
+ * puts the newest comment directly below the input field, as in Jira. Choice, labels and stored
+ * value are those of every list by time (`domain/list-order.ts`, shared with the sources, QS-1).
+ */
+export type CommentOrder = ListOrder;
 
 /** localStorage key of the order on this device; only "oldest" is stored. */
 export const COMMENT_ORDER_STORAGE_KEY = 'byl-comments-order';
-
-/** Labels of the switch, in its order. */
-export const COMMENT_ORDER_LABELS: Readonly<Record<CommentOrder, string>> = Object.freeze({
-	newest: 'Neueste zuerst',
-	oldest: 'Älteste zuerst'
-});
-
-export const COMMENT_ORDERS: readonly CommentOrder[] = Object.freeze(['newest', 'oldest']);
-
-/** The stored value read strictly: only "oldest" counts, anything else is the default. */
-export function parseCommentOrder(raw: string | null | undefined): CommentOrder {
-	return raw === 'oldest' ? 'oldest' : DEFAULT_COMMENT_ORDER;
-}
-
-/** The value to store, or null to remove the key (default). */
-export function serializeCommentOrder(order: CommentOrder): string | null {
-	return order === 'oldest' ? 'oldest' : null;
-}
 
 /** What the live region says after a change of the order. */
 export function commentOrderAnnouncement(order: CommentOrder): string {

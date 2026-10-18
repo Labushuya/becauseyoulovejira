@@ -1173,6 +1173,13 @@
 						wo du bist. Jede Liste hat ihre eigene Seite, die Hauptquelle steht immer zuerst auf
 						Seite 1, und ein anderes Ticket beginnt wieder auf Seite 1.
 					</li>
+					<li>
+						Ab zwei Quellen wählst du über ihnen „Neueste zuerst“ (Standard) oder „Älteste zuerst“;
+						die Wahl gilt auf diesem Gerät für alle Tickets, auch für Quell-Tickets und
+						Folge-Tickets. Einträge aus dem Eingang stehen nach dem Datum, das sie zeigen (Datum
+						beim Absender, sonst Eingang), Tickets nach dem Zeitpunkt der Verknüpfung. Die
+						Hauptquelle bleibt vorn, und nach dem Umschalten beginnt jede Liste wieder auf Seite 1.
+					</li>
 				</ul>
 			</details>
 			<details>

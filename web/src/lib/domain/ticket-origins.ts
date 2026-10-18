@@ -4,6 +4,7 @@
 // Pure. The texts of the codes, the chain of a refused circle and the title of a follow-up are the
 // same as in app/pb_hooks/lib/ticket-source-rules.js (tests/unit/web-ticket-origins.test.mjs).
 
+import { compareIds, compareTimestamps, type ListOrder } from './list-order';
 import { isStatus, type Status } from './status';
 import type { TicketSummary } from './ticket';
 import { hideTicket, sameScope, type PickerRule } from './ticket-picker';
@@ -109,6 +110,18 @@ export function toTicketOrigins(value: unknown): TicketOrigins | null {
 		descendants,
 		already: value.already === true
 	};
+}
+
+/**
+ * Source tickets or follow-ups in the order of the switch of the sources (QS-1, ADR-0031 addendum
+ * M): by the time of their link, equal times by the link; "Älteste zuerst" ascending as the server
+ * sends them (`created,id`), "Neueste zuerst" the exact reverse.
+ */
+export function orderOrigins(origins: readonly TicketOrigin[], order: ListOrder): TicketOrigin[] {
+	const direction = order === 'oldest' ? 1 : -1;
+	return [...origins].sort(
+		(a, b) => direction * (compareTimestamps(a.created, b.created) || compareIds(a.link, b.link))
+	);
 }
 
 /** "HAUS-12", "HAUS-12 und HAUS-15", "HAUS-12, HAUS-15 und HAUS-17". */

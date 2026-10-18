@@ -483,6 +483,23 @@ describe('help page (EH-9)', () => {
 		expect(content).toMatch(/die Hauptquelle steht immer zuerst auf Seite 1/);
 	});
 
+	it('explains the order of the sources, source tickets and follow-ups (QS-1)', () => {
+		render(Page);
+		const section = screen.getByRole('region', { name: 'Häufige Fragen' });
+		const question = [...section.querySelectorAll('details')].find(
+			(details) =>
+				details.querySelector('summary')?.textContent?.trim() === 'Wie ist ein Ticket aufgebaut?'
+		);
+		const content = text(question as HTMLElement);
+		expect(content).toMatch(/Ab zwei Quellen wählst du über ihnen „Neueste zuerst“ \(Standard\)/);
+		expect(content).toMatch(/gilt auf diesem Gerät für alle Tickets, auch für Quell-Tickets/);
+		expect(content).toMatch(
+			/nach dem Datum, das sie zeigen \(Datum beim Absender, sonst Eingang\)/
+		);
+		expect(content).toMatch(/Tickets nach dem Zeitpunkt der Verknüpfung/);
+		expect(content).toMatch(/nach dem Umschalten beginnt jede Liste wieder auf Seite 1/);
+	});
+
 	it('explains status, due date and inheritance of new sub-tasks, the status menu and the series line (UT-1)', () => {
 		const { container } = render(Page);
 		const section = screen.getByRole('region', { name: 'Häufige Fragen' });

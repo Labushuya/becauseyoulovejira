@@ -11,6 +11,7 @@ import type { ResolvedPathname } from '$app/types';
 import type { RecordChange, Unsubscribe } from '$lib/data/realtime';
 import type { TicketSourceLink } from '$lib/data/ticket-origins';
 import type { InboxItemSummary } from '$lib/domain/inbox';
+import { SOURCE_ORDER_STORAGE_KEY } from '$lib/domain/sources';
 import type { ProjectRef, Ticket, TicketSummary } from '$lib/domain/ticket';
 import type {
 	FollowUpOutcome,
@@ -19,6 +20,7 @@ import type {
 	TicketOrigins
 } from '$lib/domain/ticket-origins';
 import { FlagStore } from '$lib/stores/flags.svelte';
+import { sourceOrderStore, type ListOrderStore } from '$lib/stores/list-order.svelte';
 import { LiveHealth } from '$lib/stores/live-health.svelte';
 import { TicketFollowUpStore } from '$lib/stores/ticket-follow-up.svelte';
 import { TicketOriginsStore, type TicketOriginsData } from '$lib/stores/ticket-origins.svelte';
@@ -63,11 +65,16 @@ function origins(overrides: Partial<TicketOrigins> = {}): TicketOrigins {
 	};
 }
 
-/** `count` tickets HAUS-<from>, HAUS-<from + 1> … for long lists (TD-1). */
+/**
+ * `count` tickets HAUS-<from>, HAUS-<from + 1> … for long lists (TD-1), linked one after the other
+ * (a minute apart), so newest first shows the highest number first (QS-1).
+ */
 function numbered(count: number, from: number): TicketOrigin[] {
 	return Array.from({ length: count }, (_, index) => {
 		const number = from + index;
-		return origin(`tick${String(number).padStart(11, '0')}`, `HAUS-${number}`);
+		return origin(`tick${String(number).padStart(11, '0')}`, `HAUS-${number}`, {
+			created: `2026-10-01 08:${String(index).padStart(2, '0')}:00.000Z`
+		});
 	});
 }
 
@@ -131,6 +138,10 @@ async function setup(
 		open?: TicketSummary[];
 		done?: TicketSummary[];
 		inModal?: boolean;
+		/** Order of the lists (QS-1), shared with the follow-ups. */
+		order?: ListOrderStore;
+		/** Renders "Folge-Tickets" after "Quellen", as panel and full view do. */
+		withFollowUps?: boolean;
 	} = {}
 ) {
 	const sourcesData = {
@@ -152,10 +163,14 @@ async function setup(
 		candidates: [],
 		picker: picker.source,
 		origins: store,
-		hrefOf
+		hrefOf,
+		order: options.order
 	};
 	if (options.inModal) render(InModalHarness, { props: { component: TicketSources, props } });
 	else render(TicketSources, { props });
+	if (options.withFollowUps) {
+		render(TicketFollowUps, { props: { ticket: TICKET, store, hrefOf, order: options.order } });
+	}
 	await vi.waitFor(() => expect(sources.state).toBe('ready'));
 	await vi.waitFor(() => expect(store.state).toBe('ready'));
 	return { store, data, handlers, flags, picker };
@@ -187,7 +202,12 @@ describe('section "Quellen" with source tickets', () => {
 		await setup(
 			origins({
 				sources: [
-					origin('tick00000000001', 'HAUS-3', { title: 'Heizung prüfen', status: 'done' }),
+					// Linked after HAUS-7, so it stands first (newest first, QS-1).
+					origin('tick00000000001', 'HAUS-3', {
+						title: 'Heizung prüfen',
+						status: 'done',
+						created: '2026-10-02 08:00:00.000Z'
+					}),
 					origin('tick00000000002', 'HAUS-7', { title: 'Alte Notiz', trashed: true })
 				]
 			}),
@@ -243,7 +263,8 @@ describe('section "Quellen" with source tickets', () => {
 		const mails = Array.from({ length: 6 }, (_, index) => ({
 			...MAIL,
 			id: `item${String(index + 1).padStart(11, '0')}`,
-			title: `Mail ${index + 1}`
+			title: `Mail ${index + 1}`,
+			created: `2026-09-25 08:0${index}:00.000Z`
 		}));
 		await setup(origins({ sources: numbered(7, 1) }), { items: mails });
 		const entries = screen.getByRole('list', { name: 'Quellen aus dem Eingang' });
@@ -251,7 +272,7 @@ describe('section "Quellen" with source tickets', () => {
 		const entryPages = screen.getByRole('group', { name: 'Seiten der Quellen' });
 		const ticketPages = screen.getByRole('group', { name: 'Seiten der Quell-Tickets' });
 		expect(within(entries).getAllByRole('listitem')).toHaveLength(5);
-		expect(keysIn(tickets)).toEqual(['HAUS-1', 'HAUS-2', 'HAUS-3', 'HAUS-4', 'HAUS-5']);
+		expect(keysIn(tickets)).toEqual(['HAUS-7', 'HAUS-6', 'HAUS-5', 'HAUS-4', 'HAUS-3']);
 		expect(text(entryPages)).toContain('Seite 1 von 2 · 6 Quellen');
 		expect(text(ticketPages)).toContain('Seite 1 von 2 · 7 Quell-Tickets');
 		// The entries with their controls first, then the tickets with theirs.
@@ -268,11 +289,79 @@ describe('section "Quellen" with source tickets', () => {
 				name: 'Weiter zur nächsten Seite der Quell-Tickets'
 			})
 		);
-		expect(keysIn(tickets)).toEqual(['HAUS-6', 'HAUS-7']);
-		await vi.waitFor(() => expect(document.activeElement?.textContent).toContain('HAUS-6'));
+		expect(keysIn(tickets)).toEqual(['HAUS-2', 'HAUS-1']);
+		await vi.waitFor(() => expect(document.activeElement?.textContent).toContain('HAUS-2'));
 		// The entries keep their own page.
 		expect(text(entryPages)).toContain('Seite 1 von 2 · 6 Quellen');
-		expect(within(entries).getAllByRole('listitem')[0]?.textContent).toContain('Mail 1');
+		expect(within(entries).getAllByRole('listitem')[0]?.textContent).toContain('Mail 6');
+	});
+});
+
+// One switch for the entries, the source tickets and the follow-ups (QS-1, ADR-0031 addendum M).
+describe('order of source tickets and follow-ups (QS-1)', () => {
+	afterEach(() => {
+		window.localStorage.clear();
+	});
+
+	it('orders the source tickets by the time of their link, newest first, with the switch', async () => {
+		await setup(
+			origins({
+				sources: [
+					origin('tick00000000003', 'HAUS-3', { created: '2026-10-03 08:00:00.000Z' }),
+					origin('tick00000000001', 'HAUS-1', { created: '2026-10-01 08:00:00.000Z' }),
+					origin('tick00000000002', 'HAUS-2', { created: '2026-10-02 08:00:00.000Z' })
+				]
+			})
+		);
+		const tickets = screen.getByRole('list', { name: 'Quell-Tickets' });
+		expect(keysIn(tickets)).toEqual(['HAUS-3', 'HAUS-2', 'HAUS-1']);
+		// Two or more sources, tickets alone included: the switch is there.
+		await fireEvent.click(screen.getByRole('button', { name: 'Älteste zuerst' }));
+		expect(keysIn(tickets)).toEqual(['HAUS-1', 'HAUS-2', 'HAUS-3']);
+	});
+
+	it('counts entries and source tickets together for the switch', async () => {
+		await setup(origins({ sources: [origin('tick00000000001', 'HAUS-1')] }), { items: [MAIL] });
+		expect(screen.getByRole('group', { name: 'Reihenfolge der Quellen' })).toBeTruthy();
+	});
+
+	it('turns the follow-ups the same way and starts every list on page 1 again', async () => {
+		const order = sourceOrderStore(window);
+		await setup(origins({ sources: numbered(7, 1), followUps: numbered(7, 20) }), {
+			order,
+			withFollowUps: true
+		});
+		const tickets = screen.getByRole('list', { name: 'Quell-Tickets' });
+		const section = screen.getByRole('region', { name: 'Folge-Tickets' });
+		const followUps = within(section).getByRole('list', { name: 'Folge-Tickets' });
+		expect(keysIn(followUps)).toEqual(['HAUS-26', 'HAUS-25', 'HAUS-24', 'HAUS-23', 'HAUS-22']);
+		await fireEvent.click(
+			screen.getByRole('button', { name: 'Weiter zur nächsten Seite der Quell-Tickets' })
+		);
+		await fireEvent.click(
+			within(section).getByRole('button', { name: 'Weiter zur nächsten Seite der Folge-Tickets' })
+		);
+		expect(keysIn(tickets)).toEqual(['HAUS-2', 'HAUS-1']);
+		expect(keysIn(followUps)).toEqual(['HAUS-21', 'HAUS-20']);
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Älteste zuerst' }));
+		expect(order.order).toBe('oldest');
+		expect(keysIn(tickets)).toEqual(['HAUS-1', 'HAUS-2', 'HAUS-3', 'HAUS-4', 'HAUS-5']);
+		expect(keysIn(followUps)).toEqual(['HAUS-20', 'HAUS-21', 'HAUS-22', 'HAUS-23', 'HAUS-24']);
+		expect(text(section)).toContain('Seite 1 von 2 · 7 Folge-Tickets');
+	});
+
+	it('follows the order chosen in another tab', async () => {
+		const order = sourceOrderStore(window);
+		const stop = order.connect();
+		await setup(origins({ followUps: numbered(3, 20) }), { order, withFollowUps: true });
+		const followUps = screen.getByRole('list', { name: 'Folge-Tickets' });
+		expect(keysIn(followUps)).toEqual(['HAUS-22', 'HAUS-21', 'HAUS-20']);
+		window.dispatchEvent(
+			new StorageEvent('storage', { key: SOURCE_ORDER_STORAGE_KEY, newValue: 'oldest' })
+		);
+		await vi.waitFor(() => expect(keysIn(followUps)).toEqual(['HAUS-20', 'HAUS-21', 'HAUS-22']));
+		stop();
 	});
 });
 
@@ -417,7 +506,12 @@ describe('section "Folge-Tickets"', () => {
 		await followUps(
 			origins({
 				followUps: [
-					origin('tick00000000020', 'HAUS-20', { title: 'Reparatur', status: 'in_progress' }),
+					// The newer link stands first (QS-1).
+					origin('tick00000000020', 'HAUS-20', {
+						title: 'Reparatur',
+						status: 'in_progress',
+						created: '2026-10-02 08:00:00.000Z'
+					}),
 					origin('tick00000000021', 'HAUS-21', { title: 'Weg damit', trashed: true })
 				],
 				descendants: ['tick00000000020', 'tick00000000021', 'tick00000000030']
@@ -446,7 +540,8 @@ describe('section "Folge-Tickets"', () => {
 		await followUps(origins({ followUps: numbered(7, 20) }));
 		const section = screen.getByRole('region', { name: 'Folge-Tickets' });
 		const list = within(section).getByRole('list', { name: 'Folge-Tickets' });
-		expect(keysIn(list)).toEqual(['HAUS-20', 'HAUS-21', 'HAUS-22', 'HAUS-23', 'HAUS-24']);
+		// Newest link first by default (QS-1).
+		expect(keysIn(list)).toEqual(['HAUS-26', 'HAUS-25', 'HAUS-24', 'HAUS-23', 'HAUS-22']);
 		expect(text(section)).toContain('Seite 1 von 2 · 7 Folge-Tickets');
 		const previous = within(section).getByRole('button', {
 			name: 'Zurück zur vorherigen Seite der Folge-Tickets'
@@ -456,8 +551,8 @@ describe('section "Folge-Tickets"', () => {
 		await fireEvent.click(
 			within(section).getByRole('button', { name: 'Weiter zur nächsten Seite der Folge-Tickets' })
 		);
-		expect(keysIn(list)).toEqual(['HAUS-25', 'HAUS-26']);
-		await vi.waitFor(() => expect(document.activeElement?.textContent).toContain('HAUS-25'));
+		expect(keysIn(list)).toEqual(['HAUS-21', 'HAUS-20']);
+		await vi.waitFor(() => expect(document.activeElement?.textContent).toContain('HAUS-21'));
 		expect(within(section).getByRole('status').textContent).toBe('Seite 2 von 2');
 	});
 });

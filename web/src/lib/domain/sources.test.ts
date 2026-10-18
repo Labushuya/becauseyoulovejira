@@ -15,7 +15,9 @@ import {
 	orderSources,
 	pageCopyText,
 	sourceCountText,
+	sourceOrderAnnouncement,
 	sourceOrigin,
+	sourceTime,
 	sourceWhen
 } from './sources';
 
@@ -230,15 +232,176 @@ describe('pageCopyText (ADR-0031 section 6)', () => {
 	});
 });
 
-describe('orderSources and linkSummary', () => {
-	it('puts the main source first, then the others as they were linked', () => {
-		const a = item({ id: 'a', handledAt: '2026-09-25 10:00:00.000Z' });
-		const b = item({ id: 'b', handledAt: '2026-09-25 09:00:00.000Z' });
-		const main = item({ id: 'm', handledAt: '2026-09-26 09:00:00.000Z' });
-		expect(orderSources([a, main, b], 'm').map((entry) => entry.id)).toEqual(['m', 'b', 'a']);
-		expect(orderSources([a, b], null).map((entry) => entry.id)).toEqual(['b', 'a']);
+describe('orderSources (QS-1, ADR-0031 addendum M)', () => {
+	const ids = (list: readonly InboxItemSummary[]) => list.map((entry) => entry.id);
+	/** An entry with a date at the sender (null for none), its arrival and its linking. */
+	const source = (id: string, sourceDate: string | null, created: string, handledAt: string) =>
+		item({ id, sourceDate, created, handledAt });
+
+	it('orders by the time the list shows: an old mail linked late stands at its own date', () => {
+		const main = source(
+			'm',
+			'2026-09-15 08:00:00.000Z',
+			'2026-09-15 08:05:00.000Z',
+			'2026-09-15 09:00:00.000Z'
+		);
+		// Sent on 1 September, in the inbox since then, linked only on 30 September.
+		const late = source(
+			'late',
+			'2026-09-01 08:00:00.000Z',
+			'2026-09-01 08:01:00.000Z',
+			'2026-09-30 10:00:00.000Z'
+		);
+		const middle = source(
+			'mid',
+			'2026-09-10 08:00:00.000Z',
+			'2026-09-10 08:01:00.000Z',
+			'2026-09-16 10:00:00.000Z'
+		);
+		// Without a date at the sender: its arrival on 20 September counts.
+		const typed = source('typed', null, '2026-09-20 08:00:00.000Z', '2026-09-21 10:00:00.000Z');
+		const list = [typed, late, main, middle];
+		expect(ids(orderSources(list, 'm', 'newest'))).toEqual(['m', 'typed', 'mid', 'late']);
+		expect(ids(orderSources(list, 'm', 'oldest'))).toEqual(['m', 'late', 'mid', 'typed']);
 	});
 
+	it('keeps a moved entry at its own date, not at the time it was linked first', () => {
+		// "Anderem Ticket zuordnen …" keeps handled_at: the moved entry still carries the linking to
+		// its old ticket, long before the other one was linked here.
+		const moved = source(
+			'moved',
+			'2026-09-15 08:00:00.000Z',
+			'2026-09-15 08:01:00.000Z',
+			'2026-08-01 10:00:00.000Z'
+		);
+		const here = source(
+			'here',
+			'2026-09-14 08:00:00.000Z',
+			'2026-09-14 08:01:00.000Z',
+			'2026-09-29 10:00:00.000Z'
+		);
+		expect(ids(orderSources([here, moved], null, 'newest'))).toEqual(['moved', 'here']);
+		expect(ids(orderSources([moved, here], null, 'oldest'))).toEqual(['here', 'moved']);
+	});
+
+	it('orders entries linked in the same millisecond by their own times, then arrival, then ID', () => {
+		// "Neues Ticket" with several sources links them at once: handled_at is the same.
+		const at = '2026-09-25 10:00:00.000Z';
+		const third = source('third', '2026-09-03 08:00:00.000Z', '2026-09-03 08:01:00.000Z', at);
+		const first = source('first', '2026-09-01 08:00:00.000Z', '2026-09-01 08:01:00.000Z', at);
+		const second = source('second', null, '2026-09-02 08:00:00.000Z', at);
+		// Same date at the sender: the earlier arrival first; both equal: the ID decides.
+		const laterArrival = source('arr2', '2026-09-04 08:00:00.000Z', '2026-09-05 08:00:00.000Z', at);
+		const earlierArrival = source(
+			'arr1',
+			'2026-09-04 08:00:00.000Z',
+			'2026-09-04 09:00:00.000Z',
+			at
+		);
+		const twinB = source('twinb', '2026-09-06 08:00:00.000Z', '2026-09-06 08:00:00.000Z', at);
+		const twinA = source('twina', '2026-09-06 08:00:00.000Z', '2026-09-06 08:00:00.000Z', at);
+		const list = [twinB, third, laterArrival, first, twinA, second, earlierArrival];
+		const oldest = ['first', 'second', 'third', 'arr1', 'arr2', 'twina', 'twinb'];
+		expect(ids(orderSources(list, null, 'oldest'))).toEqual(oldest);
+		expect(ids(orderSources(list, null, 'newest'))).toEqual([...oldest].reverse());
+		// The same input in another order gives the same result.
+		expect(ids(orderSources([...list].reverse(), null, 'oldest'))).toEqual(oldest);
+	});
+
+	it('takes the arrival for an entry without a date at the sender', () => {
+		expect(sourceTime(item({ sourceDate: null, created: '2026-09-25 08:00:00.000Z' }))).toBe(
+			'2026-09-25 08:00:00.000Z'
+		);
+		expect(
+			sourceTime(
+				item({ sourceDate: '2026-09-24 08:30:00.000Z', created: '2026-09-25 08:00:00.000Z' })
+			)
+		).toBe('2026-09-24 08:30:00.000Z');
+		const withDate = source(
+			'dated',
+			'2026-09-24 12:00:00.000Z',
+			'2026-09-26 08:00:00.000Z',
+			'2026-09-26 09:00:00.000Z'
+		);
+		const without = source('plain', null, '2026-09-25 08:00:00.000Z', '2026-09-25 09:00:00.000Z');
+		expect(ids(orderSources([without, withDate], null, 'oldest'))).toEqual(['dated', 'plain']);
+	});
+
+	it('puts the main source first in both orders, as the oldest and as the newest', () => {
+		const a = source('a', null, '2026-09-20 08:00:00.000Z', '2026-09-20 09:00:00.000Z');
+		const b = source('b', null, '2026-09-21 08:00:00.000Z', '2026-09-21 09:00:00.000Z');
+		const oldMain = source('m', null, '2026-09-01 08:00:00.000Z', '2026-09-01 09:00:00.000Z');
+		const newMain = source('m', null, '2026-09-30 08:00:00.000Z', '2026-09-30 09:00:00.000Z');
+		for (const main of [oldMain, newMain]) {
+			expect(ids(orderSources([a, main, b], 'm', 'newest')), main.created).toEqual(['m', 'b', 'a']);
+			expect(ids(orderSources([a, main, b], 'm', 'oldest')), main.created).toEqual(['m', 'a', 'b']);
+		}
+		expect(ids(orderSources([a, oldMain, b], null, 'newest'))).toEqual(['b', 'a', 'm']);
+	});
+
+	it('compares points in time, not text', () => {
+		// 08:30:00 written without milliseconds and with a T stands before 08:30:00.5.
+		const iso = source(
+			'iso',
+			'2026-09-24T08:30:00Z',
+			'2026-09-24 08:31:00.000Z',
+			'2026-09-25 09:00:00.000Z'
+		);
+		const pocketBase = source(
+			'pb',
+			'2026-09-24 08:30:00.500Z',
+			'2026-09-24 08:31:00.000Z',
+			'2026-09-25 09:00:00.000Z'
+		);
+		expect(ids(orderSources([pocketBase, iso], null, 'oldest'))).toEqual(['iso', 'pb']);
+	});
+
+	it('shows and orders by the same time', () => {
+		const list = [
+			source('c', null, '2026-09-03 08:00:00.000Z', '2026-09-30 09:00:00.000Z'),
+			source(
+				'a',
+				'2026-09-01 08:00:00.000Z',
+				'2026-09-28 08:00:00.000Z',
+				'2026-09-28 09:00:00.000Z'
+			),
+			// A whole day at the sender shows as a date and stands at the start of that day.
+			item({
+				id: 'b',
+				sourceDate: '2026-09-01 22:00:00.000Z',
+				sourceMeta: { all_day: true },
+				created: '2026-09-29 08:00:00.000Z',
+				handledAt: '2026-09-29 09:00:00.000Z'
+			})
+		];
+		const oldest = orderSources(list, null, 'oldest');
+		expect(oldest.map(sourceWhen)).toEqual(['01.09.2026 10:00', '02.09.2026', '03.09.2026 10:00']);
+		// The shown date is the date of `sourceTime`, the time the order uses.
+		for (const entry of oldest) {
+			expect(sourceWhen(entry), entry.id).toBe(
+				sourceWhen({ ...entry, sourceDate: sourceTime(entry) })
+			);
+		}
+		expect(orderSources(list, null, 'newest').map(sourceWhen)).toEqual([
+			'03.09.2026 10:00',
+			'02.09.2026',
+			'01.09.2026 10:00'
+		]);
+	});
+
+	it('leaves the input alone', () => {
+		const list = [item({ id: 'b' }), item({ id: 'a' })];
+		orderSources(list, 'a', 'oldest');
+		expect(ids(list)).toEqual(['b', 'a']);
+	});
+
+	it('says a change of the order', () => {
+		expect(sourceOrderAnnouncement('newest')).toBe('Neueste Quellen zuerst.');
+		expect(sourceOrderAnnouncement('oldest')).toBe('Älteste Quellen zuerst.');
+	});
+});
+
+describe('linkSummary', () => {
 	it('counts linked entries', () => {
 		expect(linkSummary(1, 'TASK-4')).toBe('1 Eintrag mit TASK-4 verknüpft.');
 		expect(linkSummary(3, 'HAUS-2')).toBe('3 Einträge mit HAUS-2 verknüpft.');

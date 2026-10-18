@@ -2,6 +2,12 @@
 	import type { ResolvedPathname } from '$app/types';
 	import { formatBerlinDateTime } from '$lib/domain/format';
 	import type { PagedNoun } from '$lib/domain/paged-list';
+	import { orderOrigins } from '$lib/domain/ticket-origins';
+	import {
+		findSourceOrder,
+		sourceOrderStore,
+		type ListOrderStore
+	} from '$lib/stores/list-order.svelte';
 	import type { TicketOriginsStore } from '$lib/stores/ticket-origins.svelte';
 	import PagedList from './PagedList.svelte';
 	import StatusPill from './StatusPill.svelte';
@@ -11,16 +17,21 @@
 	// remembered way, like the sub-tasks), title and status; one in the trash says "(im Papierkorb)"
 	// and has no link. Only shown while there are follow-ups; "Folge-Ticket anlegen …" in the menu
 	// "•••" makes one. Everything comes from the TicketOriginsStore and follows realtime. Since TD-1
-	// (ADR-0031 addendum L) the list shows five per page with its own page (PagedList).
+	// (ADR-0031 addendum L) the list shows five per page with its own page (PagedList). Since QS-1
+	// (ADR-0031 addendum M) it follows the switch of the sources by the time of the link, newest first
+	// by default; a change of the order starts on page 1 again.
 	let {
 		ticket,
 		store,
-		hrefOf
+		hrefOf,
+		order: givenOrder
 	}: {
 		ticket: { id: string };
 		store: TicketOriginsStore;
 		/** Address of another ticket in the remembered way, with the state of the current page. */
 		hrefOf: (id: string) => ResolvedPathname;
+		/** Order of the sources; without it the store of the (app) layout. */
+		order?: ListOrderStore;
 	} = $props();
 
 	/** Name of the entries, for the count and the buttons of the pages. */
@@ -28,8 +39,10 @@
 
 	const uid = $props.id();
 	const headingId = `${uid}-heading`;
+	const orderFromContext = findSourceOrder() ?? sourceOrderStore(null);
+	const view = $derived(givenOrder ?? orderFromContext);
 	const followUps = $derived(
-		store.available && store.ticketId === ticket.id ? store.followUps : []
+		store.available && store.ticketId === ticket.id ? orderOrigins(store.followUps, view.order) : []
 	);
 </script>
 
@@ -41,7 +54,7 @@
 			key={(entry) => entry.link}
 			label="Folge-Tickets"
 			noun={NOUN}
-			resetKey={ticket.id}
+			resetKey={`${ticket.id}:${view.order}`}
 			compact
 		>
 			{#snippet row(entry)}

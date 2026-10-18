@@ -3,13 +3,16 @@
 // "Lösen" as named icon buttons; the dialog of new inbox entries. Real store with fake data.
 
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { MEMBER_CONTEXT, PC_CONTEXT, REMOTE_CONTEXT, useContext } from '$lib/test/context';
 import type { RecordChange } from '$lib/data/realtime';
 import type { ConnectionName } from '$lib/domain/connections';
 import type { InboxItemSummary } from '$lib/domain/inbox';
+import { SOURCE_ORDER_STORAGE_KEY } from '$lib/domain/sources';
 import { ConnectionNamesStore } from '$lib/stores/connection-names.svelte';
 import { FlagStore } from '$lib/stores/flags.svelte';
+import { sourceOrderStore, type ListOrderStore } from '$lib/stores/list-order.svelte';
 import { LiveHealth } from '$lib/stores/live-health.svelte';
 import { TicketSourcesStore, type TicketSourcesData } from '$lib/stores/ticket-sources.svelte';
 import { alreadyLinkedReason } from '$lib/domain/ticket-picker';
@@ -73,7 +76,9 @@ async function setup(
 	sources: InboxItemSummary[],
 	candidates: InboxItemSummary[] = [],
 	/** Inside an open modal, as in the full view (ADR-0025 addendum 16). */
-	inModal = false
+	inModal = false,
+	/** Order of the lists (QS-1); without it the component's own, newest first. */
+	order?: ListOrderStore
 ) {
 	const data = {
 		list: vi.fn<TicketSourcesData['list']>(async () => sources),
@@ -94,7 +99,7 @@ async function setup(
 	const flags = new FlagStore();
 	const store = new TicketSourcesStore(data, { ensureValid: () => true, logout: vi.fn() }, flags);
 	store.open(TICKET.id, TICKET.sourceItem);
-	const props = { ticket: TICKET, store, candidates, picker: PICKER.source };
+	const props = { ticket: TICKET, store, candidates, picker: PICKER.source, order };
 	if (inModal) render(InModalHarness, { props: { component: TicketSources, props } });
 	else render(TicketSources, { props });
 	await vi.waitFor(() => expect(store.state).toBe('ready'));
@@ -135,7 +140,8 @@ describe('TicketSources', () => {
 		expect(within(main).queryByRole('button', { name: /anderem Ticket zuordnen/ })).toBeNull();
 		expect(main.textContent).toContain('Bleibt bei diesem Ticket, weil es aus ihr entstanden ist');
 
-		const chat = rows[1] as HTMLElement;
+		// Chat and link arrived at the same time: newest first reverses their IDs (QS-1).
+		const chat = rows[2] as HTMLElement;
 		expect(chat.textContent).toContain('Telegram');
 		expect(chat.textContent).toContain('Ben');
 		expect(chat.textContent).toContain('Nur Text');
@@ -145,7 +151,7 @@ describe('TicketSources', () => {
 		expect(release.className).toContain('button-icon');
 		expect(release.getAttribute('title')).toBe('Lösen (zurück in den Eingang)');
 
-		const link = rows[2] as HTMLElement;
+		const link = rows[1] as HTMLElement;
 		expect(link.textContent).toContain('https://example.com/artikel');
 		expect(link.textContent).toContain('Nur Adresse');
 	});
@@ -511,32 +517,37 @@ describe('TicketSources in the full view', () => {
 	});
 });
 
+/**
+ * `count` sources besides the main source, arrived one after the other on day `day`: "Quelle 1"
+ * at 10:00 UTC, "Quelle 2" at 10:01 … (no date at the sender, so the arrival counts).
+ */
+const more = (count: number, prefix = 'more', name = 'Quelle', day = '25') =>
+	Array.from({ length: count }, (_, index) =>
+		item(`${prefix}${String(index + 1).padStart(15 - prefix.length, '0')}`, {
+			title: `${name} ${index + 1}`,
+			created: `2026-09-${day} 10:${String(index).padStart(2, '0')}:00.000Z`,
+			handledAt: `2026-09-${day} 11:00:00.000Z`
+		})
+	);
+
+/** Titles of the sources on the shown page. */
+const titles = () =>
+	within(screen.getByRole('list', { name: 'Quellen aus dem Eingang' }))
+		.getAllByRole('listitem')
+		.map((row) => row.querySelector('.title')?.textContent?.trim() ?? '');
+
+const position = () =>
+	(document.querySelector('.position')?.textContent ?? '').replace(/\s+/g, ' ').trim();
+
 // Five sources per page (TD-1, ADR-0031 addendum L); the list itself is tested in paged-list.test.ts.
 describe('TicketSources in pages (TD-1)', () => {
 	const NEXT = 'Weiter zur nächsten Seite der Quellen';
 	const PREVIOUS = 'Zurück zur vorherigen Seite der Quellen';
 
-	/** `count` sources besides the main source, linked one after the other: "Quelle 1" … */
-	const more = (count: number, prefix = 'more', name = 'Quelle', day = '25') =>
-		Array.from({ length: count }, (_, index) =>
-			item(`${prefix}${String(index + 1).padStart(15 - prefix.length, '0')}`, {
-				title: `${name} ${index + 1}`,
-				handledAt: `2026-09-${day} 10:${String(index).padStart(2, '0')}:00.000Z`
-			})
-		);
-
-	/** Titles of the sources on the shown page. */
-	const titles = () =>
-		within(screen.getByRole('list', { name: 'Quellen aus dem Eingang' }))
-			.getAllByRole('listitem')
-			.map((row) => row.querySelector('.title')?.textContent?.trim() ?? '');
-
-	const position = () =>
-		(document.querySelector('.position')?.textContent ?? '').replace(/\s+/g, ' ').trim();
-
-	it('shows five per page with the main source first on page 1, even as the newest', async () => {
+	it('shows five per page with the main source first on page 1, even as the oldest', async () => {
+		// Newest first by default (QS-1): the main source of 24 September is the oldest.
 		await setup([...more(6), { ...MAIN, handledAt: '2026-09-30 09:00:00.000Z' }]);
-		expect(titles()).toEqual(['Rechnung März', 'Quelle 1', 'Quelle 2', 'Quelle 3', 'Quelle 4']);
+		expect(titles()).toEqual(['Rechnung März', 'Quelle 6', 'Quelle 5', 'Quelle 4', 'Quelle 3']);
 		const first = within(
 			screen.getByRole('list', { name: 'Quellen aus dem Eingang' })
 		).getAllByRole('listitem')[0] as HTMLElement;
@@ -544,19 +555,19 @@ describe('TicketSources in pages (TD-1)', () => {
 		expect(position()).toBe('Seite 1 von 2 · 7 Quellen');
 
 		await fireEvent.click(screen.getByRole('button', { name: NEXT }));
-		expect(titles()).toEqual(['Quelle 5', 'Quelle 6']);
+		expect(titles()).toEqual(['Quelle 2', 'Quelle 1']);
 		expect(screen.queryByText('Hauptquelle')).toBeNull();
-		await vi.waitFor(() => expect(document.activeElement?.textContent).toContain('Quelle 5'));
+		await vi.waitFor(() => expect(document.activeElement?.textContent).toContain('Quelle 2'));
 		expect(screen.getByRole('status').textContent).toContain('Seite 2 von 2');
 	});
 
 	it('goes back to page 1 when the only source of page 2 is released, the focus at its start', async () => {
 		const { data } = await setup([MAIN, ...more(5)]);
 		await fireEvent.click(screen.getByRole('button', { name: NEXT }));
-		expect(titles()).toEqual(['Quelle 5']);
+		expect(titles()).toEqual(['Quelle 1']);
 
-		await fireEvent.click(screen.getByRole('button', { name: '„Quelle 5“ lösen' }));
-		expect(data.release).toHaveBeenCalledWith('more00000000005');
+		await fireEvent.click(screen.getByRole('button', { name: '„Quelle 1“ lösen' }));
+		expect(data.release).toHaveBeenCalledWith('more00000000001');
 		await vi.waitFor(() => expect(titles()).toHaveLength(5));
 		expect(titles()[0]).toBe('Rechnung März');
 		expect(screen.queryByRole('group', { name: 'Seiten der Quellen' })).toBeNull();
@@ -566,16 +577,16 @@ describe('TicketSources in pages (TD-1)', () => {
 	it('keeps the page of an entry while "Anderem Ticket zuordnen …" is open below it; paging closes it', async () => {
 		const { store } = await setup([MAIN, ...more(11)], [], true);
 		await fireEvent.click(screen.getByRole('button', { name: NEXT }));
-		expect(titles()).toEqual(['Quelle 5', 'Quelle 6', 'Quelle 7', 'Quelle 8', 'Quelle 9']);
+		expect(titles()).toEqual(['Quelle 7', 'Quelle 6', 'Quelle 5', 'Quelle 4', 'Quelle 3']);
 		const moveName = '„Quelle 6“ anderem Ticket zuordnen …';
 		await fireEvent.click(screen.getByRole('button', { name: moveName }));
 		expect(screen.getByRole('button', { name: moveName }).getAttribute('aria-expanded')).toBe(
 			'true'
 		);
 
-		// Meanwhile four older entries join the ticket (another tab): they stand before it, and the
+		// Meanwhile four newer entries join the ticket (another tab): they stand before it, and the
 		// list follows the entry to its new page with the area still open.
-		for (const older of more(4, 'old', 'Ältere', '20')) store.upsert(older);
+		for (const newer of more(4, 'new', 'Neuere', '28')) store.upsert(newer);
 		await vi.waitFor(() => expect(position()).toBe('Seite 3 von 4 · 16 Quellen'));
 		expect(titles()).toContain('Quelle 6');
 		const row = screen.getByRole('button', { name: moveName }).closest('li') as HTMLElement;
@@ -586,5 +597,125 @@ describe('TicketSources in pages (TD-1)', () => {
 		expect(position()).toBe('Seite 2 von 4 · 16 Quellen');
 		expect(screen.queryByRole('region', { name: 'Anderem Ticket zuordnen' })).toBeNull();
 		expect(titles()).not.toContain('Quelle 6');
+	});
+});
+
+// The order of the sources (QS-1, ADR-0031 addendum M): by the time they show, the switch
+// "Neueste zuerst | Älteste zuerst" from two sources, remembered on this device.
+describe('TicketSources in order (QS-1)', () => {
+	const NEXT = 'Weiter zur nächsten Seite der Quellen';
+	const group = () => screen.queryByRole('group', { name: 'Reihenfolge der Quellen' });
+	const pressed = (name: string) =>
+		screen.getByRole('button', { name }).getAttribute('aria-pressed');
+
+	afterEach(() => {
+		window.localStorage.clear();
+	});
+
+	it('orders by the date shown, newest first, an old mail linked late at its own date', async () => {
+		const late = item('late00000000001', {
+			title: 'Alte Mail',
+			sourceDate: '2026-09-02 08:00:00.000Z',
+			created: '2026-09-02 08:01:00.000Z',
+			handledAt: '2026-09-30 09:00:00.000Z'
+		});
+		const typed = item('typed0000000001', {
+			title: 'Notiz',
+			created: '2026-09-26 08:00:00.000Z',
+			handledAt: '2026-09-26 09:00:00.000Z'
+		});
+		await setup([late, CHAT, MAIN, typed]);
+		const rows = within(screen.getByRole('list', { name: 'Quellen aus dem Eingang' })).getAllByRole(
+			'listitem'
+		);
+		expect(rows.map((row) => row.querySelector('.title')?.textContent)).toEqual([
+			'Rechnung März',
+			'Notiz',
+			'Nachricht chat00000000001',
+			'Alte Mail'
+		]);
+		// What each row shows is what it is ordered by.
+		expect(rows.map((row) => row.querySelector('.when')?.textContent)).toEqual([
+			'24.09.2026 10:30',
+			'26.09.2026 10:00',
+			'25.09.2026 10:00',
+			'02.09.2026 10:00'
+		]);
+		expect(group()).toBeTruthy();
+		expect(pressed('Neueste zuerst')).toBe('true');
+		expect(pressed('Älteste zuerst')).toBe('false');
+	});
+
+	it('shows the switch only from two sources', async () => {
+		const { store } = await setup([MAIN]);
+		expect(group()).toBeNull();
+		store.upsert(CHAT);
+		await vi.waitFor(() => expect(group()).toBeTruthy());
+	});
+
+	it('switches to "Älteste zuerst", says so, remembers it and starts on page 1 again', async () => {
+		const order = sourceOrderStore(window);
+		await setup([MAIN, ...more(6)], [], false, order);
+		await fireEvent.click(screen.getByRole('button', { name: NEXT }));
+		expect(titles()).toEqual(['Quelle 2', 'Quelle 1']);
+
+		const oldest = screen.getByRole('button', { name: 'Älteste zuerst' });
+		oldest.focus();
+		await fireEvent.click(oldest);
+		expect(pressed('Älteste zuerst')).toBe('true');
+		// Page 1 again, the main source still first, then the oldest.
+		expect(titles()).toEqual(['Rechnung März', 'Quelle 1', 'Quelle 2', 'Quelle 3', 'Quelle 4']);
+		expect(position()).toBe('Seite 1 von 2 · 7 Quellen');
+		expect(window.localStorage.getItem(SOURCE_ORDER_STORAGE_KEY)).toBe('oldest');
+		const said = screen.getByText('Älteste Quellen zuerst.');
+		expect(said.closest('[aria-live="polite"]')).toBeTruthy();
+		// The focus stays on the switch: starting on page 1 again moves nothing.
+		await tick();
+		expect(document.activeElement).toBe(oldest);
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Neueste zuerst' }));
+		expect(titles()).toEqual(['Rechnung März', 'Quelle 6', 'Quelle 5', 'Quelle 4', 'Quelle 3']);
+		expect(window.localStorage.getItem(SOURCE_ORDER_STORAGE_KEY)).toBeNull();
+		expect(screen.getByText('Neueste Quellen zuerst.')).toBeTruthy();
+	});
+
+	it('starts with the order remembered on this device', async () => {
+		window.localStorage.setItem(SOURCE_ORDER_STORAGE_KEY, 'oldest');
+		await setup([MAIN, ...more(2)], [], false, sourceOrderStore(window));
+		expect(pressed('Älteste zuerst')).toBe('true');
+		expect(titles()).toEqual(['Rechnung März', 'Quelle 1', 'Quelle 2']);
+	});
+
+	it('keeps the page when a source arrives through realtime; it takes its place in the order', async () => {
+		const { store } = await setup([MAIN, ...more(6)]);
+		await fireEvent.click(screen.getByRole('button', { name: NEXT }));
+		expect(titles()).toEqual(['Quelle 2', 'Quelle 1']);
+
+		// Another tab links a mail sent between Quelle 4 (10:03) and Quelle 5 (10:04).
+		store.upsert(
+			item('mail00000000099', {
+				title: 'Nachgereicht',
+				sourceDate: '2026-09-25 10:03:30.000Z',
+				created: '2026-09-29 08:00:00.000Z',
+				handledAt: '2026-09-29 09:00:00.000Z'
+			})
+		);
+		await vi.waitFor(() => expect(position()).toBe('Seite 2 von 2 · 8 Quellen'));
+		expect(titles()).toEqual(['Quelle 3', 'Quelle 2', 'Quelle 1']);
+		await fireEvent.click(
+			screen.getByRole('button', { name: 'Zurück zur vorherigen Seite der Quellen' })
+		);
+		expect(titles()).toEqual(['Rechnung März', 'Quelle 6', 'Quelle 5', 'Nachgereicht', 'Quelle 4']);
+	});
+
+	it('closes "Anderem Ticket zuordnen …" when the order changes', async () => {
+		await setup([MAIN, ...more(6)], [], true);
+		const moveName = '„Quelle 5“ anderem Ticket zuordnen …';
+		await fireEvent.click(screen.getByRole('button', { name: moveName }));
+		expect(screen.getByRole('region', { name: 'Anderem Ticket zuordnen' })).toBeTruthy();
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Älteste zuerst' }));
+		expect(screen.queryByRole('region', { name: 'Anderem Ticket zuordnen' })).toBeNull();
+		expect(position()).toBe('Seite 1 von 2 · 7 Quellen');
 	});
 });
