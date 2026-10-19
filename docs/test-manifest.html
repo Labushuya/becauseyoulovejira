@@ -341,7 +341,7 @@
   "meta": {
     "projekt": "becauseyoulovejira",
     "stand": "2026-10-19",
-    "commit": "65b7d2b"
+    "commit": "273c0d9"
   },
   "bereiche": [
     { "id": "betrieb", "titel": "Betrieb: Start, Stopp, Skripte und Daten" },
@@ -653,6 +653,8 @@
       "vermerk": "Nur Test und Dokumentation, kein Produktivcode, kein Neustart. Schlägt der Test an, wird die Bewertung neu erstellt. A5 (Kits Server-Cookie-Code nicht in app/pb_public) braucht einen Build und bleibt eine Prüfung von Hand." },
     { "id": "DOC-1", "vorhaben": "Projektregeln", "titel": "CLAUDE.md in einen kompakten Kern und Detaildokumente unter docs/regeln aufteilen; Wächtertest für Größe, Links und Anker, Index, Kopf der Detaildokumente und Namen", "bereich": "entwicklung", "quelle": "Auftrag", "datum": "2026-10-19", "faelle": ["BYL-E6-1880..BYL-E6-1884"],
       "vermerk": "Nur Doku, Test und Kommentare, kein Produktivcode, kein Neustart. Jede Zeile der alten CLAUDE.md steht wortgleich an genau einer Stelle; belegt mit einem einmaligen Prüfskript (Ergebnis im PR)." },
+    { "id": "DOC-2", "vorhaben": "Projektregeln", "titel": "Doku, die Tests oder lint lesen, und gelöschte oder umbenannte Dateien lösen die CI aus; Test der Einstufung an Beispielpfaden; docs/ in der Repo-Struktur, Kommentare zu Schlüsseln im localStorage", "bereich": "entwicklung", "quelle": "Folgepaket zu DOC-1", "datum": "2026-10-19", "faelle": ["BYL-E6-1885..BYL-E6-1888"],
+      "vermerk": "Nur CI, Test, Doku und Kommentare, kein Produktivcode, kein Neustart. Gegenprobe: jedes neue Muster und die Markierung „removed:“ einzeln entfernt lassen den Test anschlagen." },
     { "id": "querschnitt", "vorhaben": "Querschnitt", "titel": "Testumgebung, Regeln der Datenschicht, Hook-Module und dieses Manifest", "bereich": "entwicklung", "faelle": ["BYL-X-001..BYL-X-004"] }
   ],
   "zurueckgestellt": [
@@ -7794,6 +7796,27 @@
       ]
     },
     {
+      "tag": "E6", "name": "Einstufung der CI (Doku, die Tests oder lint lesen)", "desc": "Paket DOC-2: Der Job „Detect code changes“ in .github/workflows/ci.yml zählt Doku, die Tests oder lint lesen, und gelöschte oder umbenannte Dateien als Code. tests/unit/ci-ruleset.test.mjs wendet seine case-Anweisung auf Beispielpfade an. IDs BYL-E6-1885 bis BYL-E6-1888.",
+      "items": [
+        { "id": "BYL-E6-1885", "title": "Doku, die Tests oder lint lesen, löst die CI aus (DOC-2)", "art": ["unit"], "status": "bestanden",
+          "pre": "tests/unit/ci-ruleset.test.mjs liest .github/workflows/ci.yml und wertet die case-Anweisung von „Classify changed files“ wie bash aus (*, ? und Klammerausdrücke; andere Syntax lässt den Test anschlagen).", "steps": ["npm run test:unit"],
+          "expect": "Als Code gelten CLAUDE.md, docs/regeln/*, eine CLAUDE.md unter docs/ in jeder Schreibweise, docs/test-manifest.html, Markdown unter web/ (Korpus in web/src/lib/test/markdown-corpus, Prettier) und extensions/ sowie Pfade mit „removed:“. Gegenprobe: jedes dieser Muster einzeln entfernt lässt den Test mit dem Beispielpfad und dem lesenden Test anschlagen.",
+          "tests": ["tests/unit/ci-ruleset.test.mjs::counts %s as code (read by %s)"] },
+        { "id": "BYL-E6-1886", "title": "Übrige Doku überspringt die Build-Jobs weiter (DOC-2)", "art": ["unit"], "status": "bestanden",
+          "pre": "Wie BYL-E6-1885.", "steps": ["npm run test:unit"],
+          "expect": "README.md, .github/pull_request_template.md, .github/SECURITY.md, geänderte ADRs und Pläne, docs/security/bewertungen, docs/spikes, docs/assets und Markdown unter helpers/ gelten weiter als Doku; ein PR nur damit überspringt beide Build-Jobs.",
+          "tests": ["tests/unit/ci-ruleset.test.mjs::counts %s as documentation"] },
+        { "id": "BYL-E6-1887", "title": "Jeder andere Pfad ist Code (DOC-2)", "art": ["unit"], "status": "bestanden",
+          "pre": "Wie BYL-E6-1885.", "steps": ["npm run test:unit"],
+          "expect": "Hooks, package.json, ci.yml und Skripte gelten als Code, und der letzte Zweig der case-Anweisung ist „*) code=true ;;“.",
+          "tests": ["tests/unit/ci-ruleset.test.mjs::counts every other path as code, the last arm catching all"] },
+        { "id": "BYL-E6-1888", "title": "Gelöschte und umbenannte Dateien als „removed:“ (DOC-2)", "art": ["unit"], "status": "bestanden",
+          "pre": "Wie BYL-E6-1885.", "steps": ["npm run test:unit"],
+          "expect": "Der jq-Filter der Dateiliste setzt „removed:“ vor gelöschte Dateien und vor den alten Namen umbenannter; eine leere Liste zählt als Code. Gegenprobe: der alte Filter ohne Markierung lässt den Test anschlagen.",
+          "tests": ["tests/unit/ci-ruleset.test.mjs::marks deleted files and the old name of renamed ones with \"removed:\""] }
+      ]
+    },
+    {
       "tag": "Alle", "name": "Querschnitt", "desc": "Prüfungen über alle Etappen: Testumgebung, statische Regeln der Datenschicht, dieses Manifest.",
       "items": [
         { "id": "BYL-X-001", "title": "Web-Testumgebung", "art": ["unit"], "status": "bestanden",
@@ -7813,7 +7836,7 @@
           "expect": "Diese Datei ist wohlgeformt und offline nutzbar, IDs eindeutig (auch vierstellige, als Zahlen in Bereichen), alle referenzierten Testdateien und -namen existieren, jede Testdatei ist referenziert, keine Reste der Vorlage. Jeder Fall gehört zu genau einem Paket, jedes Paket hat Fälle oder einen Vermerk, ADR und Plan existieren, zurückgestellte Fälle stehen unter genau einem Thema, der Kopf hat keinen Fließtext über 300 Zeichen, ein manueller Fall ist nur mit bestaetigt (datum, durch) bestanden, und die Zahlen, die die Seite selbst rechnet (Stand, Pakete, offene manuelle Prüfungen je Bereich), stimmen mit einer unabhängigen Zählung überein. Der Prüfmodus (#204) rechnet ohne DOM: Übernahme von v1 nach v2 ohne Verlust, Zählung der eigenen Ergebnisse, veraltete Eingaben (Fall bestanden, entfernt oder Titel, Schritte bzw. Erwartung geändert), Text von „Ergebnis kopieren“ und „Alles kopieren“, Filter „Deine Eingabe“, Übersicht mit Fehlgeschlagenen zuerst, Zeitstempel mit Abstand zu UTC; in jsdom ändern Ergebnis, Notiz, Filter, Kopieren, Entfernen veralteter Einträge und Zurücksetzen nur den localStorage, nie die Daten der Seite.",
           "tests": ["tests/unit/test-manifest.test.mjs"] },
         { "id": "BYL-X-005", "title": "CI und Ruleset für main", "art": ["unit", "manuell"], "status": "bestanden",
-          "pre": ".github/workflows/ci.yml mit dem Job „Detect code changes“, Ruleset „main“ nach .github/rulesets/main.json auf GitHub aktiv. Statisch geprüft von tests/unit/ci-ruleset.test.mjs, auf GitHub nur lesend per gh belegt.", "steps": ["npm run test:unit", "Einen PR öffnen, der nur eine Datei unter docs/ (nicht docs/test-manifest.html) oder eine Markdown-Datei ändert: „Detect code changes“ meldet „Code changed: false“, „Check, lint, build and test“ und (seit AR-3 ebenfalls Pflicht) „Linux build and test“ stehen auf „übersprungen“, und gh pr merge --squash geht durch.", "Einen PR mit Code oder mit docs/test-manifest.html öffnen: der Build läuft; zwei schnelle Pushes hintereinander brechen den ersten Durchgang ab.", "Einen Merge ohne Squash, einen Push direkt auf main und einen Merge bei rotem Check versuchen: alle drei lehnt GitHub ab."],
+          "pre": ".github/workflows/ci.yml mit dem Job „Detect code changes“, Ruleset „main“ nach .github/rulesets/main.json auf GitHub aktiv. Statisch geprüft von tests/unit/ci-ruleset.test.mjs, auf GitHub nur lesend per gh belegt.", "steps": ["npm run test:unit", "Einen PR öffnen, der nur eine Datei unter docs/ (nicht docs/test-manifest.html, seit DOC-2 auch nicht docs/regeln/ und keine gelöschte oder umbenannte) oder eine Markdown-Datei (seit DOC-2 nicht CLAUDE.md und keine unter web/ oder extensions/) ändert: „Detect code changes“ meldet „Code changed: false“, „Check, lint, build and test“ und (seit AR-3 ebenfalls Pflicht) „Linux build and test“ stehen auf „übersprungen“, und gh pr merge --squash geht durch.", "Einen PR mit Code oder mit docs/test-manifest.html öffnen: der Build läuft; zwei schnelle Pushes hintereinander brechen den ersten Durchgang ab.", "Einen Merge ohne Squash, einen Push direkt auf main und einen Merge bei rotem Check versuchen: alle drei lehnt GitHub ab."],
           "expect": "Doku-PRs kosten keinen Windows-Durchgang und blockieren trotzdem nicht; Code-PRs laufen voll; main bleibt nur per Squash-Merge mit grünem Check erreichbar. Der Test prüft: jeder Pflicht-Check ist ein Job von ci.yml (GitHub Actions), jeder Pflicht-Job hängt an „Detect code changes“ und wird nur für reine Doku-PRs übersprungen, docs/test-manifest.html zählt als Code, ein neuer Push bricht den laufenden Durchgang ab; das Ruleset erlaubt nur PRs mit Squash, ohne Ausnahmen, ohne Force-Push und ohne Löschen. Belege vom 2026-09-28 (gh, nur lesend): #123 und #136 (nur Doku) mit „Code changed: false“ (Lauf 36392027521) und übersprungenem Pflicht-Check squash-gemergt; Code-PRs #157 und #159 bis #162 mit beiden Jobs grün; abgebrochene Läufe nach einem zweiten Push (36451255721 in #160, 36411447282, 36370102824); GET repos/…/rules/branches/main liefert deletion, non_fast_forward, pull_request (nur squash) und required_status_checks, bypass_actors leer, current_user_can_bypass „never“; das Repo erlaubt nur Squash-Merges; alle 87 Commits auf main seit dem Anlegen des Rulesets (2026-09-26) sind Squash-Merges eines PR (ein Elternteil, „(#NNN)“ im Titel). Nicht selbst versucht (Schreibzugriff): Merge ohne Squash, direkter Push, Merge bei rotem Check; belegt ist hier die aktive Regel.",
           "tests": ["tests/unit/ci-ruleset.test.mjs"] },
         { "id": "BYL-X-006", "title": "Popover-Attrappe wie im Browser sichtbar, stabile Prozess-Probe", "art": ["unit"], "status": "bestanden",
