@@ -500,6 +500,28 @@ describe('help page (EH-9)', () => {
 		expect(content).toMatch(/nach dem Umschalten beginnt jede Liste wieder auf Seite 1/);
 	});
 
+	it('explains the search of the sources and of the choice of entries (QS-2)', () => {
+		render(Page);
+		const section = screen.getByRole('region', { name: 'Häufige Fragen' });
+		const question = [...section.querySelectorAll('details')].find(
+			(details) =>
+				details.querySelector('summary')?.textContent?.trim() === 'Wie ist ein Ticket aufgebaut?'
+		);
+		const content = text(question as HTMLElement);
+		expect(content).toMatch(
+			/Ab sechs Quellen \(Einträge und Quell-Tickets zusammen\) steht über den Listen das Feld „Quellen durchsuchen“/
+		);
+		expect(content).toMatch(/Quell-Tickets nach Key und Titel/);
+		expect(content).toMatch(/„marz“ findet „März“\), und mehrere Wörter müssen alle vorkommen/);
+		expect(content).toMatch(
+			/\(„3 von 12“\); jede Suche beginnt auf Seite 1, die Reihenfolge bleibt/
+		);
+		expect(content).toMatch(/Esc oder „Suche zurücksetzen“ leert sie/);
+		expect(content).toMatch(
+			/„Quelle hinzufügen“ → „Eintrag aus dem Eingang …“ und bei den Quellen von „Neues Ticket“; sie durchsucht alle neuen Einträge des Eingangs/
+		);
+	});
+
 	it('explains status, due date and inheritance of new sub-tasks, the status menu and the series line (UT-1)', () => {
 		const { container } = render(Page);
 		const section = screen.getByRole('region', { name: 'Häufige Fragen' });
