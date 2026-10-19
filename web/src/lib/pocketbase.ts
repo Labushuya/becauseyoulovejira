@@ -1,4 +1,22 @@
-import PocketBase from 'pocketbase';
+import PocketBase, { type SendOptions } from 'pocketbase';
+import { noteRequest } from './data/errors';
+
+/**
+ * Every request of the SDK goes through `send`. A failed one notes its method and its path for
+ * "Details" of the message (FP-1, ADR-0071): an error of the SDK carries the address only for an
+ * answer and never the method, and for a missing connection nothing at all. Only the path is
+ * kept (the data layer strips the query); body, headers and the token stay out.
+ */
+class AppPocketBase extends PocketBase {
+	override async send<T>(path: string, options: SendOptions): Promise<T> {
+		try {
+			return await super.send<T>(path, options);
+		} catch (error) {
+			noteRequest(error, options.method ?? 'GET', path);
+			throw error;
+		}
+	}
+}
 
 /**
  * The only PocketBase client of the app. PocketBase serves the SPA itself, so the API is on the
@@ -10,5 +28,5 @@ import PocketBase from 'pocketbase';
  * and the aborted request (status 0) would look like a network error. Code that has to drop
  * stale requests passes its own AbortController signal instead.
  */
-export const pb = new PocketBase('/');
+export const pb: PocketBase = new AppPocketBase('/');
 pb.autoCancellation(false);

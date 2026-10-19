@@ -1,8 +1,10 @@
 <script lang="ts">
 	import { tick, untrack, type Snippet } from 'svelte';
+	import type { ProblemEntry } from '$lib/domain/problems';
 	import { insideModal } from '$lib/overlay/modal-context';
 	import ErrorIcon from '../ErrorIcon.svelte';
 	import SectionMessage from '../guidance/SectionMessage.svelte';
+	import ProblemDetails from '../problems/ProblemDetails.svelte';
 	import Modal from './Modal.svelte';
 
 	// Confirmation (ADR-0025 section 4): the modal in size S with the question as title, a text and
@@ -15,7 +17,8 @@
 	// Inside a modal (the full view) no confirmation is stacked (ADR-0025 section 3 and 4, addendum
 	// 16): the same question stands inline where the owner renders it, as a warning (no red) with
 	// the same buttons, the focus on "Abbrechen", Escape as "Abbrechen" (consumed, so the full view
-	// stays) and the focus back to where it was when the question closes.
+	// stays) and the focus back to where it was when the question closes. A failure that is a
+	// failed action passes its entry (`problem`, FP-1, ADR-0071) for the row "Details".
 	let {
 		open,
 		title,
@@ -23,6 +26,7 @@
 		cancelLabel = 'Abbrechen',
 		busy = false,
 		error = null,
+		problem = null,
 		onconfirm,
 		oncancel,
 		children,
@@ -34,6 +38,8 @@
 		cancelLabel?: string;
 		busy?: boolean;
 		error?: string | null;
+		/** The failed action behind `error` (`problemOf`), null without one. */
+		problem?: ProblemEntry | null;
 		onconfirm: () => void;
 		oncancel: () => void;
 		children: Snippet;
@@ -97,6 +103,7 @@
 			<ErrorIcon />
 			<span>{error}</span>
 		</div>
+		<ProblemDetails {problem} />
 	{/if}
 {/snippet}
 

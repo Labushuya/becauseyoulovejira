@@ -1,13 +1,16 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import Field from '$lib/components/form/Field.svelte';
+	import type { ProblemEntry } from '$lib/domain/problems';
 
 	// Tests of Field (UI-1): one field with a native control of the chosen kind; extra attributes of
 	// the control (disabled, readonly, required) show that the caller keeps them next to the spread.
+	// `problem` is the failed save behind an error (FP-1, ADR-0071).
 	let {
 		label = 'Name',
 		hint,
 		error = '',
+		problem = null,
 		id,
 		describedBy,
 		width,
@@ -18,6 +21,7 @@
 		label?: string;
 		hint?: string | Snippet;
 		error?: string;
+		problem?: ProblemEntry | null;
 		id?: string;
 		describedBy?: string;
 		width?: 'full' | 'auto';
@@ -29,7 +33,7 @@
 	let value = $state('');
 </script>
 
-<Field {label} {hint} {error} {id} {describedBy} {width}>
+<Field {label} {hint} {error} {problem} {id} {describedBy} {width}>
 	{#snippet control(field)}
 		{#if kind === 'select'}
 			<select {...field} {disabled} bind:value>

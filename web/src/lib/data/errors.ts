@@ -1,6 +1,10 @@
 // Error kinds of the data layer (ADR-0006 section 4). Errors are recognised by their structure
 // (`status`, `isAbort`, `response`) instead of `instanceof ClientResponseError`, because the
 // root integration tests and the web app each load their own copy of the SDK.
+// Since FP-1 (ADR-0071) this is also the one place that turns a failure into the entry behind
+// "Details" of a message (`problemOf`): the client of the app notes method and path of every
+// failed request (`noteRequest`, lib/pocketbase.ts), an action may name its intent
+// (`withIntent`), otherwise the catalog of domain/problem-intents.ts names it.
 
 import { ACCOUNT_MESSAGES } from '../domain/accounts';
 import { SCOPE_FIELD_MESSAGES, SCOPE_MESSAGE } from '../domain/area';
@@ -26,6 +30,19 @@ import { CREATE_MESSAGES } from '../domain/ticket-create';
 import { TICKET_SOURCE_MESSAGES, cycleMessage, cyclePathOf } from '../domain/ticket-origins';
 import { unreachableHint } from '../domain/context';
 import { TRASH_MESSAGES } from '../domain/trash';
+import { UNKNOWN_INTENT, intentOf } from '../domain/problem-intents';
+import {
+	UNEXPECTED_INTENT,
+	clientProblem,
+	exceptionOf,
+	fieldCodesOf,
+	isInputValidation,
+	requestPathOf,
+	responseOutcome,
+	type ProblemEntry,
+	type ProblemOutcome,
+	type ProblemRequest
+} from '../domain/problems';
 import { currentCapabilities } from './context';
 
 export type DataErrorKind =
@@ -178,6 +195,8 @@ export class DataError extends Error {
 	readonly status: number;
 	/** Field errors of a validation error, keyed by field name. */
 	readonly fields: Readonly<Record<string, FieldError>>;
+	/** When it happened (ms since the epoch), for "Zeitpunkt" of the details (ADR-0071). */
+	readonly occurredAt: number;
 
 	constructor(
 		kind: DataErrorKind,
@@ -188,6 +207,7 @@ export class DataError extends Error {
 		this.kind = kind;
 		this.status = options.status ?? 0;
 		this.fields = Object.freeze({ ...options.fields });
+		this.occurredAt = Date.now();
 	}
 }
 
@@ -271,4 +291,157 @@ export async function withDataErrors<T>(
 	} catch (error) {
 		throw toDataError(error, signal);
 	}
+}
+
+// Details of failed actions (FP-1, ADR-0071). Method, path and intent are noted beside the error
+// objects (WeakMaps), so neither the SDK error nor a DataError changes its form, and the root
+// tests that load this module without the client of the app keep working (then there is only the
+// path of an error answer, without the method).
+
+const requests = new WeakMap<object, ProblemRequest>();
+const intents = new WeakMap<object, string>();
+const problems = new WeakMap<object, ProblemEntry | null>();
+let problemCount = 0;
+let appVersion: string | null = null;
+
+/** The build of the app for "App-Stand", set once by the app (stores/problem-log.svelte.ts). */
+export function provideAppVersion(version: string | null): void {
+	appVersion = version === null || version === '' ? null : version;
+}
+
+/**
+ * Notes method and path of the request that failed with `error` (the client of the app calls it
+ * for every failure of `send`). Only the path is kept: no query, no body, no header.
+ */
+export function noteRequest(error: unknown, method: string, path: string): void {
+	if (isRecord(error) && !requests.has(error)) {
+		requests.set(error, { method: method.toUpperCase(), path: requestPathOf(path) });
+	}
+}
+
+/**
+ * Runs an action that names its intent (e.g. "Kanal verbinden"): a failure carries it to the
+ * details instead of the intent of the catalog. The outermost intent wins, it is closest to what
+ * the user did.
+ */
+export async function withIntent<T>(intent: string, run: () => Promise<T>): Promise<T> {
+	try {
+		return await run();
+	} catch (error) {
+		if (isRecord(error)) intents.set(error, intent);
+		throw error;
+	}
+}
+
+/** The error and its causes, outermost first (a DataError, then the error of the SDK). */
+function chainOf(error: Record<string, unknown>): Record<string, unknown>[] {
+	const chain = [error];
+	let current: unknown = error.cause;
+	while (isRecord(current) && !chain.includes(current) && chain.length < 5) {
+		chain.push(current);
+		current = current.cause;
+	}
+	return chain;
+}
+
+/** An error of the SDK (ClientResponseError or the like): a numeric status and an answer. */
+function isSdkLike(value: unknown): value is Record<string, unknown> & { status: number } {
+	return (
+		isRecord(value) &&
+		typeof value.status === 'number' &&
+		('response' in value || 'url' in value || 'isAbort' in value)
+	);
+}
+
+function nextProblemId(at: number): string {
+	problemCount += 1;
+	const random = Math.random().toString(36).slice(2, 7);
+	return `p-${at.toString(36)}-${problemCount.toString(36)}-${random}`;
+}
+
+const NO_ANSWER = { status: null, code: null, message: null } as const;
+
+/** What came back, from the error of the SDK or else from the DataError and its cause. */
+function outcomeOf(failure: DataError | null, raw: unknown): ProblemOutcome {
+	if (isSdkLike(raw)) {
+		return raw.status === 0
+			? { result: 'network', ...NO_ANSWER }
+			: responseOutcome(raw.status, raw.response);
+	}
+	if (failure?.kind === 'network') return { result: 'network', ...NO_ANSWER };
+	if (failure !== null && failure.status > 0) return responseOutcome(failure.status, null);
+	// An exception of the browser behind the failure, or no failure of the data layer at all.
+	if (failure === null || (raw !== undefined && raw !== null)) {
+		return { result: 'exception', ...NO_ANSWER };
+	}
+	// A DataError of the data layer itself: it could not read the answer.
+	return { result: 'answer', ...NO_ANSWER };
+}
+
+function buildProblem(error: Record<string, unknown>): ProblemEntry | null {
+	const failure = isDataError(error) ? error : null;
+	if (failure?.kind === 'aborted') return null;
+	const raw: unknown = failure === null ? error : failure.cause;
+	if (failure === null && isAbortLike(error)) return null;
+	// A refusal that only checks inputs is a hint at the field, not a failed action (ADR-0071 §1).
+	const codes =
+		failure?.kind === 'validation'
+			? Object.values(failure.fields).map((field) => field.code)
+			: isSdkLike(raw) && raw.status === 400
+				? fieldCodesOf(raw.response)
+				: [];
+	if (isInputValidation(codes)) return null;
+
+	const chain = chainOf(error);
+	const noted = chain.map((part) => requests.get(part)).find((request) => request !== undefined);
+	const url = isSdkLike(raw) && typeof raw.url === 'string' && raw.url !== '' ? raw.url : null;
+	const request = noted ?? (url === null ? null : { method: null, path: requestPathOf(url) });
+	const outcome = outcomeOf(failure, raw);
+	const explicit = chain.map((part) => intents.get(part)).find((intent) => intent !== undefined);
+	const known = request === null ? null : intentOf(request.method, request.path);
+	const at = failure?.occurredAt ?? Date.now();
+	return clientProblem({
+		id: nextProblemId(at),
+		intent: explicit ?? known ?? UNKNOWN_INTENT,
+		at,
+		outcome,
+		request,
+		app: appVersion,
+		exception: outcome.result === 'exception' ? exceptionOf(raw ?? error) : null
+	});
+}
+
+/**
+ * The entry behind "Details" of a message about `error`, or null when there is none: nothing was
+ * thrown, the request was aborted, or the server only checked an input. The same error always
+ * gives the same entry (same ID), so the list "Fehler dieser Sitzung" takes it once.
+ */
+export function problemOf(error: unknown): ProblemEntry | null {
+	if (!isRecord(error)) return null;
+	if (problems.has(error)) return problems.get(error) ?? null;
+	const problem = buildProblem(error);
+	problems.set(error, problem);
+	return problem;
+}
+
+/**
+ * An error nobody caught (window events "error" and "unhandledrejection"): "Unerwarteter Fehler"
+ * with what is known about it, or null for an aborted request.
+ */
+export function unexpectedProblem(error: unknown): ProblemEntry | null {
+	if (isRecord(error)) {
+		if (isAbortLike(error) || (isDataError(error) && error.kind === 'aborted')) return null;
+		const known = problemOf(error);
+		if (known !== null) return { ...known, intent: UNEXPECTED_INTENT };
+	}
+	const at = Date.now();
+	return clientProblem({
+		id: nextProblemId(at),
+		intent: UNEXPECTED_INTENT,
+		at,
+		outcome: { result: 'exception', status: null, code: null, message: null },
+		request: null,
+		app: appVersion,
+		exception: exceptionOf(error)
+	});
 }

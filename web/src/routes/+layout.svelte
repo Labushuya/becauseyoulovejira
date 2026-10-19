@@ -12,9 +12,11 @@
 	import favicon from '$lib/assets/favicon.svg';
 	import { auth } from '$lib/auth.svelte';
 	import DuplicateTabNotice from '$lib/components/DuplicateTabNotice.svelte';
+	import SessionProblemsDialog from '$lib/components/problems/SessionProblemsDialog.svelte';
 	import SessionNotice from '$lib/components/SessionNotice.svelte';
 	import { guardTarget } from '$lib/guard';
 	import { consumeLaunches } from '$lib/launch-queue';
+	import { problemLog } from '$lib/stores/problem-log.svelte';
 	import {
 		TAB_CHANNEL,
 		TabPresence,
@@ -123,6 +125,11 @@
 
 {#if duplicate}
 	<DuplicateTabNotice onkeep={keepThisTab} />
+{/if}
+
+<!-- The list "Fehler dieser Sitzung" (FP-1, ADR-0071 §4), once for every page, the login included. -->
+{#if problemLog.dialogOpen}
+	<SessionProblemsDialog onclose={() => problemLog.closeDialog()} />
 {/if}
 
 <style>

@@ -8,6 +8,7 @@
 
 import { createContext } from 'svelte';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
+import type { ProblemEntry } from '$lib/domain/problems';
 
 /** How long a success or info flag stays (ADS minimum; decision 3 of the user: "Rückgängig" 8 s). */
 export const FLAG_DURATION_MS = 8000;
@@ -32,6 +33,8 @@ export interface FlagInput {
 	duration?: number | null;
 	/** Called once when the flag leaves (timeout, ×, action, pushed out, cleared). */
 	onclose?: () => void;
+	/** The failed action of an error flag (`problemOf`, FP-1, ADR-0071): its row "Details". */
+	problem?: ProblemEntry | null;
 }
 
 export interface Flag {
@@ -40,6 +43,8 @@ export interface Flag {
 	readonly title: string;
 	readonly description: string;
 	readonly action: FlagAction | null;
+	/** Only for errors: the failed action behind it, null without one. */
+	readonly problem: ProblemEntry | null;
 }
 
 /** What the stores need of the flags; tests and views without flags pass SILENT_FLAGS. */
@@ -113,7 +118,8 @@ export class FlagStore implements FlagSink {
 			tone: input.tone,
 			title: input.title,
 			description: input.description ?? '',
-			action: input.action ?? null
+			action: input.action ?? null,
+			problem: input.tone === 'error' ? (input.problem ?? null) : null
 		};
 		const remaining =
 			input.duration !== undefined
