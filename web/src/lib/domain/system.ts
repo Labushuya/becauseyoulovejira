@@ -259,7 +259,49 @@ export const RESTART_TEXTS = {
 	failed:
 		'Starte sie mit start.bat im Ordner app. Was passiert ist, steht in app\\logs\\byl-control.log.',
 	notStartedTitle: 'Der Neustart hat nicht begonnen',
-	notStarted: 'Einzelheiten stehen in app\\logs\\byl-control.log. Versuche es erneut.'
+	notStarted: 'Einzelheiten stehen in app\\logs\\byl-control.log. Versuche es erneut.',
+	// "Jetzt neu starten" outside the page System, e.g. in a setup assistant (BW-1, ADR-0072).
+	preparing: 'Der Neustart wird vorbereitet.',
+	keepsOpen: 'Diese Ansicht bleibt dabei offen und steht danach wieder hier.',
+	failedHere:
+		'Nach 90 Sekunden antwortet der Server noch nicht. Wie du ihn ohne die App wieder startest, steht unten unter „Notfall“.',
+	refusedTitle: 'Nicht neu gestartet',
+	mailRunningTitle: 'Mail-Helfer neu starten …',
+	mailRunning: 'Der Mail-Hilfsprozess wird geordnet beendet und wieder gestartet.',
+	mailDone: 'Mail-Helfer neu gestartet.',
+	mailRefusedTitle: 'Mail-Helfer nicht neu gestartet'
+} as const;
+
+/**
+ * Refusals of "Jetzt neu starten" outside the page System whose text there names a script (BW-1,
+ * ADR-0072): here the way through the folder app stands only under „Notfall“.
+ */
+export const RESTART_DENIAL_TEXTS: Readonly<Partial<Record<SystemDenial, SystemNotice>>> = {
+	script: {
+		title: DENIAL_TEXTS.script.title,
+		text: 'Versuche es erneut. Hilft das nicht, zeigt die Seite „Einstellungen → System“ den Zustand und die Logs.'
+	},
+	unavailable: {
+		title: DENIAL_TEXTS.unavailable.title,
+		text: 'Dieser Server lässt sich nicht aus der App neu starten, etwa eine Test- oder Entwicklungsinstanz.'
+	},
+	missing: {
+		title: 'Neu starten aus der App geht noch nicht',
+		text: 'Der Server kennt diese Funktion erst nach einem Neustart. Den Weg dafür nennt unten „Notfall“.'
+	}
+};
+
+/**
+ * The emergency way (BW-1, ADR-0072): the files in the folder app, folded under „Notfall“ below
+ * "Jetzt neu starten", never the main way (the user's rule: everything from the browser).
+ */
+export const EMERGENCY_TEXTS = {
+	summary: 'Notfall: Neustart über den Ordner app',
+	restart:
+		'Nur wenn „Jetzt neu starten“ hier nicht geht: Im Ordner app neu-starten.bat doppelklicken. Es startet die App neu, wenn es nötig ist, etwa nach einer neuen Variablen.',
+	restartDown:
+		'Antwortet die App danach gar nicht mehr, startet start.bat im Ordner app sie wieder. Was passiert ist, steht in app\\logs\\byl-control.log.',
+	mail: 'Nur wenn „Mail-Helfer neu starten“ nicht hilft: Im Ordner app neu-starten.bat doppelklicken. Es startet die App bei Bedarf neu und den Mail-Hilfsprozess mit; sein Protokoll steht in app\\logs\\byl-mail.log.'
 } as const;
 
 /** The reason of a refusal from the HTTP status and the `reason` of the answer. */

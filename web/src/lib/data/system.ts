@@ -4,8 +4,11 @@
 // instance, rate limit, not available, busy, script) and a missing route (404 before the restart
 // after an update) come as `denied` with their reason; the session, the network and an aborted
 // signal are DataErrors. The browser sends Origin itself; nothing here names an address.
+// Since BW-1 (ADR-0072) a refusal and an answer the app could not read keep the entry behind
+// "Details" (FP-1, ADR-0071) beside the answer (`denialProblem`), so the answer keeps its form.
 
 import type PocketBase from 'pocketbase';
+import type { ProblemEntry } from '../domain/problems';
 import {
 	denialOf,
 	parseDoctor,
@@ -18,7 +21,7 @@ import {
 	type SystemOverview
 } from '../domain/system';
 import { reportRefusal } from './context';
-import { toDataError } from './errors';
+import { DataError, noteRequest, problemOf, toDataError } from './errors';
 import type { RequestOptions } from './options';
 
 const ROUTE = '/api/byl/system';
@@ -33,8 +36,27 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/** The entries of refusals, beside the answers (the answers keep their form). */
+const denialProblems = new WeakMap<object, ProblemEntry>();
+
+/**
+ * The entry behind "Details" of a refusal of the route or of an answer the app could not read
+ * (FP-1, ADR-0071): the failed request with status, reason and message of the server; null for
+ * an answer without one (a fake of the tests, or `ok`).
+ */
+export function denialProblem(answer: SystemAnswer<unknown>): ProblemEntry | null {
+	return denialProblems.get(answer) ?? null;
+}
+
+function denied(reason: SystemDenial, problem: ProblemEntry | null): SystemAnswer<never> {
+	const answer: SystemAnswer<never> = { kind: 'denied', reason };
+	if (problem !== null) denialProblems.set(answer, problem);
+	return answer;
+}
+
 async function ask<T>(
 	signal: AbortSignal | undefined,
+	request: { method: 'GET' | 'POST'; path: string },
 	call: () => Promise<unknown>,
 	parse: (answer: unknown) => T | null
 ): Promise<SystemAnswer<T>> {
@@ -46,12 +68,16 @@ async function ask<T>(
 		if (!signal?.aborted && DENIAL_STATUSES.includes(status)) {
 			const response = isRecord(error) && isRecord(error.response) ? error.response : {};
 			reportRefusal(response.reason);
-			return { kind: 'denied', reason: denialOf(status, response.reason) };
+			return denied(denialOf(status, response.reason), problemOf(error));
 		}
 		throw toDataError(error, signal);
 	}
 	const value = parse(answer);
-	return value === null ? { kind: 'denied', reason: 'script' } : { kind: 'ok', value };
+	if (value !== null) return { kind: 'ok', value };
+	// The script answered, but not in the form of the route: "Unerwartete Antwort des Servers".
+	const unreadable = new DataError('server');
+	noteRequest(unreadable, request.method, request.path);
+	return denied('script', problemOf(unreadable));
 }
 
 /** Status of the app: state, address, mail helper, start fingerprint, autostart, other copies. */
@@ -61,6 +87,7 @@ export function fetchSystemStatus(
 ): Promise<SystemAnswer<SystemOverview>> {
 	return ask(
 		options.signal,
+		{ method: 'GET', path: ROUTE },
 		() => pb.send(ROUTE, { method: 'GET', requestKey: null, signal: options.signal }),
 		parseOverview
 	);
@@ -73,6 +100,7 @@ export function fetchSystemDoctor(
 ): Promise<SystemAnswer<DoctorResult>> {
 	return ask(
 		options.signal,
+		{ method: 'GET', path: `${ROUTE}/doctor` },
 		() => pb.send(`${ROUTE}/doctor`, { method: 'GET', requestKey: null, signal: options.signal }),
 		parseDoctor
 	);
@@ -85,6 +113,7 @@ export function fetchSystemLogs(
 ): Promise<SystemAnswer<SystemLogs>> {
 	return ask(
 		options.signal,
+		{ method: 'GET', path: `${ROUTE}/logs` },
 		() => pb.send(`${ROUTE}/logs`, { method: 'GET', requestKey: null, signal: options.signal }),
 		parseLogs
 	);
@@ -99,10 +128,12 @@ export function runSystemAction(
 	action: SystemAction,
 	options: RequestOptions = {}
 ): Promise<SystemAnswer<SystemOverview | 'restarting'>> {
+	const path = `${ROUTE}/actions/${encodeURIComponent(action)}`;
 	return ask(
 		options.signal,
+		{ method: 'POST', path },
 		() =>
-			pb.send(`${ROUTE}/actions/${encodeURIComponent(action)}`, {
+			pb.send(path, {
 				method: 'POST',
 				requestKey: null,
 				signal: options.signal

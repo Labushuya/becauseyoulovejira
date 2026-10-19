@@ -10,6 +10,7 @@
 	import type { InboxKeysStore } from '$lib/stores/inbox-keys.svelte';
 	import type { InboxTargetsStore } from '$lib/stores/inbox-targets.svelte';
 	import type { NotionStore } from '$lib/stores/notion.svelte';
+	import type { RestartStore } from '$lib/stores/restart.svelte';
 	import { channelSetupHref } from '$lib/ticket-links';
 	import BookmarkletCard from './channels/BookmarkletCard.svelte';
 	import ChannelCatalog from './channels/ChannelCatalog.svelte';
@@ -42,13 +43,15 @@
 	// (ADR-0051) have their assistant too and a card with the folders, their details and the files of
 	// before (`folders`). In the household area (E7-3, ADR-0059 §5) connections, the own inbox and
 	// WhatsApp Web stay private: their cards and assistants are not offered, the catalog says
-	// "Nur im privaten Bereich"; the bookmarklet, the clipboard and the files work there.
+	// "Nur im privaten Bereich"; the bookmarklet, the clipboard and the files work there. Since BW-1
+	// (ADR-0072) the assistant restarts the app and the mail helper in place (`restart`).
 	let {
 		captureUrl,
 		connections,
 		notion,
 		github,
 		folders,
+		restart = null,
 		importKeywords = null,
 		inboxKeys = null,
 		inboxTargets = null,
@@ -68,6 +71,8 @@
 		github: GitHubStore;
 		/** Folders (ADR-0051): details of the cards and "Vorhandene Dateien übernehmen". */
 		folders: FoldersStore;
+		/** "Jetzt neu starten" in the assistant (BW-1); without it only the emergency way stands. */
+		restart?: RestartStore | null;
 		/**
 		 * Keywords of the file imports, for the numbers on the files card, and of the channels of the
 		 * own inbox (ADR-0038).
@@ -200,6 +205,7 @@
 				store={connections}
 				{notion}
 				{github}
+				{restart}
 				{projects}
 				onconnection={(id) => onsetupchange({ kind: setup?.kind ?? 'kalender', connectionId: id })}
 				onimport={(connection) => {
