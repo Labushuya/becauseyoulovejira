@@ -90,9 +90,11 @@ function expandRefs(refs, ids) {
 const isOpenManual = (item) => item.status === 'offen' && item.art.includes('manuell');
 
 /**
- * Test files the manifest must cover: tests/unit, tests/integration, web/src/**\/*.test.ts, the
- * mail helper helpers/mail/src/**\/*.test.ts, the backup helper helpers/backup/src/**\/*.test.ts
- * (ADR-0046) and the browser extension extensions/whatsapp-web/src/**\/*.test.ts (ADR-0038).
+ * Test files the manifest must cover: tests/unit, tests/integration, the specifications of the
+ * smoke test in the browser tests/mobile/**\/*.spec.mjs (Playwright, MO-1a, ADR-0073),
+ * web/src/**\/*.test.ts, the mail helper helpers/mail/src/**\/*.test.ts, the backup helper
+ * helpers/backup/src/**\/*.test.ts (ADR-0046) and the browser extension
+ * extensions/whatsapp-web/src/**\/*.test.ts (ADR-0038).
  */
 function testFiles() {
 	const list = (dir, pattern) =>
@@ -102,6 +104,7 @@ function testFiles() {
 	return [
 		...list('tests/unit', /\.test\.(js|mjs|ts)$/),
 		...list('tests/integration', /\.test\.(js|mjs|ts)$/),
+		...list('tests/mobile', /\.spec\.(js|mjs|ts)$/),
 		...list('web/src', /\.test\.ts$/),
 		...list('helpers/mail/src', /\.test\.ts$/),
 		...list('helpers/backup/src', /\.test\.ts$/),
@@ -239,6 +242,14 @@ describe('docs/test-manifest.html', () => {
 	it('covers every test file of the repository', () => {
 		const referenced = new Set(allItems().flatMap((item) => item.tests.map((ref) => ref.split('::')[0])));
 		expect(testFiles().filter((file) => !referenced.has(file))).toEqual([]);
+	});
+
+	// MO-1a (ADR-0073): the specifications of Playwright count as test files like the others; the
+	// global setup and its helpers are not.
+	it('counts the specifications of the smoke test in the browser as test files', () => {
+		const files = testFiles();
+		expect(files).toContain('tests/mobile/phone-frame.spec.mjs');
+		expect(files.filter((file) => file.startsWith('tests/mobile/') && !file.endsWith('.spec.mjs'))).toEqual([]);
 	});
 
 	it('contains nothing left over from the template', () => {

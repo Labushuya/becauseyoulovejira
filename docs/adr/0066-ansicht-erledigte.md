@@ -1,6 +1,6 @@
 # ADR-0066: Ansicht „Erledigte“ und feste Reihenfolge der Kopfnavigation
 
-- **Status:** Angenommen und umgesetzt (Paket ER-1); manuelle Prüfungen im Test-Manifest (BYL-E6-1570 bis BYL-E6-1576)
+- **Status:** Angenommen und umgesetzt (Paket ER-1); manuelle Prüfungen im Test-Manifest (BYL-E6-1570 bis BYL-E6-1576); §1 für die Handy-Ansicht ergänzt durch den Nachtrag MO-1a (untere Leiste, [ADR-0073](0073-smartphone-layout.md))
 - **Datum:** 2026-10-05
 - **Entscheidung durch:** Nutzer (Reihenfolge der Navigation mit „Papierkorb“ am Ende; eigene Ansicht mit den Gruppen „Heute“, „Gestern“, „Diese Woche“, „Diesen Monat“ und je Monat; Nachladen beim Scrollen und mit „Mehr laden“; Suche und Filter nach Projekt, Tag und Charm mit Anzahl; Aktionen über das normale Zeilenmenü mit „Wieder öffnen“ und „Rückgängig“; Realtime; „Aufgaben“ nur noch offene Arbeit mit dem Link „Erledigte ansehen →“, ohne Status „Erledigt“, mit Weiterleitung alter Adressen; Abschlussdatum), Advisor (Richtschnur für Store, Tests und Manifest), Executor (Umsetzung, Filterausdruck, Nachladen, Weiterleitung, Einzelheiten der Oberfläche)
 - **Bezug:** [ADR-0005](0005-zeitzone-europe-berlin.md) (Berliner Tag), [ADR-0006](0006-frontend-zustand-und-datenzugriff.md) §3 (erledigte Tickets seitenweise), [ADR-0010](0010-layout-nach-task-board.md) (Abschnittsleiste), [ADR-0013](0013-filter-suche-sortierung-gruppierung.md) (Nachtrag E; Nachtrag D von PL-1), [ADR-0023](0023-lebenszyklus-von-regeln-und-instanzen.md) (Wiederöffnen von Instanzen), [ADR-0034](0034-unterprojekte.md) (Unterprojekte im Filter), [ADR-0037](0037-papierkorb.md) §9 (Link „Papierkorb“, hier ersetzt), [ADR-0045](0045-ticket-duplizieren.md) (Duplizieren), [ADR-0053](0053-kalenderansicht.md) (der Kalender behält den Status „Erledigt“), [ADR-0054](0054-tickets-im-kontext-oeffnen.md) (Tickets im Kontext), [ADR-0057](0057-kontextabhaengige-oberflaeche.md) (KOB-1), [ADR-0059](0059-bereiche-privat-und-haushalt.md) (Bereiche), [ADR-0060](0060-einheitliche-eingabeelemente.md) (Felder, 44 px), [ADR-0062](0062-charms.md) (Charm), [ADR-0065](0065-tagesplan.md) (Abzeichen „Vorhaben“)
@@ -64,3 +64,12 @@
 - Negativ: Ein zweites Realtime-Abo auf `tickets`, solange die Ansicht offen ist.
 - Negativ: „Rückgängig“ von „Wieder öffnen“ setzt einen neuen Abschlusszeitpunkt.
 - Negativ: Wird ein Ticket jenseits der geladenen Seiten anderswo wieder geöffnet, stimmt die Anzahl bis zum nächsten Laden um eins nicht; der Fall ist selten, weil Wiederöffnen fast immer frisch Erledigtes betrifft.
+
+## Nachtrag (2026-10-20, Nutzerentscheidung, MO-1a): untere Leiste am Handy
+
+Ändert §1 für die Handy-Ansicht ([ADR-0073](0073-smartphone-layout.md)); am PC und mit ausgeschaltetem Schalter gilt §1 unverändert.
+
+- **Anlass:** Am Handy brachen die acht Segmente in drei bis vier Zeilen mit Zielen von 24 px um und standen mit der Kopfzeile vor jeder Liste. Der Nutzer hat für das Handy eine untere Leiste freigegeben: **Tagesplan · Aufgaben · ＋ · Eingang · Mehr**.
+- **Was sich ändert:** Mit dem Schalter „Handy-Ansicht (Vorschau)“ und unter 40rem gibt es die Spur der Segmente nicht; die untere Leiste und „Mehr“ nehmen ihren Platz ein. §1 „Am Handy gibt es keine eingeklappte Variante“ gilt dort nicht mehr.
+- **Reihenfolge:** In der Leiste steht der Tagesplan vor „Aufgaben“ (Nutzer: unterwegs die erste Frage), danach „＋“ (Schnellerfassung) und der Eingang. Unter „Mehr“ stehen alle übrigen Ansichten in der festen Folge von §1: Projekte, Wiederholungen, Kalender, Erledigte, Papierkorb, mit denselben Zahlen.
+- **Was bleibt:** Jede Ansicht ist erreichbar, in höchstens zwei Tipps; Namen, Adressen und Zustände der Links sind dieselben wie in der Spur (gemeinsam in `lib/views.ts`); die aktuelle Ansicht trägt `aria-current="page"`. Vom **Kontext** (KOB-1) hängt weiter kein Eintrag ab: Konto, Server und das Gerät im Sinne des Kontexts ändern nichts an Leiste und „Mehr“. Ob der Rahmen gilt, entscheiden allein der Schalter dieses Geräts und die Breite des Fensters.
