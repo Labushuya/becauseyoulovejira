@@ -43,7 +43,7 @@ export const REMEMBERED_FIELDS: readonly TransferField[] = Object.freeze(
 /** The choice in advance on a device without a remembered one. */
 export const DEFAULT_TRANSFER_FIELDS: readonly TransferField[] = Object.freeze(['due', 'priority']);
 
-/** Key in localStorage (CLAUDE.md §7: preferences of a device start with `byl-`). */
+/** Key in localStorage: the last confirmed choice of a device (ADR-0070 §2). */
 export const SUBTASK_TRANSFER_STORAGE_KEY = 'byl-subtask-transfer-fields';
 
 export const TRANSFER_TARGETS_MAX = 200;
