@@ -48,7 +48,7 @@ export interface DayPlanSort {
 
 export const MANUAL_SORT: DayPlanSort = Object.freeze({ key: 'manual', direction: 'ascending' });
 
-/** Key in localStorage (CLAUDE.md §7: preferences of a device start with `byl-`). */
+/** Key in localStorage: one sort per device for every day and both areas (ADR-0065, addendum TP-5). */
 export const DAY_PLAN_SORT_STORAGE_KEY = 'byl-dayplan-sort';
 
 export const DAY_PLAN_SORT_LABELS: Readonly<Record<DayPlanSortKey, string>> = Object.freeze({

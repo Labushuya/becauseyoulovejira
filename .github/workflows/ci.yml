@@ -30,8 +30,15 @@ jobs:
       code: ${{ steps.filter.outputs.code }}
     steps:
       # Documentation only means: every changed path (old and new name) is a Markdown file or
-      # lies under docs/, except docs/test-manifest.html, which tests/unit/test-manifest.test.mjs
-      # reads. An empty list or an API error counts as a code change.
+      # lies under docs/. Code are still the files that tests or the lint read (CLAUDE.md §12):
+      # CLAUDE.md, docs/regeln/ and any CLAUDE.md below docs/ in any case
+      # (claude-md-structure.test.mjs, platform-scripts.test.mjs), docs/test-manifest.html
+      # (test-manifest.test.mjs), Markdown below web/ and extensions/ (the corpus of
+      # web/src/lib/test/markdown-corpus, Prettier in the lint), and every path a pull request
+      # removes, marked "removed:" (deleted files and the old name of renamed ones): tests check
+      # that the ADRs and plans linked from CLAUDE.md, docs/regeln and the manifest exist.
+      # tests/unit/ci-ruleset.test.mjs applies this case statement to sample paths. An empty list
+      # or an API error counts as a code change.
       - name: Classify changed files
         id: filter
         shell: bash
@@ -40,13 +47,17 @@ jobs:
           REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          files=$(gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files" --jq '.[] | .filename, (.previous_filename // empty)')
+          files=$(gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files" --jq '.[] | (if .status == "removed" then "removed:" else "" end) + .filename, (.previous_filename // empty | "removed:" + .)')
           code=false
           if [ -z "$files" ]; then code=true; fi
           while IFS= read -r file; do
             [ -z "$file" ] && continue
             case "$file" in
+              removed:*) code=true ;;
               docs/test-manifest.html) code=true ;;
+              CLAUDE.md | docs/regeln/*) code=true ;;
+              docs/[Cc][Ll][Aa][Uu][Dd][Ee].[Mm][Dd] | docs/*/[Cc][Ll][Aa][Uu][Dd][Ee].[Mm][Dd]) code=true ;;
+              web/* | extensions/*) code=true ;;
               docs/* | *.md) ;;
               *) code=true ;;
             esac
