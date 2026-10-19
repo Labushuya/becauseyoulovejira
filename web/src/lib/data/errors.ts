@@ -460,6 +460,28 @@ export function reportedProblem(input: {
 }
 
 /**
+ * The entry of a request that never got an answer in time, e.g. the health check after a restart
+ * of the app when the server does not come back (BW-1, ADR-0072): "Keine Verbindung zum Server"
+ * with the request the app kept asking.
+ */
+export function unansweredProblem(input: {
+	intent: string;
+	method: string;
+	path: string;
+}): ProblemEntry {
+	const at = Date.now();
+	return clientProblem({
+		id: nextProblemId(at),
+		intent: input.intent,
+		at,
+		outcome: { result: 'network', ...NO_ANSWER },
+		request: { method: input.method.toUpperCase(), path: requestPathOf(input.path) },
+		app: appVersion,
+		exception: null
+	});
+}
+
+/**
  * `{ problem }` for the result of an action when the failure has an entry, nothing otherwise, so a
  * result keeps its form for a hint at an input: `{ ok: false, message, ...problemDetails(failure) }`.
  */

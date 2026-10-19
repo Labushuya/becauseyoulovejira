@@ -107,6 +107,43 @@ export function restartNeeded(subject: string): string {
 	return `${subject} nach dem nächsten Neustart verfügbar. ${RESTART_NEEDED.text}`;
 }
 
+/** What the tab restarts outside the page System (BW-1, ADR-0072). */
+export type RestartTask = 'restart' | 'mail-restart';
+
+/**
+ * Who restarts where, for a tab that may not do it itself (BW-1, ADR-0072): the paragraphs that
+ * stand instead of "Jetzt neu starten" resp. "Mail-Helfer neu starten", never a script; null for
+ * the administrator on the machine of the app under Windows (the button shows), [] while the
+ * context loads. Read in a template it follows the context of the tab.
+ */
+export function restartElsewhere(task: RestartTask): string[] | null {
+	const capabilities = currentCapabilities();
+	if (capabilities.scripts) return null;
+	const action = task === 'restart' ? '„Jetzt neu starten“' : '„Mail-Helfer neu starten“';
+	const after = 'Danach siehst du hier, ob es gewirkt hat.';
+	switch (capabilities.mode) {
+		case 'pending':
+			return [];
+		case 'outdated':
+			return [contextNoteText('outdated', null)];
+		case 'remote':
+			return [
+				pcOnlyText(capabilities.localUrl),
+				`Dort startest du die App mit ${action} in diesem Schritt neu oder auf der Seite „Einstellungen → System“. ${after}`
+			];
+		case 'member':
+			return [
+				`Neu starten darf nur der Verwalter der App, und nur direkt am PC, auf dem becauseyoulovejira läuft: mit ${action} in diesem Schritt oder auf der Seite „Einstellungen → System“.`,
+				`Bitte den Verwalter darum. ${after}`
+			];
+		case 'pc':
+			return [
+				CONTEXT_TEXTS.unavailable,
+				'Diese Knöpfe bedienen die Skripte eines Servers unter Windows. Starte deinen Server so neu, wie er eingerichtet ist; der Hinweis oben nennt den Weg.'
+			];
+	}
+}
+
 /** What to do when the server does not answer; start.bat only for the administrator at the PC. */
 export function serverUnreachableHint(): string {
 	return unreachableHint(currentCapabilities());
