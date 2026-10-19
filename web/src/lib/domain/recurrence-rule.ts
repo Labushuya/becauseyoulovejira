@@ -902,7 +902,7 @@ export function formPreview(
 		const rows = completions.map((completed) => {
 			const due = afterCompletion(rule, completed);
 			const appears = createOn(due, rule.lead_days);
-			// The next ticket comes with the completion at the earliest (CLAUDE.md §6 "Vorlauf").
+			// The next ticket comes with the completion at the earliest (docs/regeln/serien.md "Vorlauf").
 			const shown = completed > today && appears < completed ? completed : appears;
 			return { due, appears: shown, completed };
 		});

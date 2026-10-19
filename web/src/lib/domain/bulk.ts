@@ -145,7 +145,7 @@ export function planStep(
 
 /**
  * The patch that restores a ticket after a field change: the same fields with their values from
- * before. A changed project gives the ticket another new key (CLAUDE.md section 5), not the old one.
+ * before. A changed project gives the ticket another new key (docs/regeln/datenmodell.md), not the old one.
  */
 export function restorePatch(before: TicketSummary, patch: TicketPatch): TicketPatch {
 	const restore: TicketPatch = {};

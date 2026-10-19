@@ -1,4 +1,4 @@
-// Dates of recurring tasks (CLAUDE.md section 6, ADR-0021 sections 2 and 3). Pure: every date is
+// Dates of recurring tasks (docs/regeln/serien.md, ADR-0021 sections 2 and 3). Pure: every date is
 // a calendar date `YYYY-MM-DD` without time and time zone, "today" is always a parameter (the
 // Berlin date from berlin-date.ts, ADR-0005). Internally a date is its day number since
 // 1970-01-01; the functions jump arithmetically to the matching period instead of looping over

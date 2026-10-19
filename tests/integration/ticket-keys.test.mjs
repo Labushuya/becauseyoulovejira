@@ -1,4 +1,4 @@
-// Scope and atomic key assignment (E1 plan, package 5; CLAUDE.md section 5; OF-1, OF-3 c,
+// Scope and atomic key assignment (E1 plan, package 5; docs/regeln/datenmodell.md; OF-1, OF-3 c,
 // OF-6, OF-8, OF-11, OF-14). Every test works with fresh users or the scenario of this file, so
 // counters start at 1 regardless of other test files sharing the instance.
 

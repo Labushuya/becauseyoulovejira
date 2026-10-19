@@ -1,4 +1,4 @@
-// Reads web/src/lib/styles/tokens.css for the token tests (CLAUDE.md section 8, ADR-0027, ADR-0029):
+// Reads web/src/lib/styles/tokens.css for the token tests (docs/regeln/design-system.md, ADR-0027, ADR-0029):
 // the rule blocks with their declarations, keyed by selector. A block inside an at-rule carries the
 // at-rule in its key (for example "@media (forced-colors: active) :root"), except the media query of
 // the dark mode, whose blocks keep their plain selector. Only tests use it.

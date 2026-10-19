@@ -1,5 +1,5 @@
-// Date calculation of recurring tasks in the hooks (app/pb_hooks/lib/recurrence.js; CLAUDE.md
-// section 6, ADR-0021 sections 2 and 3, E5 plan package 1): the shared table, the required cases
+// Date calculation of recurring tasks in the hooks (app/pb_hooks/lib/recurrence.js;
+// docs/regeln/serien.md, ADR-0021 sections 2 and 3, E5 plan package 1): the shared table, the required cases
 // (month ends, leap years, daylight saving through berlin-time.js, long gaps), a comparison with a
 // day-by-day enumeration of the definition, validation and running time.
 
@@ -70,7 +70,7 @@ describe('recurrence.js: against the definition, day by day', () => {
 	});
 });
 
-describe('recurrence.js: required cases (CLAUDE.md section 6)', () => {
+describe('recurrence.js: required cases (docs/regeln/serien.md)', () => {
 	it('clamps month ends in every month of two years', () => {
 		const rule = { mode: 'calendar', freq: 'monthly', interval: 1, month_day: 31, anchor: '2027-01-31' };
 		const dates = recurrence.upcoming(rule, '2027-01-01', 24);

@@ -341,7 +341,7 @@
   "meta": {
     "projekt": "becauseyoulovejira",
     "stand": "2026-10-19",
-    "commit": "3006bb4"
+    "commit": "65b7d2b"
   },
   "bereiche": [
     { "id": "betrieb", "titel": "Betrieb: Start, Stopp, Skripte und Daten" },
@@ -651,6 +651,8 @@
       "vermerk": "Nur Dokumentation (PR #303, docs/security/bewertungen/GHSA-pxg6-pf52-xh8x.md): keine eigenen Testfälle, kein Build, kein Neustart. Die Annahmen A1 bis A4 und A6 sichert seit SEC-2 ein Wächtertest." },
     { "id": "SEC-2", "vorhaben": "Sicherheitshinweise", "titel": "Wächtertest für die Bewertung GHSA-pxg6-pf52-xh8x: kein Server-Code in web/src, adapter-static ohne experimental, ssr = false, kein exportToCookie oder loadFromCookie, cookie nur über Kit im Lockfile von web", "bereich": "entwicklung", "quelle": "Folgepaket zu SEC-1", "datum": "2026-10-19", "faelle": ["BYL-E6-1875..BYL-E6-1879"],
       "vermerk": "Nur Test und Dokumentation, kein Produktivcode, kein Neustart. Schlägt der Test an, wird die Bewertung neu erstellt. A5 (Kits Server-Cookie-Code nicht in app/pb_public) braucht einen Build und bleibt eine Prüfung von Hand." },
+    { "id": "DOC-1", "vorhaben": "Projektregeln", "titel": "CLAUDE.md in einen kompakten Kern und Detaildokumente unter docs/regeln aufteilen; Wächtertest für Größe, Links und Anker, Index, Kopf der Detaildokumente und Namen", "bereich": "entwicklung", "quelle": "Auftrag", "datum": "2026-10-19", "faelle": ["BYL-E6-1880..BYL-E6-1884"],
+      "vermerk": "Nur Doku, Test und Kommentare, kein Produktivcode, kein Neustart. Jede Zeile der alten CLAUDE.md steht wortgleich an genau einer Stelle; belegt mit einem einmaligen Prüfskript (Ergebnis im PR)." },
     { "id": "querschnitt", "vorhaben": "Querschnitt", "titel": "Testumgebung, Regeln der Datenschicht, Hook-Module und dieses Manifest", "bereich": "entwicklung", "faelle": ["BYL-X-001..BYL-X-004"] }
   ],
   "zurueckgestellt": [
@@ -893,7 +895,7 @@
           "tests": ["tests/integration/migrations-rollback.test.mjs"] },
         { "id": "BYL-E1-072", "title": "Status, Priorität und Kategorien", "art": ["unit"], "status": "bestanden",
           "pre": "–", "steps": ["npm run test:unit"],
-          "expect": "Werte und Kategorien exakt nach CLAUDE.md §5, status.js und status.ts identisch.",
+          "expect": "Werte und Kategorien exakt nach docs/regeln/datenmodell.md, status.js und status.ts identisch.",
           "tests": ["tests/unit/status.test.mjs"] },
         { "id": "BYL-E1-073", "title": "Nur eigene Datensätze sichtbar", "art": ["integration"], "status": "bestanden",
           "pre": "–", "steps": ["npm run test:integration"],
@@ -7764,6 +7766,31 @@
           "pre": "Lockfiles (Version 2 oder 3) im Root, in web, helpers/* und extensions/*.", "steps": ["npm run test:unit"],
           "expect": "Nur @sveltejs/kit in web/package-lock.json verlangt cookie (dependencies, optionalDependencies, peerDependencies, devDependencies), und node_modules/cookie steht nur dort. Ein Lockfile ohne „packages“ lässt den Test ebenfalls anschlagen. Sonst „Annahme A6 … verletzt“ mit Lockfile und Paket.",
           "tests": ["tests/unit/security-cookie-assumptions.test.mjs::A6: only @sveltejs/kit asks for cookie, and only in web/package-lock.json"] }
+      ]
+    },
+    {
+      "tag": "E6", "name": "Aufbau der Projektregeln (Kern und docs/regeln)", "desc": "Paket DOC-1: CLAUDE.md ist der kompakte Kern, die Fachregeln stehen in docs/regeln/*.md. tests/unit/claude-md-structure.test.mjs hält Größe, Links und Anker, Index, Kopf der Detaildokumente und Namen fest; die Meldung zur Größe nennt die Pflege-Regel des Kerns. IDs BYL-E6-1880 bis BYL-E6-1884.",
+      "items": [
+        { "id": "BYL-E6-1880", "title": "Kern unter 80 000 Zeichen (DOC-1)", "art": ["unit"], "status": "bestanden",
+          "pre": "tests/unit/claude-md-structure.test.mjs liest CLAUDE.md und docs/regeln/*.md.", "steps": ["npm run test:unit"],
+          "expect": "CLAUDE.md hat weniger als 80 000 Zeichen (nach DOC-1 rund 50 000). Sonst schlägt der Test mit der Zahl und der Pflege-Regel des Kerns an. Gegenprobe: der Stand vor DOC-1 (345 242 Zeichen) lässt ihn anschlagen.",
+          "tests": ["tests/unit/claude-md-structure.test.mjs::keeps the core below its hard size limit"] },
+        { "id": "BYL-E6-1881", "title": "Links und Anker in Kern und Detaildokumenten (DOC-1)", "art": ["unit"], "status": "bestanden",
+          "pre": "Wie BYL-E6-1880.", "steps": ["npm run test:unit"],
+          "expect": "Jeder relative Link in CLAUDE.md und docs/regeln/*.md außerhalb von Code zeigt auf eine vorhandene Datei oder einen Ordner, jeder Anker auf eine Überschrift der Zieldatei (Schreibweise wie bei GitHub). Andere Schemata und absolute Pfade der App wie /tickets/… zählen nicht. Gegenprobe: der Anker #api-regel in papierkorb.md lässt ihn mit Datei und Zeile anschlagen.",
+          "tests": ["tests/unit/claude-md-structure.test.mjs::resolves every relative link and anchor of the core and the detail documents"] },
+        { "id": "BYL-E6-1882", "title": "Jedes Detaildokument im Index und in der Übersicht (DOC-1)", "art": ["unit"], "status": "bestanden",
+          "pre": "Wie BYL-E6-1880.", "steps": ["npm run test:unit"],
+          "expect": "Jede Datei *.md unter docs/regeln ist im Abschnitt „Index der Detaildokumente“ von CLAUDE.md verlinkt und jede außer README.md in docs/regeln/README.md. Gegenprobe: eine neue Datei docs/regeln/probe.md lässt ihn anschlagen.",
+          "tests": ["tests/unit/claude-md-structure.test.mjs::lists every detail document in the index of the core and in docs/regeln/README.md"] },
+        { "id": "BYL-E6-1883", "title": "Kopf jedes Detaildokuments (DOC-1)", "art": ["unit"], "status": "bestanden",
+          "pre": "Wie BYL-E6-1880.", "steps": ["npm run test:unit"],
+          "expect": "Jedes Detaildokument beginnt mit einer Überschrift „# …“, sein zweiter Absatz mit „**Wann lesen:**“, und vor dem ersten Abschnitt steht ein Link auf ../../CLAUDE.md. Gegenprobe: docs/regeln/probe.md ohne diesen Kopf lässt ihn anschlagen.",
+          "tests": ["tests/unit/claude-md-structure.test.mjs::starts every detail document with \"Wann lesen\" and a link back to the core"] },
+        { "id": "BYL-E6-1884", "title": "Keine CLAUDE.md unter docs/ (DOC-1)", "art": ["unit"], "status": "bestanden",
+          "pre": "Wie BYL-E6-1880.", "steps": ["npm run test:unit"],
+          "expect": "Keine Datei unter docs/ heißt CLAUDE.md, auch nicht in anderer Groß- und Kleinschreibung; Claude Code lüde sie sonst als verschachtelte Projektregeln. Gegenprobe: docs/plan/CLAUDE.md lässt ihn anschlagen.",
+          "tests": ["tests/unit/claude-md-structure.test.mjs::has no file named CLAUDE.md below docs/"] }
       ]
     },
     {

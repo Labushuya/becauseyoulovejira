@@ -1,4 +1,4 @@
-// German labels (CLAUDE.md sections 7 and 8).
+// German labels (CLAUDE.md section 7; status pills in docs/regeln/design-system.md).
 
 import { describe, expect, it } from 'vitest';
 import {
@@ -12,7 +12,7 @@ import { SORT_KEYS } from './ordering';
 import { PRIORITIES, STATUSES } from './status';
 
 describe('labels', () => {
-	it('names every status as in CLAUDE.md section 8', () => {
+	it('names every status as in the status pills of docs/regeln/design-system.md', () => {
 		expect(Object.keys(STATUS_LABELS)).toEqual([...STATUSES]);
 		expect(STATUS_LABELS).toEqual({
 			backlog: 'Backlog',

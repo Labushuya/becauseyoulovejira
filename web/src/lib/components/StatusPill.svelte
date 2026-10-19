@@ -2,7 +2,7 @@
 	import { STATUS_LABELS } from '$lib/domain/labels';
 	import type { Status } from '$lib/domain/status';
 
-	// Status pill "Ton in Ton" (CLAUDE.md section 8). The label is text, so color is never the
+	// Status pill "Ton in Ton" (docs/regeln/design-system.md). The label is text, so color is never the
 	// only cue; "Erledigt" also carries a check icon.
 	let { status }: { status: Status } = $props();
 </script>

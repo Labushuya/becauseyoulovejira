@@ -1,4 +1,4 @@
-// German UI labels for status, priority and history fields (CLAUDE.md sections 7 and 8).
+// German UI labels for status, priority and history fields (CLAUDE.md section 7; status pills in docs/regeln/design-system.md).
 // The identifiers stay English in code (E1 plan, package 2).
 
 import type { SortKey, SortSpec } from './ordering';

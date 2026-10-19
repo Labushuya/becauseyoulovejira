@@ -1,4 +1,4 @@
-// Color math for the token tests (CLAUDE.md section 8, ADR-0009, ADR-0027): WCAG 2.x contrast,
+// Color math for the token tests (docs/regeln/design-system.md, ADR-0009, ADR-0027): WCAG 2.x contrast,
 // CIELAB (D65) and the CIEDE2000 color difference, plus the HSL hue. Only tests use it; the app
 // itself never computes colors.
 

@@ -1,5 +1,5 @@
 // Comments of a ticket (E2 plan, T-11 and T-13). Visibility follows the ticket; only the author
-// may edit or delete, enforced by the API rules (CLAUDE.md section 5).
+// may edit or delete, enforced by the API rules (docs/regeln/datenmodell.md).
 
 import type PocketBase from 'pocketbase';
 import type { Comment } from '../domain/ticket';

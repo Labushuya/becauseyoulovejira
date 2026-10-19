@@ -1,4 +1,4 @@
-// Parent guard and scope of the parent relation (E1 plan, package 6; CLAUDE.md section 5:
+// Parent guard and scope of the parent relation (E1 plan, package 6; docs/regeln/unteraufgaben.md:
 // parent at most one level; OF-3 c). Relations to project, tags and recurrence are covered in
 // ticket-keys.test.mjs.
 

@@ -18,7 +18,7 @@ export function uniqueCode() {
 	return [...randomBytes(6)].map((byte) => LETTERS[byte % LETTERS.length]).join('');
 }
 
-/** Scope as the hooks compute it (CLAUDE.md section 5). */
+/** Scope as the hooks compute it (docs/regeln/datenmodell.md). */
 export function scopeOf(ownerId, householdId) {
 	return householdId ? `h:${householdId}` : `u:${ownerId}`;
 }

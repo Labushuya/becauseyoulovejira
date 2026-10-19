@@ -113,7 +113,7 @@ becauseyoulovejira/
   extensions/whatsapp-web/  Browser-Erweiterung in TypeScript (Build → ../../app/erweiterung-whatsapp-web), Tests unter src/*.test.ts
   scripts/                Build-/Setup-Skripte (PowerShell unter Windows; PocketBase-Abruf und Binary-Namen in Node)
   tests/                  Vitest-Tests (Hooks, Regeln, Login- und SPA-Integration)
-  docs/                   ADRs, Etappenpläne, Sicherheitsbewertungen (docs/security/bewertungen), Test-Manifest, README-Assets
+  docs/                   ADRs, Etappenpläne, Detaildokumente der Projektregeln (docs/regeln, Kern in CLAUDE.md), Sicherheitsbewertungen (docs/security/bewertungen), Test-Manifest, README-Assets
   .github/                CI-Workflow, Dependabot, Issue- und PR-Vorlagen, Sicherheitsrichtlinie
 ```
 

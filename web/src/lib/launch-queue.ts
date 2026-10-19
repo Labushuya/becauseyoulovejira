@@ -3,7 +3,7 @@
 // open window instead of opening another one, and the browser hands the address of the launch to
 // window.launchQueue. A launch of the start page only focuses; another page of the app (such as
 // /eingang/neu?… of the bookmarklet) is opened in the focused window. Unsaved input asks first,
-// through the beforeNavigate question of the page (CLAUDE.md section 7).
+// through the beforeNavigate question of the page (docs/regeln/ui-bausteine.md).
 
 import type { ResolvedPathname } from '$app/types';
 

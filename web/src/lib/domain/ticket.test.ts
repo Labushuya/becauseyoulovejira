@@ -1,4 +1,4 @@
-// Conversion of the due date between storage and date input (CLAUDE.md section 5).
+// Conversion of the due date between storage and date input (docs/regeln/datenmodell.md).
 
 import { describe, expect, it } from 'vitest';
 import { fromDueInput, toDueInput } from './ticket';

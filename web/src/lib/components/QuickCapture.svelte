@@ -18,7 +18,7 @@
 	import ProblemDetails from './problems/ProblemDetails.svelte';
 	import ProjectSelect from './ProjectSelect.svelte';
 
-	// Quick entry (CLAUDE.md section 7; E4 plan, package 6; OF-E4-3) on the modal building block
+	// Quick entry (docs/regeln/ansichten.md; E4 plan, package 6; OF-E4-3) on the modal building block
 	// (ADR-0025 section 3, size M), shown while the component is mounted: one line with the short
 	// syntax `Titel @CODE !hoch #tag`, a preview of what was recognised, Enter creates a ticket
 	// (source "quick"), Alt+Enter puts the line into the inbox. After saving the field empties for

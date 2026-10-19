@@ -1,4 +1,4 @@
-// Calendar date in Europe/Berlin (CLAUDE.md section 5, ADR-0005). Pure: the EU daylight saving
+// Calendar date in Europe/Berlin (docs/regeln/datenmodell.md, ADR-0005). Pure: the EU daylight saving
 // rule is implemented here instead of relying on the time zone data of the runtime. Summer time
 // (UTC+2) runs from the last Sunday of March, 01:00 UTC, to the last Sunday of October,
 // 01:00 UTC; otherwise UTC+1. The hook module app/pb_hooks/lib/berlin-time.js (E4) implements

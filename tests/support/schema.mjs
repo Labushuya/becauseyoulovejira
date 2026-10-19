@@ -480,7 +480,7 @@ export const EXPECTED_COLLECTIONS = {
 
 export const RULE_NAMES = ['listRule', 'viewRule', 'createRule', 'updateRule', 'deleteRule'];
 
-// API rules of package 4 (CLAUDE.md section 5, OF-2, OF-3, OF-5), written out literally so the
+// API rules of package 4 (docs/regeln/datenmodell.md, OF-2, OF-3, OF-5), written out literally so the
 // test does not reuse the construction logic of the migration. Since 1790203900 (ADR-0058 §5) the
 // owner branch holds for private records only; household records go through the membership.
 const AUTH = '@request.auth.id != ""';

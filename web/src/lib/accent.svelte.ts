@@ -1,4 +1,4 @@
-// Accent themes (ADR-0027 with addendum 2026-09-27; CLAUDE.md section 8): Petrol (default), Rubin,
+// Accent themes (ADR-0027 with addendum 2026-09-27; docs/regeln/design-system.md): Petrol (default), Rubin,
 // Smaragd, Kupfer, each in light and dark, independent of the mode in theme.svelte.ts. The choice
 // lives in localStorage under ACCENT_STORAGE_KEY, only on this device: one of STORED_ACCENTS;
 // "Petrol" removes the key. tokens.css holds the colors under data-accent on the root element. The

@@ -13,11 +13,11 @@ const EXPECTED_CATEGORY = {
 };
 
 describe('status.js (hook)', () => {
-	it('lists exactly the statuses of CLAUDE.md in order', () => {
+	it('lists exactly the statuses of docs/regeln/datenmodell.md in order', () => {
 		expect([...hook.STATUSES]).toEqual(['backlog', 'open', 'in_progress', 'waiting', 'done']);
 	});
 
-	it('lists exactly the priorities of CLAUDE.md in order', () => {
+	it('lists exactly the priorities of docs/regeln/datenmodell.md in order', () => {
 		expect([...hook.PRIORITIES]).toEqual(['low', 'medium', 'high', 'urgent']);
 	});
 

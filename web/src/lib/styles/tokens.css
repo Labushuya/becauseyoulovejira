@@ -1,7 +1,7 @@
 /* Design Tokens */
 
 /*
- * Structure (CLAUDE.md section 8, ADR-0027):
+ * Structure (docs/regeln/design-system.md, ADR-0027):
  * - Four mode blocks (light, dark by media query, forced light, forced dark) hold every color token
  *   with the default accent Petrol.
  * - Each further accent theme (data-accent on the root element: rubin, smaragd, kupfer) has the
