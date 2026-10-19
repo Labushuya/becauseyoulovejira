@@ -14,6 +14,9 @@
 	// Haushalt, for every account on every device. The "+" waits until the household store knows the
 	// account has none (`known`), so a member never sees it for a moment; it comes and goes with the
 	// membership without a reload. While a remembered household loads, nothing shows, as before.
+	// In the top bar of the phone frame (`phone`, MO-1a, ADR-0073) every target is 44 px high.
+	let { phone = false }: { phone?: boolean } = $props();
+
 	const area = findAreaStore();
 	const household = $derived(area?.household ?? null);
 	const active = $derived(area?.active ?? 'private');
@@ -28,7 +31,13 @@
 {/snippet}
 
 {#if area !== null && household !== null}
-	<div class="area-switch" role="group" aria-label={AREA_TEXTS.group} data-area={active}>
+	<div
+		class="area-switch"
+		class:phone
+		role="group"
+		aria-label={AREA_TEXTS.group}
+		data-area={active}
+	>
 		<button
 			class="option"
 			class:active={active === 'private'}
@@ -56,8 +65,14 @@
 		</button>
 	</div>
 {:else if area !== null && active === 'private'}
-	<div class="area-alone">
-		<div class="area-switch" role="group" aria-label={AREA_TEXTS.group} data-area="private">
+	<div class="area-alone" class:phone>
+		<div
+			class="area-switch"
+			class:phone
+			role="group"
+			aria-label={AREA_TEXTS.group}
+			data-area="private"
+		>
 			<span class="option active current" aria-current="true">
 				{@render personIcon()}
 				<span>{AREA_TEXTS.private}</span>
@@ -162,5 +177,15 @@
 			width: var(--control-height-touch);
 			height: var(--control-height-touch);
 		}
+	}
+
+	/* Top bar of the phone frame (MO-1a, ADR-0073): 44 px for every target, also without touch. */
+	.phone .option {
+		min-height: var(--control-height-touch);
+	}
+
+	.phone .add {
+		width: var(--control-height-touch);
+		height: var(--control-height-touch);
 	}
 </style>

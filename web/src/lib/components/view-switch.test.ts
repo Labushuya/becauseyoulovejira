@@ -10,6 +10,8 @@ import { join } from 'node:path';
 import { render, screen, within } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AppContext } from '$lib/domain/context';
+import { PHONE_QUERY } from '$lib/domain/phone-layout';
+import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 import { appContext, type ContextSession } from '$lib/stores/context.svelte';
 import ViewSwitch from './ViewSwitch.svelte';
 import source from './ViewSwitch.svelte?raw';
@@ -243,5 +245,46 @@ describe('view switch in every context of the tab (KOB-1, ADR-0057)', () => {
 			document.body.innerHTML = '';
 			expect(names(show(current, '/'))).toEqual(NAMES);
 		}
+	});
+});
+
+// MO-1a (ADR-0073, addendum to ADR-0066 §1): in the phone frame the bottom bar and "Mehr" take the
+// place of the switch, with the same views (phone-frame.test.ts); everywhere else it stays.
+describe('view switch and the phone frame (MO-1a)', () => {
+	afterEach(() => {
+		getMobileLayoutStore().choose(false);
+		vi.unstubAllGlobals();
+		localStorage.clear();
+	});
+
+	function windowOf(narrow: boolean): () => void {
+		vi.stubGlobal('matchMedia', (media: string) => ({
+			matches: media === PHONE_QUERY ? narrow : false,
+			media,
+			addEventListener: () => undefined,
+			removeEventListener: () => undefined
+		}));
+		return getMobileLayoutStore().connect();
+	}
+
+	it('is not shown in the phone frame and comes back when the switch goes off', async () => {
+		const stop = windowOf(true);
+		getMobileLayoutStore().choose(true);
+		mocks.page.url = new URL('/', 'http://localhost:3000');
+		render(ViewSwitch, { props: { current: 'tasks' } });
+		expect(screen.queryByRole('navigation', { name: 'Ansicht' })).toBeNull();
+
+		getMobileLayoutStore().choose(false);
+		await vi.waitFor(() =>
+			expect(screen.getByRole('navigation', { name: 'Ansicht' })).toBeTruthy()
+		);
+		stop();
+	});
+
+	it('stays with the switch on in a wide window, with all eight views', () => {
+		const stop = windowOf(false);
+		getMobileLayoutStore().choose(true);
+		expect(names(show('tasks', '/'))).toEqual(NAMES);
+		stop();
 	});
 });

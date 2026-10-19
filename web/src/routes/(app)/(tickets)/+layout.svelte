@@ -7,6 +7,7 @@
 	import TicketTable from '$lib/components/TicketTable.svelte';
 	import ViewWithPanel from '$lib/components/ViewWithPanel.svelte';
 	import { parseListQuery } from '$lib/domain/list-query';
+	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 	import { findBulkEditStore } from '$lib/stores/bulk-edit.svelte';
 	import { getCatalogStore } from '$lib/stores/catalog.svelte';
 	import { findFirstStepsStore } from '$lib/stores/first-steps.svelte';
@@ -37,8 +38,10 @@
 	const duplicates = findTicketDuplicateStore();
 	// "Erste Schritte" below the empty state (plan EH-12); only inside the (app) layout.
 	const firstSteps = findFirstStepsStore();
-	// The tour of the (app) layout (EH-13); with it "Erste Schritte" offers "Kurze Einführung".
+	// The tour of the (app) layout (EH-13); with it "Erste Schritte" offers "Kurze Einführung". Not in
+	// the phone frame (MO-1a, ADR-0073): its steps point at the header and the filter bar of the PC.
 	const startTour = getTourStarter();
+	const mobileLayout = getMobileLayoutStore();
 	const query = $derived(parseListQuery(page.url.searchParams));
 	const activeId = $derived(page.params.id ?? null);
 	// The full view replaces the panel (plan BI-1): the list keeps its full width behind the modal.
@@ -79,7 +82,10 @@
 			{/snippet}
 			{#snippet emptyExtra()}
 				{#if firstSteps}
-					<FirstSteps store={firstSteps} onstarttour={startTour} />
+					<FirstSteps
+						store={firstSteps}
+						onstarttour={mobileLayout.active ? undefined : startTour}
+					/>
 				{/if}
 			{/snippet}
 		</TicketTable>

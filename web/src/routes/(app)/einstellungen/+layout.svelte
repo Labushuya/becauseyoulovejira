@@ -6,6 +6,7 @@
 	import SettingsNav from '$lib/components/SettingsNav.svelte';
 	import ViewSwitch from '$lib/components/ViewSwitch.svelte';
 	import { DEFAULT_HOST_PLATFORM } from '$lib/domain/host-platform';
+	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 	import {
 		SETTINGS_HOME,
 		isAdminSection,
@@ -25,8 +26,11 @@
 	// its place below the header, with no entry current; then the navigation with the way back on
 	// the left and the page on the right, with breadcrumbs and its heading. Same width and margins
 	// as the views (user decision): no maximum width, not pushed to the left. After a change of the
-	// page the focus goes to the heading, like the section bar of the views.
+	// page the focus goes to the heading, like the section bar of the views. In the phone frame
+	// (MO-1a, ADR-0073) the bottom bar and "Mehr" lead to the views, so the switch is not there.
 	let { children } = $props();
+
+	const mobileLayout = getMobileLayoutStore();
 
 	const tickets = getTicketListStore();
 	const inbox = getInboxStore();
@@ -78,9 +82,15 @@
 	{/if}
 </svelte:head>
 
-<div class="settings-bar">
-	<ViewSwitch current={null} inboxCount={inbox.newCount} projectsNewCount={tickets.newInProjects} />
-</div>
+{#if !mobileLayout.active}
+	<div class="settings-bar">
+		<ViewSwitch
+			current={null}
+			inboxCount={inbox.newCount}
+			projectsNewCount={tickets.newInProjects}
+		/>
+	</div>
+{/if}
 
 <div class="settings">
 	<div class="nav-column">

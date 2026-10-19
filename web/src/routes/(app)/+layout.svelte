@@ -10,8 +10,12 @@
 	import LiveUpdateNotice from '$lib/components/LiveUpdateNotice.svelte';
 	import ShortcutsModal from '$lib/components/help/ShortcutsModal.svelte';
 	import FlagGroup from '$lib/components/overlay/FlagGroup.svelte';
+	import PhoneTabBar from '$lib/components/phone/PhoneTabBar.svelte';
+	import PhoneTopBar from '$lib/components/phone/PhoneTopBar.svelte';
 	import QuickCapture from '$lib/components/QuickCapture.svelte';
 	import { isHelpKey, isQuickCaptureKey, isTypingTarget } from '$lib/domain/keyboard';
+	import { isPhoneStart } from '$lib/domain/phone-layout';
+	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 	import { pb } from '$lib/pocketbase';
 	import { setQuickCaptureOpener } from '$lib/quick-capture-context';
 	import { securityLoginsHref } from '$lib/settings-sections';
@@ -163,6 +167,29 @@
 	// Shell of every signed-in page (E2 plan, T-4). The root layout renders it only with a
 	// session; the login page stays outside this group.
 	let { children } = $props();
+
+	// Phone frame (MO-1a, ADR-0073): with the switch "Handy-Ansicht (Vorschau)" of this device on and
+	// below 40rem the compact top bar and the bottom bar take the place of the header, and the app
+	// starts with the day plan. The switch is off by default; off, or wider, nothing changes. The
+	// store follows the width and other tabs and keeps the meta viewport in line while shown.
+	const mobileLayout = getMobileLayoutStore();
+	$effect(() => untrack(() => mobileLayout.connect()));
+	const phone = $derived(mobileLayout.active);
+	// The start view on the phone is the day plan (decision of the user): only when the app opens at
+	// its bare start page, never for a link with its own address or a tap on "Aufgaben".
+	let started = false;
+	afterNavigate(() => {
+		if (started) return;
+		started = true;
+		const start = isPhoneStart({
+			pathname: page.url.pathname,
+			search: page.url.search,
+			hash: page.url.hash,
+			referrer: document.referrer,
+			origin: page.url.origin
+		});
+		if (mobileLayout.active && start) void goto(dayPlanHref(), { replaceState: true });
+	});
 
 	// The area of the tab (E7-3, ADR-0059): "Privat" or the household, remembered on this device per
 	// account. It comes before every store, so the first loads already ask only for this area; a
@@ -635,7 +662,8 @@
 	// that started it and runs without animation for reduced motion.
 	let touring = false;
 	async function startGuidedTour() {
-		if (touring) return;
+		// Not in the phone frame (MO-1a): its steps point at the header and the filter bar of the PC.
+		if (touring || mobileLayout.active) return;
 		touring = true;
 		firstSteps.reach('tour');
 		const active = document.activeElement;
@@ -685,13 +713,17 @@
 {#if area.visible && area.active === 'household'}
 	<div class="area-mark" aria-hidden="true"></div>
 {/if}
-<AppHeader
-	covered={panelShell.covering}
-	openCount={tickets.openState === 'ready' ? tickets.openCount : null}
-	onquick={() => (quickOpen = true)}
-	onshortcuts={() => (shortcutsOpen = true)}
-	ontour={() => void startGuidedTour()}
-/>
+{#if phone}
+	<PhoneTopBar covered={panelShell.covering} />
+{:else}
+	<AppHeader
+		covered={panelShell.covering}
+		openCount={tickets.openState === 'ready' ? tickets.openCount : null}
+		onquick={() => (quickOpen = true)}
+		onshortcuts={() => (shortcutsOpen = true)}
+		ontour={() => void startGuidedTour()}
+	/>
+{/if}
 <main class="content">
 	<!-- A failed realtime subscription is tried again; meanwhile a hint says so (ADR-0011 E6). -->
 	<LiveUpdateNotice />
@@ -703,6 +735,15 @@
 	/>
 	{@render children()}
 </main>
+{#if phone}
+	<!-- After the page and outside the top bar, whose glass must hold no fixed descendant. -->
+	<PhoneTabBar
+		covered={panelShell.covering}
+		inboxCount={inbox.newCount}
+		projectsNewCount={tickets.newInProjects}
+		onquick={() => (quickOpen = true)}
+	/>
+{/if}
 <!-- The flags after the page; while a modal is open they show in the topmost one instead, in front
      of it and clickable (ADR-0025 §8, addendum 18, FL-1). -->
 <FlagGroup store={flags} />
@@ -728,8 +769,15 @@
 <style>
 	/* The embedded side panel reaches over this padding to the edges of the window (UI-6b). */
 	.content {
-		--content-padding: 1.5rem;
+		--content-padding: var(--page-inline);
 		padding: var(--content-padding);
+	}
+
+	/* Phone frame (MO-1a, ADR-0073): the end of the page stays above the bottom bar. */
+	@media (max-width: 39.99rem) {
+		:global(:root[data-mobile-layout='on']) .content {
+			padding-bottom: calc(var(--content-padding) + var(--bottom-bar-height) + var(--safe-bottom));
+		}
 	}
 
 	/* Marker of the household area: above the sticky header (5) and the panel (11), below flags. */

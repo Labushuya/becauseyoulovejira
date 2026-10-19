@@ -3,7 +3,9 @@
 
 import { render, screen } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { PHONE_QUERY } from '$lib/domain/phone-layout';
+import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 import SectionBar from './SectionBar.svelte';
 
 describe('section bar', () => {
@@ -41,5 +43,34 @@ describe('section bar', () => {
 				.querySelector('.end')
 				?.contains(screen.getByRole('switch', { name: 'Erledigte anzeigen' }))
 		).toBe(true);
+	});
+});
+
+// MO-1a (ADR-0073): the top bar of the phone frame names the view; its heading stays for screen
+// readers and the focus, but only once on the screen.
+describe('section bar in the phone frame (MO-1a)', () => {
+	afterEach(() => {
+		getMobileLayoutStore().choose(false);
+		vi.unstubAllGlobals();
+		localStorage.clear();
+	});
+
+	it('keeps the heading for screen readers and the focus, hidden on the screen', async () => {
+		vi.stubGlobal('matchMedia', (media: string) => ({
+			matches: media === PHONE_QUERY,
+			media,
+			addEventListener: () => undefined,
+			removeEventListener: () => undefined
+		}));
+		const stop = getMobileLayoutStore().connect();
+		render(SectionBar, { props: { title: 'Aufgaben', headingId: 'h1', count: 12 } });
+		const heading = screen.getByRole('heading', { level: 2, name: 'Aufgaben' });
+		expect(heading.classList.contains('visually-hidden')).toBe(false);
+
+		getMobileLayoutStore().choose(true);
+		await vi.waitFor(() => expect(heading.classList.contains('visually-hidden')).toBe(true));
+		expect(heading.getAttribute('tabindex')).toBe('-1');
+		expect(heading.hasAttribute('data-view-heading')).toBe(true);
+		stop();
 	});
 });

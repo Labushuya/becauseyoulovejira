@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getAccentStore } from '$lib/accent.svelte';
 import { getNotifyStore } from '$lib/attention-notify.svelte';
 import ThemeMenu from '$lib/components/ThemeMenu.svelte';
+import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 import { SETTINGS_SECTIONS } from '$lib/settings-sections';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import { getThemeStore } from '$lib/theme.svelte';
@@ -311,5 +312,50 @@ describe('appearance page: Windows notification (ADR-0035, SF-6)', () => {
 		render(Page);
 		expect(notifySwitch().disabled).toBe(true);
 		expect(screen.getByText(/Dieser Browser kann keine Benachrichtigungen zeigen/)).toBeTruthy();
+	});
+});
+
+// MO-1a (ADR-0073): the switch of the phone frame among the settings of this device, off by default.
+// The page is reachable in the view of today on the phone (the gear of the header) and in the frame
+// under "Mehr" (phone-frame.test.ts).
+describe('appearance page: phone view (MO-1a)', () => {
+	function phoneSwitch(): HTMLInputElement {
+		const group = screen.getByRole('group', { name: 'Handy' });
+		return within(group).getByRole('switch', {
+			name: 'Handy-Ansicht (Vorschau)'
+		}) as HTMLInputElement;
+	}
+
+	afterEach(() => {
+		getMobileLayoutStore().choose(false);
+		document.documentElement.removeAttribute('data-mobile-layout');
+	});
+
+	it('is off by default and says what it does and where it applies', () => {
+		render(Page);
+		const control = phoneSwitch();
+		expect(control.checked).toBe(false);
+		const note = document.getElementById(control.getAttribute('aria-describedby') ?? '');
+		const text = note?.textContent?.replace(/\s+/g, ' ');
+		expect(text).toMatch(/unten eine Leiste mit Tagesplan, Aufgaben, Erfassen/);
+		expect(text).toMatch(/Noch eine Vorschau/);
+		expect(text).toMatch(/nur in diesem Browser auf diesem Gerät/);
+		expect(screen.queryByText(/zu breit für die Handy-Ansicht/)).toBeNull();
+	});
+
+	it('turns on and off at once, stores only "on" and says so in a wide window', async () => {
+		render(Page);
+
+		await fireEvent.click(phoneSwitch());
+		expect(phoneSwitch().checked).toBe(true);
+		expect(localStorage.getItem('byl-mobile-layout')).toBe('on');
+		expect(document.documentElement.getAttribute('data-mobile-layout')).toBe('on');
+		// jsdom counts as a wide window: the view of today stays, and the page says why.
+		expect(screen.getByText(/zu breit für die Handy-Ansicht/)).toBeTruthy();
+
+		await fireEvent.click(phoneSwitch());
+		expect(phoneSwitch().checked).toBe(false);
+		expect(localStorage.getItem('byl-mobile-layout')).toBeNull();
+		expect(document.documentElement.hasAttribute('data-mobile-layout')).toBe(false);
 	});
 });

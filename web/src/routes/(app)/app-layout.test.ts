@@ -10,7 +10,9 @@ import { createRawSnippet, tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import AppHeader from '$lib/components/AppHeader.svelte';
 import { EMPTY_LIST_QUERY, type ListQuery } from '$lib/domain/list-query';
+import { PHONE_QUERY, VIEWPORT_BASE, VIEWPORT_PHONE } from '$lib/domain/phone-layout';
 import type { TicketSummary } from '$lib/domain/ticket';
+import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 import { pb } from '$lib/pocketbase';
 import { appContext } from '$lib/stores/context.svelte';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
@@ -1028,5 +1030,151 @@ describe('app layout: context of the tab (KOB-1, ADR-0057)', () => {
 		await vi.waitFor(() => expect(appContext.capabilities.mode).toBe('pc'));
 		unmount();
 		expect(appContext.capabilities.mode).toBe('pending');
+	});
+});
+
+describe('app layout: phone frame (MO-1a, ADR-0073)', () => {
+	useOverlayStubs();
+
+	/** A window that is narrower than 40rem (or not); every other media query does not match. */
+	function windowOf(narrow: boolean) {
+		vi.stubGlobal('matchMedia', (media: string) => ({
+			matches: media === PHONE_QUERY ? narrow : false,
+			media,
+			addEventListener: () => undefined,
+			removeEventListener: () => undefined
+		}));
+	}
+
+	/** The meta viewport of app.html, which jsdom does not load. */
+	function addViewport(): HTMLMetaElement {
+		const meta = document.createElement('meta');
+		meta.name = 'viewport';
+		meta.content = VIEWPORT_BASE;
+		document.head.append(meta);
+		return meta;
+	}
+
+	/** Shows the layout and runs the callbacks of the first navigation, as SvelteKit does. */
+	async function enter(path: string, routeId: string) {
+		mocks.page.route.id = routeId;
+		const result = await renderLayout(path);
+		await tick();
+		for (const callback of mocks.afterNavigate) callback({ to: { url: mocks.page.url } });
+		await tick();
+		return result;
+	}
+
+	const bottomBar = () => screen.queryByRole('navigation', { name: 'Hauptnavigation' });
+
+	afterEach(() => {
+		getMobileLayoutStore().choose(false);
+		vi.unstubAllGlobals();
+		localStorage.clear();
+		document.head.querySelectorAll('meta[name="viewport"]').forEach((meta) => meta.remove());
+	});
+
+	it('takes the compact top bar and the bottom bar instead of the header on a phone with the switch on', async () => {
+		windowOf(true);
+		getMobileLayoutStore().choose(true);
+		await enter('/tagesplan', '/(app)/tagesplan');
+
+		const bar = bottomBar();
+		expect(bar).not.toBeNull();
+		const header = screen.getByRole('banner');
+		expect(header.querySelector('.title')?.textContent).toBe('Tagesplan');
+		// Nothing of the header of the PC: it is under "Mehr" and "＋" now.
+		expect(within(header).queryByRole('link', { name: 'Neues Ticket' })).toBeNull();
+		expect(within(header).queryByRole('button', { name: 'Abmelden' })).toBeNull();
+		expect(within(header).queryByRole('button', { name: 'Hilfe' })).toBeNull();
+		expect(document.getElementById(NEW_TICKET_LINK_ID)).toBeNull();
+		expect(document.documentElement.getAttribute('data-mobile-layout')).toBe('on');
+		expect(within(screen.getByRole('main')).getByText(CONTENT)).toBeTruthy();
+	});
+
+	it('starts with the day plan when the app opens at its start page', async () => {
+		windowOf(true);
+		getMobileLayoutStore().choose(true);
+		await enter('/', '/(app)/(tickets)');
+		expect(mocks.goto).toHaveBeenCalledWith('/tagesplan', { replaceState: true });
+
+		// Only at the start: the next navigation to "Aufgaben" stays there.
+		mocks.goto.mockClear();
+		for (const callback of mocks.afterNavigate) callback({ to: { url: mocks.page.url } });
+		expect(mocks.goto).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		['a link with the state of the list', '/?karte=heute', '/(app)/(tickets)'],
+		['a link to a ticket', '/tickets/abc123def456ghi', '/(app)/(tickets)/tickets/[id]'],
+		['a link to the inbox', '/eingang', '/(app)/eingang']
+	])('keeps %s on the phone', async (_name, path, routeId) => {
+		windowOf(true);
+		getMobileLayoutStore().choose(true);
+		await enter(path, routeId);
+		expect(mocks.goto).not.toHaveBeenCalled();
+	});
+
+	it('keeps the view of today on a phone with the switch off: the header, no bar, the start at "Aufgaben"', async () => {
+		windowOf(true);
+		const meta = addViewport();
+		await enter('/', '/(app)/(tickets)');
+
+		expect(bottomBar()).toBeNull();
+		const header = screen.getByRole('banner');
+		expect(within(header).getByRole('heading', { level: 1 }).textContent).toBe(
+			'becauseyoulovejira'
+		);
+		expect(within(header).getByRole('button', { name: 'Abmelden' })).toBeTruthy();
+		expect(document.getElementById(NEW_TICKET_LINK_ID)).not.toBeNull();
+		expect(mocks.goto).not.toHaveBeenCalled();
+		expect(document.documentElement.hasAttribute('data-mobile-layout')).toBe(false);
+		expect(meta.content).toBe(VIEWPORT_BASE);
+	});
+
+	it('keeps the PC unchanged with the switch on: a wide window shows the header and starts at "Aufgaben"', async () => {
+		windowOf(false);
+		getMobileLayoutStore().choose(true);
+		const meta = addViewport();
+		await enter('/', '/(app)/(tickets)');
+
+		expect(bottomBar()).toBeNull();
+		expect(
+			within(screen.getByRole('banner')).getByRole('button', { name: 'Abmelden' })
+		).toBeTruthy();
+		expect(mocks.goto).not.toHaveBeenCalled();
+		expect(meta.content).toBe(VIEWPORT_BASE);
+	});
+
+	it('gives the meta viewport the keys of the frame only while it applies', async () => {
+		windowOf(true);
+		const meta = addViewport();
+		getMobileLayoutStore().choose(true);
+		const { unmount } = await enter('/tagesplan', '/(app)/tagesplan');
+		expect(meta.content).toBe(VIEWPORT_PHONE);
+
+		getMobileLayoutStore().choose(false);
+		await tick();
+		expect(meta.content).toBe(VIEWPORT_BASE);
+		expect(bottomBar()).toBeNull();
+		getMobileLayoutStore().choose(true);
+		await tick();
+		expect(meta.content).toBe(VIEWPORT_PHONE);
+		unmount();
+		expect(meta.content).toBe(VIEWPORT_BASE);
+	});
+
+	it('opens the quick entry from "＋" and offers no tour, which points at the header of the PC', async () => {
+		windowOf(true);
+		getMobileLayoutStore().choose(true);
+		tourMocks.startTour.mockClear();
+		await enter('/tagesplan', '/(app)/tagesplan');
+
+		await fireEvent.click(
+			within(bottomBar() as HTMLElement).getByRole('button', { name: 'Erfassen' })
+		);
+		expect(screen.getByRole('dialog', { name: 'Schnellerfassung' })).toBeTruthy();
+		expect(screen.queryByRole('button', { name: 'Hilfe' })).toBeNull();
+		expect(tourMocks.startTour).not.toHaveBeenCalled();
 	});
 });

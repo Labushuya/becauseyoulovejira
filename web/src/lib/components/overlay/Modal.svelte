@@ -25,9 +25,13 @@
 	// in it, as a direct child of the <dialog> after the frame. The glass, the line, the shadow and
 	// the animation lie on the frame, not on the <dialog>, so the <dialog> is no containing block
 	// for their position: fixed, and they stand bottom left in the window as usual.
+	// Sheet (MO-1a, ADR-0073): the same modal with `placement="sheet"` stands at the bottom over the
+	// full width, with round upper corners and the safe area of the system bar below its content, as
+	// a sheet of the phone frame ("Mehr"); size, rules, focus and flags stay those of the modal.
 	let {
 		open,
 		size = 'm',
+		placement = 'center',
 		title,
 		describedBy,
 		busy = false,
@@ -44,6 +48,8 @@
 	}: {
 		open: boolean;
 		size?: 's' | 'm' | 'l' | 'xl';
+		/** In the middle of the window, or a sheet at the bottom over the full width (phone frame). */
+		placement?: 'center' | 'sheet';
 		/** Visible title, names the dialog. */
 		title: string;
 		/** ID of the element that describes the dialog. */
@@ -249,6 +255,7 @@
 
 <dialog
 	class={`modal size-${size}`}
+	class:sheet={placement === 'sheet'}
 	aria-labelledby={titleId}
 	aria-describedby={describedBy}
 	aria-busy={busy}
@@ -500,6 +507,40 @@
 			max-height: 100dvh;
 			border: none;
 			border-radius: 0;
+		}
+	}
+
+	/*
+	 * Sheet of the phone frame (MO-1a, ADR-0073): at the bottom over the full width, at most
+	 * --sheet-max-height high, so a strip of the blanket stays to tap; round upper corners, no line
+	 * at the bottom, the safe area of the system bar below the content. The × gets the target of the
+	 * phone frame. It slides up from below; reduced motion shows it at once (base.css).
+	 */
+	.modal.sheet {
+		width: 100%;
+		max-height: var(--sheet-max-height);
+		margin: auto 0 0;
+	}
+
+	.sheet .frame {
+		max-height: var(--sheet-max-height);
+		padding-bottom: var(--safe-bottom);
+		border-bottom: none;
+		border-radius: var(--radius-overlay) var(--radius-overlay) 0 0;
+	}
+
+	.sheet .head-actions .button-icon {
+		width: var(--phone-target);
+		height: var(--phone-target);
+	}
+
+	.modal.sheet[open] .frame {
+		animation-name: sheet-in;
+	}
+
+	@keyframes sheet-in {
+		from {
+			transform: translateY(100%);
 		}
 	}
 

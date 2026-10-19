@@ -5,10 +5,11 @@
 // browser cases (BYL-E6-012).
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
-import { tick } from 'svelte';
+import { createRawSnippet, tick } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
 import ModalHarness from '$lib/test/ModalHarness.svelte';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
+import Modal from './Modal.svelte';
 import source from './Modal.svelte?raw';
 
 useOverlayStubs();
@@ -268,6 +269,29 @@ describe('modal: unsaved input', () => {
 
 // FL-1 (ADR-0025 addendum 18): the flags of the app render in the topmost open modal; with them
 // flag-group.test.ts (FlagModalHarness). A modal outside of the app layout has none.
+describe('modal: sheet (MO-1a)', () => {
+	it('is a sheet only with placement "sheet", with the same name, × and rules', async () => {
+		const onclose = vi.fn();
+		const children = createRawSnippet(() => ({
+			render: () => '<a href="/projekte">Projekte</a>'
+		}));
+		render(Modal, { props: { open: true, title: 'Mehr', placement: 'sheet', onclose, children } });
+		await tick();
+		await tick();
+		const sheet = dialog('Mehr');
+		expect(sheet.open).toBe(true);
+		expect([...sheet.classList]).toEqual(expect.arrayContaining(['modal', 'size-m', 'sheet']));
+		expect(document.activeElement?.textContent).toBe('Projekte');
+		await fireEvent.click(within(sheet).getByRole('button', { name: 'Schließen' }));
+		expect(onclose).toHaveBeenCalledWith('close-button');
+	});
+
+	it('stays in the middle without it', async () => {
+		await openModal();
+		expect(dialog().classList.contains('sheet')).toBe(false);
+	});
+});
+
 describe('modal: flags', () => {
 	it('renders no flags without the flags of the app (a single component)', async () => {
 		await openModal();
@@ -340,6 +364,24 @@ describe('modal source', () => {
 		}
 		expect(rule('.modal')).toMatch(/overflow:\s*visible/);
 		expect(rule('.modal[open] .frame')).toMatch(/animation:\s*modal-in/);
+	});
+
+	// MO-1a (ADR-0073): the sheet of the phone frame is the same modal at the bottom over the full
+	// width; its <dialog> stays free of anything that would hold the flags (FL-1).
+	it('places a sheet at the bottom over the full width, with the safe area and the target of the frame', () => {
+		const sheet = rule('.modal.sheet');
+		expect(sheet).toMatch(/width:\s*100%/);
+		expect(sheet).toMatch(/max-height:\s*var\(--sheet-max-height\)/);
+		expect(sheet).toMatch(/margin:\s*auto 0 0/);
+		expect(sheet).not.toMatch(/transform|filter|perspective|contain|will-change|animation/);
+		const frame = rule('.sheet .frame');
+		expect(frame).toMatch(/max-height:\s*var\(--sheet-max-height\)/);
+		expect(frame).toMatch(/padding-bottom:\s*var\(--safe-bottom\)/);
+		expect(frame).toMatch(/border-radius:\s*var\(--radius-overlay\) var\(--radius-overlay\) 0 0/);
+		const close = rule('.sheet .head-actions .button-icon');
+		expect(close).toMatch(/width:\s*var\(--phone-target\)/);
+		expect(close).toMatch(/height:\s*var\(--phone-target\)/);
+		expect(rule('.modal.sheet[open] .frame')).toMatch(/animation-name:\s*sheet-in/);
 	});
 
 	it('lets a footer button with margin-right: auto stand on the left (fix 2026-09-30)', () => {

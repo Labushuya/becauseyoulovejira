@@ -10,6 +10,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { AreaStore } from '$lib/stores/area.svelte';
 import AreaSwitchHarness from '$lib/test/AreaSwitchHarness.svelte';
 import AreaSwitch from './AreaSwitch.svelte';
+import source from './AreaSwitch.svelte?raw';
 
 const USER = 'user00000000001';
 const HOUSE = { id: 'house0000000001', name: 'Haus Beispiel' };
@@ -27,7 +28,11 @@ function storage() {
 }
 
 /** `loading`: the household store did not answer yet. */
-function setup(household: typeof HOUSE | null | 'loading', remembered: string | null = null) {
+function setup(
+	household: typeof HOUSE | null | 'loading',
+	remembered: string | null = null,
+	phone = false
+) {
 	const memory = storage();
 	if (remembered !== null) memory.values.set(`byl-area:${USER}`, remembered);
 	const apply = vi.fn<(scope: string | null) => void>();
@@ -35,7 +40,7 @@ function setup(household: typeof HOUSE | null | 'loading', remembered: string | 
 	const store = new AreaStore(memory.source, apply, changed);
 	store.begin(USER);
 	if (household !== 'loading') store.followHousehold(household);
-	render(AreaSwitchHarness, { props: { store } });
+	render(AreaSwitchHarness, { props: { store, phone } });
 	return { store, apply, changed, memory };
 }
 
@@ -147,6 +152,23 @@ describe('area switch', () => {
 		const target = button('Haushalt mit einem sehr langen Namen, der nicht ganz passt');
 		expect(target.getAttribute('title')).toBe(
 			'Haushalt mit einem sehr langen Namen, der nicht ganz passt'
+		);
+	});
+
+	// MO-1a (ADR-0073): in the top bar of the phone frame every target is 44 px high.
+	it('gives every target 44 px in the top bar of the phone frame, and only there', () => {
+		setup(HOUSE, null, true);
+		expect(group().classList.contains('phone')).toBe(true);
+		document.body.innerHTML = '';
+		setup(null, null, true);
+		expect(group().classList.contains('phone')).toBe(true);
+		expect(group().parentElement?.classList.contains('phone')).toBe(true);
+		document.body.innerHTML = '';
+		setup(HOUSE);
+		expect(group().classList.contains('phone')).toBe(false);
+		expect(source).toMatch(/\.phone \.option \{\s*min-height: var\(--control-height-touch\);/);
+		expect(source).toMatch(
+			/\.phone \.add \{\s*width: var\(--control-height-touch\);\s*height: var\(--control-height-touch\);/
 		);
 	});
 });

@@ -9,6 +9,8 @@ import { join } from 'node:path';
 import { render, screen, within } from '@testing-library/svelte';
 import { createRawSnippet, tick } from 'svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { PHONE_QUERY } from '$lib/domain/phone-layout';
+import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 import { LAST_VIEW_KEY, LastViewStore } from '$lib/stores/last-view.svelte';
 import { MEMBER_CONTEXT, PC_CONTEXT, REMOTE_CONTEXT, useContext } from '$lib/test/context';
 import Layout from './+layout.svelte';
@@ -90,6 +92,29 @@ describe('settings layout', () => {
 			'/eingang'
 		);
 		expect(views.getByRole('link', { name: 'Projekte (2 neu)' })).toBeTruthy();
+	});
+
+	// MO-1a (ADR-0073): in the phone frame the bottom bar and "Mehr" lead to the views.
+	it('shows no switch of the views in the phone frame, the navigation of the settings stays', async () => {
+		vi.stubGlobal('matchMedia', (media: string) => ({
+			matches: media === PHONE_QUERY,
+			media,
+			addEventListener: () => undefined,
+			removeEventListener: () => undefined
+		}));
+		const stop = getMobileLayoutStore().connect();
+		getMobileLayoutStore().choose(true);
+		try {
+			await renderSettings('/einstellungen/darstellung');
+			expect(screen.queryByRole('navigation', { name: 'Ansicht' })).toBeNull();
+			expect(document.querySelector('.settings-bar')).toBeNull();
+			expect(screen.getByRole('navigation', { name: 'Einstellungen' })).toBeTruthy();
+		} finally {
+			getMobileLayoutStore().choose(false);
+			stop();
+			vi.unstubAllGlobals();
+			localStorage.clear();
+		}
 	});
 
 	it('offers the pages in a named navigation and marks the current one', async () => {
