@@ -16,6 +16,7 @@ Diese Datei bewertet das Risiko des Dependabot-Hinweises #1. Status und Begründ
 | Dependabot | [Hinweis #1](https://github.com/Labushuya/becauseyoulovejira/security/dependabot/1), am 2026-10-19 geschlossen als „Vulnerable code is not actually used“ (`not_used`) |
 | Bewertet am | 2026-10-19 |
 | Stand | `main` bei `f295ded8`. Ausgelieferter Build in `app/pb_public`: Version `1792418956990`, veröffentlicht am 2026-10-19 |
+| Aktualisiert | 2026-10-19: Wächtertest ergänzt (`tests/unit/security-cookie-assumptions.test.mjs`, Paket SEC-2). Die Bewertung selbst ist unverändert |
 | Ergebnis | VEX `not_affected`, Begründung `vulnerable_code_not_in_execute_path` |
 
 ## 1. Schwachstelle
@@ -147,29 +148,30 @@ Durchsucht wurden `web/build` und alle 1722 Dateien in `app/pb_public`. Das sind
   - Im Betrieb wird der Code weder ausgeliefert noch ausgeführt.
   - Lokal (Build, Dev-Server) wird er geladen. `serialize` wird nach Code-Lesen aber nicht aufgerufen, und die Felder kämen nicht von außen.
   - Die Advisory selbst ist „low“ und hat keinen CVSS-Wert.
-  - Es bleibt: Eine spätere Änderung kann eine Annahme kippen, ohne dass es auffällt. Bis zum Wächtertest (Abschnitt 5) fängt das nur die Neubewertung nach Abschnitt 6 ab.
+  - Es bleibt: Eine spätere Änderung kann eine Annahme kippen. Für A1 bis A4 und A6 schlägt dann der Wächtertest an (Abschnitt 5). A5 und die übrigen Bedingungen fängt weiter nur die Neubewertung nach Abschnitt 6 ab.
   - Die Kopie im SDK mit derselben Schwäche bleibt im Bundle, ungenutzt.
 
 ## 5. Absicherung der Annahmen
 
 | Nr. | Annahme | Beleg am 2026-10-19 | Automatisch geprüft |
 |---|---|---|---|
-| A1 | Kein Server-Code in `web/src` (`+server.*`, `+page.server.*`, `+layout.server.*`, `hooks.server.*`, `*.remote.*`) | Dateisuche, 0 Treffer | nein |
-| A2 | `web/svelte.config.js` nutzt `@sveltejs/adapter-static` | Import in der Datei | nein |
-| A3 | Das Root-Layout setzt `ssr = false` | `web/src/routes/+layout.ts` | nein |
-| A4 | `web/src` und `app/pb_hooks` rufen weder `exportToCookie` noch `loadFromCookie` auf | Textsuche, 0 Treffer | nein |
+| A1 | Kein Server-Code in `web/src` (`+server.*`, `+page.server.*`, `+layout.server.*`, `hooks.server.*`, `*.remote.*`) | Dateisuche, 0 Treffer | ja, `tests/unit/security-cookie-assumptions.test.mjs` |
+| A2 | `web/svelte.config.js` nutzt `@sveltejs/adapter-static` | Import in der Datei | ja, `tests/unit/security-cookie-assumptions.test.mjs` |
+| A3 | Das Root-Layout setzt `ssr = false` | `web/src/routes/+layout.ts` | ja, `tests/unit/security-cookie-assumptions.test.mjs` |
+| A4 | `web/src` und `app/pb_hooks` rufen weder `exportToCookie` noch `loadFromCookie` auf | Textsuche, 0 Treffer | ja, `tests/unit/security-cookie-assumptions.test.mjs` |
 | A5 | Kits Server-Cookie-Code steckt nicht in `app/pb_public` | Kennungen aus 3.5, 0 Treffer | nein |
-| A6 | `cookie` steht nur in `web/package-lock.json` und nur über Kit | Lockfiles, `npm ls` | nein. Ein Vorkommen in einem anderen Lockfile meldet Dependabot als neuen Hinweis |
+| A6 | `cookie` steht nur in `web/package-lock.json` und nur über Kit | Lockfiles, `npm ls` | ja, `tests/unit/security-cookie-assumptions.test.mjs`. Ein Vorkommen in einem anderen Lockfile meldet zudem Dependabot als neuen Hinweis |
 
-- **Wächtertest:** Für A1 bis A4 ist ein Wächtertest unter `tests/unit` vorgesehen, aber noch nicht umgesetzt.
-  - Jede neue Testdatei braucht nach Repo-Konvention einen Eintrag im Test-Manifest (`docs/test-manifest.html`). `tests/unit/test-manifest.test.mjs` prüft, dass das Manifest jede Testdatei abdeckt.
-  - Der Test kommt deshalb mit einem eigenen Paket.
-  - Schlägt er an, meldet er „Annahme der Bewertung GHSA-pxg6-pf52-xh8x verletzt – neu bewerten“ und verweist auf diese Datei.
-- Bis dahin gelten A1 bis A6 als am Stand oben geprüft, nicht als dauerhaft gesichert.
+- **Wächtertest:** `tests/unit/security-cookie-assumptions.test.mjs` (Paket SEC-2, im Test-Manifest BYL-E6-1875 bis BYL-E6-1879) prüft A1 bis A4 und A6 statisch. Er läuft mit den Unit-Tests, in der CI bei jedem PR mit Code.
+  - Er prüft etwas mehr als die Belege: A1 auch Ordner `hooks.server` und dass `kit.files` nicht gesetzt ist, A2 auch den Namen des geladenen Adapters und dass es keinen Schlüssel `experimental` gibt, A3 auch, dass kein anderes Layout und keine Seite `ssr` anders als `false` setzt, A4 jede Nennung der beiden Methoden.
+  - Schlägt er an, meldet er „Annahme A1 der Bewertung GHSA-pxg6-pf52-xh8x verletzt – neu bewerten“ (bzw. A2, A3, A4, A6) und verweist auf diese Datei.
+  - A5 braucht einen Build und bleibt eine Prüfung von Hand (Befehle unten).
+- A1 bis A4 und A6 gelten als gesichert, solange der Wächtertest grün ist. A5 gilt weiter als am Stand oben geprüft, nicht als dauerhaft gesichert.
 
 **Nachprüfen** (im Repo, nur lesend; `app/pb_public` und `web/.svelte-kit` erst nach einem Build):
 
 ```sh
+npx vitest run --project unit tests/unit/security-cookie-assumptions.test.mjs
 npm --prefix web ls cookie --all
 grep -l '"node_modules/cookie"' package-lock.json web/package-lock.json helpers/*/package-lock.json extensions/*/package-lock.json
 find web/src \( -name '+server.*' -o -name '+page.server.*' -o -name '+layout.server.*' -o -name 'hooks.server.*' -o -name '*.remote.*' \)
@@ -191,7 +193,7 @@ grep -rlE '\.(exportToCookie|loadFromCookie)\(' web/src app/pb_hooks app/pb_publ
 
 - GitHub Advisory Database: [GHSA-pxg6-pf52-xh8x](https://github.com/advisories/GHSA-pxg6-pf52-xh8x) (`gh api advisories/GHSA-pxg6-pf52-xh8x`, Abruf 2026-10-19)
 - jshttp/cookie: [Advisory](https://github.com/jshttp/cookie/security/advisories/GHSA-pxg6-pf52-xh8x), [PR #167](https://github.com/jshttp/cookie/pull/167), [Fix-Commit](https://github.com/jshttp/cookie/commit/e10042845354fea83bd8f34af72475eed1dadf5c)
-- CISA: [Vulnerability Exploitability eXchange (VEX) – Status Justifications](https://www.cisa.gov/sites/default/files/2023-01/VEX_Status_Justification_Jun22.pdf) (Juni 2022)
+- CISA: [Vulnerability Exploitability eXchange (VEX) - Status Justifications](https://www.cisa.gov/sites/default/files/2023-01/VEX_Status_Justification_Jun22.pdf) (Juni 2022)
 - [OpenVEX Specification](https://github.com/openvex/spec/blob/main/OPENVEX-SPEC.md): Status `not_affected`, Begründung `vulnerable_code_not_in_execute_path`
 - GitHub REST API: [Dependabot alerts](https://docs.github.com/en/rest/dependabot/alerts) (`dismissed_reason`, `dismissed_comment`)
 - Frühere Einordnung im Repo: [Plan E3](../../plan/e3.md) Abschnitt 7 (2026-09-24), [Plan Robuste Skripte](../../plan/robuste-skripte.md), [ADR-0040](../../adr/0040-veroeffentlichen-ohne-unterbrechung.md)
