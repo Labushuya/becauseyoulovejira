@@ -2,7 +2,7 @@
 
 Nicht-triviale Architekturentscheidungen von becauseyoulovejira. Format: MADR light (Kontext, Entscheidung, Alternativen, Konsequenzen). Dateinamen `NNNN-kurztitel.md`, fortlaufend nummeriert. Eine angenommene ADR wird nicht umgeschrieben, sondern durch eine neue ADR ersetzt (Status „Ersetzt durch ADR-NNNN“).
 
-Bereits verbindlich in der [Projekt-CLAUDE.md](../../CLAUDE.md) festgelegt und deshalb ohne eigene ADR: Tech-Stack (PocketBase 0.40.4 mit JS-Hooks und handgeschriebenen Migrationen, SvelteKit 2 / Svelte 5 im SPA-Modus, Vitest), Datenmodell mit Scopes und Nummernkreisen, API-Regeln, Svelte-5-Runes-Regel, Design-System.
+Bereits verbindlich in der [Projekt-CLAUDE.md](../../CLAUDE.md) und ihren Detaildokumenten unter [`docs/regeln/`](../regeln/README.md) festgelegt und deshalb ohne eigene ADR: Tech-Stack (PocketBase 0.40.4 mit JS-Hooks und handgeschriebenen Migrationen, SvelteKit 2 / Svelte 5 im SPA-Modus, Vitest), Datenmodell mit Scopes und Nummernkreisen, API-Regeln, Svelte-5-Runes-Regel, Design-System.
 
 | Nr. | Titel | Status | Datum |
 |---|---|---|---|

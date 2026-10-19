@@ -1,4 +1,4 @@
-// Guards the design tokens (CLAUDE.md section 8, ADR-0009, ADR-0025, ADR-0027): every mode block
+// Guards the design tokens (docs/regeln/design-system.md, ADR-0009, ADR-0025, ADR-0027): every mode block
 // defines the same color tokens and its color-scheme, every accent theme overrides exactly the
 // accent tokens in its four blocks, all text and UI pairs reach WCAG AA in every theme and mode,
 // the accents keep a measurable distance (CIEDE2000) from the error color, from Petrol and from

@@ -1,4 +1,4 @@
-// Switch "Transparenz" (ADR-0029 section 7; CLAUDE.md section 8): the glass of the control layer is
+// Switch "Transparenz" (ADR-0029 section 7; docs/regeln/design-system.md): the glass of the control layer is
 // on by default. The choice lives in localStorage under TRANSPARENCY_STORAGE_KEY, only on this
 // device, and only "off" is stored; "on" removes the key. tokens.css makes everything opaque under
 // data-transparency="off" on the root element. The inline script in app.html applies the stored

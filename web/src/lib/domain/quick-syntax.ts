@@ -1,4 +1,4 @@
-// Short syntax of the quick entry (CLAUDE.md section 7; E4 plan, T-10 and package 6): one line
+// Short syntax of the quick entry (docs/regeln/ansichten.md; E4 plan, T-10 and package 6): one line
 // `Titel @CODE !hoch #tag`. Pure: projects and tags come from the catalog as parameters.
 // Recognised tokens leave the title; unknown ones stay part of it. Per kind the first token wins,
 // further ones stay in the title, so nothing typed gets lost silently. `@CODE` sets only active

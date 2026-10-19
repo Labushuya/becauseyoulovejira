@@ -1,4 +1,4 @@
-// Ticket history (E1 plan, package 6; CLAUDE.md section 5; OF-4 variant A, OF-12, OF-15).
+// Ticket history (E1 plan, package 6; docs/regeln/datenmodell.md; OF-4 variant A, OF-12, OF-15).
 // History entries are written in the transaction of the ticket hook: a failing entry rolls back
 // the ticket change, including a newly drawn key.
 

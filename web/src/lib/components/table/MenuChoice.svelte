@@ -5,7 +5,7 @@
 	// One choice of a cell menu (plan BI-3, ADR-0036 §6): the current value is checked, by mark and
 	// weight. A project shows its color as a dot (ADR-0052); its name is the text of the choice. Taken
 	// out of the row of the ticket table (UT-1) so the status menu of the sub-tasks (StatusMenu) is the
-	// same; the menu rows themselves are styled by the Popover (CLAUDE.md §8).
+	// same; the menu rows themselves are styled by the Popover (docs/regeln/design-system.md).
 	let {
 		checked,
 		text,

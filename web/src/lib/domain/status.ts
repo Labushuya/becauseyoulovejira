@@ -1,4 +1,4 @@
-// Frontend mirror of app/pb_hooks/lib/status.js (CLAUDE.md section 5).
+// Frontend mirror of app/pb_hooks/lib/status.js (docs/regeln/datenmodell.md).
 // tests/unit/status.test.mjs verifies that both modules stay identical.
 
 export const STATUSES = ['backlog', 'open', 'in_progress', 'waiting', 'done'] as const;

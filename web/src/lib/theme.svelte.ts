@@ -1,4 +1,4 @@
-// Light and dark mode (ADR-0025 section 10; CLAUDE.md section 8). The choice lives in
+// Light and dark mode (ADR-0025 section 10; docs/regeln/design-system.md). The choice lives in
 // localStorage under THEME_STORAGE_KEY, only on this device: "light" or "dark"; "Wie System"
 // removes the key, and tokens.css then follows the system setting live through its media query.
 // The inline script in app.html applies the stored choice before the first paint and moves the

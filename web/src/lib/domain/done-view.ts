@@ -166,7 +166,7 @@ export function matchesDoneQuery(
 
 /**
  * Point in time a ticket was completed: `completed_at`, which the hook sets with every change to
- * "done" and clears when it leaves it (CLAUDE.md §5). Its last change stands in for a value that is
+ * "done" and clears when it leaves it (docs/regeln/datenmodell.md). Its last change stands in for a value that is
  * missing in spite of that.
  */
 export function completedAtOf(ticket: Pick<TicketSummary, 'completedAt' | 'updated'>): string {

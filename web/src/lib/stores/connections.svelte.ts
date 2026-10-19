@@ -128,7 +128,7 @@ export function connectionsData(pb: PocketBase): ConnectionsData {
 
 /**
  * Tone of the flag after "Jetzt abrufen": a failed run is an error, a hint is neutral (also a mail
- * helper that does not run, CLAUDE.md §7).
+ * helper that does not run, docs/regeln/kanaele.md).
  */
 export function runResultTone(result: RunResult): FlagTone {
 	if (result.status === 'ok') return 'success';

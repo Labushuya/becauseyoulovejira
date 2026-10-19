@@ -1,5 +1,5 @@
 // Areas "Privat" and "Haushalt" (E7-3, ADR-0059): pure rules of the area switch. An area is the
-// scope of the records (`u:<account>` or `h:<household>`, CLAUDE.md §5 "Scopes"); the app shows and
+// scope of the records (`u:<account>` or `h:<household>`, docs/regeln/datenmodell.md "Scopes und Nummernkreise"); the app shows and
 // creates in one area at a time, like a virtual desktop. Which one is remembered per device and
 // account; the household of the account decides whether there is a choice at all.
 

@@ -1,5 +1,5 @@
 // URLs of the ticket views (E2 plan, T-4 and T-5; E3 plan, T-2). Tickets are addressed by record
-// ID, never by key (CLAUDE.md section 5). The list state lives in the query and travels with
+// ID, never by key (docs/regeln/datenmodell.md). The list state lives in the query and travels with
 // every link, so opening or closing a ticket keeps filters, sort and grouping. Reading and writing
 // the list parameters goes through domain/list-query.ts, those of "Erledigte" (ADR-0066) through
 // domain/done-view.ts.

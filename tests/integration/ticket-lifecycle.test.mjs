@@ -1,4 +1,4 @@
-// completed_at and due dates (E1 plan, package 6; CLAUDE.md section 5; ADR-0005).
+// completed_at and due dates (E1 plan, package 6; docs/regeln/datenmodell.md; ADR-0005).
 
 import { beforeAll, describe, expect, it } from 'vitest';
 import { rejectionOf, superuserClient } from '../support/api.mjs';

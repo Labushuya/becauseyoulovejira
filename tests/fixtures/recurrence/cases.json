@@ -1,5 +1,5 @@
 {
-  "description": "Common cases of the date calculation of recurring tasks (ADR-0021 sections 2 and 3, CLAUDE.md section 6). Both app/pb_hooks/lib/recurrence.js and web/src/lib/domain/recurrence.ts must give `expect` for `fn` with `rule` and `args`. Dates are calendar dates; `null` means no occurrence. For `validate` the expectation is the map of field errors.",
+  "description": "Common cases of the date calculation of recurring tasks (ADR-0021 sections 2 and 3, docs/regeln/serien.md). Both app/pb_hooks/lib/recurrence.js and web/src/lib/domain/recurrence.ts must give `expect` for `fn` with `rule` and `args`. Dates are calendar dates; `null` means no occurrence. For `validate` the expectation is the map of field errors.",
   "cases": [
     { "name": "daily: today is an occurrence", "fn": "onOrAfter", "rule": { "mode": "calendar", "freq": "daily", "interval": 1, "anchor": "2026-09-01" }, "args": ["2026-09-25"], "expect": "2026-09-25" },
     { "name": "daily: after today", "fn": "after", "rule": { "mode": "calendar", "freq": "daily", "interval": 1, "anchor": "2026-09-01" }, "args": ["2026-09-25"], "expect": "2026-09-26" },

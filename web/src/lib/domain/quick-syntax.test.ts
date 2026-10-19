@@ -1,4 +1,4 @@
-// Short syntax of the quick entry (CLAUDE.md section 7; E4 plan, T-10 and package 6): tokens at
+// Short syntax of the quick entry (docs/regeln/ansichten.md; E4 plan, T-10 and package 6): tokens at
 // the start, in the middle and at the end, doubled tokens, archived projects, case, unknown
 // tokens staying in the title, and the preview.
 

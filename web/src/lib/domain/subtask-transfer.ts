@@ -289,7 +289,7 @@ export function changesOf(
 // --- Targets ---------------------------------------------------------------------------------------
 
 /**
- * A sub-task counts as open while its status is not in the category "abgeschlossen" (CLAUDE.md §5,
+ * A sub-task counts as open while its status is not in the category "abgeschlossen" (docs/regeln/datenmodell.md,
  * domain/status.ts): every status but "Erledigt".
  */
 export function isOpenSubtask(ticket: Pick<TicketSummary, 'status'>): boolean {
