@@ -2,7 +2,9 @@
 // every required check is a job of .github/workflows/ci.yml, every required job is skipped only
 // for documentation-only pull requests (a skipped required job counts as passed), and the
 // ruleset keeps pull requests, squash merges, no force pushes and no deletion. The live ruleset
-// is put on the state of main.json with the GitHub API; this test guards the file.
+// is put on the state of main.json with the GitHub API; this test guards the file. Since DOC-2 it
+// also applies the classification of "Detect code changes" to sample paths: documentation that a
+// test or the lint reads counts as code.
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
@@ -93,17 +95,114 @@ describe('CI workflow and ruleset for main', () => {
 		}
 	});
 
-	it('counts only Markdown and docs/ as documentation, except the test manifest', () => {
-		expect(workflow).toContain('docs/test-manifest.html) code=true ;;');
-		expect(workflow).toContain('docs/* | *.md) ;;');
-		expect(workflow).toContain('*) code=true ;;');
-		expect(workflow.indexOf('docs/test-manifest.html) code=true')).toBeLessThan(
-			workflow.indexOf('docs/* | *.md)')
-		);
-	});
-
 	it('runs on pull requests to main and cancels a superseded run', () => {
 		expect(workflow).toMatch(/\non:\n {2}pull_request:\n {4}branches: \[main\]\n/);
 		expect(workflow).toMatch(/\nconcurrency:\n {2}group: ci-\$\{\{ github\.event\.pull_request\.number \|\| github\.ref \}\}\n {2}cancel-in-progress: true\n/);
+	});
+});
+
+// Classification of the job "Detect code changes" (CLAUDE.md §12, DOC-2): the case statement of
+// ci.yml applied to sample paths. A pattern of a bash case statement is a glob whose * and ? also
+// match "/"; the classification uses only *, ? and bracket expressions of letters, so a small
+// translation into a regular expression evaluates it exactly. Any other syntax fails the test
+// instead of being guessed.
+
+/** Arms of `case "$file" in … esac`: patterns and whether the arm counts the path as code. */
+function classificationArms() {
+	const block = /\n( +)case "\$file" in\n([\s\S]*?)\n\1esac\n/.exec(workflow);
+	if (!block) throw new Error('ci.yml: no case "$file" in … esac in "Classify changed files"');
+	return block[2].split('\n').map((line) => {
+		const arm = /^\s*([^)]+)\)( code=true)? ;;$/.exec(line);
+		if (!arm) throw new Error(`ci.yml: arm of the classification not understood: ${line.trim()}`);
+		return { patterns: arm[1].split(' | ').map(globToRegExp), code: arm[2] !== undefined };
+	});
+}
+
+/** A glob of a bash case statement as a regular expression of the whole path. */
+function globToRegExp(glob) {
+	let source = '';
+	for (let index = 0; index < glob.length; index++) {
+		const char = glob[index];
+		if (char === '*') source += '.*';
+		else if (char === '?') source += '.';
+		else if (char === '[') {
+			const end = glob.indexOf(']', index);
+			const letters = glob.slice(index + 1, end);
+			if (end === -1 || !/^[A-Za-z0-9]+$/.test(letters)) throw new Error(`ci.yml: bracket expression not supported in ${glob}`);
+			source += `[${letters}]`;
+			index = end;
+		} else if (/[A-Za-z0-9_/:-]/.test(char)) source += char;
+		else if (char === '.') source += '\\.';
+		else throw new Error(`ci.yml: character "${char}" not supported in pattern ${glob}`);
+	}
+	return new RegExp(`^${source}$`);
+}
+
+/** True if the classification counts the line of the file list as code (first matching arm). */
+function countsAsCode(path) {
+	const arm = classificationArms().find(({ patterns }) => patterns.some((pattern) => pattern.test(path)));
+	if (!arm) throw new Error(`ci.yml: no arm matches ${path}`);
+	return arm.code;
+}
+
+/**
+ * Files that tests or the lint read although they are documentation (audit of DOC-2), with the
+ * check that reads them; a change to any of them must run the build jobs. "removed:" marks a path
+ * the pull request deletes or renames.
+ */
+const READ_BY_CHECKS = [
+	['CLAUDE.md', 'claude-md-structure.test.mjs, platform-scripts.test.mjs'],
+	['docs/regeln/README.md', 'claude-md-structure.test.mjs'],
+	['docs/regeln/tickets.md', 'claude-md-structure.test.mjs'],
+	['docs/regeln/neues-thema.md', 'claude-md-structure.test.mjs: index and head of every detail document'],
+	['docs/plan/CLAUDE.md', 'claude-md-structure.test.mjs: no CLAUDE.md below docs/'],
+	['docs/claude.md', 'claude-md-structure.test.mjs: no CLAUDE.md below docs/, in any case'],
+	['docs/adr/Claude.MD', 'claude-md-structure.test.mjs: no CLAUDE.md below docs/, in any case'],
+	['docs/test-manifest.html', 'test-manifest.test.mjs'],
+	['web/src/lib/test/markdown-corpus/mail.md', 'web/src/lib/markdown.test.ts, web/src/lib/editor/markdown-bridge.test.ts'],
+	['web/README.md', 'Prettier in npm run lint'],
+	['extensions/whatsapp-web/README.md', 'Prettier in npm run lint'],
+	['removed:docs/adr/0040-veroeffentlichen-ohne-unterbrechung.md', 'claude-md-structure.test.mjs, test-manifest.test.mjs: linked ADRs exist'],
+	['removed:docs/plan/e1.md', 'claude-md-structure.test.mjs, test-manifest.test.mjs: linked plans exist'],
+	['removed:docs/security/bewertungen/GHSA-pxg6-pf52-xh8x.md', 'claude-md-structure.test.mjs: the linked folder exists']
+];
+
+/** Documentation no check reads: a pull request that changes only these skips the build jobs. */
+const DOCUMENTATION = [
+	'README.md',
+	'.github/pull_request_template.md',
+	'.github/SECURITY.md',
+	'docs/adr/0040-veroeffentlichen-ohne-unterbrechung.md',
+	'docs/adr/README.md',
+	'docs/plan/e1.md',
+	'docs/plan/claude-md.md',
+	'docs/security/bewertungen/GHSA-pxg6-pf52-xh8x.md',
+	'docs/spikes/e0-pocketbase.md',
+	'docs/assets/banner.svg',
+	'helpers/mail/NOTIZEN.md'
+];
+
+describe('classification of changed files (Detect code changes)', () => {
+	it.each(READ_BY_CHECKS)('counts %s as code (read by %s)', (path) => {
+		expect(countsAsCode(path)).toBe(true);
+	});
+
+	it.each(DOCUMENTATION)('counts %s as documentation', (path) => {
+		expect(countsAsCode(path)).toBe(false);
+	});
+
+	it('counts every other path as code, the last arm catching all', () => {
+		for (const path of ['app/pb_hooks/tickets.pb.js', 'package.json', '.github/workflows/ci.yml', 'scripts/build.ps1']) {
+			expect(countsAsCode(path), path).toBe(true);
+		}
+		const arms = classificationArms();
+		expect(arms.at(-1)).toEqual({ patterns: [/^.*$/], code: true });
+	});
+
+	it('marks deleted files and the old name of renamed ones with "removed:"', () => {
+		expect(workflow).toContain(
+			`--jq '.[] | (if .status == "removed" then "removed:" else "" end) + .filename, (.previous_filename // empty | "removed:" + .)'`
+		);
+		expect(workflow).toContain('if [ -z "$files" ]; then code=true; fi');
 	});
 });
