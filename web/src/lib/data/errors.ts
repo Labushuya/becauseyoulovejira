@@ -20,6 +20,7 @@ import {
 	reopenOlderMessage
 } from '../domain/recurrence-rule';
 import { SUBTASK_MESSAGES, openChildrenMessage } from '../domain/subtasks';
+import { TRANSFER_MESSAGES } from '../domain/subtask-transfer';
 import { TARGET_MESSAGES } from '../domain/target-project';
 import { CREATE_MESSAGES } from '../domain/ticket-create';
 import { TICKET_SOURCE_MESSAGES, cycleMessage, cyclePathOf } from '../domain/ticket-origins';
@@ -132,7 +133,9 @@ const FIELD_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
 	// "Zuständig" (ADR-0068), the same texts as the hook.
 	...ASSIGNEE_MESSAGES,
 	// "Neues Ticket" with everything at once (ADR-0069), the same texts as the route.
-	...CREATE_MESSAGES
+	...CREATE_MESSAGES,
+	// "Auf Unteraufgaben übertragen …" (ADR-0070), the same texts as the route.
+	...TRANSFER_MESSAGES
 });
 
 /** Texts that depend on the field as well, keyed by `<field>:<code>`; they win over the above. */

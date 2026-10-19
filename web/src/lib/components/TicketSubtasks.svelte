@@ -8,15 +8,25 @@
 		subtaskStatusOf,
 		type TemplateStatus
 	} from '$lib/domain/series-template';
+	import { assigneeName } from '$lib/domain/assignee';
 	import { joinWords } from '$lib/domain/recurrence-text';
 	import { progressLabel, progressPercent, progressText } from '$lib/domain/subtasks';
+	import { TRANSFER_TEXTS, type TransferNames } from '$lib/domain/subtask-transfer';
 	import { TITLE_MAX_LENGTH, type TicketSummary } from '$lib/domain/ticket';
+	import { insideModal } from '$lib/overlay/modal-context';
+	import { findAssignees, type AssigneeSource } from '$lib/stores/assignees.svelte';
+	import type { CatalogStore } from '$lib/stores/catalog.svelte';
 	import { OngoingFinishAsk } from '$lib/stores/ongoing-finish.svelte';
+	import {
+		findSubtaskTransferStore,
+		type SubtaskTransferStore
+	} from '$lib/stores/subtask-transfer.svelte';
 	import type { TicketListStore } from '$lib/stores/ticket-list.svelte';
 	import DoneToggle from './DoneToggle.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import OngoingFinishDialog from './OngoingFinishDialog.svelte';
 	import StatusSelect from './StatusSelect.svelte';
+	import SubtaskTransferDialog from './SubtaskTransferDialog.svelte';
 	import StatusMenu from './table/StatusMenu.svelte';
 
 	// Section "Unteraufgaben" (ADR-0033 section 4), shared by the side panel and the full view: the
@@ -32,11 +42,18 @@
 	// closes. Everything comes from the list store and follows realtime. A sub-task that is an ongoing
 	// project (it takes the kind of its ticket) asks "Vorhaben abschließen?" before its check mark or
 	// "Erledigt" of its status menu completes it (VH-1); in the full view the question stands inline
-	// in this section.
+	// in this section. Since UE-1 (ADR-0070) "Auf Unteraufgaben übertragen …" stands next to "Unteraufgabe
+	// hinzufügen" once the ticket has a sub-task: the dialog gives chosen fields of the ticket to its
+	// sub-tasks (SubtaskTransferDialog, a modal M; in the full view inline in this section). Whoever sees
+	// the section may change the ticket (the update rule of tickets is their view rule); the server checks
+	// it again for every sub-task.
 	let {
 		ticket,
 		list,
-		hrefOf
+		hrefOf,
+		catalog = null,
+		transfer = findSubtaskTransferStore(),
+		assignees = findAssignees()
 	}: {
 		ticket: TicketSummary;
 		list: Pick<
@@ -51,6 +68,12 @@
 		>;
 		/** Address of the panel of a sub-task, with the list query of the current page. */
 		hrefOf: (id: string) => ResolvedPathname;
+		/** Names of project and tags of the ticket; without it those the ticket carries. */
+		catalog?: Pick<CatalogStore, 'projectOf' | 'tagsOf'> | null;
+		/** "Auf Unteraufgaben übertragen …" (UE-1); none outside the (app) layout. */
+		transfer?: SubtaskTransferStore | null;
+		/** Members of the household for the name of the assignee; none outside the layout. */
+		assignees?: AssigneeSource | null;
 	} = $props();
 
 	const uid = $props.id();
@@ -93,6 +116,32 @@
 
 	/** "Vorhaben abschließen?" before a sub-task that is an ongoing project is completed (VH-1). */
 	const finishing = new OngoingFinishAsk();
+
+	/** "Auf Unteraufgaben übertragen …" (UE-1): inside a modal (the full view) the dialog is inline. */
+	const inline = insideModal();
+	/** Ticket whose dialog is open; another ticket in the same section starts without it. */
+	let transferringFor = $state<string | null>(null);
+	let transferButton = $state<HTMLButtonElement>();
+	const transferShown = $derived(transfer !== null && subtasks.length > 0);
+	const transferring = $derived(transferShown && transferringFor === ticket.id);
+	/** What the dialog names of the ticket; the assignee only where the field shows (ADR-0068). */
+	const transferNames = $derived.by((): TransferNames => {
+		const assigneeShown =
+			ticket.assignee !== undefined &&
+			(ticket.scope ?? '').startsWith('h:') &&
+			assignees !== null &&
+			assignees.members.length > 0;
+		return {
+			project: catalog?.projectOf(ticket) ?? ticket.project,
+			tags: (catalog?.tagsOf(ticket) ?? ticket.tags).map((tag) => tag.name),
+			assignee:
+				assigneeShown && assignees !== null
+					? ticket.assignee
+						? assigneeName(ticket.assignee, assignees.context)
+						: ''
+					: null
+		};
+	});
 
 	/** The check mark of a sub-task; an open ongoing project asks first. */
 	function toggleDone(child: TicketSummary, done: boolean) {
@@ -290,15 +339,42 @@
 				</button>
 			</div>
 		</form>
-	{:else}
-		<button
-			class="button-secondary button-small"
-			type="button"
-			bind:this={addButton}
-			onclick={open}
-		>
-			Unteraufgabe hinzufügen
-		</button>
+	{/if}
+	{#if !adding || transferShown}
+		<div class="section-actions">
+			{#if !adding}
+				<button
+					class="button-secondary button-small"
+					type="button"
+					bind:this={addButton}
+					onclick={open}
+				>
+					Unteraufgabe hinzufügen
+				</button>
+			{/if}
+			{#if transferShown}
+				<button
+					class="button-secondary button-small"
+					type="button"
+					aria-haspopup={inline ? undefined : 'dialog'}
+					aria-expanded={inline ? transferring : undefined}
+					bind:this={transferButton}
+					onclick={() => (transferringFor = inline && transferring ? null : ticket.id)}
+				>
+					{TRANSFER_TEXTS.action}
+				</button>
+			{/if}
+		</div>
+	{/if}
+	{#if transferring && transfer !== null}
+		<SubtaskTransferDialog
+			parent={ticket}
+			{subtasks}
+			store={transfer}
+			names={transferNames}
+			returnFocus={() => transferButton}
+			onclose={() => (transferringFor = null)}
+		/>
 	{/if}
 	<p class="visually-hidden" aria-live="polite">{announcement}</p>
 </section>
@@ -426,7 +502,8 @@
 		color: var(--color-text-muted);
 	}
 
-	.actions {
+	.actions,
+	.section-actions {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 0.5rem;

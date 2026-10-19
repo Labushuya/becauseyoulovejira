@@ -1083,6 +1083,18 @@
 						das Häkchen davor, mit „Rückgängig“ in der Meldung.
 					</li>
 					<li>
+						Mit „Auf Unteraufgaben übertragen …“ unter „Unteraufgaben“ gibst du Werte des Tickets an
+						seine Unteraufgaben weiter: Fälligkeit, Priorität, Status, im Haushalt die
+						Zuständigkeit, Tags und Projekt. Tags kommen hinzu, vorhandene bleiben; mit dem Projekt
+						bekommen die Unteraufgaben neue Keys. Titel, Beschreibung, Wiederholung und Art bleiben,
+						wie sie sind. Fälligkeit und Priorität sind zuerst angehakt; danach merkt sich das Gerät
+						deine letzte Auswahl, das Projekt nie. Ziel sind „Alle offenen Unteraufgaben“ oder unter
+						„Auswählen …“ einzelne, auch erledigte. Eine Zeile über den Knöpfen sagt, wie viele sich
+						ändern. Lehnt eine Unteraufgabe die Änderung ab, ändert sich keine, und der Dialog nennt
+						sie. Wer mehrere Unteraufgaben auf einmal zugewiesen bekommt, erhält eine einzige
+						Meldung.
+					</li>
+					<li>
 						Gehört das übergeordnete Ticket zu einer Wiederholung, steht im Detail der Unteraufgabe
 						etwa „Teil von HAUS-7 · wiederholt sich jeden Montag“, dazu „aus der Vorlage – wird mit
 						jedem Termin neu angelegt“ oder „nur für diesen Termin“, wenn sich das sicher sagen

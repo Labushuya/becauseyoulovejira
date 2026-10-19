@@ -261,6 +261,7 @@
 				<TicketSubtasks
 					{ticket}
 					list={tickets}
+					{catalog}
 					hrefOf={(subtaskId) => links.href(subtaskId, page.url)}
 				/>
 			{/if}

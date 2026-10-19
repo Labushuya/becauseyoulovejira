@@ -135,7 +135,8 @@ describe('what the server knows (GET /api/byl/tickets/create)', () => {
 			charm: true,
 			assignee: true,
 			subtaskStatus: true,
-			duplicateSubtaskStatus: true
+			duplicateSubtaskStatus: true,
+			subtaskTransfer: true
 		});
 	});
 

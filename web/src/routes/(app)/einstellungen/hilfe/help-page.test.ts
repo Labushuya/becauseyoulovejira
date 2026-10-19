@@ -534,6 +534,28 @@ describe('help page (EH-9)', () => {
 		expect(assignees).toMatch(/seine Unteraufgaben aus der Vorlage bekommen dieselbe Person/);
 	});
 
+	it('explains "Auf Unteraufgaben übertragen …": fields, the choice in advance, targets and all or nothing (UE-1)', () => {
+		render(Page);
+		const section = screen.getByRole('region', { name: 'Häufige Fragen' });
+		const question = [...section.querySelectorAll('details')].find(
+			(details) =>
+				details.querySelector('summary')?.textContent?.trim() ===
+				'Wie arbeite ich mit Unteraufgaben?'
+		);
+		const content = text(question as HTMLElement);
+		for (const phrase of [
+			'Mit „Auf Unteraufgaben übertragen …“ unter „Unteraufgaben“ gibst du Werte des Tickets an seine Unteraufgaben weiter: Fälligkeit, Priorität, Status, im Haushalt die Zuständigkeit, Tags und Projekt.',
+			'Tags kommen hinzu, vorhandene bleiben; mit dem Projekt bekommen die Unteraufgaben neue Keys.',
+			'Titel, Beschreibung, Wiederholung und Art bleiben, wie sie sind.',
+			'Fälligkeit und Priorität sind zuerst angehakt; danach merkt sich das Gerät deine letzte Auswahl, das Projekt nie.',
+			'Ziel sind „Alle offenen Unteraufgaben“ oder unter „Auswählen …“ einzelne, auch erledigte.',
+			'Lehnt eine Unteraufgabe die Änderung ab, ändert sich keine, und der Dialog nennt sie.',
+			'Wer mehrere Unteraufgaben auf einmal zugewiesen bekommt, erhält eine einzige Meldung.'
+		]) {
+			expect(content, phrase).toContain(phrase);
+		}
+	});
+
 	it('explains what a parent fills in, a failed question and the status of duplicated sub-tasks (UT-2)', () => {
 		render(Page);
 		const section = screen.getByRole('region', { name: 'Häufige Fragen' });

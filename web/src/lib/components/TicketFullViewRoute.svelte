@@ -273,6 +273,7 @@
 				<TicketSubtasks
 					{ticket}
 					list={tickets}
+					{catalog}
 					hrefOf={(subtaskId) => host.full(subtaskId, page.url)}
 				/>
 			{/if}
