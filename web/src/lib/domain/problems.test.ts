@@ -307,10 +307,16 @@ describe('failed action or hint at an input', () => {
 		expect(isInputValidation(['validation_required'])).toBe(true);
 		expect(isInputValidation(['validation_required', 'validation_max_text_constraint'])).toBe(true);
 		expect(isInputValidation(['validation_not_unique'])).toBe(true);
+		// Checks of the form of an input in the hooks: "Titel fehlt", too long, a name.
+		expect(isInputValidation(['validation_create_title'])).toBe(true);
+		expect(isInputValidation(['validation_duplicate_title', 'validation_keywords'])).toBe(true);
+		expect(isInputValidation(['validation_account_name_max'])).toBe(true);
 	});
 
 	it('takes a refusal of a hook, a mix and an answer without fields for a failed action', () => {
 		expect(isInputValidation(['validation_project_archived'])).toBe(false);
+		// A limit of a list is a rule of the app, no check of one input.
+		expect(isInputValidation(['validation_create_subtasks_max'])).toBe(false);
 		expect(isInputValidation(['validation_required', 'validation_transfer_target'])).toBe(false);
 		expect(isInputValidation([])).toBe(false);
 	});

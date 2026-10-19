@@ -153,11 +153,12 @@ export function outcomeText(outcome: ProblemOutcome): string {
 
 /**
  * Codes that only check one input: those of the record API of PocketBase (required, length,
- * format, value, date, address, uniqueness) and the few checks of the form of an input in the
- * hooks (the name of a variable, keywords, the reserved code TASK, the name of a connection). A
+ * format, value, date, address, uniqueness) and the checks of the form of an input in the hooks
+ * (the name of a variable, keywords, the reserved code TASK, the name of a connection, of an
+ * account and of a key of the own inbox, a title or a description that is empty or too long). A
  * refusal with nothing but these is a hint at the field, not a failed action, and gets no details
- * (ADR-0071 §1). Every other refusal of the hooks (a conflict, a rule of the app) is a failed
- * action.
+ * (ADR-0071 §1). Every other refusal of the hooks (a conflict, a rule of the app, a limit of a
+ * list) is a failed action.
  */
 export const INPUT_VALIDATION_CODES: ReadonlySet<string> = new Set([
 	'validation_required',
@@ -186,7 +187,19 @@ export const INPUT_VALIDATION_CODES: ReadonlySet<string> = new Set([
 	'validation_keywords',
 	'validation_reserved_code',
 	'validation_connection_label',
-	'validation_connection_label_max'
+	'validation_connection_label_max',
+	'validation_account_name',
+	'validation_account_name_max',
+	'validation_inbox_key_name',
+	'validation_create_title',
+	'validation_create_title_max',
+	'validation_create_description_max',
+	'validation_create_subtask_title',
+	'validation_create_subtask_title_max',
+	'validation_duplicate_title',
+	'validation_follow_up_title',
+	'validation_recurrence_subtask_title',
+	'validation_recurrence_subtask_title_max'
 ]);
 
 /** Whether a refusal with these codes of fields is only a check of the input (no details). */
