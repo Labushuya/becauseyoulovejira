@@ -1,8 +1,8 @@
 // Page "Einstellungen → System" (ADR-0043; ADR-0006): status of the app, the checks of "Umgebung
 // prüfen", the logs and the actions. Loaded when the page opens and gone with it. The restart ends
-// the server this page talks to, so after starting it the store asks /api/health until the server
-// was gone and answers again (or answers with a new start time), then loads the status again; this
-// short polling concerns the server, not data (CLAUDE.md §7), and ends with the restart.
+// the server this page talks to, so after starting it the store waits for the server to go and
+// come back (followRestart of restart-follow.ts, shared with "Jetzt neu starten" in the setup
+// assistants since BW-1), then loads the status again.
 
 import type PocketBase from 'pocketbase';
 import { toDataError } from '$lib/data/errors';
@@ -29,17 +29,26 @@ import {
 } from '$lib/domain/system';
 import { RESTART_NEEDED, restartNeeded as restartNeededText } from '$lib/guidance/texts';
 import { SILENT_FLAGS, type FlagSink } from './flags.svelte';
+import {
+	REAL_CLOCK,
+	followRestart,
+	type RestartBefore,
+	type RestartData,
+	type SystemClock
+} from './restart-follow';
 import type { SessionGuard } from './ticket-list.svelte';
 
-export interface SystemData {
-	status(options: RequestOptions): Promise<SystemAnswer<SystemOverview>>;
+export {
+	REAL_CLOCK,
+	RESTART_COMPARE_AFTER_MS,
+	RESTART_POLL_MS,
+	RESTART_TIMEOUT_MS,
+	type SystemClock
+} from './restart-follow';
+
+export interface SystemData extends RestartData {
 	doctor(options: RequestOptions): Promise<SystemAnswer<DoctorResult>>;
 	logs(options: RequestOptions): Promise<SystemAnswer<SystemLogs>>;
-	act(
-		action: SystemAction,
-		options: RequestOptions
-	): Promise<SystemAnswer<SystemOverview | 'restarting'>>;
-	health(options: RequestOptions): Promise<boolean>;
 }
 
 export function systemData(pb: PocketBase): SystemData {
@@ -51,35 +60,6 @@ export function systemData(pb: PocketBase): SystemData {
 		health: (options) => checkServerHealth(pb, options)
 	};
 }
-
-/** Time for the restart; tests pass a fake one. */
-export interface SystemClock {
-	now(): number;
-	wait(ms: number, signal: AbortSignal): Promise<void>;
-}
-
-export const REAL_CLOCK: SystemClock = {
-	now: () => Date.now(),
-	wait: (ms, signal) =>
-		new Promise((resolve) => {
-			const timer = setTimeout(resolve, ms);
-			signal.addEventListener(
-				'abort',
-				() => {
-					clearTimeout(timer);
-					resolve();
-				},
-				{ once: true }
-			);
-		})
-};
-
-/** How often the restart asks /api/health. */
-export const RESTART_POLL_MS = 1000;
-/** Without a moment of absence, the status is compared after this long (a very fast restart). */
-export const RESTART_COMPARE_AFTER_MS = 5000;
-/** The restart counts as failed after this long. */
-export const RESTART_TIMEOUT_MS = 90_000;
 
 export type SystemLoadState = 'idle' | 'loading' | 'ready' | 'denied' | 'error';
 export type RestartPhase = 'idle' | 'stopping' | 'starting' | 'failed' | 'not-started';
@@ -328,53 +308,41 @@ export class SystemStore {
 				return;
 			}
 			this.#restart = 'stopping';
-			await this.#followRestart(before.pid, before.startedUtc);
+			await this.#followRestart({ pid: before.pid, startedUtc: before.startedUtc });
 		} finally {
 			this.#busy = null;
 		}
 	}
 
-	async #followRestart(pid: number | null, startedUtc: string | null): Promise<void> {
-		const started = this.#clock.now();
-		let gone = false;
-		for (;;) {
-			if (this.#signal.aborted) return;
-			const up = await this.#data.health({ signal: this.#signal });
-			if (this.#signal.aborted) return;
-			const elapsed = this.#clock.now() - started;
-			if (!up) {
-				gone = true;
-				this.#restart = 'starting';
-			} else if (gone || elapsed >= RESTART_COMPARE_AFTER_MS) {
-				const answer = await this.#data.status({ signal: this.#signal }).catch(() => null);
-				if (this.#signal.aborted) return;
-				const status = answer?.kind === 'ok' ? answer.value : null;
-				const changed =
-					status !== null && (status.status.pid !== pid || status.status.startedUtc !== startedUtc);
-				if (gone || changed) {
-					if (status !== null) {
-						this.#overview = status;
-						this.#state = 'ready';
-						this.#message = null;
-					} else if (answer?.kind === 'denied') {
-						this.#state = 'denied';
-						this.#message = denialNotice(answer.reason);
-					}
-					this.#restart = 'idle';
-					this.#flags.show({
-						tone: 'success',
-						title: RESTART_TEXTS.done,
-						...(status === null ? {} : { description: `${stateText(status.status)}.` })
-					});
-					return;
-				}
-			}
-			if (elapsed >= RESTART_TIMEOUT_MS) {
-				this.#restart = gone ? 'failed' : 'not-started';
-				return;
-			}
-			await this.#clock.wait(RESTART_POLL_MS, this.#signal);
+	async #followRestart(before: RestartBefore): Promise<void> {
+		const follow = await followRestart(
+			this.#data,
+			this.#clock,
+			this.#signal,
+			before,
+			() => (this.#restart = 'starting')
+		);
+		if (follow.kind === 'aborted') return;
+		if (follow.kind === 'timeout') {
+			this.#restart = follow.gone ? 'failed' : 'not-started';
+			return;
 		}
+		const answer = follow.answer;
+		const status = answer?.kind === 'ok' ? answer.value : null;
+		if (status !== null) {
+			this.#overview = status;
+			this.#state = 'ready';
+			this.#message = null;
+		} else if (answer?.kind === 'denied') {
+			this.#state = 'denied';
+			this.#message = denialNotice(answer.reason);
+		}
+		this.#restart = 'idle';
+		this.#flags.show({
+			tone: 'success',
+			title: RESTART_TEXTS.done,
+			...(status === null ? {} : { description: `${stateText(status.status)}.` })
+		});
 	}
 
 	/** Ends every request of the page (the page goes). */
