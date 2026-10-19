@@ -149,3 +149,7 @@ Fehlerbericht des Nutzers: „Beim Anlegen von Unteraufgaben werden alle als off
 - **Fähigkeitsabfrage (K3, L2):** „Server kennt es nicht“ (404 bzw. eine Antwort ohne die Fähigkeit) und „unbekannt wegen eines Fehlers“ sind getrennt; nur das Erste nennt „offene Unteraufgaben“ oder „nach dem nächsten Neustart“. Ein Fehler steht mit „Erneut versuchen“ da, und solange eine Fähigkeit fehlt oder unbekannt ist, fragt die App beim nächsten Öffnen des Formulars, der Vorlage bzw. des Dialogs wieder. Einzelheiten in [ADR-0069](0069-vollstaendiges-anlegen.md), Nachtrag UT-2.
 - **Keine Migration.** **Neustart nötig** für K4, K2 und die Fähigkeit `duplicate_subtask_status`; K1 und K3 wirken nach dem Build und F5.
 - **Belegt in** `tests/unit/ticket-rules.test.mjs`, `tests/integration/ticket-subtasks.test.mjs`, `new-ticket-more.test.ts`; Test-Manifest Paket „UT-2“ (BYL-E6-1782 bis BYL-E6-1797).
+
+## Nachtrag UE-1 (2026-10-19, Nutzerwunsch): Werte des Tickets auf Unteraufgaben übertragen
+
+Der Abschnitt „Unteraufgaben“ (§4) hat mit einer Unteraufgabe neben „Unteraufgabe hinzufügen“ die Aktion „Auf Unteraufgaben übertragen …“: Fälligkeit, Priorität, Status, im Haushalt die Zuständigkeit, Tags (nur hinzufügen) und Projekt (neue Keys) des Tickets gehen auf alle offenen oder ausgewählte Unteraufgaben, in einer Transaktion oder gar nicht. „Alle Ebenen“ sind nach §1 die direkten Unteraufgaben. Einzelheiten in [ADR-0070](0070-auf-unteraufgaben-uebertragen.md); Test-Manifest Paket „UE-1“ (BYL-E6-1809 bis BYL-E6-1825).
