@@ -2,8 +2,10 @@
 // per service (labels of one or two words, texts, fixed https links of the providers, commands
 // with their placeholders) and the progress, which comes from facts of the server, never from a
 // stored step: the connection, whether the server sees the variable, the keywords and the last
-// run. So after a restart (neu-starten.bat) the assistant opens at the right step, also in a new
-// tab. Which step was looked at last is only a hint of the session (the component keeps it).
+// run. So after a restart the assistant opens at the right step, also in a new tab. Which step was
+// looked at last is only a hint of the session (the component keeps it, domain/setup-resume.ts).
+// The step "Neu starten" offers "Jetzt neu starten" (BW-1, ADR-0072); its command, the file
+// neu-starten.bat, is the emergency way and stands folded under „Notfall“.
 // Stand der Klickwege: 2026-09.
 
 import type { Connection, SecretStatus } from './connections';
@@ -165,6 +167,17 @@ export interface SetupStep {
 /** The variable in the commands: the name the connection uses. */
 export const VARIABLE_PLACEHOLDER = 'variable';
 
+/**
+ * The file of the step "Neu starten": the emergency way below "Jetzt neu starten" (BW-1, ADR-0072),
+ * shown only folded under „Notfall“.
+ */
+export const RESTART_FILE: SetupCommand = Object.freeze({
+	label: 'Diese Datei doppelklicken',
+	template: 'app\\neu-starten.bat',
+	placeholders: {},
+	copyable: false
+});
+
 const CALENDAR_STEPS: readonly SetupStep[] = [
 	{
 		id: 'connect',
@@ -229,17 +242,10 @@ const CALENDAR_STEPS: readonly SetupStep[] = [
 		label: 'Neu starten',
 		title: 'App neu starten',
 		intro:
-			'Die App sieht neue Variablen erst nach einem Neustart. Im Ordner app neu-starten.bat doppelklicken; es erkennt die neue Variable und startet die App neu.',
+			'Die App sieht neue Variablen erst nach einem Neustart. „Jetzt neu starten“ startet sie geordnet neu; danach prüft dieser Schritt, ob sie die Variable sieht.',
 		actions: [],
 		links: [],
-		commands: [
-			{
-				label: 'Diese Datei doppelklicken',
-				template: 'app\\neu-starten.bat',
-				placeholders: {},
-				copyable: false
-			}
-		],
+		commands: [RESTART_FILE],
 		more: [
 			'Vor dem Neustart kann die App nicht unterscheiden, ob die Variable fehlt oder nur noch nicht geladen ist.'
 		],
@@ -310,17 +316,10 @@ function mailTail(provider: string): readonly SetupStep[] {
 			label: 'Neu starten',
 			title: 'App neu starten',
 			intro:
-				'Die App sieht neue Variablen erst nach einem Neustart; dabei startet auch der Mail-Hilfsprozess byl-mail.exe. Im Ordner app neu-starten.bat doppelklicken.',
+				'Die App sieht neue Variablen erst nach einem Neustart; dabei startet auch der Mail-Hilfsprozess byl-mail.exe. „Jetzt neu starten“ startet beides geordnet neu, danach prüft dieser Schritt die Variable.',
 			actions: [],
 			links: [],
-			commands: [
-				{
-					label: 'Diese Datei doppelklicken',
-					template: 'app\\neu-starten.bat',
-					placeholders: {},
-					copyable: false
-				}
-			],
+			commands: [RESTART_FILE],
 			more: [
 				'Der Start legt beim ersten Mal den Zugang zwischen App und Hilfsprozess an (Variable BYL_INGEST_TOKEN, nichts zu tun) und startet byl-mail.exe, sobald eine eingeschaltete Postfach-Verbindung besteht.',
 				'Beim ersten Start von byl-mail.exe können SmartScreen oder ein Virenscanner nachfragen, weil die Datei nicht signiert ist.',
@@ -524,17 +523,10 @@ const TELEGRAM_STEPS: readonly SetupStep[] = [
 		label: 'Neu starten',
 		title: 'App neu starten',
 		intro:
-			'Die App sieht neue Variablen erst nach einem Neustart. Im Ordner app neu-starten.bat doppelklicken; es erkennt die neuen Variablen und startet die App neu.',
+			'Die App sieht neue Variablen erst nach einem Neustart. „Jetzt neu starten“ startet sie geordnet neu; danach prüft dieser Schritt, ob sie beide Variablen sieht.',
 		actions: [],
 		links: [],
-		commands: [
-			{
-				label: 'Diese Datei doppelklicken',
-				template: 'app\\neu-starten.bat',
-				placeholders: {},
-				copyable: false
-			}
-		],
+		commands: [RESTART_FILE],
 		more: [
 			'Vor dem Neustart kann die App nicht unterscheiden, ob eine Variable fehlt oder nur noch nicht geladen ist.'
 		],
@@ -552,7 +544,7 @@ const TELEGRAM_STEPS: readonly SetupStep[] = [
 		more: [
 			'Im Chat mit dem Bot ist die ID deine User-ID. Für eine Gruppe den Bot hinzufügen; ihre ID beginnt mit -100. Mehrere IDs trennst du mit Komma.',
 			'In Gruppen sieht ein Bot normalerweise nur Befehle und Antworten an ihn. Soll er alles lesen, bei BotFather /setprivacy auf „Disable“ stellen.',
-			'Nach dem neuen Wert die App noch einmal neu starten (neu-starten.bat erkennt den geänderten Wert) und erneut „Jetzt abrufen“: Dann meldet die App keinen fremden Chat mehr.'
+			'Nach dem neuen Wert die App noch einmal neu starten („Jetzt neu starten“ in diesem Schritt) und erneut „Jetzt abrufen“: Dann meldet die App keinen fremden Chat mehr.'
 		],
 		checked: true
 	},
@@ -651,17 +643,10 @@ const NOTION_STEPS: readonly SetupStep[] = [
 		label: 'Neu starten',
 		title: 'App neu starten',
 		intro:
-			'Die App sieht neue Variablen erst nach einem Neustart. Im Ordner app neu-starten.bat doppelklicken; es erkennt die neue Variable und startet die App neu.',
+			'Die App sieht neue Variablen erst nach einem Neustart. „Jetzt neu starten“ startet sie geordnet neu; danach prüft dieser Schritt, ob sie die Variable sieht.',
 		actions: [],
 		links: [],
-		commands: [
-			{
-				label: 'Diese Datei doppelklicken',
-				template: 'app\\neu-starten.bat',
-				placeholders: {},
-				copyable: false
-			}
-		],
+		commands: [RESTART_FILE],
 		more: [
 			'Vor dem Neustart kann die App nicht unterscheiden, ob die Variable fehlt oder nur noch nicht geladen ist.'
 		],
@@ -787,17 +772,10 @@ const GITHUB_STEPS: readonly SetupStep[] = [
 		label: 'Neu starten',
 		title: 'App neu starten',
 		intro:
-			'Die App sieht neue Variablen erst nach einem Neustart. Im Ordner app neu-starten.bat doppelklicken; es erkennt die neue Variable und startet die App neu.',
+			'Die App sieht neue Variablen erst nach einem Neustart. „Jetzt neu starten“ startet sie geordnet neu; ob sie das Token sieht, zeigt danach der letzte Schritt „Prüfen“.',
 		actions: [],
 		links: [],
-		commands: [
-			{
-				label: 'Diese Datei doppelklicken',
-				template: 'app\\neu-starten.bat',
-				placeholders: {},
-				copyable: false
-			}
-		],
+		commands: [RESTART_FILE],
 		more: [
 			'Ohne Token überspringst du diesen Schritt.',
 			'Ob die App das Token sieht, zeigt der letzte Schritt „Prüfen“.'

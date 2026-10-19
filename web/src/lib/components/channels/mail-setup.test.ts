@@ -261,9 +261,15 @@ describe('mailbox assistant (EH-7)', () => {
 		await fireEvent.click(within(dialog).getByRole('button', { name: 'Hilfsprozess prüfen' }));
 		await vi.waitFor(() =>
 			expect(
-				within(dialog).getByText(/Der Mail-Hilfsprozess läuft nicht\. neu-starten\.bat startet ihn/)
+				within(dialog).getByText(/Der Mail-Hilfsprozess läuft nicht\. Er startet/)
 			).toBeTruthy()
 		);
+		// Since BW-1 the step restarts the helper itself; neu-starten.bat is only the folded emergency.
+		expect(within(dialog).getByRole('button', { name: 'Mail-Helfer neu starten' })).toBeTruthy();
+		const emergency = within(dialog).getByText('Notfall: Neustart über den Ordner app')
+			.parentElement as HTMLDetailsElement;
+		expect(emergency.open).toBe(false);
+		expect(emergency.textContent).toMatch(/neu-starten\.bat/);
 		expect(data.listMailbox).toHaveBeenCalledWith(ID, 1, expect.anything());
 
 		data.listMailbox.mockResolvedValueOnce({ kind: 'ok', value: [] });

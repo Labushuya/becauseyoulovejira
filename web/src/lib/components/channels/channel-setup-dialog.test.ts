@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PC_CONTEXT, useContext } from '$lib/test/context';
 import type { RecordChange } from '$lib/data/realtime';
 import { SETX_WAY_KEY, setupStepKey, type SetupTarget } from '$lib/domain/channel-setup';
+import { parseSetupResume } from '$lib/domain/setup-resume';
 import type { Connection, SecretStatus } from '$lib/domain/connections';
 import type { ProjectRef } from '$lib/domain/ticket';
 import { ConnectionsStore, type ConnectionsData } from '$lib/stores/connections.svelte';
@@ -265,7 +266,12 @@ describe('setup assistant: progress from the server', () => {
 		}
 		expect(stepHeading().textContent).toMatch(/^Schritt 6 von 7/);
 		expect(document.activeElement).toBe(stepHeading());
-		expect(sessionStorage.getItem(setupStepKey(ID))).toBe('5');
+		// Since BW-1 the entry is JSON with the step, its time and no inputs (domain/setup-resume.ts).
+		expect(parseSetupResume(sessionStorage.getItem(setupStepKey(ID)), Date.now())).toMatchObject({
+			step: 5,
+			restart: false,
+			connect: null
+		});
 		expect(
 			dialog().getByText(
 				/Schritt 5 ist noch offen: Die App sieht BYL_GOOGLE_CALENDAR_URL noch nicht\./

@@ -12,12 +12,15 @@
 		splitAtCaret,
 		splitListInput
 	} from '$lib/domain/list-input';
+	import type { ProblemEntry } from '$lib/domain/problems';
 	import ChipList from './ChipList.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
+	import ProblemDetails from './problems/ProblemDetails.svelte';
 
 	// List of keywords (ADR-0020; E4 plan package 20): add, remove, take over the suggestions. Every
-	// change is saved at once through `onsave`, which answers with an error text or null. Without
+	// change is saved at once through `onsave`, which answers with an error text or null; since BW-1
+	// also with the text and the entry of a failed request, shown with "Details" (FP-1). Without
 	// keywords a neutral warning says what that means (`emptyText`), as a compact section message of
 	// the tone "warning" (plan EH-10): icon and hidden "Achtung:", no yellow.
 	// Input (user feedback, package A): a comma, Enter and pasting a comma-separated list take the
@@ -41,7 +44,10 @@
 		description: string;
 		/** Shown while the list is empty. */
 		emptyText: string;
-		onsave: (next: string[], announcement: string) => Promise<string | null>;
+		onsave: (
+			next: string[],
+			announcement: string
+		) => Promise<string | { message: string; problem: ProblemEntry | null } | null>;
 	} = $props();
 
 	const uid = $props.id();
@@ -56,6 +62,8 @@
 	let input = $state('');
 	let inputError = $state<string | null>(null);
 	let saveError = $state<string | null>(null);
+	/** The failed request behind `saveError`, for "Details" (FP-1, ADR-0071). */
+	let saveProblem = $state.raw<ProblemEntry | null>(null);
 	let saving = $state(false);
 	let field = $state<HTMLInputElement>();
 	let live = $state('');
@@ -75,9 +83,11 @@
 		if (saving) return false;
 		saving = true;
 		saveError = null;
+		saveProblem = null;
 		const error = await onsave(next, announcement);
 		saving = false;
-		saveError = error;
+		saveError = typeof error === 'string' ? error : (error?.message ?? null);
+		saveProblem = typeof error === 'string' ? null : (error?.problem ?? null);
 		return error === null;
 	}
 
@@ -299,6 +309,7 @@
 	</div>
 	{#if saveError !== null}
 		<p class="alert-error" role="alert"><ErrorIcon /><span>{saveError}</span></p>
+		<ProblemDetails problem={saveProblem} />
 	{/if}
 </fieldset>
 

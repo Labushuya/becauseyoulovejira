@@ -4,6 +4,7 @@
 		CHAT_COMMAND,
 		CONTROL_PANEL_STEPS,
 		DEFAULT_ALLOWLIST,
+		RESTART_FILE,
 		chatIdFromHint,
 		SETUP_TITLES,
 		SETX_WAY_KEY,
@@ -12,7 +13,6 @@
 		matchesSetupKind,
 		openCheckBefore,
 		setupProgress,
-		setupStepKey,
 		setupSteps,
 		stepCheck,
 		stepStates,
@@ -31,13 +31,24 @@
 		type Connection,
 		type TelegramRepliesChange
 	} from '$lib/domain/connections';
+	import { withoutCommands } from '$lib/domain/context';
 	import { folderPlatformOf } from '$lib/domain/folders';
 	import { checkSummary } from '$lib/domain/github';
 	import { DEFAULT_HOST_PLATFORM } from '$lib/domain/host-platform';
 	import { checkText } from '$lib/domain/notion';
 	import type { ProblemEntry } from '$lib/domain/problems';
+	import {
+		SECRET_NOT_KEPT,
+		SETUP_RESUME_PREFIX,
+		isStaleSetupResume,
+		parseSetupResume,
+		serializeSetupResume,
+		setupResumeKey,
+		type SetupConnectInputs,
+		type SetupResume
+	} from '$lib/domain/setup-resume';
 	import type { ProjectRef } from '$lib/domain/ticket';
-	import { currentNote, textForContext } from '$lib/guidance/texts';
+	import { currentNote, restartElsewhere, textForContext } from '$lib/guidance/texts';
 	import {
 		runProblem as runProblemOf,
 		type ConnectionsStore
@@ -45,6 +56,7 @@
 	import type { GitHubStore } from '$lib/stores/github.svelte';
 	import { findHostStore } from '$lib/stores/host.svelte';
 	import type { NotionStore } from '$lib/stores/notion.svelte';
+	import type { RestartStore } from '$lib/stores/restart.svelte';
 	import ErrorIcon from '../ErrorIcon.svelte';
 	import KeywordEditor from '../KeywordEditor.svelte';
 	import CodeBlock from '../guidance/CodeBlock.svelte';
@@ -55,6 +67,8 @@
 	import Stepper from '../guidance/Stepper.svelte';
 	import Tabs from '../guidance/Tabs.svelte';
 	import Modal from '../overlay/Modal.svelte';
+	import RestartAction from '../system/RestartAction.svelte';
+	import RestartEmergency from '../system/RestartEmergency.svelte';
 	import CardTargetProject from './CardTargetProject.svelte';
 	import FolderSetupList from './FolderSetupList.svelte';
 	import GitHubSetupRepos from './GitHubSetupRepos.svelte';
@@ -81,12 +95,20 @@
 	// ends with "Verbindung prüfen", which asks GitHub for the token, the rate limit and every
 	// repository. Folders (ADR-0051 §7) have no variable: the connection comes with its first folder,
 	// the same step adds more, and the last one runs the first check ("Jetzt prüfen").
+	// Since BW-1 (ADR-0072) the step "Neu starten", "Chat freigeben" of Telegram and the first run of
+	// a mailbox restart the app resp. the mail helper in place (RestartAction, the route of the page
+	// System), wait for it and check again; the files of the folder app stand only folded under
+	// „Notfall“. The tab keeps the step and the inputs of "Verbinden" without secrets in
+	// sessionStorage (`byl-setup:<id>`, before the connection `byl-setup:neu:<art>`,
+	// domain/setup-resume.ts): a reload opens the same step again, exactly the step a restart was
+	// started from. "Später fortsetzen" keeps the entry, "Fertig" and closing otherwise drop it.
 	let {
 		kind,
 		connectionId,
 		store,
 		notion,
 		github,
+		restart = null,
 		projects = [],
 		onconnection,
 		onimport,
@@ -100,6 +122,8 @@
 		notion: NotionStore;
 		/** GitHub: "Verbindung prüfen" of the last step. */
 		github: GitHubStore;
+		/** "Jetzt neu starten" in the steps (BW-1); without it only the emergency way stands. */
+		restart?: RestartStore | null;
 		/** Every project of the catalog, archived ones included (the step "Zielprojekt"). */
 		projects?: readonly ProjectRef[];
 		/** A connection was created; the owner writes its ID into the address. */
@@ -126,6 +150,8 @@
 		connection,
 		secretStatus: connection === null ? null : store.status(connection.id)
 	});
+	/** The failed question for the variables, with "Details" (FP-1, since BW-1). */
+	const statusFailure = $derived(connection === null ? null : store.statusFailure(connection.id));
 	/**
 	 * Before the connection exists, a name no connection uses yet, so `setx` for a second one does
 	 * not overwrite the secret of the first (ADR-0041, addendum of 2026-10-01).
@@ -154,12 +180,16 @@
 
 	/**
 	 * The note instead of a step that works only at the machine of the app (KOB-1, ADR-0057): the
-	 * variable with setx or the control panel there, the restart with neu-starten.bat; null where the
-	 * step shows. Read in the template, it follows the context of the tab.
+	 * variable with setx or the control panel there; for the restart who does it where (BW-1).
+	 * Paragraphs, [] while the context loads, null where the step shows. Read in the template, it
+	 * follows the context of the tab.
 	 */
-	function stepNote(entry: SetupStep): string | null {
-		if (entry.id === 'restart') return currentNote('script');
-		if (entry.id === 'variable' || entry.id === 'token') return currentNote('pc');
+	function stepNote(entry: SetupStep): readonly string[] | null {
+		if (entry.id === 'restart') return restartElsewhere('restart');
+		if (entry.id === 'variable' || entry.id === 'token') {
+			const note = currentNote('pc');
+			return note === null ? null : note === '' ? [] : [note];
+		}
 		return null;
 	}
 	const host = findHostStore();
@@ -181,30 +211,109 @@
 		}
 	}
 
-	/** The step looked at last for this connection in this tab; only its number. */
-	function remembered(id: string | null): number | null {
-		if (id === null) return null;
+	/**
+	 * The entry of this tab under `key` (domain/setup-resume.ts); a broken or expired one goes. A
+	 * blocked storage only loses the way back; the progress still comes from the server.
+	 */
+	function readResume(key: string): SetupResume | null {
 		try {
-			const value = Number(session()?.getItem(setupStepKey(id)) ?? '');
-			return Number.isInteger(value) && value >= 0 ? value : null;
+			const storage = session();
+			const stored = storage?.getItem(key) ?? null;
+			const entry = parseSetupResume(stored, Date.now());
+			if (stored !== null && entry === null) storage?.removeItem(key);
+			return entry;
 		} catch {
 			return null;
 		}
 	}
 
-	function remember(index: number) {
-		if (connection === null) return;
+	/** Drops the broken and expired entries of every assistant of this tab. */
+	function pruneResumes() {
 		try {
-			session()?.setItem(setupStepKey(connection.id), String(index));
+			const storage = session();
+			if (storage === null) return;
+			const now = Date.now();
+			const keys = Array.from({ length: storage.length }, (_, index) => storage.key(index));
+			for (const key of keys) {
+				if (key?.startsWith(SETUP_RESUME_PREFIX) && isStaleSetupResume(storage.getItem(key), now)) {
+					storage.removeItem(key);
+				}
+			}
+		} catch {
+			// Nothing to tidy where the storage is blocked.
+		}
+	}
+
+	function dropResume(key: string) {
+		try {
+			session()?.removeItem(key);
+		} catch {
+			// Blocked storage: there is nothing to drop.
+		}
+	}
+
+	/** Key of the entry now: of the connection of the address, or before it exists of the kind. */
+	const resumeKey = $derived(setupResumeKey(kind, connectionId));
+
+	// The entry of this tab when the assistant opens (after a reload, a restart or "Später
+	// fortsetzen"), read once; stale entries of other assistants go first.
+	const resumed = untrack(() => {
+		pruneResumes();
+		return readResume(setupResumeKey(kind, connectionId));
+	});
+	/** The inputs of "Verbinden" in this tab; restored when the assistant opens. */
+	let connectInputs = $state.raw<SetupConnectInputs | null>(resumed?.connect ?? null);
+	/** A restart was started here or the tab came back: values of "Wert hier einsetzen" are gone. */
+	let valuesGone = $state(resumed !== null);
+
+	/**
+	 * Keeps the step (and before the connection its inputs) under `key`; `restarting` marks the step
+	 * a restart was started from.
+	 */
+	function remember(index: number, restarting = false, key = resumeKey) {
+		try {
+			session()?.setItem(
+				key,
+				serializeSetupResume({
+					step: index,
+					savedAt: Date.now(),
+					restart: restarting,
+					connect: key === setupResumeKey(kind, null) ? connectInputs : null
+				})
+			);
 		} catch {
 			// Only the way back to the step is lost; the progress still comes from the server.
 		}
 	}
 
-	/** First step: the first open one after the facts, or a later one looked at in this tab. */
+	/** The form "Verbinden" changed: its inputs without secrets go into the entry of this tab. */
+	function rememberInputs(inputs: SetupConnectInputs) {
+		connectInputs = inputs;
+		remember(current);
+	}
+
+	/** "Später fortsetzen" keeps the entry; "Fertig", ×, Esc and the veil end the setup and drop it. */
+	let keepForLater = false;
+
+	function closeAssistant() {
+		if (keepForLater) {
+			remember(current);
+		} else {
+			dropResume(resumeKey);
+			dropResume(setupResumeKey(kind, null));
+		}
+		onclose();
+	}
+
+	/**
+	 * First step: the step a restart was started from; else the first open one after the facts, or
+	 * a later one looked at in this tab.
+	 */
 	const initial = $derived(
 		Math.min(
-			Math.max(setupProgress(kind, facts), remembered(connectionId) ?? 0),
+			resumed?.restart === true
+				? resumed.step
+				: Math.max(setupProgress(kind, facts), resumed?.step ?? 0),
 			Math.max(total - 1, 0)
 		)
 	);
@@ -275,11 +384,48 @@
 
 	function created(next: Connection) {
 		hold();
-		remember(current);
+		// The entry moves from the kind to the new connection; its inputs are done.
+		dropResume(setupResumeKey(kind, null));
+		connectInputs = null;
+		remember(current, false, setupResumeKey(kind, next.id));
 		onconnection(next.id);
 	}
 
-	async function saveKeywords(keywords: string[], announcement: string): Promise<string | null> {
+	// A connection that is gone takes its entry along.
+	$effect(() => {
+		if (missing) untrack(() => dropResume(setupResumeKey(kind, connectionId)));
+	});
+
+	/** Place of a restart in this assistant: the RestartStore shows its run and result only there. */
+	function restartPlace(stepId: SetupStep['id']): string {
+		return `setup:${kind}:${connectionId ?? 'neu'}:${stepId}`;
+	}
+
+	/** A restart begins at this step: it stays, and a reload opens exactly here again. */
+	function beforeRestart() {
+		hold();
+		remember(current, true);
+	}
+
+	/** The server is back: ask it again whether it sees the variables. */
+	function afterRestart() {
+		valuesGone = true;
+		if (connection !== null) void store.checkStatus(connection.id);
+	}
+
+	/** Steps with "Wert hier einsetzen" for a secret: after a reload or a restart its value is gone. */
+	function takesSecret(entry: SetupStep): boolean {
+		return entry.commands.some(
+			(command) =>
+				command.value !== undefined && command.placeholders[command.value]?.secret === true
+		);
+	}
+
+	/** Saves the keywords; a failed request comes back with its entry for "Details" (FP-1). */
+	async function saveKeywords(
+		keywords: string[],
+		announcement: string
+	): Promise<string | { message: string; problem: ProblemEntry | null } | null> {
 		if (connection === null) return null;
 		hold();
 		const result = await store.saveSettings(
@@ -288,11 +434,9 @@
 			announcement
 		);
 		if (result.ok) return null;
-		return (
-			result.message ??
-			Object.values(result.fields)[0] ??
-			'Die Stichwörter ließen sich nicht speichern.'
-		);
+		if (result.message !== null)
+			return { message: result.message, problem: result.problem ?? null };
+		return Object.values(result.fields)[0] ?? 'Die Stichwörter ließen sich nicht speichern.';
 	}
 
 	/** Telegram: error of the last switch of the answers in the chat (inline). */
@@ -347,8 +491,13 @@
 		await store.refresh(connection.id);
 	}
 
-	/** Result of "Hilfsprozess prüfen": only on a click, the helper logs in to the mailbox. */
-	let helper = $state<'ok' | 'unavailable' | { message: string; hint: string } | null>(null);
+	/**
+	 * Result of "Hilfsprozess prüfen": only on a click, the helper logs in to the mailbox. A failure
+	 * carries its entry for "Details" (FP-1, since BW-1).
+	 */
+	let helper = $state.raw<
+		'ok' | 'unavailable' | { message: string; hint: string; problem: ProblemEntry | null } | null
+	>(null);
 	/** "Hilfsprozess prüfen" runs (it logs in to the mailbox, which takes a moment). */
 	let probing = $state(false);
 
@@ -364,7 +513,7 @@
 				? 'ok'
 				: outcome.kind === 'unavailable'
 					? 'unavailable'
-					: { message: outcome.message, hint: outcome.hint };
+					: { message: outcome.message, hint: outcome.hint, problem: outcome.problem };
 	}
 
 	function stepIndex(id: SetupStep['id']): number {
@@ -511,7 +660,13 @@
 {#snippet body(entry: SetupStep)}
 	{#if entry.id === 'connect'}
 		{#if connection === null}
-			<SetupConnectForm {kind} {store} oncreated={created} />
+			<SetupConnectForm
+				{kind}
+				{store}
+				restored={connectInputs}
+				oncreated={created}
+				onremember={rememberInputs}
+			/>
 		{:else if kind === 'github'}
 			{@const current = connection}
 			<GitHubSetupRepos
@@ -560,6 +715,9 @@
 			<p class="hint">Erst die Verbindung anlegen; danach wählst du hier ihr Zielprojekt.</p>
 		{/if}
 	{:else if entry.id === 'variable' || entry.id === 'token'}
+		{#if valuesGone && takesSecret(entry)}
+			<SectionMessage tone="info" compact>{SECRET_NOT_KEPT}</SectionMessage>
+		{/if}
 		<Tabs
 			label="Weg zur Variablen"
 			tabs={[
@@ -578,13 +736,30 @@
 			{/snippet}
 		</Tabs>
 	{:else if entry.id === 'restart'}
-		{@render commandBlocks(entry, false)}
 		{#if connection !== null && facts.secretStatus !== null && check?.tone === 'open'}
 			<SectionMessage tone="warning" compact>
-				Hast du setx schon ausgeführt? Dann starte die App neu: neu-starten.bat im Ordner app.
-				Danach „Erneut prüfen“.
+				Hast du setx schon ausgeführt? Dann starte die App jetzt neu; danach prüft dieser Schritt
+				von selbst erneut.
 			</SectionMessage>
 		{/if}
+		{#if statusFailure !== null}
+			<SectionMessage tone="error" compact live problem={statusFailure.problem}>
+				{textForContext(statusFailure.message)}
+			</SectionMessage>
+		{/if}
+		<RestartAction
+			store={restart}
+			place={restartPlace('restart')}
+			hint={kind === 'github'
+				? 'Startet becauseyoulovejira geordnet neu, wie auf der Seite „System“. Ob die App das Token sieht, zeigt danach der letzte Schritt.'
+				: 'Startet becauseyoulovejira geordnet neu, wie auf der Seite „System“. Danach prüft dieser Schritt erneut, ob die App die Variable sieht.'}
+			onstart={beforeRestart}
+			onrestarted={afterRestart}
+		>
+			{#snippet emergency()}
+				{@render commandBlocks(entry, false)}
+			{/snippet}
+		</RestartAction>
 	{:else if entry.id === 'keywords'}
 		{#if connection !== null}
 			<KeywordEditor
@@ -615,12 +790,19 @@
 				</SectionMessage>
 			{:else if helper === 'unavailable'}
 				<SectionMessage tone="info" live>
-					{textForContext(
-						'Der Mail-Hilfsprozess läuft nicht. neu-starten.bat startet ihn, sobald eine eingeschaltete Postfach-Verbindung besteht und die App die Variable sieht.'
-					)}
+					Der Mail-Hilfsprozess läuft nicht. Er startet, sobald eine eingeschaltete
+					Postfach-Verbindung besteht und die App die Variable sieht.
 				</SectionMessage>
+				<RestartAction
+					store={restart}
+					task="mail-restart"
+					place={restartPlace('first-run')}
+					hint="Beendet den Mail-Hilfsprozess geordnet und startet ihn wieder; danach prüft dieser Schritt ihn erneut."
+					onstart={hold}
+					onrestarted={() => void probe()}
+				/>
 			{:else if helper !== null}
-				<SectionMessage tone="error" live>
+				<SectionMessage tone="error" live problem={helper.problem}>
 					{textForContext(`${helper.message} ${helper.hint}`)}
 				</SectionMessage>
 			{/if}
@@ -631,8 +813,8 @@
 			<!-- The ID goes into a variable with setx and needs a restart: at the PC only (KOB-1). -->
 			<PcOnly need="pc">
 				<SectionMessage tone="info" title={`Erkannte Chat-ID: ${chatId}`} live headingLevel={4}>
-					Gib diese ID frei: den Befehl ausführen, dann die App neu starten (neu-starten.bat) und
-					erneut „Jetzt abrufen“.
+					Gib diese ID frei: den Befehl ausführen, dann unten „Jetzt neu starten“ und danach erneut
+					„Jetzt abrufen“.
 				</SectionMessage>
 				<CodeBlock
 					code={CHAT_COMMAND.template}
@@ -647,6 +829,22 @@
 					name="ids"
 					fixed={fixedValues}
 				/>
+				<RestartAction
+					store={restart}
+					place={restartPlace('chat')}
+					hint="Startet becauseyoulovejira geordnet neu, damit die App die freigegebene ID kennt. Danach erneut „Jetzt abrufen“."
+					onstart={beforeRestart}
+					onrestarted={afterRestart}
+				>
+					{#snippet emergency()}
+						<CodeBlock
+							code={RESTART_FILE.template}
+							label={RESTART_FILE.label}
+							placeholders={RESTART_FILE.placeholders}
+							copyable={RESTART_FILE.copyable}
+						/>
+					{/snippet}
+				</RestartAction>
 			</PcOnly>
 		{/if}
 	{:else if entry.id === 'check'}
@@ -707,7 +905,10 @@
 									type="button"
 									aria-haspopup="dialog"
 									onclick={() => {
-										if (connection !== null) onimport(connection);
+										if (connection === null) return;
+										// The setup is done: its entry of this tab goes (BW-1).
+										dropResume(resumeKey);
+										onimport(connection);
 									}}
 								>
 									Listen übernehmen …
@@ -717,7 +918,10 @@
 					</SectionMessage>
 				{:else}
 					<SectionMessage tone={notionCheck.kind === 'error' ? 'error' : 'info'} live>
-						{textForContext(notionCheck.message)}
+						<!-- Missing access data lead to the step "Neu starten" with its button (BW-1). -->
+						{notionCheck.kind === 'missing' && stepIndex('restart') >= 0
+							? withoutCommands(notionCheck.message).text
+							: textForContext(notionCheck.message)}
 						{#snippet actions()}
 							{#if notionCheck?.kind === 'missing' && stepIndex('restart') >= 0}
 								<button
@@ -753,6 +957,12 @@
 	{/if}
 {/snippet}
 
+{#snippet noteMessage(note: readonly string[])}
+	<SectionMessage tone="info" compact>
+		{#each note as text (text)}<span class="note-line">{text}</span>{/each}
+	</SectionMessage>
+{/snippet}
+
 {#snippet more(entry: SetupStep)}
 	{#if entry.more.length > 0}
 		<details class="more">
@@ -771,7 +981,7 @@
 	size="l"
 	title={`${SETUP_TITLES[kind]} einrichten`}
 	initialFocus={heading ?? null}
-	onclose={() => onclose()}
+	onclose={closeAssistant}
 >
 	<div class="setup">
 		<div class="top">
@@ -820,7 +1030,12 @@
 							<p>{textForContext(entry.intro)}</p>
 							{@render links(entry)}
 							{@render actionsList(entry)}
-							{@render commandBlocks(entry, false)}
+							{#if entry.id === 'restart'}
+								<!-- The file of the restart is the emergency way, folded (BW-1). -->
+								<RestartEmergency>{@render commandBlocks(entry, false)}</RestartEmergency>
+							{:else}
+								{@render commandBlocks(entry, false)}
+							{/if}
 							{#if entry.id === 'variable' || entry.id === 'token'}
 								<p>Oder über die Systemsteuerung:</p>
 								{@render controlPanel()}
@@ -832,8 +1047,8 @@
 									{/each}
 								</ul>
 							{/if}
-						{:else if note !== ''}
-							<SectionMessage tone="info" compact>{note}</SectionMessage>
+						{:else if note.length > 0}
+							{@render noteMessage(note)}
 						{/if}
 					</section>
 				{/each}
@@ -862,8 +1077,8 @@
 					{@render links(step)}
 					{@render actionsList(step)}
 					{@render body(step)}
-				{:else if currentStepNote !== ''}
-					<SectionMessage tone="info" compact>{currentStepNote}</SectionMessage>
+				{:else if currentStepNote.length > 0}
+					{@render noteMessage(currentStepNote)}
 				{/if}
 				{#if check !== null}
 					<SetupCheck check={{ ...check, text: textForContext(check.text) }}>
@@ -888,7 +1103,16 @@
 	</div>
 
 	{#snippet footer({ close })}
-		<button class="button-subtle later" type="button" onclick={close}>Später fortsetzen</button>
+		<button
+			class="button-subtle later"
+			type="button"
+			onclick={() => {
+				keepForLater = true;
+				close();
+			}}
+		>
+			Später fortsetzen
+		</button>
 		{#if current > 0 && !overview}
 			<button class="button-secondary" type="button" onclick={() => void goTo(current - 1)}>
 				Zurück
@@ -991,6 +1215,11 @@
 	.hint {
 		font-size: 0.8125rem;
 		color: var(--color-text-muted);
+	}
+
+	/* One paragraph of a note in place of a step (BW-1). */
+	.note-line {
+		display: block;
 	}
 
 	.checked-repos {

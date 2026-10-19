@@ -7,20 +7,23 @@
 	import type { FoldersStore } from '$lib/stores/folders.svelte';
 	import type { GitHubStore } from '$lib/stores/github.svelte';
 	import type { NotionStore } from '$lib/stores/notion.svelte';
+	import type { RestartStore } from '$lib/stores/restart.svelte';
 	import { foldersStoreOf } from './folders-fake';
 	import { githubStoreOf } from './github-fake';
 	import { notionStoreOf } from './notion-fake';
+	import { restartStoreOf } from './restart-fake';
 
 	// Test harness of the page "Kanäle" with the setup assistant (channel-setup-dialog.test.ts, EH-5):
 	// it keeps the assistant of the address in a state, as the page does with the URL, and reports
 	// every change, so a test sees opening, creating and closing like a navigation. Without a Notion,
-	// GitHub or folders store of the test the view gets an inert one (ADR-0041, ADR-0050, ADR-0051);
-	// `projects` are those of the catalog (the step "Zielprojekt", ADR-0049).
+	// GitHub, folders or restart store of the test the view gets an inert one (ADR-0041, ADR-0050,
+	// ADR-0051, BW-1); `projects` are those of the catalog (the step "Zielprojekt", ADR-0049).
 	let {
 		connections,
 		notion = notionStoreOf(),
 		github = githubStoreOf(),
 		folders = foldersStoreOf(),
+		restart = restartStoreOf(),
 		projects = [],
 		setup = null,
 		onchange
@@ -29,6 +32,7 @@
 		notion?: NotionStore;
 		github?: GitHubStore;
 		folders?: FoldersStore;
+		restart?: RestartStore;
 		projects?: readonly ProjectRef[];
 		setup?: SetupTarget | null;
 		onchange: (next: SetupTarget | null) => void;
@@ -43,6 +47,7 @@
 	{notion}
 	{github}
 	{folders}
+	{restart}
 	{projects}
 	setup={current}
 	onsetupchange={(next) => {

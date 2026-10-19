@@ -19,6 +19,8 @@
 	import { InboxKeysStore, inboxKeysData } from '$lib/stores/inbox-keys.svelte';
 	import { InboxTargetsStore, inboxTargetsData } from '$lib/stores/inbox-targets.svelte';
 	import { NotionStore, notionData } from '$lib/stores/notion.svelte';
+	import { RestartStore } from '$lib/stores/restart.svelte';
+	import { systemData } from '$lib/stores/system.svelte';
 	import { channelSetupHref } from '$lib/ticket-links';
 
 	// Settings of the channels (E4 plan, T-3): bookmarklet (package 7) and connections (package 10).
@@ -41,6 +43,9 @@
 	const github = new GitHubStore(githubData(pb), auth, flags);
 	// Folders (ADR-0051): their cards load their details and take files of before into the inbox.
 	const folders = new FoldersStore(foldersData(pb), auth, flags);
+	// "Jetzt neu starten" and "Mail-Helfer neu starten" in the assistant (BW-1, ADR-0072): the route
+	// and the checks of the page System.
+	const restart = new RestartStore(systemData(pb), auth);
 	// Target projects of the cards without a connection (ADR-0049); the projects of the catalog name
 	// the targets of every card.
 	const inboxTargets = new InboxTargetsStore(inboxTargetsData(pb), auth, flags);
@@ -79,6 +84,7 @@
 			notion.reset();
 			github.reset();
 			folders.reset();
+			restart.reset();
 		};
 	});
 
@@ -100,6 +106,7 @@
 	{notion}
 	{github}
 	{folders}
+	{restart}
 	{importKeywords}
 	{inboxKeys}
 	{inboxTargets}

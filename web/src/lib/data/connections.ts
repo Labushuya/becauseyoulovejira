@@ -36,8 +36,9 @@ import {
 	type MailboxMail,
 	type MailboxOutcome
 } from '../domain/mailbox';
+import type { ProblemEntry } from '../domain/problems';
 import { areaOptions, followArea } from './area';
-import { DATA_ERROR_MESSAGES, DataError, toDataError, withDataErrors } from './errors';
+import { DATA_ERROR_MESSAGES, DataError, problemOf, toDataError, withDataErrors } from './errors';
 import { currentUserId, type RequestOptions } from './options';
 import type { RecordChange, Unsubscribe } from './realtime';
 
@@ -622,6 +623,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/** The entries of refused mailbox calls, beside the outcomes (the outcomes keep their form). */
+const mailboxProblems = new WeakMap<object, ProblemEntry>();
+
+/**
+ * The entry behind "Details" of a mailbox call the route, the helper or the mailbox refused
+ * (FP-1, ADR-0071; since BW-1 "Hilfsprozess prüfen" of the assistant): null for every other
+ * outcome, also for "unavailable" (the helper does not run, a neutral hint).
+ */
+export function mailboxProblem(outcome: MailboxOutcome<unknown>): ProblemEntry | null {
+	return mailboxProblems.get(outcome) ?? null;
+}
+
 /**
  * Runs a call of the mailbox routes: 503 (mail helper not running) and 400/502 (refused by the
  * route, the helper or the mailbox) become an outcome with the message and hint of the server;
@@ -637,11 +650,14 @@ async function mailboxCall<T>(
 		const status = isRecord(error) && typeof error.status === 'number' ? error.status : 0;
 		const response = isRecord(error) && isRecord(error.response) ? error.response : {};
 		if (!signal?.aborted && [400, 502, 503].includes(status)) {
-			return {
+			const outcome: MailboxOutcome<T> = {
 				kind: status === 503 ? 'unavailable' : 'failed',
 				message: textOf(response.message) || DATA_ERROR_MESSAGES.server,
 				hint: textOf(response.hint)
 			};
+			const problem = status === 503 ? null : problemOf(error);
+			if (problem !== null) mailboxProblems.set(outcome, problem);
+			return outcome;
 		}
 		throw toDataError(error, signal);
 	}

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { connectionTypeOf, type SetupKind } from '$lib/domain/channel-setup';
 	import {
 		connectionDraftErrors,
@@ -30,6 +31,7 @@
 	} from '$lib/domain/github';
 	import { DEFAULT_HOST_PLATFORM } from '$lib/domain/host-platform';
 	import type { ProblemEntry } from '$lib/domain/problems';
+	import { connectInputsOf, type SetupConnectInputs } from '$lib/domain/setup-resume';
 	import type { ConnectionsStore } from '$lib/stores/connections.svelte';
 	import { GITHUB_AUTO_UNAVAILABLE_MESSAGE } from '$lib/stores/github.svelte';
 	import { findHostStore } from '$lib/stores/host.svelte';
@@ -48,15 +50,26 @@
 	// or with "Alle meine Repositorys beobachten" (addendum of 2026-10-02), then the first repository
 	// is optional. A folder connection (ADR-0051 §7) has no variable and comes with its first folder, whose path
 	// follows the system of the server (the server checks it on the disk).
+	// Since BW-1 (ADR-0072) the assistant keeps these inputs in its tab (`restored`, `onremember`), so
+	// they are back after a restart or a reload; none of them is a secret (domain/setup-resume.ts).
 	let {
 		kind,
 		store,
-		oncreated
+		restored = null,
+		oncreated,
+		onremember
 	}: {
 		kind: SetupKind;
 		store: ConnectionsStore;
+		/** Inputs of before in this tab; read once when the form opens. */
+		restored?: SetupConnectInputs | null;
 		oncreated: (connection: Connection) => void;
+		/** The user changed an input; the assistant keeps the inputs without secrets. */
+		onremember?: (inputs: SetupConnectInputs) => void;
 	} = $props();
+
+	/** The inputs of before, only once (a later change of the prop is no new form). */
+	const kept = untrack(() => restored);
 
 	const uid = $props.id();
 	const ids = {
@@ -71,9 +84,19 @@
 		const { type, provider } = connectionTypeOf(kind);
 		const empty = emptyConnectionDraft(type);
 		const draft = type === 'mail' && provider !== '' ? withMailProvider(empty, provider) : empty;
-		if (!usesSecret(type)) return draft;
 		const taken = store.connections.map((connection) => connection.secretEnv);
-		return { ...draft, secretEnv: freeVariableName(draft.secretEnv, taken) };
+		const free = usesSecret(type)
+			? { ...draft, secretEnv: freeVariableName(draft.secretEnv, taken) }
+			: draft;
+		if (kept === null) return free;
+		// Inputs of before; an empty one (a name of a variable that was not complete) keeps the default.
+		return {
+			...free,
+			label: kept.label || free.label,
+			mailUser: kept.mailUser,
+			secretEnv: (usesSecret(type) && kept.secretEnv) || free.secretEnv,
+			allowlistEnv: (type === 'telegram' && kept.allowlistEnv) || free.allowlistEnv
+		};
 	}
 
 	const host = findHostStore();
@@ -81,10 +104,22 @@
 
 	let draft = $state<ConnectionDraft>(initialDraft());
 	/** GitHub: the first repository, optional with "Alle meine Repositorys". */
-	let repo = $state<GitHubRepoDraft>(emptyRepoDraft());
-	let auto = $state(false);
+	let repo = $state<GitHubRepoDraft>(kept?.repo ?? emptyRepoDraft());
+	let auto = $state(kept?.githubAuto ?? false);
 	/** Folders: the first folder. */
-	let folder = $state<FolderDraft>(emptyFolderDraft());
+	let folder = $state<FolderDraft>(kept?.folder ?? emptyFolderDraft());
+
+	// Every change of an input goes to the assistant, which keeps it in this tab (BW-1); the first
+	// run only reads the inputs as they open.
+	let opened = false;
+	$effect(() => {
+		const inputs = connectInputsOf(draft.type, draft, auto, repo, folder);
+		if (!opened) {
+			opened = true;
+			return;
+		}
+		untrack(() => onremember?.(inputs));
+	});
 	let submitted = $state(false);
 	let saving = $state(false);
 	let serverFields = $state<Record<string, string>>({});

@@ -19,6 +19,7 @@ import {
 	importFromMailbox,
 	listConnections,
 	listMailbox,
+	mailboxProblem,
 	renameConnection,
 	runConnection,
 	saveConnectionSettings,
@@ -175,11 +176,33 @@ export type ConnectionActionResult = { ok: true } | ConnectionActionFailure;
 /** Result of "Verbindung anlegen"; the assistant takes the new ID into its address. */
 export type ConnectionCreateResult = { ok: true; connection: Connection } | ConnectionActionFailure;
 
+/** Why asking the server for the variables failed, with "Details" (FP-1, since BW-1). */
+export interface StatusFailure {
+	message: string;
+	problem: ProblemEntry | null;
+}
+
+/** Intent of "Hilfsprozess prüfen" in the assistant (the words of the catalog). */
+const PROBE_INTENT = 'Mail-Helfer prüfen';
+/** Intent of asking the server for the variables ("Erneut prüfen"; the words of the catalog). */
+const STATUS_INTENT = 'Zugangsdaten des Kanals prüfen';
+
+/**
+ * Answer of "Hilfsprozess prüfen": the helper runs and reaches the mailbox, it does not run (a
+ * neutral hint), or it refused or failed, with "Details" when there is a failed request behind it.
+ */
+export type HelperProbe =
+	| { kind: 'ok' }
+	| { kind: 'unavailable'; message: string; hint: string }
+	| { kind: 'failed'; message: string; hint: string; problem: ProblemEntry | null };
+
 export class ConnectionsStore {
 	readonly #data: ConnectionsData;
 	readonly #session: SessionGuard;
 	readonly #items = new SvelteMap<string, Connection>();
 	readonly #status = new SvelteMap<string, SecretStatus>();
+	/** The failed question for the variables per connection (only the assistant shows it). */
+	readonly #statusFailures = new SvelteMap<string, StatusFailure>();
 	/** IDs with a running "Jetzt abrufen". */
 	readonly #running = new SvelteMap<string, true>();
 	/** Answer of the last "Jetzt abrufen" per connection in this page (the assistant shows it). */
@@ -226,6 +249,11 @@ export class ConnectionsStore {
 
 	status(id: string): SecretStatus | null {
 		return this.#status.get(id) ?? null;
+	}
+
+	/** Why the last question for the variables of `id` failed; null after a good answer. */
+	statusFailure(id: string): StatusFailure | null {
+		return this.#statusFailures.get(id) ?? null;
 	}
 
 	/** Loads the list and the state of the variables; a second call replaces a running one. */
@@ -280,10 +308,19 @@ export class ConnectionsStore {
 
 	async #loadStatus(id: string, options: RequestOptions): Promise<void> {
 		try {
-			this.#status.set(id, await this.#data.secretStatus(id, options));
-		} catch {
-			// Unknown state: the page shows nothing about the variables for this connection.
+			const status = await withIntent(STATUS_INTENT, () => this.#data.secretStatus(id, options));
+			this.#status.set(id, status);
+			this.#statusFailures.delete(id);
+		} catch (error) {
+			// Unknown state: the page shows nothing about the variables for this connection; the
+			// assistant names the failure with "Details" (FP-1, since BW-1).
 			this.#status.delete(id);
+			const failure = toDataError(error, options.signal);
+			if (failure.kind === 'aborted' || failure.kind === 'session') {
+				this.#statusFailures.delete(id);
+				return;
+			}
+			this.#statusFailures.set(id, { message: failure.message, problem: problemOf(failure) });
 		}
 	}
 
@@ -323,6 +360,7 @@ export class ConnectionsStore {
 				if (change.action === 'delete') {
 					this.#items.delete(change.id);
 					this.#status.delete(change.id);
+					this.#statusFailures.delete(change.id);
 					return;
 				}
 				const known = this.#items.get(change.record.id);
@@ -344,12 +382,32 @@ export class ConnectionsStore {
 	/**
 	 * "Hilfsprozess prüfen" of the assistant (plan EH-7 §3.8): asks the mail helper for one mail of
 	 * the mailbox. Only on a click, because the helper logs in to the mailbox for it. "unavailable"
-	 * means byl-mail.exe does not run; null when the session ended.
+	 * means byl-mail.exe does not run; a refusal or failure carries its entry for "Details" with the
+	 * intent of the check (FP-1, since BW-1); null when the session ended or the request was aborted.
 	 */
-	async probeHelper(id: string): Promise<MailboxOutcome<null> | null> {
-		const outcome = await this.listMailbox(id, 1);
-		if (outcome === null) return null;
-		return outcome.kind === 'ok' ? { kind: 'ok', value: null } : outcome;
+	async probeHelper(id: string): Promise<HelperProbe | null> {
+		if (!this.#session.ensureValid()) return null;
+		try {
+			const outcome = await withIntent(PROBE_INTENT, () => this.#data.listMailbox(id, 1, {}));
+			if (outcome.kind === 'ok') return { kind: 'ok' };
+			const { message, hint } = outcome;
+			if (outcome.kind === 'unavailable') return { kind: 'unavailable', message, hint };
+			const problem = mailboxProblem(outcome);
+			return {
+				kind: 'failed',
+				message,
+				hint,
+				problem: problem === null ? null : { ...problem, intent: PROBE_INTENT }
+			};
+		} catch (error) {
+			const failure = toDataError(error);
+			if (failure.kind === 'aborted') return null;
+			if (failure.kind === 'session') {
+				this.#session.logout();
+				return null;
+			}
+			return { kind: 'failed', message: failure.message, hint: '', problem: problemOf(failure) };
+		}
 	}
 
 	/** Reads one connection again ("Erneut prüfen" while waiting for the first run). */
@@ -479,6 +537,7 @@ export class ConnectionsStore {
 			await this.#data.remove(id);
 			this.#items.delete(id);
 			this.#status.delete(id);
+			this.#statusFailures.delete(id);
 			this.#notify(`„${label}“ gelöscht.`);
 		});
 	}
@@ -582,6 +641,7 @@ export class ConnectionsStore {
 		this.#controller = null;
 		this.#items.clear();
 		this.#status.clear();
+		this.#statusFailures.clear();
 		this.#lastRun.clear();
 		this.#helper = null;
 		this.#state = 'idle';
