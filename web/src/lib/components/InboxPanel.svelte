@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { areaMover } from '$lib/area-move-entry';
-	import { toDataError } from '$lib/data/errors';
+	import { problemOf, toDataError } from '$lib/data/errors';
 	import { withConnectionName } from '$lib/domain/connections';
+	import type { ProblemEntry } from '$lib/domain/problems';
 	import { formatBerlinDateTime } from '$lib/domain/format';
 	import {
 		CHANNEL_LABELS,
@@ -42,6 +43,7 @@
 	} from '$lib/domain/sources';
 	import { convertHref } from '$lib/ticket-links';
 	import ErrorIcon from './ErrorIcon.svelte';
+	import ProblemDetails from './problems/ProblemDetails.svelte';
 	import TrashNotice from './TrashNotice.svelte';
 	import Lozenge from './guidance/Lozenge.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
@@ -119,6 +121,9 @@
 	let loadState = $state<'loading' | 'ready' | 'not_found' | 'error'>('loading');
 	let loadError = $state<string | null>(null);
 	let message = $state<string | null>(null);
+	/** The failed requests behind `loadError` and `message`, for "Details" (FP-1, ADR-0071). */
+	let loadProblem = $state.raw<ProblemEntry | null>(null);
+	let messageProblem = $state.raw<ProblemEntry | null>(null);
 	let downloading = $state(false);
 	let linking = $state(false);
 	let moving = $state(false);
@@ -212,10 +217,17 @@
 				if (failure.kind === 'aborted') return;
 				loadState = failure.kind === 'not_found' ? 'not_found' : 'error';
 				loadError = failure.message;
+				loadProblem = problemOf(failure);
 			}
 		);
 		return () => controller.abort();
 	});
+
+	/** A failed action of the panel, with its request (null for a text of the app itself). */
+	function fail(text: string | null, problem: ProblemEntry | null | undefined) {
+		message = text;
+		messageProblem = problem ?? null;
+	}
 
 	function update(entry: InboxItemSummary) {
 		if (loaded !== null && loaded.id === entry.id) loaded = { ...loaded, ...entry };
@@ -223,13 +235,14 @@
 
 	async function run(
 		action: () => Promise<
-			{ ok: true; item: InboxItemSummary } | { ok: false; message: string | null }
+			| { ok: true; item: InboxItemSummary }
+			| { ok: false; message: string | null; problem?: ProblemEntry }
 		>
 	) {
 		message = null;
 		const result = await action();
 		if (result.ok) update(result.item);
-		else message = result.message;
+		else fail(result.message, result.problem);
 	}
 
 	// "Ansehen" of a file of a folder (ADR-0051 §6); outside the (app) layout there is none. Only the
@@ -252,7 +265,7 @@
 		try {
 			const result = await store.originalUrl(entry);
 			if (result.ok) window.location.assign(result.url);
-			else message = result.message;
+			else fail(result.message, result.problem);
 		} finally {
 			downloading = false;
 		}
@@ -274,14 +287,14 @@
 		try {
 			const result = await store.savePage(entry);
 			if (!result.ok) {
-				message = result.message;
+				fail(result.message, result.problem);
 				return;
 			}
 			const fresh = await store.fetch(entry.id);
 			if (fresh.id === id) loaded = fresh;
 		} catch (error) {
 			const failure = toDataError(error);
-			if (failure.kind !== 'aborted') message = failure.message;
+			if (failure.kind !== 'aborted') fail(failure.message, problemOf(failure));
 		} finally {
 			savingPage = false;
 		}
@@ -412,6 +425,7 @@
 	{:else if loadState === 'error'}
 		<h2 id={headingId} tabindex="-1">Eintrag</h2>
 		<p class="alert-error"><ErrorIcon /><span>{loadError}</span></p>
+		<ProblemDetails problem={loadProblem} />
 	{:else if item === null}
 		<p class="loading" role="status">Eintrag wird geladen …</p>
 	{:else}
@@ -425,6 +439,10 @@
 				<SectionMessage tone={viewNote.tone} compact>{viewNote.text}</SectionMessage>
 			{/if}
 		</div>
+		{#if message}
+			<!-- Outside the live region: the message is said, its "Details" are not (FP-1). -->
+			<ProblemDetails problem={messageProblem} />
+		{/if}
 
 		{#if item.state === 'converted' && item.ticketId !== null}
 			{@render belongsTo(item, item.ticketId)}

@@ -25,6 +25,7 @@
 <script lang="ts">
 	import { tick, type Snippet } from 'svelte';
 	import { labelError, sameLabelHint } from '$lib/domain/connections';
+	import type { ProblemEntry } from '$lib/domain/problems';
 	import { textForContext } from '$lib/guidance/texts';
 	import ActionsMenu from '../ActionsMenu.svelte';
 	import ErrorIcon from '../ErrorIcon.svelte';
@@ -52,6 +53,7 @@
 		progress = null,
 		hint = null,
 		message = null,
+		problem = null,
 		busy = false,
 		primary,
 		menu = [],
@@ -74,6 +76,8 @@
 		hint?: { tone: 'info' | 'warning' | 'error'; text: string } | null;
 		/** Error of the last action of this card (inline, ADR-0009). */
 		message?: string | null;
+		/** The failed request behind `message`, for "Details" (FP-1, ADR-0071). */
+		problem?: ProblemEntry | null;
 		/** The card loads (aria-busy); the info line says what. */
 		busy?: boolean;
 		/** The one main button. */
@@ -263,7 +267,7 @@
 		<SectionMessage tone={hint.tone} compact>{textForContext(hint.text)}</SectionMessage>
 	{/if}
 	{#if message !== null}
-		<SectionMessage tone="error" compact live>{message}</SectionMessage>
+		<SectionMessage tone="error" compact live {problem}>{message}</SectionMessage>
 	{/if}
 
 	<footer class="actions">

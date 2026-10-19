@@ -15,6 +15,7 @@
 	} from '$lib/domain/inbox';
 	import { type InboxQuery } from '$lib/domain/inbox-query';
 	import { MORE_COLUMNS_HINT } from '$lib/domain/labels';
+	import type { ProblemEntry } from '$lib/domain/problems';
 	import type { Project } from '$lib/domain/project';
 	import { projectChoiceLabel, treeOrder } from '$lib/domain/project-tree';
 	import { SOURCE_FAMILY_CHIPS, SOURCE_FAMILY_LABELS, type SourceFamily } from '$lib/domain/source';
@@ -227,9 +228,12 @@
 		return columnFit.observe(element);
 	});
 
-	/** Failure of a row action (discard, restore, assign) as an error flag; it stays until closed. */
-	function fail(message: string | null | undefined) {
-		if (message) flags.show({ tone: 'error', title: message });
+	/**
+	 * Failure of a row action (discard, restore, assign) as an error flag; it stays until closed. The
+	 * failed request comes along for "Details" (FP-1, ADR-0071).
+	 */
+	function fail(message: string | null | undefined, problem?: ProblemEntry | null) {
+		if (message) flags.show({ tone: 'error', title: message, ...(problem && { problem }) });
 	}
 
 	async function navigate(next: InboxQuery) {
@@ -274,7 +278,7 @@
 		const index = rowIndex(item.id);
 		const result = await store.discard(item.id);
 		if (!result.ok) {
-			fail(result.message);
+			fail(result.message, result.problem);
 			return;
 		}
 		selected = selected.filter((entry) => entry !== item.id);
@@ -318,16 +322,21 @@
 		try {
 			const result = await store.savePage(item);
 			if (!result.ok && result.message !== null) {
-				fail(`Seite von „${item.title}“ ließ sich nicht sichern: ${result.message}`);
+				fail(
+					`Seite von „${item.title}“ ließ sich nicht sichern: ${result.message}`,
+					result.problem
+				);
 			}
 		} finally {
 			saving = null;
 		}
 	}
 
-	async function act(action: () => Promise<{ ok: boolean; message?: string | null }>) {
+	async function act(
+		action: () => Promise<{ ok: boolean; message?: string | null; problem?: ProblemEntry }>
+	) {
 		const result = await action();
-		if (!result.ok) fail(result.message);
+		if (!result.ok) fail(result.message, result.problem);
 	}
 
 	/** Entry whose original file is being fetched from the menu of its row (one at a time). */
@@ -340,7 +349,7 @@
 		try {
 			const result = await store.originalUrl(item);
 			if (result.ok) window.location.assign(result.url);
-			else fail(result.message);
+			else fail(result.message, result.problem);
 		} finally {
 			downloading = null;
 		}
@@ -703,8 +712,8 @@
 		{/if}
 	</div>
 
-	{#snippet failure(message: string)}
-		<SectionMessage tone="error" live>
+	{#snippet failure(message: string, problem: ProblemEntry | null = null)}
+		<SectionMessage tone="error" live {problem}>
 			{message}
 			{#snippet actions()}
 				<button class="button-subtle" type="button" onclick={() => store.reload()}>
@@ -718,7 +727,7 @@
 		{#if store.error === INBOX_UNAVAILABLE_MESSAGE}
 			<SectionMessage tone="info" live>{store.error}</SectionMessage>
 		{:else}
-			{@render failure(store.error)}
+			{@render failure(store.error, store.errorProblem)}
 		{/if}
 	{:else if !showsNew && store.handledLoad === 'error' && store.handledError}
 		{@render failure(store.handledError)}

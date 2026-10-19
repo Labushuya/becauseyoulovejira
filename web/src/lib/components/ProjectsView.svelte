@@ -49,6 +49,7 @@
 	import ErrorIcon from './ErrorIcon.svelte';
 	import EmptyState from './guidance/EmptyState.svelte';
 	import ConfirmDialog from './overlay/ConfirmDialog.svelte';
+	import ProblemDetails from './problems/ProblemDetails.svelte';
 	import ProjectTable from './ProjectTable.svelte';
 	import ProjectTicketList from './ProjectTicketList.svelte';
 	import ProjectTiles from './ProjectTiles.svelte';
@@ -377,7 +378,7 @@
 		try {
 			const result = await action();
 			const reason = reasonOf(result);
-			if (!result.ok && reason !== null) actions.fail(failure, reason);
+			if (!result.ok && reason !== null) actions.fail(failure, reason, result.problem ?? null);
 		} finally {
 			busyId = null;
 		}
@@ -619,6 +620,7 @@
 	{:else}
 		{#if tickets.openState === 'error' && tickets.openError}
 			{@render failure(tickets.openError, () => tickets.reload())}
+			<ProblemDetails problem={tickets.openErrorProblem} />
 		{/if}
 		{#if stats.error}
 			{@render failure(stats.error, () => stats.reload())}

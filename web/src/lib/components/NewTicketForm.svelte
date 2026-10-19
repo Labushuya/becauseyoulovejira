@@ -22,6 +22,7 @@
 		type TemplateSubtask
 	} from '$lib/domain/series-template';
 	import { isPriority, isStatus, type Priority, type Status } from '$lib/domain/status';
+	import type { ProblemEntry } from '$lib/domain/problems';
 	import { FROM_PARENT_HINT, parentDefaultsOf } from '$lib/domain/subtasks';
 	import {
 		CREATE_SUBTASKS_MAX,
@@ -73,6 +74,7 @@
 	import TicketSourceChoice from './TicketSourceChoice.svelte';
 	import ConfirmDialog from './overlay/ConfirmDialog.svelte';
 	import Drawer from './overlay/Drawer.svelte';
+	import ProblemDetails from './problems/ProblemDetails.svelte';
 
 	// "Neues Ticket" in the side panel (E2 plan, T-8 and package 8; E3 plan, T-13 and T-14; NT-1,
 	// ADR-0069). Everything that can be set at a ticket can be set here already, except what needs an
@@ -326,6 +328,8 @@
 	let tagError = $state<string | null>(null);
 	let pending = $state(false);
 	let message = $state<string | null>(null);
+	/** The failed request behind `message` (FP-1, ADR-0071). */
+	let messageProblem = $state.raw<ProblemEntry | null>(null);
 	let fieldErrors = $state<Partial<Record<CreateField, string>>>({});
 	let titleInput = $state<HTMLInputElement>();
 	let form = $state<HTMLFormElement>();
@@ -595,6 +599,7 @@
 		}
 		pending = false;
 		message = result.message;
+		messageProblem = result.problem ?? null;
 		fieldErrors = result.fields;
 		errorIndex = result.index ?? {};
 		const ruleErrors: Partial<Record<RecurrenceFormField, string>> = {};
@@ -772,6 +777,9 @@
 			<p class="alert-error"><ErrorIcon /><span>{message}</span></p>
 		{/if}
 	</div>
+	{#if message}
+		<ProblemDetails problem={messageProblem} />
+	{/if}
 
 	<form
 		id={ids.form}

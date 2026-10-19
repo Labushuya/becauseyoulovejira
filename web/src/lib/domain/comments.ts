@@ -3,6 +3,7 @@
 // the latter shared with the hook.
 
 import type { ListOrder } from './list-order';
+import type { ProblemEntry } from './problems';
 
 /**
  * Order of the comments below the pinned one (ADR-0044 section 1); the default "Neueste zuerst"
@@ -123,6 +124,8 @@ export interface CommentPinControl {
 	readonly pinning: string | null;
 	/** Why pinning or releasing this comment failed, null otherwise. */
 	pinError(commentId: string): string | null;
+	/** The failed request behind `pinError`, for "Details" (FP-1, ADR-0071). */
+	pinProblem?(commentId: string): ProblemEntry | null;
 	/** Pins the comment; another pinned one is replaced (with "Rückgängig" in a flag). */
 	pin(commentId: string): Promise<boolean>;
 	/** Releases the pin. */

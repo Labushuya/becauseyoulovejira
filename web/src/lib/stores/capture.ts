@@ -3,8 +3,9 @@
 // runes and SDK: the route passes the store methods, the tests pass fakes.
 
 import type PocketBase from 'pocketbase';
-import { toDataError } from '$lib/data/errors';
+import { problemDetails, toDataError } from '$lib/data/errors';
 import { createTicket } from '$lib/data/tickets';
+import type { ProblemEntry } from '$lib/domain/problems';
 import {
 	PRESET_META_KEY,
 	presetMeta,
@@ -56,7 +57,14 @@ export type CaptureSaveResult =
 			 * form names it neutrally with a link to the existing entry or its ticket.
 			 */
 			duplicate?: { itemId: string; ticketId: string };
+			/** The failed request behind `message`, for "Details" (FP-1, ADR-0071). */
+			problem?: ProblemEntry;
 	  };
+
+/** `{ problem }` of a result of a store, nothing without one. */
+function detailsOf(result: { problem?: ProblemEntry | null }): { problem?: ProblemEntry } {
+	return result.problem === undefined || result.problem === null ? {} : { problem: result.problem };
+}
 
 /** Field of the form that shows a failure of a ticket field. */
 function formField(template: Capture['template'], field: keyof TicketDraft): CaptureField | null {
@@ -116,7 +124,12 @@ export async function saveCapture(
 			};
 		}
 		if (result.kind === 'duplicate') return duplicateResult(result);
-		return { ok: false, message: result.message ?? inboxFieldMessage(result.fields), fields: {} };
+		return {
+			ok: false,
+			message: result.message ?? inboxFieldMessage(result.fields),
+			fields: {},
+			...detailsOf(result)
+		};
 	}
 
 	const result = await deps.createTicket(captureTicketDraft(capture, tags.ids));
@@ -137,7 +150,7 @@ export async function saveCapture(
 		else fields[target] = message;
 	}
 	const message = result.message ?? (rest.length > 0 ? rest.join(' ') : null);
-	return { ok: false, message, fields };
+	return { ok: false, message, fields, ...detailsOf(result) };
 }
 
 /** An inbox field error has no field in the form (the entry keeps title and text only). */
@@ -201,7 +214,12 @@ export async function saveQuickEntry(
 			};
 		}
 		if (result.kind === 'duplicate') return duplicateResult(result);
-		return { ok: false, message: result.message ?? inboxFieldMessage(result.fields), fields: {} };
+		return {
+			ok: false,
+			message: result.message ?? inboxFieldMessage(result.fields),
+			fields: {},
+			...detailsOf(result)
+		};
 	}
 
 	const result = await deps.createTicket({
@@ -218,7 +236,8 @@ export async function saveQuickEntry(
 		return {
 			ok: false,
 			message: result.message ?? (messages.length > 0 ? messages.join(' ') : null),
-			fields: {}
+			fields: {},
+			...detailsOf(result)
 		};
 	}
 	void deps.markRead(result.ticket);
@@ -262,7 +281,8 @@ export function panelFreeTicketCreate(
 			return {
 				ok: false,
 				message: Object.keys(fields).length > 0 ? null : failure.message,
-				fields
+				fields,
+				...problemDetails(failure)
 			};
 		}
 	};

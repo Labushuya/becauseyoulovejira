@@ -2,6 +2,7 @@
 	import { tick } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { RECURRENCE_TABLE, withKeyDefaults } from '$lib/domain/columns';
+	import type { ProblemEntry } from '$lib/domain/problems';
 	import {
 		openInstancesOf,
 		ruleDeleteText,
@@ -114,7 +115,8 @@
 					flags.show({
 						tone: 'error',
 						title: `„${rule.title}“ ließ sich nicht ${rule.active ? 'pausieren' : 'fortsetzen'}.`,
-						description: reason
+						description: reason,
+						...(result.problem !== undefined && { problem: result.problem })
 					});
 				}
 			}
@@ -188,6 +190,8 @@
 	let deleting = $state<RecurrenceRule | null>(null);
 	let deleteBusy = $state(false);
 	let deleteError = $state<string | null>(null);
+	/** The failed request behind `deleteError`, for "Details" (FP-1, ADR-0071). */
+	let deleteProblem = $state.raw<ProblemEntry | null>(null);
 
 	/** "Löschen" of the question: the rule goes, its tickets stay (ADR-0023 section 7). */
 	async function confirmDelete() {
@@ -200,6 +204,7 @@
 		deleteBusy = false;
 		if (!result.ok) {
 			deleteError = result.message;
+			deleteProblem = result.problem ?? null;
 			if (deleteError === null) deleting = null;
 			return;
 		}
@@ -261,7 +266,7 @@
 	{#if store.state === 'unavailable'}
 		<SectionMessage tone="info" live>{RECURRENCE_UNAVAILABLE}</SectionMessage>
 	{:else if store.state === 'error' && store.error}
-		<SectionMessage tone="error" live>
+		<SectionMessage tone="error" live problem={store.errorProblem}>
 			{store.error}
 			{#snippet actions()}
 				<button class="button-subtle" type="button" onclick={() => void store.reload()}>
@@ -289,7 +294,7 @@
 	{:else}
 		{#if tickets.openState === 'error' && tickets.openError}
 			<div class="load-error">
-				<SectionMessage tone="error" live>
+				<SectionMessage tone="error" live problem={tickets.openErrorProblem}>
 					{tickets.openError}
 					{#snippet actions()}
 						<button class="button-subtle" type="button" onclick={() => void tickets.reload()}>
@@ -328,6 +333,7 @@
 		confirmLabel="Löschen"
 		busy={deleteBusy}
 		error={deleteError}
+		problem={deleteProblem}
 		onconfirm={() => void confirmDelete()}
 		oncancel={cancelDelete}
 	>

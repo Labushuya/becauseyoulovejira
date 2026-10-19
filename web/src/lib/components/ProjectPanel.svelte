@@ -4,6 +4,7 @@
 	import type { ResolvedPathname } from '$app/types';
 	import { areaMover } from '$lib/area-move-entry';
 	import { inheritLabel, type ProjectColor } from '$lib/domain/colors';
+	import type { ProblemEntry } from '$lib/domain/problems';
 	import {
 		PROJECT_CODE_MAX_LENGTH,
 		PROJECT_NAME_MAX_LENGTH,
@@ -29,6 +30,7 @@
 	import SectionMessage from './guidance/SectionMessage.svelte';
 	import ConfirmDialog from './overlay/ConfirmDialog.svelte';
 	import Drawer from './overlay/Drawer.svelte';
+	import ProblemDetails from './problems/ProblemDetails.svelte';
 	import TicketLeaveQuestion from './TicketLeaveQuestion.svelte';
 
 	// Project panel (ADR-0025 section 10, decision 4 of the user; plan UI-Konsistenz, package UI-8)
@@ -176,6 +178,10 @@
 	let confirmingDiscard = $state(false);
 	let confirmingArchive = $state(false);
 	let archiveError = $state<string | null>(null);
+	/** The failed requests behind the three messages, for "Details" (FP-1, ADR-0071). */
+	let messageProblem = $state.raw<ProblemEntry | null>(null);
+	let deleteProblem = $state.raw<ProblemEntry | null>(null);
+	let archiveProblem = $state.raw<ProblemEntry | null>(null);
 
 	const creating = $derived(project === null);
 	const name = $derived(typedName ?? project?.name ?? '');
@@ -302,6 +308,7 @@
 			if (!result.ok) {
 				fieldErrors = result.fields;
 				message = result.message;
+				messageProblem = result.problem ?? null;
 			}
 			return result;
 		} finally {
@@ -368,6 +375,7 @@
 		}
 		// The message stays in the question, not below the form.
 		archiveError = result.message ?? Object.values(result.fields)[0] ?? null;
+		archiveProblem = result.problem ?? null;
 		message = null;
 		if (archiveError === null) confirmingArchive = false;
 	}
@@ -395,6 +403,7 @@
 			ondeleted?.();
 		} else if (result.message !== null) {
 			deleteError = result.message;
+			deleteProblem = result.problem ?? null;
 		} else {
 			confirmingDelete = false;
 		}
@@ -621,6 +630,9 @@
 			<div class="alert-error"><ErrorIcon /><span>{message}</span></div>
 		{/if}
 	</div>
+	{#if message}
+		<ProblemDetails problem={messageProblem} />
+	{/if}
 
 	{#if project !== null && openTickets}
 		<section class="manage tickets-section" aria-labelledby={ids.openTickets}>
@@ -719,6 +731,7 @@
 		confirmLabel="Endgültig löschen"
 		busy={deleting}
 		error={deleteError}
+		problem={deleteProblem}
 		onconfirm={remove}
 		oncancel={() => {
 			confirmingDelete = false;
@@ -734,6 +747,7 @@
 		confirmLabel="Archivieren"
 		{busy}
 		error={archiveError}
+		problem={archiveProblem}
 		onconfirm={confirmArchive}
 		oncancel={() => {
 			confirmingArchive = false;

@@ -6,7 +6,7 @@
 // emergency plan (ADR-0046 §8) and the storage (ADR-0047 §6). No table (description lists).
 
 import { readFileSync } from 'node:fs';
-import { render, screen, within } from '@testing-library/svelte';
+import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { page } from '$app/state';
 import { MOVE_TEXTS } from '$lib/domain/area-move';
@@ -20,6 +20,7 @@ import {
 import { SCRIPT_PROBLEMS } from '$lib/domain/script-problems';
 import { RESTART_NEEDED } from '$lib/guidance/texts';
 import { HELP_SECTIONS, SETTINGS_SECTIONS, helpHref } from '$lib/settings-sections';
+import { problemLog } from '$lib/stores/problem-log.svelte';
 import Page from './+page.svelte';
 
 function text(element: Element): string {
@@ -45,7 +46,7 @@ describe('help page (EH-9)', () => {
 		}
 	});
 
-	it('jumps to the sections that exist on the page, twenty-one since "Zuständigkeit"', () => {
+	it('jumps to the sections that exist on the page, twenty-two since "Fehler dieser Sitzung"', () => {
 		const { container } = render(Page);
 
 		const jump = within(screen.getByRole('navigation', { name: 'Auf dieser Seite' }));
@@ -65,6 +66,7 @@ describe('help page (EH-9)', () => {
 			'GitHub',
 			'Ordner',
 			'Häufige Fragen',
+			'Fehler dieser Sitzung',
 			'Betrieb',
 			'Sicherung & Notfall',
 			'Speicher',
@@ -1534,5 +1536,27 @@ describe('help page in the context of the tab (KOB-1, ADR-0057)', () => {
 
 		expect(text(container)).not.toMatch(COMMANDS);
 		expect(text(screen.getByRole('region', { name: 'Betrieb' })).trim()).toBe('Betrieb');
+	});
+});
+
+describe('errors of this session (FP-1)', () => {
+	it('offers the list to every account, with the number of errors', async () => {
+		for (const context of [MEMBER_CONTEXT, PC_CONTEXT]) {
+			await useContext(context);
+			problemLog.clear();
+			problemLog.closeDialog();
+			const { unmount } = render(Page);
+
+			const section = screen.getByRole('region', { name: 'Fehler dieser Sitzung' });
+			expect(text(section)).toMatch(/Unter „Details“ einer Fehlermeldung steht/);
+			const button = within(section).getByRole('button', {
+				name: 'Fehler dieser Sitzung anzeigen (0)'
+			});
+			await fireEvent.click(button);
+			expect(problemLog.dialogOpen).toBe(true);
+			problemLog.closeDialog();
+			unmount();
+		}
+		expect(helpHref('fehler')).toBe('/einstellungen/hilfe#fehler');
 	});
 });

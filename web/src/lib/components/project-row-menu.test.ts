@@ -264,7 +264,9 @@ describe('menu "•••" of a row of the project list (AM-4)', () => {
 		await vi.waitFor(() => expect(actions.archive).toHaveBeenCalledWith(EMPTY, true));
 		expect(actions.fail).toHaveBeenCalledExactlyOnceWith(
 			'Projekt „Leer“ ließ sich nicht archivieren.',
-			'Das geht gerade nicht.'
+			'Das geht gerade nicht.',
+			// No failed request behind a refusal at a field (FP-1): no "Details".
+			null
 		);
 
 		await fireEvent.click(entry('Büro', 'Aus dem Archiv holen'));

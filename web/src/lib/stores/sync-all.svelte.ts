@@ -6,10 +6,12 @@
 
 import type PocketBase from 'pocketbase';
 import { listConnections, runConnection } from '$lib/data/connections';
-import { toDataError } from '$lib/data/errors';
+import { problemDetails, problemOf, toDataError, withIntent } from '$lib/data/errors';
 import type { RequestOptions } from '$lib/data/options';
 import { fetchesAutomatically, type Connection, type RunResult } from '$lib/domain/connections';
+import type { ProblemEntry } from '$lib/domain/problems';
 import { syncProgressText, syncSummary, type SyncEntry } from '$lib/domain/sync-all';
+import { runProblem } from './connections.svelte';
 import type { FlagSink } from './flags.svelte';
 import type { SessionGuard } from './ticket-list.svelte';
 
@@ -41,6 +43,9 @@ function failedRun(message: string): RunResult {
 
 /** Thrown inside a run when the session ended; the store stops quietly. */
 class SessionEnded extends Error {}
+
+/** The failed request of each connection whose run failed, by ID (FP-1, ADR-0071). */
+type RunFailures = Record<string, ProblemEntry | null>;
 
 /** Where the action of the flag leads. */
 export interface SyncAllNavigation {
@@ -97,15 +102,21 @@ export class SyncAllStore {
 				const failure = toDataError(error);
 				if (failure.kind === 'session') throw new SessionEnded();
 				this.#status = 'Die Kanäle ließen sich nicht laden.';
-				this.#flags.show({ tone: 'error', title: this.#status, description: failure.message });
+				this.#flags.show({
+					tone: 'error',
+					title: this.#status,
+					description: failure.message,
+					...problemDetails(failure)
+				});
 				return;
 			}
 			const entries: SyncEntry[] = [];
+			const failures: RunFailures = {};
 			for (const [index, connection] of connections.entries()) {
 				this.#status = syncProgressText(index, connections.length, connection.label);
-				entries.push({ connection, result: await this.#runOne(connection.id) });
+				entries.push({ connection, result: await this.#runOne(connection.id, failures) });
 			}
-			this.#announce(entries);
+			this.#announce(entries, failures);
 		} catch (error) {
 			if (!(error instanceof SessionEnded)) throw error;
 			this.#status = '';
@@ -115,24 +126,39 @@ export class SyncAllStore {
 		}
 	}
 
-	async #runOne(id: string): Promise<RunResult> {
+	/** One run; a failed request goes into `failures` for the "Details" of the flag (FP-1). */
+	async #runOne(id: string, failures: RunFailures): Promise<RunResult> {
 		try {
-			return await this.#data.run(id);
+			return await withIntent('Kanal jetzt abrufen', () => this.#data.run(id));
 		} catch (error) {
 			const failure = toDataError(error);
 			if (failure.kind === 'session') throw new SessionEnded();
+			failures[id] = problemOf(failure);
 			return failedRun(failure.message);
 		}
 	}
 
-	#announce(entries: readonly SyncEntry[]): void {
+	#announce(entries: readonly SyncEntry[], failures: Readonly<RunFailures> = {}): void {
 		const summary = syncSummary(entries);
 		this.#status = summary.title;
 		const problem = summary.problem;
+		// The "Details" of the flag: those of the connection it leads to, a failed request or a run
+		// the server reports as failed.
+		const failed =
+			problem === null ? undefined : entries.find((e) => e.connection.id === problem.id);
+		const details =
+			problem === null
+				? null
+				: Object.hasOwn(failures, problem.id)
+					? (failures[problem.id] ?? null)
+					: failed === undefined
+						? null
+						: runProblem(problem.id, failed.result);
 		this.#flags.show({
 			tone: summary.tone,
 			title: summary.title,
 			description: summary.description,
+			...(summary.tone === 'error' && details !== null && { problem: details }),
 			...(problem !== null
 				? {
 						action: {

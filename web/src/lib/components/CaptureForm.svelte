@@ -24,11 +24,13 @@
 	import { TITLE_MAX_LENGTH, type ProjectRef, type TagRef } from '$lib/domain/ticket';
 	import type { EnsureTagResult } from '$lib/stores/catalog.svelte';
 	import type { CaptureSaveResult } from '$lib/stores/capture';
+	import type { ProblemEntry } from '$lib/domain/problems';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import PrioritySelect from './PrioritySelect.svelte';
 	import TagPicker from './TagPicker.svelte';
 	import ConfirmDialog from './overlay/ConfirmDialog.svelte';
 	import Drawer from './overlay/Drawer.svelte';
+	import ProblemDetails from './problems/ProblemDetails.svelte';
 
 	// Capture by template (E4 plan, package 5; OF-E4-1 (a)): a radio group of the fixed templates,
 	// the fields of the chosen one with required marks and field errors (ADR-0009), and the target
@@ -102,6 +104,8 @@
 	let errors = $state<CaptureErrors>({});
 	let pending = $state(false);
 	let message = $state<string | null>(null);
+	/** The failed request behind `message`, for "Details" (FP-1, ADR-0071). */
+	let messageProblem = $state.raw<ProblemEntry | null>(null);
 	let result = $state<{
 		text: string;
 		/** Link to the saved or existing ticket or entry; null if the server named none. */
@@ -177,6 +181,7 @@
 		if (!outcome.ok) {
 			pending = false;
 			message = outcome.message;
+			messageProblem = outcome.problem ?? null;
 			errors = outcome.fields;
 			return;
 		}
@@ -289,6 +294,9 @@
 			<p class="alert-error"><ErrorIcon /><span>{message}</span></p>
 		{/if}
 	</div>
+	{#if message}
+		<ProblemDetails problem={messageProblem} />
+	{/if}
 
 	<form
 		id={formId}

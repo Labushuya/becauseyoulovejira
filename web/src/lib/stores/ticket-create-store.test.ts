@@ -122,7 +122,11 @@ describe('createWithOptions', () => {
 				monthDay: 'Tag 1 bis 31.',
 				dayPlan: 'Erledigt.'
 			},
-			index: { ticketSources: 1 }
+			index: { ticketSources: 1 },
+			// Refusals of the route, no mere checks of inputs: the failed action for "Details" (FP-1).
+			problem: expect.objectContaining({
+				outcome: expect.objectContaining({ result: 'response', status: 400 })
+			})
 		});
 	});
 
@@ -139,7 +143,10 @@ describe('createWithOptions', () => {
 		expect(await store.createWithOptions(REQUEST)).toEqual({
 			ok: false,
 			message: 'Schon bearbeitet.',
-			fields: {}
+			fields: {},
+			problem: expect.objectContaining({
+				outcome: expect.objectContaining({ code: 'source_item: validation_inbox_item_handled' })
+			})
 		});
 	});
 

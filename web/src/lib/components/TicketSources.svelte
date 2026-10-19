@@ -45,8 +45,10 @@
 	import { insideModal } from '$lib/overlay/modal-context';
 	import { inboxItemHref } from '$lib/ticket-links';
 	import type { PagedNoun } from '$lib/domain/paged-list';
+	import type { ProblemEntry } from '$lib/domain/problems';
 	import AddSourcesDialog from './AddSourcesDialog.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
+	import ProblemDetails from './problems/ProblemDetails.svelte';
 	import ListSearch from './ListSearch.svelte';
 	import MoveSourceDialog from './MoveSourceDialog.svelte';
 	import PagedList from './PagedList.svelte';
@@ -167,6 +169,8 @@
 	/** Entry of the dialog "Anderem Ticket zuordnen …", null while it is closed. */
 	let moving = $state<Pick<InboxItemSummary, 'id' | 'title' | 'scope'> | null>(null);
 	let message = $state<string | null>(null);
+	/** The failed request behind `message`, for "Details" (FP-1, ADR-0071). */
+	let messageProblem = $state.raw<ProblemEntry | null>(null);
 	/** The last change of the order, said in the polite region of the section. */
 	let orderSaid = $state('');
 
@@ -262,7 +266,10 @@
 		message = null;
 		const result = await store.originalUrl(item);
 		if (result.ok) window.location.assign(result.value);
-		else message = result.message;
+		else {
+			message = result.message;
+			messageProblem = result.problem ?? null;
+		}
 	}
 
 	async function release(item: InboxItemSummary) {
@@ -312,9 +319,12 @@
 			<SectionMessage tone={viewNote.tone} compact>{viewNote.text}</SectionMessage>
 		{/if}
 	</div>
+	{#if message}
+		<ProblemDetails problem={messageProblem} />
+	{/if}
 
 	{#if store.state === 'error' && store.ticketId === ticket.id}
-		<SectionMessage tone="error" compact>
+		<SectionMessage tone="error" compact problem={store.errorProblem}>
 			{store.error}
 			{#snippet actions()}
 				<button class="button-subtle" type="button" onclick={() => void store.reload()}>

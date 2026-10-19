@@ -11,7 +11,7 @@
 import type PocketBase from 'pocketbase';
 import { createContext } from 'svelte';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
-import { toDataError, type DataError } from '$lib/data/errors';
+import { problemDetails, problemOf, toDataError, type DataError } from '$lib/data/errors';
 import type { RequestOptions } from '$lib/data/options';
 import {
 	createTicket,
@@ -28,6 +28,7 @@ import {
 } from '$lib/data/ticket-create';
 import { toggleTask } from '$lib/markdown';
 import { PIN_FLAGS, type CommentPinControl } from '$lib/domain/comments';
+import type { ProblemEntry } from '$lib/domain/problems';
 import type { RecurrenceRule } from '$lib/domain/recurrence-rule';
 import {
 	createFieldOf,
@@ -142,13 +143,18 @@ export interface TicketDetailData {
 	delete(id: string, sources: SourceHandling): Promise<TrashMove | null>;
 }
 
-/** Outcome of ticking a task; a failure carries a message unless nothing is to be shown. */
-export type TaskResult = { ok: true } | { ok: false; message: string | null };
+/**
+ * Outcome of ticking a task; a failure carries a message unless nothing is to be shown, and the
+ * failed request behind it for "Details" (FP-1, ADR-0071).
+ */
+export type TaskResult =
+	{ ok: true } | { ok: false; message: string | null; problem?: ProblemEntry | null };
 
 /**
  * Outcome of creating a ticket; a failure carries a message and/or errors per field of the form,
- * with the row of a list (`index`) where the server named one. With everything at once (NT-1) a
- * success also names the rule of the series, null without one.
+ * with the row of a list (`index`) where the server named one, and the failed request behind the
+ * message (`problem`, FP-1). With everything at once (NT-1) a success also names the rule of the
+ * series, null without one.
  */
 export type CreateResult =
 	| { ok: true; ticket: Ticket; rule?: RecurrenceRule | null }
@@ -157,6 +163,7 @@ export type CreateResult =
 			message: string | null;
 			fields: Partial<Record<CreateField, string>>;
 			index?: Partial<Record<CreateListField, number>>;
+			problem?: ProblemEntry | null;
 	  };
 
 const DRAFT_FIELDS: readonly (keyof TicketDraft)[] = [
@@ -284,7 +291,11 @@ export class TicketDetailStore implements CommentPinControl {
 
 	readonly #drafts = new SvelteMap<EditableField, string>();
 	readonly #saving = new SvelteSet<FieldKey>();
-	readonly #fieldErrors = new SvelteMap<FieldKey, string>();
+	/** Error per field, with the failed save behind it for "Details" (FP-1, ADR-0071). */
+	readonly #fieldErrors = new SvelteMap<
+		FieldKey,
+		{ message: string; problem: ProblemEntry | null }
+	>();
 	#controller: AbortController | null = null;
 	#live: LiveSource | null = null;
 	/** Ends the subscription of the shown ticket. */
@@ -302,7 +313,12 @@ export class TicketDetailStore implements CommentPinControl {
 	/** Comment whose pin is being saved (ADR-0044 section 2). */
 	#pinning = $state<string | null>(null);
 	/** Why pinning or releasing a comment of the shown ticket failed. */
-	#pinFailure = $state<{ ticketId: string; commentId: string; message: string } | null>(null);
+	#pinFailure = $state<{
+		ticketId: string;
+		commentId: string;
+		message: string;
+		problem: ProblemEntry | null;
+	} | null>(null);
 
 	#id = $state<string | null>(null);
 	#own = $state.raw<Ticket | null>(null);
@@ -310,6 +326,8 @@ export class TicketDetailStore implements CommentPinControl {
 	/** Text in the input of the tag picker (T-14), kept here for the question on leaving. */
 	#tagInput = $state('');
 	#error = $state<string | null>(null);
+	/** The failed request behind `#error` (FP-1, ADR-0071). */
+	#errorProblem = $state.raw<ProblemEntry | null>(null);
 	/** The shown ticket went into an area this tab does not see (E7-4, ADR-0061 §3). */
 	#movedAway = $state(false);
 	/**
@@ -319,6 +337,8 @@ export class TicketDetailStore implements CommentPinControl {
 	#support = $state.raw<CreateSupport | null | undefined>(undefined);
 	/** Why the last question failed (UT-2): the answer is unknown then, not "the server lacks it". */
 	#supportProblem = $state<string | null>(null);
+	/** The failed request of that question (FP-1, ADR-0071). */
+	#supportFailure = $state.raw<ProblemEntry | null>(null);
 	/** The question runs. */
 	#supportLoading = $state(false);
 
@@ -364,6 +384,11 @@ export class TicketDetailStore implements CommentPinControl {
 		return this.#error;
 	}
 
+	/** The failed request behind `error`, for "Details" (FP-1, ADR-0071). */
+	get errorProblem(): ProblemEntry | null {
+		return this.#error === null ? null : this.#errorProblem;
+	}
+
 	/** With the state "deleted": the ticket was moved into an area this account does not see. */
 	get movedAway(): boolean {
 		return this.#movedAway;
@@ -385,7 +410,17 @@ export class TicketDetailStore implements CommentPinControl {
 	}
 
 	fieldError(field: FieldKey): string | null {
-		return this.#fieldErrors.get(field) ?? null;
+		return this.#fieldErrors.get(field)?.message ?? null;
+	}
+
+	/** The failed save behind the error of `field`, null for a hint at the input or none. */
+	fieldProblem(field: FieldKey): ProblemEntry | null {
+		return this.#fieldErrors.get(field)?.problem ?? null;
+	}
+
+	/** The error of `field` after a failed save. */
+	#failField(field: FieldKey, message: string, failure: DataError): void {
+		this.#fieldErrors.set(field, { message, problem: problemOf(failure) });
 	}
 
 	/**
@@ -435,7 +470,7 @@ export class TicketDetailStore implements CommentPinControl {
 			if (failure.kind === 'session') this.#session.logout();
 			else if (failure.kind !== 'aborted' && ticket.id === this.#id) {
 				this.#completion = null;
-				this.#fieldErrors.set('status', failure.fields.status?.message ?? failure.message);
+				this.#failField('status', failure.fields.status?.message ?? failure.message, failure);
 			}
 			return false;
 		} finally {
@@ -486,7 +521,7 @@ export class TicketDetailStore implements CommentPinControl {
 			if (failure.kind === 'session') this.#session.logout();
 			else if (failure.kind !== 'aborted' && ticket.id === this.#id) {
 				this.#reopen = null;
-				this.#fieldErrors.set('status', failure.fields.status?.message ?? failure.message);
+				this.#failField('status', failure.fields.status?.message ?? failure.message, failure);
 			}
 			return false;
 		} finally {
@@ -602,7 +637,7 @@ export class TicketDetailStore implements CommentPinControl {
 			if (failure.kind === 'session') this.#session.logout();
 			else if (failure.kind !== 'aborted' && ticket.id === this.#id) {
 				const key = field === 'blocksParent' ? 'blocks_parent' : field;
-				this.#fieldErrors.set(field, failure.fields[key]?.message ?? failure.message);
+				this.#failField(field, failure.fields[key]?.message ?? failure.message, failure);
 			}
 			return null;
 		} finally {
@@ -629,6 +664,11 @@ export class TicketDetailStore implements CommentPinControl {
 		return failure !== null && failure.ticketId === this.#id && failure.commentId === commentId
 			? failure.message
 			: null;
+	}
+
+	/** The failed request behind `pinError` (FP-1, ADR-0071), null otherwise. */
+	pinProblem(commentId: string): ProblemEntry | null {
+		return this.pinError(commentId) === null ? null : (this.#pinFailure?.problem ?? null);
 	}
 
 	/**
@@ -669,7 +709,8 @@ export class TicketDetailStore implements CommentPinControl {
 			if (failure.kind === 'session') this.#session.logout();
 			else if (failure.kind !== 'aborted' && ticket.id === this.#id) {
 				const message = failure.fields.pinned_comment?.message ?? failure.message;
-				this.#pinFailure = { ticketId: ticket.id, commentId: target, message };
+				const problem = problemOf(failure);
+				this.#pinFailure = { ticketId: ticket.id, commentId: target, message, problem };
 			}
 			return null;
 		} finally {
@@ -712,7 +753,8 @@ export class TicketDetailStore implements CommentPinControl {
 			this.#flags.show({
 				tone: 'error',
 				title: PIN_FLAGS.undoFailed,
-				description: failure.fields.pinned_comment?.message ?? failure.message
+				description: failure.fields.pinned_comment?.message ?? failure.message,
+				problem: problemOf(failure)
 			});
 		}
 	}
@@ -793,7 +835,7 @@ export class TicketDetailStore implements CommentPinControl {
 
 	/** Marks a field as invalid without a request (e.g. an incomplete date in the browser). */
 	reject(field: FieldKey, message: string): void {
-		this.#fieldErrors.set(field, message);
+		this.#fieldErrors.set(field, { message, problem: null });
 	}
 
 	/**
@@ -828,7 +870,7 @@ export class TicketDetailStore implements CommentPinControl {
 		if (this.#saving.has(field)) return false;
 		const result = patchFor(field, draft);
 		if ('error' in result) {
-			this.#fieldErrors.set(field, result.error);
+			this.#fieldErrors.set(field, { message: result.error, problem: null });
 			return false;
 		}
 		const next = field === 'title' ? draft.trim() : draft;
@@ -889,7 +931,7 @@ export class TicketDetailStore implements CommentPinControl {
 			else if (refusal !== null && ticket.id === this.#id && isStatus(next)) {
 				this.#reopen = { ticketId: ticket.id, status: next, message: refusal };
 			} else if (failure.kind !== 'aborted' && ticket.id === this.#id) {
-				this.#fieldErrors.set(field, failure.fields[field]?.message ?? failure.message);
+				this.#failField(field, failure.fields[field]?.message ?? failure.message, failure);
 			}
 			if (!stale) return false;
 		} finally {
@@ -909,7 +951,7 @@ export class TicketDetailStore implements CommentPinControl {
 			const failure = toDataError(error);
 			if (failure.kind === 'session') this.#session.logout();
 			else if (failure.kind !== 'aborted' && id === this.#id) {
-				this.#fieldErrors.set('description', failure.message);
+				this.#failField('description', failure.message, failure);
 			}
 			return false;
 		}
@@ -965,8 +1007,10 @@ export class TicketDetailStore implements CommentPinControl {
 			if (failure.kind === 'session' || failure.kind === 'aborted') {
 				return { ok: false, message: null };
 			}
-			if (isStale(failure)) return { ok: false, message: TASK_STALE_MESSAGE };
-			return { ok: false, message: failure.fields.description?.message ?? failure.message };
+			const details = problemDetails(failure);
+			if (isStale(failure)) return { ok: false, message: TASK_STALE_MESSAGE, ...details };
+			const message = failure.fields.description?.message ?? failure.message;
+			return { ok: false, message, ...details };
 		} finally {
 			this.#saving.delete('description');
 		}
@@ -1021,8 +1065,9 @@ export class TicketDetailStore implements CommentPinControl {
 			}
 			const known = Object.keys(fields).length > 0;
 			const itemMessage = failure.fields.source_item?.message;
-			if (itemMessage !== undefined) return { ok: false, message: itemMessage, fields };
-			return { ok: false, message: known ? null : failure.message, fields };
+			const details = problemDetails(failure);
+			if (itemMessage !== undefined) return { ok: false, message: itemMessage, fields, ...details };
+			return { ok: false, message: known ? null : failure.message, fields, ...details };
 		}
 	}
 
@@ -1041,6 +1086,11 @@ export class TicketDetailStore implements CommentPinControl {
 	 */
 	get createSupportProblem(): string | null {
 		return this.#supportProblem;
+	}
+
+	/** The failed request behind `createSupportProblem`, for "Details" (FP-1, ADR-0071). */
+	get createSupportFailure(): ProblemEntry | null {
+		return this.#supportProblem === null ? null : this.#supportFailure;
 	}
 
 	/** The question runs ("Erneut versuchen" shows it). */
@@ -1069,7 +1119,10 @@ export class TicketDetailStore implements CommentPinControl {
 		} catch (error) {
 			const failure = toDataError(error);
 			if (failure.kind === 'session') this.#session.logout();
-			else if (failure.kind !== 'aborted') this.#supportProblem = failure.message;
+			else if (failure.kind !== 'aborted') {
+				this.#supportProblem = failure.message;
+				this.#supportFailure = problemOf(failure);
+			}
 		} finally {
 			this.#supportLoading = false;
 		}
@@ -1125,7 +1178,8 @@ export class TicketDetailStore implements CommentPinControl {
 				ok: false,
 				message: loose[0] ?? (known ? null : failure.message),
 				fields,
-				...(Object.keys(index).length > 0 && { index })
+				...(Object.keys(index).length > 0 && { index }),
+				...problemDetails(failure)
 			};
 		}
 	}
@@ -1199,7 +1253,7 @@ export class TicketDetailStore implements CommentPinControl {
 			const failure = toDataError(error);
 			if (failure.kind === 'session') this.#session.logout();
 			else if (failure.kind !== 'aborted' && ticket.id === this.#id) {
-				this.#fieldErrors.set('tags', failure.fields.tags?.message ?? failure.message);
+				this.#failField('tags', failure.fields.tags?.message ?? failure.message, failure);
 			}
 			return false;
 		} finally {
@@ -1298,6 +1352,7 @@ export class TicketDetailStore implements CommentPinControl {
 				return;
 			}
 			this.#error = failure.message;
+			this.#errorProblem = problemOf(failure);
 			this.#state = 'error';
 		} finally {
 			if (this.#controller === controller) this.#controller = null;

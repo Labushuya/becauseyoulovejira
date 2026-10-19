@@ -9,6 +9,7 @@
 		type RecurrenceFormField,
 		type RecurrenceFormValues
 	} from '$lib/domain/recurrence-rule';
+	import type { ProblemEntry } from '$lib/domain/problems';
 	import type { TemplateStatus } from '$lib/domain/series-template';
 	import type { EditResult } from '$lib/stores/catalog-editor';
 	import { insideModal } from '$lib/overlay/modal-context';
@@ -16,6 +17,7 @@
 	import InitialStatusField from './InitialStatusField.svelte';
 	import InlineDialog from './InlineDialog.svelte';
 	import Modal from './overlay/Modal.svelte';
+	import ProblemDetails from './problems/ProblemDetails.svelte';
 	import RecurrenceForm from './RecurrenceForm.svelte';
 
 	// "Wiederholen…" and "Regel bearbeiten" (E5 plan, package 4) on the modal building block
@@ -96,6 +98,8 @@
 	let errors = $state<Partial<Record<RecurrenceFormField, string>>>({});
 	let statusError = $state<string | null>(null);
 	let message = $state<string | null>(null);
+	/** The failed request behind `message`, for "Details" (FP-1, ADR-0071). */
+	let problem = $state.raw<ProblemEntry | null>(null);
 	let busy = $state(false);
 	let form = $state<HTMLFormElement>();
 
@@ -139,7 +143,10 @@
 				return;
 			}
 			fromServer(result.fields);
-			if (result.message !== null) message = result.message;
+			if (result.message !== null) {
+				message = result.message;
+				problem = result.problem ?? null;
+			}
 		} finally {
 			busy = false;
 		}
@@ -176,6 +183,7 @@
 		{/if}
 		{#if message}
 			<div class="alert-error" role="alert"><ErrorIcon /><span>{message}</span></div>
+			<ProblemDetails {problem} />
 		{/if}
 	</form>
 {/snippet}

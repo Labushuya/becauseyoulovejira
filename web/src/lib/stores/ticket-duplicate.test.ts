@@ -75,7 +75,9 @@ describe('TicketDuplicateStore', () => {
 		expect(await store.duplicate(ORIGINAL, REQUEST, vi.fn())).toEqual({
 			ok: false,
 			message: 'Anderes Problem.',
-			fields: { status: 'Nie „Erledigt“.', project: 'Das Projekt ist archiviert.' }
+			fields: { status: 'Nie „Erledigt“.', project: 'Das Projekt ist archiviert.' },
+			// Refusals of the route: the failed action with its "Details" (FP-1).
+			problem: expect.objectContaining({ outcome: expect.objectContaining({ status: 400 }) })
 		});
 		expect(shown).toEqual([]);
 	});
@@ -87,7 +89,8 @@ describe('TicketDuplicateStore', () => {
 		expect(await gone.store.duplicate(ORIGINAL, REQUEST, vi.fn())).toEqual({
 			ok: false,
 			message: DUPLICATE_GONE,
-			fields: {}
+			fields: {},
+			problem: expect.objectContaining({ outcome: expect.objectContaining({ status: 404 }) })
 		});
 		const failed = setup(async () => {
 			throw new DataError('forbidden', { status: 403 });
@@ -95,7 +98,8 @@ describe('TicketDuplicateStore', () => {
 		expect(await failed.store.duplicate(ORIGINAL, REQUEST, vi.fn())).toEqual({
 			ok: false,
 			message: 'Dafür fehlt die Berechtigung.',
-			fields: {}
+			fields: {},
+			problem: expect.objectContaining({ outcome: expect.objectContaining({ status: 403 }) })
 		});
 	});
 

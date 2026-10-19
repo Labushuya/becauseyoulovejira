@@ -8,9 +8,11 @@
 	} from '$lib/stores/ticket-picker.svelte';
 	import { insideModal } from '$lib/overlay/modal-context';
 	import type { SourceActionResult } from '$lib/stores/ticket-sources.svelte';
+	import type { ProblemEntry } from '$lib/domain/problems';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import InlineDialog from './InlineDialog.svelte';
 	import Modal from './overlay/Modal.svelte';
+	import ProblemDetails from './problems/ProblemDetails.svelte';
 	import TicketPicker from './TicketPicker.svelte';
 
 	// "Anderem Ticket zuordnen …" (ADR-0031, addendum): a linked entry changes directly from its
@@ -63,6 +65,8 @@
 	let ticket = $state<TicketSummary | null>(null);
 	let fieldError = $state<string | null>(null);
 	let failure = $state<string | null>(null);
+	/** The failed request behind `failure`, for "Details" (FP-1, ADR-0071). */
+	let problem = $state.raw<ProblemEntry | null>(null);
 	let busy = $state(false);
 
 	async function move(event: SubmitEvent) {
@@ -82,6 +86,7 @@
 				onclose();
 			} else if (result.message !== null) {
 				failure = result.message;
+				problem = result.problem ?? null;
 			}
 		} finally {
 			busy = false;
@@ -107,6 +112,7 @@
 		{/if}
 		{#if failure !== null}
 			<p class="alert-error" role="alert"><ErrorIcon /><span>{failure}</span></p>
+			<ProblemDetails {problem} />
 		{/if}
 	</form>
 {/snippet}

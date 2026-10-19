@@ -233,6 +233,9 @@ export const HELP_SECTIONS = [
 	// Folders (ADR-0051): linked from their card.
 	{ id: 'ordner', label: 'Ordner' },
 	{ id: 'fragen', label: 'Häufige Fragen' },
+	// The errors of this session (FP-1, ADR-0071 §5), for every account; FP-3 moves the entry to
+	// "Einstellungen → Protokoll".
+	{ id: 'fehler', label: 'Fehler dieser Sitzung' },
 	{ id: 'betrieb', label: 'Betrieb' },
 	// Backups and the emergency plan (ADR-0046 §8): linked from the page "Sicherung".
 	{ id: 'sicherung', label: 'Sicherung & Notfall' },

@@ -153,7 +153,16 @@ describe('menu of a row: preparing a question (AM-2)', () => {
 		expect(gone.store.dialog).toBeNull();
 		expect(gone.store.isPreparing(ID)).toBe(false);
 		expect(gone.shown).toEqual([
-			{ tone: 'error', title: 'TASK-1 konnte nicht geladen werden.', description: DUPLICATE_GONE }
+			{
+				tone: 'error',
+				title: 'TASK-1 konnte nicht geladen werden.',
+				description: DUPLICATE_GONE,
+				// The row "Details" (FP-1): what was chosen and what came back.
+				problem: expect.objectContaining({
+					intent: 'Ticket in den Papierkorb legen',
+					outcome: expect.objectContaining({ result: 'response', status: 404 })
+				})
+			}
 		]);
 
 		const broken = setup({
@@ -164,6 +173,7 @@ describe('menu of a row: preparing a question (AM-2)', () => {
 		expect(await broken.store.choose('duplicate', summary())).toBe(false);
 		expect(broken.shown[0]?.tone).toBe('error');
 		expect(broken.shown[0]?.description).toMatch(/Der Server hat mit einem Fehler geantwortet/);
+		expect(broken.shown[0]?.problem?.intent).toBe('Ticket duplizieren');
 	});
 
 	it('ends an expired session without a flag and sends nothing without one', async () => {

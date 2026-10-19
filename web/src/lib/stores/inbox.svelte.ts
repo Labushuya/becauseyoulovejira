@@ -10,7 +10,8 @@
 import type PocketBase from 'pocketbase';
 import { createContext } from 'svelte';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
-import { toDataError } from '$lib/data/errors';
+import { problemDetails, toDataError } from '$lib/data/errors';
+import type { ProblemEntry } from '$lib/domain/problems';
 import {
 	assignToTicket,
 	createItem,
@@ -96,13 +97,19 @@ export function inboxData(pb: PocketBase): InboxData {
 
 /** Outcome of "Seiteninhalt sichern"; a failure carries a message unless hidden (lost session). */
 export type PageCopyResult =
-	{ ok: true; truncated: boolean } | { ok: false; message: string | null };
+	{ ok: true; truncated: boolean } | { ok: false; message: string | null; problem?: ProblemEntry };
 
 /** Outcome of creating an entry: created, already there, or failed (message and field texts). */
 export type InboxCreateResult =
 	| { kind: 'created'; item: InboxItem }
 	| InboxDuplicate
-	| { kind: 'error'; message: string | null; fields: Readonly<Record<string, string>> };
+	| {
+			kind: 'error';
+			message: string | null;
+			fields: Readonly<Record<string, string>>;
+			/** The failed request, for "Details" (FP-1, ADR-0071). */
+			problem?: ProblemEntry;
+	  };
 
 /**
  * Outcome of an .ics import: the counts of the hook, or a failure with its message (null after a
@@ -112,8 +119,10 @@ export type CalendarImportResult =
 	({ kind: 'imported' } & CalendarImportSummary) | { kind: 'error'; message: string | null };
 
 /** Outcome of discarding, restoring and assigning; a failure carries a message unless hidden. */
+/** A refusal carries the failed request behind its message for "Details" (FP-1, ADR-0071). */
 export type InboxActionResult =
-	{ ok: true; item: InboxItemSummary } | { ok: false; message: string | null };
+	| { ok: true; item: InboxItemSummary }
+	| { ok: false; message: string | null; problem?: ProblemEntry };
 
 /** Whether two queries load the same entries (the grouping only arranges them). */
 function sameQuery(a: InboxQuery, b: InboxQuery): boolean {
@@ -147,6 +156,8 @@ export class InboxStore {
 
 	#state = $state<LoadState>('idle');
 	#error = $state<string | null>(null);
+	/** The failed request behind `#error` (FP-1, ADR-0071). */
+	#errorProblem = $state.raw<ProblemEntry | null>(null);
 	#query = $state<InboxQuery>(DEFAULT_INBOX_QUERY);
 	#handledLoad = $state<LoadState>('idle');
 	#handledError = $state<string | null>(null);
@@ -223,6 +234,11 @@ export class InboxStore {
 
 	get error(): string | null {
 		return this.#error;
+	}
+
+	/** The failed request behind `error`, for "Details" (FP-1, ADR-0071). */
+	get errorProblem(): ProblemEntry | null {
+		return this.#error === null ? null : this.#errorProblem;
 	}
 
 	/**
@@ -370,14 +386,17 @@ export class InboxStore {
 	/** Address of the protected original with a fresh file token, or a message. */
 	async originalUrl(
 		item: Pick<InboxItemSummary, 'id' | 'original'>
-	): Promise<{ ok: true; url: string } | { ok: false; message: string | null }> {
+	): Promise<
+		{ ok: true; url: string } | { ok: false; message: string | null; problem?: ProblemEntry }
+	> {
 		if (!this.#session.ensureValid()) return { ok: false, message: null };
 		try {
 			const url = await this.#data.originalUrl(item);
 			if (url === null) return { ok: false, message: 'Zu diesem Eintrag gibt es keine Datei.' };
 			return { ok: true, url };
 		} catch (error) {
-			return { ok: false, message: this.#failureMessage(error) };
+			const message = this.#failureMessage(error);
+			return { ok: false, message, ...(message !== null && problemDetails(error)) };
 		}
 	}
 
@@ -394,7 +413,8 @@ export class InboxStore {
 			for (const [field, detail] of Object.entries(failure.fields)) fields[field] = detail.message;
 			const message = this.#failureMessage(error);
 			const known = Object.keys(fields).length > 0;
-			return { kind: 'error', message: known ? null : message, fields };
+			const details = message === null ? {} : problemDetails(error);
+			return { kind: 'error', message: known ? null : message, fields, ...details };
 		}
 	}
 
@@ -460,7 +480,11 @@ export class InboxStore {
 		this.#undoFlags.delete(id);
 		const result = await this.#restore(id, title);
 		if (!result.ok && result.message !== null) {
-			this.#flags.show({ tone: 'error', title: result.message });
+			this.#flags.show({
+				tone: 'error',
+				title: result.message,
+				...(result.problem !== undefined && { problem: result.problem })
+			});
 		}
 		return result;
 	}
@@ -521,7 +545,8 @@ export class InboxStore {
 			});
 			return { ok: true, truncated: outcome.truncated };
 		} catch (error) {
-			return { ok: false, message: this.#failureMessage(error) };
+			const message = this.#failureMessage(error);
+			return { ok: false, message, ...(message !== null && problemDetails(error)) };
 		} finally {
 			this.#pending.delete(item.id);
 		}
@@ -662,7 +687,7 @@ export class InboxStore {
 			const title = this.find(id)?.title ?? knownTitle;
 			const field = Object.values(toDataError(error).fields)[0]?.message;
 			const prefix = title === undefined ? `Der Eintrag ${failure}` : `„${title}“ ${failure}`;
-			return { ok: false, message: `${prefix} ${field ?? message}` };
+			return { ok: false, message: `${prefix} ${field ?? message}`, ...problemDetails(error) };
 		} finally {
 			this.#pending.delete(id);
 		}
@@ -754,6 +779,7 @@ export class InboxStore {
 			const message = this.#failureMessage(error, true);
 			if (message === null) return;
 			this.#error = message;
+			this.#errorProblem = problemDetails(error).problem ?? null;
 			this.#state = 'error';
 		} finally {
 			if (this.#newController === controller) this.#newController = null;

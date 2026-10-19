@@ -7,10 +7,11 @@
 // on a fake data layer; the list of the section is a real TicketListStore.
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
+import { ClientResponseError } from 'pocketbase';
 import { tick } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
 import type { ResolvedPathname } from '$app/types';
-import { DataError } from '$lib/data/errors';
+import { DataError, noteRequest } from '$lib/data/errors';
 import { EMPTY_LIST_QUERY } from '$lib/domain/list-query';
 import {
 	SUBTASK_TRANSFER_STORAGE_KEY,
@@ -21,6 +22,7 @@ import {
 import type { ProjectRef, TicketSummary } from '$lib/domain/ticket';
 import type { CreateSupport } from '$lib/domain/ticket-create';
 import type { FlagInput } from '$lib/stores/flags.svelte';
+import { problemLog } from '$lib/stores/problem-log.svelte';
 import {
 	SubtaskTransferStore,
 	type TransferSupportSource
@@ -327,6 +329,40 @@ describe('the dialog', () => {
 		expect((await screen.findByRole('alert')).textContent).toContain(
 			'Das Hauptticket wurde inzwischen geändert. Bitte erneut öffnen.'
 		);
+	});
+
+	it('shows the details of the failed transfer and takes it into the list of the session (FP-1)', async () => {
+		problemLog.clear();
+		const path = `/api/byl/tickets/${PARENT_ID}/subtasks/transfer`;
+		// As the client of the app hands on a refusal of the route: the error of the SDK with its request.
+		const refusal = new ClientResponseError({
+			url: `http://127.0.0.1:8090${path}`,
+			status: 409,
+			response: { status: 409, message: 'Das Hauptticket wurde inzwischen geändert.', data: {} }
+		});
+		noteRequest(refusal, 'POST', path);
+		renderDialog({ answer: async () => Promise.reject(refusal) });
+		await fireEvent.click(submitButton());
+		const alert = await screen.findByRole('alert');
+
+		const details = within(alert).getByRole('button', {
+			name: 'Details: Unteraufgaben übertragen'
+		});
+		await fireEvent.click(details);
+		const facts = (
+			document.getElementById(details.getAttribute('aria-controls') ?? '')?.textContent ?? ''
+		).replace(/\s+/g, ' ');
+		expect(facts).toContain('Ergebnis HTTP 409 (Konflikt)');
+		expect(facts).toContain('Servermeldung Das Hauptticket wurde inzwischen geändert.');
+		expect(facts).toContain(`Anfrage POST ${path}`);
+		expect(problemLog.entries[0]).toMatchObject({
+			intent: 'Unteraufgaben übertragen',
+			outcome: { status: 409 },
+			request: { method: 'POST', path }
+		});
+		// Inside the side panel the dialog is a modal: the list unfolds in place.
+		const all = within(alert).getByRole('button', { name: 'Alle Fehler dieser Sitzung (1)' });
+		expect(all.getAttribute('aria-expanded')).toBe('false');
 	});
 
 	it('shows the hint to restart instead of an error when the server does not know the route', async () => {

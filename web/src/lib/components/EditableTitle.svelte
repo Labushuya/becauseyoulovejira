@@ -5,6 +5,7 @@
 	import CharmIcon from './CharmIcon.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import KindBadge from './KindBadge.svelte';
+	import ProblemDetails from './problems/ProblemDetails.svelte';
 
 	// Title of the panel (E2 plan, T-7): a heading with "Titel bearbeiten". While editing, Enter
 	// or leaving the field saves and Escape cancels; the heading is the focus target of the panel.
@@ -88,6 +89,7 @@
 	{/if}
 	{#if error}
 		<p class="field-error" id={errorId}><ErrorIcon /><span>{error}</span></p>
+		<ProblemDetails problem={store.fieldProblem('title')} />
 	{/if}
 </div>
 

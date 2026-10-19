@@ -152,6 +152,12 @@ describe('facts and texts', () => {
 		expect(outcomeText({ result: 'answer', status: null, code: null, message: null })).toBe(
 			'Unerwartete Antwort des Servers'
 		);
+		expect(outcomeText({ result: 'reported', status: null, code: 'error', message: 'x' })).toBe(
+			'Vom Server gemeldeter Fehler'
+		);
+		expect(outcomeText({ result: 'response', status: null, code: 'x', message: null })).toBe(
+			'Vom Server abgelehnt'
+		);
 	});
 
 	it('formats the time in Berlin in winter and summer', () => {

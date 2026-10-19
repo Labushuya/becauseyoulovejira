@@ -12,8 +12,9 @@
 import type PocketBase from 'pocketbase';
 import { createContext } from 'svelte';
 import { moveRecords, type MoveAnswer } from '$lib/data/area-move';
-import { toDataError } from '$lib/data/errors';
+import { problemOf, toDataError } from '$lib/data/errors';
 import type { RequestOptions } from '$lib/data/options';
+import type { ProblemEntry } from '$lib/domain/problems';
 import {
 	MOVE_TEXTS,
 	choiceErrors,
@@ -86,6 +87,7 @@ export class AreaMoveStore {
 	#choices = $state.raw<MoveChoices>(NO_CHOICES);
 	#state = $state<MoveState>('idle');
 	#message = $state<string | null>(null);
+	#messageProblem = $state.raw<ProblemEntry | null>(null);
 	/** The dependencies across the border of the first preview: the choice stays after "Mitnehmen". */
 	#dependencies = $state.raw<Dependencies>([]);
 	/** The links of source and follow-up tickets across the border of the first preview (ADR-0067). */
@@ -122,6 +124,11 @@ export class AreaMoveStore {
 	/** Why the preview or the move did not work; null while all is fine. */
 	get message(): string | null {
 		return this.#message;
+	}
+
+	/** The failed request behind `message`, for "Details" (FP-1, ADR-0071). */
+	get messageProblem(): ProblemEntry | null {
+		return this.#message === null ? null : this.#messageProblem;
 	}
 
 	/** Dependencies with tickets that stay behind (ADR-0061 §2), as the first preview named them. */
@@ -274,6 +281,7 @@ export class AreaMoveStore {
 		this.#controller = controller;
 		this.#state = preview ? 'loading' : 'running';
 		this.#message = null;
+		this.#messageProblem = null;
 		try {
 			const answer = await this.#data.move(moveBody(request, this.#choices, preview), {
 				signal: controller.signal
@@ -288,7 +296,10 @@ export class AreaMoveStore {
 		} catch (error) {
 			const failure = toDataError(error, controller.signal);
 			if (failure.kind === 'session') this.#session.logout();
-			else if (failure.kind !== 'aborted') this.#message = failure.message;
+			else if (failure.kind !== 'aborted') {
+				this.#message = failure.message;
+				this.#messageProblem = problemOf(failure);
+			}
 			return null;
 		} finally {
 			if (this.#controller === controller) {

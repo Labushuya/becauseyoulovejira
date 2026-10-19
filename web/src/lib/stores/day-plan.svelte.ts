@@ -47,7 +47,8 @@ import {
 	type ItemPosition,
 	type OtherAreaPlan
 } from '$lib/data/day-plan';
-import { toDataError } from '$lib/data/errors';
+import { problemDetails, toDataError } from '$lib/data/errors';
+import type { ProblemEntry } from '$lib/domain/problems';
 import type { RequestOptions } from '$lib/data/options';
 import type { RecordChange, Unsubscribe } from '$lib/data/realtime';
 import { updateTicket } from '$lib/data/tickets';
@@ -267,6 +268,8 @@ export class DayPlanStore {
 	#date = $state<CalendarDate | null>(null);
 	#state = $state<LoadState | 'missing'>('idle');
 	#error = $state<string | null>(null);
+	/** The failed request behind `#error` (FP-1, ADR-0071). */
+	#errorProblem = $state.raw<ProblemEntry | null>(null);
 	#answer = $state.raw<DayPlanAnswer | null>(null);
 	#plan = $state.raw<DayPlanMeta | null>(null);
 	readonly #items = new SvelteMap<string, DayPlanItem>();
@@ -398,6 +401,11 @@ export class DayPlanStore {
 
 	get error(): string | null {
 		return this.#error;
+	}
+
+	/** The failed request behind `error`, for "Details" (FP-1, ADR-0071). */
+	get errorProblem(): ProblemEntry | null {
+		return this.#error === null ? null : this.#errorProblem;
 	}
 
 	/** The shown day (today while no other is chosen). */
@@ -636,6 +644,7 @@ export class DayPlanStore {
 			const message = this.#messageOf(error);
 			if (message === null) return;
 			this.#error = message;
+			this.#errorProblem = problemDetails(error).problem ?? null;
 			this.#state = 'error';
 		} finally {
 			if (this.#controller === controller) this.#controller = null;
@@ -824,7 +833,7 @@ export class DayPlanStore {
 	#fail(error: unknown, title: string): void {
 		const message = this.#messageOf(error);
 		if (message === null) return;
-		this.#flags.show({ tone: 'error', title, description: message });
+		this.#flags.show({ tone: 'error', title, description: message, ...problemDetails(error) });
 	}
 
 	#announce(message: string): void {
@@ -1368,7 +1377,8 @@ export class DayPlanEntryStore {
 			this.#flags.show({
 				tone: 'error',
 				title: `${ticket.key} kam nicht in den Tagesplan.`,
-				description: field?.message ?? failure.message
+				description: field?.message ?? failure.message,
+				...problemDetails(failure)
 			});
 			return false;
 		} finally {

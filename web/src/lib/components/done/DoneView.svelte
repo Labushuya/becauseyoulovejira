@@ -35,6 +35,7 @@
 	import ErrorIcon from '../ErrorIcon.svelte';
 	import EmptyState from '../guidance/EmptyState.svelte';
 	import KindBadge from '../KindBadge.svelte';
+	import ProblemDetails from '../problems/ProblemDetails.svelte';
 	import SectionBar from '../SectionBar.svelte';
 	import TicketActions from '../TicketActions.svelte';
 	import TicketRowDialogs from '../TicketRowDialogs.svelte';
@@ -277,6 +278,7 @@
 				>Erneut versuchen</button
 			>
 		</div>
+		<ProblemDetails problem={store.loadProblem} />
 	{:else if store.state === 'ready' && store.tickets.length === 0}
 		{#if filtered}
 			<EmptyState
@@ -338,6 +340,7 @@
 					>Erneut versuchen</button
 				>
 			</div>
+			<ProblemDetails problem={store.loadProblem} />
 		{:else if store.hasMore}
 			<div class="more" bind:this={sentinel}>
 				<button

@@ -39,6 +39,7 @@ import {
 	isInputValidation,
 	requestPathOf,
 	responseOutcome,
+	sanitizeProblemText,
 	type ProblemEntry,
 	type ProblemOutcome,
 	type ProblemRequest
@@ -369,7 +370,11 @@ function outcomeOf(failure: DataError | null, raw: unknown): ProblemOutcome {
 			: responseOutcome(raw.status, raw.response);
 	}
 	if (failure?.kind === 'network') return { result: 'network', ...NO_ANSWER };
-	if (failure !== null && failure.status > 0) return responseOutcome(failure.status, null);
+	// A DataError of the data layer with a status or fields: the codes of its fields.
+	if (failure !== null && (failure.status > 0 || Object.keys(failure.fields).length > 0)) {
+		const outcome = responseOutcome(failure.status, { data: failure.fields });
+		return failure.status > 0 ? outcome : { ...outcome, status: null };
+	}
 	// An exception of the browser behind the failure, or no failure of the data layer at all.
 	if (failure === null || (raw !== undefined && raw !== null)) {
 		return { result: 'exception', ...NO_ANSWER };
@@ -422,6 +427,45 @@ export function problemOf(error: unknown): ProblemEntry | null {
 	const problem = buildProblem(error);
 	problems.set(error, problem);
 	return problem;
+}
+
+/**
+ * The entry of a failure the server reports in a successful answer, e.g. "Jetzt abrufen" of a
+ * channel whose run failed (200 with `status: 'error'` and the cleaned error): the request worked,
+ * the action did not. `code` and `message` are those of the answer.
+ */
+export function reportedProblem(input: {
+	intent: string;
+	method: string;
+	path: string;
+	code: string | null;
+	message: string | null;
+}): ProblemEntry {
+	const at = Date.now();
+	const message = input.message === null ? null : sanitizeProblemText(input.message);
+	return clientProblem({
+		id: nextProblemId(at),
+		intent: input.intent,
+		at,
+		outcome: {
+			result: 'reported',
+			status: null,
+			code: input.code === null ? null : sanitizeProblemText(input.code, 60),
+			message: message === '' ? null : message
+		},
+		request: { method: input.method.toUpperCase(), path: requestPathOf(input.path) },
+		app: appVersion,
+		exception: null
+	});
+}
+
+/**
+ * `{ problem }` for the result of an action when the failure has an entry, nothing otherwise, so a
+ * result keeps its form for a hint at an input: `{ ok: false, message, ...problemDetails(failure) }`.
+ */
+export function problemDetails(error: unknown): { problem?: ProblemEntry } {
+	const problem = problemOf(error);
+	return problem === null ? {} : { problem };
 }
 
 /**

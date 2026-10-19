@@ -172,7 +172,7 @@
 	{#if store.state === 'unavailable'}
 		<SectionMessage tone="info" live>{restartNeeded('Der Papierkorb ist')}</SectionMessage>
 	{:else if store.state === 'error' && store.error}
-		<SectionMessage tone="error" live>
+		<SectionMessage tone="error" live problem={store.errorProblem}>
 			{store.error}
 			{#snippet actions()}
 				<button class="button-subtle" type="button" onclick={() => void store.reload()}>

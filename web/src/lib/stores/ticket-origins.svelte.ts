@@ -11,7 +11,7 @@
 import type PocketBase from 'pocketbase';
 import { createContext } from 'svelte';
 import { SvelteSet } from 'svelte/reactivity';
-import { toDataError } from '$lib/data/errors';
+import { problemDetails, toDataError } from '$lib/data/errors';
 import type { RequestOptions } from '$lib/data/options';
 import {
 	onReconnect,
@@ -205,7 +205,8 @@ export class TicketOriginsStore {
 				this.#flags.show({
 					tone: 'error',
 					title: `${source.key} ließ sich nicht als Quelle entfernen.`,
-					description: message
+					description: message,
+					...problemDetails(error)
 				});
 			}
 			return { ok: false, message };

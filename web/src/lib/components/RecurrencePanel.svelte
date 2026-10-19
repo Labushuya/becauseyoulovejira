@@ -41,6 +41,7 @@
 		type TemplateStatus
 	} from '$lib/domain/series-template';
 	import { DEFAULT_PRIORITY, type ProjectRef, type TagRef } from '$lib/domain/ticket';
+	import type { ProblemEntry } from '$lib/domain/problems';
 	import type { EditResult } from '$lib/stores/catalog-editor';
 	import type { EnsureTagResult } from '$lib/stores/catalog.svelte';
 	import { helpHref } from '$lib/settings-sections';
@@ -50,6 +51,7 @@
 	import SectionMessage from './guidance/SectionMessage.svelte';
 	import ConfirmDialog from './overlay/ConfirmDialog.svelte';
 	import Drawer from './overlay/Drawer.svelte';
+	import ProblemDetails from './problems/ProblemDetails.svelte';
 	import RecurrenceBacklogQuestion from './RecurrenceBacklogQuestion.svelte';
 	import RecurrenceForm from './RecurrenceForm.svelte';
 	import RecurrenceTemplateFields from './RecurrenceTemplateFields.svelte';
@@ -257,6 +259,10 @@
 	let rhythmErrors = $state<Partial<Record<RecurrenceFormField, string>>>({});
 	let message = $state<string | null>(null);
 	let stateError = $state<string | null>(null);
+	/** The failed requests behind the three messages, for "Details" (FP-1, ADR-0071). */
+	let messageProblem = $state.raw<ProblemEntry | null>(null);
+	let stateProblem = $state.raw<ProblemEntry | null>(null);
+	let deleteProblem = $state.raw<ProblemEntry | null>(null);
 	let busy = $state(false);
 	let toggling = $state(false);
 	let confirmingDelete = $state(false);
@@ -414,7 +420,10 @@
 				return;
 			}
 			fromServer(result.fields);
-			if (result.message !== null) message = result.message;
+			if (result.message !== null) {
+				message = result.message;
+				messageProblem = result.problem ?? null;
+			}
 		} finally {
 			busy = false;
 		}
@@ -430,6 +439,7 @@
 			const result = await ontoggle(!rule.active);
 			if (!result.ok) {
 				stateError = result.message ?? Object.values(result.fields)[0] ?? null;
+				stateProblem = result.problem ?? null;
 				if (result.fields.project) fieldErrors = { ...fieldErrors, project: result.fields.project };
 			}
 		} finally {
@@ -444,7 +454,10 @@
 		stateError = null;
 		try {
 			const result = await ondecide(choice);
-			if (!result.ok) stateError = result.message ?? Object.values(result.fields)[0] ?? null;
+			if (!result.ok) {
+				stateError = result.message ?? Object.values(result.fields)[0] ?? null;
+				stateProblem = result.problem ?? null;
+			}
 		} finally {
 			toggling = false;
 		}
@@ -467,6 +480,7 @@
 			ondeleted?.();
 		} else if (result.message !== null) {
 			deleteError = result.message;
+			deleteProblem = result.problem ?? null;
 		} else {
 			confirmingDelete = false;
 		}
@@ -604,7 +618,9 @@
 				</button>
 			{/if}
 			{#if stateError}
-				<SectionMessage tone="error" compact live>{stateError}</SectionMessage>
+				<SectionMessage tone="error" compact live problem={stateProblem}>
+					{stateError}
+				</SectionMessage>
 			{/if}
 		</section>
 	{/if}
@@ -676,6 +692,9 @@
 				<p class="alert-error"><ErrorIcon /><span>{message}</span></p>
 			{/if}
 		</div>
+		{#if message}
+			<ProblemDetails problem={messageProblem} />
+		{/if}
 		<p class="hint">Tipp: <kbd>Strg</kbd>+<kbd>Enter</kbd> speichert.</p>
 	</form>
 </Drawer>
@@ -687,6 +706,7 @@
 		confirmLabel="Löschen"
 		busy={deleting}
 		error={deleteError}
+		problem={deleteProblem}
 		onconfirm={remove}
 		oncancel={() => {
 			confirmingDelete = false;

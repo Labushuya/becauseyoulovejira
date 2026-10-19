@@ -9,7 +9,8 @@
 
 import type PocketBase from 'pocketbase';
 import { createContext } from 'svelte';
-import { toDataError } from '$lib/data/errors';
+import { problemDetails, toDataError } from '$lib/data/errors';
+import type { ProblemEntry } from '$lib/domain/problems';
 import { duplicateTicket, fetchDuplicateTarget } from '$lib/data/tickets';
 import {
 	duplicatedElsewhereFlag,
@@ -56,14 +57,23 @@ export function ticketDuplicateData(pb: PocketBase): TicketDuplicateData {
 	};
 }
 
-/** Outcome of a duplication; a refusal carries errors per field and/or a message. */
+/**
+ * Outcome of a duplication; a refusal carries errors per field and/or a message, and the failed
+ * request for "Details" (`problem`, FP-1, ADR-0071).
+ */
 export type DuplicateResult =
 	| { ok: true; outcome: DuplicateOutcome }
-	| { ok: false; message: string | null; fields: Partial<Record<DuplicateField, string>> };
+	| {
+			ok: false;
+			message: string | null;
+			fields: Partial<Record<DuplicateField, string>>;
+			problem?: ProblemEntry;
+	  };
 
 /** The projects and tags of the other area, or why they could not be loaded (MV-2). */
 export type DuplicateTargetResult =
-	{ ok: true; target: DuplicateTarget } | { ok: false; message: string | null };
+	| { ok: true; target: DuplicateTarget }
+	| { ok: false; message: string | null; problem?: ProblemEntry };
 
 const FIELDS: readonly DuplicateField[] = ['title', 'status', 'project', 'source', 'to'];
 
@@ -149,7 +159,7 @@ export class TicketDuplicateStore {
 				};
 			}
 			const field = Object.values(failure.fields)[0];
-			return { ok: false, message: field?.message ?? failure.message };
+			return { ok: false, message: field?.message ?? failure.message, ...problemDetails(failure) };
 		}
 	}
 
@@ -186,7 +196,9 @@ export class TicketDuplicateStore {
 			if (failure.kind === 'session' || failure.kind === 'aborted') {
 				return { ok: false, message: null, fields: {} };
 			}
-			if (failure.kind === 'not_found') return { ok: false, message: DUPLICATE_GONE, fields: {} };
+			if (failure.kind === 'not_found') {
+				return { ok: false, message: DUPLICATE_GONE, fields: {}, ...problemDetails(failure) };
+			}
 			const fields: Partial<Record<DuplicateField, string>> = {};
 			const others: string[] = [];
 			for (const [name, entry] of Object.entries(failure.fields)) {
@@ -195,7 +207,7 @@ export class TicketDuplicateStore {
 				else fields[field] = entry.message;
 			}
 			const message = others[0] ?? (Object.keys(fields).length === 0 ? failure.message : null);
-			return { ok: false, message, fields };
+			return { ok: false, message, fields, ...problemDetails(failure) };
 		}
 	}
 }

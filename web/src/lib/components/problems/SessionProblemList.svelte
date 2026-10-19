@@ -40,7 +40,7 @@
 
 <div class="session-problems">
 	{#if log.count === 0}
-		<p class="nothing" tabindex="-1" bind:this={nothing}>{PROBLEM_TEXTS.empty}</p>
+		<p class="nothing" tabindex="-1" bind:this={nothing}>{PROBLEM_TEXTS.noProblems}</p>
 	{:else}
 		<div class="toolbar">
 			<CopyReportButton

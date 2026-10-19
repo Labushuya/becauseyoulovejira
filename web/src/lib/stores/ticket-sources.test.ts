@@ -266,7 +266,11 @@ describe('TicketSourcesStore', () => {
 		);
 		expect(await store.move(a, { id: 'ticket000000002', key: 'HAUS-13' })).toEqual({
 			ok: false,
-			message: 'Bleibt beim Ticket.'
+			message: 'Bleibt beim Ticket.',
+			// The refusal of the hook with its "Details" for the dialog (FP-1).
+			problem: expect.objectContaining({
+				outcome: expect.objectContaining({ code: 'ticket: validation_inbox_primary_source' })
+			})
 		});
 		expect(flags.flags).toEqual([]);
 	});

@@ -9,7 +9,7 @@
 
 import type PocketBase from 'pocketbase';
 import { createContext } from 'svelte';
-import { toDataError } from '$lib/data/errors';
+import { problemDetails, toDataError } from '$lib/data/errors';
 import { countTicketSources, listSourceEventDates } from '$lib/data/bulk';
 import { deleteTicket, updateTicket, type TrashMove } from '$lib/data/tickets';
 import { restoreFromTrash } from '$lib/data/trash';
@@ -313,7 +313,8 @@ export class BulkEditStore {
 				if (reason === null) return null;
 				this.#flags.show({
 					tone: 'error',
-					title: `Die Termine der Quellen ließen sich nicht laden. ${reason}`
+					title: `Die Termine der Quellen ließen sich nicht laden. ${reason}`,
+					...problemDetails(error)
 				});
 				return null;
 			}

@@ -5,9 +5,10 @@
 // the bot in "Bearbeiten"; mailboxes (package 22).
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
+import { ClientResponseError } from 'pocketbase';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PC_CONTEXT, useContext } from '$lib/test/context';
-import { DataError } from '$lib/data/errors';
+import { DataError, noteRequest } from '$lib/data/errors';
 import {
 	connectionDraftErrors,
 	emptyConnectionDraft,
@@ -29,6 +30,7 @@ import {
 } from '$lib/stores/connections.svelte';
 import { FlagStore } from '$lib/stores/flags.svelte';
 import { ImportKeywordsStore, type ImportKeywordsData } from '$lib/stores/import-keywords.svelte';
+import { problemLog } from '$lib/stores/problem-log.svelte';
 import { EMPTY_IMPORT_KEYWORDS } from '$lib/domain/keywords';
 import ChannelsViewHarness from '$lib/test/ChannelsViewHarness.svelte';
 import { foldersStoreOf } from '$lib/test/folders-fake';
@@ -595,6 +597,65 @@ describe('Jetzt abrufen (E4 plan, package 15)', () => {
 		const details = await openDetails('Google Kalender');
 		expect(details.getAllByText(/25\.09\.2026 12:00/)).toHaveLength(1);
 		expect(details.queryByText(/zuletzt erfolgreich/)).toBeNull();
+	});
+
+	it('shows the details of a failed run at its card and keeps it for the session (FP-1)', async () => {
+		problemLog.clear();
+		problemLog.closeDialog();
+		const context = setup();
+		// As the client of the app hands on a request without an answer (server stopped, offline).
+		const offline = new ClientResponseError(new TypeError('Failed to fetch'));
+		noteRequest(offline, 'POST', `/api/byl/connections/${CAL.id}/run`);
+		context.data.run.mockRejectedValueOnce(offline);
+		await context.store.load();
+		renderCards(context.store);
+		const calendar = card('Google Kalender');
+		await fireEvent.click(calendar.getByRole('button', { name: 'Jetzt abrufen: Google Kalender' }));
+
+		const alert = await calendar.findByRole('alert');
+		expect(alert.textContent).toMatch(/Server nicht erreichbar/);
+		const details = within(alert).getByRole('button', { name: 'Details: Kanal jetzt abrufen' });
+		await fireEvent.click(details);
+		const facts = (
+			document.getElementById(details.getAttribute('aria-controls') ?? '')?.textContent ?? ''
+		).replace(/\s+/g, ' ');
+		expect(facts).toContain('Ergebnis Keine Verbindung zum Server');
+		expect(facts).toContain(`Anfrage POST /api/byl/connections/${CAL.id}/run`);
+		const all = within(alert).getByRole('button', { name: 'Alle Fehler dieser Sitzung (1)' });
+		expect(all.getAttribute('aria-haspopup')).toBe('dialog');
+		await fireEvent.click(all);
+		expect(problemLog.dialogOpen).toBe(true);
+		problemLog.closeDialog();
+	});
+
+	it('gives the flag of a run the server reports as failed its details (FP-1)', async () => {
+		const context = setup();
+		context.data.run.mockResolvedValueOnce({
+			status: 'error',
+			created: 0,
+			duplicates: 0,
+			updated: 0,
+			skipped: 0,
+			failed: 0,
+			unmatched: 0,
+			error: 'HTTP 404 von https://calendar.google.com',
+			missing: []
+		});
+		await context.store.load();
+		renderCards(context.store);
+		await fireEvent.click(
+			card('Google Kalender').getByRole('button', { name: 'Jetzt abrufen: Google Kalender' })
+		);
+		await vi.waitFor(() => expect(context.flags.flags[0]?.tone).toBe('error'));
+		expect(context.flags.flags[0]?.problem).toMatchObject({
+			intent: 'Kanal jetzt abrufen',
+			outcome: {
+				result: 'reported',
+				code: 'error',
+				message: 'HTTP 404 von https://calendar.google.com'
+			},
+			request: { method: 'POST', path: `/api/byl/connections/${CAL.id}/run` }
+		});
 	});
 
 	it('shows "Wird abgerufen" while a run is going (EH-3)', async () => {

@@ -101,8 +101,10 @@
 {/if}
 
 <style>
+	/* A line of its own also in a row that wraps, like the error of a field (base.css). */
 	.problem-details {
 		display: grid;
+		flex-basis: 100%;
 		grid-template-columns: minmax(0, 1fr);
 		gap: 0.5rem;
 		min-width: 0;

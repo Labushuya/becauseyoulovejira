@@ -5,8 +5,9 @@
 // (before the migration of the trash the server deletes for good and the list only announces it).
 // A ticket that is already gone (404) counts as moved. Any other failure keeps the ticket.
 
-import { toDataError } from '$lib/data/errors';
+import { problemDetails, toDataError } from '$lib/data/errors';
 import type { TrashMove } from '$lib/data/tickets';
+import type { ProblemEntry } from '$lib/domain/problems';
 import { deletedWithSourcesText, type SourceHandling } from '$lib/domain/sources';
 import type { SessionGuard } from './ticket-list.svelte';
 
@@ -21,8 +22,12 @@ export interface DeleteSources {
 	handling: SourceHandling;
 }
 
-/** Outcome of deleting the ticket; a failure carries a message unless nothing is to be shown. */
-export type DeleteResult = { ok: true; key: string } | { ok: false; message: string | null };
+/**
+ * Outcome of deleting the ticket; a failure carries a message unless nothing is to be shown, and
+ * the failed request behind it for "Details" (`problem`, FP-1, ADR-0071).
+ */
+export type DeleteResult =
+	{ ok: true; key: string } | { ok: false; message: string | null; problem?: ProblemEntry };
 
 export interface TrashMoveDeps {
 	/** The route "Ticket löschen"; the move for "Rückgängig", null before the migration. */
@@ -47,7 +52,9 @@ export async function moveTicketToTrash(
 		if (failure.kind === 'session' || failure.kind === 'aborted') {
 			return { ok: false, message: null };
 		}
-		if (failure.kind !== 'not_found') return { ok: false, message: failure.message };
+		if (failure.kind !== 'not_found') {
+			return { ok: false, message: failure.message, ...problemDetails(failure) };
+		}
 	}
 	deps.list.remove(ticket.id);
 	const text = deletedWithSourcesText(

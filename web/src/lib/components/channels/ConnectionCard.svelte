@@ -16,6 +16,7 @@
 		type TelegramRepliesChange
 	} from '$lib/domain/connections';
 	import { formatBerlinDateTime } from '$lib/domain/format';
+	import type { ProblemEntry } from '$lib/domain/problems';
 	import { connectionAnchor } from '$lib/domain/sync-all';
 	import type { ProjectRef } from '$lib/domain/ticket';
 	import { textForContext } from '$lib/guidance/texts';
@@ -44,6 +45,7 @@
 		helper = null,
 		lastRun = null,
 		message = null,
+		problem = null,
 		onrun,
 		onpick,
 		onedit,
@@ -68,6 +70,8 @@
 		lastRun?: RunResult | null;
 		/** Error of the last action of this card (inline, ADR-0009). */
 		message?: string | null;
+		/** The failed request behind `message`, for "Details" (FP-1, ADR-0071). */
+		problem?: ProblemEntry | null;
 		onrun: () => void;
 		onpick: () => void;
 		/** "Stichwörter und Einstellungen …": the edit modal of the owner. */
@@ -192,6 +196,7 @@
 		: null}
 	hint={health.hint}
 	{message}
+	{problem}
 	{primary}
 	{menu}
 	{rename}

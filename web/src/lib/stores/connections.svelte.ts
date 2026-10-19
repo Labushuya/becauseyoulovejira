@@ -30,8 +30,15 @@ import {
 	subscribeConnection
 } from '$lib/data/connections';
 import type { RecordChange, Unsubscribe } from '$lib/data/realtime';
-import { toDataError } from '$lib/data/errors';
+import {
+	problemDetails,
+	problemOf,
+	reportedProblem,
+	toDataError,
+	withIntent
+} from '$lib/data/errors';
 import type { RequestOptions } from '$lib/data/options';
+import type { ProblemEntry } from '$lib/domain/problems';
 import {
 	labelError,
 	renamedText,
@@ -128,13 +135,45 @@ export function runResultTone(result: RunResult): FlagTone {
 	return result.status === 'error' ? 'error' : 'info';
 }
 
-export type ConnectionActionResult =
-	{ ok: true } | { ok: false; message: string | null; fields: Readonly<Record<string, string>> };
+/** Intent of "Verbindung anlegen" in the details of its failure (FP-1, ADR-0071). */
+const CONNECT_INTENT = 'Kanal verbinden';
+/** Intent of "Jetzt abrufen". */
+const RUN_INTENT = 'Kanal jetzt abrufen';
+
+/** One entry per answer, so the flag and the assistant show the same and the list takes it once. */
+const runProblems = new WeakMap<RunResult, ProblemEntry>();
+
+/**
+ * "Details" of a run the server reports as failed: "Jetzt abrufen" answers 200 with `status`
+ * "error" and the cleaned error of the run (FP-1, ADR-0071); null for every other result.
+ */
+export function runProblem(id: string, result: RunResult): ProblemEntry | null {
+	if (result.status !== 'error') return null;
+	const known = runProblems.get(result);
+	if (known !== undefined) return known;
+	const problem = reportedProblem({
+		intent: RUN_INTENT,
+		method: 'POST',
+		path: `/api/byl/connections/${encodeURIComponent(id)}/run`,
+		code: result.status,
+		message: result.error
+	});
+	runProblems.set(result, problem);
+	return problem;
+}
+
+/** A refusal of an action, with the failed request behind it for "Details" (FP-1, ADR-0071). */
+export interface ConnectionActionFailure {
+	ok: false;
+	message: string | null;
+	fields: Readonly<Record<string, string>>;
+	problem?: ProblemEntry;
+}
+
+export type ConnectionActionResult = { ok: true } | ConnectionActionFailure;
 
 /** Result of "Verbindung anlegen"; the assistant takes the new ID into its address. */
-export type ConnectionCreateResult =
-	| { ok: true; connection: Connection }
-	| { ok: false; message: string | null; fields: Readonly<Record<string, string>> };
+export type ConnectionCreateResult = { ok: true; connection: Connection } | ConnectionActionFailure;
 
 export class ConnectionsStore {
 	readonly #data: ConnectionsData;
@@ -151,6 +190,8 @@ export class ConnectionsStore {
 
 	#state = $state<LoadState>('idle');
 	#error = $state<string | null>(null);
+	/** The failed request behind `#error` (FP-1, ADR-0071). */
+	#errorProblem = $state.raw<ProblemEntry | null>(null);
 
 	#list = $derived(
 		[...this.#items.values()].sort((a, b) =>
@@ -176,6 +217,11 @@ export class ConnectionsStore {
 
 	get error(): string | null {
 		return this.#error;
+	}
+
+	/** The failed request behind `error`, for "Details"; null without one. */
+	get errorProblem(): ProblemEntry | null {
+		return this.#error === null ? null : this.#errorProblem;
 	}
 
 	status(id: string): SecretStatus | null {
@@ -212,6 +258,7 @@ export class ConnectionsStore {
 			this.#state = 'error';
 			this.#error =
 				failure.kind === 'not_found' ? CONNECTIONS_UNAVAILABLE_MESSAGE : failure.message;
+			this.#errorProblem = problemOf(failure);
 		} finally {
 			if (this.#controller === controller) this.#controller = null;
 		}
@@ -242,7 +289,7 @@ export class ConnectionsStore {
 
 	async create(draft: ConnectionDraft): Promise<ConnectionCreateResult> {
 		let created: Connection | null = null;
-		const result = await this.#act(async () => {
+		const result = await this.#act(CONNECT_INTENT, async () => {
 			const connection = await this.#data.create(draft);
 			created = connection;
 			this.#items.set(connection.id, connection);
@@ -307,7 +354,7 @@ export class ConnectionsStore {
 
 	/** Reads one connection again ("Erneut prüfen" while waiting for the first run). */
 	async refresh(id: string): Promise<ConnectionActionResult> {
-		return this.#act(async () => {
+		return this.#act('Kanal erneut prüfen', async () => {
 			this.#items.set(id, await this.#data.get(id));
 		});
 	}
@@ -318,7 +365,7 @@ export class ConnectionsStore {
 	}
 
 	async setEnabled(id: string, enabled: boolean): Promise<ConnectionActionResult> {
-		return this.#act(async () => {
+		return this.#act(enabled ? 'Kanal fortsetzen' : 'Kanal pausieren', async () => {
 			const updated = await this.#data.setEnabled(id, enabled);
 			this.#items.set(id, updated);
 			this.#notify(`„${updated.label}“ ${enabled ? 'läuft wieder' : 'ist pausiert'}.`);
@@ -336,7 +383,7 @@ export class ConnectionsStore {
 		const invalid = labelError(label);
 		if (invalid !== null) return invalid;
 		if (label.trim() === current.label) return null;
-		const result = await this.#act(async () => {
+		const result = await this.#act('Kanal umbenennen', async () => {
 			const updated = await this.#data.rename(id, label);
 			this.#items.set(id, updated);
 			this.#notify(renamedText(current.label, updated.label));
@@ -356,7 +403,7 @@ export class ConnectionsStore {
 		if (current === undefined) return null;
 		const projectId = project?.id ?? null;
 		if ((current.targetProjectId ?? null) === projectId) return null;
-		const result = await this.#act(async () => {
+		const result = await this.#act('Zielprojekt des Kanals speichern', async () => {
 			const updated = await this.#data.setTarget(id, projectId);
 			this.#items.set(id, updated);
 			this.#notify(targetSavedText(updated.label, project));
@@ -378,7 +425,7 @@ export class ConnectionsStore {
 	): Promise<ConnectionActionResult> {
 		const current = this.#items.get(id);
 		if (current === undefined) return { ok: false, message: null, fields: {} };
-		return this.#act(async () => {
+		return this.#act('Einstellungen des Kanals speichern', async () => {
 			const updated = await this.#data.saveSettings(current, settings);
 			this.#items.set(id, updated);
 			this.#notify(announcement);
@@ -396,7 +443,7 @@ export class ConnectionsStore {
 		announcement: string
 	): Promise<string | null> {
 		if (!this.#items.has(id)) return null;
-		const result = await this.#act(async () => {
+		const result = await this.#act('Repositories des Kanals speichern', async () => {
 			const updated = await this.#data.saveGitHub(id, settings);
 			this.#items.set(id, updated);
 			this.#notify(announcement);
@@ -417,7 +464,7 @@ export class ConnectionsStore {
 		announcement: string
 	): Promise<string | null> {
 		if (!this.#items.has(id)) return null;
-		const result = await this.#act(async () => {
+		const result = await this.#act('Ordner des Kanals speichern', async () => {
 			const updated = await this.#data.saveFolders(id, settings);
 			this.#items.set(id, updated);
 			this.#notify(announcement);
@@ -428,7 +475,7 @@ export class ConnectionsStore {
 
 	async remove(id: string): Promise<ConnectionActionResult> {
 		const label = this.#items.get(id)?.label ?? 'Die Verbindung';
-		return this.#act(async () => {
+		return this.#act('Kanal löschen', async () => {
 			await this.#data.remove(id);
 			this.#items.delete(id);
 			this.#status.delete(id);
@@ -451,10 +498,12 @@ export class ConnectionsStore {
 		const mail = this.#items.get(id)?.type === 'mail';
 		this.#running.set(id, true);
 		try {
-			return await this.#act(async () => {
+			return await this.#act(RUN_INTENT, async () => {
 				const result = await this.#data.run(id);
 				this.#lastRun.set(id, result);
-				if (announce) this.#notify(runResultText(label, result), runResultTone(result));
+				if (announce) {
+					this.#notify(runResultText(label, result), runResultTone(result), runProblem(id, result));
+				}
 				this.#items.set(id, await this.#data.get(id));
 				// The run of a mailbox tells whether the helper answers; the card follows at once.
 				if (mail) await this.#loadHelper({});
@@ -472,7 +521,8 @@ export class ConnectionsStore {
 	 */
 	async scan(id: string, action: 'start' | 'cancel'): Promise<ConnectionActionResult> {
 		const label = this.#items.get(id)?.label ?? 'Postfach';
-		return this.#act(async () => {
+		const intent = action === 'start' ? 'Postfach neu durchsuchen' : 'Durchsuchen abbrechen';
+		return this.#act(intent, async () => {
 			const result = await this.#data.scan(id, action);
 			const { text, tone } = scanResultText(label, result);
 			this.#notify(text, tone);
@@ -538,15 +588,19 @@ export class ConnectionsStore {
 		this.#error = null;
 	}
 
-	/** Result of an action as a flag (ADR-0025 section 8). */
-	#notify(title: string, tone: FlagTone = 'success'): void {
-		this.#flags.show({ tone, title });
+	/** Result of an action as a flag (ADR-0025 section 8); a failed run with its "Details". */
+	#notify(title: string, tone: FlagTone = 'success', problem: ProblemEntry | null = null): void {
+		this.#flags.show({ tone, title, ...(problem !== null && { problem }) });
 	}
 
-	async #act(run: () => Promise<void>): Promise<ConnectionActionResult> {
+	/**
+	 * Runs an action of the page; a refusal comes back with the texts for the fields or a message
+	 * and, for "Details", the failed request with `intent` (FP-1, ADR-0071).
+	 */
+	async #act(intent: string, run: () => Promise<void>): Promise<ConnectionActionResult> {
 		if (!this.#session.ensureValid()) return { ok: false, message: null, fields: {} };
 		try {
-			await run();
+			await withIntent(intent, run);
 			return { ok: true };
 		} catch (error) {
 			const failure = toDataError(error);
@@ -559,7 +613,8 @@ export class ConnectionsStore {
 			return {
 				ok: false,
 				message: Object.keys(fields).length > 0 ? null : failure.message,
-				fields
+				fields,
+				...problemDetails(failure)
 			};
 		}
 	}

@@ -40,6 +40,7 @@
 		type ParentChange,
 		type TagChangeNames
 	} from '$lib/domain/subtask-transfer-change';
+	import type { ProblemEntry } from '$lib/domain/problems';
 	import type { TicketSummary } from '$lib/domain/ticket';
 	import { insideModal } from '$lib/overlay/modal-context';
 	import type { SubtaskTransferStore } from '$lib/stores/subtask-transfer.svelte';
@@ -144,11 +145,16 @@
 	/** The server answered the transfer with "unknown route" (before the restart). */
 	let routeMissing = $state(false);
 
-	/** The state of one of the two requests (sub-tasks, series). */
+	/** The state of one of the two requests (sub-tasks, series), a failure with its "Details" (FP-1). */
 	type Part =
 		| { readonly state: 'idle' }
 		| { readonly state: 'done'; readonly text: string }
-		| { readonly state: 'failed'; readonly message: string; readonly retry: boolean };
+		| {
+				readonly state: 'failed';
+				readonly message: string;
+				readonly retry: boolean;
+				readonly problem: ProblemEntry | null;
+		  };
 	const IDLE: Part = { state: 'idle' };
 	let transferPart = $state.raw<Part>(IDLE);
 	let seriesPart = $state.raw<Part>(IDLE);
@@ -209,7 +215,12 @@
 			transferPart = IDLE;
 		} else if (result.message !== null) {
 			// 409: sending the same again cannot help, the dialog says to open it anew.
-			transferPart = { state: 'failed', message: result.message, retry: result.stale !== true };
+			transferPart = {
+				state: 'failed',
+				message: result.message,
+				retry: result.stale !== true,
+				problem: result.problem ?? null
+			};
 		} else {
 			transferPart = IDLE;
 		}
@@ -225,10 +236,12 @@
 			return;
 		}
 		const refusal = result.refused[0];
+		// The writes of the series come back as reasons, without the failed request (no "Details").
 		seriesPart = {
 			state: 'failed',
 			message: templateRefusedText(offer.title, refusal?.reason ?? CHANGE_TEXTS.seriesLost),
-			retry: true
+			retry: true,
+			problem: null
 		};
 	}
 
@@ -285,7 +298,7 @@
 		<SectionMessage tone="success" compact>{part.text}</SectionMessage>
 	{:else if part.state === 'failed' && locked && part.retry}
 		<!-- The other part is done: only this one goes again. -->
-		<SectionMessage tone="error" live>
+		<SectionMessage tone="error" live problem={part.problem}>
 			{part.message}
 			{#snippet actions()}
 				<button
@@ -298,7 +311,7 @@
 			{/snippet}
 		</SectionMessage>
 	{:else if part.state === 'failed'}
-		<SectionMessage tone="error" live>{part.message}</SectionMessage>
+		<SectionMessage tone="error" live problem={part.problem}>{part.message}</SectionMessage>
 	{/if}
 {/snippet}
 
@@ -311,7 +324,7 @@
 			{@render restartHint()}
 		{:else}
 			{#if support === 'failed'}
-				<SectionMessage tone="error" compact live>
+				<SectionMessage tone="error" compact live problem={store.supportFailure}>
 					{TRANSFER_TEXTS.problem(store.supportProblem ?? '')}
 					{#snippet actions()}
 						<button

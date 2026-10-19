@@ -149,7 +149,11 @@ describe('CatalogEditor: projects', () => {
 		expect(await editor.deleteProject(HOUSE)).toEqual({
 			ok: false,
 			message: 'Ein Projekt mit Tickets lässt sich nicht löschen. Bitte archivieren.',
-			fields: {}
+			fields: {},
+			// A refusal of the hook: the failed action with its "Details" (FP-1).
+			problem: expect.objectContaining({
+				outcome: expect.objectContaining({ code: 'id: validation_project_in_use' })
+			})
 		});
 		expect(catalog.projectById(HOUSE.id)).not.toBeNull();
 	});

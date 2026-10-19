@@ -35,9 +35,13 @@
 	import { checkSummary } from '$lib/domain/github';
 	import { DEFAULT_HOST_PLATFORM } from '$lib/domain/host-platform';
 	import { checkText } from '$lib/domain/notion';
+	import type { ProblemEntry } from '$lib/domain/problems';
 	import type { ProjectRef } from '$lib/domain/ticket';
 	import { currentNote, textForContext } from '$lib/guidance/texts';
-	import type { ConnectionsStore } from '$lib/stores/connections.svelte';
+	import {
+		runProblem as runProblemOf,
+		type ConnectionsStore
+	} from '$lib/stores/connections.svelte';
 	import type { GitHubStore } from '$lib/stores/github.svelte';
 	import { findHostStore } from '$lib/stores/host.svelte';
 	import type { NotionStore } from '$lib/stores/notion.svelte';
@@ -293,6 +297,8 @@
 
 	/** Telegram: error of the last switch of the answers in the chat (inline). */
 	let repliesError = $state<string | null>(null);
+	/** The failed request behind `repliesError`, for "Details" (FP-1, ADR-0071). */
+	let repliesProblem = $state.raw<ProblemEntry | null>(null);
 
 	async function saveReplies(change: TelegramRepliesChange) {
 		if (connection === null) return;
@@ -303,14 +309,17 @@
 			{ ...settingsDraftOf(connection), ...change },
 			telegramRepliesAnnouncement(connection.label, change)
 		);
-		if (!result.ok)
+		if (!result.ok) {
 			repliesError =
 				result.message ??
 				Object.values(result.fields)[0] ??
 				'Die Einstellung ließ sich nicht speichern.';
+			repliesProblem = result.problem ?? null;
+		}
 	}
 
 	let runError = $state<string | null>(null);
+	let runProblem = $state.raw<ProblemEntry | null>(null);
 	const lastRun = $derived(connection === null ? null : store.lastRun(connection.id));
 	const running = $derived(connection !== null && store.isRunning(connection.id));
 
@@ -319,7 +328,10 @@
 		hold();
 		runError = null;
 		const result = await store.runNow(connection.id, { announce: false });
-		if (!result.ok && result.message !== null) runError = result.message;
+		if (!result.ok && result.message !== null) {
+			runError = result.message;
+			runProblem = result.problem ?? null;
+		}
 	}
 
 	async function recheck() {
@@ -472,6 +484,7 @@
 				compact={lastRun.status !== 'ok'}
 				live
 				headingLevel={4}
+				problem={runProblemOf(connection.id, lastRun)}
 			>
 				{textForContext(runResultText(connection.label, lastRun))}
 				{#snippet actions()}
@@ -488,7 +501,9 @@
 			</SectionMessage>
 		{/if}
 		{#if runError !== null}
-			<SectionMessage tone="error" compact live>{textForContext(runError)}</SectionMessage>
+			<SectionMessage tone="error" compact live problem={runProblem}>
+				{textForContext(runError)}
+			</SectionMessage>
 		{/if}
 	{/if}
 {/snippet}
@@ -729,7 +744,9 @@
 			/>
 			<TelegramReplySwitches {connection} onchange={saveReplies} />
 			{#if repliesError !== null}
-				<SectionMessage tone="error" compact live>{repliesError}</SectionMessage>
+				<SectionMessage tone="error" compact live problem={repliesProblem}>
+					{repliesError}
+				</SectionMessage>
 			{/if}
 		{/if}
 		{@render runBlock()}

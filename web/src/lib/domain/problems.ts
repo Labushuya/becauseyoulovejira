@@ -15,9 +15,10 @@ export type ProblemSource = 'client' | 'server';
 
 /**
  * What came back: no connection, an answer with an error status, an answer the app could not
- * read, or an exception in the browser.
+ * read, an exception in the browser, or an answer that reports a failure itself (a channel whose
+ * run failed answers "Jetzt abrufen" with 200 and the cleaned error).
  */
-export type ProblemResult = 'network' | 'response' | 'answer' | 'exception';
+export type ProblemResult = 'network' | 'response' | 'answer' | 'exception' | 'reported';
 
 export interface ProblemOutcome {
 	readonly result: ProblemResult;
@@ -95,7 +96,7 @@ export const PROBLEM_TEXTS = Object.freeze({
 	copied: 'Kopiert.',
 	copyFailed: 'Kopieren war nicht möglich. Der Bericht ist markiert: mit Strg+C kopieren.',
 	listTitle: 'Fehler dieser Sitzung',
-	empty: 'In dieser Sitzung ist kein Fehler aufgetreten.',
+	noProblems: 'In dieser Sitzung ist kein Fehler aufgetreten.',
 	copyAll: 'Alle kopieren',
 	copiedAll: 'Alle kopiert.',
 	clear: 'Liste leeren',
@@ -103,7 +104,9 @@ export const PROBLEM_TEXTS = Object.freeze({
 	unknownApp: 'unbekannt',
 	network: 'Keine Verbindung zum Server',
 	answer: 'Unerwartete Antwort des Servers',
-	exception: 'Unerwartete Ausnahme im Browser'
+	exception: 'Unerwartete Ausnahme im Browser',
+	reported: 'Vom Server gemeldeter Fehler',
+	refused: 'Vom Server abgelehnt'
 });
 
 /** "Alle Fehler dieser Sitzung (3)". */
@@ -138,8 +141,10 @@ export function outcomeText(outcome: ProblemOutcome): string {
 			return PROBLEM_TEXTS.answer;
 		case 'exception':
 			return PROBLEM_TEXTS.exception;
+		case 'reported':
+			return PROBLEM_TEXTS.reported;
 		case 'response': {
-			if (outcome.status === null) return PROBLEM_TEXTS.answer;
+			if (outcome.status === null) return PROBLEM_TEXTS.refused;
 			const label = STATUS_LABELS[outcome.status];
 			return label === undefined ? `HTTP ${outcome.status}` : `HTTP ${outcome.status} (${label})`;
 		}
@@ -147,10 +152,12 @@ export function outcomeText(outcome: ProblemOutcome): string {
 }
 
 /**
- * Codes of the record API of PocketBase that only check one input (required, length, format,
- * value, date, address, uniqueness): a refusal with nothing but these is a hint at the field, not
- * a failed action, and gets no details (ADR-0071 §1). Refusals of the hooks (a conflict, a rule of
- * the app) are failed actions.
+ * Codes that only check one input: those of the record API of PocketBase (required, length,
+ * format, value, date, address, uniqueness) and the few checks of the form of an input in the
+ * hooks (the name of a variable, keywords, the reserved code TASK, the name of a connection). A
+ * refusal with nothing but these is a hint at the field, not a failed action, and gets no details
+ * (ADR-0071 §1). Every other refusal of the hooks (a conflict, a rule of the app) is a failed
+ * action.
  */
 export const INPUT_VALIDATION_CODES: ReadonlySet<string> = new Set([
 	'validation_required',
@@ -174,7 +181,12 @@ export const INPUT_VALIDATION_CODES: ReadonlySet<string> = new Set([
 	'validation_not_unique',
 	'validation_values_mismatch',
 	'validation_match_invalid',
-	'validation_in_invalid'
+	'validation_in_invalid',
+	'validation_secret_name',
+	'validation_keywords',
+	'validation_reserved_code',
+	'validation_connection_label',
+	'validation_connection_label_max'
 ]);
 
 /** Whether a refusal with these codes of fields is only a check of the input (no details). */
@@ -454,7 +466,13 @@ export function addProblem(entries: readonly ProblemEntry[], entry: ProblemEntry
 	return [merged, ...entries.slice(0, index), ...entries.slice(index + 1)];
 }
 
-const RESULTS: readonly ProblemResult[] = ['network', 'response', 'answer', 'exception'];
+const RESULTS: readonly ProblemResult[] = [
+	'network',
+	'response',
+	'answer',
+	'exception',
+	'reported'
+];
 
 const text = (value: unknown): value is string => typeof value === 'string';
 const textOrNull = (value: unknown): value is string | null => value === null || text(value);

@@ -10,7 +10,8 @@
 import type PocketBase from 'pocketbase';
 import { createContext } from 'svelte';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
-import { toDataError } from '$lib/data/errors';
+import { problemDetails, toDataError } from '$lib/data/errors';
+import type { ProblemEntry } from '$lib/domain/problems';
 import { assignToTicket, listTicketSources, originalFileUrl, releaseItem } from '$lib/data/inbox';
 import type { RequestOptions } from '$lib/data/options';
 import type { InboxItemSummary } from '$lib/domain/inbox';
@@ -43,7 +44,9 @@ export function ticketSourcesData(pb: PocketBase): TicketSourcesData {
 }
 
 /** Outcome of releasing a source or asking for its file. */
-export type SourceActionResult<T> = { ok: true; value: T } | { ok: false; message: string | null };
+/** A refusal carries the failed request behind its message for "Details" (FP-1, ADR-0071). */
+export type SourceActionResult<T> =
+	{ ok: true; value: T } | { ok: false; message: string | null; problem?: ProblemEntry };
 
 export class TicketSourcesStore {
 	readonly #data: TicketSourcesData;
@@ -59,6 +62,8 @@ export class TicketSourcesStore {
 	#mainSource = $state<string | null>(null);
 	#state = $state<LoadState>('idle');
 	#error = $state<string | null>(null);
+	/** The failed request behind `#error` (FP-1, ADR-0071). */
+	#errorProblem = $state.raw<ProblemEntry | null>(null);
 
 	#sorted = $derived(orderSources([...this.#items.values()], this.#mainSource, DEFAULT_LIST_ORDER));
 
@@ -93,6 +98,11 @@ export class TicketSourcesStore {
 
 	get error(): string | null {
 		return this.#error;
+	}
+
+	/** The failed request behind `error`, for "Details" (FP-1, ADR-0071). */
+	get errorProblem(): ProblemEntry | null {
+		return this.#error === null ? null : this.#errorProblem;
 	}
 
 	/** True for the main source of the open ticket (tickets.source_item); it is never released. */
@@ -225,7 +235,8 @@ export class TicketSourcesStore {
 			});
 			return { ok: true, value: moved };
 		} catch (error) {
-			return { ok: false, message: this.#failureMessage(error) };
+			const message = this.#failureMessage(error);
+			return { ok: false, message, ...(message !== null && problemDetails(error)) };
 		} finally {
 			this.#pending.delete(item.id);
 		}
@@ -248,7 +259,8 @@ export class TicketSourcesStore {
 			if (message !== null) {
 				this.#flags.show({
 					tone: 'error',
-					title: `„${item.title}“ ließ sich nicht lösen: ${message}`
+					title: `„${item.title}“ ließ sich nicht lösen: ${message}`,
+					...problemDetails(error)
 				});
 			}
 			return { ok: false, message };
@@ -266,7 +278,8 @@ export class TicketSourcesStore {
 				? { ok: false, message: 'Dieser Eintrag hat keine Originaldatei.' }
 				: { ok: true, value: url };
 		} catch (error) {
-			return { ok: false, message: this.#failureMessage(error) };
+			const message = this.#failureMessage(error);
+			return { ok: false, message, ...(message !== null && problemDetails(error)) };
 		}
 	}
 
@@ -292,6 +305,7 @@ export class TicketSourcesStore {
 			if (message === null) return;
 			this.#state = 'error';
 			this.#error = message;
+			this.#errorProblem = problemDetails(error).problem ?? null;
 		} finally {
 			if (this.#controller === controller) this.#controller = null;
 		}

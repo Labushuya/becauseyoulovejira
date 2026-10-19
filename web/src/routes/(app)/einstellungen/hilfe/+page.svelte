@@ -19,6 +19,7 @@
 	import RecurrenceHelp from '$lib/components/help/RecurrenceHelp.svelte';
 	import ScriptProblemsHelp from '$lib/components/help/ScriptProblemsHelp.svelte';
 	import ShortcutList from '$lib/components/help/ShortcutList.svelte';
+	import SessionProblemsEntry from '$lib/components/problems/SessionProblemsEntry.svelte';
 	import { PRIORITY_NUMBERS, PRIORITY_WORDS } from '$lib/domain/quick-syntax';
 	import { CONTEXT_TEXTS, RESTART_NEEDED } from '$lib/guidance/texts';
 	import { HELP_SECTIONS, helpHref } from '$lib/settings-sections';
@@ -1573,6 +1574,12 @@
 				</ul>
 			</details>
 		</div>
+	</section>
+
+	<!-- The errors of this tab (FP-1, ADR-0071 §5): for every account, kept small for FP-3. -->
+	<section id="fehler" aria-labelledby="fehler-title">
+		<h3 id="fehler-title">Fehler dieser Sitzung</h3>
+		<SessionProblemsEntry />
 	</section>
 
 	<section id="betrieb" aria-labelledby="betrieb-title">

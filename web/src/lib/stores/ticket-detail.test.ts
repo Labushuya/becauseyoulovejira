@@ -434,7 +434,11 @@ describe('creating', () => {
 		expect(await store.create(DRAFT, origin)).toEqual({
 			ok: false,
 			message: 'Dieser Eintrag wurde schon bearbeitet.',
-			fields: {}
+			fields: {},
+			// A refusal of the hook is a failed action with "Details" (FP-1), no hint at an input.
+			problem: expect.objectContaining({
+				outcome: expect.objectContaining({ status: 400 })
+			})
 		});
 	});
 
@@ -465,7 +469,8 @@ describe('creating', () => {
 		expect(await store.create(DRAFT)).toEqual({
 			ok: false,
 			message: expect.stringMatching(/Der Server hat mit einem Fehler geantwortet/),
-			fields: {}
+			fields: {},
+			problem: expect.objectContaining({ outcome: expect.objectContaining({ status: 400 }) })
 		});
 		expect(store.state).toBe('idle');
 	});
@@ -507,7 +512,10 @@ describe('project (E3 plan, T-13)', () => {
 		expect(await store.create(draft)).toEqual({
 			ok: false,
 			message: null,
-			fields: { project: 'Das Projekt ist archiviert.' }
+			fields: { project: 'Das Projekt ist archiviert.' },
+			problem: expect.objectContaining({
+				outcome: expect.objectContaining({ code: 'project: validation_project_archived' })
+			})
 		});
 	});
 
@@ -700,7 +708,8 @@ describe('TicketDetailStore: deleting', () => {
 
 		expect(result).toEqual({
 			ok: false,
-			message: expect.stringMatching(/Server nicht erreichbar/)
+			message: expect.stringMatching(/Server nicht erreichbar/),
+			problem: expect.objectContaining({ outcome: expect.objectContaining({ result: 'network' }) })
 		});
 		expect(list.remove).not.toHaveBeenCalled();
 		expect(store.ticket?.id).toBe(ID);
@@ -792,7 +801,11 @@ describe('ticking tasks of the description (ADR-0032 section 6)', () => {
 		data.update.mockRejectedValue(staleError());
 		data.get.mockResolvedValue(ticket({ description: TASKS, updated: LATER }));
 
-		expect(await store.toggleTask(0, true)).toEqual({ ok: false, message: TASK_STALE_MESSAGE });
+		expect(await store.toggleTask(0, true)).toEqual({
+			ok: false,
+			message: TASK_STALE_MESSAGE,
+			problem: expect.objectContaining({ outcome: expect.objectContaining({ result: 'response' }) })
+		});
 		expect(data.update).toHaveBeenCalledTimes(2);
 	});
 
@@ -811,7 +824,8 @@ describe('ticking tasks of the description (ADR-0032 section 6)', () => {
 
 		expect(await store.toggleTask(0, true)).toEqual({
 			ok: false,
-			message: DATA_ERROR_MESSAGES.server
+			message: DATA_ERROR_MESSAGES.server,
+			problem: expect.objectContaining({ outcome: expect.objectContaining({ status: 500 }) })
 		});
 
 		data.update.mockRejectedValueOnce(new DataError('session', { status: 401 }));
