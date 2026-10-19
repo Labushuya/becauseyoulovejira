@@ -173,7 +173,8 @@ describe('transfer', () => {
 		expect(await store.transfer(PARENT, REQUEST, ['priority'])).toEqual({
 			ok: false,
 			message: 'Das Hauptticket wurde inzwischen geändert. Bitte erneut öffnen.',
-			missing: false
+			missing: false,
+			stale: true
 		});
 		expect(flags).toEqual([]);
 	});

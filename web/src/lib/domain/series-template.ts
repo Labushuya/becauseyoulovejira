@@ -626,6 +626,28 @@ export function offerDescription(offers: readonly TemplateOffer[]): string {
 	return `Künftige Tickets von ${series} kommen weiter mit der bisherigen Vorlage (${fields.join(', ')}).`;
 }
 
+/** A rule that refused the fields of its offer, with the reason of the server. */
+export interface TemplateRefusal {
+	ruleId: string;
+	title: string;
+	reason: string;
+}
+
+/**
+ * The result of "Auch für künftige Tickets übernehmen" for the dialog "Übertragen …" (UE-2): how many
+ * rules took their fields, which refused, and whether the session ended on the way.
+ */
+export interface TemplateApplyResult {
+	applied: number;
+	refused: readonly TemplateRefusal[];
+	ended: boolean;
+}
+
+/** "Die Vorlage von „Müll“ wurde nicht geändert. Das Projekt ist archiviert." */
+export function templateRefusedText(title: string, reason: string): string {
+	return `Die Vorlage von „${title}“ wurde nicht geändert. ${reason}`;
+}
+
 /** Success flag of the action: "Vorlage von „Müll“ übernommen." or "Vorlagen von 2 Serien …". */
 export function appliedTitle(offers: readonly Pick<TemplateOffer, 'title'>[]): string {
 	return offers.length === 1

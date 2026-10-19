@@ -48,6 +48,7 @@ import {
 	type TemplateStatus
 } from '$lib/domain/series-template';
 import type { Status } from '$lib/domain/status';
+import { seriesChanges, type TicketChangeSink } from '$lib/domain/subtask-transfer-change';
 import {
 	compareSubtasks,
 	openBlocking,
@@ -260,6 +261,12 @@ export interface TicketListOptions {
 	 */
 	series?: SeriesChangeSink;
 	/**
+	 * Where a change of one ticket goes (UE-2): a cell, the check mark, the calendar and their
+	 * "Rückgängig". The layout passes the flag "Übertragen …", which leaves the rest to the offer of
+	 * the series; without it every change goes to `series` as before.
+	 */
+	changes?: TicketChangeSink;
+	/**
 	 * The own pins (ADR-0064): their open tickets stand in the section "Angeheftet" above the list,
 	 * whatever the filters, and not again below; without them nothing is pinned.
 	 */
@@ -296,6 +303,8 @@ export class TicketListStore {
 	readonly #movedDue = new SvelteMap<string, string>();
 	readonly #flags: FlagSink;
 	readonly #series: SeriesChangeSink;
+	/** Changes of one ticket by the user in this tab (UE-2). */
+	readonly #changes: TicketChangeSink;
 	/** The own pins (ADR-0064), null without them. */
 	readonly #pins: PinnedSource | null;
 	/** Target state of running check mark requests, keyed by ticket ID. */
@@ -448,6 +457,7 @@ export class TicketListStore {
 			reads,
 			flags = SILENT_FLAGS,
 			series = NO_SERIES,
+			changes = seriesChanges(series),
 			pins,
 			assignees = () => NO_ASSIGNEES
 		}: TicketListOptions = {}
@@ -463,6 +473,7 @@ export class TicketListStore {
 		this.#reads = reads ?? null;
 		this.#flags = flags;
 		this.#series = series;
+		this.#changes = changes;
 	}
 
 	/**
@@ -683,11 +694,13 @@ export class TicketListStore {
 	/**
 	 * Answers the question (ADR-0033 section 2): completes the ticket anyway (`force`) or with its
 	 * blocking sub-tasks (`complete_children`, atomically in the hook). The flag offers
-	 * "Rückgängig" for both, which also reopens the sub-tasks completed along.
+	 * "Rückgängig" for both, which also reopens the sub-tasks completed along. The answer settled
+	 * the sub-tasks for this status, so the flag "Übertragen …" leaves the status out (UE-2).
 	 */
 	async confirmCompletion(choice: CompletionChoice): Promise<void> {
 		const question = this.#completion;
 		if (question === null || this.#completing || !this.#session.ensureValid()) return;
+		const before = this.find(question.id);
 		const children = completedChildren(this.openBlockingOf(question.id), choice);
 		this.#completing = true;
 		this.#completionError = null;
@@ -696,6 +709,7 @@ export class TicketListStore {
 			const saved = await this.#data.setDone(question.id, true, choice);
 			this.#completion = null;
 			this.completed(saved, question.previousStatus, children);
+			if (before !== null) this.#changes.changed({ before, after: saved, answered: ['status'] });
 		} catch (error) {
 			const message = this.#failureMessage(error);
 			if (message !== null) this.#completionError = message;
@@ -954,6 +968,7 @@ export class TicketListStore {
 				this.upsert(saved);
 				this.#flags.show({ tone: 'success', title: `${saved.key} wieder offen.` });
 			}
+			this.#changes.changed({ before: ticket, after: saved });
 		} catch (error) {
 			const open = done ? openChildrenOf(error) : null;
 			if (open !== null) this.#askCompletion(ticket, open.count, open.keys);
@@ -976,7 +991,8 @@ export class TicketListStore {
 	 * question about open sub-tasks (ADR-0033 section 2), with "Rückgängig" in the flag. A refusal
 	 * comes as an error flag with the reason, the cell keeps its value. Resolves to true when saved.
 	 * A changed priority, project or tags of an open ticket of a series brings the flag "Nur dieses
-	 * Ticket geändert." with "Auch für künftige Tickets übernehmen" (plan WV), as in the panel.
+	 * Ticket geändert." with "Auch für künftige Tickets übernehmen" (plan WV), as in the panel; a
+	 * ticket with open sub-tasks the flag "Übertragen …" instead (UE-2).
 	 */
 	async changeField(id: string, patch: TicketPatch): Promise<boolean> {
 		const ticket = this.find(id);
@@ -989,7 +1005,7 @@ export class TicketListStore {
 		try {
 			const saved = await this.#data.update(id, patch);
 			this.upsert(saved);
-			this.#series.offerTemplate([{ before: ticket, after: saved }]);
+			this.#changes.changed({ before: ticket, after: saved });
 			return true;
 		} catch (error) {
 			const failure = toDataError(error);
@@ -1040,6 +1056,7 @@ export class TicketListStore {
 			}
 		});
 		this.#movedDue.set(id, flagId);
+		this.#changes.changed({ before: ticket, after: saved });
 		return true;
 	}
 
@@ -1049,6 +1066,7 @@ export class TicketListStore {
 		if (this.#pending.has(saved.id) || !this.#session.ensureValid()) return;
 		const restored = await this.#saveDue(saved, previous, 'zurückgesetzt');
 		if (restored === null) return;
+		this.#changes.changed({ before: saved, after: restored, undo: true });
 		this.#flags.show({
 			tone: 'success',
 			title:
@@ -1119,6 +1137,8 @@ export class TicketListStore {
 		try {
 			saved = await this.#data.update(id, { status: undoable.previousStatus });
 			this.upsert(saved);
+			// It was done until now; a done ticket has left the open list, so it is not looked up.
+			this.#changes.changed({ before: { ...saved, status: 'done' }, after: saved, undo: true });
 		} catch (error) {
 			this.#fail(error, `${undoable.key} konnte nicht zurückgesetzt werden.`, {
 				id,
@@ -1553,6 +1573,7 @@ export class TicketListStore {
 				tone: 'success',
 				title: `${saved.key} ist wieder offen, als normales Ticket.`
 			});
+			this.#changes.changed({ before: ticket, after: saved });
 			return true;
 		} catch (error) {
 			this.#fail(error, `${ticket.key} konnte nicht geändert werden.`);

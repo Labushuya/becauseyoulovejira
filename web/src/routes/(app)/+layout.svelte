@@ -115,6 +115,10 @@
 		subtaskTransferData
 	} from '$lib/stores/subtask-transfer.svelte';
 	import {
+		TransferOfferStore,
+		setTransferOfferStore
+	} from '$lib/stores/subtask-transfer-offer.svelte';
+	import {
 		TicketFollowUpStore,
 		setTicketFollowUpStore,
 		ticketFollowUpData
@@ -205,6 +209,24 @@
 	// ticket of a series in the panel, a cell or a bulk action offers the same for the template of
 	// its rule (plan WV).
 	const rules = setRecurrenceStore(new RecurrenceStore(recurrenceData(pb), auth, flags));
+	// "Übertragen …" after a change of a ticket with open sub-tasks (UE-2, ADR-0070 addendum UE-2):
+	// panel, full view, cells, check mark and calendar report their changes here; it shows the flag
+	// or leaves the change to the offer of the series of the rules. Its action opens the ticket where
+	// it is not shown (like "Öffnen" of other flags), and its section "Unteraufgaben" the dialog.
+	const transferOffers = setTransferOfferStore(
+		new TransferOfferStore({
+			flags,
+			subtasksOf: (id) => tickets.subtasksOf(id),
+			series: rules,
+			support: () => subtaskTransfer.support,
+			reveal: async (id) => {
+				if (detail.id !== id) {
+					await goto(ticketHrefIn(id, page.route.id, page.url, openMode.effective));
+				}
+			}
+		})
+	);
+	afterNavigate(() => transferOffers.navigated());
 	// The own pinned tickets (ADR-0064) of every area, live in every tab of the account; they come
 	// before the list, which shows them in the section "Angeheftet" instead of below.
 	const pins = setPinStore(new PinStore(pinData(pb), auth, flags));
@@ -224,6 +246,7 @@
 			reads: readsData(pb),
 			flags,
 			series: rules,
+			changes: transferOffers,
 			pins,
 			assignees: () => assigneeDirectory.context
 		})
@@ -253,14 +276,14 @@
 	$effect(() => untrack(() => trash.connect(trashLive(pb))));
 	// Replacing a pinned comment offers "Rückgängig" as a flag (ADR-0044).
 	const detail = setTicketDetailStore(
-		new TicketDetailStore(ticketDetailData(pb), auth, tickets, trash, rules, flags)
+		new TicketDetailStore(ticketDetailData(pb), auth, tickets, trash, rules, flags, transferOffers)
 	);
 	// "Ticket duplizieren" (ADR-0045): one request, the result as a flag with the way back. Whether the
 	// server takes the status of the new sub-tasks comes from the same answer as "Neues Ticket" (UT-2).
 	setTicketDuplicateStore(new TicketDuplicateStore(ticketDuplicateData(pb), auth, flags, detail));
 	// "Auf Unteraufgaben übertragen …" (ADR-0070): one request, the result as a flag; the device keeps
 	// the last confirmed fields. Whether the server knows the route comes from the same answer.
-	setSubtaskTransferStore(
+	const subtaskTransfer = setSubtaskTransferStore(
 		new SubtaskTransferStore(subtaskTransferData(pb), auth, flags, detail, window)
 	);
 	// "Zum Tagesplan" in the menu "•••" of every ticket (ADR-0065): into the plan of today of its own
@@ -397,6 +420,7 @@
 		catalog.rescope();
 		tickets.rescope();
 		rules.rescope();
+		transferOffers.reset();
 		inbox.rescope();
 		trash.rescope();
 		if (cause === 'link') {

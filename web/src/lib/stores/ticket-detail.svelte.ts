@@ -43,6 +43,7 @@ import { isCharmKey } from '$lib/domain/charms';
 import { isProjectColor } from '$lib/domain/colors';
 import { isTicketKind, kindOf } from '$lib/domain/day-plan';
 import { NO_SERIES, type SeriesChangeSink } from '$lib/domain/series-template';
+import { seriesChanges, type TicketChangeSink } from '$lib/domain/subtask-transfer-change';
 import { isPriority, isStatus, type Status } from '$lib/domain/status';
 import { openBlocking, type CompletionChoice } from '$lib/domain/subtasks';
 import type {
@@ -273,8 +274,11 @@ export class TicketDetailStore implements CommentPinControl {
 	readonly #session: SessionGuard;
 	readonly #list: TicketListSync;
 	readonly #trash: TrashUndo | null;
-	/** Offers to take a change of an open ticket of a series over into its template (plan WV). */
-	readonly #series: SeriesChangeSink;
+	/**
+	 * Where a saved change of the shown ticket goes: the offer for the template of its series (plan
+	 * WV) or, for a ticket with open sub-tasks, the flag "Übertragen …" (UE-2).
+	 */
+	readonly #changes: TicketChangeSink;
 	/** "Angepinnter Kommentar ersetzt." with "Rückgängig" (ADR-0044 section 2). */
 	readonly #flags: FlagSink;
 
@@ -333,13 +337,14 @@ export class TicketDetailStore implements CommentPinControl {
 		list: TicketListSync,
 		trash: TrashUndo | null = null,
 		series: SeriesChangeSink = NO_SERIES,
-		flags: FlagSink = SILENT_FLAGS
+		flags: FlagSink = SILENT_FLAGS,
+		changes: TicketChangeSink = seriesChanges(series)
 	) {
 		this.#data = data;
 		this.#session = session;
 		this.#list = list;
 		this.#trash = trash;
-		this.#series = series;
+		this.#changes = changes;
 		this.#flags = flags;
 	}
 
@@ -408,7 +413,8 @@ export class TicketDetailStore implements CommentPinControl {
 	/**
 	 * Answers the question: completes the shown ticket anyway (`force`) or with its blocking
 	 * sub-tasks (`complete_children`). The list shows the flag with "Rückgängig", which restores the
-	 * sub-tasks as well. A failure stands at the field "status" and ends the question.
+	 * sub-tasks as well. A failure stands at the field "status" and ends the question. The answer
+	 * settled the sub-tasks for this status, so the flag "Übertragen …" leaves the status out (UE-2).
 	 */
 	async confirmCompletion(choice: CompletionChoice): Promise<boolean> {
 		const ticket = this.#ticket;
@@ -422,6 +428,7 @@ export class TicketDetailStore implements CommentPinControl {
 			this.#completion = null;
 			this.#list.completed(saved, ticket.status, children);
 			if (saved.id === this.#id) this.upsert(saved);
+			this.#changes.changed({ before: ticket, after: saved, answered: ['status'] });
 			return true;
 		} catch (error) {
 			const failure = toDataError(error);
@@ -472,6 +479,7 @@ export class TicketDetailStore implements CommentPinControl {
 			this.#list.upsert(saved);
 			this.#list.announce(`${saved.key} ist wieder offen, als normales Ticket.`);
 			if (saved.id === this.#id) this.upsert(saved);
+			this.#changes.changed({ before: ticket, after: saved });
 			return true;
 		} catch (error) {
 			const failure = toDataError(error);
@@ -868,7 +876,8 @@ export class TicketDetailStore implements CommentPinControl {
 			}
 			// Title, description, priority or project of an open ticket of a series: only this
 			// ticket changed; the flag offers the same for the next ones (status and due date never).
-			this.#series.offerTemplate([{ before: ticket, after: saved }]);
+			// A ticket with open sub-tasks gets the flag "Übertragen …" instead (UE-2).
+			this.#changes.changed({ before: ticket, after: saved });
 			return true;
 		} catch (error) {
 			const failure = toDataError(error);
@@ -1184,7 +1193,7 @@ export class TicketDetailStore implements CommentPinControl {
 			const saved = await this.#data.update(ticket.id, { tags });
 			this.#list.upsert(saved);
 			if (saved.id === this.#id) this.upsert(saved);
-			this.#series.offerTemplate([{ before: ticket, after: saved }]);
+			this.#changes.changed({ before: ticket, after: saved });
 			return true;
 		} catch (error) {
 			const failure = toDataError(error);

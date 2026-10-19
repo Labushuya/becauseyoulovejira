@@ -45,6 +45,7 @@ import {
 	templateChanges,
 	templateOf,
 	templateOffers,
+	templateRefusedText,
 	ticketTemplate,
 	trimmedSubtasks,
 	type RuleTemplate,
@@ -52,7 +53,9 @@ import {
 	type SeriesChangeSink,
 	type SeriesParent,
 	type SubtaskStatusProblem,
+	type TemplateApplyResult,
 	type TemplateOffer,
+	type TemplateRefusal,
 	type TemplateStatus,
 	type TemplateSubtask
 } from '$lib/domain/series-template';
@@ -863,11 +866,45 @@ export class RecurrenceStore implements SeriesChangeSink {
 		this.#flags.dismiss(id);
 	}
 
+	/**
+	 * Whether the flag `id` of `offerTemplate` still stands (UE-2): a later change of the same ticket
+	 * with open sub-tasks takes it into the flag "Übertragen …" instead of showing a second flag.
+	 */
+	isTemplateOffer(id: string): boolean {
+		return id === this.#templateOffer;
+	}
+
 	/** The action of the offer: each rule gets its fields; one flag for the result. */
 	async #applyOffers(
 		offers: readonly Pick<TemplateOffer, 'ruleId' | 'title' | 'patch'>[]
 	): Promise<void> {
-		if (!this.#session.ensureValid()) return;
+		await this.#writeOffers(offers, (refusal) =>
+			this.#flags.show({ tone: 'error', title: templateRefusedText(refusal.title, refusal.reason) })
+		);
+	}
+
+	/**
+	 * "Auch für künftige Tickets übernehmen" in the dialog "Übertragen …" (UE-2, ADR-0070 addendum
+	 * UE-2): the same writes as the action of the flag, with its success flag, but a refusal comes back
+	 * to the dialog instead of an error flag, so it can say what worked and offer "Erneut versuchen".
+	 */
+	async applyTemplateOffers(
+		offers: readonly Pick<TemplateOffer, 'ruleId' | 'title' | 'patch'>[]
+	): Promise<TemplateApplyResult> {
+		const refused: TemplateRefusal[] = [];
+		const outcome = await this.#writeOffers(offers, (refusal) => refused.push(refusal));
+		return { ...outcome, refused };
+	}
+
+	/**
+	 * Each rule gets its fields; one success flag for those that took them. A refusal goes to
+	 * `refuse`; an aborted request counts as neither; the end of the session stops it.
+	 */
+	async #writeOffers(
+		offers: readonly Pick<TemplateOffer, 'ruleId' | 'title' | 'patch'>[],
+		refuse: (refusal: TemplateRefusal) => void
+	): Promise<{ applied: number; ended: boolean }> {
+		if (!this.#session.ensureValid()) return { applied: 0, ended: true };
 		const applied: Pick<TemplateOffer, 'title'>[] = [];
 		for (const offer of offers) {
 			try {
@@ -877,17 +914,15 @@ export class RecurrenceStore implements SeriesChangeSink {
 				const failure = toDataError(error);
 				if (failure.kind === 'session') {
 					this.#session.logout();
-					return;
+					return { applied: applied.length, ended: true };
 				}
 				if (failure.kind === 'aborted') continue;
 				const reason = Object.values(failure.fields)[0]?.message ?? failure.message;
-				this.#flags.show({
-					tone: 'error',
-					title: `Die Vorlage von „${offer.title}“ wurde nicht geändert. ${reason}`
-				});
+				refuse({ ruleId: offer.ruleId, title: offer.title, reason });
 			}
 		}
 		if (applied.length > 0) this.#notify(appliedTitle(applied));
+		return { applied: applied.length, ended: false };
 	}
 
 	/**

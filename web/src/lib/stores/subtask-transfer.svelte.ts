@@ -52,9 +52,13 @@ export function subtaskTransferData(pb: PocketBase): SubtaskTransferData {
  */
 export type TransferSupport = 'ready' | 'missing' | 'pending' | 'failed';
 
-/** The result of a transfer; `missing` when the server does not know the route yet. */
+/**
+ * The result of a transfer; `missing` when the server does not know the route yet, `stale` when the
+ * parent changed meanwhile (409: sending again cannot help, the dialog has to be opened anew).
+ */
 export type TransferResult =
-	{ ok: true; outcome: TransferOutcome } | { ok: false; message: string | null; missing: boolean };
+	| { ok: true; outcome: TransferOutcome }
+	| { ok: false; message: string | null; missing: boolean; stale?: boolean };
 
 type PrefStorage = Pick<Storage, 'getItem' | 'setItem'>;
 
@@ -147,20 +151,22 @@ export class SubtaskTransferStore {
 
 	/**
 	 * Transfers the chosen fields of `parent` (`chosen` are the checked fields of the dialog, which the
-	 * device remembers without the project). On success the flag names the number of changed
-	 * sub-tasks; a refusal comes back as a message (409: the parent changed meanwhile; a sub-task a hook
-	 * refused with its key), a server without the route as `missing`. Without a session nothing is sent.
+	 * device remembers without the project; after a change, UE-2, it remembers nothing: `remember`
+	 * false). On success the flag names the number of changed sub-tasks; a refusal comes back as a
+	 * message (409: the parent changed meanwhile, `stale`; a sub-task a hook refused with its key), a
+	 * server without the route as `missing`. Without a session nothing is sent.
 	 */
 	async transfer(
 		parent: { id: string; key: string },
 		request: TransferRequest,
-		chosen: Iterable<TransferField>
+		chosen: Iterable<TransferField>,
+		remember = true
 	): Promise<TransferResult> {
 		if (!this.#session.ensureValid()) return { ok: false, message: null, missing: false };
 		try {
 			const outcome = await this.#data.transfer(parent.id, request);
 			if (outcome === null) return { ok: false, message: null, missing: true };
-			this.#remember(chosen);
+			if (remember) this.#remember(chosen);
 			this.#flags.show({ tone: 'success', title: transferredText(outcome.changed) });
 			return { ok: true, outcome };
 		} catch (error) {
@@ -170,7 +176,7 @@ export class SubtaskTransferStore {
 				return { ok: false, message: null, missing: false };
 			}
 			if (failure.status === 409) {
-				return { ok: false, message: TRANSFER_STALE_MESSAGE, missing: false };
+				return { ok: false, message: TRANSFER_STALE_MESSAGE, missing: false, stale: true };
 			}
 			if (failure.kind === 'not_found') {
 				return {
