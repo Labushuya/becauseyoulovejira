@@ -33,11 +33,15 @@ var HISTORY_FIELD = 'assignee';
 // account behind a membership that ends (the same name as in lib/ticket-service.js). INHERITED_KEY
 // marks a new sub-task that takes the assignee of its ticket in the same request ("Neues Ticket",
 // UT-1): the person hears of the ticket once, not of every sub-task (ADR-0068 addendum UT-1).
+// BATCH_KEY marks the saves of a route that tells each person once for all of them after its commit
+// ("Auf Unteraufgaben übertragen …", UE-1, ADR-0070 §5): the notice stays on the record for the read
+// row and the route, but the after-success hook of the single ticket sends nothing.
 var NOTICE_KEY = '@assignee_notice';
 var CLEANUP_KEY = '@assignee_cleanup';
 var NEXT_SENT_KEY = '@assignee_next_sent';
 var ACTOR_KEY = '@actor';
 var INHERITED_KEY = '@assignee_inherited';
+var BATCH_KEY = '@assignee_batch';
 
 function hasField(app, collection, field) {
   try {
@@ -160,6 +164,7 @@ function prepareTicket(txApp, record, original, actor) {
   }
 }
 
+/** The assignment by someone else a save of `record` made ({ to, by }), null without one. */
 function noticeOf(record) {
   var raw = record.get(NOTICE_KEY);
   if (!raw) {
@@ -190,34 +195,31 @@ function afterTicketUpdate(txApp, record) {
   }
 }
 
-/**
- * After the commit of a create or an update: tells the open tabs of the new assignee that someone else
- * gave him the ticket ("Anna hat dir HAUS-12 zugewiesen."). The message carries the ticket, its key,
- * title and area and who it was (ID and name); only his own tabs get it. Never throws.
- */
-function notifyAssigned(app, record) {
-  var notice = noticeOf(record);
-  if (notice === null) {
-    return;
-  }
+function nameOf(app, userId) {
   try {
-    var name = '';
-    try {
-      name = app.findRecordById(USERS, notice.by).getString('name');
-    } catch (err) {
-      name = '';
-    }
-    var message = new SubscriptionMessage({
-      name: TOPIC,
-      data: JSON.stringify({
-        ticket: record.id,
-        key: record.getString('key'),
-        title: record.getString('title'),
-        scope: record.getString('scope'),
-        by: notice.by,
-        by_name: name
-      })
-    });
+    return app.findRecordById(USERS, userId).getString('name');
+  } catch (err) {
+    return '';
+  }
+}
+
+// The message of one ticket: the ticket, its key, title and area and who it was (ID and name).
+function payloadOf(app, record, by) {
+  return {
+    ticket: record.id,
+    key: record.getString('key'),
+    title: record.getString('title'),
+    scope: record.getString('scope'),
+    by: by,
+    by_name: nameOf(app, by)
+  };
+}
+
+// Sends `payload` on the topic to the open tabs of the account `to` only. Never throws: a notice that
+// does not go out is logged, the change itself stays.
+function sendTo(app, to, payload) {
+  try {
+    var message = new SubscriptionMessage({ name: TOPIC, data: JSON.stringify(payload) });
     var clients = app.subscriptionsBroker().clients();
     for (var id in clients) {
       var client = clients[id];
@@ -225,10 +227,60 @@ function notifyAssigned(app, record) {
         continue;
       }
       var auth = client.get('auth');
-      if (!auth || auth.collection().name !== USERS || String(auth.id) !== notice.to) {
+      if (!auth || auth.collection().name !== USERS || String(auth.id) !== to) {
         continue;
       }
       client.send(message);
+    }
+  } catch (err) {
+    app.logger().warn('byl-assignee: Hinweis an offene Tabs nicht gesendet', 'error', String(err));
+  }
+}
+
+/**
+ * After the commit of a create or an update: tells the open tabs of the new assignee that someone else
+ * gave him the ticket ("Anna hat dir HAUS-12 zugewiesen."). The message carries the ticket, its key,
+ * title and area and who it was (ID and name); only his own tabs get it. A save of a route that tells
+ * the person itself (BATCH_KEY) sends nothing here. Never throws.
+ */
+function notifyAssigned(app, record) {
+  var notice = noticeOf(record);
+  if (notice === null || record.get(BATCH_KEY)) {
+    return;
+  }
+  sendTo(app, notice.to, payloadOf(app, record, notice.by));
+}
+
+/**
+ * After the commit of a route that saved several sub-tasks of `parent` with BATCH_KEY (UE-1, ADR-0070
+ * §5): every person hears once. `entries` are { notice, record } of the saves with an assignment by
+ * someone else. One sub-task for a person goes out as the message of a single ticket; several as one
+ * message of the first of them with `count` and the parent (`parent`, `parent_key`, `parent_title`),
+ * which a tab shows as "Anna hat dir 3 Unteraufgaben von HAUS-12 zugewiesen." (a tab of before reads
+ * it as the first sub-task). Never throws.
+ */
+function notifyAssignedTogether(app, entries, parent) {
+  try {
+    var order = [];
+    var byPerson = {};
+    for (var i = 0; i < entries.length; i++) {
+      var to = entries[i].notice.to;
+      if (!Object.prototype.hasOwnProperty.call(byPerson, to)) {
+        byPerson[to] = [];
+        order.push(to);
+      }
+      byPerson[to].push(entries[i]);
+    }
+    for (var j = 0; j < order.length; j++) {
+      var list = byPerson[order[j]];
+      var payload = payloadOf(app, list[0].record, list[0].notice.by);
+      if (list.length > 1 && parent) {
+        payload.count = list.length;
+        payload.parent = parent.id;
+        payload.parent_key = parent.getString('key');
+        payload.parent_title = parent.getString('title');
+      }
+      sendTo(app, order[j], payload);
     }
   } catch (err) {
     app.logger().warn('byl-assignee: Hinweis an offene Tabs nicht gesendet', 'error', String(err));
@@ -442,13 +494,16 @@ module.exports = {
   NOTICE_KEY: NOTICE_KEY,
   CLEANUP_KEY: CLEANUP_KEY,
   INHERITED_KEY: INHERITED_KEY,
+  BATCH_KEY: BATCH_KEY,
   ready: ready,
   rulesReady: rulesReady,
   memberIds: memberIds,
   skipsTicketHooks: skipsTicketHooks,
   prepareTicket: prepareTicket,
   afterTicketUpdate: afterTicketUpdate,
+  noticeOf: noticeOf,
   notifyAssigned: notifyAssigned,
+  notifyAssignedTogether: notifyAssignedTogether,
   dropAssignee: dropAssignee,
   clearedHistory: clearedHistory,
   rememberNextSent: rememberNextSent,

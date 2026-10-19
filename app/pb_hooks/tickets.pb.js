@@ -187,6 +187,20 @@ routerAdd(
   $apis.requireAuth('users')
 );
 
+// "Auf Unteraufgaben übertragen …" (UE-1, ADR-0070): JSON { expected_updated, fields, targets }; gives
+// the chosen sub-tasks the values of the chosen fields of the ticket, read by the server, in one
+// transaction or not at all; 409 when the ticket changed after the dialog read it. Every sub-task runs
+// through the model hooks above; an assignee hears once of all of them (lib/subtask-transfer-service.js).
+routerAdd(
+  'POST',
+  '/api/byl/tickets/{id}/subtasks/transfer',
+  function (e) {
+    var result = require(`${__hooks}/lib/subtask-transfer-service.js`).transfer(e, e.request.pathValue('id'));
+    return e.json(200, result);
+  },
+  $apis.requireAuth('users')
+);
+
 // What "Duplizieren" into the other area needs first (MV-2): ?to=household|private answers the
 // active projects of the target and the tags of the original by name there. Nothing is written.
 routerAdd(
