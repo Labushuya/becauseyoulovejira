@@ -95,6 +95,26 @@ describe('CI workflow and ruleset for main', () => {
 		}
 	});
 
+	// MO-1a (ADR-0073): the smoke test of the phone frame in the browser is a step of the Linux job,
+	// after the build it needs (app/pb_public) and the Chrome of the runner image; never on Windows.
+	it('runs the smoke test of the phone frame only in the Linux job, after the build', () => {
+		const section = (id) => {
+			const start = workflow.indexOf(`\n  ${id}:\n`);
+			const next = workflow.slice(start + 1).search(/\n {2}[A-Za-z0-9_-]+:\n/);
+			return next === -1 ? workflow.slice(start) : workflow.slice(start, start + 1 + next);
+		};
+		const linux = section('linux');
+		const windows = section('build');
+		expect(linux).toContain('name: Linux build and test');
+		expect(windows).toContain('name: Check, lint, build and test');
+		expect(linux).toMatch(/- name: Mobile smoke test\n {8}run: npm run test:mobile\n/);
+		expect(linux.indexOf('run: npm run test:mobile')).toBeGreaterThan(linux.indexOf('run: npm run build'));
+		expect(windows).not.toContain('test:mobile');
+		expect(section('changes')).not.toContain('test:mobile');
+		// No download of browsers anywhere in the workflow.
+		expect(workflow).not.toMatch(/playwright install/);
+	});
+
 	it('runs on pull requests to main and cancels a superseded run', () => {
 		expect(workflow).toMatch(/\non:\n {2}pull_request:\n {4}branches: \[main\]\n/);
 		expect(workflow).toMatch(/\nconcurrency:\n {2}group: ci-\$\{\{ github\.event\.pull_request\.number \|\| github\.ref \}\}\n {2}cancel-in-progress: true\n/);

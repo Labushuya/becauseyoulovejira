@@ -181,3 +181,10 @@ jobs:
 
       - name: Test
         run: npm test
+
+      # Smoke test of the phone frame (MO-1a, ADR-0073) with @playwright/test in the Google Chrome
+      # of the runner image (channel "chrome", no browser download), against an own disposable
+      # instance with app/pb_public of the step "Build". Only in this job: the Windows job runs the
+      # same suites and is the longer one already.
+      - name: Mobile smoke test
+        run: npm run test:mobile

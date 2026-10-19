@@ -23,6 +23,10 @@ app/byl-config.json
 .env.*
 !.env.example
 coverage/
+# Output of the smoke test of the phone frame (MO-1a, playwright.config.mjs) and of other reporters
+test-results/
+playwright-report/
+blob-report/
 .DS_Store
 Thumbs.db
 .tmp/
