@@ -1216,6 +1216,20 @@
 						beim Absender, sonst Eingang), Tickets nach dem Zeitpunkt der Verknüpfung. Die
 						Hauptquelle bleibt vorn, und nach dem Umschalten beginnt jede Liste wieder auf Seite 1.
 					</li>
+					<li>
+						Ab sechs Quellen (Einträge und Quell-Tickets zusammen) steht über den Listen das Feld
+						„Quellen durchsuchen“. Es findet Einträge nach Titel, Kanal und Verbindung, Datum,
+						Absender, Chat oder Adresse und Quell-Tickets nach Key und Titel. Groß- und
+						Kleinschreibung, Akzente und Umlaut-Punkte zählen nicht („marz“ findet „März“), und
+						mehrere Wörter müssen alle vorkommen, gleich wo. Neben dem Feld steht, wie viele passen
+						(„3 von 12“); jede Suche beginnt auf Seite 1, die Reihenfolge bleibt. Esc oder „Suche
+						zurücksetzen“ leert sie, ein anderes Ticket beginnt ohne Suche.
+					</li>
+					<li>
+						Dieselbe Suche steht in „Quelle hinzufügen“ → „Eintrag aus dem Eingang …“ und bei den
+						Quellen von „Neues Ticket“; sie durchsucht alle neuen Einträge des Eingangs. Gewählte
+						Einträge bleiben gewählt, auch wenn eine Suche sie gerade ausblendet.
+					</li>
 				</ul>
 			</details>
 			<details>

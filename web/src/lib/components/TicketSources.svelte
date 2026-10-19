@@ -1,10 +1,18 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import type { ResolvedPathname } from '$app/types';
 	import { withConnectionName } from '$lib/domain/connections';
 	import { formatBerlinDateTime } from '$lib/domain/format';
 	import type { InboxItemSummary } from '$lib/domain/inbox';
 	import type { ListOrder } from '$lib/domain/list-order';
+	import {
+		hasSourceSearch,
+		matchesSourceWords,
+		noSourceMatchText,
+		searchHitsText
+	} from '$lib/domain/source-search';
 	import { orderOrigins, type TicketOrigin } from '$lib/domain/ticket-origins';
+	import { matchesWords, searchWords } from '$lib/domain/ticket-picker';
 	import {
 		findSourceOrder,
 		sourceOrderStore,
@@ -39,6 +47,7 @@
 	import type { PagedNoun } from '$lib/domain/paged-list';
 	import AddSourcesDialog from './AddSourcesDialog.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
+	import ListSearch from './ListSearch.svelte';
 	import MoveSourceDialog from './MoveSourceDialog.svelte';
 	import PagedList from './PagedList.svelte';
 	import EmptyState from './guidance/EmptyState.svelte';
@@ -76,6 +85,13 @@
 	// source stays first. Changing it starts every list on page 1 again and closes an open
 	// "Anderem Ticket zuordnen …"; a source arriving through realtime takes its place in the order
 	// while the page stays.
+	// Since QS-2 (ADR-0031 addendum N) a search stands above the lists once there is more than one
+	// page of sources (entries and source tickets together): entries by title, channel with the
+	// name of the connection, date, sender, chat or address, source tickets by key and title, with
+	// the words and the normalisation of the ticket picker. It narrows both lists, starts them on
+	// page 1, keeps the order and closes an open "Anderem Ticket zuordnen …" like paging; without
+	// a hit "Suche zurücksetzen" empties it and puts the focus back into the field. Another ticket
+	// starts without a search.
 	let {
 		ticket,
 		store,
@@ -101,8 +117,6 @@
 
 	const orderFromContext = findSourceOrder() ?? sourceOrderStore(null);
 	const view = $derived(givenOrder ?? orderFromContext);
-	/** The lists belong to the ticket and the order: changing either starts on page 1 again. */
-	const listKey = $derived(`${ticket.id}:${view.order}`);
 
 	/** Names of the entries of both lists, for their count and the buttons of their pages. */
 	const ENTRY_NOUN: PagedNoun = { one: 'Quelle', other: 'Quellen' };
@@ -189,6 +203,61 @@
 		store.ticketId === ticket.id ? orderSources(store.items, ticket.sourceItem, view.order) : []
 	);
 
+	/**
+	 * The search text (QS-2). Typing overrides it (a writable $derived); another ticket, the one
+	 * before included, derives it anew and so starts without a search.
+	 */
+	let searchText = $derived.by(() => {
+		void ticket.id;
+		return '';
+	});
+	let searchInput = $state<HTMLInputElement>();
+	/** Entries and source tickets together, before the search. */
+	const total = $derived(items.length + ticketSources.length);
+	const searchable = $derived(hasSourceSearch(total));
+	/** Only a field that is shown narrows the lists. */
+	const query = $derived(searchable ? searchText : '');
+	const words = $derived(searchWords(query));
+	const shownItems = $derived(
+		words.length === 0
+			? items
+			: items.filter((item) =>
+					matchesSourceWords(item, words, connectionNames?.nameOf(item.connectionId) ?? null)
+				)
+	);
+	const shownTickets = $derived(
+		words.length === 0
+			? ticketSources
+			: ticketSources.filter((origin) => matchesWords(origin, words))
+	);
+	const hits = $derived(shownItems.length + shownTickets.length);
+	const searchCount = $derived(words.length > 0 && hits > 0 ? searchHitsText(hits, total) : '');
+	const searchSaid = $derived(
+		words.length === 0 ? '' : hits > 0 ? searchCount : noSourceMatchText(query)
+	);
+	/**
+	 * The lists belong to the ticket, the order and the search: changing any of them starts on
+	 * page 1 again.
+	 */
+	const listKey = $derived(`${ticket.id}:${view.order}:${words.join(' ')}`);
+
+	function setSearch(text: string) {
+		searchText = text;
+	}
+
+	/** A new search leaves the entry of an open "Anderem Ticket zuordnen …" like paging. */
+	function searched() {
+		moving = null;
+	}
+
+	/** "Suche zurücksetzen" of the empty result: every source again, the focus in the field. */
+	async function resetSearch() {
+		setSearch('');
+		searched();
+		await tick();
+		searchInput?.focus();
+	}
+
 	async function download(item: InboxItemSummary) {
 		message = null;
 		const result = await store.originalUrl(item);
@@ -264,12 +333,36 @@
 				: 'Mails, Nachrichten oder Links aus dem Eingang lassen sich mit diesem Ticket verknüpfen.'}
 		/>
 	{:else}
-		{#if items.length + ticketSources.length > 1}
-			<OrderSwitch label="Reihenfolge der Quellen" order={view.order} onchange={chooseOrder} />
+		{#if total > 1}
+			<div class="tools">
+				{#if searchable}
+					<ListSearch
+						bind:query={() => query, setSearch}
+						bind:input={searchInput}
+						label="Quellen durchsuchen"
+						placeholder="Titel, Absender, Kanal oder Key"
+						count={searchCount}
+						announcement={searchSaid}
+						onsearch={searched}
+					/>
+				{/if}
+				<div class="order-slot">
+					<OrderSwitch label="Reihenfolge der Quellen" order={view.order} onchange={chooseOrder} />
+				</div>
+			</div>
 		{/if}
-		{#if items.length > 0}
+		{#if words.length > 0 && hits === 0}
+			<EmptyState size="compact" headingLevel={4} title={noSourceMatchText(query)}>
+				{#snippet secondary()}
+					<button class="button-secondary" type="button" onclick={() => void resetSearch()}>
+						Suche zurücksetzen
+					</button>
+				{/snippet}
+			</EmptyState>
+		{/if}
+		{#if shownItems.length > 0}
 			<PagedList
-				{items}
+				items={shownItems}
 				key={(item) => item.id}
 				label="Quellen aus dem Eingang"
 				noun={ENTRY_NOUN}
@@ -431,9 +524,9 @@
 				{/snippet}
 			</PagedList>
 		{/if}
-		{#if ticketSources.length > 0}
+		{#if shownTickets.length > 0}
 			<PagedList
-				items={ticketSources}
+				items={shownTickets}
 				key={(origin) => origin.link}
 				label="Quell-Tickets"
 				noun={TICKET_NOUN}
@@ -563,6 +656,20 @@
 	.hint {
 		font-size: var(--font-size-control);
 		color: var(--color-text-muted);
+	}
+
+	/* The search and the switch of the order in one row (QS-2); the switch stays at the right,
+	   alone as before and on a line of its own when the row wraps. */
+	.tools {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+		align-items: center;
+		min-width: 0;
+	}
+
+	.order-slot {
+		margin-inline-start: auto;
 	}
 
 	.source {

@@ -719,3 +719,179 @@ describe('TicketSources in order (QS-1)', () => {
 		expect(position()).toBe('Seite 1 von 2 · 7 Quellen');
 	});
 });
+
+// The search of the section (QS-2, ADR-0031 addendum N): from more than one page of sources, with
+// the words and the normalisation of the ticket picker; every search starts on page 1 and keeps
+// the order. Source tickets are searched in ticket-origins.test.ts.
+describe('TicketSources with a search (QS-2)', () => {
+	const NEXT = 'Weiter zur nächsten Seite der Quellen';
+	const field = () =>
+		screen.queryByRole<HTMLInputElement>('searchbox', { name: 'Quellen durchsuchen' });
+	const pressed = (name: string) =>
+		screen.getByRole('button', { name }).getAttribute('aria-pressed');
+	/** What the field names as its description: the hits next to it. */
+	const described = () => {
+		const id = field()?.getAttribute('aria-describedby');
+		return id ? (document.getElementById(id)?.textContent ?? null) : null;
+	};
+	/** The polite live region of the search. */
+	const said = () =>
+		field()?.closest('.list-search')?.querySelector('[aria-live="polite"]')?.textContent ?? '';
+
+	async function type(text: string) {
+		await fireEvent.input(field() as HTMLInputElement, { target: { value: text } });
+	}
+
+	afterEach(() => {
+		window.localStorage.clear();
+	});
+
+	it('shows the field only from more than five sources, with a label', async () => {
+		const { store } = await setup([MAIN, ...more(4)]);
+		expect(field()).toBeNull();
+		const [sixth] = more(1, 'six', 'Sechste');
+		store.upsert(sixth as InboxItemSummary);
+		await vi.waitFor(() => expect(field()).toBeTruthy());
+		const label = document.querySelector(`label[for="${field()?.id}"]`);
+		expect(label?.textContent?.trim()).toBe('Quellen durchsuchen');
+		expect(field()?.getAttribute('placeholder')).toBe('Titel, Absender, Kanal oder Key');
+		// The search and the switch of the order share one row above the lists.
+		const tools = field()?.closest('.tools') as HTMLElement;
+		expect(within(tools).getByRole('group', { name: 'Reihenfolge der Quellen' })).toBeTruthy();
+	});
+
+	it('narrows by title, sender, chat, address, channel and date, without case and umlaut dots', async () => {
+		await setup([MAIN, CHAT, LINK, ...more(3)]);
+		await type('MARZ shop');
+		expect(titles()).toEqual(['Rechnung März']);
+		expect(described()).toBe('1 von 6');
+		await vi.waitFor(() => expect(said()).toBe('1 von 6'), { timeout: 2000 });
+
+		await type('familie');
+		expect(titles()).toEqual(['Nachricht chat00000000001']);
+		await type('example.com/artikel');
+		expect(titles()).toEqual(['Artikel']);
+		await type('24.09.2026 mail-datei');
+		expect(titles()).toEqual(['Rechnung März']);
+		// Every word, each anywhere: the Telegram messages, not the mail or the link.
+		await type('telegram nachricht');
+		expect(titles()).toEqual(['Nachricht chat00000000001']);
+		await type('telegram');
+		expect(titles()).toHaveLength(4);
+		expect(described()).toBe('4 von 6');
+	});
+
+	it('starts on page 1 after a search and keeps the order chosen', async () => {
+		await setup([MAIN, ...more(11)], [], false, sourceOrderStore(window));
+		await fireEvent.click(screen.getByRole('button', { name: 'Älteste zuerst' }));
+		await fireEvent.click(screen.getByRole('button', { name: NEXT }));
+		expect(position()).toBe('Seite 2 von 3 · 12 Quellen');
+
+		await type('quelle');
+		expect(position()).toBe('Seite 1 von 3 · 11 Quellen');
+		expect(titles()).toEqual(['Quelle 1', 'Quelle 2', 'Quelle 3', 'Quelle 4', 'Quelle 5']);
+		expect(pressed('Älteste zuerst')).toBe('true');
+		expect(described()).toBe('11 von 12');
+
+		// Paging inside the hits, then the other order: page 1 again, the search stays.
+		await fireEvent.click(screen.getByRole('button', { name: NEXT }));
+		expect(titles()).toEqual(['Quelle 6', 'Quelle 7', 'Quelle 8', 'Quelle 9', 'Quelle 10']);
+		await fireEvent.click(screen.getByRole('button', { name: 'Neueste zuerst' }));
+		expect(field()?.value).toBe('quelle');
+		expect(titles()).toEqual(['Quelle 11', 'Quelle 10', 'Quelle 9', 'Quelle 8', 'Quelle 7']);
+		expect(position()).toBe('Seite 1 von 3 · 11 Quellen');
+
+		// A narrower search after paging: page 1, here the only page.
+		await fireEvent.click(screen.getByRole('button', { name: NEXT }));
+		await type('rechnung');
+		expect(titles()).toEqual(['Rechnung März']);
+		expect(screen.queryByRole('group', { name: 'Seiten der Quellen' })).toBeNull();
+	});
+
+	it('says when no source matches and resets with "Suche zurücksetzen", the focus in the field', async () => {
+		await setup([MAIN, ...more(6)]);
+		await type('  Mahnung ');
+		expect(screen.queryByRole('list', { name: 'Quellen aus dem Eingang' })).toBeNull();
+		expect(screen.getByRole('heading', { name: 'Keine Quelle passt zu „Mahnung“' })).toBeTruthy();
+		expect(described()).toBeNull();
+		await vi.waitFor(() => expect(said()).toBe('Keine Quelle passt zu „Mahnung“'), {
+			timeout: 2000
+		});
+		// The switch of the order stays, the search would still keep it.
+		expect(screen.getByRole('group', { name: 'Reihenfolge der Quellen' })).toBeTruthy();
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Suche zurücksetzen' }));
+		expect(field()?.value).toBe('');
+		expect(titles()).toHaveLength(5);
+		expect(position()).toBe('Seite 1 von 2 · 7 Quellen');
+		await vi.waitFor(() => expect(document.activeElement).toBe(field()));
+		await vi.waitFor(() => expect(said()).toBe(''), { timeout: 2000 });
+	});
+
+	it('empties the search on Escape first and lets Escape through when it is empty', async () => {
+		await setup([MAIN, ...more(6)]);
+		await type('rechnung');
+		expect(titles()).toHaveLength(1);
+		// fireEvent answers false when the event was cancelled (consumed).
+		expect(await fireEvent.keyDown(field() as HTMLInputElement, { key: 'Escape' })).toBe(false);
+		expect(field()?.value).toBe('');
+		expect(titles()).toHaveLength(5);
+		expect(await fireEvent.keyDown(field() as HTMLInputElement, { key: 'Escape' })).toBe(true);
+	});
+
+	it('closes "Anderem Ticket zuordnen …" when the search changes', async () => {
+		await setup([MAIN, ...more(6)], [], true);
+		await fireEvent.click(
+			screen.getByRole('button', { name: '„Quelle 5“ anderem Ticket zuordnen …' })
+		);
+		expect(screen.getByRole('region', { name: 'Anderem Ticket zuordnen' })).toBeTruthy();
+		// The entry stays among the hits on page 1; the search alone closes its area.
+		await type('quelle');
+		expect(titles()).toContain('Quelle 5');
+		expect(screen.queryByRole('region', { name: 'Anderem Ticket zuordnen' })).toBeNull();
+	});
+
+	it('takes a source from realtime in when it matches; the page and the count follow', async () => {
+		const { store } = await setup([MAIN, ...more(6)]);
+		await type('rechnung');
+		expect(titles()).toEqual(['Rechnung März']);
+		store.upsert(
+			item('mail00000000077', { title: 'Rechnung April', created: '2026-09-26 08:00:00.000Z' })
+		);
+		store.upsert(item('mail00000000078', { title: 'Lieferschein' }));
+		await vi.waitFor(() => expect(titles()).toEqual(['Rechnung März', 'Rechnung April']));
+		expect(described()).toBe('2 von 9');
+	});
+
+	it('starts another ticket without a search, also the ticket before again', async () => {
+		const data = {
+			list: vi.fn<TicketSourcesData['list']>(async () => [MAIN, ...more(6)]),
+			link: vi.fn<TicketSourcesData['link']>(),
+			release: vi.fn<TicketSourcesData['release']>(),
+			originalUrl: vi.fn<TicketSourcesData['originalUrl']>()
+		} satisfies TicketSourcesData;
+		const store = new TicketSourcesStore(
+			data,
+			{ ensureValid: () => true, logout: vi.fn() },
+			new FlagStore()
+		);
+		store.open(TICKET.id, TICKET.sourceItem);
+		const { rerender } = render(TicketSources, {
+			props: { ticket: TICKET, store, candidates: [], picker: PICKER.source }
+		});
+		await vi.waitFor(() => expect(store.state).toBe('ready'));
+		await type('rechnung');
+		expect(titles()).toEqual(['Rechnung März']);
+
+		const other = { id: 'ticket000000002', key: 'TASK-5', sourceItem: MAIN.id };
+		store.open(other.id, other.sourceItem);
+		await rerender({ ticket: other });
+		await vi.waitFor(() => expect(titles()).toHaveLength(5));
+		expect(field()?.value).toBe('');
+
+		store.open(TICKET.id, TICKET.sourceItem);
+		await rerender({ ticket: TICKET });
+		await vi.waitFor(() => expect(titles()).toHaveLength(5));
+		expect(field()?.value).toBe('');
+	});
+});
