@@ -1,12 +1,24 @@
 <script lang="ts">
-	import { normalizeTitle, type InboxItemSummary } from '$lib/domain/inbox';
+	import { withConnectionName } from '$lib/domain/connections';
+	import type { InboxItemSummary } from '$lib/domain/inbox';
+	import { matchesSourceWords, noEntryMatchText, searchHitsText } from '$lib/domain/source-search';
 	import { sourceChannelLabel, sourceOrigin, sourceWhen } from '$lib/domain/sources';
+	import { searchWords } from '$lib/domain/ticket-picker';
+	import { findConnectionNames } from '$lib/stores/connection-names.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
+	import ListSearch from './ListSearch.svelte';
 
-	// Choosing new entries of the inbox as sources of a ticket (ADR-0031 section 7): a search over title,
-	// sender, chat and address and one checkbox per entry with its channel, date and origin. One building
-	// block for "Quelle hinzufügen …" of a ticket and "Neues Ticket" (NT-1). `chosen` is replaced as a
-	// whole on every change.
+	// Choosing new entries of the inbox as sources of a ticket (ADR-0031 section 7): a search and one
+	// checkbox per entry with its channel (with the name of its connection), date and origin. One
+	// building block for "Quelle hinzufügen …" of a ticket and "Neues Ticket" (NT-1). `chosen` is
+	// replaced as a whole on every change.
+	// Since QS-2 (ADR-0031 addendum N) the search compares like every search of the app (the words
+	// and the normalisation of the ticket picker, `matchesSourceWords`): title, channel and
+	// connection, date, sender, chat and address, without case, accents and umlaut dots, every word
+	// somewhere. The new entries are all loaded (InboxStore, in full like the open tickets) and
+	// follow realtime, so the search sees every one of them and no request is added. It says "3 von
+	// 12" next to the field and once typing pauses; Escape empties it first. Chosen entries stay
+	// chosen while a search hides them.
 	let {
 		candidates,
 		chosen = $bindable([]),
@@ -25,17 +37,28 @@
 	} = $props();
 
 	const uid = $props.id();
-	const ids = { search: `${uid}-search`, error: `${uid}-error` };
+	const ids = { list: `${uid}-list`, error: `${uid}-error` };
+	/** Names of the connections (ADR-0026, addendum KK-3); outside the (app) layout none. */
+	const connectionNames = findConnectionNames();
 
 	let query = $state('');
 
-	const shown = $derived.by(() => {
-		const needle = normalizeTitle(query);
-		if (needle === '') return candidates;
-		return candidates.filter((item) =>
-			normalizeTitle(`${item.title} ${sourceOrigin(item)}`).includes(needle)
-		);
-	});
+	const words = $derived(searchWords(query));
+	const shown = $derived(
+		words.length === 0
+			? candidates
+			: candidates.filter((item) => matchesSourceWords(item, words, nameOf(item)))
+	);
+	const count = $derived(
+		words.length > 0 && shown.length > 0 ? searchHitsText(shown.length, candidates.length) : ''
+	);
+	const announcement = $derived(
+		words.length === 0 ? '' : shown.length > 0 ? count : noEntryMatchText(query)
+	);
+
+	function nameOf(item: InboxItemSummary): string | null {
+		return connectionNames?.nameOf(item.connectionId) ?? null;
+	}
 
 	function toggle(id: string, on: boolean) {
 		chosen = on
@@ -46,48 +69,45 @@
 </script>
 
 <div class="entries">
-	<span class="search-field search">
-		<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-			<circle cx="7" cy="7" r="4.25" />
-			<path d="M10.25 10.25L13.5 13.5" />
-		</svg>
-		<input
-			id={ids.search}
-			type="search"
-			autocomplete="off"
-			spellcheck="false"
-			aria-label="Einträge durchsuchen"
-			placeholder="Suchen"
-			bind:value={query}
-		/>
-	</span>
+	<ListSearch
+		bind:query
+		label="Einträge durchsuchen"
+		placeholder="Titel, Absender, Kanal oder Datum"
+		{count}
+		{announcement}
+		controls={ids.list}
+	/>
 	<fieldset aria-describedby={error ? ids.error : undefined}>
 		<legend>{legend}</legend>
-		{#if shown.length === 0}
-			<p class="hint" role="status">Keine Treffer.</p>
-		{:else}
-			<ul class="candidates">
-				{#each shown as item (item.id)}
-					<li>
-						<label>
-							<input
-								type="checkbox"
-								checked={chosen.includes(item.id)}
-								onchange={(event) => toggle(item.id, event.currentTarget.checked)}
-							/>
-							<span class="text">
-								<span class="title">{item.title}</span>
-								<span class="meta">
-									{[sourceChannelLabel(item), sourceWhen(item), sourceOrigin(item)]
-										.filter((part) => part !== '')
-										.join(' · ')}
-								</span>
-							</span>
-						</label>
-					</li>
-				{/each}
-			</ul>
+		{#if words.length > 0 && shown.length === 0}
+			<p class="hint">{noEntryMatchText(query)}</p>
 		{/if}
+		<!-- Always there, also empty, so the field can name the list it narrows. -->
+		<ul class="candidates" id={ids.list}>
+			{#each shown as item (item.id)}
+				<li>
+					<label>
+						<input
+							type="checkbox"
+							checked={chosen.includes(item.id)}
+							onchange={(event) => toggle(item.id, event.currentTarget.checked)}
+						/>
+						<span class="text">
+							<span class="title">{item.title}</span>
+							<span class="meta">
+								{[
+									withConnectionName(sourceChannelLabel(item), nameOf(item)),
+									sourceWhen(item),
+									sourceOrigin(item)
+								]
+									.filter((part) => part !== '')
+									.join(' · ')}
+							</span>
+						</span>
+					</label>
+				</li>
+			{/each}
+		</ul>
 	</fieldset>
 	{#if error}
 		<p class="field-error" id={ids.error}><ErrorIcon /><span>{error}</span></p>
@@ -99,10 +119,6 @@
 		display: grid;
 		gap: 0.75rem;
 		min-width: 0;
-	}
-
-	.search {
-		width: 100%;
 	}
 
 	fieldset {

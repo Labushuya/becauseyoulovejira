@@ -365,6 +365,90 @@ describe('order of source tickets and follow-ups (QS-1)', () => {
 	});
 });
 
+// The search of the section (QS-2, ADR-0031 addendum N) over entries and source tickets together:
+// source tickets by key and title like the ticket picker, the follow-ups stay as they are.
+describe('search over entries and source tickets (QS-2)', () => {
+	const field = () =>
+		screen.queryByRole<HTMLInputElement>('searchbox', { name: 'Quellen durchsuchen' });
+	const tickets = () => screen.queryByRole('list', { name: 'Quell-Tickets' });
+	const entries = () => screen.queryByRole('list', { name: 'Quellen aus dem Eingang' });
+
+	async function type(value: string) {
+		await fireEvent.input(field() as HTMLInputElement, { target: { value } });
+	}
+
+	const mails = (count: number) =>
+		Array.from({ length: count }, (_, index) => ({
+			...MAIL,
+			id: `item${String(index + 1).padStart(11, '0')}`,
+			title: `Mail ${index + 1}`,
+			created: `2026-09-25 08:0${index}:00.000Z`
+		}));
+
+	it('counts entries and source tickets together for the field', async () => {
+		await setup(origins({ sources: numbered(2, 1) }), { items: mails(3) });
+		expect(field()).toBeNull();
+		cleanup();
+		await setup(origins({ sources: numbered(3, 1) }), { items: mails(3) });
+		expect(field()).toBeTruthy();
+	});
+
+	it('finds source tickets by key and title, without case and umlaut dots, beside the entries', async () => {
+		await setup(
+			origins({
+				sources: [
+					origin('tick00000000001', 'HAUS-3', { title: 'Heizung prüfen' }),
+					...numbered(3, 10)
+				]
+			}),
+			{ items: [{ ...MAIL, id: 'item00000000099', title: 'Rechnung Heizung' }, ...mails(2)] }
+		);
+		await type('HEIZUNG');
+		expect(keysIn(tickets() as HTMLElement)).toEqual(['HAUS-3']);
+		expect(within(entries() as HTMLElement).getAllByRole('listitem')).toHaveLength(1);
+		expect(text(field()?.closest('.list-search') as HTMLElement)).toContain('2 von 7');
+
+		await type('prufen haus-3');
+		expect(keysIn(tickets() as HTMLElement)).toEqual(['HAUS-3']);
+		expect(entries()).toBeNull();
+		await type('haus-1');
+		expect(keysIn(tickets() as HTMLElement)).toEqual(['HAUS-12', 'HAUS-11', 'HAUS-10']);
+
+		// Only entries match: the list of source tickets leaves.
+		await type('mail');
+		expect(tickets()).toBeNull();
+		expect(within(entries() as HTMLElement).getAllByRole('listitem')).toHaveLength(2);
+	});
+
+	it('pages the source tickets found from page 1 and leaves the follow-ups alone', async () => {
+		await setup(origins({ sources: numbered(12, 1), followUps: numbered(3, 20) }), {
+			withFollowUps: true
+		});
+		await fireEvent.click(
+			screen.getByRole('button', { name: 'Weiter zur nächsten Seite der Quell-Tickets' })
+		);
+		expect(keysIn(tickets() as HTMLElement)).toEqual([
+			'HAUS-7',
+			'HAUS-6',
+			'HAUS-5',
+			'HAUS-4',
+			'HAUS-3'
+		]);
+		await type('ticket haus');
+		expect(keysIn(tickets() as HTMLElement)).toEqual([
+			'HAUS-12',
+			'HAUS-11',
+			'HAUS-10',
+			'HAUS-9',
+			'HAUS-8'
+		]);
+		await type('haus-2');
+		expect(keysIn(tickets() as HTMLElement)).toEqual(['HAUS-2']);
+		const followUps = screen.getByRole('list', { name: 'Folge-Tickets' });
+		expect(keysIn(followUps)).toEqual(['HAUS-22', 'HAUS-21', 'HAUS-20']);
+	});
+});
+
 describe('"Quelle hinzufügen → Ticket"', () => {
 	const self = pickerTicket({ id: TICKET.id, key: 'TASK-4', title: 'Dieses' });
 	const linked = pickerTicket({ id: 'tick00000000001', key: 'HAUS-3', title: 'Schon Quelle' });
