@@ -1095,6 +1095,21 @@
 						Meldung.
 					</li>
 					<li>
+						Änderst du an einem Ticket mit offenen Unteraufgaben Fälligkeit, Priorität, Status,
+						Zuständigkeit, Tags oder Projekt, fragt eine Meldung unten links etwa „Fälligkeit und
+						Priorität von HAUS-12 geändert. Auch für die Unteraufgaben?“. Sie bleibt stehen, bis du
+						sie nutzt oder schließt; weitere Änderungen am selben Ticket kommen dazu, und was du
+						zurücknimmst, fällt wieder heraus. „Übertragen …“ öffnet den Dialog mit genau den
+						geänderten Feldern. Eine geänderte Fälligkeit geht als gleiches Datum oder um denselben
+						Abstand verschoben („+3 Tage“) an die Unteraufgaben; Unteraufgaben ohne Fälligkeit
+						bleiben dabei ohne. Bei Tags gehen nur die eben hinzugefügten und entfernten mit. Gehört
+						das Ticket zu einer Wiederholung, steht im Dialog „Auch für künftige Tickets
+						übernehmen“; mit dem Ziel „Keine“ änderst du nur die Vorlage. Klappt ein Teil nicht,
+						sagt der Dialog, was geklappt hat, und bietet „Erneut versuchen“ an. Hat die Frage
+						„Unteraufgaben mit erledigen“ oder „Trotzdem erledigen“ den Status schon geklärt, fragt
+						die Meldung nicht noch einmal danach.
+					</li>
+					<li>
 						Gehört das übergeordnete Ticket zu einer Wiederholung, steht im Detail der Unteraufgabe
 						etwa „Teil von HAUS-7 · wiederholt sich jeden Montag“, dazu „aus der Vorlage – wird mit
 						jedem Termin neu angelegt“ oder „nur für diesen Termin“, wenn sich das sicher sagen
