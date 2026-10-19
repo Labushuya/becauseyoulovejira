@@ -42,6 +42,7 @@
 		withCalendarQuery
 	} from '$lib/ticket-links';
 	import ErrorIcon from '../ErrorIcon.svelte';
+	import ProblemDetails from '../problems/ProblemDetails.svelte';
 	import FilterBar from '../FilterBar.svelte';
 	import SectionMessage from '../guidance/SectionMessage.svelte';
 	import SectionBar from '../SectionBar.svelte';
@@ -322,6 +323,7 @@
 				Erneut versuchen
 			</button>
 		</p>
+		<ProblemDetails problem={tickets.openErrorProblem} />
 	{/if}
 	{#if done.state === 'error' && done.error}
 		<p class="alert-error" role="alert">

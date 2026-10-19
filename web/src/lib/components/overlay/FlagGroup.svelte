@@ -3,12 +3,14 @@
 	import { flagOutlets, type FlagHost } from '$lib/overlay/flag-outlets.svelte';
 	import type { FlagMessage, FlagStore } from '$lib/stores/flags.svelte';
 	import ErrorIcon from '../ErrorIcon.svelte';
+	import ProblemDetails from '../problems/ProblemDetails.svelte';
 
 	// Flags bottom left (ADR-0025 section 8; plan UI-Konsistenz, package UI-5): the newest on top,
 	// each with icon, title, optional text, at most one action and the × "Benachrichtigung
-	// schließen". Two live regions (polite for success and info, assertive for errors) announce
-	// every new flag; the focus never moves. The clock of the store stops while the pointer or the
-	// focus is on the flags and while the tab is hidden.
+	// schließen"; an error of a failed action ends with its row "Details" (FP-1, ADR-0071). Two live
+	// regions (polite for success and info, assertive for errors) announce every new flag; the
+	// focus never moves. The clock of the store stops while the pointer or the focus is on the flags
+	// and while the tab is hidden.
 	// Where (addendum 18, package FL-1): the app layout renders this group after `main`, so the
 	// keyboard reaches it after the page; every modal renders one as a direct child of its <dialog>,
 	// after its content. Only the output that flag-outlets names shows the section: the topmost open
@@ -166,6 +168,7 @@
 									{flag.action.label}
 								</button>
 							{/if}
+							<ProblemDetails problem={flag.problem} />
 						</div>
 						<button
 							class="button-icon"

@@ -37,6 +37,7 @@
 		type GitHubRepoSummary,
 		type GitHubSettings
 	} from '$lib/domain/github';
+	import type { ProblemEntry } from '$lib/domain/problems';
 	import { projectChoiceLabel } from '$lib/domain/project-tree';
 	import { connectionAnchor } from '$lib/domain/sync-all';
 	import type { ProjectRef } from '$lib/domain/ticket';
@@ -73,6 +74,7 @@
 		running,
 		lastRun = null,
 		message = null,
+		problem = null,
 		projects = [],
 		others = [],
 		onrun,
@@ -93,6 +95,8 @@
 		lastRun?: RunResult | null;
 		/** Error of the last action of this card (inline, ADR-0009). */
 		message?: string | null;
+		/** The failed request behind `message`, for "Details" (FP-1, ADR-0071). */
+		problem?: ProblemEntry | null;
 		/** Every project of the catalog, archived ones included (target projects). */
 		projects?: readonly ProjectRef[];
 		/** Names of the other connections, for the note about a name that is taken. */
@@ -332,6 +336,7 @@
 	{info}
 	hint={health.hint}
 	message={message ?? actionError}
+	problem={message === null ? null : problem}
 	{primary}
 	{menu}
 	{rename}

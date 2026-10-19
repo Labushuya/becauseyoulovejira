@@ -101,8 +101,13 @@
 		newOf,
 		directOf: (project) => (subProjectsOf(project).length === 0 ? null : ownCounts(project)),
 		notify,
-		fail: (title, reason) =>
-			flags.show({ tone: 'error', title, ...(reason === null ? {} : { description: reason }) }),
+		fail: (title, reason, problem = null) =>
+			flags.show({
+				tone: 'error',
+				title,
+				...(reason === null ? {} : { description: reason }),
+				...(problem !== null && { problem })
+			}),
 		async archive(project, archived) {
 			const result = await editor.setProjectArchived(project, archived);
 			if (result.ok) {

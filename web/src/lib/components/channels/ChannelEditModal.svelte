@@ -7,6 +7,7 @@
 		type TelegramRepliesChange
 	} from '$lib/domain/connections';
 	import { MAIL_MATCH_BODY_LABEL } from '$lib/domain/keywords';
+	import type { ProblemEntry } from '$lib/domain/problems';
 	import SectionMessage from '../guidance/SectionMessage.svelte';
 	import KeywordEditor from '../KeywordEditor.svelte';
 	import Modal from '../overlay/Modal.svelte';
@@ -22,6 +23,7 @@
 	let {
 		connection,
 		message = null,
+		problem = null,
 		onkeywords,
 		onreplies,
 		onmatchbody,
@@ -31,6 +33,8 @@
 		connection: Connection;
 		/** Error of the last switch (inline). */
 		message?: string | null;
+		/** The failed request behind `message`, for "Details" (FP-1, ADR-0071). */
+		problem?: ProblemEntry | null;
 		onkeywords: (next: string[], announcement: string) => Promise<string | null>;
 		/** Telegram: a switch of the answers of the bot changed. */
 		onreplies: (change: TelegramRepliesChange) => Promise<void>;
@@ -68,7 +72,7 @@
 			</label>
 		{/if}
 		{#if message !== null}
-			<SectionMessage tone="error" compact live>{message}</SectionMessage>
+			<SectionMessage tone="error" compact live {problem}>{message}</SectionMessage>
 		{/if}
 		<section class="variables" aria-labelledby={`${uid}-variables`}>
 			<h3 id={`${uid}-variables`}>Zugangsdaten</h3>

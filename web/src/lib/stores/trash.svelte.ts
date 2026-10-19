@@ -7,7 +7,8 @@
 import type PocketBase from 'pocketbase';
 import { createContext } from 'svelte';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
-import { toDataError, type DataError } from '$lib/data/errors';
+import { problemOf, toDataError, type DataError } from '$lib/data/errors';
+import type { ProblemEntry } from '$lib/domain/problems';
 import type { Unsubscribe } from '$lib/data/realtime';
 import { onReconnect } from '$lib/data/realtime';
 import type { TrashMove } from '$lib/data/tickets';
@@ -172,6 +173,8 @@ export class TrashStore {
 
 	#state = $state<TrashState>('idle');
 	#error = $state<string | null>(null);
+	/** The failed request behind `#error` (FP-1, ADR-0071). */
+	#errorProblem = $state.raw<ProblemEntry | null>(null);
 	#items = $state.raw<readonly TrashItem[]>([]);
 	#retention = $state<TrashRetention>(DEFAULT_RETENTION);
 	/** The setting of the account for its private trash, also while a household is shown (E7-3). */
@@ -198,6 +201,11 @@ export class TrashStore {
 	/** Loading error in words, while `state` is "error". */
 	get error(): string | null {
 		return this.#error;
+	}
+
+	/** The failed request behind `error`, for "Details" (FP-1, ADR-0071). */
+	get errorProblem(): ProblemEntry | null {
+		return this.#error === null ? null : this.#errorProblem;
 	}
 
 	/** Tickets of the trash (first of each group), newest first. */
@@ -328,6 +336,7 @@ export class TrashStore {
 			}
 			this.#state = failure.status === 503 ? 'unavailable' : 'error';
 			this.#error = failure.message;
+			this.#errorProblem = problemOf(failure);
 		} finally {
 			if (this.#controller === controller) this.#controller = null;
 			if (this.#reloadAgain) {
@@ -404,7 +413,8 @@ export class TrashStore {
 			if (reason !== null) {
 				this.#flags.show({
 					tone: 'error',
-					title: `${key || 'Das Ticket'} wurde nicht wiederhergestellt. ${reason}`
+					title: `${key || 'Das Ticket'} wurde nicht wiederhergestellt. ${reason}`,
+					problem: problemOf(failure)
 				});
 			}
 			if (failure.kind === 'not_found') this.#remove([id]);
@@ -450,7 +460,8 @@ export class TrashStore {
 			if (reason !== null && !actions.some((action) => action.action === 'move')) {
 				this.#flags.show({
 					tone: 'error',
-					title: `Die Entscheidung für ${key || 'das Ticket'} wurde nicht übernommen. ${reason}`
+					title: `Die Entscheidung für ${key || 'das Ticket'} wurde nicht übernommen. ${reason}`,
+					problem: problemOf(failure)
 				});
 			}
 			if (failure.kind === 'not_found') this.#remove([id]);
@@ -479,7 +490,11 @@ export class TrashStore {
 			}
 			const reason = reasonOf(failure);
 			if (reason !== null) {
-				this.#flags.show({ tone: 'error', title: `${key} wurde nicht gelöscht. ${reason}` });
+				this.#flags.show({
+					tone: 'error',
+					title: `${key} wurde nicht gelöscht. ${reason}`,
+					problem: problemOf(failure)
+				});
 			}
 			return false;
 		} finally {
@@ -603,7 +618,11 @@ export class TrashStore {
 			if (failure.kind === 'session') this.#session.logout();
 			const reason = reasonOf(failure);
 			if (reason !== null) {
-				this.#flags.show({ tone: 'error', title: `Der Papierkorb wurde nicht geleert. ${reason}` });
+				this.#flags.show({
+					tone: 'error',
+					title: `Der Papierkorb wurde nicht geleert. ${reason}`,
+					problem: problemOf(failure)
+				});
 			}
 			void this.reload();
 			return false;
@@ -636,7 +655,8 @@ export class TrashStore {
 			if (reason !== null) {
 				this.#flags.show({
 					tone: 'error',
-					title: `Die Aufbewahrung wurde nicht gespeichert. ${reason}`
+					title: `Die Aufbewahrung wurde nicht gespeichert. ${reason}`,
+					problem: problemOf(failure)
 				});
 			}
 			return false;
@@ -678,7 +698,8 @@ export class TrashStore {
 			if (reason !== null) {
 				this.#flags.show({
 					tone: 'error',
-					title: `${key || 'Das Ticket'} wurde nicht wiederhergestellt. ${reason}`
+					title: `${key || 'Das Ticket'} wurde nicht wiederhergestellt. ${reason}`,
+					problem: problemOf(failure)
 				});
 			}
 			return false;

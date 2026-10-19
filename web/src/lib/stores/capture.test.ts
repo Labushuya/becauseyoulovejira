@@ -260,7 +260,9 @@ describe('panelFreeTicketCreate', () => {
 		expect(fields).toEqual({
 			ok: false,
 			message: null,
-			fields: { project: 'Das Projekt ist archiviert.' }
+			fields: { project: 'Das Projekt ist archiviert.' },
+			// A refusal of the hook (no mere check of an input) keeps its request for "Details" (FP-1).
+			problem: expect.objectContaining({ outcome: expect.objectContaining({ status: 400 }) })
 		});
 		const lost = await panelFreeTicketCreate(
 			async () => {

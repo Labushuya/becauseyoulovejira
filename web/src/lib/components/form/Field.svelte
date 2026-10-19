@@ -10,6 +10,8 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import ErrorIcon from '$lib/components/ErrorIcon.svelte';
+	import ProblemDetails from '$lib/components/problems/ProblemDetails.svelte';
+	import type { ProblemEntry } from '$lib/domain/problems';
 
 	// One field of a form (UI-1, ADR-0060): the label above the control, then the error and the
 	// hint, in the same sizes and gaps in every form. The field links them: the label names the
@@ -17,11 +19,13 @@
 	// it is invalid while there is an error (aria-invalid, ADR-0009). The control stays a native
 	// input, select or textarea of the caller, so binding, focus and events stay where they are;
 	// its look comes from base.css. Checkboxes, radios and switches carry their name in their own
-	// label and need no field.
+	// label and need no field. An error that is a failed save, not a hint at the input, passes its
+	// entry (`problem`, FP-1, ADR-0071) and gets the row "Details" below.
 	let {
 		label,
 		hint,
 		error = '',
+		problem = null,
 		id,
 		describedBy,
 		width = 'full',
@@ -33,6 +37,8 @@
 		hint?: string | Snippet;
 		/** Error at the field (ADR-0009); empty for none. */
 		error?: string;
+		/** The failed action behind the error (`problemOf`), null for a hint at the input. */
+		problem?: ProblemEntry | null;
 		/** ID of the control; generated when missing. */
 		id?: string;
 		/** Further IDs that describe the control, after the error and the hint. */
@@ -62,6 +68,7 @@
 	{@render control(attributes)}
 	{#if error !== ''}
 		<p class="field-error" id={errorId}><ErrorIcon /><span>{error}</span></p>
+		<ProblemDetails {problem} />
 	{/if}
 	{#if hint !== undefined}
 		<p class="hint" id={hintId}>

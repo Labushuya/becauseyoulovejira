@@ -3,15 +3,18 @@
 // ticket fields. Own answers and realtime events (ADR-0007, filtered to the open ticket) go
 // through the same idempotent `upsertComment`, `removeComment` and `upsertHistory`. Drafts (new
 // comment, edited comments) are never overwritten by updates. Project and tag names of the
-// history come from the catalog (E3 plan, T-16), not from lists of this store.
+// history come from the catalog (E3 plan, T-16), not from lists of this store. Every message of a
+// failed request keeps the request beside it for "Details" (FP-1, ADR-0071), per place: the new
+// comment, a comment, the list of comments and the history.
 
 import type PocketBase from 'pocketbase';
 import { createContext } from 'svelte';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { createComment, deleteComment, listComments, updateComment } from '$lib/data/comments';
-import { toDataError } from '$lib/data/errors';
+import { problemOf, toDataError } from '$lib/data/errors';
 import { listHistory } from '$lib/data/history';
 import type { RequestOptions } from '$lib/data/options';
+import type { ProblemEntry } from '$lib/domain/problems';
 import type { Comment, HistoryEntry } from '$lib/domain/ticket';
 import { toggleTask } from '$lib/markdown';
 import { hold, type LiveSource } from './realtime';
@@ -53,6 +56,8 @@ export class TicketActivityStore {
 	readonly #edits = new SvelteMap<string, string>();
 	readonly #busy = new SvelteSet<string>();
 	readonly #commentErrors = new SvelteMap<string, string>();
+	/** The failed request behind a message, by place: "post", "comments", "history", "comment:<id>". */
+	readonly #problems = new SvelteMap<string, ProblemEntry | null>();
 	#controller: AbortController | null = null;
 	#historyController: AbortController | null = null;
 	#live: LiveSource | null = null;
@@ -103,6 +108,11 @@ export class TicketActivityStore {
 		return this.#error;
 	}
 
+	/** The failed request behind `commentsError` (FP-1, ADR-0071). */
+	get commentsProblem(): ProblemEntry | null {
+		return this.#error === null ? null : (this.#problems.get('comments') ?? null);
+	}
+
 	/** History of the ticket, newest first. */
 	get history(): readonly HistoryEntry[] {
 		return this.#history;
@@ -114,6 +124,11 @@ export class TicketActivityStore {
 
 	get historyError(): string | null {
 		return this.#historyError;
+	}
+
+	/** The failed request behind `historyError` (FP-1, ADR-0071). */
+	get historyProblem(): ProblemEntry | null {
+		return this.#historyError === null ? null : (this.#problems.get('history') ?? null);
 	}
 
 	/** Only the author may edit or delete; the API rules enforce it (T-13). */
@@ -138,6 +153,11 @@ export class TicketActivityStore {
 		return this.#postError;
 	}
 
+	/** The failed request behind `postError` (FP-1, ADR-0071). */
+	get postProblem(): ProblemEntry | null {
+		return this.#postError === null ? null : (this.#problems.get('post') ?? null);
+	}
+
 	/** ID of the comment the last successful "Kommentieren" created, null before one. */
 	get lastPostedId(): string | null {
 		return this.#lastPosted;
@@ -159,6 +179,16 @@ export class TicketActivityStore {
 
 	commentError(id: string): string | null {
 		return this.#commentErrors.get(id) ?? null;
+	}
+
+	/** The failed request behind `commentError(id)` (FP-1, ADR-0071). */
+	commentProblem(id: string): ProblemEntry | null {
+		return this.commentError(id) === null ? null : (this.#problems.get(`comment:${id}`) ?? null);
+	}
+
+	/** A message at `place`, with the failed request behind it (null for a text of the app). */
+	#noteProblem(place: string, error: unknown): void {
+		this.#problems.set(place, error === null ? null : problemOf(error));
 	}
 
 	/**
@@ -253,6 +283,7 @@ export class TicketActivityStore {
 		if (ticketId === null || this.#posting) return false;
 		if (body.trim() === '') {
 			this.#postError = COMMENT_REQUIRED_MESSAGE;
+			this.#noteProblem('post', null);
 			return false;
 		}
 		if (!this.#session.ensureValid()) return false;
@@ -266,7 +297,10 @@ export class TicketActivityStore {
 			return true;
 		} catch (error) {
 			const message = this.#failureMessage(error, 'body');
-			if (message !== null && ticketId === this.#ticketId) this.#postError = message;
+			if (message !== null && ticketId === this.#ticketId) {
+				this.#postError = message;
+				this.#noteProblem('post', error);
+			}
 			return false;
 		} finally {
 			this.#posting = false;
@@ -301,6 +335,7 @@ export class TicketActivityStore {
 		if (this.#busy.has(id)) return false;
 		if (draft.trim() === '') {
 			this.#commentErrors.set(id, COMMENT_REQUIRED_MESSAGE);
+			this.#noteProblem(`comment:${id}`, null);
 			return false;
 		}
 		if (draft === comment.body) {
@@ -316,8 +351,7 @@ export class TicketActivityStore {
 			if (this.#edits.get(id) === draft) this.#edits.delete(id);
 			return true;
 		} catch (error) {
-			const message = this.#failureMessage(error, 'body');
-			if (message !== null && this.#comments.has(id)) this.#commentErrors.set(id, message);
+			this.#failComment(id, error);
 			return false;
 		} finally {
 			this.#busy.delete(id);
@@ -343,8 +377,7 @@ export class TicketActivityStore {
 			this.upsertComment(await this.#data.updateComment(id, body));
 			return true;
 		} catch (error) {
-			const message = this.#failureMessage(error, 'body');
-			if (message !== null && this.#comments.has(id)) this.#commentErrors.set(id, message);
+			this.#failComment(id, error);
 			return false;
 		} finally {
 			this.#busy.delete(id);
@@ -368,12 +401,19 @@ export class TicketActivityStore {
 				this.removeComment(id);
 				return true;
 			}
-			const message = this.#failureMessage(error, 'body');
-			if (message !== null && this.#comments.has(id)) this.#commentErrors.set(id, message);
+			this.#failComment(id, error);
 			return false;
 		} finally {
 			this.#busy.delete(id);
 		}
+	}
+
+	/** The error of a failed request at its comment, with the request for "Details". */
+	#failComment(id: string, error: unknown): void {
+		const message = this.#failureMessage(error, 'body');
+		if (message === null || !this.#comments.has(id)) return;
+		this.#commentErrors.set(id, message);
+		this.#noteProblem(`comment:${id}`, error);
 	}
 
 	/** Empties the store and aborts a running request. */
@@ -391,6 +431,7 @@ export class TicketActivityStore {
 		this.#edits.clear();
 		this.#busy.clear();
 		this.#commentErrors.clear();
+		this.#problems.clear();
 		this.#ticketId = null;
 		this.#state = 'idle';
 		this.#error = null;
@@ -489,6 +530,7 @@ export class TicketActivityStore {
 			const message = this.#failureMessage(error);
 			if (message === null) return;
 			this.#error = message;
+			this.#noteProblem('comments', error);
 			this.#state = 'error';
 		} finally {
 			if (this.#controller === controller) this.#controller = null;
@@ -516,6 +558,7 @@ export class TicketActivityStore {
 			const message = this.#failureMessage(error);
 			if (message === null || quiet) return;
 			this.#historyError = message;
+			this.#noteProblem('history', error);
 			this.#historyState = 'error';
 		} finally {
 			if (this.#historyController === controller) this.#historyController = null;

@@ -10,7 +10,7 @@
 import type PocketBase from 'pocketbase';
 import { createContext } from 'svelte';
 import { listComments } from '$lib/data/comments';
-import { toDataError } from '$lib/data/errors';
+import { problemOf, toDataError, withIntent } from '$lib/data/errors';
 import { listTicketSources } from '$lib/data/inbox';
 import { getTicketOrigins } from '$lib/data/ticket-origins';
 import { deleteTicket, getTicket, type TrashMove } from '$lib/data/tickets';
@@ -71,6 +71,13 @@ export type RowDialog =
 	| { kind: 'followup'; ticket: Ticket }
 	| { kind: 'delete'; ticket: TicketSummary; sourceCount: number };
 
+/** What the user chose in the menu, for the details of a failure to load (FP-1, ADR-0071). */
+const ROW_INTENTS: Readonly<Record<RowDialog['kind'], string>> = {
+	duplicate: 'Ticket duplizieren',
+	followup: 'Folge-Ticket anlegen',
+	delete: 'Ticket in den Papierkorb legen'
+};
+
 export class TicketRowActionsStore {
 	readonly #data: TicketRowActionsData;
 	readonly #session: SessionGuard;
@@ -116,20 +123,7 @@ export class TicketRowActionsStore {
 		if (!this.#session.ensureValid()) return false;
 		this.#preparing = ticket.id;
 		try {
-			if (kind === 'delete') {
-				const sources = await this.#data.sources(ticket.id);
-				this.#dialog = { kind, ticket, sourceCount: sources.length };
-			} else if (kind === 'followup') {
-				this.#dialog = { kind, ticket: await this.#data.get(ticket.id) };
-			} else {
-				const [full, sources, ticketSources, commentCount] = await Promise.all([
-					this.#data.get(ticket.id),
-					this.#data.sources(ticket.id),
-					this.#data.ticketSources?.(ticket.id) ?? Promise.resolve([]),
-					this.#data.commentCount(ticket.id)
-				]);
-				this.#dialog = { kind, ticket: full, sources, ticketSources, commentCount };
-			}
+			this.#dialog = await withIntent(ROW_INTENTS[kind], () => this.#prepare(kind, ticket));
 			return true;
 		} catch (error) {
 			const failure = toDataError(error);
@@ -138,13 +132,30 @@ export class TicketRowActionsStore {
 				this.flags.show({
 					tone: 'error',
 					title: `${ticket.key} konnte nicht geladen werden.`,
-					description: failure.kind === 'not_found' ? DUPLICATE_GONE : failure.message
+					description: failure.kind === 'not_found' ? DUPLICATE_GONE : failure.message,
+					problem: problemOf(failure)
 				});
 			}
 			return false;
 		} finally {
 			this.#preparing = null;
 		}
+	}
+
+	/** What the dialog of `kind` needs, loaded. */
+	async #prepare(kind: RowDialog['kind'], ticket: TicketSummary): Promise<RowDialog> {
+		if (kind === 'delete') {
+			const sources = await this.#data.sources(ticket.id);
+			return { kind, ticket, sourceCount: sources.length };
+		}
+		if (kind === 'followup') return { kind, ticket: await this.#data.get(ticket.id) };
+		const [full, sources, ticketSources, commentCount] = await Promise.all([
+			this.#data.get(ticket.id),
+			this.#data.sources(ticket.id),
+			this.#data.ticketSources?.(ticket.id) ?? Promise.resolve([]),
+			this.#data.commentCount(ticket.id)
+		]);
+		return { kind, ticket: full, sources, ticketSources, commentCount };
 	}
 
 	/** Cancel, or the dialog is done. */

@@ -9,6 +9,7 @@
 	import type { TicketActivityStore } from '$lib/stores/ticket-activity.svelte';
 	import CommentBody from './CommentBody.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
+	import ProblemDetails from './problems/ProblemDetails.svelte';
 	import RichTextEditor from './RichTextEditor.svelte';
 	import Lozenge from './guidance/Lozenge.svelte';
 	import ConfirmDialog from './overlay/ConfirmDialog.svelte';
@@ -59,12 +60,15 @@
 	const editing = $derived(store.isEditing(comment.id));
 	const busy = $derived(store.isBusy(comment.id));
 	const error = $derived(store.commentError(comment.id));
+	/** The failed requests behind the errors, for "Details" (FP-1, ADR-0071). */
+	const problem = $derived(store.commentProblem(comment.id));
 	/** Names the comment for screen readers on its buttons ("Bearbeiten: Kommentar von Du …"). */
 	const context = $derived(`Kommentar von ${author} vom ${time}`);
 	const pinOffered = $derived(pin !== null && pin.pinnedComment !== undefined);
 	const pinBusy = $derived(pin?.pinning === comment.id);
 	const pinLocked = $derived((pin?.pinning ?? null) !== null);
 	const pinError = $derived(pin?.pinError(comment.id) ?? null);
+	const pinProblem = $derived(pin?.pinProblem?.(comment.id) ?? null);
 
 	async function startEdit() {
 		store.startEdit(comment.id);
@@ -166,6 +170,7 @@
 			/>
 			{#if error}
 				<p class="field-error" id={errorId}><ErrorIcon /><span>{error}</span></p>
+				<ProblemDetails {problem} />
 			{/if}
 			<div class="buttons">
 				<button
@@ -194,10 +199,12 @@
 			/>
 			{#if error}
 				<p class="field-error" id={errorId}><ErrorIcon /><span>{error}</span></p>
+				<ProblemDetails {problem} />
 			{/if}
 		{/if}
 		{#if pinError}
 			<p class="field-error" id={pinErrorId}><ErrorIcon /><span>{pinError}</span></p>
+			<ProblemDetails problem={pinProblem} />
 		{/if}
 	</article>
 	<ConfirmDialog

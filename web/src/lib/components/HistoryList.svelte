@@ -6,6 +6,7 @@
 	import type { TicketActivityStore } from '$lib/stores/ticket-activity.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import EmptyState from './guidance/EmptyState.svelte';
+	import ProblemDetails from './problems/ProblemDetails.svelte';
 
 	// History of the open ticket (E2 plan, T-10 and T-11): newest first, each entry with time in
 	// Berlin, actor and a readable text. A changed description opens old and new text as plain
@@ -54,6 +55,8 @@
 			Erneut versuchen
 		</button>
 	</div>
+	<!-- "Details" of a failed load of the history; the catalog keeps no request (FP-1). -->
+	<ProblemDetails problem={store.historyState === 'error' ? store.historyProblem : null} />
 {:else if loading}
 	<p class="muted loading" role="status">Verlauf wird geladen …</p>
 {:else if store.historyState === 'ready' && lines.length === 0}

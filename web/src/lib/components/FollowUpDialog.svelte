@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { tick, untrack } from 'svelte';
 	import { charmName } from '$lib/domain/charms';
+	import type { ProblemEntry } from '$lib/domain/problems';
 	import { projectPath } from '$lib/domain/project-tree';
 	import {
 		DEFAULT_FOLLOW_UP_TAKE,
@@ -16,6 +17,7 @@
 	import Field from './form/Field.svelte';
 	import InlineDialog from './InlineDialog.svelte';
 	import Modal from './overlay/Modal.svelte';
+	import ProblemDetails from './problems/ProblemDetails.svelte';
 
 	// "Folge-Ticket anlegen …" (QT-1, ADR-0067 §4): a new ticket that stems from this one. The title
 	// starts as "Folge: ‹Titel›"; project and area come from the source (an archived project not, the
@@ -53,6 +55,8 @@
 	let take = $state<FollowUpTake>({ ...DEFAULT_FOLLOW_UP_TAKE });
 	let titleError = $state('');
 	let message = $state<string | null>(null);
+	/** The failed request behind `message`, for "Details" (FP-1, ADR-0071). */
+	let problem = $state.raw<ProblemEntry | null>(null);
 	let busy = $state(false);
 	let formElement = $state<HTMLFormElement>();
 
@@ -90,6 +94,7 @@
 			}
 			titleError = result.title ?? '';
 			message = result.message;
+			problem = result.problem ?? null;
 		} finally {
 			busy = false;
 		}
@@ -136,6 +141,7 @@
 		<p class="hint">{projectText} Es ist eine Aufgabe und startet offen.</p>
 		{#if message}
 			<div class="alert-error" role="alert"><ErrorIcon /><span>{message}</span></div>
+			<ProblemDetails {problem} />
 		{/if}
 	</form>
 {/snippet}

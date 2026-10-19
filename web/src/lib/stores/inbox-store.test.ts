@@ -581,7 +581,11 @@ describe('actions', () => {
 		);
 		expect(await store.assign(A.id, 'tick00000000009')).toEqual({
 			ok: false,
-			message: `„${A.title}“ konnte nicht zugeordnet werden. Das Ticket ist nicht verfügbar.`
+			message: `„${A.title}“ konnte nicht zugeordnet werden. Das Ticket ist nicht verfügbar.`,
+			// The refusal of the hook with its "Details" (FP-1).
+			problem: expect.objectContaining({
+				outcome: expect.objectContaining({ code: 'ticket: validation_scope_mismatch' })
+			})
 		});
 		expect(store.find(A.id)?.state).toBe('new');
 	});

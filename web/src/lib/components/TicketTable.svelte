@@ -80,6 +80,7 @@
 	import GroupPopover from './GroupPopover.svelte';
 	import OngoingFinishDialog from './OngoingFinishDialog.svelte';
 	import PinIcon from './PinIcon.svelte';
+	import ProblemDetails from './problems/ProblemDetails.svelte';
 	import SectionBar from './SectionBar.svelte';
 	import { CELL_PADDING_REM, CHIP_GAP_REM, createChipMeasure, remPx } from './table/chip-measure';
 	import { ColumnFit, cellsOf } from './table/column-fit.svelte';
@@ -750,6 +751,7 @@
 
 	{#if store.openState === 'error' && store.openError}
 		{@render failure(store.openError, 'Erneut versuchen', () => store.reload())}
+		<ProblemDetails problem={store.openErrorProblem} />
 	{:else if store.openState === 'ready' && !hasOpenRows && !hasPinnedRows}
 		{#if filtered}
 			<EmptyState

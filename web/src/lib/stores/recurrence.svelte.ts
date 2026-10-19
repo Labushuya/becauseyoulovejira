@@ -13,7 +13,8 @@
 import type PocketBase from 'pocketbase';
 import { createContext } from 'svelte';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
-import { toDataError } from '$lib/data/errors';
+import { problemDetails, toDataError } from '$lib/data/errors';
+import type { ProblemEntry } from '$lib/domain/problems';
 import type { RequestOptions } from '$lib/data/options';
 import { onReconnect, subscribeRules } from '$lib/data/realtime';
 import { fetchCreateSupport } from '$lib/data/ticket-create';
@@ -248,6 +249,8 @@ export class RecurrenceStore implements SeriesChangeSink {
 
 	#state = $state<RecurrenceState>('idle');
 	#error = $state<string | null>(null);
+	/** The failed request behind `#error` (FP-1, ADR-0071). */
+	#errorProblem = $state.raw<ProblemEntry | null>(null);
 	/** The server knows "Jeden Termin einzeln anlegen" (after its migration, plan OR-5). */
 	#eachReady = $state(false);
 	/** The server knows "Status beim Anlegen" (after its migration, plan WV). */
@@ -300,6 +303,11 @@ export class RecurrenceStore implements SeriesChangeSink {
 
 	get error(): string | null {
 		return this.#error;
+	}
+
+	/** The failed request behind `error`, for "Details" (FP-1, ADR-0071). */
+	get errorProblem(): ProblemEntry | null {
+		return this.#error === null ? null : this.#errorProblem;
 	}
 
 	/**
@@ -1013,6 +1021,7 @@ export class RecurrenceStore implements SeriesChangeSink {
 			const message = this.#failureMessage(error);
 			if (message === null || quiet) return;
 			this.#error = message;
+			this.#errorProblem = problemDetails(error).problem ?? null;
 			this.#state = 'error';
 		} finally {
 			if (this.#controller === controller) {
@@ -1040,7 +1049,12 @@ export class RecurrenceStore implements SeriesChangeSink {
 			}
 			if (Object.keys(fields).length > 0) return { ok: false, message: null, fields };
 			const other = Object.values(failure.fields)[0]?.message;
-			return { ok: false, message: other ?? failure.message, fields: {} };
+			return {
+				ok: false,
+				message: other ?? failure.message,
+				fields: {},
+				...problemDetails(failure)
+			};
 		}
 	}
 

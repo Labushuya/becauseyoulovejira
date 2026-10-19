@@ -12,6 +12,8 @@
 
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	import ProblemDetails from '$lib/components/problems/ProblemDetails.svelte';
+	import type { ProblemEntry } from '$lib/domain/problems';
 	import GuidanceIcon from './GuidanceIcon.svelte';
 
 	// Section message (ADR-0026 section 2, ADS pattern "section message" and, compact, "inline
@@ -20,12 +22,15 @@
 	// differs by icon, bold title and line, never by yellow. The tone also stands as a hidden prefix.
 	// Only with `live` is it announced (status, errors alert); static hints have no role, and the
 	// focus never moves because of a message. Not an overlay (ADR-0025 section 12).
+	// An error about a failed action passes its entry (`problem`, FP-1, ADR-0071): the row
+	// "Details" follows the text and the actions.
 	let {
 		tone,
 		title,
 		compact = false,
 		live = false,
 		headingLevel = 3,
+		problem = null,
 		children,
 		actions
 	}: {
@@ -37,6 +42,8 @@
 		live?: boolean;
 		/** Level of the title as heading; only with a title and not compact. */
 		headingLevel?: 3 | 4;
+		/** The failed action behind an error (`problemOf`), for "Details"; null without one. */
+		problem?: ProblemEntry | null;
 		children: Snippet;
 		actions?: Snippet;
 	} = $props();
@@ -62,6 +69,9 @@
 		{/if}
 		{#if actions}
 			<div class="actions">{@render actions()}</div>
+		{/if}
+		{#if tone === 'error'}
+			<ProblemDetails {problem} />
 		{/if}
 	</div>
 </div>

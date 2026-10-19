@@ -29,11 +29,13 @@
 		type RepoDraftField
 	} from '$lib/domain/github';
 	import { DEFAULT_HOST_PLATFORM } from '$lib/domain/host-platform';
+	import type { ProblemEntry } from '$lib/domain/problems';
 	import type { ConnectionsStore } from '$lib/stores/connections.svelte';
 	import { GITHUB_AUTO_UNAVAILABLE_MESSAGE } from '$lib/stores/github.svelte';
 	import { findHostStore } from '$lib/stores/host.svelte';
 	import ErrorIcon from '../ErrorIcon.svelte';
 	import Field from '../form/Field.svelte';
+	import ProblemDetails from '../problems/ProblemDetails.svelte';
 	import FolderFields from './FolderFields.svelte';
 	import GitHubRepoFields from './GitHubRepoFields.svelte';
 
@@ -87,6 +89,8 @@
 	let saving = $state(false);
 	let serverFields = $state<Record<string, string>>({});
 	let formMessage = $state<string | null>(null);
+	/** The failed request behind `formMessage`, for "Details" (FP-1, ADR-0071). */
+	let formProblem = $state.raw<ProblemEntry | null>(null);
 
 	const github = $derived(draft.type === 'github');
 	const folders = $derived(draft.type === 'folder');
@@ -154,6 +158,7 @@
 		// comes as an error of the settings; hooks of before the restart know no "Alle meine
 		// Repositorys".
 		formMessage = result.message ?? (github || folders ? (result.fields.settings ?? null) : null);
+		formProblem = result.problem ?? null;
 		if (github && isAutoUnknown(formMessage, auto)) formMessage = GITHUB_AUTO_UNAVAILABLE_MESSAGE;
 	}
 </script>
@@ -237,6 +242,7 @@
 	{/if}
 	{#if formMessage !== null}
 		<p class="alert-error" role="alert"><ErrorIcon /><span>{formMessage}</span></p>
+		<ProblemDetails problem={formProblem} />
 	{/if}
 	<div>
 		<button class="button-secondary" type="submit" aria-disabled={saving}>

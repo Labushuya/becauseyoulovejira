@@ -5,8 +5,9 @@
 // newer). The hooks stay authoritative; their field errors come back per field.
 
 import type PocketBase from 'pocketbase';
-import { toDataError } from '$lib/data/errors';
+import { problemDetails, toDataError } from '$lib/data/errors';
 import type { RequestOptions } from '$lib/data/options';
+import type { ProblemEntry } from '$lib/domain/problems';
 import {
 	createProject,
 	deleteProject,
@@ -52,11 +53,17 @@ export function catalogEditorData(pb: PocketBase): CatalogEditorData {
 /**
  * Outcome of an action. A failure carries German texts per form field (`fields`) and a message
  * for everything else; `message` is null if there is nothing more to show (field errors only,
- * an aborted request, or an ended session that leads to the login).
+ * an aborted request, or an ended session that leads to the login). With a message comes the
+ * failed request behind it for "Details" (`problem`, FP-1, ADR-0071).
  */
 export type EditResult<T> =
 	| { ok: true; value: T }
-	| { ok: false; message: string | null; fields: Readonly<Record<string, string>> };
+	| {
+			ok: false;
+			message: string | null;
+			fields: Readonly<Record<string, string>>;
+			problem?: ProblemEntry;
+	  };
 
 /**
  * Form fields of the project panel (with the parent, ADR-0034, and the color, ADR-0052) and of
@@ -219,6 +226,6 @@ export class CatalogEditor {
 		}
 		if (Object.keys(fields).length > 0) return invalid(fields);
 		const other = Object.values(failure.fields)[0]?.message;
-		return { ok: false, message: other ?? failure.message, fields: {} };
+		return { ok: false, message: other ?? failure.message, fields: {}, ...problemDetails(failure) };
 	}
 }

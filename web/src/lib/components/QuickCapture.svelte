@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { ResolvedPathname } from '$app/types';
+	import type { ProblemEntry } from '$lib/domain/problems';
 	import { treeOrder } from '$lib/domain/project-tree';
 	import {
 		describeQuickEntry,
@@ -14,6 +15,7 @@
 	import ErrorIcon from './ErrorIcon.svelte';
 	import NewTabHint from './guidance/NewTabHint.svelte';
 	import Modal from './overlay/Modal.svelte';
+	import ProblemDetails from './problems/ProblemDetails.svelte';
 	import ProjectSelect from './ProjectSelect.svelte';
 
 	// Quick entry (CLAUDE.md section 7; E4 plan, package 6; OF-E4-3) on the modal building block
@@ -56,6 +58,8 @@
 	/** Something was saved in this dialog: the footer says "Schließen" instead of "Abbrechen". */
 	let saved = $state(false);
 	let message = $state<string | null>(null);
+	/** The failed request behind `message`, for "Details" (FP-1, ADR-0071). */
+	let messageProblem = $state.raw<ProblemEntry | null>(null);
 	let result = $state<{ text: string; href: ResolvedPathname; target: CaptureTarget } | null>(null);
 
 	const entry = $derived(parseQuickEntry(text, projects, tags));
@@ -75,6 +79,7 @@
 		result = null;
 		if (entry.title === '') {
 			message = 'Der Titel darf nicht leer sein.';
+			messageProblem = null;
 			input?.focus();
 			return;
 		}
@@ -83,6 +88,7 @@
 		pending = false;
 		if (!outcome.ok) {
 			message = outcome.message;
+			messageProblem = outcome.problem ?? null;
 			return;
 		}
 		saved = true;
@@ -175,6 +181,9 @@
 				<p class="alert-error"><ErrorIcon /><span>{message}</span></p>
 			{/if}
 		</div>
+		{#if message}
+			<ProblemDetails problem={messageProblem} />
+		{/if}
 	</form>
 
 	{#snippet footer({ close })}

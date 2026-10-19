@@ -2,10 +2,12 @@
 	import { tick } from 'svelte';
 	import { DESCRIPTION_MAX_LENGTH, type Ticket } from '$lib/domain/ticket';
 	import type { TicketDetailStore } from '$lib/stores/ticket-detail.svelte';
+	import type { ProblemEntry } from '$lib/domain/problems';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import Markdown from './Markdown.svelte';
 	import RichTextEditor from './RichTextEditor.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
+	import ProblemDetails from './problems/ProblemDetails.svelte';
 
 	// Description of a ticket (E2 plan, package 7), shared by the side panel and the full view
 	// (ADR-0025 section 7): sanitised Markdown with "Bearbeiten", the editor (since RT-3 the
@@ -28,14 +30,18 @@
 	let editButton = $state<HTMLButtonElement>();
 	let editor = $state<ReturnType<typeof RichTextEditor>>();
 	/** Why ticking a task failed, for the ticket it happened on. */
-	let taskError = $state<{ ticketId: string; message: string } | null>(null);
+	let taskError = $state<{
+		ticketId: string;
+		message: string;
+		problem: ProblemEntry | null;
+	} | null>(null);
 
 	const editing = $derived(store.isEditing('description'));
 	const saving = $derived(store.isSaving('description'));
 	const error = $derived(store.fieldError('description'));
 	const conflict = $derived(editing && store.descriptionConflict);
 	const shownTaskError = $derived(
-		taskError !== null && taskError.ticketId === ticket.id ? taskError.message : null
+		taskError !== null && taskError.ticketId === ticket.id ? taskError : null
 	);
 
 	async function edit() {
@@ -71,7 +77,10 @@
 	async function toggleTask(index: number, checked: boolean): Promise<boolean> {
 		const ticketId = ticket.id;
 		const result = await store.toggleTask(index, checked);
-		taskError = result.ok || result.message === null ? null : { ticketId, message: result.message };
+		taskError =
+			result.ok || result.message === null
+				? null
+				: { ticketId, message: result.message, problem: result.problem ?? null };
 		return result.ok;
 	}
 </script>
@@ -103,6 +112,7 @@
 		/>
 		{#if error}
 			<p class="field-error" id={errorId}><ErrorIcon /><span>{error}</span></p>
+			<ProblemDetails problem={store.fieldProblem('description')} />
 		{/if}
 		{#if conflict}
 			<SectionMessage
@@ -154,8 +164,9 @@
 		/>
 		{#if shownTaskError !== null}
 			<p class="field-error" id={taskErrorId} role="alert">
-				<ErrorIcon /><span>{shownTaskError}</span>
+				<ErrorIcon /><span>{shownTaskError.message}</span>
 			</p>
+			<ProblemDetails problem={shownTaskError.problem} />
 		{/if}
 	{:else}
 		<p class="muted">Keine Beschreibung.</p>

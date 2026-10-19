@@ -6,7 +6,8 @@
 
 import type PocketBase from 'pocketbase';
 import { createContext } from 'svelte';
-import { toDataError } from '$lib/data/errors';
+import { problemDetails, toDataError } from '$lib/data/errors';
+import type { ProblemEntry } from '$lib/domain/problems';
 import { createFollowUp } from '$lib/data/ticket-origins';
 import {
 	followUpFlag,
@@ -26,10 +27,13 @@ export function ticketFollowUpData(pb: PocketBase): TicketFollowUpData {
 	return { create: (sourceId, request) => createFollowUp(pb, sourceId, request) };
 }
 
-/** Outcome of the question; a refusal carries the error of the title and/or a message. */
+/**
+ * Outcome of the question; a refusal carries the error of the title and/or a message, and the
+ * failed request for "Details" (`problem`, FP-1, ADR-0071).
+ */
 export type FollowUpResult =
 	| { ok: true; outcome: FollowUpOutcome }
-	| { ok: false; message: string | null; title: string | null };
+	| { ok: false; message: string | null; title: string | null; problem?: ProblemEntry };
 
 export class TicketFollowUpStore {
 	readonly #data: TicketFollowUpData;
@@ -69,7 +73,9 @@ export class TicketFollowUpStore {
 			if (failure.kind === 'session' || failure.kind === 'aborted') {
 				return { ok: false, message: null, title: null };
 			}
-			if (failure.kind === 'not_found') return { ok: false, message: DUPLICATE_GONE, title: null };
+			if (failure.kind === 'not_found') {
+				return { ok: false, message: DUPLICATE_GONE, title: null, ...problemDetails(failure) };
+			}
 			if (failure.status === 503) {
 				// Before the migration of ADR-0067 (the instance still waits for its restart).
 				return { ok: false, message: restartNeeded('„Folge-Ticket anlegen“ ist'), title: null };
@@ -77,7 +83,7 @@ export class TicketFollowUpStore {
 			const title = failure.fields.title?.message ?? null;
 			const other = Object.entries(failure.fields).find(([name]) => name !== 'title')?.[1];
 			const message = other?.message ?? (title === null ? failure.message : null);
-			return { ok: false, message, title };
+			return { ok: false, message, title, ...problemDetails(failure) };
 		}
 	}
 }

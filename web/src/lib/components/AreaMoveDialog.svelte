@@ -14,6 +14,7 @@
 	import SectionMessage from './guidance/SectionMessage.svelte';
 	import InlineDialog from './InlineDialog.svelte';
 	import Modal from './overlay/Modal.svelte';
+	import ProblemDetails from './problems/ProblemDetails.svelte';
 
 	// "In den Haushalt verschieben …" / "Ins Private verschieben …" (E7-4, ADR-0061): the preview of the
 	// server with what moves (count per kind) and what changes, the choices it needs (the project in
@@ -293,6 +294,7 @@
 
 		{#if store.message !== null}
 			<div class="alert-error" role="alert"><ErrorIcon /><span>{store.message}</span></div>
+			<ProblemDetails problem={store.messageProblem} />
 		{/if}
 	</form>
 {/snippet}

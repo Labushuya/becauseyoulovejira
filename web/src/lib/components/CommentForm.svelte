@@ -3,6 +3,7 @@
 	import { COMMENT_MAX_LENGTH } from '$lib/domain/ticket';
 	import type { TicketActivityStore } from '$lib/stores/ticket-activity.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
+	import ProblemDetails from './problems/ProblemDetails.svelte';
 	import RichTextEditor from './RichTextEditor.svelte';
 
 	// New comment above the list (E2 plan, T-11 and package 9; since ADR-0044 at the top in either
@@ -72,6 +73,7 @@
 		/>
 		{#if store.postError}
 			<p class="field-error" id={errorId}><ErrorIcon /><span>{store.postError}</span></p>
+			<ProblemDetails problem={store.postProblem} />
 		{/if}
 		<div class="buttons">
 			<button

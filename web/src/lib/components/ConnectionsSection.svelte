@@ -7,11 +7,13 @@
 		type ConnectionSettingsDraft,
 		type TelegramRepliesChange
 	} from '$lib/domain/connections';
+	import type { ProblemEntry } from '$lib/domain/problems';
 	import { cardAnchorOf } from '$lib/domain/sync-all';
 	import type { ProjectRef } from '$lib/domain/ticket';
 	import { RESTART_NEEDED } from '$lib/guidance/texts';
 	import {
 		CONNECTIONS_UNAVAILABLE_MESSAGE,
+		type ConnectionActionFailure,
 		type ConnectionsStore
 	} from '$lib/stores/connections.svelte';
 	import type { FoldersStore } from '$lib/stores/folders.svelte';
@@ -71,10 +73,15 @@
 	let pendingDelete = $state<Connection | null>(null);
 	let deleting = $state(false);
 	let deleteError = $state<string | null>(null);
-	/** Error of the last action of a card, by connection. */
-	let cardMessage = $state<{ id: string; text: string } | null>(null);
+	/** The failed request behind `deleteError` (FP-1, ADR-0071). */
+	let deleteProblem = $state.raw<ProblemEntry | null>(null);
+	/** Error of the last action of a card, by connection, with its "Details" (FP-1). */
+	let cardMessage = $state.raw<{ id: string; text: string; problem: ProblemEntry | null } | null>(
+		null
+	);
 	/** Error of the last switch in the edit modal. */
 	let editMessage = $state<string | null>(null);
+	let editProblem = $state.raw<ProblemEntry | null>(null);
 	let picking = $state<Connection | null>(null);
 	let editingId = $state<string | null>(null);
 
@@ -101,6 +108,17 @@
 		return cardMessage !== null && cardMessage.id === connection.id ? cardMessage.text : null;
 	}
 
+	function problemOfCard(connection: Connection): ProblemEntry | null {
+		return cardMessage !== null && cardMessage.id === connection.id ? cardMessage.problem : null;
+	}
+
+	/** The message of a refused action at its card. */
+	function failCard(connection: Connection, result: ConnectionActionFailure) {
+		if (result.message !== null) {
+			cardMessage = { id: connection.id, text: result.message, problem: result.problem ?? null };
+		}
+	}
+
 	// Every card follows its connection through realtime while the page is open: the progress of
 	// the full scan of an inbox shows as the mail helper reports it (ADR-0020, addendum 3), and a
 	// name changed in another tab shows at once (ADR-0026, addendum KK-3); no polling (CLAUDE.md
@@ -122,22 +140,19 @@
 	async function scan(connection: Connection, action: 'start' | 'cancel') {
 		cardMessage = null;
 		const result = await store.scan(connection.id, action);
-		if (!result.ok && result.message !== null)
-			cardMessage = { id: connection.id, text: result.message };
+		if (!result.ok) failCard(connection, result);
 	}
 
 	async function setEnabled(connection: Connection, enabled: boolean) {
 		cardMessage = null;
 		const result = await store.setEnabled(connection.id, enabled);
-		if (!result.ok && result.message !== null)
-			cardMessage = { id: connection.id, text: result.message };
+		if (!result.ok) failCard(connection, result);
 	}
 
 	async function runNow(connection: Connection) {
 		cardMessage = null;
 		const result = await store.runNow(connection.id);
-		if (!result.ok && result.message !== null)
-			cardMessage = { id: connection.id, text: result.message };
+		if (!result.ok) failCard(connection, result);
 	}
 
 	async function saveKeywords(connection: Connection, keywords: string[], announcement: string) {
@@ -176,8 +191,12 @@
 			result.message ??
 			Object.values(result.fields)[0] ??
 			'Die Einstellung ließ sich nicht speichern.';
-		if (place === 'card') cardMessage = { id: connection.id, text };
-		else editMessage = text;
+		const problem = result.problem ?? null;
+		if (place === 'card') cardMessage = { id: connection.id, text, problem };
+		else {
+			editMessage = text;
+			editProblem = problem;
+		}
 	}
 
 	/** Telegram: one of the two answers of the bot in the chat (ADR-0016, addendum of 2026-10-01). */
@@ -201,7 +220,10 @@
 		const result = await store.remove(pendingDelete.id);
 		deleting = false;
 		if (result.ok) pendingDelete = null;
-		else deleteError = result.message ?? Object.values(result.fields)[0] ?? null;
+		else {
+			deleteError = result.message ?? Object.values(result.fields)[0] ?? null;
+			deleteProblem = result.problem ?? null;
+		}
 	}
 </script>
 
@@ -236,7 +258,7 @@
 			{RESTART_NEEDED.text}
 		</SectionMessage>
 	{:else if store.state === 'error'}
-		<SectionMessage tone="error" live>
+		<SectionMessage tone="error" live problem={store.errorProblem}>
 			{store.error}
 			{#snippet actions()}
 				<button class="button-secondary" type="button" onclick={() => void store.load()}>
@@ -274,6 +296,7 @@
 								secretStatus={store.status(connection.id)}
 								{notion}
 								message={messageOf(connection)}
+								problem={problemOfCard(connection)}
 								onimport={() => onimport(connection)}
 								onchanged={() => void store.refresh(connection.id)}
 								onpause={(enabled) => void setEnabled(connection, enabled)}
@@ -295,6 +318,7 @@
 								running={store.isRunning(connection.id)}
 								lastRun={store.lastRun(connection.id)}
 								message={messageOf(connection)}
+								problem={problemOfCard(connection)}
 								onrun={() => void runNow(connection)}
 								onpause={(enabled) => void setEnabled(connection, enabled)}
 								onsetup={() => onsetup(connection)}
@@ -316,6 +340,7 @@
 								running={store.isRunning(connection.id)}
 								lastRun={store.lastRun(connection.id)}
 								message={messageOf(connection)}
+								problem={problemOfCard(connection)}
 								onrun={() => void runNow(connection)}
 								onpause={(enabled) => void setEnabled(connection, enabled)}
 								onsetup={() => onsetup(connection)}
@@ -338,6 +363,7 @@
 								helper={store.helper}
 								lastRun={store.lastRun(connection.id)}
 								message={messageOf(connection)}
+								problem={problemOfCard(connection)}
 								onrun={() => void runNow(connection)}
 								onpick={() => (picking = connection)}
 								onedit={() => {
@@ -370,6 +396,7 @@
 	<ChannelEditModal
 		{connection}
 		message={editMessage}
+		problem={editProblem}
 		onkeywords={(next, announcement) => saveKeywords(connection, next, announcement)}
 		onreplies={(change) => saveReplies(connection, change, 'modal')}
 		onmatchbody={(matchBody) =>
@@ -406,6 +433,7 @@
 	confirmLabel="Löschen"
 	busy={deleting}
 	error={deleteError}
+	problem={deleteProblem}
 	onconfirm={() => void confirmDelete()}
 	oncancel={() => {
 		if (!deleting) pendingDelete = null;

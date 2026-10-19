@@ -13,7 +13,7 @@
 import type PocketBase from 'pocketbase';
 import { createContext } from 'svelte';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
-import { toDataError } from '$lib/data/errors';
+import { problemDetails, toDataError } from '$lib/data/errors';
 import type { RequestOptions } from '$lib/data/options';
 import { listPins, pinTicket, unpinTicket } from '$lib/data/pins';
 import {
@@ -191,7 +191,12 @@ export class PinStore implements PinnedSource {
 			return;
 		}
 		const reason = Object.values(failure.fields)[0]?.message ?? failure.message;
-		this.#flags.show({ tone: 'error', title: pinFailedText(key, pinned), description: reason });
+		this.#flags.show({
+			tone: 'error',
+			title: pinFailedText(key, pinned),
+			description: reason,
+			...problemDetails(failure)
+		});
 	}
 }
 

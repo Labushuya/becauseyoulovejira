@@ -10,7 +10,7 @@
 
 import type PocketBase from 'pocketbase';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
-import { DataError, toDataError } from '$lib/data/errors';
+import { DataError, problemDetails, toDataError } from '$lib/data/errors';
 import {
 	checkNotion,
 	importNotion,
@@ -195,7 +195,13 @@ export class NotionStore {
 			const failed = this.#failed(error, undefined);
 			if (failed !== null) {
 				this.#lastCheck.set(id, failed);
-				if (announce) this.#flags.show({ tone: 'error', title: `„${label}“: ${failed.message}` });
+				if (announce) {
+					this.#flags.show({
+						tone: 'error',
+						title: `„${label}“: ${failed.message}`,
+						...problemDetails(error)
+					});
+				}
 			}
 			return failed;
 		} finally {

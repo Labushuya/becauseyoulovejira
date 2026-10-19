@@ -1,9 +1,11 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import type { ProblemEntry } from '$lib/domain/problems';
 	import type { SourceHandling } from '$lib/domain/sources';
 	import type { TicketDetailStore } from '$lib/stores/ticket-detail.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
+	import ProblemDetails from './problems/ProblemDetails.svelte';
 	import SourceHandlingChoice from './SourceHandlingChoice.svelte';
 	import TicketDeleteText from './TicketDeleteText.svelte';
 
@@ -11,7 +13,7 @@
 	// view is a modal, and no dialog opens from a dialog (ADR-0025 section 3), so the question stands
 	// inline at the top of its content, with the same text and choice as the confirmation of the
 	// side panel. The focus starts on "Abbrechen"; Escape cancels and is consumed, so the full view
-	// stays. A failure stays in the question.
+	// stays. A failure stays in the question, with its "Details" (FP-1, ADR-0071).
 	let {
 		store,
 		ondeleted,
@@ -29,6 +31,7 @@
 
 	let deleting = $state(false);
 	let error = $state<string | null>(null);
+	let problem = $state.raw<ProblemEntry | null>(null);
 	let handling = $state<SourceHandling>('inbox');
 	let cancelButton = $state<HTMLButtonElement>();
 
@@ -49,8 +52,10 @@
 		);
 		deleting = false;
 		if (result.ok) ondeleted();
-		else if (result.message !== null) error = result.message;
-		else oncancel();
+		else if (result.message !== null) {
+			error = result.message;
+			problem = result.problem ?? null;
+		} else oncancel();
 	}
 
 	function onkeydown(event: KeyboardEvent) {
@@ -72,6 +77,7 @@
 				{/if}
 				{#if error}
 					<p class="alert-error" role="alert"><ErrorIcon /><span>{error}</span></p>
+					<ProblemDetails {problem} />
 				{/if}
 			</div>
 			{#snippet actions()}

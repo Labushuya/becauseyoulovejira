@@ -1003,6 +1003,12 @@ Der **Kalender** (`/kalender`, im Umschalter nach „Wiederholungen“) zeigt, w
 
 In der App steht dieselbe Liste unter **Einstellungen → Hilfe** (auch über das Menü **?** in der Kopfzeile), zusammen mit der Kurzsyntax, häufigen Fragen und dem Betrieb. Maßgeblich ist die Liste in der App (`web/src/lib/domain/shortcuts.ts`).
 
+### Fehler nachvollziehen
+
+- **„Details“ an einer Fehlermeldung** ([ADR-0071](docs/adr/0071-fehlerdetails-und-sitzungsprotokoll.md)): Schlägt eine Aktion fehl (etwa „Jetzt abrufen“ eines Kanals, Speichern eines Feldes, Duplizieren), steht unter der Meldung **„Details“**. Aufgeklappt nennt es die **Absicht** („Kanal jetzt abrufen“), den Zeitpunkt, das Ergebnis („Keine Verbindung zum Server“, „HTTP 500 (Fehler des Servers)“ mit Code und Meldung des Servers), die Anfrage (Methode und Pfad) und den App-Stand. **„Kopieren“** legt das als Text in die Zwischenablage, etwa für eine Fehlermeldung an dich selbst oder ein Issue.
+- **Fehler dieser Sitzung:** Über „Alle Fehler dieser Sitzung (n)“ oder **Einstellungen → Hilfe → „Fehler dieser Sitzung“** öffnet sich die Liste aller Fehler dieses Tabs, neueste zuerst, auch unerwartete Fehler der App. „Alle kopieren“ und „Liste leeren“ stehen darüber. Wiederholt sich ein Fehler schnell, zählt er mit („3×“).
+- **Was gespeichert wird:** nur im Tab (`sessionStorage`), höchstens 100 Einträge; Neuladen behält die Liste, das Schließen des Tabs löscht sie. Kein Inhalt eines Feldes, keine Query, kein Token, kein Header; IDs und Keys im Pfad schon. Prüfungen einer Eingabe („Pflichtfeld“) sind keine Fehler und haben keine Details.
+
 
 ---
 

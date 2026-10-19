@@ -17,6 +17,7 @@
 	import { formatCalendarDate } from '$lib/domain/format';
 	import type { InboxItemSummary } from '$lib/domain/inbox';
 	import { PRIORITY_LABELS, STATUS_LABELS } from '$lib/domain/labels';
+	import type { ProblemEntry } from '$lib/domain/problems';
 	import { projectPath } from '$lib/domain/project-tree';
 	import type { ProjectRef, Ticket } from '$lib/domain/ticket';
 	import type { TicketOrigin } from '$lib/domain/ticket-origins';
@@ -29,6 +30,7 @@
 	import InitialStatusChoice from './InitialStatusChoice.svelte';
 	import InlineDialog from './InlineDialog.svelte';
 	import Modal from './overlay/Modal.svelte';
+	import ProblemDetails from './problems/ProblemDetails.svelte';
 	import ProjectSelect from './ProjectSelect.svelte';
 
 	// "Wie soll das Duplikat entstehen?" (ADR-0045 §2): title with "(Kopie)", what the duplicate
@@ -137,6 +139,9 @@
 	);
 	let errors = $state<Partial<Record<DuplicateField, string>>>({});
 	let message = $state<string | null>(null);
+	/** The failed requests behind `message` and `targetMessage` (FP-1, ADR-0071). */
+	let messageProblem = $state.raw<ProblemEntry | null>(null);
+	let targetProblem = $state.raw<ProblemEntry | null>(null);
 	let busy = $state(false);
 	let formElement = $state<HTMLFormElement>();
 	/** Projects and tags of the other area (MV-2): loaded when it is chosen. */
@@ -197,7 +202,10 @@
 		try {
 			const result = await store.target(ticket.id, to);
 			if (result.ok) target = result.target;
-			else targetMessage = result.message;
+			else {
+				targetMessage = result.message;
+				targetProblem = result.problem ?? null;
+			}
 		} finally {
 			targetLoading = false;
 		}
@@ -239,6 +247,7 @@
 				project !== undefined && !projectShown ? project : null
 			].find((text) => text !== null);
 			message = result.message ?? hidden ?? null;
+			messageProblem = result.problem ?? null;
 		} finally {
 			busy = false;
 		}
@@ -540,9 +549,11 @@
 
 		{#if crossing && targetMessage}
 			<div class="alert-error" role="alert"><ErrorIcon /><span>{targetMessage}</span></div>
+			<ProblemDetails problem={targetProblem} />
 		{/if}
 		{#if message}
 			<div class="alert-error" role="alert"><ErrorIcon /><span>{message}</span></div>
+			<ProblemDetails problem={messageProblem} />
 		{/if}
 	</form>
 {/snippet}

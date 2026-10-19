@@ -13,6 +13,7 @@
 	import ErrorIcon from './ErrorIcon.svelte';
 	import OrderSwitch from './OrderSwitch.svelte';
 	import EmptyState from './guidance/EmptyState.svelte';
+	import ProblemDetails from './problems/ProblemDetails.svelte';
 
 	// Comments of the open ticket (E2 plan, T-11; ADR-0044): the switch "Neueste zuerst | Älteste
 	// zuerst" (remembered on this device, announced politely), the input field at the top in either
@@ -71,6 +72,7 @@
 				Erneut versuchen
 			</button>
 		</div>
+		<ProblemDetails problem={store.commentsProblem} />
 	{:else}
 		{#if store.comments.length > 1}
 			<OrderSwitch label="Reihenfolge der Kommentare" order={view.order} onchange={choose} />

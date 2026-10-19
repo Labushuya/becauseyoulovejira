@@ -18,6 +18,7 @@
 	import KindSwitch from './KindSwitch.svelte';
 	import OngoingFinishDialog from './OngoingFinishDialog.svelte';
 	import PrioritySelect from './PrioritySelect.svelte';
+	import ProblemDetails from './problems/ProblemDetails.svelte';
 	import ProjectSelect from './ProjectSelect.svelte';
 	import StatusSelect from './StatusSelect.svelte';
 	import TagPicker from './TagPicker.svelte';
@@ -27,8 +28,9 @@
 
 	// Fields of a ticket (E2 plan, package 7; E3 plan, T-13 and T-14), shared by the side panel and
 	// the full view (ADR-0025 section 7): status, priority, due date, project and tags, each saving
-	// at once, with the field errors of the server at their field. Project and tags come from the
-	// catalog; a new tag is taken from the catalog, which reuses an existing name. The row
+	// at once, with the field errors of the server at their field (a failed save with its "Details",
+	// FP-1, ADR-0071). Project and tags come from the catalog; a new tag is taken from the catalog,
+	// which reuses an existing name. The row
 	// "Übergeordnet" of sub-tasks (ADR-0033) comes in through `parentRow` as two cells of the grid.
 	// The own color (ADR-0052) after the project, "Wie Projekt (Blau)" first, saves at once like the
 	// project; only when the server knows the field. The charm (ADR-0062) after it, chosen in its
@@ -159,6 +161,8 @@
 	{@const error = store.fieldError(field)}
 	{#if error}
 		<p class="field-error" id={errorIdOf(field)}><ErrorIcon /><span>{error}</span></p>
+		<!-- A failed save, not a hint at the input, gets its "Details" (FP-1, ADR-0071). -->
+		<ProblemDetails problem={store.fieldProblem(field)} />
 	{/if}
 {/snippet}
 
@@ -238,6 +242,7 @@
 				errorId={errorIdOf('assignee')}
 				onchoose={(value) => store.choose('assignee', value)}
 			/>
+			<ProblemDetails problem={store.fieldProblem('assignee')} />
 		</div>
 	{/if}
 
@@ -309,6 +314,7 @@
 				errorId={errorIdOf('color')}
 				onchoose={(value) => store.choose('color', value ?? '')}
 			/>
+			<ProblemDetails problem={store.fieldProblem('color')} />
 		</div>
 	{/if}
 
@@ -322,6 +328,7 @@
 				errorId={errorIdOf('charm')}
 				onchoose={(value) => store.choose('charm', value ?? '')}
 			/>
+			<ProblemDetails problem={store.fieldProblem('charm')} />
 		</div>
 	{/if}
 
@@ -335,6 +342,7 @@
 				error={store.fieldError('kind')}
 				onchange={(wanted) => store.choose('kind', wanted ? 'ongoing' : 'task')}
 			/>
+			<ProblemDetails problem={store.fieldProblem('kind')} />
 		</div>
 	{/if}
 

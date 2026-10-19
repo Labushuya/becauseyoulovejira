@@ -15,6 +15,7 @@
 	import Drawer from './overlay/Drawer.svelte';
 	import EditableTitle from './EditableTitle.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
+	import ProblemDetails from './problems/ProblemDetails.svelte';
 	import TicketActions from './TicketActions.svelte';
 	import TicketDelete from './TicketDelete.svelte';
 	import TicketDescription from './TicketDescription.svelte';
@@ -228,6 +229,7 @@
 					>Erneut versuchen</button
 				>
 			</div>
+			<ProblemDetails problem={store.errorProblem} />
 		</div>
 	{:else if store.state === 'ready' && ticket}
 		<EditableTitle {store} {headingId} bind:heading />

@@ -13,8 +13,9 @@
 import type PocketBase from 'pocketbase';
 import { createContext } from 'svelte';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
-import { toDataError } from '$lib/data/errors';
+import { problemOf, toDataError } from '$lib/data/errors';
 import type { RequestOptions } from '$lib/data/options';
+import type { ProblemEntry } from '$lib/domain/problems';
 import { listReads, markAllRead, markRead, type TicketRead } from '$lib/data/reads';
 import {
 	createTicket,
@@ -337,6 +338,8 @@ export class TicketListStore {
 	#query = $state<ListQuery>(EMPTY_LIST_QUERY);
 	#openState = $state<LoadState>('idle');
 	#openError = $state<string | null>(null);
+	/** The failed request behind `#openError` (FP-1, ADR-0071). */
+	#openErrorProblem = $state.raw<ProblemEntry | null>(null);
 	#announcement = $state('');
 	/** Search that narrows the list (after the pause), null without one. */
 	#search = $state<string | null>(null);
@@ -624,6 +627,11 @@ export class TicketListStore {
 
 	get openError(): string | null {
 		return this.#openError;
+	}
+
+	/** The failed request behind `openError`, for "Details" (FP-1, ADR-0071). */
+	get openErrorProblem(): ProblemEntry | null {
+		return this.#openError === null ? null : this.#openErrorProblem;
 	}
 
 	/** Search that narrows the list (ADR-0013 section 2), null without one or during the pause. */
@@ -1018,7 +1026,8 @@ export class TicketListStore {
 			} else if (field !== undefined && failure.kind === 'validation') {
 				this.#flags.show({
 					tone: 'error',
-					title: `${ticket.key} konnte nicht geändert werden. ${field.message}`
+					title: `${ticket.key} konnte nicht geändert werden. ${field.message}`,
+					problem: problemOf(failure)
 				});
 			} else {
 				this.#fail(error, `${ticket.key} konnte nicht geändert werden.`);
@@ -1098,12 +1107,14 @@ export class TicketListStore {
 			if (fields.some((entry) => entry.code === STALE_CODE)) {
 				this.#flags.show({
 					tone: 'error',
-					title: `Fälligkeit von ${ticket.key} nicht ${verb}: Das Ticket wurde inzwischen geändert.`
+					title: `Fälligkeit von ${ticket.key} nicht ${verb}: Das Ticket wurde inzwischen geändert.`,
+					problem: problemOf(failure)
 				});
 			} else if (failure.kind === 'validation' && field !== undefined) {
 				this.#flags.show({
 					tone: 'error',
-					title: `Fälligkeit von ${ticket.key} konnte nicht ${verb} werden. ${field.message}`
+					title: `Fälligkeit von ${ticket.key} konnte nicht ${verb} werden. ${field.message}`,
+					problem: problemOf(failure)
 				});
 			} else {
 				this.#fail(error, `Fälligkeit von ${ticket.key} konnte nicht ${verb} werden.`);
@@ -1149,11 +1160,14 @@ export class TicketListStore {
 			this.#pending.delete(id);
 		}
 		const failed: string[] = [];
+		let firstFailure: unknown = null;
 		for (const child of undoable.children) {
 			try {
 				this.upsert(await this.#data.update(child.id, { status: child.previousStatus }));
 			} catch (error) {
-				if (this.#failureMessage(error) !== null) failed.push(child.key);
+				if (this.#failureMessage(error) === null) continue;
+				failed.push(child.key);
+				firstFailure ??= error;
 			}
 		}
 		const restored = undoable.children.length - failed.length;
@@ -1167,7 +1181,9 @@ export class TicketListStore {
 		if (failed.length > 0) {
 			this.#flags.show({
 				tone: 'error',
-				title: `${failed.join(', ')} ${failed.length === 1 ? 'konnte' : 'konnten'} nicht zurückgesetzt werden.`
+				title: `${failed.join(', ')} ${failed.length === 1 ? 'konnte' : 'konnten'} nicht zurückgesetzt werden.`,
+				// The details of the first failure stand for all (FP-1, ADR-0071).
+				problem: problemOf(firstFailure)
 			});
 		}
 	}
@@ -1389,6 +1405,7 @@ export class TicketListStore {
 			const message = this.#failureMessage(error);
 			if (message === null) return;
 			this.#openError = message;
+			this.#openErrorProblem = problemOf(error);
 			this.#openState = 'error';
 		} finally {
 			if (this.#openController === controller) this.#openController = null;
@@ -1548,6 +1565,7 @@ export class TicketListStore {
 		this.#flags.show({
 			tone: 'error',
 			title: `${prefix} ${message}`,
+			problem: problemOf(error),
 			...(refusal !== null &&
 				reopen !== undefined && {
 					action: {

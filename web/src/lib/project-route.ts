@@ -6,6 +6,7 @@
 // of a row of the list alike (plan aktionsmenues, AM-4).
 
 import { createContext } from 'svelte';
+import type { ProblemEntry } from './domain/problems';
 import type { Project } from './domain/project';
 import type { ProjectCounts } from './domain/project-tree';
 import type { CatalogEditor, EditResult } from './stores/catalog-editor';
@@ -22,8 +23,11 @@ export interface ProjectRoute {
 	directOf(project: Project): ProjectCounts | null;
 	/** Success flag of an action (ADR-0025 section 8). */
 	notify(title: string): void;
-	/** Error flag of an action without a place of its own (the menu of a row), with the reason. */
-	fail(title: string, reason: string | null): void;
+	/**
+	 * Error flag of an action without a place of its own (the menu of a row), with the reason and
+	 * the failed request behind it for "Details" (FP-1, ADR-0071).
+	 */
+	fail(title: string, reason: string | null, problem?: ProblemEntry | null): void;
 	/** "Archivieren" or "Aus dem Archiv holen", with the success flag. */
 	archive(project: Project, archived: boolean): Promise<EditResult<Project>>;
 	/** "Mit Oberprojekt zurückholen": the archived parent first, the hook keeps the child below it. */

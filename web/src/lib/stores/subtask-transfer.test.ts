@@ -174,7 +174,12 @@ describe('transfer', () => {
 			ok: false,
 			message: 'Das Hauptticket wurde inzwischen geändert. Bitte erneut öffnen.',
 			missing: false,
-			stale: true
+			stale: true,
+			// "Details" of the message (FP-1): the intent and the answer of the route.
+			problem: expect.objectContaining({
+				intent: 'Unteraufgaben übertragen',
+				outcome: expect.objectContaining({ result: 'response', status: 409 })
+			})
 		});
 		expect(flags).toEqual([]);
 	});
@@ -194,7 +199,10 @@ describe('transfer', () => {
 		expect(await store.transfer(PARENT, REQUEST, ['project'])).toEqual({
 			ok: false,
 			message: 'GART-3: Das Projekt ist archiviert.',
-			missing: false
+			missing: false,
+			problem: expect.objectContaining({
+				outcome: expect.objectContaining({ code: 'targets: validation_project_archived' })
+			})
 		});
 	});
 

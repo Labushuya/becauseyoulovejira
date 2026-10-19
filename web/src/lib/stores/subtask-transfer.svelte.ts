@@ -9,8 +9,12 @@
 
 import type PocketBase from 'pocketbase';
 import { createContext } from 'svelte';
-import { toDataError } from '$lib/data/errors';
+import { problemOf, toDataError, withIntent } from '$lib/data/errors';
 import { transferToSubtasks } from '$lib/data/subtask-transfer';
+import type { ProblemEntry } from '$lib/domain/problems';
+
+/** The intent in "Details" of a failed transfer (FP-1, ADR-0071), the action of the dialog. */
+const TRANSFER_INTENT = 'Unteraufgaben übertragen';
 import {
 	DEFAULT_TRANSFER_FIELDS,
 	SUBTASK_TRANSFER_STORAGE_KEY,
@@ -33,6 +37,8 @@ import type { SessionGuard } from './ticket-list.svelte';
 export interface TransferSupportSource {
 	readonly createSupport: CreateSupport | null | undefined;
 	readonly createSupportProblem: string | null;
+	/** The failed request behind `createSupportProblem` (FP-1, ADR-0071). */
+	readonly createSupportFailure?: ProblemEntry | null;
 	readonly createSupportLoading: boolean;
 	loadCreateSupport(): Promise<void>;
 }
@@ -54,11 +60,18 @@ export type TransferSupport = 'ready' | 'missing' | 'pending' | 'failed';
 
 /**
  * The result of a transfer; `missing` when the server does not know the route yet, `stale` when the
- * parent changed meanwhile (409: sending again cannot help, the dialog has to be opened anew).
+ * parent changed meanwhile (409: sending again cannot help, the dialog has to be opened anew). A
+ * refusal carries the failed request behind its message for "Details" (`problem`, FP-1).
  */
 export type TransferResult =
 	| { ok: true; outcome: TransferOutcome }
-	| { ok: false; message: string | null; missing: boolean; stale?: boolean };
+	| {
+			ok: false;
+			message: string | null;
+			missing: boolean;
+			stale?: boolean;
+			problem?: ProblemEntry | null;
+	  };
 
 type PrefStorage = Pick<Storage, 'getItem' | 'setItem'>;
 
@@ -110,6 +123,11 @@ export class SubtaskTransferStore {
 	/** Why the question failed (`failed`), null otherwise. */
 	get supportProblem(): string | null {
 		return this.support === 'failed' ? (this.#support?.createSupportProblem ?? null) : null;
+	}
+
+	/** The failed request behind `supportProblem`, for "Details" (FP-1, ADR-0071). */
+	get supportFailure(): ProblemEntry | null {
+		return this.support === 'failed' ? (this.#support?.createSupportFailure ?? null) : null;
 	}
 
 	/** The question runs ("Erneut versuchen" shows it). */
@@ -164,7 +182,9 @@ export class SubtaskTransferStore {
 	): Promise<TransferResult> {
 		if (!this.#session.ensureValid()) return { ok: false, message: null, missing: false };
 		try {
-			const outcome = await this.#data.transfer(parent.id, request);
+			const outcome = await withIntent(TRANSFER_INTENT, () =>
+				this.#data.transfer(parent.id, request)
+			);
 			if (outcome === null) return { ok: false, message: null, missing: true };
 			if (remember) this.#remember(chosen);
 			this.#flags.show({ tone: 'success', title: transferredText(outcome.changed) });
@@ -175,23 +195,28 @@ export class SubtaskTransferStore {
 			if (failure.kind === 'session' || failure.kind === 'aborted') {
 				return { ok: false, message: null, missing: false };
 			}
+			const problem = problemOf(failure);
 			if (failure.status === 409) {
-				return { ok: false, message: TRANSFER_STALE_MESSAGE, missing: false, stale: true };
+				return { ok: false, message: TRANSFER_STALE_MESSAGE, missing: false, stale: true, problem };
 			}
 			if (failure.kind === 'not_found') {
 				return {
 					ok: false,
 					message: TRANSFER_MESSAGES.validation_transfer_missing ?? failure.message,
-					missing: false
+					missing: false,
+					problem
 				};
 			}
 			const field = failure.fields.targets ?? Object.values(failure.fields)[0];
-			if (field === undefined) return { ok: false, message: failure.message, missing: false };
+			if (field === undefined) {
+				return { ok: false, message: failure.message, missing: false, problem };
+			}
 			const key = typeof field.params?.key === 'string' ? field.params.key : null;
 			return {
 				ok: false,
 				message: key === null ? field.message : targetFailureText(key, field.message),
-				missing: false
+				missing: false,
+				problem
 			};
 		}
 	}

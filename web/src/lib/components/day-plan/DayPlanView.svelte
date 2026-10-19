@@ -10,6 +10,7 @@
 	import ErrorIcon from '../ErrorIcon.svelte';
 	import OngoingFinishDialog from '../OngoingFinishDialog.svelte';
 	import SectionMessage from '../guidance/SectionMessage.svelte';
+	import ProblemDetails from '../problems/ProblemDetails.svelte';
 	import SectionBar from '../SectionBar.svelte';
 	import ViewSwitch from '../ViewSwitch.svelte';
 	import DayPlanList from './DayPlanList.svelte';
@@ -145,6 +146,7 @@
 				onclick={() => void store.reload()}>Erneut versuchen</button
 			>
 		</p>
+		<ProblemDetails problem={store.errorProblem} />
 	{:else if store.state === 'ready'}
 		{#if !store.editable}
 			<SectionMessage tone="info" compact>Vergangene Tage sind schreibgeschützt.</SectionMessage>

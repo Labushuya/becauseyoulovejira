@@ -11,7 +11,8 @@
 
 import type PocketBase from 'pocketbase';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
-import { toDataError } from '$lib/data/errors';
+import { problemDetails, toDataError } from '$lib/data/errors';
+import type { ProblemEntry } from '$lib/domain/problems';
 import type { RequestOptions } from '$lib/data/options';
 import {
 	completedTicketMatches,
@@ -121,6 +122,8 @@ export class DoneListStore {
 	#state = $state<LoadState>('idle');
 	#error = $state<string | null>(null);
 	#moreError = $state<string | null>(null);
+	/** The failed request behind `#error` or `#moreError` (FP-1, ADR-0071). */
+	#loadProblem = $state.raw<ProblemEntry | null>(null);
 	#hasMore = $state(false);
 	#loadingMore = $state(false);
 	#total = $state<number | null>(null);
@@ -173,6 +176,11 @@ export class DoneListStore {
 
 	get error(): string | null {
 		return this.#error;
+	}
+
+	/** The failed request behind `error` or `moreError`, for "Details" (FP-1, ADR-0071). */
+	get loadProblem(): ProblemEntry | null {
+		return this.#error === null && this.#moreError === null ? null : this.#loadProblem;
 	}
 
 	/** Failure of "Mehr laden"; the loaded pages stay. */
@@ -491,6 +499,7 @@ export class DoneListStore {
 			if (controller.signal.aborted) return;
 			const message = this.#failureMessage(error);
 			if (message === null) return;
+			this.#loadProblem = problemDetails(error).problem ?? null;
 			if (first) {
 				this.#error = message;
 				this.#state = 'error';
@@ -632,6 +641,7 @@ export class DoneListStore {
 		this.#flags.show({
 			tone: 'error',
 			title: `${prefix} ${message}`,
+			...problemDetails(error),
 			...(refusal !== null &&
 				detach !== undefined && {
 					action: { label: REOPEN_DETACHED_LABEL, run: () => void this.reopenDetached(detach) }

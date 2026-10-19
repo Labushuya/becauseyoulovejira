@@ -11,6 +11,7 @@
 		sourceResultText,
 		type NotionImportedSource
 	} from '$lib/domain/notion';
+	import type { ProblemEntry } from '$lib/domain/problems';
 	import { connectionAnchor } from '$lib/domain/sync-all';
 	import type { ProjectRef } from '$lib/domain/ticket';
 	import { helpHref } from '$lib/settings-sections';
@@ -36,6 +37,7 @@
 		secretStatus,
 		notion,
 		message = null,
+		problem = null,
 		onimport,
 		onchanged,
 		onpause,
@@ -52,6 +54,8 @@
 		notion: NotionStore;
 		/** Error of the last action of this card (inline, ADR-0009). */
 		message?: string | null;
+		/** The failed request behind `message`, for "Details" (FP-1, ADR-0071). */
+		problem?: ProblemEntry | null;
 		/** Opens the import dialog of this connection. */
 		onimport: () => void;
 		/** A request to Notion changed the state of the connection on the server (last run, error). */
@@ -183,6 +187,7 @@
 	busy={progress !== null}
 	hint={health.hint}
 	message={message ?? refetchError}
+	problem={message === null ? null : problem}
 	{primary}
 	{menu}
 	{rename}
