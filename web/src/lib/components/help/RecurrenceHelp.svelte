@@ -211,6 +211,17 @@
 			Fälligkeit. Eine neue Regel ohne Ticket beginnt immer ab heute.
 		</li>
 		<li>
+			Die Vorschau im Formular rechnet mit der aktuellen Fälligkeit des Tickets, auch wenn du sie
+			änderst, während das Formular offen ist. Bei „Nach Erledigung“ steht dort „Dieses Ticket:
+			fällig …“ und darunter, was nach dem Erledigen am Fälligkeitstag kommt („Am Fälligkeitstag
+			erledigt → nächstes erscheint … → fällig …“), ist es nicht heute fällig, zusätzlich „Heute
+			erledigt → …“. „Beginnt am“ fehlt dort, denn der nächste Termin zählt ab dem Erledigen; ohne
+			Ticket (eine neue Regel) gilt „Beginnt am“ nur als erste Fälligkeit. Weicht „Beginnt am“ beim
+			festen Rhythmus von der Fälligkeit des Tickets ab, bietet das Formular „Fälligkeit übernehmen“
+			an; von selbst ändert es nichts. In „Neues Ticket“ folgt der Beginn der Fälligkeit, solange du
+			am Rhythmus nichts geändert hast.
+		</li>
+		<li>
 			Folgetickets bekommen Titel, Beschreibung, Priorität, Projekt, Tags und den „Status beim
 			Anlegen“ aus der Vorlage der Regel. Die Vorlage übernimmt beim Einrichten die Werte des
 			Tickets. Mit welchem Status Folgetickets starten, fragt die App beim Anlegen der Regel im Feld

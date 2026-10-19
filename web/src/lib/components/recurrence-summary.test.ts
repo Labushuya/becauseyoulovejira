@@ -149,9 +149,17 @@ async function setup(
 		parentSeries,
 		onticket
 	};
-	if (inModal) render(InModalHarness, { props: { component: RecurrenceSummary, props } });
-	else render(RecurrenceSummary, { props });
-	return { fake, store, onticket, flagTitles };
+	if (inModal) {
+		render(InModalHarness, { props: { component: RecurrenceSummary, props } });
+		return { fake, store, onticket, flagTitles, changeTicket: undefined };
+	}
+	const view = render(RecurrenceSummary, { props });
+	/**
+	 * The section of the panel with a changed ticket, as the panel hands it on (RV-1); the full
+	 * view with its field "Fälligkeit" is covered in ticket-panel.test.ts.
+	 */
+	const changeTicket = (changed: Ticket) => view.rerender({ ...props, ticket: changed });
+	return { fake, store, onticket, flagTitles, changeTicket };
 }
 
 describe('RecurrenceSummary', () => {
@@ -462,6 +470,57 @@ describe('RecurrenceSummary: "Wiederholen…" for a ticket overdue since long ag
 		await fireEvent.click(screen.getByRole('button', { name: 'Wiederholen…' }));
 		const area = screen.getByRole('region', { name: 'Wiederholen…' });
 		expect(firstNote(area).note).toBe('Erstes Vorkommen: Di 29.09.');
+	});
+});
+
+// RV-1 (ADR-0022 addendum 18): the due date of the ticket changes while "Wiederholen…" stands open
+// (in the full view under "Details", see ticket-panel.test.ts; in the panel by another device). The
+// preview follows it at once, "Beginnt am" does not follow by itself.
+describe('RecurrenceSummary: "Wiederholen…" and a changing due date (RV-1)', () => {
+	const rowsOf = (area: HTMLElement) =>
+		[...area.querySelectorAll<HTMLElement>('.preview li')].map((row) =>
+			(row.textContent ?? '').replace(/\s+/g, ' ').trim()
+		);
+	const ticketLineOf = (area: HTMLElement) =>
+		area.querySelector('.preview-ticket')?.textContent?.trim();
+
+	it('follows the due date in the dialog and takes it as "Beginnt am" only on the click', async () => {
+		const { fake, changeTicket } = await setup(ticket());
+		await fireEvent.click(screen.getByRole('button', { name: 'Wiederholen…' }));
+		const dialog = screen.getByRole('dialog', { name: 'Wiederholen…' });
+		expect(within(dialog).queryByRole('button', { name: 'Fälligkeit übernehmen' })).toBeNull();
+		await fireEvent.click(within(dialog).getByRole('radio', { name: 'Nach Erledigung' }));
+		expect(within(dialog).queryByLabelText('Beginnt am')).toBeNull();
+		expect(ticketLineOf(dialog)).toBe('Dieses Ticket: fällig Mo 28.09.');
+		expect(rowsOf(dialog)).toEqual([
+			'Am Fälligkeitstag erledigt → nächstes erscheint Fr 02.10. → fällig Mo 05.10.',
+			'Heute erledigt → erscheint Di 29.09. → fällig Fr 02.10.'
+		]);
+
+		// The due date moves to Wednesday 30.09.
+		await changeTicket?.(ticket({ due: '2026-09-30' }));
+		expect(ticketLineOf(dialog)).toBe('Dieses Ticket: fällig Mi 30.09.');
+		expect(rowsOf(dialog)[0]).toBe(
+			'Am Fälligkeitstag erledigt → nächstes erscheint So 04.10. → fällig Mi 07.10.'
+		);
+
+		// Back to a fixed rhythm: "Beginnt am" kept its date and offers the new due date.
+		await fireEvent.click(within(dialog).getByRole('radio', { name: 'Fester Rhythmus' }));
+		const start = within(dialog).getByLabelText<HTMLInputElement>('Beginnt am');
+		expect(start.value).toBe('2026-09-28');
+		expect(
+			within(dialog).getByText('„Beginnt am“ weicht von der Fälligkeit des Tickets ab (Mi 30.09.).')
+		).toBeTruthy();
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Fälligkeit übernehmen' }));
+		expect(start.value).toBe('2026-09-30');
+		expect(within(dialog).queryByRole('button', { name: 'Fälligkeit übernehmen' })).toBeNull();
+
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Wiederholung anlegen' }));
+		await vi.waitFor(() => expect(fake.createRule).toHaveBeenCalledOnce());
+		expect(fake.createRule).toHaveBeenCalledWith(
+			expect.objectContaining({ mode: 'calendar', anchor: '2026-09-30' }),
+			'ticket000000001'
+		);
 	});
 });
 

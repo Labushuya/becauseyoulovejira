@@ -834,6 +834,22 @@ describe('help page (EH-9)', () => {
 		}
 	});
 
+	// RV-1 (ADR-0022 addendum 18): the preview refers to the current due date of the ticket.
+	it('explains that the preview counts from the current due date and what "Beginnt am" means (RV-1)', () => {
+		render(Page);
+		const content = text(screen.getByRole('region', { name: 'Wiederholungen' }));
+		for (const phrase of [
+			'Die Vorschau im Formular rechnet mit der aktuellen Fälligkeit des Tickets, auch wenn du sie änderst, während das Formular offen ist.',
+			'Bei „Nach Erledigung“ steht dort „Dieses Ticket: fällig …“',
+			'(„Am Fälligkeitstag erledigt → nächstes erscheint … → fällig …“), ist es nicht heute fällig, zusätzlich „Heute erledigt → …“.',
+			'„Beginnt am“ fehlt dort, denn der nächste Termin zählt ab dem Erledigen; ohne Ticket (eine neue Regel) gilt „Beginnt am“ nur als erste Fälligkeit.',
+			'Weicht „Beginnt am“ beim festen Rhythmus von der Fälligkeit des Tickets ab, bietet das Formular „Fälligkeit übernehmen“ an; von selbst ändert es nichts.',
+			'In „Neues Ticket“ folgt der Beginn der Fälligkeit, solange du am Rhythmus nichts geändert hast.'
+		]) {
+			expect(content, phrase).toContain(phrase);
+		}
+	});
+
 	// Plan WV-3 (ADR-0022 addendum 10): "Unteraufgaben werden nicht kopiert" is replaced.
 	it('explains the sub-tasks of the template, how they are taken over and what reopening does', () => {
 		render(Page);

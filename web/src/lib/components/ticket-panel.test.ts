@@ -2501,6 +2501,42 @@ describe('ticket route: full view (ADR-0025 section 7, UI-7)', () => {
 			}
 		});
 
+		// RV-1 (ADR-0022 addendum 18): the due date under "Details" changes while "Wiederholen…"
+		// stands open; the preview follows at once, "Beginnt am" only on "Fälligkeit übernehmen".
+		it('lets the preview of "Wiederholen…" follow a new due date under "Details" (RV-1)', async () => {
+			const { dialog, data } = await renderFullView();
+			const card = within(dialog).getByRole('region', { name: 'Wiederholung' });
+			await fireEvent.click(within(card).getByRole('button', { name: 'Wiederholen…' }));
+			const area = within(card).getByRole('region', { name: 'Wiederholen…' });
+			await fireEvent.click(within(area).getByRole('radio', { name: 'Nach Erledigung' }));
+			const ticketLine = () => area.querySelector('.preview-ticket')?.textContent?.trim();
+			const firstRow = () =>
+				(area.querySelector('.preview li')?.textContent ?? '').replace(/\s+/g, ' ').trim();
+			expect(within(area).queryByLabelText('Beginnt am')).toBeNull();
+			expect(ticketLine()).toBe('Dieses Ticket: fällig Do 01.10.');
+			expect(firstRow()).toBe(
+				'Am Fälligkeitstag erledigt → nächstes erscheint Mo 05.10. → fällig Do 08.10.'
+			);
+
+			const due = within(dialog).getByLabelText<HTMLInputElement>('Fälligkeit');
+			await fireEvent.focus(due);
+			await fireEvent.input(due, { target: { value: '2026-10-08' } });
+			await fireEvent.blur(due);
+			await vi.waitFor(() => expect(data.update).toHaveBeenCalledWith(ID, { due: '2026-10-08' }));
+			await vi.waitFor(() => expect(ticketLine()).toBe('Dieses Ticket: fällig Do 08.10.'));
+			expect(firstRow()).toBe(
+				'Am Fälligkeitstag erledigt → nächstes erscheint Mo 12.10. → fällig Do 15.10.'
+			);
+
+			await fireEvent.click(within(area).getByRole('radio', { name: 'Fester Rhythmus' }));
+			expect(within(area).getByLabelText<HTMLInputElement>('Beginnt am').value).toBe('2026-10-01');
+			expect(
+				within(area).getByText('„Beginnt am“ weicht von der Fälligkeit des Tickets ab (Do 08.10.).')
+			).toBeTruthy();
+			await fireEvent.click(within(area).getByRole('button', { name: 'Fälligkeit übernehmen' }));
+			expect(within(area).getByLabelText<HTMLInputElement>('Beginnt am').value).toBe('2026-10-08');
+		});
+
 		it('unfolds "Quelle hinzufügen …" inline below the heading of the sources', async () => {
 			const { dialog } = await renderFullView();
 			const sources = within(dialog).getByRole('region', { name: 'Quellen' });

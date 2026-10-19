@@ -247,10 +247,16 @@ describe('web data layer: overview "Wiederholungen" (E5 plan, package 5)', () =>
       weekdays: ["TH"],
     });
     expect(thursday.nextDue).toBe("2031-01-09");
-    // The preview of the panel shows the same first date as the saved next ticket.
-    expect(formPreview(formValuesOf(thursday, today), today).dates[0]).toBe(
-      thursday.nextDue,
-    );
+    // The preview of the panel shows the same first date as the saved next ticket; the panel hands
+    // the form its rule as context (RV-1: only a ticket gives a due date to count from).
+    const context = {
+      kind: "rule",
+      nextDue: thursday.nextDue,
+      each: thursday.eachOccurrence === true,
+    };
+    const preview = formPreview(formValuesOf(thursday, today), today, context);
+    expect(preview.dates[0]).toBe(thursday.nextDue);
+    expect(preview.ticketDue).toBeNull();
   });
 
   it("deletes a rule and leaves its open ticket without the series", async () => {

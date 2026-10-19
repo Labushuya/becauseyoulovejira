@@ -822,45 +822,194 @@ export function formErrors(
 export interface PreviewRow {
 	due: CalendarDate;
 	appears: CalendarDate;
+	/**
+	 * After completion: the day of the completion the row assumes, the due date of the ticket or
+	 * today (RV-1); absent for a fixed rhythm.
+	 */
+	completed?: CalendarDate;
 }
 
 export interface RecurrencePreview {
-	/** The next dates of a fixed rhythm, or the date after completing today. */
+	/** The next dates of a fixed rhythm, or the dates after the completions of `rows`. */
 	dates: CalendarDate[];
 	/** The same dates with the day each ticket appears (due minus the lead time). */
 	rows: PreviewRow[];
 	/** Due date a ticket without one gets with a fixed rhythm (ADR-0023 section 1), else null. */
 	firstDue: CalendarDate | null;
+	/**
+	 * After completion: the due date of this ticket as the series begins with it (RV-1,
+	 * `completionDue`), "Dieses Ticket: fällig …"; null without one and for a fixed rhythm.
+	 */
+	ticketDue: CalendarDate | null;
+}
+
+/** The heading of the preview: the next dates, or what follows a completion (RV-1). */
+export function previewTitle(values: RecurrenceFormValues): string {
+	return values.mode === 'calendar' ? 'Nächste Termine' : 'So geht es weiter';
+}
+
+/**
+ * After completion the due date of the ticket the form belongs to (RV-1), always the current one
+ * of `context`, as the series begins with it: "Serie ab heute beginnen" moves a date before today
+ * (createDates, WH-2), "Ursprüngliches Datum behalten" keeps it. Null with a fixed rhythm, without
+ * a ticket, for a ticket without due date and while the values are invalid.
+ */
+export function completionDue(
+	values: RecurrenceFormValues,
+	today: CalendarDate,
+	context: RecurrenceFormContext | undefined
+): CalendarDate | null {
+	if (values.mode !== 'after_completion' || context?.kind !== 'ticket') return null;
+	const due = context.due;
+	if (due === null || !isCalendarDate(due)) return null;
+	const dates = createDates({
+		rule: formParams(values),
+		withTicket: true,
+		ticketDue: due,
+		today,
+		start: values.start ?? DEFAULT_SERIES_START
+	});
+	return dates === null ? null : (dates.ticketDue ?? due);
 }
 
 /**
  * Preview of the form: for a fixed rhythm the next three dates from the start (not before
- * today), after completion the date that follows a completion today; each with the day its
- * ticket appears (plan "Wiederholungen verständlich machen": "erscheint … → fällig …"). Empty
- * while the values are invalid. `withoutDue`: the ticket has no due date yet and gets the first
- * occurrence.
+ * today); after completion (RV-1) the date that follows a completion on the due date of the ticket
+ * (`context`, when it lies today or later) and, unless that is today, the date that follows a
+ * completion today; without a due date only the latter. Each row with the day its ticket appears
+ * (plan "Wiederholungen verständlich machen": "erscheint … → fällig …"), after completion never
+ * before the completion. Empty while the values are invalid. `withoutDue`: the ticket has no due
+ * date yet and gets the first occurrence.
  */
 export function formPreview(
 	values: RecurrenceFormValues,
 	today: CalendarDate,
+	context?: RecurrenceFormContext,
 	withoutDue = false
 ): RecurrencePreview {
 	const rule = validRule(formParams(values));
 	const invalid = rule === null || Object.keys(formErrors(values)).length > 0;
-	if (invalid || !isCalendarDate(rule.anchor)) return { dates: [], rows: [], firstDue: null };
-	const rowsOf = (dates: CalendarDate[]) =>
-		dates.map((due) => ({ due, appears: createOn(due, rule.lead_days) }));
+	if (invalid || !isCalendarDate(rule.anchor)) {
+		return { dates: [], rows: [], firstDue: null, ticketDue: null };
+	}
 	if (rule.mode === 'after_completion') {
-		const dates = [afterCompletion(rule, today)];
-		return { dates, rows: rowsOf(dates), firstDue: null };
+		const ticketDue = completionDue(values, today, context);
+		// A day before today cannot be the day of the completion any more.
+		const completions = [
+			...(ticketDue !== null && ticketDue >= today ? [ticketDue] : []),
+			...(ticketDue !== today ? [today] : [])
+		];
+		const rows = completions.map((completed) => {
+			const due = afterCompletion(rule, completed);
+			const appears = createOn(due, rule.lead_days);
+			// The next ticket comes with the completion at the earliest (CLAUDE.md §6 "Vorlauf").
+			const shown = completed > today && appears < completed ? completed : appears;
+			return { due, appears: shown, completed };
+		});
+		return { dates: rows.map((row) => row.due), rows, firstDue: null, ticketDue };
 	}
 	const from = rule.anchor > today ? rule.anchor : today;
 	const dates = upcoming(rule, from, 3);
 	return {
 		dates,
-		rows: rowsOf(dates),
-		firstDue: withoutDue ? onOrAfter(rule, rule.anchor) : null
+		rows: dates.map((due) => ({ due, appears: createOn(due, rule.lead_days) })),
+		firstDue: withoutDue ? onOrAfter(rule, rule.anchor) : null,
+		ticketDue: null
 	};
+}
+
+/** The parts of a row of the preview as read: "Heute erledigt → erscheint Fr 02.10. → fällig …". */
+export interface PreviewRowText {
+	/** After completion "Am Fälligkeitstag erledigt" or "Heute erledigt"; null for a fixed rhythm. */
+	completed: string | null;
+	appears: string;
+	due: string;
+}
+
+/**
+ * The texts of a row (RV-1): a fixed rhythm "erscheint Fr 02.10." and "fällig Mo 05.10."; after
+ * completion first the day of the completion, "Am Fälligkeitstag erledigt" with "nächstes erscheint
+ * …" or "Heute erledigt" with "erscheint …".
+ */
+export function previewRowText(
+	row: PreviewRow,
+	preview: RecurrencePreview,
+	today: CalendarDate
+): PreviewRowText {
+	const appears = appearsText(row.appears, today);
+	const due = `fällig ${dayLabel(row.due, today)}`;
+	if (row.completed === undefined) return { completed: null, appears, due };
+	if (row.completed === preview.ticketDue) {
+		return { completed: 'Am Fälligkeitstag erledigt', appears: `nächstes ${appears}`, due };
+	}
+	return { completed: 'Heute erledigt', appears, due };
+}
+
+/** "Dieses Ticket: fällig Sa 31.10." above the rows after completion (RV-1); null without. */
+export function previewTicketText(preview: RecurrencePreview, today: CalendarDate): string | null {
+	return preview.ticketDue === null
+		? null
+		: `Dieses Ticket: fällig ${dayLabel(preview.ticketDue, today)}`;
+}
+
+/** Whether the form belongs to a ticket (with or without due date), not to a rule of its own. */
+function withTicket(context: RecurrenceFormContext | undefined, withoutDue: boolean): boolean {
+	return context?.kind === 'ticket' || withoutDue;
+}
+
+/**
+ * Whether the form shows "Beginnt am" (RV-1): after completion the next date counts from the
+ * completion, so at a ticket the start takes no part and the field gives way; without a ticket (a
+ * new rule, a rule of its own) it stays as the first due date (`ANCHOR_FIRST_DUE_HINT`). A start the
+ * check refuses stays visible, so its error can be seen and fixed.
+ */
+export function anchorShown(
+	values: RecurrenceFormValues,
+	context: RecurrenceFormContext | undefined,
+	withoutDue = false
+): boolean {
+	if (values.mode !== 'after_completion' || !withTicket(context, withoutDue)) return true;
+	return formErrors(values).anchor !== undefined;
+}
+
+/** Hint at "Beginnt am" after completion without a ticket (RV-1). */
+export const ANCHOR_FIRST_DUE_HINT =
+	'Gilt nur als erste Fälligkeit; danach zählt der Abstand ab dem Erledigen.';
+
+/** The hint of "Beginnt am", or undefined: only after completion without a ticket (RV-1). */
+export function anchorHint(
+	values: RecurrenceFormValues,
+	context: RecurrenceFormContext | undefined,
+	withoutDue = false
+): string | undefined {
+	return values.mode === 'after_completion' && !withTicket(context, withoutDue)
+		? ANCHOR_FIRST_DUE_HINT
+		: undefined;
+}
+
+/** Label of the button that takes the due date of the ticket as "Beginnt am" (RV-1). */
+export const TAKE_DUE_LABEL = 'Fälligkeit übernehmen';
+
+/**
+ * The due date "Fälligkeit übernehmen" offers for "Beginnt am" (RV-1): the current due date of the
+ * ticket while "Beginnt am" is shown and differs from it, else null. Nothing follows by itself,
+ * though the due date may change while the form is open (dialog, full view, "Neues Ticket" once
+ * its values were touched).
+ */
+export function anchorOffer(
+	values: RecurrenceFormValues,
+	context: RecurrenceFormContext | undefined
+): CalendarDate | null {
+	if (context?.kind !== 'ticket' || context.due === null || !isCalendarDate(context.due)) {
+		return null;
+	}
+	if (!anchorShown(values, context)) return null;
+	return values.anchor === context.due ? null : context.due;
+}
+
+/** "„Beginnt am“ weicht von der Fälligkeit des Tickets ab (Sa 31.10.)." (RV-1) */
+export function anchorOfferText(due: CalendarDate, today: CalendarDate): string {
+	return `„Beginnt am“ weicht von der Fälligkeit des Tickets ab (${dayLabel(due, today)}).`;
 }
 
 /**
