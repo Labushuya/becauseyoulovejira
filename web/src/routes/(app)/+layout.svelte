@@ -110,6 +110,11 @@
 		ticketSourcesData
 	} from '$lib/stores/ticket-sources.svelte';
 	import {
+		SubtaskTransferStore,
+		setSubtaskTransferStore,
+		subtaskTransferData
+	} from '$lib/stores/subtask-transfer.svelte';
+	import {
 		TicketFollowUpStore,
 		setTicketFollowUpStore,
 		ticketFollowUpData
@@ -253,6 +258,11 @@
 	// "Ticket duplizieren" (ADR-0045): one request, the result as a flag with the way back. Whether the
 	// server takes the status of the new sub-tasks comes from the same answer as "Neues Ticket" (UT-2).
 	setTicketDuplicateStore(new TicketDuplicateStore(ticketDuplicateData(pb), auth, flags, detail));
+	// "Auf Unteraufgaben übertragen …" (ADR-0070): one request, the result as a flag; the device keeps
+	// the last confirmed fields. Whether the server knows the route comes from the same answer.
+	setSubtaskTransferStore(
+		new SubtaskTransferStore(subtaskTransferData(pb), auth, flags, detail, window)
+	);
 	// "Zum Tagesplan" in the menu "•••" of every ticket (ADR-0065): into the plan of today of its own
 	// area; the flag leads to the plan.
 	setDayPlanEntryStore(

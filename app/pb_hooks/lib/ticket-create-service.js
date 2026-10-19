@@ -362,6 +362,8 @@ function planToday(txApp, ticket, actor) {
  * status without a word, so the forms offer none then. `duplicate_subtask_status` (UT-2, no migration)
  * says the same for "Duplizieren": the route takes `subtask_status` for the new sub-tasks, a server of
  * before would drop it and create open ones, so the dialog asks only once it is named.
+ * `subtask_transfer` (UE-1, no migration) says that the route "Auf Unteraufgaben übertragen …" exists;
+ * before the restart the dialog shows the hint to restart instead of sending.
  */
 function support(e) {
   var tickets = e.app.findCollectionByNameOrId(TICKETS);
@@ -375,7 +377,8 @@ function support(e) {
     charm: hasField(tickets, 'charm'),
     assignee: hasField(tickets, 'assignee'),
     subtask_status: true,
-    duplicate_subtask_status: true
+    duplicate_subtask_status: true,
+    subtask_transfer: true
   };
 }
 

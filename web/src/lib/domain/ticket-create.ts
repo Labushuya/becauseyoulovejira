@@ -188,6 +188,11 @@ export interface CreateSupport {
 	 * restart after UT-2, whose route would create open ones without a word.
 	 */
 	duplicateSubtaskStatus: boolean;
+	/**
+	 * "Auf Unteraufgaben übertragen …" (UE-1, no migration): false before the restart after UE-1, whose
+	 * server does not know the route yet.
+	 */
+	subtaskTransfer: boolean;
 }
 
 /** The answer of the GET, or null when it is not one. */
@@ -204,17 +209,22 @@ export function toCreateSupport(value: unknown): CreateSupport | null {
 		charm: flag('charm'),
 		assignee: flag('assignee'),
 		subtaskStatus: flag('subtask_status'),
-		duplicateSubtaskStatus: flag('duplicate_subtask_status')
+		duplicateSubtaskStatus: flag('duplicate_subtask_status'),
+		subtaskTransfer: flag('subtask_transfer')
 	};
 }
 
 /**
- * Whether an answer names every option that comes with the hooks alone (UT-1, UT-2): only then may it
+ * Whether an answer names every option that comes with the hooks alone (UT-1, UT-2, UE-1): only then may it
  * stay for the session. Before the restart after such a package the server does not name it yet;
  * asking again on the next opening of a form finds it once the restart has happened (UT-2, K3).
  */
 export function supportComplete(support: CreateSupport | null | undefined): boolean {
-	return support?.subtaskStatus === true && support.duplicateSubtaskStatus === true;
+	return (
+		support?.subtaskStatus === true &&
+		support.duplicateSubtaskStatus === true &&
+		support.subtaskTransfer === true
+	);
 }
 
 /**

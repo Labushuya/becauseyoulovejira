@@ -112,3 +112,9 @@ Zuständigkeit und Rotation sind Felder von Tickets und Regeln; ihre Änderungen
 - **Tagesplan (§8):** Unteraufgaben mit Zuständigkeit schlägt die Quelle „Mir zugewiesen“ der Person vor wie jedes Ticket; mit der geerbten Fälligkeit gilt dasselbe für „Heute fällig“.
 - **Neustart nötig** (`neu-starten.bat`) für Route und Erzeugung; „Unteraufgabe hinzufügen“ im Detail wirkt nach dem Build und F5.
 - **Belegt in** `assignees.test.mjs` (Person des Vorkommens an den Unteraufgaben, kein `assigned_at`, kein Verlauf, Zeiger einmal, Rückgängig), `ticket-create.test.mjs` (Zuständigkeit der Unteraufgaben, `assigned_at`, kein Hinweis je Unteraufgabe), `ticket-list.test.ts` und `ticket-subtasks.test.ts`.
+
+## Nachtrag UE-1 (2026-10-19): ein Hinweis je Person beim Übertragen auf Unteraufgaben
+
+- **Anlass:** „Auf Unteraufgaben übertragen …“ ([ADR-0070](0070-auf-unteraufgaben-uebertragen.md)) kann einer Person viele Unteraufgaben auf einmal geben; ein Hinweis je Unteraufgabe wäre Lärm.
+- **Regel (§4 ergänzt):** Speicherungen einer Route, die selbst meldet, tragen den flüchtigen Schlüssel `@assignee_batch` (`BATCH_KEY` in `lib/assignee-service.js`). Der Modell-Hook bleibt unverändert (`assigned_at`, Lesezeile gelöscht, das Ticket ist wieder „neu“); nur der After-Success-Hook sendet für sie nichts. Nach dem Commit sendet die Route mit `notifyAssignedTogether` je Empfänger einen Hinweis: bei einer Unteraufgabe die gewohnte Nachricht, bei mehreren die der ersten mit `count`, `parent`, `parent_key` und `parent_title`. Die SPA zeigt „Anna hat dir 3 Unteraufgaben von HAUS-12 zugewiesen.“, „Öffnen“ öffnet das Hauptticket. Kein globaler Zustand: die Hinweise hängen an den Datensätzen der einen Anfrage.
+- **Belegt in** `tests/integration/subtask-transfer.test.mjs` und `assigned-notices.test.ts`; Test-Manifest Paket „UE-1“ (BYL-E6-1814).

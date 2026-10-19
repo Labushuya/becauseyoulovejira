@@ -1,21 +1,39 @@
 // The live notice of an assignment (E7-5, ADR-0068 §4): every notice of the server becomes an info
 // flag "Anna hat dir HAUS-12 zugewiesen." with the title of the ticket and "Öffnen", which leads to
-// the ticket; the cleanup ends the subscription. The topic is read strictly.
+// the ticket; the cleanup ends the subscription. The topic is read strictly. Since UE-1 one notice
+// may stand for several sub-tasks of a ticket given at once (ADR-0070 §5).
 
 import { describe, expect, it, vi } from 'vitest';
-import { ASSIGNED_TOPIC, parseAssignedNotice, subscribeAssigned } from '$lib/data/assigned';
+import {
+	ASSIGNED_TOPIC,
+	parseAssignedNotice,
+	subscribeAssigned,
+	type AssignedNotice
+} from '$lib/data/assigned';
 import type PocketBase from 'pocketbase';
 import { AssignedNotices, OPEN_ASSIGNED_LABEL, type AssignedLive } from './assigned-notices.svelte';
 import type { FlagInput } from './flags.svelte';
 import { LiveHealth } from './live-health.svelte';
 
-const NOTICE = {
+const NOTICE: AssignedNotice = {
 	ticket: 'ticket000000001',
 	key: 'HAUS-12',
 	title: 'Müll rausbringen',
 	scope: 'h:house0000000001',
 	by: 'bert00000000002',
-	byName: 'Bert Beispiel'
+	byName: 'Bert Beispiel',
+	count: 1,
+	parent: null
+};
+
+/** One notice for three sub-tasks of HAUS-12 given at once (UE-1, ADR-0070 §5). */
+const GROUPED: AssignedNotice = {
+	...NOTICE,
+	ticket: 'ticket000000013',
+	key: 'HAUS-13',
+	title: 'Laub',
+	count: 3,
+	parent: { id: 'ticket000000012', key: 'HAUS-12', title: 'Garten winterfest' }
 };
 
 function fakeLive() {
@@ -68,6 +86,22 @@ describe('AssignedNotices', () => {
 		expect(input?.title).toBe('Jemand hat dir HAUS-12 zugewiesen.');
 		expect(input).not.toHaveProperty('description');
 	});
+
+	it('names several sub-tasks given at once in one flag whose "Öffnen" opens their ticket (UE-1)', () => {
+		const flags = { show: vi.fn<(input: FlagInput) => string>(() => 'flag'), dismiss: vi.fn() };
+		const open = vi.fn();
+		new AssignedNotices(flags, open).show(GROUPED);
+		const input = flags.show.mock.calls[0]?.[0] as FlagInput | undefined;
+		expect(input).toMatchObject({
+			tone: 'info',
+			title: 'Bert Beispiel hat dir 3 Unteraufgaben von HAUS-12 zugewiesen.',
+			description: 'Garten winterfest'
+		});
+		input?.action?.run();
+		expect(open).toHaveBeenCalledExactlyOnceWith(
+			expect.objectContaining({ ticket: 'ticket000000012', key: 'HAUS-12', scope: NOTICE.scope })
+		);
+	});
 });
 
 describe('topic byl/assigned', () => {
@@ -82,6 +116,33 @@ describe('topic byl/assigned', () => {
 				by_name: NOTICE.byName
 			})
 		).toEqual(NOTICE);
+		// Several sub-tasks at once (UE-1): the count and the parent; without the parent one ticket.
+		expect(
+			parseAssignedNotice({
+				ticket: GROUPED.ticket,
+				key: GROUPED.key,
+				title: GROUPED.title,
+				scope: NOTICE.scope,
+				by: NOTICE.by,
+				by_name: NOTICE.byName,
+				count: 3,
+				parent: 'ticket000000012',
+				parent_key: 'HAUS-12',
+				parent_title: 'Garten winterfest'
+			})
+		).toEqual(GROUPED);
+		expect(
+			parseAssignedNotice({ ticket: GROUPED.ticket, key: GROUPED.key, count: 3, parent: '' })
+		).toMatchObject({ count: 1, parent: null });
+		expect(
+			parseAssignedNotice({
+				ticket: GROUPED.ticket,
+				key: GROUPED.key,
+				count: 1,
+				parent: 'ticket000000012',
+				parent_key: 'HAUS-12'
+			})
+		).toMatchObject({ count: 1, parent: null });
 		expect(parseAssignedNotice({ ticket: NOTICE.ticket })).toBeNull();
 		expect(parseAssignedNotice({ key: 'HAUS-12', ticket: 7 })).toBeNull();
 		expect(parseAssignedNotice('HAUS-12')).toBeNull();

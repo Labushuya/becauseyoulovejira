@@ -214,8 +214,23 @@ export function assigneeHistoryText(newValue: string, context: AssigneeContext):
 
 /** The live notice of an assignment by someone else: "Anna hat dir HAUS-12 zugewiesen." */
 export function assignedNoticeText(byName: string, key: string): string {
-	const who = byName.trim() === '' ? 'Jemand' : byName.trim();
-	return `${who} hat dir ${key} zugewiesen.`;
+	return `${whoOf(byName)} hat dir ${key} zugewiesen.`;
+}
+
+/**
+ * One notice for several sub-tasks of a ticket given at once (UE-1, ADR-0070 §5): "Anna hat dir 3
+ * Unteraufgaben von HAUS-12 zugewiesen."
+ */
+export function assignedSubtasksNoticeText(
+	byName: string,
+	count: number,
+	parentKey: string
+): string {
+	return `${whoOf(byName)} hat dir ${count} Unteraufgaben von ${parentKey} zugewiesen.`;
+}
+
+function whoOf(byName: string): string {
+	return byName.trim() === '' ? 'Jemand' : byName.trim();
 }
 
 /** Names of the modes in the dialog of a rule. */

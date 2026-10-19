@@ -610,7 +610,8 @@ describe('"Status der Unteraufgaben" (UT-2)', () => {
 		charm: true,
 		assignee: true,
 		subtaskStatus: true,
-		duplicateSubtaskStatus: true
+		duplicateSubtaskStatus: true,
+		subtaskTransfer: true
 	};
 
 	/**

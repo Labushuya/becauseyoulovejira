@@ -260,7 +260,8 @@ describe('answers of the route', () => {
 				charm: false,
 				assignee: true,
 				subtask_status: true,
-				duplicate_subtask_status: true
+				duplicate_subtask_status: true,
+				subtask_transfer: true
 			})
 		).toEqual({
 			recurrence: true,
@@ -272,18 +273,21 @@ describe('answers of the route', () => {
 			charm: false,
 			assignee: true,
 			subtaskStatus: true,
-			duplicateSubtaskStatus: true
+			duplicateSubtaskStatus: true,
+			subtaskTransfer: true
 		});
 		// A server before UT-1 does not name the status of sub-tasks, one before UT-2 not that of
-		// "Duplizieren".
+		// "Duplizieren", one before UE-1 not "Auf Unteraufgaben übertragen …".
 		expect(toCreateSupport({ recurrence: true }).subtaskStatus).toBe(false);
 		expect(toCreateSupport({ subtask_status: true }).duplicateSubtaskStatus).toBe(false);
+		expect(toCreateSupport({ subtask_status: true, duplicate_subtask_status: true }).subtaskTransfer).toBe(false);
 		expect(toCreateSupport('ok')).toBeNull();
 	});
 
 	it('keeps an answer for the session only once it names every option of the hooks (UT-2)', () => {
-		const full = toCreateSupport({ subtask_status: true, duplicate_subtask_status: true });
+		const full = toCreateSupport({ subtask_status: true, duplicate_subtask_status: true, subtask_transfer: true });
 		expect(supportComplete(full)).toBe(true);
+		expect(supportComplete(toCreateSupport({ subtask_status: true, duplicate_subtask_status: true }))).toBe(false);
 		expect(supportComplete(toCreateSupport({ subtask_status: true }))).toBe(false);
 		expect(supportComplete(toCreateSupport({}))).toBe(false);
 		expect(supportComplete(null)).toBe(false);
