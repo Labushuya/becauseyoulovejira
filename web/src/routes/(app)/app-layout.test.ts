@@ -1104,6 +1104,18 @@ describe('app layout: phone frame (MO-1a, ADR-0073)', () => {
 		expect(mocks.goto).not.toHaveBeenCalled();
 	});
 
+	it('keeps "Aufgaben" when it is reloaded, as when pulled down to refresh', async () => {
+		windowOf(true);
+		getMobileLayoutStore().choose(true);
+		const entries = vi
+			.spyOn(performance, 'getEntriesByType')
+			.mockReturnValue([{ type: 'reload' } as unknown as PerformanceEntry]);
+		await enter('/', '/(app)/(tickets)');
+		expect(entries).toHaveBeenCalledWith('navigation');
+		expect(mocks.goto).not.toHaveBeenCalled();
+		entries.mockRestore();
+	});
+
 	it.each([
 		['a link with the state of the list', '/?karte=heute', '/(app)/(tickets)'],
 		['a link to a ticket', '/tickets/abc123def456ghi', '/(app)/(tickets)/tickets/[id]'],

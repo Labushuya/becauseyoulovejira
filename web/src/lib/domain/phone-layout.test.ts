@@ -26,7 +26,15 @@ import {
 const ORIGIN = 'http://192.168.178.20:8090';
 
 function start(overrides: Partial<StartAddress> = {}): StartAddress {
-	return { pathname: '/', search: '', hash: '', referrer: '', origin: ORIGIN, ...overrides };
+	return {
+		pathname: '/',
+		search: '',
+		hash: '',
+		referrer: '',
+		origin: ORIGIN,
+		navigation: 'navigate',
+		...overrides
+	};
 }
 
 describe('phone layout: breakpoint and switch', () => {
@@ -80,6 +88,8 @@ describe('phone layout: the day plan as the start view', () => {
 	it('starts with the day plan at the bare start page opened from outside', () => {
 		expect(isPhoneStart(start())).toBe(true);
 		expect(isPhoneStart(start({ referrer: 'https://example.com/' }))).toBe(true);
+		// A browser that does not say how the document came.
+		expect(isPhoneStart(start({ navigation: '' }))).toBe(true);
 	});
 
 	it.each([
@@ -87,7 +97,9 @@ describe('phone layout: the day plan as the start view', () => {
 		['a link to a ticket', { pathname: '/tickets/abc123def456ghi' }],
 		['the day plan itself', { pathname: '/tagesplan' }],
 		['a link with a fragment', { hash: '#oben' }],
-		['a page of the app loading "/" anew after an update', { referrer: `${ORIGIN}/projekte` }]
+		['a page of the app loading "/" anew after an update', { referrer: `${ORIGIN}/projekte` }],
+		['"Aufgaben" reloaded (pulled down to refresh)', { navigation: 'reload' }],
+		['the way back to "Aufgaben"', { navigation: 'back_forward' }]
 	])('keeps %s', (_name, overrides) => {
 		expect(isPhoneStart(start(overrides))).toBe(false);
 	});

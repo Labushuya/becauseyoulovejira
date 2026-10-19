@@ -60,17 +60,24 @@ export interface StartAddress {
 	readonly referrer: string;
 	/** Origin of the app, e.g. "http://192.168.178.20:8090". */
 	readonly origin: string;
+	/**
+	 * How the document came (PerformanceNavigationTiming.type): "navigate", "reload",
+	 * "back_forward"; empty where the browser does not say.
+	 */
+	readonly navigation: string;
 }
 
 /**
  * Whether the app was opened at its start page, so the phone frame starts with the day plan
  * (decision of the user): only the bare "/" (the shortcut on the home screen, the address typed),
- * not a link with a state ("/?karte=heute", "/tickets/…"), and not a page of the app that loaded "/"
- * as a new document after an update (its referrer is the app itself). A tap on "Aufgaben" never
- * comes here: it navigates inside the open app.
+ * not a link with a state ("/?karte=heute", "/tickets/…"), not a page of the app that loaded "/"
+ * as a new document after an update (its referrer is the app itself), and not a reload ("Aufgaben"
+ * pulled down to refresh stays "Aufgaben") or a way back to it. A tap on "Aufgaben" never comes
+ * here: it navigates inside the open app.
  */
 export function isPhoneStart(address: StartAddress): boolean {
 	if (address.pathname !== '/' || address.search !== '' || address.hash !== '') return false;
+	if (address.navigation !== 'navigate' && address.navigation !== '') return false;
 	if (address.referrer === '') return true;
 	try {
 		return new URL(address.referrer).origin !== address.origin;

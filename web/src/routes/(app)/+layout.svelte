@@ -176,17 +176,20 @@
 	$effect(() => untrack(() => mobileLayout.connect()));
 	const phone = $derived(mobileLayout.active);
 	// The start view on the phone is the day plan (decision of the user): only when the app opens at
-	// its bare start page, never for a link with its own address or a tap on "Aufgaben".
+	// its bare start page, never for a link with its own address, a reload or a tap on "Aufgaben".
 	let started = false;
 	afterNavigate(() => {
 		if (started) return;
 		started = true;
+		const kind = (performance.getEntriesByType?.('navigation')[0] as { type?: unknown } | undefined)
+			?.type;
 		const start = isPhoneStart({
 			pathname: page.url.pathname,
 			search: page.url.search,
 			hash: page.url.hash,
 			referrer: document.referrer,
-			origin: page.url.origin
+			origin: page.url.origin,
+			navigation: typeof kind === 'string' ? kind : ''
 		});
 		if (mobileLayout.active && start) void goto(dayPlanHref(), { replaceState: true });
 	});
