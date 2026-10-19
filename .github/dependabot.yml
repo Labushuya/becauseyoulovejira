@@ -21,6 +21,12 @@ updates:
       # applies to all directories above.
       - dependency-name: 'typescript'
         update-types: ['version-update:semver-major']
+      # SvelteKit 3 migration deferred (#300); adapter-static 4 requires Kit 3.
+      # Patches and minors stay allowed.
+      - dependency-name: '@sveltejs/kit'
+        update-types: ['version-update:semver-major']
+      - dependency-name: '@sveltejs/adapter-static'
+        update-types: ['version-update:semver-major']
     commit-message:
       prefix: chore
       include: scope
