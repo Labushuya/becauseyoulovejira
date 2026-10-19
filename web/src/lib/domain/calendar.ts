@@ -13,6 +13,7 @@ import { formatCalendarDate } from './format';
 import { eventDueDate, type InboxItemSummary } from './inbox';
 import { NO_PROJECT, type ListQuery } from './list-query';
 import { compareTickets, compareTitles } from './ordering';
+import { PHONE_QUERY } from './phone-layout';
 import { WEEKDAYS, weekdayOf } from './recurrence';
 import { MONTH_NAMES, WEEKDAY_NAMES } from './recurrence-text';
 import { sourceFamily } from './source';
@@ -110,9 +111,10 @@ export const CALENDAR_VIEW_STORAGE_KEY = 'byl-calendar-view';
 
 /**
  * Below this width a month grid has no room for titles: without a choice the calendar starts with
- * the agenda there, and a month shows dots instead of titles (ADR-0053 §7).
+ * the agenda there, and a month shows dots instead of titles (ADR-0053 §7). Since MO-1a the one
+ * breakpoint of the phone layout (ADR-0073), independent of its switch.
  */
-export const CALENDAR_NARROW_QUERY = '(max-width: 39.99rem)';
+export const CALENDAR_NARROW_QUERY = PHONE_QUERY;
 
 /** The view shown: the one of the URL, else the remembered one, else the month (agenda if narrow). */
 export function effectiveView(

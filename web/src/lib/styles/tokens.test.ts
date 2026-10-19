@@ -12,6 +12,8 @@ import {
 	MODES,
 	MODE_SELECTORS,
 	OPAQUE_BLOCKS,
+	PHONE_BLOCK,
+	PHONE_TOKENS,
 	TOKENS_SOURCE as SOURCE,
 	accentSelector,
 	customProperties,
@@ -78,7 +80,15 @@ const NON_COLOR_TOKENS = {
 	'--font-size-small': '0.75rem',
 	'--font-size-control': '0.8125rem',
 	'--font-size-body': '0.875rem',
-	'--font-size-title': '1.125rem'
+	'--font-size-title': '1.125rem',
+	// Phone layout (MO-1a, ADR-0073): margin, bars, targets, safe areas and the highest sheet.
+	'--page-inline': '1.5rem',
+	'--top-bar-height': '3.5rem',
+	'--bottom-bar-height': '3.5rem',
+	'--phone-target': '3rem',
+	'--safe-top': 'env(safe-area-inset-top, 0px)',
+	'--safe-bottom': 'env(safe-area-inset-bottom, 0px)',
+	'--sheet-max-height': 'calc(100dvh - var(--safe-top) - 2.5rem)'
 } as const;
 
 /** What the blocks of the switch point "opaque" set (ADR-0029 section 6). */
@@ -135,7 +145,8 @@ describe('tokens.css', () => {
 		const expected = [
 			...MODES.map((mode) => MODE_SELECTORS[mode]),
 			...ACCENTS.flatMap((accent) => MODES.map((mode) => accentSelector(accent, mode))),
-			...OPAQUE_BLOCKS
+			...OPAQUE_BLOCKS,
+			PHONE_BLOCK
 		];
 		expect([...blocks.keys()].sort()).toEqual(expected.sort());
 	});
@@ -207,9 +218,21 @@ describe('tokens.css', () => {
 			expect(light.get(name), name).toBe(value);
 		}
 		for (const [selector, properties] of blocks) {
-			if (selector === LIGHT || opaqueBlocks.has(selector)) continue;
+			if (selector === LIGHT || opaqueBlocks.has(selector) || selector === PHONE_BLOCK) continue;
 			expect([...properties.keys()].filter(isNonColorToken), selector).toEqual([]);
 		}
+	});
+
+	// MO-1a (ADR-0073): the phone values only with the switch on and below the one breakpoint, and
+	// only tokens that :root defines as well, so from 40rem and with the switch off nothing changes.
+	it('sets only the margin of the pages in the block of the phone layout', () => {
+		const phone = blocks.get(PHONE_BLOCK);
+		expect(Object.fromEntries(phone ?? new Map<string, string>())).toEqual(PHONE_TOKENS);
+		for (const name of Object.keys(PHONE_TOKENS)) {
+			expect(isNonColorToken(name), name).toBe(true);
+			expect(blocks.get(LIGHT)?.get(name), name).not.toBe(PHONE_TOKENS[name]);
+		}
+		expect(allBlocks.get(PHONE_BLOCK)?.size).toBe(Object.keys(PHONE_TOKENS).length);
 	});
 
 	it('has neutral glass materials of at least 0.82 on the surface in every mode block (ADR-0029)', () => {

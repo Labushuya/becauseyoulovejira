@@ -164,6 +164,21 @@
 	--font-size-control: 0.8125rem;
 	--font-size-body: 0.875rem;
 	--font-size-title: 1.125rem;
+
+	/*
+	 * Phone layout (MO-1a, ADR-0073): the margin of the pages, the heights of the compact top bar and
+	 * of the bottom bar, the smallest target of the bars and of the sheet (48 px, more than the 44 px
+	 * of Apple HIG), the safe areas of the system bars and the cut-out (0 unless the phone frame sets
+	 * viewport-fit=cover) and the highest sheet, which leaves a strip of the blanket to tap. Only the
+	 * margin changes on the phone, in the block at the end of this file.
+	 */
+	--page-inline: 1.5rem;
+	--top-bar-height: 3.5rem;
+	--bottom-bar-height: 3.5rem;
+	--phone-target: 3rem;
+	--safe-top: env(safe-area-inset-top, 0px);
+	--safe-bottom: env(safe-area-inset-bottom, 0px);
+	--sheet-max-height: calc(100dvh - var(--safe-top) - 2.5rem);
 }
 
 /* Dark mode via media query */
@@ -675,5 +690,17 @@
 		--glass-filter-regular: none !important;
 		--glass-filter-thick: none !important;
 		--backdrop-image: none !important;
+	}
+}
+
+/*
+ * Phone layout (MO-1a, ADR-0073): with the switch "Handy-Ansicht (Vorschau)" on (data-mobile-layout,
+ * set by lib/mobile-layout.svelte.ts) and below the one breakpoint of PHONE_QUERY, the pages keep a
+ * margin of 16 px, the window margin of compact layouts in Material. Off, or from 40rem, nothing
+ * changes.
+ */
+@media (max-width: 39.99rem) {
+	:root[data-mobile-layout='on'] {
+		--page-inline: 1rem;
 	}
 }
