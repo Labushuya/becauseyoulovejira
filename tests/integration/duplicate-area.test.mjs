@@ -304,6 +304,54 @@ describe('into the private area (ticket of the household)', () => {
 	});
 });
 
+describe('the status of the new sub-tasks in the other area (UT-2, ADR-0045 addendum UT-2)', () => {
+	it('starts them like the duplicate or "open", into the household and into the private area', async () => {
+		const { original, sub1, sub2 } = await richPrivateTicket();
+		const like = await a.duplicate(original.id, {
+			title: `Wie das Duplikat ${uniqueSuffix()}`,
+			to: 'household',
+			status: 'in_progress',
+			subtasks: true,
+			subtask_status: 'duplicate'
+		});
+		expect((await childrenOf(like.id)).map((child) => [child.title, child.status, child.completed_at, child.scope])).toEqual([
+			[sub1.title, 'in_progress', '', householdScope()],
+			[sub2.title, 'in_progress', '', householdScope()]
+		]);
+		const open = await a.duplicate(original.id, {
+			title: `Offen ${uniqueSuffix()}`,
+			to: 'household',
+			status: 'waiting',
+			subtasks: true,
+			subtask_status: 'open'
+		});
+		expect((await childrenOf(open.id)).map((child) => child.status)).toEqual(['open', 'open']);
+
+		const shared = await a.ticket({ household: householdId, title: `Fenster ${uniqueSuffix()}` });
+		await a.ticket({ household: householdId, parent: shared.id, title: 'Rahmen' });
+		const mine = await b.duplicate(shared.id, {
+			title: 'Fenster (Kopie)',
+			to: 'private',
+			status: 'backlog',
+			subtasks: true,
+			subtask_status: 'duplicate'
+		});
+		expect((await childrenOf(mine.id)).map((child) => [child.title, child.status, child.scope])).toEqual([
+			['Rahmen', 'backlog', privateScope(b)]
+		]);
+	});
+
+	it('refuses an unknown choice before anything is written', async () => {
+		const { original, fresh } = await richPrivateTicket();
+		const title = `Abgelehnt UT-2 ${uniqueSuffix()}`;
+		expect(
+			await rejection(a.duplicate(original.id, { title, to: 'household', tags: true, subtasks: true, subtask_status: 'erledigt' }))
+		).toEqual({ status: 400, codes: { subtask_status: 'validation_duplicate_subtask_status' } });
+		expect(await ticketsTitled(title)).toHaveLength(0);
+		expect(await tagsNamed(householdScope(), fresh)).toHaveLength(0);
+	});
+});
+
 describe('one transaction', () => {
 	it('leaves nothing behind when the last write fails: no copy, no sub-task, no new tag, no number', async () => {
 		const fresh = `neu-${uniqueSuffix()}`;

@@ -23,7 +23,8 @@ describe('parseRequest', () => {
 			subtasks: true,
 			comments: true,
 			color: true,
-			to: 'household'
+			to: 'household',
+			subtask_status: 'duplicate'
 		});
 		expect(options).toEqual({
 			title: 'Kopie',
@@ -31,6 +32,7 @@ describe('parseRequest', () => {
 			project: 'p1',
 			source: 'copy',
 			to: 'household',
+			subtaskStatus: 'duplicate',
 			description: true,
 			priority: true,
 			tags: false,
@@ -90,6 +92,33 @@ describe('parseRequest', () => {
 		expect(rules.parseRequest({ ...valid, source: 'link' })).toEqual({ field: 'source', code: 'validation_duplicate_source' });
 	});
 
+	it('reads the status of the new sub-tasks: like the duplicate or "open", open without a choice (UT-2)', () => {
+		expect([...rules.SUBTASK_STATUS_CHOICES]).toEqual(['duplicate', 'open']);
+		// A client of before sends none and gets open sub-tasks, as before.
+		for (const missing of [undefined, null, '']) {
+			expect(rules.parseRequest({ ...valid, subtask_status: missing }).options.subtaskStatus).toBe('open');
+		}
+		expect(rules.parseRequest({ ...valid, subtask_status: 'duplicate' }).options.subtaskStatus).toBe('duplicate');
+		expect(rules.parseRequest({ ...valid, subtask_status: 'open' }).options.subtaskStatus).toBe('open');
+		for (const wrong of ['waiting', 'done', 'Duplicate', 1]) {
+			expect(rules.parseRequest({ ...valid, subtask_status: wrong })).toEqual({
+				field: 'subtask_status',
+				code: 'validation_duplicate_subtask_status'
+			});
+		}
+	});
+
+	it('starts the new sub-tasks with the status of the duplicate or "open", never "done" (UT-2)', () => {
+		for (const status of ['backlog', 'open', 'in_progress', 'waiting']) {
+			const like = rules.parseRequest({ ...valid, status, subtask_status: 'duplicate' }).options;
+			expect(rules.subtaskStatusOf(like), status).toBe(status);
+			const open = rules.parseRequest({ ...valid, status, subtask_status: 'open' }).options;
+			expect(rules.subtaskStatusOf(open), status).toBe('open');
+			const before = rules.parseRequest({ ...valid, status }).options;
+			expect(rules.subtaskStatusOf(before), status).toBe('open');
+		}
+	});
+
 	it('reads anything but an object as empty', () => {
 		for (const body of [null, undefined, 'x', 3]) {
 			expect(rules.parseRequest(body)).toEqual({ field: 'title', code: 'validation_duplicate_title' });
@@ -108,7 +137,8 @@ describe('parseRequest', () => {
 			'validation_duplicate_no_household',
 			'validation_duplicate_area_right',
 			'validation_duplicate_source_area',
-			'validation_duplicate_project_area'
+			'validation_duplicate_project_area',
+			'validation_duplicate_subtask_status'
 		]) {
 			expect(rules.MESSAGES[code], code).toMatch(/\S/);
 		}

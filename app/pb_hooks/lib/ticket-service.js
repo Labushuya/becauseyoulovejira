@@ -60,6 +60,17 @@ function hasChildren(txApp, record) {
   return txApp.findRecordsByFilter('tickets', 'parent = {:id}', '', 1, 0, { id: record.id }).length > 0;
 }
 
+// The status of the parent of a new ticket that names no status of its own (UT-2), '' otherwise:
+// without a parent, with a status, or when the parent is missing (checkRelations refuses it then).
+function parentStatusOf(txApp, record) {
+  var parentId = record.getString('parent');
+  if (parentId === '' || record.getString('status') !== '') {
+    return '';
+  }
+  var parent = findById(txApp, 'tickets', parentId);
+  return parent ? parent.getString('status') : '';
+}
+
 // Called from the request hooks: remembers the signed-in app user for the history. Superusers
 // and anonymous requests leave it empty (ticket_history.user relates to users only).
 function rememberActor(e) {
@@ -398,7 +409,9 @@ function checkCreate(txApp, record) {
 
   var defaults = rules.createDefaults({
     status: record.getString('status'),
-    priority: record.getString('priority')
+    priority: record.getString('priority'),
+    // A sub-task without a status starts like its parent (UT-2); a missing parent fails below.
+    parentStatus: parentStatusOf(txApp, record)
   });
   for (var field in defaults) {
     if (Object.prototype.hasOwnProperty.call(defaults, field)) {

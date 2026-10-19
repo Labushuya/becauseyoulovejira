@@ -974,6 +974,94 @@ describe('RecurrenceStore: the sub-tasks of the template (plan WV-3)', () => {
 		}
 	});
 
+	it('keeps a failed question for the status of the sub-tasks as unknown, with its reason (UT-2)', async () => {
+		const probe = vi
+			.fn<(options: unknown) => Promise<boolean>>()
+			.mockRejectedValueOnce(new DataError('network'))
+			.mockResolvedValue(true);
+		const store = new RecurrenceStore(
+			{ ...ready(fakeData([])), subtaskStatusReady: probe },
+			session()
+		);
+		await store.load();
+		expect(store.state).toBe('ready');
+		expect(store.subtaskStatusReady).toBe(false);
+		expect(store.subtaskStatusProblem).toContain('Server nicht erreichbar.');
+		expect(store.subtaskStatusIssue?.reason).toBe(store.subtaskStatusProblem);
+		expect(store.subtaskStatusIssue?.busy).toBe(false);
+
+		// "Erneut versuchen".
+		store.subtaskStatusIssue?.retry();
+		await vi.waitFor(() => expect(store.subtaskStatusReady).toBe(true));
+		expect(store.subtaskStatusProblem).toBeNull();
+		expect(store.subtaskStatusIssue).toBeNull();
+		// A known "yes" stays: no further question.
+		await store.checkSubtaskStatus();
+		expect(probe).toHaveBeenCalledTimes(2);
+	});
+
+	it('asks again on "Bearbeiten" of the template while the status is missing, so a restart shows (UT-2)', async () => {
+		const probe = vi
+			.fn<(options: unknown) => Promise<boolean>>()
+			.mockResolvedValueOnce(false)
+			.mockResolvedValue(true);
+		const store = new RecurrenceStore(
+			{ ...ready(fakeData([rule()])), subtaskStatusReady: probe },
+			session()
+		);
+		await store.load();
+		expect(store.subtaskStatusReady).toBe(false);
+		// The server answered: missing, not unknown.
+		expect(store.subtaskStatusProblem).toBeNull();
+		store.editTemplate('rule00000000001');
+		await vi.waitFor(() => expect(store.subtaskStatusReady).toBe(true));
+		store.cancelTemplate();
+		store.editTemplate('rule00000000001');
+		await store.checkSubtaskStatus();
+		expect(probe).toHaveBeenCalledTimes(2);
+	});
+
+	it('asks nothing without the list of the template, and once while a question runs', async () => {
+		const without = vi.fn(async () => true);
+		const plain = new RecurrenceStore({ ...fakeData([]), subtaskStatusReady: without }, session());
+		await plain.load();
+		await plain.checkSubtaskStatus();
+		expect(without).not.toHaveBeenCalled();
+		expect(plain.subtaskStatusProblem).toBeNull();
+
+		let answer: (value: boolean) => void = () => undefined;
+		const probe = vi
+			.fn<(options: unknown) => Promise<boolean>>()
+			.mockResolvedValueOnce(false)
+			.mockImplementation(() => new Promise<boolean>((resolve) => (answer = resolve)));
+		const store = new RecurrenceStore(
+			{ ...ready(fakeData([])), subtaskStatusReady: probe },
+			session()
+		);
+		await store.load();
+		const first = store.checkSubtaskStatus();
+		expect(store.subtaskStatusLoading).toBe(true);
+		await store.checkSubtaskStatus();
+		answer(true);
+		await first;
+		expect(probe).toHaveBeenCalledTimes(2);
+		expect(store.subtaskStatusReady).toBe(true);
+	});
+
+	it('ends the session when the question finds it lost (UT-2)', async () => {
+		const guard = session();
+		const store = new RecurrenceStore(
+			{
+				...ready(fakeData([])),
+				subtaskStatusReady: vi.fn(async () => Promise.reject(new DataError('session')))
+			},
+			guard
+		);
+		await store.load();
+		expect(guard.logout).toHaveBeenCalled();
+		expect(store.subtaskStatusProblem).toBeNull();
+	});
+
 	it('knows the charms only after their migration and sends a charm of the draft only then (ADR-0062)', async () => {
 		const ruleData = fakeData([rule()]);
 		const after = new RecurrenceStore(

@@ -183,6 +183,11 @@ export interface CreateSupport {
 	 * restart after UT-1, whose hooks would drop it without a word.
 	 */
 	subtaskStatus: boolean;
+	/**
+	 * "Duplizieren" takes the status of the new sub-tasks (UT-2, no migration): false before the
+	 * restart after UT-2, whose route would create open ones without a word.
+	 */
+	duplicateSubtaskStatus: boolean;
 }
 
 /** The answer of the GET, or null when it is not one. */
@@ -198,9 +203,30 @@ export function toCreateSupport(value: unknown): CreateSupport | null {
 		color: flag('color'),
 		charm: flag('charm'),
 		assignee: flag('assignee'),
-		subtaskStatus: flag('subtask_status')
+		subtaskStatus: flag('subtask_status'),
+		duplicateSubtaskStatus: flag('duplicate_subtask_status')
 	};
 }
+
+/**
+ * Whether an answer names every option that comes with the hooks alone (UT-1, UT-2): only then may it
+ * stay for the session. Before the restart after such a package the server does not name it yet;
+ * asking again on the next opening of a form finds it once the restart has happened (UT-2, K3).
+ */
+export function supportComplete(support: CreateSupport | null | undefined): boolean {
+	return support?.subtaskStatus === true && support.duplicateSubtaskStatus === true;
+}
+
+/**
+ * Words of "Weitere Optionen" while the question runs or after it failed (UT-2, K3): a failure says
+ * why and that the options are unknown, never that a restart is needed.
+ */
+export const SUPPORT_TEXTS = Object.freeze({
+	loading: 'Weitere Optionen werden geladen …',
+	problem: (reason: string) =>
+		`Welche weiteren Optionen der Server kennt, ließ sich gerade nicht abfragen. ${reason} Bis dahin gibt es hier nur, was es schon vorher gab.`,
+	retry: 'Erneut versuchen'
+});
 
 /** A field of the form an error of the route stands at. */
 export type CreateField =

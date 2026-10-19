@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { loadHookLib } from '../support/hook-lib.mjs';
 import { SCOPE_FIELD_MESSAGES, SCOPE_MESSAGE } from '../../web/src/lib/domain/area.ts';
+import { subtaskStatusOf } from '../../web/src/lib/domain/series-template.ts';
+import { parentDefaultsOf } from '../../web/src/lib/domain/subtasks.ts';
 
 const rules = loadHookLib('ticket-rules.js');
+const recurrenceRules = loadHookLib('recurrence-rules.js');
+
+const PARENT_STATUSES = ['', 'backlog', 'open', 'in_progress', 'waiting', 'done', 'x', undefined, null];
 
 describe('createDefaults', () => {
 	it('sets status open and priority medium when empty (OF-11)', () => {
@@ -20,6 +25,34 @@ describe('createDefaults', () => {
 	it('keeps values sent by the client', () => {
 		expect(rules.createDefaults({ status: 'backlog', priority: 'urgent' })).toEqual({});
 		expect(rules.createDefaults({ status: 'done', priority: '' })).toEqual({ priority: 'medium' });
+	});
+
+	it('starts a sub-task without a status like its parent, "open" under a done one (UT-2, K4)', () => {
+		expect(rules.createDefaults({ status: '', priority: 'high', parentStatus: 'waiting' })).toEqual({ status: 'waiting' });
+		expect(rules.createDefaults({ status: '', parentStatus: 'in_progress' }).status).toBe('in_progress');
+		expect(rules.createDefaults({ status: '', parentStatus: 'backlog' }).status).toBe('backlog');
+		expect(rules.createDefaults({ status: '', parentStatus: 'done' }).status).toBe('open');
+		expect(rules.createDefaults({ status: '', parentStatus: '' }).status).toBe('open');
+		// An own status always wins, also "done" (the Record API may create a done sub-task).
+		expect(rules.createDefaults({ status: 'done', parentStatus: 'waiting' })).toEqual({ priority: 'medium' });
+	});
+
+	it('decides like subtaskStatusOf of the hooks and of the SPA (parity, UT-2)', () => {
+		expect([...rules.SUBTASK_STATUSES]).toEqual([...recurrenceRules.INITIAL_STATUSES]);
+		for (const parentStatus of PARENT_STATUSES) {
+			const own = rules.createDefaults({ status: '', parentStatus }).status;
+			expect(own, String(parentStatus)).toBe(recurrenceRules.subtaskStatusOf(undefined, parentStatus));
+			expect(own, String(parentStatus)).toBe(subtaskStatusOf(undefined, parentStatus));
+		}
+	});
+
+	it('gives the status "Neues Ticket" fills in from a parent the same way (parity, UT-2, K1)', () => {
+		for (const parentStatus of ['backlog', 'open', 'in_progress', 'waiting', 'done']) {
+			const parent = { status: parentStatus, due: null, kind: 'task', assignee: null };
+			expect(parentDefaultsOf(parent).status, parentStatus).toBe(
+				rules.createDefaults({ status: '', parentStatus }).status
+			);
+		}
 	});
 });
 

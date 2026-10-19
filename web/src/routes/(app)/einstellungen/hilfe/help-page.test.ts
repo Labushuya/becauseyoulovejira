@@ -534,6 +534,28 @@ describe('help page (EH-9)', () => {
 		expect(assignees).toMatch(/seine Unteraufgaben aus der Vorlage bekommen dieselbe Person/);
 	});
 
+	it('explains what a parent fills in, a failed question and the status of duplicated sub-tasks (UT-2)', () => {
+		render(Page);
+		const section = screen.getByRole('region', { name: 'Häufige Fragen' });
+		const answer = (summary: string) =>
+			text(
+				[...section.querySelectorAll('details')].find(
+					(details) => details.querySelector('summary')?.textContent?.trim() === summary
+				) as HTMLElement
+			);
+		const create = answer('Was kann ich schon beim Anlegen eines Tickets einstellen?');
+		expect(create).toMatch(
+			/übernimmt das neue Ticket dessen Status \(bei einem erledigten Hauptticket „Offen“\), Fälligkeit, Art und Zuständigkeit, solange du diese Felder nicht selbst gesetzt hast/
+		);
+		expect(create).toMatch(/„Vom Hauptticket übernommen\.“/);
+		expect(create).toMatch(/mit dem Grund und „Erneut versuchen“; beim nächsten Öffnen fragt/);
+		const duplicate = answer('Wie dupliziere ich ein Ticket?');
+		expect(duplicate).toMatch(
+			/„Status der Unteraufgaben“ wählst du „Wie das Duplikat“ \(vorgewählt, sie starten mit dem Status des Duplikats\) oder „Offen“/
+		);
+		expect(duplicate).not.toMatch(/neue, offene Unteraufgaben/);
+	});
+
 	it('explains sub-tasks below their parent in the day plan and the line above a lone one (TP-2, TP-3)', () => {
 		const { container } = render(Page);
 		const content = text(container.querySelector<HTMLElement>('section#tagesplan')!);

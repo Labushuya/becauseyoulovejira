@@ -14,6 +14,7 @@ import {
 	createRequestBody,
 	moreOptionsLabel,
 	moreOptionsSet,
+	supportComplete,
 	toCreateOutcome,
 	toCreateSupport
 } from '../../web/src/lib/domain/ticket-create.ts';
@@ -249,7 +250,18 @@ describe('answers of the route', () => {
 
 	it('reads the answer of GET', () => {
 		expect(
-			toCreateSupport({ recurrence: true, pin: true, day_plan: false, ticket_sources: true, kind: true, color: true, charm: false, assignee: true, subtask_status: true })
+			toCreateSupport({
+				recurrence: true,
+				pin: true,
+				day_plan: false,
+				ticket_sources: true,
+				kind: true,
+				color: true,
+				charm: false,
+				assignee: true,
+				subtask_status: true,
+				duplicate_subtask_status: true
+			})
 		).toEqual({
 			recurrence: true,
 			pin: true,
@@ -259,11 +271,23 @@ describe('answers of the route', () => {
 			color: true,
 			charm: false,
 			assignee: true,
-			subtaskStatus: true
+			subtaskStatus: true,
+			duplicateSubtaskStatus: true
 		});
-		// A server before UT-1 does not name the status of sub-tasks.
+		// A server before UT-1 does not name the status of sub-tasks, one before UT-2 not that of
+		// "Duplizieren".
 		expect(toCreateSupport({ recurrence: true }).subtaskStatus).toBe(false);
+		expect(toCreateSupport({ subtask_status: true }).duplicateSubtaskStatus).toBe(false);
 		expect(toCreateSupport('ok')).toBeNull();
+	});
+
+	it('keeps an answer for the session only once it names every option of the hooks (UT-2)', () => {
+		const full = toCreateSupport({ subtask_status: true, duplicate_subtask_status: true });
+		expect(supportComplete(full)).toBe(true);
+		expect(supportComplete(toCreateSupport({ subtask_status: true }))).toBe(false);
+		expect(supportComplete(toCreateSupport({}))).toBe(false);
+		expect(supportComplete(null)).toBe(false);
+		expect(supportComplete(undefined)).toBe(false);
 	});
 });
 

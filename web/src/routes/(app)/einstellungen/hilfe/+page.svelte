@@ -1045,9 +1045,18 @@
 						Zuständigkeit des Tickets.
 					</li>
 					<li>
+						Wählst du unter „Übergeordnet“ ein Hauptticket, übernimmt das neue Ticket dessen Status
+						(bei einem erledigten Hauptticket „Offen“), Fälligkeit, Art und Zuständigkeit, solange
+						du diese Felder nicht selbst gesetzt hast; dort steht dann „Vom Hauptticket
+						übernommen.“. Ein anderes Hauptticket füllt sie neu, ohne Hauptticket gelten wieder die
+						Werte vom Anfang.
+					</li>
+					<li>
 						Das Ticket entsteht mit allem in einem Schritt oder gar nicht: Lehnt der Server etwas
 						ab, steht der Grund am Feld, und nichts ist angelegt. „Umwandeln“ im Eingang öffnet
-						denselben Dialog.
+						denselben Dialog. Lässt sich gerade nicht abfragen, was der Server kennt, sagt „Weitere
+						Optionen“ das mit dem Grund und „Erneut versuchen“; beim nächsten Öffnen fragt die App
+						von selbst wieder.
 					</li>
 					<li>
 						Erst am angelegten Ticket gehen Kommentare, Verlauf, Folge-Tickets, Duplizieren,
@@ -1251,11 +1260,13 @@
 						dabei nicht. Das Duplikat bekommt einen neuen Key im gewählten Projekt.
 					</li>
 					<li>
-						Unteraufgaben kommen als neue, offene Unteraufgaben mit. Kopierte Kommentare beginnen
-						mit „Kopiert aus HAUS-12“ und behalten Autor und Zeit; ein angepinnter bleibt angepinnt.
-						Den Charm und die Art (Aufgabe oder laufendes Vorhaben) nimmt das Duplikat immer mit,
-						jede Unteraufgabe die ihrer eigenen. Eine Wiederholung kommt nie mit: Das Duplikat ist
-						ein normales Ticket.
+						Unteraufgaben kommen als neue Unteraufgaben mit; unter „Status der Unteraufgaben“ wählst
+						du „Wie das Duplikat“ (vorgewählt, sie starten mit dem Status des Duplikats) oder
+						„Offen“, auch in den anderen Bereich. Kopierte Kommentare beginnen mit „Kopiert aus
+						HAUS-12“ und behalten Autor und Zeit; ein angepinnter bleibt angepinnt. Den Charm und
+						die Art (Aufgabe oder laufendes Vorhaben) nimmt das Duplikat immer mit, jede
+						Unteraufgabe die ihrer eigenen. Eine Wiederholung kommt nie mit: Das Duplikat ist ein
+						normales Ticket.
 					</li>
 					<li>
 						Hat das Ticket Quellen, wählst du „Keine Quelle“ (Standard) oder „Kopie der Herkunft

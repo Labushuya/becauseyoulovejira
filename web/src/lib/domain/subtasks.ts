@@ -1,6 +1,8 @@
 // Sub-tasks (ADR-0033): order and progress of the sub-tasks of a ticket, the texts of the hook
-// codes and of the question before completing. Pure.
+// codes and of the question before completing, what a new sub-task takes from its parent. Pure.
 
+import type { CalendarDate } from './berlin-date';
+import { subtaskStatusOf, type TemplateStatus } from './series-template';
 import type { ParentRef, TicketSummary } from './ticket';
 
 /**
@@ -282,6 +284,36 @@ export function isKnownParent(parent: Pick<ParentRef, 'key'>): boolean {
 export function subtaskOfText(parent: Pick<ParentRef, 'key' | 'title'>, withTitle = false): string {
 	const name = withTitle && parent.title !== '' ? `${parent.key} ${parent.title}` : parent.key;
 	return `Unteraufgabe von ${name}:`;
+}
+
+// --- A new ticket below a parent in "Neues Ticket" (UT-2, ADR-0069 addendum UT-2) -------------------
+
+/** Hint at a field of "Neues Ticket" whose value came from the chosen parent. */
+export const FROM_PARENT_HINT = 'Vom Hauptticket übernommen.';
+
+/**
+ * What "Neues Ticket" fills in from the chosen parent while a field is untouched (UT-2, K1): the
+ * status a sub-task starts with (`subtaskStatusOf`, never "Erledigt": "Offen" under a done parent,
+ * as the hook decides for a sub-task without a status), its due date, whether it is an ongoing
+ * project and its assignee ('' for nobody). `ongoing` and `assignee` are null where the server does
+ * not know the field (before its migration): those fields stay as they are.
+ */
+export interface ParentDefaults {
+	status: TemplateStatus;
+	due: CalendarDate | null;
+	ongoing: boolean | null;
+	assignee: string | null;
+}
+
+export function parentDefaultsOf(
+	parent: Pick<TicketSummary, 'status' | 'due' | 'kind' | 'assignee'>
+): ParentDefaults {
+	return {
+		status: subtaskStatusOf(undefined, parent.status),
+		due: parent.due,
+		ongoing: parent.kind === undefined ? null : parent.kind === 'ongoing',
+		assignee: parent.assignee === undefined ? null : (parent.assignee ?? '')
+	};
 }
 
 // --- A sub-task of a ticket of a series (UT-1, ADR-0033 addendum UT-1) ------------------------------

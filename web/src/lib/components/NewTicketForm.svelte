@@ -22,8 +22,10 @@
 		type TemplateSubtask
 	} from '$lib/domain/series-template';
 	import { isPriority, isStatus, type Priority, type Status } from '$lib/domain/status';
+	import { FROM_PARENT_HINT, parentDefaultsOf } from '$lib/domain/subtasks';
 	import {
 		CREATE_SUBTASKS_MAX,
+		SUPPORT_TEXTS,
 		moreOptionsLabel,
 		moreOptionsSet,
 		readMoreOpen,
@@ -88,14 +90,18 @@
 	// "Wiederholen" (plan OR-4), the sub-tasks (ADR-0033; since UT-1 each with a status, without an own
 	// choice the one of the ticket, "Offen" for a done one, once the server takes it:
 	// `subtaskStatusAvailable`) and the sources: new entries of the inbox (ADR-0031) and tickets it
-	// stems from (ADR-0067). Options that differ from a new ticket are
-	// counted in the heading, "Weitere Optionen (2 gesetzt)". The fields are the building blocks of the
-	// detail (ColorChoice, KindSwitch, BlocksParentSwitch, TicketPicker, TemplateSubtaskList,
-	// InboxEntryChoice, RecurrenceForm). The route creates everything in one request (one transaction
-	// of the server); a refusal stands at its field, and a field under "Weitere Optionen" opens the
-	// area for it. A server before its restart after NT-1 does not know that request
-	// (`extrasAvailable` false): then the area offers only color and "Wiederholen" as before and says
-	// when the rest comes.
+	// stems from (ADR-0067). Since UT-2 a chosen parent fills in status ("Offen" under a done one), due
+	// date, kind and assignee while the field is untouched, with the hint "Vom Hauptticket übernommen."
+	// at the field; another parent fills them in again, no parent sets them back. Options that differ
+	// from a new ticket are counted in the heading, "Weitere Optionen (2 gesetzt)". The fields are the
+	// building blocks of the detail (ColorChoice, KindSwitch, BlocksParentSwitch, TicketPicker,
+	// TemplateSubtaskList, InboxEntryChoice, RecurrenceForm). The route creates everything in one
+	// request (one transaction of the server); a refusal stands at its field, and a field under
+	// "Weitere Optionen" opens the area for it. A server before its restart after NT-1 does not know
+	// that request (`extrasAvailable` false): then the area offers only color and "Wiederholen" as
+	// before and says when the rest comes. Since UT-2 it says so only when the server answered that
+	// way; while the question runs it says nothing of a restart (`extrasPending`), and a failed
+	// question says why with "Erneut versuchen" (`extrasProblem`).
 	//
 	// "Anlegen" or Ctrl+Enter creates; the button is locked during the request, so a double click
 	// creates one ticket. "Abbrechen" and Escape ask first through the confirmation (ADR-0025 section
@@ -134,6 +140,9 @@
 		dayPlanAvailable = false,
 		ticketSourcesAvailable = false,
 		subtaskStatusAvailable = false,
+		extrasPending = false,
+		extrasProblem = null,
+		onretryextras = () => undefined,
 		candidates = [],
 		picker = findTicketPickerSource(),
 		scope = findAreaStore()?.key ?? null,
@@ -194,6 +203,17 @@
 		 * ticket (UT-1; CreateSupport.subtaskStatus): each row of the sub-tasks offers its status.
 		 */
 		subtaskStatusAvailable?: boolean;
+		/**
+		 * The question which options the server knows runs (UT-2): without an answer yet the area says
+		 * nothing of a restart.
+		 */
+		extrasPending?: boolean;
+		/**
+		 * Why that question failed (UT-2), null otherwise: the options are unknown, not missing; the
+		 * area says why and offers "Erneut versuchen" (`onretryextras`).
+		 */
+		extrasProblem?: string | null;
+		onretryextras?: () => void;
 		/** New entries of the inbox that may become sources (without the one converted here). */
 		candidates?: readonly InboxItemSummary[];
 		/** Tickets of the pickers of parent and sources; the (app) layout provides them. */
@@ -243,8 +263,11 @@
 		titleHint: `${uid}-title-hint`,
 		titleError: `${uid}-title-error`,
 		status: `${uid}-status`,
+		statusHint: `${uid}-status-hint`,
 		priority: `${uid}-priority`,
 		due: `${uid}-due`,
+		dueHint: `${uid}-due-hint`,
+		kindHint: `${uid}-kind-hint`,
 		sourceDate: `${uid}-source-date`,
 		dueError: `${uid}-due-error`,
 		project: `${uid}-project`,
@@ -323,6 +346,13 @@
 	let templateSubtasks = $state(false);
 	/** Row of a list a refusal of the server names. */
 	let errorIndex = $state<Partial<Record<'subtasks' | 'ticketSources' | 'sources', number>>>({});
+	/**
+	 * Fields the user set by hand (UT-2, K1): a chosen parent fills in only the others. A due date the
+	 * entry of the inbox brought was chosen when it was typed in, so it counts as set.
+	 */
+	let touched = $state({ status: false, due: initialDue !== '', ongoing: false, assignee: false });
+	/** What the polite region says after a parent filled in fields ("… übernommen: Status, Art."). */
+	let parentNote = $state('');
 
 	/**
 	 * Values of the section "Wiederholen"; null until it is opened the first time. They stay while
@@ -403,6 +433,21 @@
 			sources: sourcesShown ? sources.length : 0,
 			ticketSources: ticketSourcesShown ? ticketSources.length : 0
 		})
+	);
+
+	// The fields that hold a value of the chosen parent (UT-2, K1); each shows FROM_PARENT_HINT. An
+	// empty due date, "Niemand" and "Aufgabe" are no value taken over.
+	const fromParent = $derived(parent === null ? null : parentDefaultsOf(parent));
+	const statusFromParent = $derived(fromParent !== null && !touched.status);
+	const dueFromParent = $derived(fromParent?.due != null && !touched.due && due === fromParent.due);
+	const ongoingFromParent = $derived(
+		kindShown && fromParent?.ongoing === true && !touched.ongoing && ongoing
+	);
+	const assigneeFromParent = $derived(
+		assigneeShown &&
+			!touched.assignee &&
+			chosenAssignee !== '' &&
+			chosenAssignee === (fromParent?.assignee ?? null)
 	);
 
 	const dirty = $derived(
@@ -626,6 +671,43 @@
 		if (sourceDate === null) return;
 		due = berlinDateOf(sourceDate);
 		dueInvalid = false;
+		touched.due = true;
+	}
+
+	/**
+	 * "Übergeordnet" (UT-2, K1): every field the user has not set (status, due date, kind, assignee)
+	 * takes the value of the new parent, as a sub-task gets it on the other ways; without a parent it
+	 * goes back to the value the form started with. The polite region names what came from the parent.
+	 */
+	function chooseParent(next: TicketSummary | null) {
+		const same = (next?.id ?? null) === (parent?.id ?? null);
+		parent = next;
+		if (same) return;
+		cleared('parent');
+		const taken = next === null ? null : parentDefaultsOf(next);
+		const names: string[] = [];
+		if (!touched.status) {
+			status = taken?.status ?? DEFAULT_STATUS;
+			if (taken !== null) names.push('Status');
+		}
+		if (!touched.due) {
+			due = taken?.due ?? initialDue;
+			dueInvalid = false;
+			dueChanged();
+			if (taken?.due != null) names.push('Fälligkeit');
+		}
+		if (kindShown && !touched.ongoing && taken?.ongoing !== null) {
+			ongoing = taken?.ongoing ?? false;
+			if (taken?.ongoing === true) names.push('Art');
+		}
+		if (assigneeShown && !touched.assignee && taken?.assignee !== null) {
+			assignee = taken?.assignee ?? '';
+			if (members.some((member) => member.id === assignee)) names.push('Zuständigkeit');
+		}
+		parentNote =
+			next === null || names.length === 0
+				? ''
+				: `Vom Hauptticket ${next.key} übernommen: ${names.join(', ')}.`;
 	}
 
 	function addTag(tagId: string): boolean {
@@ -726,10 +808,16 @@
 					disabled={pending}
 					error={fieldErrors.status ?? null}
 					errorId={`${ids.status}-error`}
+					describedby={statusFromParent ? ids.statusHint : undefined}
 					onchoose={(value) => {
-						if (isStatus(value)) status = value;
+						if (!isStatus(value)) return;
+						status = value;
+						touched.status = true;
 					}}
 				/>
+				{#if statusFromParent}
+					<p class="hint" id={ids.statusHint}>{FROM_PARENT_HINT}</p>
+				{/if}
 			</div>
 			<div class="field" data-ticket-option="priority">
 				<label for={ids.priority}>Priorität</label>
@@ -750,11 +838,19 @@
 					id={ids.due}
 					type="date"
 					aria-invalid={dueError ? 'true' : undefined}
-					aria-describedby={dueError ? ids.dueError : undefined}
+					aria-describedby={[dueError ? ids.dueError : '', dueFromParent ? ids.dueHint : '']
+						.filter((part) => part !== '')
+						.join(' ') || undefined}
 					bind:value={due}
-					oninput={(event) => (dueInvalid = event.currentTarget.validity.badInput)}
+					oninput={(event) => {
+						dueInvalid = event.currentTarget.validity.badInput;
+						touched.due = true;
+					}}
 					onchange={dueChanged}
 				/>
+				{#if dueFromParent}
+					<p class="hint" id={ids.dueHint}>{FROM_PARENT_HINT}</p>
+				{/if}
 			</div>
 		</div>
 		{#if sourceDate !== null}
@@ -770,14 +866,23 @@
 		{/if}
 		{#if assigneeShown}
 			<div data-ticket-option="assignee">
-				<Field label="Zuständig" id={ids.assignee} error={fieldErrors.assignee ?? ''} width="auto">
+				<Field
+					label="Zuständig"
+					id={ids.assignee}
+					error={fieldErrors.assignee ?? ''}
+					hint={assigneeFromParent ? FROM_PARENT_HINT : undefined}
+					width="auto"
+				>
 					{#snippet control(field)}
 						<div class="assignee-row">
 							<select
 								{...field}
 								value={chosenAssignee}
 								disabled={pending}
-								onchange={(event) => (assignee = event.currentTarget.value)}
+								onchange={(event) => {
+									assignee = event.currentTarget.value;
+									touched.assignee = true;
+								}}
 							>
 								<option value="">{NOBODY_LABEL}</option>
 								{#each members as member (member.id)}
@@ -792,7 +897,9 @@
 									type="button"
 									aria-disabled={chosenAssignee === selfId || pending ? 'true' : undefined}
 									onclick={() => {
-										if (!pending && selfId !== null) assignee = selfId;
+										if (pending || selfId === null) return;
+										assignee = selfId;
+										touched.assignee = true;
 									}}>Mir <span class="visually-hidden">zuweisen</span></button
 								>
 							{/if}
@@ -908,7 +1015,25 @@
 				</button>
 			</h3>
 			<div class="more-body" id={ids.moreBody} hidden={!moreOpen} data-more-options>
-				{#if !extrasAvailable}
+				<!-- What the server knows (UT-2, K3): a failed question is no missing option, and the
+				     restart is named only when the server answered without the route. -->
+				{#if extrasProblem !== null}
+					<SectionMessage tone="error" compact>
+						{SUPPORT_TEXTS.problem(extrasProblem)}
+						{#snippet actions()}
+							<button
+								class="button-subtle"
+								type="button"
+								aria-busy={extrasPending ? 'true' : undefined}
+								onclick={() => {
+									if (!extrasPending) onretryextras();
+								}}>{SUPPORT_TEXTS.retry}</button
+							>
+						{/snippet}
+					</SectionMessage>
+				{:else if !extrasAvailable && extrasPending}
+					<p class="hint" role="status">{SUPPORT_TEXTS.loading}</p>
+				{:else if !extrasAvailable}
 					<SectionMessage tone="info" compact>
 						{restartNeeded(
 							'Unteraufgaben, Quellen, Übergeordnet, Art, Anheften und „Zum Tagesplan“ beim Anlegen sind'
@@ -999,11 +1124,16 @@
 						<KindSwitch
 							{ongoing}
 							error={fieldErrors.kind ?? null}
+							describedby={ongoingFromParent ? ids.kindHint : undefined}
 							onchange={(wanted) => {
 								ongoing = wanted;
+								touched.ongoing = true;
 								cleared('kind');
 							}}
 						/>
+						{#if ongoingFromParent}
+							<p class="hint" id={ids.kindHint}>{FROM_PARENT_HINT}</p>
+						{/if}
 					</div>
 				{/if}
 
@@ -1015,13 +1145,13 @@
 						{:else}
 							<TicketPicker
 								label="Unter ein Ticket einordnen"
-								hint="Aus der Liste wählen oder tippen; Unteraufgaben kommen nicht in Frage (nur eine Ebene)."
+								hint="Aus der Liste wählen oder tippen; Unteraufgaben kommen nicht in Frage (nur eine Ebene). Status, Fälligkeit, Art und Zuständigkeit kommen vom gewählten Ticket, solange du sie nicht selbst setzt."
 								source={picker}
 								rules={parentRules}
-								bind:value={parent}
+								bind:value={() => parent, chooseParent}
 								error={fieldErrors.parent ?? null}
-								onchoose={() => cleared('parent')}
 							/>
+							<p class="visually-hidden" role="status">{parentNote}</p>
 							{#if parent !== null}
 								<BlocksParentSwitch
 									blocks={blocksParent}
@@ -1144,7 +1274,9 @@
 								defaultStatus={subtaskStatusOf(undefined, status)}
 								hint={subtaskStatusAvailable
 									? `Entstehen mit dem Ticket mit seinem Projekt, seinen Tags, seiner Fälligkeit, Art und Zuständigkeit, höchstens ${CREATE_SUBTASKS_MAX}. Ohne eigene Wahl starten sie mit dem Status des Tickets (ist es erledigt, mit „Offen“).`
-									: `Entstehen mit dem Ticket als offene Unteraufgaben mit seinem Projekt und seinen Tags, höchstens ${CREATE_SUBTASKS_MAX}.`}
+									: extrasProblem !== null
+										? `Entstehen mit dem Ticket mit seinem Projekt und seinen Tags, höchstens ${CREATE_SUBTASKS_MAX}.`
+										: `Entstehen mit dem Ticket als offene Unteraufgaben mit seinem Projekt und seinen Tags, höchstens ${CREATE_SUBTASKS_MAX}.`}
 							/>
 						{/if}
 					</div>

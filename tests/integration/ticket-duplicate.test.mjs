@@ -318,6 +318,57 @@ describe('sub-tickets and comments', () => {
 		expect(await childrenOf(without.id)).toEqual([]);
 	});
 
+	it('starts the new sub-tickets like the duplicate or "open", as asked; open without a choice (UT-2)', async () => {
+		const original = await owner.ticket({ title: 'Umzug' });
+		await owner.ticket({ parent: original.id, title: 'Kartons', status: 'done' });
+		await owner.ticket({ parent: original.id, title: 'Helfer', status: 'backlog' });
+		const statuses = async (id) => (await childrenOf(id)).map((child) => [child.title, child.status, child.completed_at]);
+
+		const like = await duplicate(owner.client, original.id, { status: 'in_progress', subtasks: true, subtask_status: 'duplicate' });
+		expect((await ticketOf(like.id)).status).toBe('in_progress');
+		expect(await statuses(like.id)).toEqual([
+			['Kartons', 'in_progress', ''],
+			['Helfer', 'in_progress', '']
+		]);
+		const open = await duplicate(owner.client, original.id, { status: 'waiting', subtasks: true, subtask_status: 'open' });
+		expect(await statuses(open.id)).toEqual([
+			['Kartons', 'open', ''],
+			['Helfer', 'open', '']
+		]);
+		// A client of before sends no choice: open, as before.
+		const before = await duplicate(owner.client, original.id, { status: 'backlog', subtasks: true });
+		expect((await childrenOf(before.id)).map((child) => child.status)).toEqual(['open', 'open']);
+		// The sub-tickets of the original stay as they are.
+		expect((await childrenOf(original.id)).map((child) => child.status)).toEqual(['done', 'backlog']);
+	});
+
+	it('refuses an unknown choice for the sub-tickets before the first write (UT-2)', async () => {
+		const original = await owner.ticket();
+		await owner.ticket({ parent: original.id });
+		const counts = await countsOf(owner);
+		for (const choice of ['waiting', 'done', 'wie']) {
+			expect(await rejectionOf(duplicate(owner.client, original.id, { subtasks: true, subtask_status: choice }))).toEqual({
+				status: 400,
+				codes: { subtask_status: 'validation_duplicate_subtask_status' }
+			});
+		}
+		expect(await countsOf(owner)).toEqual(counts);
+	});
+
+	it('takes the choice through the data layer of the SPA (UT-2)', async () => {
+		const original = await owner.ticket({ title: 'Garten' });
+		await owner.ticket({ parent: original.id, title: 'Hecke' });
+		const outcome = await duplicateTicket(owner.client, original.id, {
+			title: 'Garten (Kopie)',
+			status: 'waiting',
+			project: null,
+			take: { ...NOTHING, subtasks: true },
+			source: 'none',
+			subtaskStatus: 'duplicate'
+		});
+		expect((await childrenOf(outcome.id)).map((child) => child.status)).toEqual(['waiting']);
+	});
+
 	it('takes the kind of the original and of each sub-ticket over, like the charm (ADR-0065, PL-1)', async () => {
 		const original = await owner.ticket({ title: 'Sprachkurs', kind: 'ongoing' });
 		await owner.ticket({ parent: original.id, title: 'Lektion 1' });

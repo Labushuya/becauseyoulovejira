@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import type { ResolvedPathname } from '$app/types';
@@ -49,6 +50,13 @@
 		if (!result.ok) removing = null;
 		return result;
 	}
+
+	// Opening a rule asks again whether the hooks take a status per sub-task, while that is missing or
+	// unknown (UT-2): a restart since the load is found without reloading the page.
+	$effect(() => {
+		void id;
+		untrack(() => void store.checkSubtaskStatus());
+	});
 </script>
 
 <svelte:head>
@@ -65,6 +73,7 @@
 			statusAvailable={store.statusReady}
 			subtasksAvailable={store.subtasksReady}
 			subtaskStatusAvailable={store.subtaskStatusReady}
+			subtaskStatusProblem={store.subtaskStatusIssue}
 			colorsAvailable={catalog.colorsReady}
 			charmsAvailable={store.charmsReady}
 			assignmentAvailable={store.assigneesReady}

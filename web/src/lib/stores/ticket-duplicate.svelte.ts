@@ -4,7 +4,8 @@
 // caller's part (it knows the remembered way to open a ticket, ADR-0036 §1). The new tickets reach
 // the lists by realtime like any other. Since MV-2 (ADR-0045, addendum MV-2) the duplicate may go
 // into the other area: the store loads its projects and tags first, and the flag of a duplicate there
-// leads to it instead of back to the original.
+// leads to it instead of back to the original. Since UT-2 it says whether the server takes the status
+// of the new sub-tasks, from the answer of GET /api/byl/tickets/create the TicketDetailStore keeps.
 
 import type PocketBase from 'pocketbase';
 import { createContext } from 'svelte';
@@ -19,9 +20,28 @@ import {
 	type DuplicateRequest,
 	type DuplicateTarget
 } from '$lib/domain/duplicate';
+import type { CreateSupport } from '$lib/domain/ticket-create';
 import { restartNeeded } from '$lib/guidance/texts';
 import { SILENT_FLAGS, type FlagSink } from './flags.svelte';
 import type { SessionGuard } from './ticket-list.svelte';
+
+/**
+ * What the store reads of the options the server knows (UT-2): the TicketDetailStore of the (app)
+ * layout, which asks GET /api/byl/tickets/create.
+ */
+export interface DuplicateSupportSource {
+	readonly createSupport: CreateSupport | null | undefined;
+	readonly createSupportProblem: string | null;
+	readonly createSupportLoading: boolean;
+	loadCreateSupport(): Promise<void>;
+}
+
+/**
+ * Whether the question may offer "Status der Unteraufgaben" (UT-2): the server takes it (`ready`),
+ * answered without it or knows no such question at all (`missing`, before the restart), the answer
+ * is still out (`pending`), or the question failed (`failed`: unknown, not missing).
+ */
+export type SubtaskStatusSupport = 'ready' | 'missing' | 'pending' | 'failed';
 
 export interface TicketDuplicateData {
 	duplicate(id: string, request: DuplicateRequest): Promise<DuplicateOutcome>;
@@ -54,16 +74,57 @@ export class TicketDuplicateStore {
 	readonly #data: TicketDuplicateData;
 	readonly #session: SessionGuard;
 	readonly #flags: FlagSink;
+	readonly #support: DuplicateSupportSource | null;
 
-	constructor(data: TicketDuplicateData, session: SessionGuard, flags: FlagSink = SILENT_FLAGS) {
+	constructor(
+		data: TicketDuplicateData,
+		session: SessionGuard,
+		flags: FlagSink = SILENT_FLAGS,
+		support: DuplicateSupportSource | null = null
+	) {
 		this.#data = data;
 		this.#session = session;
 		this.#flags = flags;
+		this.#support = support;
 	}
 
 	/** Whether the question may offer the other area (MV-2): the data layer can load it. */
 	get offersAreas(): boolean {
 		return this.#data.target !== undefined;
+	}
+
+	/**
+	 * Whether the server takes the status of the new sub-tasks (UT-2). Without a source (tests of
+	 * single parts) it is `missing`, and the sub-tasks start open as before.
+	 */
+	get subtaskStatusSupport(): SubtaskStatusSupport {
+		const source = this.#support;
+		if (source === null) return 'missing';
+		const known = source.createSupport;
+		if (known?.duplicateSubtaskStatus === true) return 'ready';
+		if (source.createSupportProblem !== null) return 'failed';
+		if (known === undefined || source.createSupportLoading) return 'pending';
+		return 'missing';
+	}
+
+	/** Why the question failed (`failed`), null otherwise. */
+	get subtaskStatusProblem(): string | null {
+		return this.subtaskStatusSupport === 'failed'
+			? (this.#support?.createSupportProblem ?? null)
+			: null;
+	}
+
+	/** The question runs ("Erneut versuchen" shows it). */
+	get subtaskStatusLoading(): boolean {
+		return this.#support?.createSupportLoading ?? false;
+	}
+
+	/**
+	 * Asks the server what it knows, unless it named everything already: on every opening of the
+	 * question with sub-tasks and for "Erneut versuchen" (UT-2, K3).
+	 */
+	async loadSupport(): Promise<void> {
+		await this.#support?.loadCreateSupport();
 	}
 
 	/**

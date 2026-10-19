@@ -124,7 +124,7 @@ async function until(ready, label) {
 }
 
 describe('what the server knows (GET /api/byl/tickets/create)', () => {
-	it('names every option after all migrations', async () => {
+	it('names every option after all migrations, and those of the hooks alone (UT-1, UT-2)', async () => {
 		expect(await fetchCreateSupport(a.client)).toEqual({
 			recurrence: true,
 			pin: true,
@@ -134,7 +134,8 @@ describe('what the server knows (GET /api/byl/tickets/create)', () => {
 			color: true,
 			charm: true,
 			assignee: true,
-			subtaskStatus: true
+			subtaskStatus: true,
+			duplicateSubtaskStatus: true
 		});
 	});
 

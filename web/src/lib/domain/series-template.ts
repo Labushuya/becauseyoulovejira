@@ -58,6 +58,23 @@ export function subtaskStatusOf(status: unknown, parentStatus: unknown): Templat
 }
 
 /**
+ * The list "Unteraufgaben" of a template when the question whether the hooks take a status per
+ * sub-task failed (UT-2, K3): unknown, so neither "offen" nor a restart is named.
+ */
+export function subtaskStatusProblemText(reason: string): string {
+	return `Ob jede Unteraufgabe einen eigenen Status bekommen kann, ließ sich gerade nicht abfragen. ${reason}`;
+}
+
+/** That failed question with the way to ask again ("Erneut versuchen"), for the forms of a template. */
+export interface SubtaskStatusProblem {
+	/** Why it failed (the text of the data layer). */
+	reason: string;
+	/** The question runs again. */
+	busy: boolean;
+	retry: () => void;
+}
+
+/**
  * The sub-tasks of a stored template (`template_subtasks`): entries with a title, the priority
  * "Mittel" when it is missing and since UT-1 the status when the entry names one of TEMPLATE_STATUSES;
  * anything else (no list, broken entries) is left out. [] before the migration of the field.

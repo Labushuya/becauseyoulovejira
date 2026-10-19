@@ -1,6 +1,11 @@
 <script lang="ts">
 	import { inheritLabel, projectColorOf } from '$lib/domain/colors';
-	import type { RuleTemplate, TemplateStatus, TicketSubtask } from '$lib/domain/series-template';
+	import type {
+		RuleTemplate,
+		SubtaskStatusProblem,
+		TemplateStatus,
+		TicketSubtask
+	} from '$lib/domain/series-template';
 	import { isPriority } from '$lib/domain/status';
 	import {
 		DESCRIPTION_MAX_LENGTH,
@@ -32,7 +37,8 @@
 	// in `chosenStatus`, ADR-0022 addenda 9 and 17). The sub-tasks after their migration
 	// (`subtasksAvailable`, ADR-0022 addendum 10); at a ticket with sub-tasks the list can take them
 	// over (`ticketSubtasks`), and since UT-1 each sub-task offers its status (`subtaskStatusAvailable`),
-	// without an own choice the "Status beim Anlegen". The color of the next tickets, "Wie Projekt
+	// without an own choice the "Status beim Anlegen"; a failed question for it says why with "Erneut
+	// versuchen" (`subtaskStatusProblem`, UT-2). The color of the next tickets, "Wie Projekt
 	// (Blau)" first, after its migration (`colorsAvailable`, ADR-0052); the charm after its migration
 	// (`charmsAvailable`, ADR-0062).
 	let {
@@ -49,6 +55,7 @@
 		askStatus = false,
 		subtasksAvailable = false,
 		subtaskStatusAvailable = false,
+		subtaskStatusProblem = null,
 		colorsAvailable = false,
 		charmsAvailable = false,
 		ticketSubtasks = [],
@@ -93,6 +100,8 @@
 		subtasksAvailable?: boolean;
 		/** The hooks take a status per sub-task of the template (after the restart after UT-1). */
 		subtaskStatusAvailable?: boolean;
+		/** The question for it failed (UT-2): unknown, with "Erneut versuchen"; null otherwise. */
+		subtaskStatusProblem?: SubtaskStatusProblem | null;
 		/** The server knows the color of the template (after its migration, ADR-0052). */
 		colorsAvailable?: boolean;
 		/** The server knows the charm of the template (after its migration, ADR-0062). */
@@ -300,6 +309,9 @@
 		error={errors.template_subtasks ?? null}
 		{busy}
 		statusAvailable={subtaskStatusAvailable}
+		statusProblem={subtaskStatusProblem?.reason ?? null}
+		statusBusy={subtaskStatusProblem?.busy ?? false}
+		onretrystatus={subtaskStatusProblem?.retry}
 		defaultStatus={subtaskDefault}
 	/>
 {/if}

@@ -5,7 +5,7 @@
 
 	// Test harness: the list "Unteraufgaben" of the template (plan WV-3) bound to a value the test
 	// reads as JSON, inside a form like the editor at the ticket. Since UT-1 with the status per row
-	// and its default.
+	// and its default, since UT-2 with a failed question for it and "Erneut versuchen".
 	let {
 		initial,
 		ticketSubtasks = [],
@@ -13,6 +13,9 @@
 		error = null,
 		busy = false,
 		statusAvailable = false,
+		statusProblem = null,
+		statusBusy = false,
+		onretrystatus,
 		defaultStatus = 'open',
 		hint
 	}: {
@@ -22,6 +25,9 @@
 		error?: string | null;
 		busy?: boolean;
 		statusAvailable?: boolean;
+		statusProblem?: string | null;
+		statusBusy?: boolean;
+		onretrystatus?: () => void;
 		defaultStatus?: TemplateStatus;
 		hint?: string;
 	} = $props();
@@ -37,6 +43,9 @@
 		{error}
 		{busy}
 		{statusAvailable}
+		{statusProblem}
+		{statusBusy}
+		{onretrystatus}
 		{defaultStatus}
 		{hint}
 	/>

@@ -168,7 +168,8 @@ describe('loadCreateSupport', () => {
 		color: true,
 		charm: true,
 		assignee: true,
-		subtaskStatus: true
+		subtaskStatus: true,
+		duplicateSubtaskStatus: true
 	};
 
 	it('keeps a known answer for the session and asks again while the route is missing', async () => {
@@ -180,20 +181,101 @@ describe('loadCreateSupport', () => {
 		expect(store.createSupport).toBeUndefined();
 		await store.loadCreateSupport();
 		expect(store.createSupport).toBeNull();
+		expect(store.createSupportProblem).toBeNull();
 		await store.loadCreateSupport();
 		expect(store.createSupport).toEqual(SUPPORT);
 		await store.loadCreateSupport();
 		expect(createSupport).toHaveBeenCalledTimes(2);
 	});
 
-	it('knows no support without the data access (tests of single parts) and after a failure', async () => {
+	it('asks again on the next opening while an answer lacks an option of the hooks (UT-2)', async () => {
+		const before = { ...SUPPORT, subtaskStatus: false, duplicateSubtaskStatus: false };
+		const afterUt1 = { ...SUPPORT, duplicateSubtaskStatus: false };
+		const createSupport = vi
+			.fn<() => Promise<CreateSupport | null>>()
+			.mockResolvedValueOnce(before)
+			.mockResolvedValueOnce(afterUt1)
+			.mockResolvedValue(SUPPORT);
+		const { store } = setup({ createSupport });
+		await store.loadCreateSupport();
+		expect(store.createSupport).toEqual(before);
+		// The restart happened meanwhile: the next opening finds the options without a reload.
+		await store.loadCreateSupport();
+		expect(store.createSupport?.subtaskStatus).toBe(true);
+		await store.loadCreateSupport();
+		expect(store.createSupport).toEqual(SUPPORT);
+		await store.loadCreateSupport();
+		expect(createSupport).toHaveBeenCalledTimes(3);
+	});
+
+	it('knows a failure as unknown, not as a server without the route, and asks again (UT-2)', async () => {
+		const createSupport = vi
+			.fn<() => Promise<CreateSupport | null>>()
+			.mockRejectedValueOnce(new DataError('network'))
+			.mockResolvedValue(SUPPORT);
+		const { store } = setup({ createSupport });
+		await store.loadCreateSupport();
+		expect(store.createSupport).toBeUndefined();
+		expect(store.createSupportProblem).toContain('Server nicht erreichbar.');
+		expect(store.createSupportLoading).toBe(false);
+		// "Erneut versuchen" or the next opening.
+		await store.loadCreateSupport();
+		expect(store.createSupport).toEqual(SUPPORT);
+		expect(store.createSupportProblem).toBeNull();
+	});
+
+	it('keeps an earlier answer when asking again fails, and says why', async () => {
+		const before = { ...SUPPORT, duplicateSubtaskStatus: false };
+		const createSupport = vi
+			.fn<() => Promise<CreateSupport | null>>()
+			.mockResolvedValueOnce(before)
+			.mockRejectedValueOnce(new DataError('server'));
+		const { store } = setup({ createSupport });
+		await store.loadCreateSupport();
+		await store.loadCreateSupport();
+		expect(store.createSupport).toEqual(before);
+		expect(store.createSupportProblem).toBe(
+			'Der Server hat mit einem Fehler geantwortet. Bitte später erneut versuchen.'
+		);
+	});
+
+	it('asks once while a question runs, and shows that it runs', async () => {
+		let answer: (value: CreateSupport) => void = () => undefined;
+		const createSupport = vi.fn(
+			() => new Promise<CreateSupport | null>((resolve) => (answer = resolve))
+		);
+		const { store } = setup({ createSupport });
+		const first = store.loadCreateSupport();
+		expect(store.createSupportLoading).toBe(true);
+		await store.loadCreateSupport();
+		answer(SUPPORT);
+		await first;
+		expect(createSupport).toHaveBeenCalledOnce();
+		expect(store.createSupportLoading).toBe(false);
+	});
+
+	it('ends the session on a lost session without a problem to show', async () => {
+		const logout = vi.fn();
+		const store = new TicketDetailStore(
+			{
+				get: vi.fn(),
+				update: vi.fn(),
+				create: vi.fn(),
+				delete: vi.fn(),
+				createSupport: vi.fn(async () => Promise.reject(new DataError('session')))
+			},
+			{ ensureValid: () => true, logout },
+			setup().list
+		);
+		await store.loadCreateSupport();
+		expect(logout).toHaveBeenCalledOnce();
+		expect(store.createSupportProblem).toBeNull();
+	});
+
+	it('knows no support without the data access (tests of single parts)', async () => {
 		const { store } = setup();
 		await store.loadCreateSupport();
 		expect(store.createSupport).toBeNull();
-		const failing = setup({
-			createSupport: vi.fn(async () => Promise.reject(new DataError('network')))
-		});
-		await failing.store.loadCreateSupport();
-		expect(failing.store.createSupport).toBeNull();
+		expect(store.createSupportProblem).toBeNull();
 	});
 });

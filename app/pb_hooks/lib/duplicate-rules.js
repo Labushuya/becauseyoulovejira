@@ -14,6 +14,11 @@ var SOURCE_CHOICES = Object.freeze(['none', 'copy']);
 // household of the account or its private area.
 var AREAS = Object.freeze(['household', 'private']);
 
+// The status the new sub-tasks of a duplicate start with (ADR-0045, addendum UT-2): that of the
+// duplicate ("wie das Duplikat", the default of the dialog) or "open". A client of before sends none
+// and gets open ones, as before.
+var SUBTASK_STATUS_CHOICES = Object.freeze(['duplicate', 'open']);
+
 // Longest title of a ticket (tickets.title, migration 1790200500).
 var TITLE_MAX = 200;
 
@@ -36,7 +41,8 @@ var MESSAGES = Object.freeze({
   validation_duplicate_area_right: 'In den Haushalt duplizieren lassen sich nur eigene private Tickets.',
   validation_duplicate_source_area:
     'In einen anderen Bereich kommen keine Quellen mit: Einträge des Eingangs bleiben beim Original, und Ticket-Quellen verweisen nie über die Grenze eines Bereichs.',
-  validation_duplicate_project_area: 'Dieses Projekt gibt es im Zielbereich nicht, oder es ist archiviert.'
+  validation_duplicate_project_area: 'Dieses Projekt gibt es im Zielbereich nicht, oder es ist archiviert.',
+  validation_duplicate_subtask_status: 'Die Unteraufgaben starten wie das Duplikat oder mit „Offen“.'
 });
 
 function text(value) {
@@ -62,6 +68,8 @@ function trim(value) {
  *   description, priority, tags, due, parent, subtasks, comments: what to take over (flags)
  *   color        the own color of the ticket (flag, ADR-0052; a client of before sends none)
  *   to           '' (also when missing) for the area of the original, or one of AREAS (MV-2)
+ *   subtask_status  one of SUBTASK_STATUS_CHOICES for the new sub-tasks (UT-2), 'open' when missing
+ *                (a client of before); the option is `subtaskStatus`
  */
 function parseRequest(body) {
   var input = body && typeof body === 'object' ? body : {};
@@ -84,6 +92,10 @@ function parseRequest(body) {
   if (to !== '' && AREAS.indexOf(to) === -1) {
     return { field: 'to', code: 'validation_duplicate_area' };
   }
+  var subtaskStatus = text(input.subtask_status) === '' ? 'open' : text(input.subtask_status);
+  if (SUBTASK_STATUS_CHOICES.indexOf(subtaskStatus) === -1) {
+    return { field: 'subtask_status', code: 'validation_duplicate_subtask_status' };
+  }
   return {
     options: {
       title: title,
@@ -91,6 +103,7 @@ function parseRequest(body) {
       project: text(input.project),
       source: source,
       to: to,
+      subtaskStatus: subtaskStatus,
       description: isTrueFlag(input.description),
       priority: isTrueFlag(input.priority),
       tags: isTrueFlag(input.tags),
@@ -117,6 +130,14 @@ function takenValues(ticket, options) {
     due: options.due ? text(ticket.due) : '',
     color: options.color ? text(ticket.color) : ''
   };
+}
+
+/**
+ * The status every new sub-task of a duplicate starts with (UT-2): the status of the duplicate with
+ * `subtaskStatus` 'duplicate' (never done, parseRequest refuses that), else "open".
+ */
+function subtaskStatusOf(options) {
+  return options.subtaskStatus === 'duplicate' ? options.status : 'open';
 }
 
 /**
@@ -200,12 +221,14 @@ module.exports = {
   STATUSES: STATUSES,
   SOURCE_CHOICES: SOURCE_CHOICES,
   AREAS: AREAS,
+  SUBTASK_STATUS_CHOICES: SUBTASK_STATUS_CHOICES,
   TITLE_MAX: TITLE_MAX,
   COMMENT_MAX: COMMENT_MAX,
   HISTORY_FIELD: HISTORY_FIELD,
   MESSAGES: MESSAGES,
   parseRequest: parseRequest,
   takenValues: takenValues,
+  subtaskStatusOf: subtaskStatusOf,
   historyValue: historyValue,
   crossesArea: crossesArea,
   areaViolation: areaViolation,

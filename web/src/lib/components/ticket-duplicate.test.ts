@@ -2,9 +2,10 @@
 // modal (the full view), the required status, what is taken over, the source, the series hint,
 // refusals at their field and opening the duplicate. Since MV-2 the "Ziel" of a member of a
 // household: the projects and tags of the other area, what does not come along, the request with the
-// area and the flag that leads to the duplicate. The store runs for real on a fake data layer.
-// The entry in the menu "•••" of the header is covered in ticket-actions.test.ts and
-// ticket-panel.test.ts (plan aktionsmenues).
+// area and the flag that leads to the duplicate. Since UT-2 "Status der Unteraufgaben" with the
+// question what the server knows (ready, before the restart, failed with "Erneut versuchen"). The
+// store runs for real on a fake data layer. The entry in the menu "•••" of the header is covered in
+// ticket-actions.test.ts and ticket-panel.test.ts (plan aktionsmenues).
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
@@ -18,8 +19,10 @@ import {
 	type DuplicateTarget
 } from '$lib/domain/duplicate';
 import type { InboxItemSummary } from '$lib/domain/inbox';
-import type { ProjectRef, Ticket } from '$lib/domain/ticket';
+import type { ProjectRef, Ticket, TicketSummary } from '$lib/domain/ticket';
+import type { CreateSupport } from '$lib/domain/ticket-create';
 import type { FlagInput } from '$lib/stores/flags.svelte';
+import { TicketDetailStore } from '$lib/stores/ticket-detail.svelte';
 import { TicketDuplicateStore } from '$lib/stores/ticket-duplicate.svelte';
 import InModalHarness from '$lib/test/InModalHarness.svelte';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
@@ -593,5 +596,196 @@ describe('"Ziel": into the other area (MV-2)', () => {
 		await submit();
 		await vi.waitFor(() => expect(areas().getAttribute('aria-invalid')).toBe('true'));
 		expect(areas().textContent).toContain('Du bist in keinem Haushalt.');
+	});
+});
+
+describe('"Status der Unteraufgaben" (UT-2)', () => {
+	const SUPPORT: CreateSupport = {
+		recurrence: true,
+		pin: true,
+		dayPlan: true,
+		ticketSources: true,
+		kind: true,
+		color: true,
+		charm: true,
+		assignee: true,
+		subtaskStatus: true,
+		duplicateSubtaskStatus: true
+	};
+
+	/**
+	 * The dialog with two sub-tasks and the real stores: the TicketDetailStore asks the fake route what
+	 * the server knows, the duplicate store reads it from there, as in the (app) layout.
+	 */
+	function renderWithSupport(
+		createSupport: () => Promise<CreateSupport | null>,
+		props: Record<string, unknown> = {}
+	) {
+		const session = { ensureValid: () => true, logout: vi.fn() };
+		const list = {
+			find: () => null,
+			upsert: vi.fn((summary: TicketSummary) => summary),
+			completed: vi.fn(),
+			remove: vi.fn(),
+			announce: vi.fn()
+		};
+		const support = vi.fn(createSupport);
+		const detail = new TicketDetailStore(
+			{ get: vi.fn(), update: vi.fn(), create: vi.fn(), delete: vi.fn(), createSupport: support },
+			session,
+			list
+		);
+		const data = {
+			duplicate: vi.fn<(id: string, request: DuplicateRequest) => Promise<DuplicateOutcome>>(
+				async () => OUTCOME
+			),
+			target: vi.fn(async (): Promise<DuplicateTarget> => ({
+				to: 'household',
+				scope: 'h:house0000000001',
+				name: 'Haus Beispiel',
+				projects: [],
+				tags: { reused: [], created: [] }
+			}))
+		};
+		const store = new TicketDuplicateStore(data, session, undefined, detail);
+		render(DuplicateDialog, {
+			props: {
+				ticket: ticket(),
+				projects: [HOUSE, GARDEN],
+				subtaskCount: 2,
+				store,
+				onopen: vi.fn(),
+				onclose: vi.fn(),
+				...props
+			}
+		});
+		return { data, support };
+	}
+
+	const take = () => screen.getByRole('group', { name: 'Übernehmen' });
+	const subtasksBox = () => within(take()).getByRole('checkbox', { name: 'Unteraufgaben (2)' });
+	const subtasksHint = () =>
+		document.getElementById(subtasksBox().getAttribute('aria-describedby') ?? '')?.textContent;
+	const choice = () => screen.queryByRole('radiogroup', { name: 'Status der Unteraufgaben' });
+	const shownChoice = () =>
+		vi.waitFor(() => {
+			const group = choice();
+			if (group === null) throw new Error('"Status der Unteraufgaben" is not shown yet.');
+			return group;
+		});
+
+	it('asks the server on opening and offers "Wie das Duplikat" (default) or "Offen"', async () => {
+		const { data, support } = renderWithSupport(async () => SUPPORT);
+		expect(support).toHaveBeenCalledOnce();
+		// Only with "Unteraufgaben" checked.
+		expect(choice()).toBeNull();
+		await fireEvent.click(subtasksBox());
+		const group = await shownChoice();
+		expect(subtasksHint()).toBe(
+			'Als neue Unteraufgaben mit derselben Auswahl; sie kommen in das Projekt des Duplikats.'
+		);
+		const radios = within(group).getAllByRole<HTMLInputElement>('radio');
+		expect(radios.map((radio) => radio.labels?.[0]?.textContent?.trim())).toEqual([
+			'Wie das Duplikat',
+			'Offen'
+		]);
+		expect(radios.map((radio) => radio.checked)).toEqual([true, false]);
+		// The choice names the status of the duplicate once it is chosen.
+		await fireEvent.click(within(statusGroup()).getByRole('radio', { name: 'Wartet' }));
+		expect(within(group).getByRole('radio', { name: 'Wie das Duplikat (Wartet)' })).toBeTruthy();
+		await submit();
+		await vi.waitFor(() => expect(data.duplicate).toHaveBeenCalledOnce());
+		expect(data.duplicate.mock.calls[0]?.[1]).toMatchObject({
+			status: 'waiting',
+			take: { subtasks: true },
+			subtaskStatus: 'duplicate'
+		});
+	});
+
+	it('sends "Offen" when chosen, and no choice without sub-tasks', async () => {
+		const { data } = renderWithSupport(async () => SUPPORT);
+		await fireEvent.click(subtasksBox());
+		const group = await shownChoice();
+		await fireEvent.click(within(group).getByRole('radio', { name: 'Offen' }));
+		await fireEvent.click(within(statusGroup()).getByRole('radio', { name: 'Backlog' }));
+		await submit();
+		await vi.waitFor(() => expect(data.duplicate).toHaveBeenCalledOnce());
+		expect(data.duplicate.mock.calls[0]?.[1].subtaskStatus).toBe('open');
+
+		document.body.innerHTML = '';
+		const again = renderWithSupport(async () => SUPPORT);
+		await fireEvent.click(within(statusGroup()).getByRole('radio', { name: 'Backlog' }));
+		await submit();
+		await vi.waitFor(() => expect(again.data.duplicate).toHaveBeenCalledOnce());
+		expect(again.data.duplicate.mock.calls[0]?.[1]).not.toHaveProperty('subtaskStatus');
+	});
+
+	it('offers the choice into the other area as well (MV-2)', async () => {
+		const { data } = renderWithSupport(async () => SUPPORT, {
+			ticket: ticket({ scope: 'u:user00000000001' }),
+			household: 'Haus Beispiel'
+		});
+		await fireEvent.click(
+			within(screen.getByRole('radiogroup', { name: 'Ziel' })).getByRole('radio', {
+				name: 'Haus Beispiel'
+			})
+		);
+		await vi.waitFor(() => screen.getByRole('combobox', { name: 'Projekt im Ziel' }));
+		await fireEvent.click(subtasksBox());
+		const group = await shownChoice();
+		await fireEvent.click(within(group).getByRole('radio', { name: 'Offen' }));
+		await fireEvent.click(within(statusGroup()).getByRole('radio', { name: 'Offen' }));
+		await submit();
+		await vi.waitFor(() => expect(data.duplicate).toHaveBeenCalledOnce());
+		expect(data.duplicate.mock.calls[0]?.[1]).toMatchObject({
+			to: 'household',
+			subtaskStatus: 'open'
+		});
+	});
+
+	it('before the restart: open sub-tasks as the hint says, and when the choice comes', async () => {
+		const { data } = renderWithSupport(async () => ({ ...SUPPORT, duplicateSubtaskStatus: false }));
+		await fireEvent.click(subtasksBox());
+		await vi.waitFor(() =>
+			expect(
+				screen.getByText(
+					/„Status der Unteraufgaben“ ist beim Duplizieren nach dem nächsten Neustart verfügbar/
+				)
+			).toBeTruthy()
+		);
+		expect(choice()).toBeNull();
+		expect(subtasksHint()).toBe(
+			'Als neue, offene Unteraufgaben mit derselben Auswahl; sie kommen in das Projekt des Duplikats.'
+		);
+		await fireEvent.click(within(statusGroup()).getByRole('radio', { name: 'Offen' }));
+		await submit();
+		await vi.waitFor(() => expect(data.duplicate).toHaveBeenCalledOnce());
+		expect(data.duplicate.mock.calls[0]?.[1]).not.toHaveProperty('subtaskStatus');
+	});
+
+	it('says why the choice is missing after a failed question; "Erneut versuchen" brings it', async () => {
+		let fail = true;
+		const { support } = renderWithSupport(async () => {
+			if (fail) throw new DataError('network');
+			return SUPPORT;
+		});
+		await fireEvent.click(subtasksBox());
+		const message = await vi.waitFor(() =>
+			screen.getByText(
+				/Ob die Unteraufgaben wie das Duplikat starten können, ließ sich gerade nicht abfragen\./
+			)
+		);
+		expect(message.textContent).toMatch(
+			/Server nicht erreichbar\..*Ohne Antwort starten sie mit „Offen“\./s
+		);
+		// Unknown is not "before the restart": no restart and no "offene" in the hint.
+		expect(screen.queryByText(/nach dem nächsten Neustart/)).toBeNull();
+		expect(subtasksHint()).toBe(
+			'Als neue Unteraufgaben mit derselben Auswahl; sie kommen in das Projekt des Duplikats.'
+		);
+		fail = false;
+		await fireEvent.click(screen.getByRole('button', { name: 'Erneut versuchen' }));
+		await shownChoice();
+		expect(support).toHaveBeenCalledTimes(2);
 	});
 });
