@@ -556,6 +556,33 @@ describe('help page (EH-9)', () => {
 		}
 	});
 
+	it('explains "Übertragen …" after a change: the question, what it collects, the dialog and the series (UE-2)', () => {
+		render(Page);
+		const section = screen.getByRole('region', { name: 'Häufige Fragen' });
+		const question = [...section.querySelectorAll('details')].find(
+			(details) =>
+				details.querySelector('summary')?.textContent?.trim() ===
+				'Wie arbeite ich mit Unteraufgaben?'
+		);
+		const content = text(question as HTMLElement);
+		for (const phrase of [
+			'Änderst du an einem Ticket mit offenen Unteraufgaben Fälligkeit, Priorität, Status, Zuständigkeit, Tags oder Projekt, fragt eine Meldung unten links etwa „Fälligkeit und Priorität von HAUS-12 geändert. Auch für die Unteraufgaben?“.',
+			'weitere Änderungen am selben Ticket kommen dazu, und was du zurücknimmst, fällt wieder heraus.',
+			'„Übertragen …“ öffnet den Dialog mit genau den geänderten Feldern.',
+			'um denselben Abstand verschoben („+3 Tage“) an die Unteraufgaben; Unteraufgaben ohne Fälligkeit bleiben dabei ohne.',
+			'Bei Tags gehen nur die eben hinzugefügten und entfernten mit.',
+			'mit dem Ziel „Keine“ änderst du nur die Vorlage.',
+			'Klappt ein Teil nicht, sagt der Dialog, was geklappt hat, und bietet „Erneut versuchen“ an.',
+			'Hat die Frage „Unteraufgaben mit erledigen“ oder „Trotzdem erledigen“ den Status schon geklärt, fragt die Meldung nicht noch einmal danach.'
+		]) {
+			expect(content, phrase).toContain(phrase);
+		}
+		const series = text(screen.getByRole('region', { name: 'Wiederholungen' }));
+		expect(series).toContain(
+			'Hat das Ticket offene Unteraufgaben und hast du etwa Priorität, Tags oder Projekt geändert, steht stattdessen nur die Frage „Auch für die Unteraufgaben?“ mit „Übertragen …“; „Auch für künftige Tickets übernehmen“ ist dann ein Häkchen in ihrem Dialog.'
+		);
+	});
+
 	it('explains what a parent fills in, a failed question and the status of duplicated sub-tasks (UT-2)', () => {
 		render(Page);
 		const section = screen.getByRole('region', { name: 'Häufige Fragen' });

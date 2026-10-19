@@ -1,6 +1,6 @@
 # ADR-0070: Auf Unteraufgaben übertragen
 
-- **Status:** Angenommen und umgesetzt (Paket UE-1); Fälle im Test-Manifest BYL-E6-1809 bis BYL-E6-1825, manuelle Prüfungen BYL-E6-1821 bis BYL-E6-1825
+- **Status:** Angenommen und umgesetzt (Paket UE-1); Fälle im Test-Manifest BYL-E6-1809 bis BYL-E6-1825, manuelle Prüfungen BYL-E6-1821 bis BYL-E6-1825; Nachtrag UE-2 (2026-10-19): „Übertragen …“ nach einer Änderung am Hauptticket, Fälle BYL-E6-1826 bis BYL-E6-1839, manuelle Prüfungen BYL-E6-1837 bis BYL-E6-1839
 - **Datum:** 2026-10-19
 - **Entscheidung durch:** Nutzer (Auftrag UE-1 über den Advisor: Aktion im Abschnitt „Unteraufgaben“, Felder mit Vorauswahl und Gedächtnis je Gerät, Ziel „Alle offenen“ oder „Auswählen …“, alles oder nichts, zusammengefasste Benachrichtigung, Vorbereitung auf UE-2), Advisor (Akzeptanzkriterien), Executor (Bestandsaufnahme, Analyse der Hooks, Route, Dialog, Tests)
 - **Bezug:** [ADR-0033](0033-unteraufgaben.md) (Unteraufgaben, eine Ebene), [ADR-0068](0068-zustaendigkeit.md) (Zuständigkeit und Hinweis `byl/assigned`), [ADR-0069](0069-vollstaendiges-anlegen.md) (Fähigkeitsabfrage `GET /api/byl/tickets/create`, Nachtrag UT-2), [ADR-0045](0045-ticket-duplizieren.md) (Muster einer Route mit Transaktion), [ADR-0022](0022-erzeugung-von-instanzen.md) und [ADR-0023](0023-lebenszyklus-von-regeln-und-instanzen.md) (Serien), [ADR-0032](0032-editor-tiptap-markdown.md) §6 (bekannter Stand `expected_updated`), [ADR-0025](0025-ui-konsistenz-overlay-system.md) (Modal, eingebetteter Dialog, Flags), [ADR-0026](0026-einstellungsbereich-und-hinweis-bausteine.md) (SectionMessage), [ADR-0043](0043-system-seite.md) (Neustart über „Einstellungen → System“)
@@ -112,3 +112,80 @@ Die Aktion gehört zur Option `subtasks` der Registry (`domain/ticket-options.ts
 - Hooks ohne Migration: Nach dem Merge ist ein Neustart nötig (Einstellungen → System → „Jetzt neu starten“). Bis dahin zeigt der Dialog den Hinweis.
 - Eine Ablehnung eines Hooks bricht die ganze Übertragung ab; der Dialog nennt die Unteraufgabe mit dem Grund.
 - Ein Tab, der vor dem Build geöffnet wurde, zeigt eine zusammengefasste Benachrichtigung als Zuweisung der ersten Unteraufgabe, bis er neu lädt.
+
+## Nachtrag UE-2 (2026-10-19): „Übertragen …“ nach einer Änderung am Hauptticket
+
+**Entscheidung durch:** Nutzer (Auftrag UE-2 über den Advisor: Flag mit genau einer Aktion, ein Flag je Hauptticket mit gesammelten Feldern, Modus „nach Änderung“ desselben Dialogs, Verschieben um den Abstand, Tags als Änderung, Serien-Checkbox statt Serien-Angebot), Executor (Bestandsaufnahme der Wege und Rückfragen, Entscheidungen unten). **Keine Änderung am Server**, keine Migration: Die Route aus §4 kann `shift` und `remove` schon (§9). Nur die SPA ändert sich; nach dem Build genügt F5.
+
+### 1. Flag
+
+Ändert die Person in diesem Tab an **einem** Ticket mit mindestens einer **offenen** Unteraufgabe ein Feld des Dialogs (Fälligkeit, Priorität, Status, Zuständigkeit, Tags, Projekt), erscheint das Info-Flag „Fälligkeit und Priorität von HAUS-12 geändert. Auch für die Unteraufgaben?“ mit genau einer Aktion **„Übertragen …“** (dazu wie jedes Flag ×). Es läuft nicht ab (`duration: null`, wie das Serien-Angebot seit FL-1) und steht bei offenem Dialog wie jedes Flag im obersten Dialog (ADR-0025 Nachtrag 18).
+
+- **Ein Flag je Hauptticket** (`TransferOfferStore`, `stores/subtask-transfer-offer.svelte.ts`): Weitere Änderungen desselben Tickets sammeln sich (`nextParentChange`, rein in `domain/subtask-transfer-change.ts`). Alter Wert ist der Stand vor der **ersten** Änderung (`before`), neuer der der letzten (`after`). Ändert sich der Text, ersetzt ein neues Flag das alte (eines bleibt); sonst bleibt es stehen. Gezählt werden nur Felder, die die Person selbst geändert hat (`touched`): Ein Feld, das eine andere Person dazwischen geändert hat, steht zwar im neuen Stand, aber nicht im Flag.
+- **Zurückgenommen:** Ein Feld, das wieder seinen alten Wert hat, fällt heraus (`pendingFields`); ohne Feld verschwindet das Flag. Das gilt auch für „Rückgängig“ eines „erledigt“-Flags und einer verschobenen Fälligkeit im Kalender: Sie aktualisieren ein stehendes Flag, beginnen aber nie eines (`undo`).
+- **Auslöser** sind nur die Meldungen der Ticket-Stores über `TicketChangeSink.changed`; dorthin melden ausschließlich Änderungen der Person in diesem Tab an einem Ticket. Realtime (andere Personen, andere Tabs, Server, Regeln, Erzeugung einer Serie) läuft über `upsert` und meldet nichts; der Dialog selbst ändert nur Unteraufgaben über die Route, die per Realtime ankommen; Sammelaktionen behalten den bisherigen Weg (`BulkEditStore` mit dem `RecurrenceStore`) und melden nichts. Belegt in `subtask-transfer-offer.test.ts` („what the ticket stores report“) und `subtask-transfer-after-change.test.ts`.
+
+### 2. Einstiegsstellen (Inventur)
+
+| Weg | Feld | erfasst | Grund |
+|---|---|---|---|
+| Seitenpanel und Vollansicht (`TicketFields`, `TicketDetailStore`: `#save`, `#saveTags`, `confirmCompletion`, `reopenDetached`) | Status, Priorität, Fälligkeit, Zuständigkeit, Projekt, Tags | ja | zentrale Stelle für beide Ansichten |
+| Tabelle „Aufgaben“ (`TicketListStore.changeField`, `setDone`, `confirmCompletion`, `undo`, `reopenDetached`) | Zellen, Häkchen, „Erledigt“ mit Rückfrage, „Rückgängig“ | ja | derselbe Store, an derselben Stelle wie das Serien-Angebot |
+| Kalender, Ziehen eines Eintrags (`TicketListStore.moveDue`, „Rückgängig“) | Fälligkeit | ja | derselbe Store; das Flag „Fälligkeit … gesetzt.“ mit „Rückgängig“ bleibt daneben (Ergebnis, kein Angebot) |
+| Sammelaktionen (`BulkEditStore`) | alle | nein | per Auftrag: Mehrfachbearbeitung mehrerer Tickets löst nichts aus; das Serien-Angebot bleibt dort unverändert |
+| Tagesplan (`DayPlanStore`: Haken, Frage zu offenen Unteraufgaben) | Status | nein | eigener Store und eigener Datenweg, nicht die zentrale Stelle; der Haken heißt bei einem Vorhaben „für heute erledigt“ |
+| „Erledigte“ (`DoneListStore`: „Wieder öffnen“, „Rückgängig“) | Status | nein | eigener Store; nur das Wiederöffnen erledigter Tickets |
+| Statusmenü und Häkchen im Abschnitt „Unteraufgaben“ | Status einer Unteraufgabe | entfällt | eine Unteraufgabe hat keine Unteraufgaben (ADR-0033) |
+| Board-Ziehen | – | entfällt | gibt es nicht (Stufe 2) |
+| „Neues Ticket“, Duplizieren, Verschieben in einen anderen Bereich, Papierkorb | – | entfällt | Anlegen bzw. keine Änderung eines Feldes des Dialogs an einem bestehenden Hauptticket |
+
+### 3. Bestehende Rückfragen zum Status
+
+- **„N Unteraufgaben sind noch offen – trotzdem erledigen?“** (ADR-0033 §2; `TicketCompletionQuestion` in Panel und Vollansicht, `CompletionDialog` in der Tabelle): greift, wenn der Status auf „Erledigt“ geht und mindestens eine offene **blockierende** Unteraufgabe da ist (`openBlocking`, auch nach einer Ablehnung `open_children` des Hooks). „Unteraufgaben mit erledigen“ erledigt sie im selben Schritt, „Trotzdem erledigen“ lässt sie bewusst offen. Beide Antworten haben die Unteraufgaben für diese Statusänderung behandelt: Die Antwort meldet `answered: ['status']`, und der Status fällt aus dem Flag, auch ein vorher gesammelter. Offene **nicht blockierende** Unteraufgaben fragt niemand; dort steht „Status“ im Flag, und „Übertragen …“ erledigt sie auf Wunsch.
+- **„Vorhaben abschließen?“** (VH-1; `OngoingFinishAsk` in `TicketFields`): greift beim Erledigen eines offenen laufenden Vorhabens und betrifft das Ticket selbst (Tagesplan), nicht seine Unteraufgaben. Danach läuft das Speichern wie sonst (gegebenenfalls mit der Frage oben); „Status“ bleibt im Flag. Sind unter den Unteraufgaben Vorhaben, sagt der Dialog das wie in §3 („Darunter ist ein laufendes Vorhaben; es wird damit abgeschlossen.“).
+- **Abgelehntes Wiedereröffnen** (ADR-0023 Nachtrag 4; `TicketReopenQuestion` mit „Als normales Ticket wieder öffnen (aus der Serie lösen)“): betrifft die Serie, nicht die Unteraufgaben; die Statusänderung meldet sich normal, „Status“ steht im Flag.
+- **`TicketParentField`** („Übergeordnet“, QB-1 nur Anordnung in voller Breite) stellt keine Frage zum Status.
+
+### 4. Flag oder Serien-Angebot
+
+`offerChoice`: Das Flag erscheint, wenn mindestens ein Feld des Dialogs abweicht, das Ticket mindestens eine offene Unteraufgabe hat und der Server die Route nicht nachweislich fehlt (`SubtaskTransferStore.support` ist nicht `missing`). Dann steht **nur** das Flag; „Auch für künftige Tickets übernehmen“ ist eine Checkbox im Dialog (§6). Sonst geht die Änderung unverändert an das bisherige Serien-Angebot (`RecurrenceStore.offerTemplate([{ before, after }])`): ohne offene Unteraufgabe, mit nur anderen Feldern (Titel, Beschreibung, Farbe, Charm), für eine Unteraufgabe selbst, vor dem Neustart.
+
+- **Gemischte Änderung** (etwa Titel und Priorität): **ein** Flag, „Übertragen …“. Die Checkbox im Dialog trägt das ganze Serien-Angebot dieser Änderung, also auch den Titel (`templateOffers` über den gesammelten Stand vor und nach). Begründung: Zwei Flags zum selben Ticket hätten konkurriert, und die Checkbox ist genau das Serien-Angebot; das Flag sagt in seiner Beschreibung, dass der Dialog es anbietet („Im Dialog lässt sich die Änderung auch für künftige Tickets von „Müll“ übernehmen.“).
+- **Ein stehendes Serien-Angebot desselben Tickets** (etwa nach einer Titeländerung) gibt einer folgenden Änderung eines Feldes des Dialogs Platz: Es wird zurückgezogen (`withdrawTemplateOffer`, gemerkt mit `isTemplateOffer`), seine Änderung zählt im Flag mit (alter Wert von dort), die Checkbox übernimmt auch sie. Umgekehrt geht, wenn im Flag kein Feld mehr abweicht, das Übrige der gesammelten Änderung (etwa der Titel) an das Serien-Angebot.
+- Das Angebot „Unteraufgabe hinzufügen“ einer Serie (WV-3, `offerSubtask`) bleibt eigenständig: Es betrifft die Liste der Vorlage, kein Feld des Dialogs, und konkurriert nicht mit dem Flag.
+
+### 5. Dialog im Modus „nach Änderung“
+
+Derselbe `SubtaskTransferDialog` mit der Prop `afterChange` (`{ change, series, tagNames }`) und `applySeries`; ohne sie ist er unverändert der von UE-1.
+
+- **Vorauswahl:** genau die geänderten Felder, die er ungesperrt anbietet (`changeInitialFields`), auch das Projekt. Die gemerkte Auswahl des Geräts gilt hier nicht und wird hier nicht überschrieben (`transfer(…, remember = false)`).
+- **Fälligkeit:** Hat die Änderung eine alte und eine neue Fälligkeit mit Abstand (`dueShiftOf`, neue minus alte in Kalendertagen, 1 bis 3650), steht unter „Fälligkeit: 15.10.2026“ die Gruppe „Fälligkeit der Unteraufgaben“ mit „Gleiches Datum wie das Hauptticket“ (Standard) und „Um denselben Abstand verschieben (+3 Tage)“ mit „Unteraufgaben ohne Fälligkeit bleiben ohne.“; gesperrt, solange die Fälligkeit nicht angehakt ist. Sonst die Checkbox aus UE-1 („Gleiche Fälligkeit …“, ohne Fälligkeit mit „Die Unteraufgaben verlieren ihre Fälligkeit.“).
+- **Verschieben ohne eigene Fälligkeit:** Die Route verschiebt nur eine vorhandene Fälligkeit (`changesOf` in `lib/subtask-transfer-rules.js`: `child.due === '' ? '' : shift(…)`); eine Unteraufgabe ohne bleibt ohne und zählt nicht als geändert, wenn sonst nichts wechselt. Die Zeile über den Knöpfen sagt es („Ändert 2 von 3 Unteraufgaben. 1 Unteraufgabe ohne Fälligkeit bleibt ohne.“).
+- **Tags:** als Änderung, nicht alle Tags des Haupttickets: „Tags: Garten hinzufügen, Müll entfernen“ mit „Andere Tags der Unteraufgaben bleiben.“, gesendet als `{ add, remove }` (`tagChangeOf`), gemessen am Hauptticket beim Öffnen, weil die Route nur Tags hinzufügt, die es hat, und nur solche entfernt, die es nicht hat. Ohne Tag-Änderung die Checkbox aus UE-1.
+- **Priorität, Status, Zuständigkeit, Projekt:** der neue Wert des Haupttickets wie in UE-1 (der Server liest ihn).
+- **Ziel:** „Alle offenen Unteraufgaben (n)“ (Standard), „Keine“ oder „Auswählen …“. **„Keine“ nur mit der Serien-Checkbox:** Ohne sie hieße „Keine“ dasselbe wie „Abbrechen“; ein zweiter Weg ohne Wirkung wäre verwirrend. Mit „Keine“ sind die Felder gesperrt, die Zeile sagt „Die Unteraufgaben bleiben, wie sie sind.“, der Knopf heißt **„Für künftige Tickets übernehmen“** und ist ohne Haken bei der Serie gesperrt.
+- **Serien-Checkbox „Auch für künftige Tickets übernehmen“:** erscheint genau dann, wenn das bisherige Serien-Angebot für diese Änderung erschienen wäre (`TransferOfferStore.seriesOffer` = `templateOffers` beim Öffnen), nicht angehakt, mit „Die Vorlage von „Müll“ bekommt Priorität und Tags; dieses Ticket und seine Unteraufgaben ändert das nicht.“. Sie schreibt genau, was die Aktion des Serien-Angebots schreibt, über denselben Weg (`RecurrenceStore.applyTemplateOffers`, gemeinsam mit der Aktion des Flags in `#writeOffers`: `updateRule` der Record-API, Erfolgs-Flag „Vorlage von „Müll“ übernommen.“); eine Ablehnung kommt hier an den Dialog statt als Fehler-Flag.
+- **Zwei Operationen, Reihenfolge und Fehler:** erst die Unteraufgaben (Route), dann die Vorlage (Record-API); keine neue Route, kein Kombinieren auf dem Server. Klappen beide, schließt der Dialog. Schlägt eine fehl, nachdem die andere geklappt hat, bleibt er offen: Die gelungene steht als `SectionMessage` (success), die fehlgeschlagene als `SectionMessage` (error, `role="alert"`) mit **„Erneut versuchen“**, das nur diesen Teil wiederholt; die Auswahl ist dann gesperrt (gesendet ist gesendet), der Knopf unten heißt „Schließen“. Schlägt der einzige oder beide Teile fehl, bleibt der Dialog wie in UE-1 bearbeitbar mit der Meldung. Nichts schließt still.
+- **409:** wie UE-1 („Das Hauptticket wurde inzwischen geändert. Bitte erneut öffnen.“), ohne „Erneut versuchen“, weil derselbe Stand wieder abgelehnt würde (`TransferResult.stale`).
+- **Vor dem Neustart:** Weiß der Server die Route nicht (`missing` aus `GET /api/byl/tickets/create` oder 404 ohne `ticket`), steht statt der Felder der Hinweis aus §8; die Serien-Checkbox bleibt, sie braucht die Route nicht. Ist `missing` schon bekannt, erscheint statt des Flags gleich das bisherige Serien-Angebot (§4), sodass nichts ins Leere führt.
+
+### 6. Öffnen des Dialogs aus dem Flag
+
+Kein bestehendes Flag öffnet einen Dialog; Aktionen wie „Öffnen“ navigieren. „Übertragen …“ öffnet deshalb den Dialog im Abschnitt „Unteraufgaben“ des Haupttickets: Ist es im Panel oder in der Vollansicht zu sehen (`TicketDetailStore.id`), sofort, sonst öffnet es das Ticket zuerst (`ticketHrefIn` mit dem gemerkten Öffnungsmodus, wie „Öffnen“ der Zuweisung). Die Anfrage (`requestFor`, `take`) nimmt genau der Abschnitt dieses Tickets einmal; die nächste Navigation, die nicht der Weg dorthin ist, verwirft sie (`navigated` aus `afterNavigate`), etwa wenn „Änderungen verwerfen?“ den Weg abbricht. Im Panel ist der Dialog ein Modal M; steht dort gerade ein anderer Dialog davor (das Flag stand in ihm), wartet er, bis jener zu ist (kein Dialog über einem Dialog, ADR-0025 §3). In der Vollansicht steht er eingebettet. Der Fokus geht vorher auf „Auf Unteraufgaben übertragen …“, damit er beim Schließen dorthin zurückkehrt.
+
+### 7. Künftige Vorkommen einer Serie und ihre Unteraufgaben
+
+Ein neues Vorkommen entsteht aus der Vorlage der Regel (`newInstance` in `lib/recurrence-service.js`: Titel, Beschreibung, Projekt, Tags, Priorität, „Status beim Anlegen“, Farbe, Charm; die Zuständigkeit nach der Art der Regel, Fälligkeit aus dem Rhythmus). Seine Unteraufgaben entstehen aus `template_subtasks` (`newSubtasks`): Titel und Priorität des Eintrags, Status des Eintrags oder des neuen Tickets, und vom neuen Ticket („Vererbung“, UT-1) Projekt, Tags, Fälligkeit, Art und Zuständigkeit. Für das Zusammenspiel heißt das: Die Serien-Checkbox schreibt Projekt und Tags (und andere Felder der Vorlage) in die Vorlage; über die Vererbung erreichen Projekt und Tags auch die Unteraufgaben künftiger Vorkommen. Die Priorität erreicht nur das künftige Hauptticket, die Unteraufgaben behalten die Priorität ihres Eintrags. Fälligkeit, Status und Zuständigkeit gehören nie in die Vorlage (Nachtrag 6 von ADR-0023, ADR-0068 §5); künftige Unteraufgaben bekommen die Fälligkeit ihres Vorkommens. Nichts darüber hinaus wurde erweitert. Belegt in `recurrence-subtasks.test.mjs` („moves the sub-tasks by the distance …“).
+
+### 8. Alternativen
+
+- **Neue Route für Unteraufgaben und Vorlage zusammen:** wäre atomar, aber eine neue Server-Route für zwei bestehende Operationen; der Auftrag schließt sie aus. Stattdessen zwei Anfragen mit klarer Teilfehler-Anzeige.
+- **Den Dialog als Modal im Layout öffnen, wo immer das Flag steht:** über der Vollansicht oder einem anderen Dialog ein Dialog über einem Dialog (ADR-0025 §3). Verworfen zugunsten des Abschnitts des Tickets.
+- **Jede Komponente einzeln anbinden:** doppelte Logik; die Ticket-Stores sind die zentrale Stelle, an der schon das Serien-Angebot hängt.
+- **Den Status ganz aus dem Flag lassen:** Bei nicht blockierenden Unteraufgaben fragt niemand; gerade dort hilft „Status: Erledigt“.
+
+### 9. Konsequenzen
+
+- Keine Änderung an Hooks oder Migrationen: nach dem Build F5. Steht der Neustart nach UE-1 noch aus, zeigt der Dialog bis dahin den Hinweis, und die Serien-Checkbox funktioniert trotzdem.
+- `TicketDetailStore` und `TicketListStore` melden Änderungen an einen `TicketChangeSink` (`changes`, Standard `seriesChanges(series)` mit dem bisherigen Verhalten); das `(app)`-Layout gibt ihnen den `TransferOfferStore`.
+- Belegt in `subtask-transfer-change.test.ts`, `subtask-transfer-offer.test.ts`, `subtask-transfer-after-change.test.ts`, `subtask-transfer.test.ts` (Store), `tests/unit/web-subtask-transfer.test.mjs` (Body nach Änderung gegen die Regeln der Route) und `tests/integration/recurrence-subtasks.test.mjs`.

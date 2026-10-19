@@ -1,6 +1,6 @@
 # ADR-0023: Lebenszyklus von Regeln und Instanzen: Anlegen, Erledigen, Rückgängig, Pausieren, Bearbeiten, Löschen
 
-- **Status:** Angenommen (2026-09-26: Der Nutzer hat die Empfehlungen zu OF-E5-1 bis OF-E5-5 bestätigt; umgesetzt in E5, siehe Nachtrag am Ende); Nachtrag 9 (2026-10-05): Nur das aktuelle Vorkommen zählt (WH-1); Nachtrag 10 (2026-10-12): Das Angebot für künftige Tickets bleibt stehen (FL-1)
+- **Status:** Angenommen (2026-09-26: Der Nutzer hat die Empfehlungen zu OF-E5-1 bis OF-E5-5 bestätigt; umgesetzt in E5, siehe Nachtrag am Ende); Nachtrag 9 (2026-10-05): Nur das aktuelle Vorkommen zählt (WH-1); Nachtrag 10 (2026-10-12): Das Angebot für künftige Tickets bleibt stehen (FL-1); Nachtrag 11 (2026-10-19): Bei offenen Unteraufgaben steckt das Angebot im Dialog „Übertragen …“ (UE-2, aus 0070)
 - **Datum:** 2026-09-25
 - **Entscheidung durch:** Advisor
 - **Ergänzt:** [ADR-0021](0021-regelmodell-wiederkehrende-aufgaben.md) (Regelmodell), [ADR-0022](0022-erzeugung-von-instanzen.md) (Erzeugung)
@@ -189,3 +189,13 @@ Ersetzt in Nachtrag 6 („Warum ein Flag und keine Frage“) den Satz, das Flag 
 - Das Info-Flag „Nur dieses Ticket geändert.“ mit „Auch für künftige Tickets übernehmen“ (geänderte Felder nach Nachtrag 6, Unteraufgaben nach Nachtrag 8) verschwindet nicht mehr von selbst (`OFFER_DURATION`, `duration: null`). Es bleibt, bis der Nutzer die Aktion wählt, es mit × schließt oder ein neueres Angebot es ersetzt; „Rückgängig“ einer Sammelaktion zieht es wie bisher zurück.
 - Bei offenem Dialog steht es wie jedes Flag im obersten Dialog, also in der Vollansicht vor ihr und klickbar (ADR-0025 Nachtrag 18).
 - Belegt in `recurrence-store.test.ts` („keeps the offer until it is taken, closed or replaced …“) und `series-template-offer.test.ts` („keeps the offer until it is closed, also long after 8 s“).
+
+## Nachtrag 11 (2026-10-19, UE-2): Bei offenen Unteraufgaben steckt das Angebot im Dialog „Übertragen …“
+
+Ergänzt Nachtrag 6 („Auch für künftige Tickets übernehmen“). Seit [ADR-0070](0070-auf-unteraufgaben-uebertragen.md) Nachtrag UE-2 bietet ein Flag nach einer Änderung am Hauptticket an, sie auch auf seine Unteraufgaben zu übertragen. Damit nie zwei Flags zum selben Ticket konkurrieren:
+
+- **Ersetzt:** Hat das Ticket mindestens eine offene Unteraufgabe und hat die Person ein Feld des Dialogs geändert (Fälligkeit, Priorität, Status, Zuständigkeit, Tags, Projekt), erscheint statt „Nur dieses Ticket geändert.“ **nur** das Flag „… von HAUS-12 geändert. Auch für die Unteraufgaben?“ mit „Übertragen …“. Im Dialog steht genau dann, wenn dieses Angebot erschienen wäre, die Checkbox **„Auch für künftige Tickets übernehmen“** (nicht angehakt). Sie schreibt dasselbe wie die Aktion des Flags (`templateOffers`, `RecurrenceStore.applyTemplateOffers` über denselben `updateRule` wie `#applyOffers`); mit dem Ziel „Keine“ allein für die Vorlage. Bei einer gemischten Änderung (etwa Titel und Priorität) trägt die Checkbox alle Felder der Vorlage, auch den Titel. Ein Angebot, das für eine frühere Änderung desselben Tickets noch steht, geht in das Flag über (zurückgezogen, seine Felder in der Checkbox).
+- **Gesammelt:** Weil das Flag die Änderungen eines Tickets sammelt (alter Wert vor der ersten Änderung), nennt auch die Checkbox die gesammelten Felder; das bisherige Angebot ersetzte ein älteres durch das neuere.
+- **Unverändert:** ohne offene Unteraufgabe, mit nur anderen Feldern (Titel, Beschreibung, Farbe, Charm), bei Sammelaktionen, für „Unteraufgabe hinzufügen“ (Nachtrag 8) und vor dem Neustart nach UE-1 (der Server kennt die Route nicht). Ein erledigtes Ticket bekommt das Angebot weiterhin nie, also auch keine Checkbox. Fällt im Flag kein Feld des Dialogs mehr ins Gewicht, geht das Übrige der gesammelten Änderung als dieses Angebot weiter.
+- **Künftige Vorkommen:** Die Vorlage gibt Projekt und Tags weiter, und die Unteraufgaben des neuen Vorkommens erben sie von ihm (UT-1); ihre Priorität kommt aus dem Eintrag der Vorlage, ihre Fälligkeit aus dem Vorkommen. Status und Fälligkeit gehören weiter nie in die Vorlage. Nichts darüber hinaus wurde erweitert.
+- Belegt in `subtask-transfer-offer.test.ts`, `subtask-transfer-after-change.test.ts` und `recurrence-subtasks.test.mjs` („moves the sub-tasks by the distance …“).

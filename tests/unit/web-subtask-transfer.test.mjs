@@ -1,6 +1,7 @@
 // "Auf Unteraufgaben übertragen …" (UE-1, ADR-0070): the route (app/pb_hooks/lib/subtask-transfer-rules.js)
 // and the SPA (web/src/lib/domain/subtask-transfer.ts) name the same fields, limits and texts, the body
 // the SPA sends reads on the server as the same request, and both count the same sub-tasks as changing.
+// Since UE-2 also the body after a change (web/src/lib/domain/subtask-transfer-change.ts).
 
 import { describe, expect, it } from 'vitest';
 import { loadHookLib } from '../support/hook-lib.mjs';
@@ -16,6 +17,7 @@ import {
 	changesOf,
 	transferRequestBody
 } from '../../web/src/lib/domain/subtask-transfer.ts';
+import { changeFieldsOf, startParentChange } from '../../web/src/lib/domain/subtask-transfer-change.ts';
 
 const rules = loadHookLib('subtask-transfer-rules.js');
 const berlinTime = loadHookLib('berlin-time.js');
@@ -53,6 +55,24 @@ describe('the body of the SPA', () => {
 		const fields = { ...NO_TRANSFER_FIELDS, due: { mode: 'shift', days: -3 }, tags: { add: [], remove: ['tag000000000002'] } };
 		const body = transferRequestBody({ expectedUpdated: 'x', fields, targets: 'open' });
 		expect(rules.parseRequest(body).options.fields).toEqual(fields);
+	});
+
+	it('after a change (UE-2): the distance and the tags of the change pass the checks against the parent', () => {
+		const ticket = (overrides) => ({
+			id: 'parent000000001', key: 'HAUS-12', title: 'Müll', status: 'open', priority: 'medium', due: '2026-10-12',
+			projectId: null, tagIds: ['tag000000000002'], project: null, tags: [], recurring: false, source: null,
+			completedAt: null, created: 'x', updated: 'x', ...overrides
+		});
+		const before = ticket();
+		const after = ticket({ due: '2026-10-09', priority: 'high', tagIds: ['tag000000000001'] });
+		const change = startParentChange({ before, after });
+		const fields = changeFieldsOf(new Set(['due', 'priority', 'tags']), after, change, 'shift');
+		expect(fields).toEqual({ ...NO_TRANSFER_FIELDS, due: { mode: 'shift', days: -3 }, priority: true, tags: { add: ['tag000000000001'], remove: ['tag000000000002'] } });
+		const parsed = rules.parseRequest(transferRequestBody({ expectedUpdated: 'x', fields, targets: 'open' }));
+		expect(parsed.options.fields).toEqual(fields);
+		expect(rules.tagsViolation(parsed.options.fields.tags, after.tagIds)).toBe('');
+		// Against the parent before the change both lists would be refused.
+		expect(rules.tagsViolation(parsed.options.fields.tags, before.tagIds)).toBe('validation_transfer_tags');
 	});
 });
 

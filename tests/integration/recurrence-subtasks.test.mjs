@@ -4,14 +4,22 @@
 // of the ticket (also with "Jeden Termin einzeln anlegen" and for a catch-up ticket), and reopening
 // the direct predecessor removes an untouched follow-up with its sub-tasks, while any change of
 // the user to them keeps it. The clock of a run comes through the test route
-// POST /api/byl-test/recurrence/run (tests/fixtures/pb_hooks/recurrence-clock.pb.js).
+// POST /api/byl-test/recurrence/run (tests/fixtures/pb_hooks/recurrence-clock.pb.js). Since UE-2
+// (ADR-0070 addendum UE-2) also the dialog "Übertragen …" after a change of an open ticket of a
+// series: the sub-tasks through the route of UE-1, the template through the way of "Auch für künftige
+// Tickets übernehmen", and what the next ticket and its sub-tasks get from it.
 
 import { randomBytes } from 'node:crypto';
 import PocketBase from 'pocketbase';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { startPocketBase } from '../support/pocketbase-harness.mjs';
 import { FAIL_TICKET_INSERT, uniqueCode } from '../support/scenario.mjs';
+import { getRule, updateRule } from '../../web/src/lib/data/recurrence.ts';
+import { transferToSubtasks } from '../../web/src/lib/data/subtask-transfer.ts';
+import { getTicket } from '../../web/src/lib/data/tickets.ts';
 import { berlinToday } from '../../web/src/lib/domain/berlin-date.ts';
+import { templateOffers } from '../../web/src/lib/domain/series-template.ts';
+import { changeFieldsOf, startParentChange } from '../../web/src/lib/domain/subtask-transfer-change.ts';
 
 let instance;
 let superuser;
@@ -458,5 +466,61 @@ describe('duplicating a ticket of a series with sub-tasks from the template (ADR
 		expect(titles(await childrenOf(copy.id))).toEqual(['Einkaufen']);
 		expect((await openOf(rule.id)).map((ticket) => ticket.id)).toEqual([instance.id]);
 		expect(titles(await childrenOf(instance.id))).toEqual(['Einkaufen']);
+	});
+});
+
+describe('"Übertragen …" after a change of an open ticket of a series (UE-2)', () => {
+	it('moves the sub-tasks by the distance with the tags of the change; the template brings the rest to the next ticket', async () => {
+		const waste = await owner.pb.collection('tags').create({ owner: owner.id, name: `müll-${unique()}` });
+		const garden = await owner.pb.collection('tags').create({ owner: owner.id, name: `garten-${unique()}` });
+		const rule = await createRule({
+			title: 'Tonnen',
+			anchor: '2050-09-01',
+			priority: 'medium',
+			tags: [waste.id],
+			template_subtasks: [{ title: 'Tonne rausstellen', priority: 'low' }]
+		});
+		await run('2050-09-01T12:00:00Z');
+		const [instance] = await openOf(rule.id);
+		const [child] = await childrenOf(instance.id);
+		expect(child).toMatchObject({ priority: 'low', tags: [waste.id] });
+		expect(dateOf(child.due)).toBe('2050-09-01');
+
+		// The change of the user in the panel: three days later, more urgent, Garten instead of Müll.
+		const before = await getTicket(owner.pb, instance.id);
+		await tickets().update(instance.id, { due: '2050-09-04', priority: 'high', tags: [garden.id] });
+		const after = await getTicket(owner.pb, instance.id);
+		const change = startParentChange({ before, after });
+
+		// The dialog: the sub-tasks by the same distance, through the route of UE-1.
+		const fields = changeFieldsOf(new Set(['due', 'priority', 'tags']), after, change, 'shift');
+		expect(fields.due).toEqual({ mode: 'shift', days: 3 });
+		const outcome = await transferToSubtasks(owner.pb, instance.id, {
+			expectedUpdated: after.updated,
+			fields,
+			targets: 'open'
+		});
+		expect(outcome).toMatchObject({ changed: 1, unchanged: 0 });
+		const moved = await superuser.collection('tickets').getOne(child.id);
+		expect(moved).toMatchObject({ priority: 'high', tags: [garden.id] });
+		expect(dateOf(moved.due)).toBe('2050-09-04');
+
+		// "Auch für künftige Tickets übernehmen": exactly what the offer of the series writes.
+		const ruleNow = await getRule(owner.pb, rule.id);
+		const [offer] = templateOffers([{ before, after }], (id) => (id === rule.id ? ruleNow : null));
+		expect(offer).toMatchObject({ fields: ['priority', 'tags'], patch: { priority: 'high', tags: [garden.id] } });
+		await updateRule(owner.pb, offer.ruleId, offer.patch);
+		expect(await ruleOf(rule.id)).toMatchObject({ priority: 'high', tags: [garden.id] });
+
+		// The next ticket takes the template; its sub-tasks take project and tags of it (UT-1), their
+		// priority from the entry of the template, the due date of their ticket; no shift of the old one.
+		await tickets().update(instance.id, { status: 'done', complete_children: true });
+		await run('2050-09-02T12:00:00Z');
+		const [next] = await openOf(rule.id);
+		expect(next.id).not.toBe(instance.id);
+		expect(next).toMatchObject({ priority: 'high', tags: [garden.id] });
+		const [nextChild] = await childrenOf(next.id);
+		expect(nextChild).toMatchObject({ title: 'Tonne rausstellen', priority: 'low', tags: [garden.id] });
+		expect(dateOf(nextChild.due)).toBe(dateOf(next.due));
 	});
 });

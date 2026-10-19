@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { tick } from 'svelte';
+	import { tick, untrack } from 'svelte';
 	import type { ResolvedPathname } from '$app/types';
 	import { isCalendarDate, type CalendarDate } from '$lib/domain/berlin-date';
 	import {
@@ -11,12 +11,24 @@
 	import { assigneeName } from '$lib/domain/assignee';
 	import { joinWords } from '$lib/domain/recurrence-text';
 	import { progressLabel, progressPercent, progressText } from '$lib/domain/subtasks';
+	import type { TemplateOffer } from '$lib/domain/series-template';
 	import { TRANSFER_TEXTS, type TransferNames } from '$lib/domain/subtask-transfer';
+	import {
+		tagChangeOf,
+		type ParentChange,
+		type TagChangeNames
+	} from '$lib/domain/subtask-transfer-change';
 	import { TITLE_MAX_LENGTH, type TicketSummary } from '$lib/domain/ticket';
+	import { flagOutlets } from '$lib/overlay/flag-outlets.svelte';
 	import { insideModal } from '$lib/overlay/modal-context';
 	import { findAssignees, type AssigneeSource } from '$lib/stores/assignees.svelte';
 	import type { CatalogStore } from '$lib/stores/catalog.svelte';
+	import { findFlagStore, type FlagStore } from '$lib/stores/flags.svelte';
 	import { OngoingFinishAsk } from '$lib/stores/ongoing-finish.svelte';
+	import {
+		findTransferOfferStore,
+		type TransferOfferStore
+	} from '$lib/stores/subtask-transfer-offer.svelte';
 	import {
 		findSubtaskTransferStore,
 		type SubtaskTransferStore
@@ -46,13 +58,18 @@
 	// hinzufügen" once the ticket has a sub-task: the dialog gives chosen fields of the ticket to its
 	// sub-tasks (SubtaskTransferDialog, a modal M; in the full view inline in this section). Whoever sees
 	// the section may change the ticket (the update rule of tickets is their view rule); the server checks
-	// it again for every sub-task.
+	// it again for every sub-task. Since UE-2 (ADR-0070 addendum UE-2) "Übertragen …" of the flag after
+	// a change of the ticket opens the same dialog here in its mode "nach Änderung"; the focus goes to
+	// "Auf Unteraufgaben übertragen …" first, so it comes back there. In the side panel the dialog
+	// waits while another dialog is open (the flag stood in front of it): no dialog over a dialog.
 	let {
 		ticket,
 		list,
 		hrefOf,
 		catalog = null,
 		transfer = findSubtaskTransferStore(),
+		offers = findTransferOfferStore(),
+		flags = findFlagStore(),
 		assignees = findAssignees()
 	}: {
 		ticket: TicketSummary;
@@ -72,6 +89,10 @@
 		catalog?: Pick<CatalogStore, 'projectOf' | 'tagsOf'> | null;
 		/** "Auf Unteraufgaben übertragen …" (UE-1); none outside the (app) layout. */
 		transfer?: SubtaskTransferStore | null;
+		/** The flag "Übertragen …" after a change (UE-2); none outside the (app) layout. */
+		offers?: TransferOfferStore | null;
+		/** The flags of the layout: where they stand tells whether a dialog is open in front. */
+		flags?: FlagStore | null;
 		/** Members of the household for the name of the assignee; none outside the layout. */
 		assignees?: AssigneeSource | null;
 	} = $props();
@@ -124,6 +145,42 @@
 	let transferButton = $state<HTMLButtonElement>();
 	const transferShown = $derived(transfer !== null && subtasks.length > 0);
 	const transferring = $derived(transferShown && transferringFor === ticket.id);
+	/** The mode "nach Änderung" of the open dialog (UE-2), null for the mode of UE-1. */
+	let afterChange = $state.raw<{
+		change: ParentChange;
+		series: TemplateOffer | null;
+		tagNames: TagChangeNames;
+	} | null>(null);
+	/** "Übertragen …" of the flag of this ticket waits for this section (UE-2). */
+	const requested = $derived(offers?.requestFor(ticket.id) ?? null);
+	/** A dialog is open in front of the side panel; the flag stood in it. */
+	const otherDialog = $derived(flags !== null && flagOutlets.hostOf(flags) !== null);
+
+	/** Names of the tags the change added and removed, as the catalog knows them. */
+	function tagNamesOf(change: ParentChange): TagChangeNames {
+		const tags = tagChangeOf(change, ticket);
+		const named = (ids: readonly string[], fallback: TicketSummary) =>
+			(catalog?.tagsOf({ tagIds: [...ids], tags: fallback.tags }) ?? fallback.tags)
+				.filter((tag) => ids.includes(tag.id))
+				.map((tag) => tag.name);
+		return {
+			added: named(tags?.add ?? [], ticket),
+			removed: named(tags?.remove ?? [], change.before)
+		};
+	}
+
+	$effect(() => {
+		if (requested === null || offers === null || !transferShown) return;
+		if (!inline && !transferring && otherDialog) return;
+		untrack(() => {
+			const change = offers.take(ticket.id);
+			if (change === null) return;
+			// The opener of the dialog is the button of this section, not the flag that is gone.
+			transferButton?.focus();
+			afterChange = { change, series: offers.seriesOffer(change), tagNames: tagNamesOf(change) };
+			transferringFor = ticket.id;
+		});
+	});
 	/** What the dialog names of the ticket; the assignee only where the field shows (ADR-0068). */
 	const transferNames = $derived.by((): TransferNames => {
 		const assigneeShown =
@@ -359,7 +416,10 @@
 					aria-haspopup={inline ? undefined : 'dialog'}
 					aria-expanded={inline ? transferring : undefined}
 					bind:this={transferButton}
-					onclick={() => (transferringFor = inline && transferring ? null : ticket.id)}
+					onclick={() => {
+						afterChange = null;
+						transferringFor = inline && transferring ? null : ticket.id;
+					}}
 				>
 					{TRANSFER_TEXTS.action}
 				</button>
@@ -367,14 +427,22 @@
 		</div>
 	{/if}
 	{#if transferring && transfer !== null}
-		<SubtaskTransferDialog
-			parent={ticket}
-			{subtasks}
-			store={transfer}
-			names={transferNames}
-			returnFocus={() => transferButton}
-			onclose={() => (transferringFor = null)}
-		/>
+		<!-- A new request of the flag opens the dialog anew in its mode. -->
+		{#key afterChange}
+			<SubtaskTransferDialog
+				parent={ticket}
+				{subtasks}
+				store={transfer}
+				names={transferNames}
+				{afterChange}
+				applySeries={offers === null ? null : (offer) => offers.applySeries(offer)}
+				returnFocus={() => transferButton}
+				onclose={() => {
+					transferringFor = null;
+					afterChange = null;
+				}}
+			/>
+		{/key}
 	{/if}
 	<p class="visually-hidden" aria-live="polite">{announcement}</p>
 </section>

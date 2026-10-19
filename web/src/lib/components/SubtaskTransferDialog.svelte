@@ -2,6 +2,12 @@
 	import { untrack } from 'svelte';
 	import { resolve } from '$app/paths';
 	import {
+		appliedTitle,
+		templateRefusedText,
+		type TemplateApplyResult,
+		type TemplateOffer
+	} from '$lib/domain/series-template';
+	import {
 		OPEN_TARGETS,
 		TRANSFER_TEXTS,
 		chosenInAdvance,
@@ -14,10 +20,26 @@
 		targetsOf,
 		targetsRequest,
 		transferSummary,
+		transferredText,
 		type TargetChoice,
 		type TransferField,
 		type TransferNames
 	} from '$lib/domain/subtask-transfer';
+	import {
+		CHANGE_TEXTS,
+		changeFieldOffers,
+		changeFieldsOf,
+		changeInitialFields,
+		dueShiftOf,
+		pendingFields,
+		seriesHint,
+		shiftLabel,
+		withoutDueCount,
+		withoutDueText,
+		type DueChoice,
+		type ParentChange,
+		type TagChangeNames
+	} from '$lib/domain/subtask-transfer-change';
 	import type { TicketSummary } from '$lib/domain/ticket';
 	import { insideModal } from '$lib/overlay/modal-context';
 	import type { SubtaskTransferStore } from '$lib/stores/subtask-transfer.svelte';
@@ -35,11 +57,23 @@
 	// opened: the server reads its own and answers 409 when the ticket changed since. In the side panel
 	// a modal M; inside a modal (the full view) the same form stands inline (InlineDialog, ADR-0025
 	// addendum 16). Before the restart after UE-1 the dialog shows the hint to restart instead.
+	//
+	// Since UE-2 (ADR-0070 addendum UE-2) the flag "Übertragen …" opens it in the mode "nach Änderung"
+	// (`afterChange`): exactly the changed fields are checked (the remembered choice neither counts nor
+	// changes), a changed due date offers "Gleiches Datum wie das Hauptticket" or "Um denselben Abstand
+	// verschieben (+3 Tage)", changed tags go as the change (added and removed), and where the offer of
+	// the series would have come, "Auch für künftige Tickets übernehmen" (not checked) writes the same
+	// into the template, together with the target "Keine". The two parts are two requests: when one
+	// fails, the dialog says what worked and offers "Erneut versuchen" for the other; nothing closes
+	// silently. Before the restart the hint stands instead of the fields, the checkbox of the series
+	// stays.
 	let {
 		parent,
 		subtasks,
 		store,
 		names,
+		afterChange = null,
+		applySeries = null,
 		onclose,
 		returnFocus
 	}: {
@@ -49,6 +83,17 @@
 		store: SubtaskTransferStore;
 		/** Project, tag names and assignee of the ticket as the dialog names them. */
 		names: TransferNames;
+		/**
+		 * The mode "nach Änderung" (UE-2): the change of the flag, the offer of the series it would
+		 * have brought (null: none) and the names of the changed tags; null for the mode of UE-1.
+		 */
+		afterChange?: {
+			change: ParentChange;
+			series: TemplateOffer | null;
+			tagNames: TagChangeNames;
+		} | null;
+		/** Writes the offer of the series (the way of the flag of the series). */
+		applySeries?: ((offer: TemplateOffer) => Promise<TemplateApplyResult>) | null;
 		/** Cancel, or after the transfer. */
 		onclose: () => void;
 		/** Inline only: where the focus goes on closing when the opener is gone. */
@@ -59,67 +104,168 @@
 	const formId = `${uid}-form`;
 	const describedId = `${uid}-described`;
 	const summaryId = `${uid}-summary`;
+	const shiftHintId = `${uid}-shift-hint`;
+	const seriesHintId = `${uid}-series-hint`;
 	const inline = insideModal();
 
 	/** The ticket as the dialog opened: its values are what the user confirms. */
 	const shown = untrack(() => ({ ...parent }));
 	const shownNames = untrack(() => ({ ...names }));
-	const offers = fieldOffers(shown, shownNames);
+	const after = untrack(() => afterChange);
+	const offers =
+		after === null
+			? fieldOffers(shown, shownNames)
+			: changeFieldOffers(shown, shownNames, after.change, after.tagNames);
+	/** The distance of a changed due date, when the dialog offers to move by it. */
+	const shift =
+		after !== null && pendingFields(after.change).includes('due') && shown.due !== null
+			? dueShiftOf(after.change)
+			: null;
+	/** "Auch für künftige Tickets übernehmen" with what it writes; only where the series offered it. */
+	const seriesOffer = after !== null && untrack(() => applySeries) !== null ? after.series : null;
 
 	let chosen = $state<TransferField[]>(
-		untrack(() => [...initialFields(store.rememberedFields, offers, shown)])
+		untrack(() =>
+			after === null
+				? [...initialFields(store.rememberedFields, offers, shown)]
+				: [...changeInitialFields(offers, after.change)]
+		)
 	);
-	let mode = $state<'open' | 'chosen'>('open');
+	let dueChoice = $state<DueChoice>('same');
+	let mode = $state<'open' | 'chosen' | 'none'>('open');
 	let chosenIds = $state<string[]>(
 		untrack(() => {
 			const advance = chosenInAdvance(subtasks);
 			return advance.mode === 'chosen' ? [...advance.ids] : [];
 		})
 	);
+	let seriesChecked = $state(false);
 	let busy = $state(false);
-	let message = $state<string | null>(null);
 	/** The server answered the transfer with "unknown route" (before the restart). */
 	let routeMissing = $state(false);
+
+	/** The state of one of the two requests (sub-tasks, series). */
+	type Part =
+		| { readonly state: 'idle' }
+		| { readonly state: 'done'; readonly text: string }
+		| { readonly state: 'failed'; readonly message: string; readonly retry: boolean };
+	const IDLE: Part = { state: 'idle' };
+	let transferPart = $state.raw<Part>(IDLE);
+	let seriesPart = $state.raw<Part>(IDLE);
 
 	const support = $derived(routeMissing ? 'missing' : store.support);
 	const openCount = $derived(subtasks.filter(isOpenSubtask).length);
 	const choice = $derived<TargetChoice>(
-		mode === 'open' ? OPEN_TARGETS : { mode: 'chosen', ids: new Set(chosenIds) }
+		mode === 'chosen' ? { mode: 'chosen', ids: new Set(chosenIds) } : OPEN_TARGETS
 	);
-	const fields = $derived(fieldsOf(new Set(chosen), shown));
-	const targets = $derived(targetsOf(subtasks, choice));
+	const fields = $derived(
+		after === null
+			? fieldsOf(new Set(chosen), shown)
+			: changeFieldsOf(new Set(chosen), shown, after.change, dueChoice)
+	);
+	/** Once one part is done, the choice stays as it was sent; only the failed part goes again. */
+	const locked = $derived(transferPart.state === 'done' || seriesPart.state === 'done');
+	const wantsTransfer = $derived(support !== 'missing' && mode !== 'none');
+	const wantsSeries = $derived(seriesOffer !== null && seriesChecked);
+	const targets = $derived(wantsTransfer ? targetsOf(subtasks, choice) : []);
 	const summary = $derived(transferSummary(shown, targets, fields));
-	const ready = $derived(support === 'ready' && hasFields(fields) && targets.length > 0);
+	const transferReady = $derived(support === 'ready' && hasFields(fields) && targets.length > 0);
+	const ready = $derived(
+		!locked && (wantsTransfer || wantsSeries) && (!wantsTransfer || transferReady)
+	);
+	const summaryLine = $derived(
+		wantsTransfer
+			? [summaryText(summary), withoutDueText(withoutDueCount(targets, fields))]
+					.filter((text) => text !== '')
+					.join(' ')
+			: CHANGE_TEXTS.untouched
+	);
+	const submitShown = $derived(!locked && (support !== 'missing' || seriesOffer !== null));
+	const submitText = $derived(
+		wantsTransfer || seriesOffer === null ? TRANSFER_TEXTS.submit : CHANGE_TEXTS.seriesOnly
+	);
 
 	// Every opening asks what the server knows (unless it named everything already).
 	$effect(() => untrack(() => void store.loadSupport()));
 
 	const hintId = (field: TransferField) => `${uid}-${field}-hint`;
 
-	async function submit(event: SubmitEvent) {
-		event.preventDefault();
-		if (busy || !ready) return;
-		message = null;
+	/** The sub-tasks: done, failed with its message, or nothing to show (no session, before restart). */
+	async function sendTransfer(): Promise<void> {
+		const result = await store.transfer(
+			{ id: shown.id, key: shown.key },
+			{
+				expectedUpdated: shown.updated,
+				fields,
+				targets: targetsRequest(subtasks, choice)
+			},
+			chosen,
+			after === null
+		);
+		if (result.ok) {
+			transferPart = { state: 'done', text: transferredText(result.outcome.changed) };
+		} else if (result.missing) {
+			routeMissing = true;
+			transferPart = IDLE;
+		} else if (result.message !== null) {
+			// 409: sending the same again cannot help, the dialog says to open it anew.
+			transferPart = { state: 'failed', message: result.message, retry: result.stale !== true };
+		} else {
+			transferPart = IDLE;
+		}
+	}
+
+	/** The series: the same writes as its flag; a refusal or a lost request stays as a message. */
+	async function sendSeries(offer: TemplateOffer): Promise<void> {
+		if (applySeries === null) return;
+		const result = await applySeries(offer);
+		if (result.ended) return;
+		if (result.applied > 0) {
+			seriesPart = { state: 'done', text: appliedTitle([offer]) };
+			return;
+		}
+		const refusal = result.refused[0];
+		seriesPart = {
+			state: 'failed',
+			message: templateRefusedText(offer.title, refusal?.reason ?? CHANGE_TEXTS.seriesLost),
+			retry: true
+		};
+	}
+
+	/** Runs the parts that were wanted and are not done; closes once all of them are. */
+	async function run(parts: { transfer: boolean; series: boolean }): Promise<void> {
 		busy = true;
 		try {
-			const result = await store.transfer(
-				{ id: shown.id, key: shown.key },
-				{
-					expectedUpdated: shown.updated,
-					fields,
-					targets: targetsRequest(subtasks, choice)
-				},
-				chosen
-			);
-			if (result.ok) {
-				onclose();
-				return;
+			if (parts.transfer && transferPart.state !== 'done') await sendTransfer();
+			if (parts.series && seriesOffer !== null && seriesPart.state !== 'done') {
+				await sendSeries(seriesOffer);
 			}
-			if (result.missing) routeMissing = true;
-			else message = result.message;
 		} finally {
 			busy = false;
 		}
+		const transferDone = !parts.transfer || transferPart.state === 'done';
+		const seriesDone = !parts.series || seriesPart.state === 'done';
+		if (transferDone && seriesDone) onclose();
+	}
+
+	/** What the dialog sent last: "Erneut versuchen" repeats only the failed part of it. */
+	let wanted = { transfer: false, series: false };
+
+	async function submit(event: SubmitEvent) {
+		event.preventDefault();
+		if (busy || !ready) return;
+		wanted = { transfer: wantsTransfer, series: wantsSeries };
+		if (wanted.transfer) transferPart = IDLE;
+		if (wanted.series) seriesPart = IDLE;
+		await run(wanted);
+	}
+
+	function retry(part: 'transfer' | 'series') {
+		if (busy) return;
+		void run({
+			transfer: wanted.transfer && (part === 'transfer' || transferPart.state !== 'done'),
+			series: wanted.series && (part === 'series' || seriesPart.state !== 'done')
+		});
 	}
 </script>
 
@@ -134,9 +280,33 @@
 	</SectionMessage>
 {/snippet}
 
+{#snippet partMessage(part: Part, which: 'transfer' | 'series')}
+	{#if part.state === 'done' && locked}
+		<SectionMessage tone="success" compact>{part.text}</SectionMessage>
+	{:else if part.state === 'failed' && locked && part.retry}
+		<!-- The other part is done: only this one goes again. -->
+		<SectionMessage tone="error" live>
+			{part.message}
+			{#snippet actions()}
+				<button
+					class="button-subtle"
+					type="button"
+					aria-busy={busy ? 'true' : undefined}
+					aria-disabled={busy ? 'true' : undefined}
+					onclick={() => retry(which)}>{TRANSFER_TEXTS.retry}</button
+				>
+			{/snippet}
+		</SectionMessage>
+	{:else if part.state === 'failed'}
+		<SectionMessage tone="error" live>{part.message}</SectionMessage>
+	{/if}
+{/snippet}
+
 {#snippet content()}
 	<form id={formId} class="form" novalidate onsubmit={submit}>
-		<p id={describedId}>{TRANSFER_TEXTS.describe(shown.key)}</p>
+		<p id={describedId}>
+			{after === null ? TRANSFER_TEXTS.describe(shown.key) : CHANGE_TEXTS.describe(shown.key)}
+		</p>
 		{#if support === 'missing'}
 			{@render restartHint()}
 		{:else}
@@ -158,7 +328,7 @@
 				<p class="hint" role="status">{TRANSFER_TEXTS.loading}</p>
 			{/if}
 
-			<fieldset class="group">
+			<fieldset class="group" disabled={locked || mode === 'none'}>
 				<legend>{TRANSFER_TEXTS.fields}</legend>
 				{#each offers as offer (offer.field)}
 					{@const described = offer.locked ?? offer.hint}
@@ -175,15 +345,41 @@
 					{#if described !== null}
 						<p class="hint nested" id={hintId(offer.field)}>{described}</p>
 					{/if}
+					{#if offer.field === 'due' && shift !== null}
+						<fieldset class="group nested" disabled={!chosen.includes('due')}>
+							<legend class="visually-hidden">{CHANGE_TEXTS.dueChoice}</legend>
+							<label class="choice">
+								<input type="radio" name={`${uid}-due`} value="same" bind:group={dueChoice} />
+								{CHANGE_TEXTS.sameDue}
+							</label>
+							<label class="choice">
+								<input
+									type="radio"
+									name={`${uid}-due`}
+									value="shift"
+									bind:group={dueChoice}
+									aria-describedby={shiftHintId}
+								/>
+								{shiftLabel(shift)}
+							</label>
+							<p class="hint nested" id={shiftHintId}>{CHANGE_TEXTS.keepWithout}</p>
+						</fieldset>
+					{/if}
 				{/each}
 			</fieldset>
 
-			<fieldset class="group">
+			<fieldset class="group" disabled={locked}>
 				<legend>{TRANSFER_TEXTS.target}</legend>
 				<label class="choice">
 					<input type="radio" name={`${uid}-target`} value="open" bind:group={mode} />
 					{TRANSFER_TEXTS.allOpen(openCount)}
 				</label>
+				{#if seriesOffer !== null}
+					<label class="choice">
+						<input type="radio" name={`${uid}-target`} value="none" bind:group={mode} />
+						{CHANGE_TEXTS.none}
+					</label>
+				{/if}
 				<label class="choice">
 					<input type="radio" name={`${uid}-target`} value="chosen" bind:group={mode} />
 					{TRANSFER_TEXTS.choose}
@@ -206,29 +402,45 @@
 					</fieldset>
 				{/if}
 			</fieldset>
+		{/if}
 
-			<p class="summary" id={summaryId} aria-live="polite">{summaryText(summary)}</p>
+		{#if seriesOffer !== null}
+			<div class="group">
+				<label class="choice">
+					<input
+						type="checkbox"
+						bind:checked={seriesChecked}
+						disabled={locked}
+						aria-describedby={seriesHintId}
+					/>
+					<span>{CHANGE_TEXTS.series}</span>
+				</label>
+				<p class="hint nested" id={seriesHintId}>{seriesHint(seriesOffer)}</p>
+			</div>
 		{/if}
-		{#if message}
-			<SectionMessage tone="error" live>{message}</SectionMessage>
+
+		{#if support !== 'missing'}
+			<p class="summary" id={summaryId} aria-live="polite">{summaryLine}</p>
 		{/if}
+		{@render partMessage(transferPart, 'transfer')}
+		{@render partMessage(seriesPart, 'series')}
 	</form>
 {/snippet}
 
 {#snippet buttons({ close }: { close: () => void })}
 	<button class="button-secondary" type="button" aria-disabled={busy} onclick={close}>
-		{TRANSFER_TEXTS.cancel}
+		{locked ? CHANGE_TEXTS.close : TRANSFER_TEXTS.cancel}
 	</button>
-	{#if support !== 'missing'}
+	{#if submitShown}
 		<button
 			class="button-primary"
 			type="submit"
 			form={formId}
 			aria-disabled={busy || !ready ? 'true' : undefined}
 			aria-busy={busy ? 'true' : undefined}
-			aria-describedby={summaryId}
+			aria-describedby={support === 'missing' ? undefined : summaryId}
 		>
-			{busy ? TRANSFER_TEXTS.busy : TRANSFER_TEXTS.submit}
+			{busy ? (wantsTransfer ? TRANSFER_TEXTS.busy : CHANGE_TEXTS.seriesBusy) : submitText}
 		</button>
 	{/if}
 {/snippet}

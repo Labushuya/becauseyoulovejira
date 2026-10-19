@@ -251,7 +251,10 @@
 			stehen, bis du ihn nutzt oder schließt; in der Vollansicht erscheint er vor dem Dialog.
 			Dasselbe gilt, wenn du einem offenen Ticket der Serie eine Unteraufgabe hinzufügst; Entfernen
 			oder Umbenennen einer Unteraufgabe änderst du dagegen direkt in der Vorlage. Status und
-			Fälligkeit gehören immer nur zum einzelnen Ticket.
+			Fälligkeit gehören immer nur zum einzelnen Ticket. Hat das Ticket offene Unteraufgaben und
+			hast du etwa Priorität, Tags oder Projekt geändert, steht stattdessen nur die Frage „Auch für
+			die Unteraufgaben?“ mit „Übertragen …“; „Auch für künftige Tickets übernehmen“ ist dann ein
+			Häkchen in ihrem Dialog.
 		</li>
 		<li>
 			Eine Rückfrage beim Entstehen eines Tickets gibt es nicht: Folgetickets entstehen im
