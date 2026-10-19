@@ -341,7 +341,7 @@
   "meta": {
     "projekt": "becauseyoulovejira",
     "stand": "2026-10-19",
-    "commit": "f295ded"
+    "commit": "3006bb4"
   },
   "bereiche": [
     { "id": "betrieb", "titel": "Betrieb: Start, Stopp, Skripte und Daten" },
@@ -647,6 +647,10 @@
       "vermerk": "Nur Oberfläche, keine Hooks und keine Migration: nach dem Build F5, kein Neustart. Drei manuelle Fälle (BYL-E6-1851 bis BYL-E6-1853)." },
     { "id": "FP-1", "vorhaben": "Fehler nachvollziehen", "titel": "„Details“ an den Meldungen echter Fehler (Absicht, Zeitpunkt, Ergebnis, Anfrage, App-Stand, „Kopieren“), Katalog der Absichten für alle Routen, Liste „Fehler dieser Sitzung“ nur im Tab samt unerwarteter Fehler, Einstieg in der Hilfe", "bereich": "darstellung", "quelle": "Nutzerwunsch", "datum": "2026-10-19", "adr": ["0071-fehlerdetails-und-sitzungsprotokoll.md"], "faelle": ["BYL-E6-1854..BYL-E6-1874"],
       "vermerk": "Nur Oberfläche, keine Hooks und keine Migration: nach dem Build F5, kein Neustart. Vier manuelle Fälle (BYL-E6-1871 bis BYL-E6-1874)." },
+    { "id": "SEC-1", "vorhaben": "Sicherheitshinweise", "titel": "Risikobewertung GHSA-pxg6-pf52-xh8x (cookie < 0.7.0, Dependabot-Hinweis #1): VEX not_affected, vulnerable_code_not_in_execute_path, Hinweis als not_used geschlossen", "bereich": "entwicklung", "quelle": "Dependabot-Hinweis #1", "datum": "2026-10-19", "faelle": [],
+      "vermerk": "Nur Dokumentation (PR #303, docs/security/bewertungen/GHSA-pxg6-pf52-xh8x.md): keine eigenen Testfälle, kein Build, kein Neustart. Die Annahmen A1 bis A4 und A6 sichert seit SEC-2 ein Wächtertest." },
+    { "id": "SEC-2", "vorhaben": "Sicherheitshinweise", "titel": "Wächtertest für die Bewertung GHSA-pxg6-pf52-xh8x: kein Server-Code in web/src, adapter-static ohne experimental, ssr = false, kein exportToCookie oder loadFromCookie, cookie nur über Kit im Lockfile von web", "bereich": "entwicklung", "quelle": "Folgepaket zu SEC-1", "datum": "2026-10-19", "faelle": ["BYL-E6-1875..BYL-E6-1879"],
+      "vermerk": "Nur Test und Dokumentation, kein Produktivcode, kein Neustart. Schlägt der Test an, wird die Bewertung neu erstellt. A5 (Kits Server-Cookie-Code nicht in app/pb_public) braucht einen Build und bleibt eine Prüfung von Hand." },
     { "id": "querschnitt", "vorhaben": "Querschnitt", "titel": "Testumgebung, Regeln der Datenschicht, Hook-Module und dieses Manifest", "bereich": "entwicklung", "faelle": ["BYL-X-001..BYL-X-004"] }
   ],
   "zurueckgestellt": [
@@ -7735,6 +7739,31 @@
           "steps": ["Ein Ticket in der Vollansicht öffnen und die Beschreibung speichern (offline).", "Mit Tab zu „Details“ gehen, mit Enter aufklappen, zu „Kopieren“ und „Alle Fehler dieser Sitzung (n)“ gehen.", "Außerhalb eines Dialogs (Karte eines Kanals) „Alle Fehler dieser Sitzung (n)“ wählen, mit Tab durch die Liste gehen und mit Esc schließen."],
           "expect": "NVDA sagt „Details: ‹Absicht›, Schalter, reduziert“ bzw. „erweitert“ und nach „Kopieren“ „Kopiert.“. In der Vollansicht klappt die Liste unter dem Fehler auf, es öffnet sich kein zweiter Dialog. Außerhalb öffnet sich der Dialog „Fehler dieser Sitzung“, der Fokus steht darin; Esc schließt ihn, und der Fokus kehrt zum Knopf zurück.",
           "tests": [] }
+      ]
+    },
+    {
+      "tag": "E6", "name": "Wächtertest der Bewertung GHSA-pxg6-pf52-xh8x", "desc": "Paket SEC-2 (Folgepaket zu SEC-1, PR #303): Die Annahmen A1 bis A4 und A6 aus Abschnitt 5 von docs/security/bewertungen/GHSA-pxg6-pf52-xh8x.md werden statisch geprüft. Schlägt eine Prüfung an, nennt sie die Annahme („Annahme A1 der Bewertung GHSA-pxg6-pf52-xh8x verletzt – neu bewerten“) und den Pfad der Bewertung. IDs BYL-E6-1875 bis BYL-E6-1879.",
+      "items": [
+        { "id": "BYL-E6-1875", "title": "A1: kein Server-Code von SvelteKit in web/src (SEC-2)", "art": ["unit"], "status": "bestanden",
+          "pre": "tests/unit/security-cookie-assumptions.test.mjs liest web/src und lädt web/svelte.config.js (web/node_modules installiert).", "steps": ["npm run test:unit"],
+          "expect": "Unter web/src gibt es keine Datei und keinen Ordner +server.*, +page.server.*, +layout.server.*, hooks.server* oder *.remote.*, und svelte.config.js setzt kit.files nicht (Routen und Hooks an den Standardorten). Sonst schlägt der Test mit „Annahme A1 … verletzt – neu bewerten“ und den Pfaden an. Gegenprobe: eine Datei web/src/routes/+server.ts lässt ihn anschlagen.",
+          "tests": ["tests/unit/security-cookie-assumptions.test.mjs::A1: web/src holds no server code of SvelteKit (+server, +page.server, +layout.server, hooks.server, *.remote)"] },
+        { "id": "BYL-E6-1876", "title": "A2: adapter-static ohne experimental (SEC-2)", "art": ["unit"], "status": "bestanden",
+          "pre": "Wie BYL-E6-1875.", "steps": ["npm run test:unit"],
+          "expect": "web/svelte.config.js importiert @sveltejs/adapter-static, übergibt es an kit.adapter und importiert keinen anderen Adapter; geladen heißt der Adapter „@sveltejs/adapter-static“. Weder experimental noch remoteFunctions steht in der Datei, kit.experimental fehlt, Remote Functions sind also aus. Sonst „Annahme A2 … verletzt“.",
+          "tests": ["tests/unit/security-cookie-assumptions.test.mjs::A2: web/svelte.config.js builds with adapter-static and sets no experimental option (Remote Functions)"] },
+        { "id": "BYL-E6-1877", "title": "A3: ssr = false im Root-Layout, kein Layout und keine Seite schaltet es ein (SEC-2)", "art": ["unit"], "status": "bestanden",
+          "pre": "Wie BYL-E6-1875.", "steps": ["npm run test:unit"],
+          "expect": "web/src/routes/+layout.ts exportiert genau ssr = false. Kein anderes +layout.* oder +page.* unter web/src/routes exportiert ssr mit einem anderen Wert als false oder in einer Export-Liste. Auskommentierte Zeilen zählen nicht. Sonst „Annahme A3 … verletzt“ mit Datei und Wert.",
+          "tests": ["tests/unit/security-cookie-assumptions.test.mjs::A3: the root layout turns SSR off and no other layout or page turns it on"] },
+        { "id": "BYL-E6-1878", "title": "A4: kein exportToCookie und kein loadFromCookie des SDK (SEC-2)", "art": ["unit"], "status": "bestanden",
+          "pre": "Wie BYL-E6-1875.", "steps": ["npm run test:unit"],
+          "expect": "Keine Datei unter web/src und app/pb_hooks nennt exportToCookie oder loadFromCookie, auch nicht über Klammern oder beim Destrukturieren. Sonst „Annahme A4 … verletzt“ mit den Dateien.",
+          "tests": ["tests/unit/security-cookie-assumptions.test.mjs::A4: neither web/src nor app/pb_hooks uses exportToCookie or loadFromCookie of the PocketBase SDK"] },
+        { "id": "BYL-E6-1879", "title": "A6: cookie nur über Kit im Lockfile von web (SEC-2)", "art": ["unit"], "status": "bestanden",
+          "pre": "Lockfiles (Version 2 oder 3) im Root, in web, helpers/* und extensions/*.", "steps": ["npm run test:unit"],
+          "expect": "Nur @sveltejs/kit in web/package-lock.json verlangt cookie (dependencies, optionalDependencies, peerDependencies, devDependencies), und node_modules/cookie steht nur dort. Ein Lockfile ohne „packages“ lässt den Test ebenfalls anschlagen. Sonst „Annahme A6 … verletzt“ mit Lockfile und Paket.",
+          "tests": ["tests/unit/security-cookie-assumptions.test.mjs::A6: only @sveltejs/kit asks for cookie, and only in web/package-lock.json"] }
       ]
     },
     {
