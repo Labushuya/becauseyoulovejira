@@ -6,6 +6,8 @@ import {
 	DEFAULT_TAKE,
 	DUPLICATE_AREA_TEXTS,
 	DUPLICATE_MESSAGES,
+	DUPLICATE_SUBTASK_STATUSES,
+	DUPLICATE_SUBTASK_TEXTS,
 	DUPLICATE_TITLE_MAX,
 	copySourceHint,
 	duplicateAreaOf,
@@ -49,7 +51,9 @@ describe('the question', () => {
 			source: 'none',
 			// "Ziel" (MV-2): the area of the original.
 			to: 'private',
-			targetProject: ''
+			targetProject: '',
+			// "Status der Unteraufgaben" (UT-2): like the duplicate.
+			subtaskStatus: 'duplicate'
 		});
 		expect(initialDuplicateForm({ title: 'Rasen', projectId: null }, [], 'household').to).toBe(
 			'household'
@@ -225,6 +229,58 @@ describe('into the other area (MV-2)', () => {
 		});
 		expect(duplicatedElsewhereFlag('HAUS-2', 'PRIV-9', 'private').title).toBe(
 			'HAUS-2 ins Private dupliziert.'
+		);
+	});
+});
+
+describe('the status of the new sub-tasks (UT-2)', () => {
+	const form = {
+		...initialDuplicateForm({ title: 'Herd', projectId: null }, [], 'private'),
+		status: 'in_progress' as const,
+		take: { ...DEFAULT_TAKE, subtasks: true }
+	};
+
+	it('sends the choice only where the server takes it and sub-tasks come along', () => {
+		expect(duplicateRequestOf(form, 'private', true).subtaskStatus).toBe('duplicate');
+		expect(
+			duplicateRequestOf({ ...form, subtaskStatus: 'open' }, 'private', true).subtaskStatus
+		).toBe('open');
+		// Not offered (before the restart, unknown) or without sub-tasks: nothing, they start open.
+		expect(duplicateRequestOf(form, 'private')).not.toHaveProperty('subtaskStatus');
+		expect(duplicateRequestOf(form, 'private', false)).not.toHaveProperty('subtaskStatus');
+		expect(
+			duplicateRequestOf({ ...form, take: { ...form.take, subtasks: false } }, 'private', true)
+		).not.toHaveProperty('subtaskStatus');
+	});
+
+	it('sends it into the other area as well (MV-2)', () => {
+		const elsewhere = { ...form, to: 'household' as const, subtaskStatus: 'open' as const };
+		expect(duplicateRequestOf(elsewhere, 'private', true)).toMatchObject({
+			to: 'household',
+			subtaskStatus: 'open'
+		});
+		expect(
+			duplicateRequestOf({ ...elsewhere, subtaskStatus: 'duplicate' }, 'private', true)
+		).toMatchObject({ to: 'household', subtaskStatus: 'duplicate' });
+	});
+
+	it('writes subtask_status into the body only with a choice', () => {
+		expect(duplicateRequestBody(duplicateRequestOf(form, 'private', true)).subtask_status).toBe(
+			'duplicate'
+		);
+		expect(duplicateRequestBody(duplicateRequestOf(form, 'private'))).not.toHaveProperty(
+			'subtask_status'
+		);
+		expect(DUPLICATE_SUBTASK_STATUSES).toEqual(['duplicate', 'open']);
+	});
+
+	it('names the chosen status at "Wie das Duplikat" and says "offene" only where it is sure', () => {
+		expect(DUPLICATE_SUBTASK_TEXTS.duplicate(null)).toBe('Wie das Duplikat');
+		expect(DUPLICATE_SUBTASK_TEXTS.duplicate('In Arbeit')).toBe('Wie das Duplikat (In Arbeit)');
+		expect(DUPLICATE_SUBTASK_TEXTS.hint).not.toMatch(/offen/);
+		expect(DUPLICATE_SUBTASK_TEXTS.hintOpen).toMatch(/neue, offene Unteraufgaben/);
+		expect(DUPLICATE_SUBTASK_TEXTS.problem('Server nicht erreichbar.')).toBe(
+			'Ob die Unteraufgaben wie das Duplikat starten können, ließ sich gerade nicht abfragen. Server nicht erreichbar. Ohne Antwort starten sie mit „Offen“.'
 		);
 	});
 });

@@ -140,6 +140,38 @@ describe('completing a ticket with open sub-tickets (ADR-0033 section 2)', () =>
 	});
 });
 
+describe('a new sub-ticket without a status (UT-2, K4; ADR-0033 addendum UT-2)', () => {
+	it('starts like its parent through the Record API, "open" under a done one', async () => {
+		const owner = await createOwner(s.superuser);
+		for (const status of ['backlog', 'open', 'in_progress', 'waiting']) {
+			const parent = await owner.ticket({ status });
+			const child = await owner.ticket({ parent: parent.id });
+			expect(child.status, status).toBe(status);
+			expect(child.completed_at, status).toBe('');
+		}
+		const done = await owner.ticket({ status: 'done' });
+		const underDone = await owner.ticket({ parent: done.id });
+		expect(underDone).toMatchObject({ status: 'open', completed_at: '' });
+		// The history names the creation only, as for every new ticket.
+		expect((await historyOf(s.superuser, underDone.id)).map((entry) => entry.field)).toEqual(['created']);
+	});
+
+	it('keeps an own status and leaves a ticket without a parent "open" as before', async () => {
+		const owner = await createOwner(s.superuser);
+		const waiting = await owner.ticket({ status: 'waiting' });
+		expect((await owner.ticket({ parent: waiting.id, status: 'backlog' })).status).toBe('backlog');
+		expect((await owner.ticket({ parent: waiting.id, status: 'done' })).status).toBe('done');
+		expect((await owner.ticket()).status).toBe('open');
+	});
+
+	it('still refuses a missing parent, whatever the status', async () => {
+		const owner = await createOwner(s.superuser);
+		const rejection = await rejectionOf(owner.ticket({ parent: 'missing00000001' }));
+		expect(rejection.status).toBe(400);
+		expect(Object.keys(rejection.codes)).toEqual(['parent']);
+	});
+});
+
 describe('series and sub-tickets (ADR-0033 section 3)', () => {
 	/** "Wiederholen…" on a sub-ticket: one day after completion, the follow-up within the lead time. */
 	async function childInSeries(owner) {

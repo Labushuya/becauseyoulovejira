@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import ErrorIcon from '$lib/components/ErrorIcon.svelte';
@@ -57,8 +58,10 @@
 		support === null ? [] : (inbox.newItems ?? []).filter((item) => item.id !== convert)
 	);
 
+	// Asked on every opening of the form, until an answer names every option of the hooks (UT-2); the
+	// state the question reads must not run it again.
 	$effect(() => {
-		void detail.loadCreateSupport();
+		untrack(() => void detail.loadCreateSupport());
 	});
 
 	/** The entry to convert, once loaded; a handled entry is refused before the form opens. */
@@ -177,6 +180,10 @@
 		dayPlanAvailable={(support?.dayPlan ?? false) && dayPlans !== null}
 		ticketSourcesAvailable={support?.ticketSources ?? false}
 		subtaskStatusAvailable={support?.subtaskStatus ?? false}
+		extrasPending={detail.createSupportLoading ||
+			(detail.createSupport === undefined && detail.createSupportProblem === null)}
+		extrasProblem={detail.createSupportProblem}
+		onretryextras={() => void detail.loadCreateSupport()}
 		{candidates}
 		today={tickets.today}
 		oncreatetag={(name) => catalog.ensureTag(name)}

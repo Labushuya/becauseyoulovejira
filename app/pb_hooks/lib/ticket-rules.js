@@ -6,15 +6,23 @@
 var DEFAULT_STATUS = 'open';
 var DEFAULT_PRIORITY = 'medium';
 
+// Statuses a new sub-task takes over from its parent (UT-2, ADR-0033 addendum UT-2): every one but
+// done. The same list as INITIAL_STATUSES of lib/recurrence-rules.js, whose subtaskStatusOf decides
+// the same for the other ways (tests/unit/ticket-rules.test.mjs holds both equal).
+var SUBTASK_STATUSES = ['backlog', 'open', 'in_progress', 'waiting'];
+
 function isEmpty(value) {
   return value === null || value === undefined || value === '';
 }
 
-// Returns the fields to set on create: { status?, priority? }.
+// Returns the fields to set on create: { status?, priority? }. Without a status a ticket starts
+// "open"; since UT-2 a sub-task without one (`parentStatus`, the status of its parent; '' or missing
+// for a ticket without a parent) starts with the status of its parent, unless that one is done, then
+// "open" as well, like subtaskStatusOf(undefined, parentStatus) of lib/recurrence-rules.js.
 function createDefaults(values) {
   var result = {};
   if (isEmpty(values.status)) {
-    result.status = DEFAULT_STATUS;
+    result.status = SUBTASK_STATUSES.indexOf(values.parentStatus) === -1 ? DEFAULT_STATUS : values.parentStatus;
   }
   if (isEmpty(values.priority)) {
     result.priority = DEFAULT_PRIORITY;
@@ -187,6 +195,7 @@ function pinnedCommentViolation(input) {
 module.exports = {
   DEFAULT_STATUS: DEFAULT_STATUS,
   DEFAULT_PRIORITY: DEFAULT_PRIORITY,
+  SUBTASK_STATUSES: SUBTASK_STATUSES,
   CALENDAR_DATE_PATTERN: CALENDAR_DATE_PATTERN,
   createDefaults: createDefaults,
   needsNewKey: needsNewKey,

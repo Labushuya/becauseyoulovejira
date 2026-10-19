@@ -3,6 +3,7 @@
 	import { COLOR_LABELS } from '$lib/domain/colors';
 	import {
 		DUPLICATE_AREA_TEXTS,
+		DUPLICATE_SUBTASK_TEXTS,
 		copySourceHint,
 		duplicateAreaOf,
 		duplicateFormErrors,
@@ -15,10 +16,11 @@
 	} from '$lib/domain/duplicate';
 	import { formatCalendarDate } from '$lib/domain/format';
 	import type { InboxItemSummary } from '$lib/domain/inbox';
-	import { PRIORITY_LABELS } from '$lib/domain/labels';
+	import { PRIORITY_LABELS, STATUS_LABELS } from '$lib/domain/labels';
 	import { projectPath } from '$lib/domain/project-tree';
 	import type { ProjectRef, Ticket } from '$lib/domain/ticket';
 	import type { TicketOrigin } from '$lib/domain/ticket-origins';
+	import { restartNeeded } from '$lib/guidance/texts';
 	import { insideModal } from '$lib/overlay/modal-context';
 	import { findAreaStore } from '$lib/stores/area.svelte';
 	import type { TicketDuplicateStore } from '$lib/stores/ticket-duplicate.svelte';
@@ -42,7 +44,11 @@
 	// addendum MV-2) a member of a household chooses the "Ziel": the area of the original (the
 	// default) or the other one. There the project is one of the target (loaded with its tags from
 	// the server), the tags are mapped by name, the parent stays behind and no source comes along; the
-	// dialog says so, and afterwards the flag leads to the duplicate while the tab stays.
+	// dialog says so, and afterwards the flag leads to the duplicate while the tab stays. Since UT-2
+	// (ADR-0045, addendum UT-2) checked "Unteraufgaben" asks "Status der Unteraufgaben": "Wie das
+	// Duplikat" (the default) or "Offen", in both areas, once the server takes it; opening the question
+	// asks the server again while that is missing or unknown, and a failed question says why with
+	// "Erneut versuchen" (the sub-tasks start open then).
 	let {
 		ticket,
 		projects,
@@ -164,6 +170,18 @@
 	/** A refusal of the source without the section (no sources known) goes to the message. */
 	const sourceShown = $derived(sources.length > 0 || ticketKeys.length > 0);
 
+	/** Whether the server takes the status of the new sub-tasks (UT-2). */
+	const subtaskSupport = $derived(store.subtaskStatusSupport);
+	/** Below "Unteraufgaben (N)": "offene" only where the server answered without the choice. */
+	const subtasksHint = $derived(
+		subtaskSupport === 'missing' ? DUPLICATE_SUBTASK_TEXTS.hintOpen : DUPLICATE_SUBTASK_TEXTS.hint
+	);
+	// With sub-tasks the question asks the server what it knows, every time it opens, until the answer
+	// names the choice (UT-2, K3).
+	$effect(() => {
+		if (subtaskCount > 0) untrack(() => void store.loadSupport());
+	});
+
 	async function focusFirstError() {
 		await tick();
 		formElement?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
@@ -200,7 +218,7 @@
 		try {
 			const result = await store.duplicate(
 				{ id: ticket.id, key: ticket.key },
-				duplicateRequestOf({ ...answers, status }, origin),
+				duplicateRequestOf({ ...answers, status }, origin, subtaskSupport === 'ready'),
 				onopen
 			);
 			if (result.ok) {
@@ -385,10 +403,54 @@
 					/>
 					Unteraufgaben ({subtaskCount})
 				</label>
-				<p class="hint nested" id={ids.subtasks}>
-					Als neue, offene Unteraufgaben mit derselben Auswahl; sie kommen in das Projekt des
-					Duplikats.
-				</p>
+				<p class="hint nested" id={ids.subtasks}>{subtasksHint}</p>
+				{#if answers.take.subtasks && subtaskSupport === 'ready'}
+					<fieldset class="group nested" role="radiogroup">
+						<legend>{DUPLICATE_SUBTASK_TEXTS.legend}</legend>
+						<div class="areas">
+							<label class="choice">
+								<input
+									type="radio"
+									name={`${uid}-subtask-status`}
+									value="duplicate"
+									bind:group={answers.subtaskStatus}
+								/>
+								{DUPLICATE_SUBTASK_TEXTS.duplicate(
+									answers.status === '' ? null : STATUS_LABELS[answers.status]
+								)}
+							</label>
+							<label class="choice">
+								<input
+									type="radio"
+									name={`${uid}-subtask-status`}
+									value="open"
+									bind:group={answers.subtaskStatus}
+								/>
+								{DUPLICATE_SUBTASK_TEXTS.open}
+							</label>
+						</div>
+					</fieldset>
+				{:else if answers.take.subtasks && subtaskSupport === 'failed' && store.subtaskStatusProblem !== null}
+					<div class="nested">
+						<SectionMessage tone="error" compact>
+							{DUPLICATE_SUBTASK_TEXTS.problem(store.subtaskStatusProblem)}
+							{#snippet actions()}
+								<button
+									class="button-subtle"
+									type="button"
+									aria-busy={store.subtaskStatusLoading ? 'true' : undefined}
+									onclick={() => {
+										if (!store.subtaskStatusLoading) void store.loadSupport();
+									}}>Erneut versuchen</button
+								>
+							{/snippet}
+						</SectionMessage>
+					</div>
+				{:else if answers.take.subtasks && subtaskSupport === 'missing'}
+					<p class="hint nested">
+						{restartNeeded('Die Wahl „Status der Unteraufgaben“ ist beim Duplizieren')}
+					</p>
+				{/if}
 			{/if}
 			{#if commentCount > 0}
 				<label class="choice">

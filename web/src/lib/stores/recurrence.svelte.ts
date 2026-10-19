@@ -51,6 +51,7 @@ import {
 	type SeriesChange,
 	type SeriesChangeSink,
 	type SeriesParent,
+	type SubtaskStatusProblem,
 	type TemplateOffer,
 	type TemplateStatus,
 	type TemplateSubtask
@@ -256,6 +257,13 @@ export class RecurrenceStore implements SeriesChangeSink {
 	#assigneesReady = $state(false);
 	/** The hooks take a status per sub-task of the template (after the restart after UT-1). */
 	#subtaskStatusReady = $state(false);
+	/**
+	 * Why the question for `#subtaskStatusReady` failed (UT-2), null after an answer: the status is
+	 * unknown then, not missing, and the list says why with "Erneut versuchen".
+	 */
+	#subtaskStatusProblem = $state<string | null>(null);
+	/** That question runs (the load, `checkSubtaskStatus`). */
+	#subtaskStatusLoading = $state(false);
 	/** Draft of the template edited at a ticket, null while none is edited. */
 	#templateDraft = $state<TemplateDraft | null>(null);
 	/** The flag offering "Auch für künftige Tickets übernehmen", while it is shown. */
@@ -338,6 +346,65 @@ export class RecurrenceStore implements SeriesChangeSink {
 	 */
 	get subtaskStatusReady(): boolean {
 		return this.subtasksReady && this.#subtaskStatusReady;
+	}
+
+	/**
+	 * Why the question whether the hooks take a status per sub-task failed (UT-2, K3), null otherwise:
+	 * the forms then say the status is unknown, not that the server lacks it, and offer
+	 * `checkSubtaskStatus` again.
+	 */
+	get subtaskStatusProblem(): string | null {
+		return this.subtasksReady && !this.#subtaskStatusReady ? this.#subtaskStatusProblem : null;
+	}
+
+	/** The question runs ("Erneut versuchen" shows it). */
+	get subtaskStatusLoading(): boolean {
+		return this.#subtaskStatusLoading;
+	}
+
+	/** The failed question with "Erneut versuchen" for the forms of a template, null without one. */
+	get subtaskStatusIssue(): SubtaskStatusProblem | null {
+		const reason = this.subtaskStatusProblem;
+		if (reason === null) return null;
+		return {
+			reason,
+			busy: this.#subtaskStatusLoading,
+			retry: () => void this.checkSubtaskStatus()
+		};
+	}
+
+	/**
+	 * Asks the server again whether the hooks take a status per sub-task of the template (UT-2, K3),
+	 * as long as that is missing or unknown: on opening a form with the list (the template at a ticket,
+	 * the panel of a rule, "Neue Regel") and for "Erneut versuchen". A known "yes" stays; a restart
+	 * since the load is found this way without reloading the page.
+	 */
+	async checkSubtaskStatus(): Promise<void> {
+		if (!this.subtasksReady || this.#subtaskStatusReady || this.#subtaskStatusLoading) return;
+		await this.#askSubtaskStatus(undefined);
+	}
+
+	/** The question itself; a failure is kept as the problem, a lost session ends it. */
+	async #askSubtaskStatus(signal: AbortSignal | undefined): Promise<void> {
+		const ask = this.#data.subtaskStatusReady?.bind(this.#data);
+		if (ask === undefined) {
+			this.#subtaskStatusReady = false;
+			return;
+		}
+		this.#subtaskStatusLoading = true;
+		try {
+			const ready = await ask({ signal });
+			if (signal?.aborted) return;
+			this.#subtaskStatusReady = ready;
+			this.#subtaskStatusProblem = null;
+		} catch (error) {
+			if (signal?.aborted) return;
+			const failure = toDataError(error);
+			if (failure.kind === 'session') this.#session.logout();
+			else if (failure.kind !== 'aborted') this.#subtaskStatusProblem = failure.message;
+		} finally {
+			this.#subtaskStatusLoading = false;
+		}
 	}
 
 	ruleById(id: string | null | undefined): RecurrenceRule | null {
@@ -655,11 +722,15 @@ export class RecurrenceStore implements SeriesChangeSink {
 		return Object.keys(changes).length > 0 || draft.tagText.trim() !== '';
 	}
 
-	/** "Bearbeiten" of the template of a rule: a draft of it, unless that rule has one already. */
+	/**
+	 * "Bearbeiten" of the template of a rule: a draft of it, unless that rule has one already. While
+	 * the status per sub-task is missing or unknown, the server is asked again (UT-2).
+	 */
 	editTemplate(ruleId: string): void {
 		const rule = this.ruleById(ruleId);
 		if (rule === null || this.#templateDraft?.ruleId === ruleId) return;
 		this.#templateDraft = { ruleId, template: templateOf(rule), tagText: '' };
+		void this.checkSubtaskStatus();
 	}
 
 	/** New values of the draft (the fields replace the whole template on every change). */
@@ -845,6 +916,8 @@ export class RecurrenceStore implements SeriesChangeSink {
 		this.#charmsReady = false;
 		this.#assigneesReady = false;
 		this.#subtaskStatusReady = false;
+		this.#subtaskStatusProblem = null;
+		this.#subtaskStatusLoading = false;
 	}
 
 	/** Success flag of an action; the flag group announces it (role status). */
@@ -895,8 +968,9 @@ export class RecurrenceStore implements SeriesChangeSink {
 			if (controller.signal.aborted) return;
 			this.#assigneesReady = await this.#probe('assigneesReady', controller.signal);
 			if (controller.signal.aborted) return;
-			this.#subtaskStatusReady =
-				this.#subtasksReady && (await this.#probe('subtaskStatusReady', controller.signal));
+			// Unlike the probes above a failure is kept (UT-2): unknown is not "the server lacks it".
+			if (this.#subtasksReady) await this.#askSubtaskStatus(controller.signal);
+			else this.#subtaskStatusReady = false;
 			if (controller.signal.aborted) return;
 			this.#state = 'ready';
 		} catch (error) {
@@ -937,7 +1011,8 @@ export class RecurrenceStore implements SeriesChangeSink {
 
 	/**
 	 * Whether the server knows a field of a later migration; the switch or field stays hidden when
-	 * it cannot tell (old schema, a failed probe, no probe in tests).
+	 * it cannot tell (old schema, a failed probe, no probe in tests). The status per sub-task asks on
+	 * its own (`#askSubtaskStatus`, UT-2).
 	 */
 	async #probe(
 		name:
@@ -945,8 +1020,7 @@ export class RecurrenceStore implements SeriesChangeSink {
 			| 'initialStatusReady'
 			| 'templateSubtasksReady'
 			| 'charmsReady'
-			| 'assigneesReady'
-			| 'subtaskStatusReady',
+			| 'assigneesReady',
 		signal: AbortSignal
 	): Promise<boolean> {
 		const probe = this.#data[name]?.bind(this.#data);

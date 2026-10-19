@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { loadHookLib } from '../support/hook-lib.mjs';
 import {
 	DUPLICATE_MESSAGES,
+	DUPLICATE_SUBTASK_STATUSES,
 	duplicateRequestBody,
 	toDuplicateOutcome
 } from '../../web/src/lib/domain/duplicate.ts';
@@ -32,11 +33,33 @@ describe('texts of the codes of "Ticket duplizieren" (web/src/lib/domain/duplica
 describe('request and answer', () => {
 	it('sends a body the hook reads as the same choice', () => {
 		const body = duplicateRequestBody({ title: 'Kopie', status: 'waiting', project: null, take, source: 'copy' });
-		expect(rules.parseRequest(body).options).toEqual({ title: 'Kopie', status: 'waiting', project: '', source: 'copy', to: '', ...take });
+		expect(rules.parseRequest(body).options).toEqual({
+			title: 'Kopie',
+			status: 'waiting',
+			project: '',
+			source: 'copy',
+			to: '',
+			subtaskStatus: 'open',
+			...take
+		});
 		expect(duplicateRequestBody({ title: 'K', status: 'open', project: 'p1', take, source: 'none' }).project).toBe('p1');
 		// Into the other area (MV-2): the hook reads the same area.
 		const elsewhere = duplicateRequestBody({ title: 'K', status: 'open', project: null, take, source: 'none', to: 'household' });
 		expect(rules.parseRequest(elsewhere).options.to).toBe('household');
+	});
+
+	it('offers the choices of the status of the new sub-tasks the hook reads, with the same result (UT-2)', () => {
+		expect([...DUPLICATE_SUBTASK_STATUSES]).toEqual([...rules.SUBTASK_STATUS_CHOICES]);
+		for (const subtaskStatus of DUPLICATE_SUBTASK_STATUSES) {
+			const body = duplicateRequestBody({ title: 'K', status: 'in_progress', project: null, take, source: 'none', subtaskStatus });
+			const { options } = rules.parseRequest(body);
+			expect(options.subtaskStatus).toBe(subtaskStatus);
+			expect(rules.subtaskStatusOf(options)).toBe(subtaskStatus === 'duplicate' ? 'in_progress' : 'open');
+		}
+		// Without a choice (before the restart, unknown) the body names none and the hook starts them open.
+		const plain = duplicateRequestBody({ title: 'K', status: 'waiting', project: null, take, source: 'none' });
+		expect(plain).not.toHaveProperty('subtask_status');
+		expect(rules.subtaskStatusOf(rules.parseRequest(plain).options)).toBe('open');
 	});
 
 	it('reads the answer of the route and refuses anything else', () => {

@@ -45,6 +45,8 @@ const mocks = vi.hoisted(() => ({
 		upsert: vi.fn(),
 		createWithOptions: vi.fn(),
 		createSupport: null as unknown,
+		createSupportProblem: null as string | null,
+		createSupportLoading: false,
 		loadCreateSupport: vi.fn(async () => undefined)
 	},
 	catalog: null as unknown,
@@ -455,6 +457,188 @@ describe('the status of the sub-tasks (UT-1)', () => {
 			)
 		).toBeTruthy();
 	});
+
+	it('says "offene" only when the server answered so, not after a failed question (UT-2)', async () => {
+		renderForm({ extrasProblem: 'Server nicht erreichbar.' });
+		await twoRows();
+		expect(screen.queryByText(/als offene Unteraufgaben/)).toBeNull();
+		expect(
+			screen.getByText('Entstehen mit dem Ticket mit seinem Projekt und seinen Tags, höchstens 20.')
+		).toBeTruthy();
+	});
+});
+
+describe('"Übergeordnet" fills in what a sub-task takes (UT-2, K1)', () => {
+	const ME = 'user00000000001';
+	const MEMBERS = [
+		{ id: ME, name: 'Anna Beispiel', self: true },
+		{ id: 'user00000000002', name: 'Bert Beispiel', self: false }
+	];
+	const CELLAR = pickerTicket({
+		key: 'TASK-30',
+		title: 'Keller räumen',
+		scope: SCOPE,
+		status: 'waiting',
+		due: '2026-10-20',
+		kind: 'ongoing',
+		assignee: 'user00000000002'
+	});
+	const ATTIC = pickerTicket({
+		key: 'TASK-31',
+		title: 'Dachboden ausmisten',
+		scope: SCOPE,
+		status: 'in_progress',
+		due: null,
+		kind: 'task',
+		assignee: null
+	});
+	const PAINTED = pickerTicket({
+		key: 'TASK-32',
+		title: 'Flur streichen',
+		scope: SCOPE,
+		status: 'done',
+		due: '2026-09-01',
+		kind: 'task',
+		assignee: null
+	});
+	const picker = () => fakePickerSource({ open: [CELLAR, ATTIC, PAINTED] }).source;
+
+	const ticketStatus = () =>
+		screen.getByLabelText<HTMLSelectElement>('Status', { selector: 'select' });
+	const dueField = () => screen.getByLabelText<HTMLInputElement>('Fälligkeit');
+	const kindSwitch = () =>
+		screen.getByRole<HTMLInputElement>('switch', { name: 'Laufendes Vorhaben' });
+	const parentPicker = () => screen.getByRole('combobox', { name: 'Unter ein Ticket einordnen' });
+	const hintsOf = (control: HTMLElement) =>
+		(control.getAttribute('aria-describedby') ?? '')
+			.split(' ')
+			.map((id) => document.getElementById(id)?.textContent?.trim());
+
+	async function chooseParent(words: string) {
+		await fireEvent.input(parentPicker(), { target: { value: words } });
+		await vi.waitFor(() => expect(parentPicker().getAttribute('aria-expanded')).toBe('true'));
+		await fireEvent.keyDown(parentPicker(), { key: 'Enter' });
+	}
+
+	it('takes status, due date and kind of the parent, says so at the fields and sends them', async () => {
+		const { oncreate } = renderForm({ picker: picker() });
+		await fireEvent.input(titleField(), { target: { value: 'Regal abbauen' } });
+		await openMore();
+		await chooseParent('Keller');
+		await vi.waitFor(() => expect(ticketStatus().value).toBe('waiting'));
+		expect(dueField().value).toBe('2026-10-20');
+		expect(kindSwitch().checked).toBe(true);
+		expect(hintsOf(ticketStatus())).toContain('Vom Hauptticket übernommen.');
+		expect(hintsOf(dueField())).toContain('Vom Hauptticket übernommen.');
+		expect(hintsOf(kindSwitch())).toContain('Vom Hauptticket übernommen.');
+		expect(
+			screen.getByText('Vom Hauptticket TASK-30 übernommen: Status, Fälligkeit, Art.')
+		).toBeTruthy();
+
+		await fireEvent.click(createButton());
+		expect(oncreate.mock.calls[0]?.[0]).toMatchObject({
+			status: 'waiting',
+			due: '2026-10-20',
+			kind: 'ongoing',
+			parent: CELLAR.id
+		});
+	});
+
+	it('starts "Offen" under a done parent, never "Erledigt"', async () => {
+		renderForm({ picker: picker() });
+		await openMore();
+		await chooseParent('Flur');
+		await vi.waitFor(() => expect(dueField().value).toBe('2026-09-01'));
+		expect(ticketStatus().value).toBe('open');
+		expect(hintsOf(ticketStatus())).toContain('Vom Hauptticket übernommen.');
+	});
+
+	it('leaves fields set by hand alone, also when the parent changes', async () => {
+		const { oncreate } = renderForm({ picker: picker() });
+		await fireEvent.input(titleField(), { target: { value: 'Regal abbauen' } });
+		await fireEvent.change(ticketStatus(), { target: { value: 'backlog' } });
+		await fireEvent.input(dueField(), { target: { value: '2026-11-02' } });
+		await openMore();
+		await chooseParent('Keller');
+		await vi.waitFor(() => expect(kindSwitch().checked).toBe(true));
+		expect(ticketStatus().value).toBe('backlog');
+		expect(dueField().value).toBe('2026-11-02');
+		expect(hintsOf(ticketStatus())).not.toContain('Vom Hauptticket übernommen.');
+		expect(hintsOf(dueField())).not.toContain('Vom Hauptticket übernommen.');
+		expect(screen.getByText('Vom Hauptticket TASK-30 übernommen: Art.')).toBeTruthy();
+
+		await fireEvent.click(createButton());
+		expect(oncreate.mock.calls[0]?.[0]).toMatchObject({
+			status: 'backlog',
+			due: '2026-11-02',
+			kind: 'ongoing'
+		});
+	});
+
+	it('takes the untouched fields again from another parent and sets them back without one', async () => {
+		const { oncreate } = renderForm({ picker: picker() });
+		await fireEvent.input(titleField(), { target: { value: 'Regal abbauen' } });
+		await openMore();
+		await chooseParent('Keller');
+		await vi.waitFor(() => expect(ticketStatus().value).toBe('waiting'));
+		// The kind is set by hand: it stays with the next parent.
+		await fireEvent.click(kindSwitch());
+		expect(kindSwitch().checked).toBe(false);
+
+		await chooseParent('Dachboden');
+		await vi.waitFor(() => expect(ticketStatus().value).toBe('in_progress'));
+		// The new parent has no due date: the field is empty again, without the hint.
+		expect(dueField().value).toBe('');
+		expect(hintsOf(dueField())).not.toContain('Vom Hauptticket übernommen.');
+		expect(kindSwitch().checked).toBe(false);
+
+		// Typing in the picker drops the parent: the untouched fields go back to the start.
+		await fireEvent.input(parentPicker(), { target: { value: 'xyz' } });
+		await vi.waitFor(() => expect(ticketStatus().value).toBe('open'));
+		expect(hintsOf(ticketStatus())).not.toContain('Vom Hauptticket übernommen.');
+
+		await chooseParent('Dachboden');
+		await vi.waitFor(() => expect(ticketStatus().value).toBe('in_progress'));
+		await fireEvent.click(createButton());
+		expect(oncreate.mock.calls[0]?.[0]).toMatchObject({ status: 'in_progress', parent: ATTIC.id });
+		expect(oncreate.mock.calls[0]?.[0]).not.toHaveProperty('kind');
+		expect(oncreate.mock.calls[0]?.[0]).toMatchObject({ due: null });
+	});
+
+	it('takes the assignee of the parent in the household, unless one is chosen', async () => {
+		const household = 'h:house0000000001';
+		const shared = { ...CELLAR, scope: household };
+		const { oncreate } = renderForm({
+			picker: fakePickerSource({ open: [shared] }).source,
+			scope: household,
+			assignmentAvailable: true,
+			assignees: fixedAssignees(MEMBERS, ME)
+		});
+		await fireEvent.input(titleField(), { target: { value: 'Regal abbauen' } });
+		await openMore();
+		await chooseParent('Keller');
+		const select = screen.getByLabelText<HTMLSelectElement>('Zuständig');
+		await vi.waitFor(() => expect(select.value).toBe('user00000000002'));
+		expect(hintsOf(select)).toContain('Vom Hauptticket übernommen.');
+		await fireEvent.click(createButton());
+		expect(oncreate.mock.calls[0]?.[0]).toMatchObject({ assignee: 'user00000000002' });
+
+		document.body.innerHTML = '';
+		const again = renderForm({
+			picker: fakePickerSource({ open: [shared] }).source,
+			scope: household,
+			assignmentAvailable: true,
+			assignees: fixedAssignees(MEMBERS, ME)
+		});
+		await fireEvent.input(titleField(), { target: { value: 'Regal abbauen' } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Mir zuweisen' }));
+		await openMore();
+		await chooseParent('Keller');
+		await vi.waitFor(() => expect(ticketStatus().value).toBe('waiting'));
+		expect(screen.getByLabelText<HTMLSelectElement>('Zuständig').value).toBe(ME);
+		await fireEvent.click(createButton());
+		expect(again.oncreate.mock.calls[0]?.[0]).toMatchObject({ assignee: ME });
+	});
 });
 
 describe('fields per area', () => {
@@ -636,6 +820,51 @@ describe('before the restart of the server after NT-1', () => {
 	});
 });
 
+describe('while the question what the server knows runs or after it failed (UT-2, K3)', () => {
+	it('names no restart while the answer is still out', async () => {
+		renderForm({ extrasAvailable: false, extrasPending: true });
+		await openMore();
+		expect(moreBody().textContent).not.toContain('Neustart');
+		expect(within(moreBody()).getByRole('status').textContent).toBe(
+			'Weitere Optionen werden geladen …'
+		);
+	});
+
+	it('says why after a failure, offers "Erneut versuchen" and names no restart', async () => {
+		const onretryextras = vi.fn();
+		renderForm({
+			extrasAvailable: false,
+			extrasProblem: 'Server nicht erreichbar.',
+			onretryextras
+		});
+		await openMore();
+		expect(moreBody().textContent).not.toContain('Neustart');
+		expect(moreBody().textContent).toContain(
+			'Welche weiteren Optionen der Server kennt, ließ sich gerade nicht abfragen. Server nicht erreichbar.'
+		);
+		// Creating works as before meanwhile: color and "Wiederholen".
+		expect(optionKeys(moreBody())).toEqual(['color', 'recurrence']);
+		const retry = within(moreBody()).getByRole('button', { name: 'Erneut versuchen' });
+		await fireEvent.click(retry);
+		expect(onretryextras).toHaveBeenCalledOnce();
+	});
+
+	it('shows the running retry at its button and does not ask twice', async () => {
+		const onretryextras = vi.fn();
+		renderForm({
+			extrasAvailable: false,
+			extrasPending: true,
+			extrasProblem: 'Server nicht erreichbar.',
+			onretryextras
+		});
+		await openMore();
+		const retry = within(moreBody()).getByRole('button', { name: 'Erneut versuchen' });
+		expect(retry.getAttribute('aria-busy')).toBe('true');
+		await fireEvent.click(retry);
+		expect(onretryextras).not.toHaveBeenCalled();
+	});
+});
+
 describe('the route: one request for everything', () => {
 	const RULE = { id: 'rule00000000012' };
 
@@ -666,6 +895,31 @@ describe('the route: one request for everything', () => {
 
 	afterEach(() => {
 		mocks.detail.createSupport = null;
+		mocks.detail.createSupportProblem = null;
+		mocks.detail.createSupportLoading = false;
+	});
+
+	it('asks what the server knows on every opening of the form (UT-2)', async () => {
+		mocks.detail.loadCreateSupport.mockClear();
+		const first = render(NewTicketPage);
+		await vi.waitFor(() => expect(mocks.detail.loadCreateSupport).toHaveBeenCalledOnce());
+		first.unmount();
+		render(NewTicketPage);
+		await vi.waitFor(() => expect(mocks.detail.loadCreateSupport).toHaveBeenCalledTimes(2));
+	});
+
+	it('shows a failed question with "Erneut versuchen" instead of a restart (UT-2)', async () => {
+		mocks.detail.createSupport = undefined;
+		mocks.detail.createSupportProblem = 'Server nicht erreichbar.';
+		mocks.detail.loadCreateSupport.mockClear();
+		render(NewTicketPage);
+		await openMore();
+		expect(moreBody().textContent).toContain(
+			'ließ sich gerade nicht abfragen. Server nicht erreichbar.'
+		);
+		expect(moreBody().textContent).not.toContain('Neustart');
+		await fireEvent.click(within(moreBody()).getByRole('button', { name: 'Erneut versuchen' }));
+		expect(mocks.detail.loadCreateSupport).toHaveBeenCalledTimes(2);
 	});
 
 	it('asks the server what it knows and sends the ticket, the series and the extras in one request', async () => {

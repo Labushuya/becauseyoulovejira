@@ -6,6 +6,7 @@
 		isTemplateStatus,
 		moveSubtask,
 		subtaskCountText,
+		subtaskStatusProblemText,
 		subtasksOfTicket,
 		takeSubtasks,
 		takenText,
@@ -16,6 +17,7 @@
 	import { isPriority } from '$lib/domain/status';
 	import { DEFAULT_PRIORITY, TITLE_MAX_LENGTH } from '$lib/domain/ticket';
 	import ErrorIcon from './ErrorIcon.svelte';
+	import SectionMessage from './guidance/SectionMessage.svelte';
 	import PrioritySelect from './PrioritySelect.svelte';
 	import StatusSelect from './StatusSelect.svelte';
 
@@ -33,7 +35,9 @@
 	// for the sub-tasks of the new ticket, with its own hint and the status of the ticket as default.
 	// Since RG-1 every control of a row has a short visible name above it ("Titel", "Status",
 	// "Priorität", in the order of "Neues Ticket"); its accessible name adds the row ("Status der
-	// Unteraufgabe 2"), so a screen reader knows which row a field belongs to.
+	// Unteraufgabe 2"), so a screen reader knows which row a field belongs to. Since UT-2 a failed
+	// question whether the hooks take the status (`statusProblem`) is no "server without it": the hint
+	// stays neutral, and a message says why with "Erneut versuchen" (`onretrystatus`).
 	let {
 		subtasks = $bindable(),
 		ticketSubtasks = [],
@@ -43,6 +47,9 @@
 		busy = false,
 		disabled = false,
 		statusAvailable = false,
+		statusProblem = null,
+		statusBusy = false,
+		onretrystatus,
 		defaultStatus = 'open',
 		hint
 	}: {
@@ -60,18 +67,32 @@
 		disabled?: boolean;
 		/** Each row offers its status (UT-1): the hooks know it (after the restart after UT-1). */
 		statusAvailable?: boolean;
+		/**
+		 * Why the question for `statusAvailable` failed (UT-2), null otherwise: whether a row may have a
+		 * status is unknown then.
+		 */
+		statusProblem?: string | null;
+		/** That question runs again. */
+		statusBusy?: boolean;
+		/** "Erneut versuchen" of that question; without it the message has no button. */
+		onretrystatus?: () => void;
 		/** The status a row without an own choice shows and starts with. */
 		defaultStatus?: TemplateStatus;
 		/** What the list is for, below its legend; without one the text of the template. */
 		hint?: string;
 	} = $props();
 
-	/** What the list of a template means, before and after the hooks of UT-1. */
+	/**
+	 * What the list of a template means, before and after the hooks of UT-1; "offene … ohne
+	 * Fälligkeit" only when the server answered so, not when the question failed (UT-2).
+	 */
 	const shownHint = $derived(
 		hint ??
 			(statusAvailable
 				? `Jedes neue Ticket der Serie bekommt sie als Unteraufgaben mit seiner Fälligkeit, Art und Zuständigkeit, höchstens ${TEMPLATE_SUBTASKS_MAX}. Ohne eigene Wahl starten sie mit dem „Status beim Anlegen“.`
-				: `Jedes neue Ticket der Serie bekommt sie als offene Unteraufgaben ohne Fälligkeit, höchstens ${TEMPLATE_SUBTASKS_MAX}.`)
+				: statusProblem !== null
+					? `Jedes neue Ticket der Serie bekommt sie als Unteraufgaben, höchstens ${TEMPLATE_SUBTASKS_MAX}.`
+					: `Jedes neue Ticket der Serie bekommt sie als offene Unteraufgaben ohne Fälligkeit, höchstens ${TEMPLATE_SUBTASKS_MAX}.`)
 	);
 
 	const uid = $props.id();
@@ -188,9 +209,25 @@
 	}
 </script>
 
+{#snippet retryStatus()}
+	<button
+		class="button-subtle"
+		type="button"
+		aria-busy={statusBusy ? 'true' : undefined}
+		onclick={() => {
+			if (!statusBusy) onretrystatus?.();
+		}}>Erneut versuchen</button
+	>
+{/snippet}
+
 <fieldset class="subtasks" aria-describedby={error ? `${ids.hint} ${ids.error}` : ids.hint}>
 	<legend id={ids.legend}>Unteraufgaben</legend>
 	<p class="hint" id={ids.hint}>{shownHint}</p>
+	{#if !statusAvailable && statusProblem !== null}
+		<SectionMessage tone="error" compact actions={onretrystatus ? retryStatus : undefined}>
+			{subtaskStatusProblemText(statusProblem)}
+		</SectionMessage>
+	{/if}
 	{#if subtasks.length > 0}
 		<ol class="list" aria-labelledby={ids.legend} bind:this={list}>
 			{#each subtasks as entry, index (index)}

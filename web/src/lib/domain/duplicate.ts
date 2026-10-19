@@ -19,6 +19,17 @@ export type DuplicateSource = 'none' | 'copy';
 /** The area of a duplicate (MV-2): the household of the account or its private area. */
 export type DuplicateArea = 'household' | 'private';
 
+/**
+ * The status the new sub-tasks start with (UT-2): that of the duplicate (the default) or "Offen".
+ * The same choices as SUBTASK_STATUS_CHOICES of the hook.
+ */
+export type DuplicateSubtaskStatus = 'duplicate' | 'open';
+
+export const DUPLICATE_SUBTASK_STATUSES: readonly DuplicateSubtaskStatus[] = Object.freeze([
+	'duplicate',
+	'open'
+]);
+
 /** The area of a ticket by its scope (`h:<household>` or `u:<account>`). */
 export function duplicateAreaOf(scope: string): DuplicateArea {
 	return scope.startsWith('h:') ? 'household' : 'private';
@@ -32,7 +43,7 @@ export interface DuplicateTake {
 	due: boolean;
 	/** A sub-task stays below the same parent. */
 	parent: boolean;
-	/** New, open sub-tasks from those of the original. */
+	/** New sub-tasks from those of the original (open, or since UT-2 as `subtaskStatus` says). */
 	subtasks: boolean;
 	/** Copies of the comments with the note "Kopiert aus …". */
 	comments: boolean;
@@ -49,6 +60,11 @@ export interface DuplicateRequest {
 	source: DuplicateSource;
 	/** The other area of the account (MV-2); missing: the area of the original. */
 	to?: DuplicateArea;
+	/**
+	 * The status of the new sub-tasks (UT-2), only where the server takes it and sub-tasks come
+	 * along; missing: "Offen", as a server of before does it.
+	 */
+	subtaskStatus?: DuplicateSubtaskStatus;
 }
 
 /** A ticket the duplication created, by ID and key. */
@@ -88,7 +104,9 @@ export const DUPLICATE_MESSAGES = Object.freeze({
 	validation_duplicate_source_area:
 		'In einen anderen Bereich kommen keine Quellen mit: Einträge des Eingangs bleiben beim Original, und Ticket-Quellen verweisen nie über die Grenze eines Bereichs.',
 	validation_duplicate_project_area:
-		'Dieses Projekt gibt es im Zielbereich nicht, oder es ist archiviert.'
+		'Dieses Projekt gibt es im Zielbereich nicht, oder es ist archiviert.',
+	validation_duplicate_subtask_status:
+		'Die Unteraufgaben starten wie das Duplikat oder mit „Offen“.'
 });
 
 /** Request body of the route. */
@@ -106,7 +124,8 @@ export function duplicateRequestBody(request: DuplicateRequest): Record<string, 
 		subtasks: request.take.subtasks,
 		comments: request.take.comments,
 		color: request.take.color,
-		...(request.to !== undefined && { to: request.to })
+		...(request.to !== undefined && { to: request.to }),
+		...(request.subtaskStatus !== undefined && { subtask_status: request.subtaskStatus })
 	};
 }
 
@@ -196,12 +215,14 @@ export interface DuplicateForm {
 	to: DuplicateArea;
 	/** The project in the other area, '' for none (MV-2). */
 	targetProject: string;
+	/** "Status der Unteraufgaben" (UT-2): at first "Wie das Duplikat". */
+	subtaskStatus: DuplicateSubtaskStatus;
 }
 
 /**
  * The question as it starts for a ticket: its title with "(Kopie)", its project if that can still
  * take tickets (one of `activeProjectIds`; an archived one cannot), no status, no source, the area
- * of the original as the target (`origin`, MV-2).
+ * of the original as the target (`origin`, MV-2), sub-tasks like the duplicate (UT-2).
  */
 export function initialDuplicateForm(
 	ticket: { title: string; projectId: string | null },
@@ -220,7 +241,8 @@ export function initialDuplicateForm(
 		take: { ...DEFAULT_TAKE },
 		source: 'none',
 		to: origin,
-		targetProject: ''
+		targetProject: '',
+		subtaskStatus: 'duplicate'
 	};
 }
 
@@ -242,12 +264,17 @@ export function duplicateFormErrors(
 
 /**
  * The request of an answered question. Into the other area (`form.to` is not `origin`, MV-2) it
- * takes the project of the target, never the parent and no source.
+ * takes the project of the target, never the parent and no source. The status of the new sub-tasks
+ * goes along only where the server takes it (`subtaskStatusOffered`, UT-2) and sub-tasks come along;
+ * without it the server starts them "Offen", in both areas.
  */
 export function duplicateRequestOf(
 	form: DuplicateForm & { status: DuplicateStatus },
-	origin: DuplicateArea = form.to
+	origin: DuplicateArea = form.to,
+	subtaskStatusOffered = false
 ): DuplicateRequest {
+	const subtaskStatus =
+		subtaskStatusOffered && form.take.subtasks ? { subtaskStatus: form.subtaskStatus } : {};
 	if (form.to !== origin) {
 		return {
 			title: form.title.trim(),
@@ -255,7 +282,8 @@ export function duplicateRequestOf(
 			project: form.targetProject !== '' ? form.targetProject : null,
 			take: { ...form.take, parent: false },
 			source: 'none',
-			to: form.to
+			to: form.to,
+			...subtaskStatus
 		};
 	}
 	return {
@@ -263,9 +291,27 @@ export function duplicateRequestOf(
 		status: form.status,
 		project: form.takeProject && form.project !== '' ? form.project : null,
 		take: { ...form.take },
-		source: form.source
+		source: form.source,
+		...subtaskStatus
 	};
 }
+
+/**
+ * Words of "Status der Unteraufgaben" (UT-2): the two choices ("Wie das Duplikat" names the chosen
+ * status), the hint below "Unteraufgaben (N)" and why the choice is missing after a failed question.
+ * "offene" only where they start open for sure.
+ */
+export const DUPLICATE_SUBTASK_TEXTS = Object.freeze({
+	legend: 'Status der Unteraufgaben',
+	duplicate: (status: string | null) =>
+		status === null ? 'Wie das Duplikat' : `Wie das Duplikat (${status})`,
+	open: 'Offen',
+	hint: 'Als neue Unteraufgaben mit derselben Auswahl; sie kommen in das Projekt des Duplikats.',
+	hintOpen:
+		'Als neue, offene Unteraufgaben mit derselben Auswahl; sie kommen in das Projekt des Duplikats.',
+	problem: (reason: string) =>
+		`Ob die Unteraufgaben wie das Duplikat starten können, ließ sich gerade nicht abfragen. ${reason} Ohne Antwort starten sie mit „Offen“.`
+});
 
 /** What the question needs of the other area (GET …/duplicate-target, MV-2). */
 export interface DuplicateTarget {

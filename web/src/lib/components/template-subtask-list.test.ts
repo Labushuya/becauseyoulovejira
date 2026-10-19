@@ -26,6 +26,9 @@ function setup(
 		invalidRows?: number[];
 		error?: string | null;
 		statusAvailable?: boolean;
+		statusProblem?: string | null;
+		statusBusy?: boolean;
+		onretrystatus?: () => void;
 		defaultStatus?: TemplateStatus;
 		hint?: string;
 	} = {}
@@ -246,6 +249,46 @@ describe('the status of each row (UT-1)', () => {
 				'Jedes neue Ticket der Serie bekommt sie als offene Unteraufgaben ohne Fälligkeit, höchstens 20.'
 			)
 		).toBeTruthy();
+	});
+
+	it('says why after a failed question, without "offene", and asks again on "Erneut versuchen" (UT-2)', async () => {
+		const onretrystatus = vi.fn();
+		const { group } = setup([entry('A')], {
+			statusProblem: 'Server nicht erreichbar.',
+			onretrystatus
+		});
+		expect(within(group).queryByText(/offene Unteraufgaben/)).toBeNull();
+		expect(
+			within(group).getByText(
+				'Jedes neue Ticket der Serie bekommt sie als Unteraufgaben, höchstens 20.'
+			)
+		).toBeTruthy();
+		expect(group.textContent).toContain(
+			'Ob jede Unteraufgabe einen eigenen Status bekommen kann, ließ sich gerade nicht abfragen. Server nicht erreichbar.'
+		);
+		expect(group.textContent).not.toContain('Neustart');
+		await fireEvent.click(within(group).getByRole('button', { name: 'Erneut versuchen' }));
+		expect(onretrystatus).toHaveBeenCalledOnce();
+	});
+
+	it('shows a running retry at its button, and no button without the way to ask (UT-2)', async () => {
+		const onretrystatus = vi.fn();
+		const { group } = setup([entry('A')], {
+			statusProblem: 'Server nicht erreichbar.',
+			statusBusy: true,
+			onretrystatus
+		});
+		const retry = within(group).getByRole('button', { name: 'Erneut versuchen' });
+		expect(retry.getAttribute('aria-busy')).toBe('true');
+		await fireEvent.click(retry);
+		expect(onretrystatus).not.toHaveBeenCalled();
+		document.body.innerHTML = '';
+		const alone = setup([entry('A')], { statusProblem: 'Server nicht erreichbar.' });
+		expect(within(alone.group).queryByRole('button', { name: 'Erneut versuchen' })).toBeNull();
+		// Once the status is known, the old problem is gone.
+		document.body.innerHTML = '';
+		const known = setup([entry('A')], { statusAvailable: true, statusProblem: 'Alt.' });
+		expect(known.group.textContent).not.toContain('ließ sich gerade nicht abfragen');
 	});
 
 	it('shows the default for a row without an own status and keeps a chosen one', async () => {

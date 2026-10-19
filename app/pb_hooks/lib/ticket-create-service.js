@@ -359,7 +359,9 @@ function planToday(txApp, ticket, actor) {
  * offers only those. Before this package the route is missing (404) and the form creates as before.
  * `subtask_status` (UT-1, no migration) says that these hooks take a status per sub-task, here and in
  * the template of a rule; a server before its restart after UT-1 does not name it and would drop the
- * status without a word, so the forms offer none then.
+ * status without a word, so the forms offer none then. `duplicate_subtask_status` (UT-2, no migration)
+ * says the same for "Duplizieren": the route takes `subtask_status` for the new sub-tasks, a server of
+ * before would drop it and create open ones, so the dialog asks only once it is named.
  */
 function support(e) {
   var tickets = e.app.findCollectionByNameOrId(TICKETS);
@@ -372,7 +374,8 @@ function support(e) {
     color: hasField(tickets, 'color'),
     charm: hasField(tickets, 'charm'),
     assignee: hasField(tickets, 'assignee'),
-    subtask_status: true
+    subtask_status: true,
+    duplicate_subtask_status: true
   };
 }
 

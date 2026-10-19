@@ -417,6 +417,7 @@
 							statusAvailable={store.statusReady}
 							subtasksAvailable={store.subtasksReady}
 							subtaskStatusAvailable={store.subtaskStatusReady}
+							subtaskStatusProblem={store.subtaskStatusIssue}
 							colorsAvailable={catalog.colorsReady ?? false}
 							charmsAvailable={store.charmsReady}
 							ticketSubtasks={subtasks}

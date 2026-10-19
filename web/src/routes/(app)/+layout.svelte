@@ -250,8 +250,9 @@
 	const detail = setTicketDetailStore(
 		new TicketDetailStore(ticketDetailData(pb), auth, tickets, trash, rules, flags)
 	);
-	// "Ticket duplizieren" (ADR-0045): one request, the result as a flag with the way back.
-	setTicketDuplicateStore(new TicketDuplicateStore(ticketDuplicateData(pb), auth, flags));
+	// "Ticket duplizieren" (ADR-0045): one request, the result as a flag with the way back. Whether the
+	// server takes the status of the new sub-tasks comes from the same answer as "Neues Ticket" (UT-2).
+	setTicketDuplicateStore(new TicketDuplicateStore(ticketDuplicateData(pb), auth, flags, detail));
 	// "Zum Tagesplan" in the menu "•••" of every ticket (ADR-0065): into the plan of today of its own
 	// area; the flag leads to the plan.
 	setDayPlanEntryStore(

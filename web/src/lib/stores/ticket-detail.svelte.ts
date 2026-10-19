@@ -31,6 +31,7 @@ import { PIN_FLAGS, type CommentPinControl } from '$lib/domain/comments';
 import type { RecurrenceRule } from '$lib/domain/recurrence-rule';
 import {
 	createFieldOf,
+	supportComplete,
 	type CreateField,
 	type CreateListField,
 	type CreateRequest,
@@ -312,6 +313,10 @@ export class TicketDetailStore implements CommentPinControl {
 	 * the server does not know the route (before its restart), then the options it knows.
 	 */
 	#support = $state.raw<CreateSupport | null | undefined>(undefined);
+	/** Why the last question failed (UT-2): the answer is unknown then, not "the server lacks it". */
+	#supportProblem = $state<string | null>(null);
+	/** The question runs. */
+	#supportLoading = $state(false);
 
 	/** The loaded ticket, or the list's version of it if that one is newer (check mark). */
 	#ticket = $derived.by((): Ticket | null => {
@@ -1014,28 +1019,50 @@ export class TicketDetailStore implements CommentPinControl {
 
 	/**
 	 * What "Neues Ticket" may offer beyond the fields of before (NT-1): undefined until
-	 * `loadCreateSupport` answered, null before the restart of the server after NT-1.
+	 * `loadCreateSupport` answered (also after a failure without an earlier answer), null while the
+	 * server does not know the route (404, before its restart after NT-1).
 	 */
 	get createSupport(): CreateSupport | null | undefined {
 		return this.#support;
 	}
 
 	/**
-	 * Asks the server once which options of "Neues Ticket" it knows. A known answer stays for the
-	 * session; a missing route (before the restart) or a failure is asked again the next time.
+	 * Why the last question failed (UT-2): the answer is unknown then, which is not the same as a
+	 * server that lacks an option; null after an answer and before the first question.
+	 */
+	get createSupportProblem(): string | null {
+		return this.#supportProblem;
+	}
+
+	/** The question runs ("Erneut versuchen" shows it). */
+	get createSupportLoading(): boolean {
+		return this.#supportLoading;
+	}
+
+	/**
+	 * Asks the server which options of "Neues Ticket" and "Duplizieren" it knows. Only an answer that
+	 * names every option of the hooks (`supportComplete`) stays for the session; a missing route, an
+	 * answer of a server before its restart and a failure are asked again on the next call, so the
+	 * next opening of a form finds what a restart brought (UT-2). A failure keeps an earlier answer and
+	 * says why (`createSupportProblem`).
 	 */
 	async loadCreateSupport(): Promise<void> {
-		if (this.#support) return;
+		if (supportComplete(this.#support) || this.#supportLoading) return;
 		if (this.#data.createSupport === undefined) {
 			this.#support = null;
 			return;
 		}
 		if (!this.#session.ensureValid()) return;
+		this.#supportLoading = true;
 		try {
 			this.#support = await this.#data.createSupport();
+			this.#supportProblem = null;
 		} catch (error) {
-			if (toDataError(error).kind === 'session') this.#session.logout();
-			this.#support = null;
+			const failure = toDataError(error);
+			if (failure.kind === 'session') this.#session.logout();
+			else if (failure.kind !== 'aborted') this.#supportProblem = failure.message;
+		} finally {
+			this.#supportLoading = false;
 		}
 	}
 

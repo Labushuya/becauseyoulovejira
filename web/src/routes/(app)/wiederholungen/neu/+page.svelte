@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import SectionMessage from '$lib/components/guidance/SectionMessage.svelte';
 	import Drawer from '$lib/components/overlay/Drawer.svelte';
@@ -20,6 +21,12 @@
 	const store = getRecurrenceStore();
 	const catalog = getCatalogStore();
 	const tickets = getTicketListStore();
+
+	// Opening the form asks again whether the hooks take a status per sub-task, while that is missing
+	// or unknown (UT-2).
+	$effect(() => {
+		untrack(() => void store.checkSubtaskStatus());
+	});
 </script>
 
 <svelte:head>
@@ -39,6 +46,7 @@
 		statusAvailable={store.statusReady}
 		subtasksAvailable={store.subtasksReady}
 		subtaskStatusAvailable={store.subtaskStatusReady}
+		subtaskStatusProblem={store.subtaskStatusIssue}
 		colorsAvailable={catalog.colorsReady}
 		charmsAvailable={store.charmsReady}
 		assignmentAvailable={store.assigneesReady}

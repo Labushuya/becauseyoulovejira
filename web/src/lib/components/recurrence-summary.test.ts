@@ -972,6 +972,52 @@ describe('RecurrenceSummary: the status of the sub-tasks of the template (UT-1)'
 		await fireEvent.click(screen.getByRole('button', { name: 'Vorlage bearbeiten' }));
 		expect(screen.queryByLabelText('Status der Unteraufgabe 1')).toBeNull();
 	});
+
+	it('asks again on "Bearbeiten" while the status is missing, so a restart since shows it (UT-2)', async () => {
+		const series = rule({ templateSubtasks: [{ title: 'Entkalken', priority: 'high' }] });
+		const probe = vi
+			.fn<(options: unknown) => Promise<boolean>>()
+			.mockResolvedValueOnce(false)
+			.mockResolvedValue(true);
+		await setup(inSeries(), [series], {
+			templateSubtasksReady: vi.fn(async () => true),
+			subtaskStatusReady: probe
+		});
+		expect(probe).toHaveBeenCalledOnce();
+		await fireEvent.click(screen.getByRole('button', { name: 'Vorlage bearbeiten' }));
+		await vi.waitFor(() =>
+			expect(screen.getByLabelText<HTMLSelectElement>('Status der Unteraufgabe 1')).toBeTruthy()
+		);
+		expect(probe).toHaveBeenCalledTimes(2);
+	});
+
+	it('says why the status is unknown after a failed question; "Erneut versuchen" asks again (UT-2)', async () => {
+		const series = rule({ templateSubtasks: [{ title: 'Entkalken', priority: 'high' }] });
+		let fail = true;
+		const probe = vi.fn(async () => {
+			if (fail) throw new DataError('network');
+			return true;
+		});
+		await setup(inSeries(), [series], {
+			templateSubtasksReady: vi.fn(async () => true),
+			subtaskStatusReady: probe
+		});
+		await fireEvent.click(screen.getByRole('button', { name: 'Vorlage bearbeiten' }));
+		const list = screen.getByRole('group', { name: 'Unteraufgaben' });
+		await vi.waitFor(() =>
+			expect(list.textContent).toContain(
+				'Ob jede Unteraufgabe einen eigenen Status bekommen kann, ließ sich gerade nicht abfragen. Server nicht erreichbar.'
+			)
+		);
+		expect(list.textContent).not.toContain('offene Unteraufgaben');
+		expect(list.textContent).not.toContain('Neustart');
+		fail = false;
+		await fireEvent.click(within(list).getByRole('button', { name: 'Erneut versuchen' }));
+		await vi.waitFor(() =>
+			expect(within(list).getByLabelText('Status der Unteraufgabe 1')).toBeTruthy()
+		);
+		expect(list.textContent).not.toContain('ließ sich gerade nicht abfragen');
+	});
 });
 
 describe('RecurrenceSummary: a sub-task of a ticket of a series (UT-1)', () => {

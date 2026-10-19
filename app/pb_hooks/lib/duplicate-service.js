@@ -221,9 +221,10 @@ function saveDuplicate(txApp, original, options, context) {
   return saveTicket(txApp, copied, context.actor);
 }
 
-// New, open sub-tickets of the duplicate, one per sub-ticket of the original (also done ones), in
-// the order they were created, with the same choice of fields; their project is the one of the
-// duplicate, like for every new sub-ticket (ADR-0033 section 4, ADR-0034 section 6). In another area
+// New sub-tickets of the duplicate, one per sub-ticket of the original (also done ones), in the order
+// they were created, with the same choice of fields; their project is the one of the duplicate, like
+// for every new sub-ticket (ADR-0033 section 4, ADR-0034 section 6). They start with the status of the
+// duplicate or "open", as asked (UT-2, rules.subtaskStatusOf; open without a choice). In another area
 // their tags are mapped like those of the duplicate (`mapTag`, MV-2).
 function saveSubtasks(txApp, original, duplicate, options, actor, mapTag) {
   var created = [];
@@ -242,7 +243,7 @@ function saveSubtasks(txApp, original, duplicate, options, actor, mapTag) {
       household: duplicate.getString('household'),
       title: child.getString('title'),
       description: taken.description,
-      status: 'open',
+      status: rules.subtaskStatusOf(options),
       priority: taken.priority,
       due: taken.due,
       project: duplicate.getString('project'),

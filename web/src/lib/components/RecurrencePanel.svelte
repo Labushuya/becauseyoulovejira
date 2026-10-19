@@ -37,6 +37,7 @@
 		templateOf,
 		trimmedSubtasks,
 		type RuleTemplate,
+		type SubtaskStatusProblem,
 		type TemplateStatus
 	} from '$lib/domain/series-template';
 	import { DEFAULT_PRIORITY, type ProjectRef, type TagRef } from '$lib/domain/ticket';
@@ -82,6 +83,7 @@
 		statusAvailable = false,
 		subtasksAvailable = false,
 		subtaskStatusAvailable = false,
+		subtaskStatusProblem = null,
 		colorsAvailable = false,
 		charmsAvailable = false,
 		assignmentAvailable = false,
@@ -115,6 +117,11 @@
 		subtasksAvailable?: boolean;
 		/** Offer the status of each sub-task (UT-1, RecurrenceStore.subtaskStatusReady). */
 		subtaskStatusAvailable?: boolean;
+		/**
+		 * The question for it failed (UT-2, RecurrenceStore.subtaskStatusIssue): the list says why with
+		 * "Erneut versuchen"; null otherwise.
+		 */
+		subtaskStatusProblem?: SubtaskStatusProblem | null;
 		/** Offer the color of the template and send it (ADR-0052, CatalogStore.colorsReady). */
 		colorsAvailable?: boolean;
 		/** Offer the charm of the template and send it (ADR-0062, RecurrenceStore.charmsReady). */
@@ -619,6 +626,7 @@
 				{askStatus}
 				{subtasksAvailable}
 				{subtaskStatusAvailable}
+				{subtaskStatusProblem}
 				{colorsAvailable}
 				{charmsAvailable}
 				{invalidSubtasks}
