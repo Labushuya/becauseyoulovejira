@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
+	ANCHOR_FIRST_DUE_HINT,
+	TAKE_DUE_LABEL,
+	anchorHint,
+	anchorOffer,
+	anchorOfferText,
+	anchorShown,
+	previewRowText,
+	previewTicketText,
+	previewTitle,
+	type RecurrenceFormValues,
 	defaultFormValues,
 	formErrors,
 	formParams,
@@ -234,26 +244,186 @@ describe('the form', () => {
 				{ due: '2026-10-05', appears: '2026-10-02' },
 				{ due: '2026-10-12', appears: '2026-10-09' }
 			],
-			firstDue: null
+			firstDue: null,
+			ticketDue: null
 		});
 		// A start in the past: the dates from today on.
 		expect(formPreview({ ...values, anchor: '2026-01-05' }, TODAY).dates[0]).toBe('2026-09-28');
+		// After completion without a due date of the ticket: a completion today (RV-1).
 		expect(
 			formPreview({ ...values, mode: 'after_completion', freq: 'daily', interval: '3' }, TODAY)
 		).toEqual({
 			dates: ['2026-09-28'],
-			rows: [{ due: '2026-09-28', appears: '2026-09-25' }],
-			firstDue: null
+			rows: [{ due: '2026-09-28', appears: '2026-09-25', completed: TODAY }],
+			firstDue: null,
+			ticketDue: null
 		});
-		expect(formPreview(defaultFormValues(null, TODAY), TODAY, true).firstDue).toBe(TODAY);
+		expect(formPreview(defaultFormValues(null, TODAY), TODAY, undefined, true).firstDue).toBe(
+			TODAY
+		);
+		expect(
+			formPreview(defaultFormValues(null, TODAY), TODAY, { kind: 'ticket', due: null }, true)
+				.firstDue
+		).toBe(TODAY);
 		expect(formPreview({ ...values, weekdays: [] }, TODAY)).toEqual({
 			dates: [],
 			rows: [],
-			firstDue: null
+			firstDue: null,
+			ticketDue: null
 		});
 		expect(appearsText('2026-09-24', TODAY)).toBe('erscheint sofort');
 		expect(appearsText(TODAY, TODAY)).toBe('erscheint heute');
 		expect(appearsText('2026-10-02', TODAY)).toBe('erscheint Fr 02.10.');
+	});
+});
+
+// RV-1 (ADR-0022 addendum 18): the preview refers to the current due date of the ticket, not to
+// today alone; "Beginnt am" gives way after completion at a ticket and offers "Fälligkeit
+// übernehmen" where it differs from the due date. Today is Friday 25.09.2026.
+describe('the preview from the due date of the ticket (RV-1)', () => {
+	const ticket = (due: string | null) => ({ kind: 'ticket' as const, due });
+	/** Weekly after completion, lead time 3. */
+	const weekly = (overrides: Partial<RecurrenceFormValues> = {}): RecurrenceFormValues => ({
+		...defaultFormValues('2026-10-03', TODAY),
+		mode: 'after_completion',
+		...overrides
+	});
+
+	it('counts after completion from the due date and from today when it is not today', () => {
+		// Due Saturday 03.10.: the next one after completing on that day, and after completing today.
+		const preview = formPreview(weekly(), TODAY, ticket('2026-10-03'));
+		expect(preview).toEqual({
+			dates: ['2026-10-10', '2026-10-02'],
+			rows: [
+				{ due: '2026-10-10', appears: '2026-10-07', completed: '2026-10-03' },
+				{ due: '2026-10-02', appears: '2026-09-29', completed: TODAY }
+			],
+			firstDue: null,
+			ticketDue: '2026-10-03'
+		});
+		expect(previewTicketText(preview, TODAY)).toBe('Dieses Ticket: fällig Sa 03.10.');
+		expect(preview.rows.map((row) => previewRowText(row, preview, TODAY))).toEqual([
+			{
+				completed: 'Am Fälligkeitstag erledigt',
+				appears: 'nächstes erscheint Mi 07.10.',
+				due: 'fällig Sa 10.10.'
+			},
+			{ completed: 'Heute erledigt', appears: 'erscheint Di 29.09.', due: 'fällig Fr 02.10.' }
+		]);
+	});
+
+	it('shows one row when the ticket is due today, and the row of today without a due date', () => {
+		const dueToday = formPreview(weekly(), TODAY, ticket(TODAY));
+		expect(dueToday.ticketDue).toBe(TODAY);
+		expect(dueToday.rows).toEqual([{ due: '2026-10-02', appears: '2026-09-29', completed: TODAY }]);
+		expect(previewRowText(dueToday.rows[0]!, dueToday, TODAY).completed).toBe(
+			'Am Fälligkeitstag erledigt'
+		);
+		for (const context of [
+			ticket(null),
+			undefined,
+			{ kind: 'rule' as const, nextDue: null, each: false }
+		]) {
+			const preview = formPreview(weekly(), TODAY, context);
+			expect(preview.ticketDue, JSON.stringify(context)).toBeNull();
+			expect(previewTicketText(preview, TODAY)).toBeNull();
+			expect(preview.rows).toEqual([
+				{ due: '2026-10-02', appears: '2026-09-29', completed: TODAY }
+			]);
+			expect(previewRowText(preview.rows[0]!, preview, TODAY)).toEqual({
+				completed: 'Heute erledigt',
+				appears: 'erscheint Di 29.09.',
+				due: 'fällig Fr 02.10.'
+			});
+		}
+	});
+
+	it('lets the next ticket appear with the completion at the earliest', () => {
+		// Every 2 days with lead time 3: on the due date itself; completed today "sofort" as before.
+		const preview = formPreview(
+			weekly({ freq: 'daily', interval: '2' }),
+			TODAY,
+			ticket('2026-10-03')
+		);
+		expect(preview.rows).toEqual([
+			{ due: '2026-10-05', appears: '2026-10-03', completed: '2026-10-03' },
+			{ due: '2026-09-27', appears: '2026-09-24', completed: TODAY }
+		]);
+		expect(preview.rows.map((row) => previewRowText(row, preview, TODAY).appears)).toEqual([
+			'nächstes erscheint Sa 03.10.',
+			'erscheint sofort'
+		]);
+	});
+
+	it('follows where a series with a past due date begins (WH-2)', () => {
+		// "Serie ab heute beginnen" (chosen in advance) makes the ticket due today.
+		const past = weekly({ anchor: '2024-03-12' });
+		const fromToday = formPreview(past, TODAY, ticket('2024-03-12'));
+		expect(fromToday.ticketDue).toBe(TODAY);
+		expect(fromToday.rows.map((row) => row.completed)).toEqual([TODAY]);
+		// "Ursprüngliches Datum behalten": the ticket stays overdue, only today can complete it.
+		const kept = formPreview({ ...past, start: 'keep' }, TODAY, ticket('2024-03-12'));
+		expect(kept.ticketDue).toBe('2024-03-12');
+		expect(previewTicketText(kept, TODAY)).toBe('Dieses Ticket: fällig Di 12.03.2024');
+		expect(kept.rows.map((row) => previewRowText(row, kept, TODAY).completed)).toEqual([
+			'Heute erledigt'
+		]);
+	});
+
+	it('keeps "Nächste Termine" of a fixed rhythm from its current start', () => {
+		const values = { ...defaultFormValues('2026-10-05', TODAY) };
+		const due = ticket('2026-10-07');
+		expect(formPreview(values, TODAY, due)).toMatchObject({
+			dates: ['2026-10-05', '2026-10-12', '2026-10-19'],
+			ticketDue: null
+		});
+		expect(formPreview(values, TODAY, due).rows.every((row) => row.completed === undefined)).toBe(
+			true
+		);
+		// Taking the due date over moves the start, and the dates follow.
+		expect(formPreview({ ...values, anchor: '2026-10-07' }, TODAY, due).dates).toEqual([
+			'2026-10-12',
+			'2026-10-19',
+			'2026-10-26'
+		]);
+		expect(previewTitle(values)).toBe('Nächste Termine');
+		expect(previewTitle(weekly())).toBe('So geht es weiter');
+	});
+
+	it('hides "Beginnt am" after completion at a ticket and says what it means without one', () => {
+		const rule = { kind: 'rule' as const, nextDue: '2026-10-03', each: false };
+		expect(anchorShown(weekly({ mode: 'calendar' }), ticket('2026-10-03'))).toBe(true);
+		expect(anchorShown(weekly(), ticket('2026-10-03'))).toBe(false);
+		expect(anchorShown(weekly(), ticket(null))).toBe(false);
+		expect(anchorShown(weekly(), undefined, true)).toBe(false);
+		expect(anchorShown(weekly(), undefined)).toBe(true);
+		expect(anchorShown(weekly(), rule)).toBe(true);
+		// A start the check refuses stays visible with its error.
+		expect(anchorShown(weekly({ anchor: '' }), ticket('2026-10-03'))).toBe(true);
+
+		expect(anchorHint(weekly(), undefined)).toBe(ANCHOR_FIRST_DUE_HINT);
+		expect(anchorHint(weekly(), rule)).toBe(ANCHOR_FIRST_DUE_HINT);
+		expect(ANCHOR_FIRST_DUE_HINT).toBe(
+			'Gilt nur als erste Fälligkeit; danach zählt der Abstand ab dem Erledigen.'
+		);
+		expect(anchorHint(weekly(), ticket(null))).toBeUndefined();
+		expect(anchorHint(weekly({ mode: 'calendar' }), undefined)).toBeUndefined();
+	});
+
+	it('offers the current due date where "Beginnt am" differs from it', () => {
+		const values = defaultFormValues('2026-10-05', TODAY);
+		expect(anchorOffer(values, ticket('2026-10-07'))).toBe('2026-10-07');
+		expect(anchorOfferText('2026-10-07', TODAY)).toBe(
+			'„Beginnt am“ weicht von der Fälligkeit des Tickets ab (Mi 07.10.).'
+		);
+		expect(TAKE_DUE_LABEL).toBe('Fälligkeit übernehmen');
+		expect(anchorOffer({ ...values, anchor: '' }, ticket('2026-10-07'))).toBe('2026-10-07');
+		expect(anchorOffer(values, ticket('2026-10-05'))).toBeNull();
+		expect(anchorOffer(values, ticket(null))).toBeNull();
+		expect(anchorOffer(values, undefined)).toBeNull();
+		expect(anchorOffer(values, { kind: 'rule', nextDue: '2026-10-07', each: false })).toBeNull();
+		// After completion at a ticket "Beginnt am" is not shown, so nothing is offered.
+		expect(anchorOffer({ ...values, mode: 'after_completion' }, ticket('2026-10-07'))).toBeNull();
 	});
 });
 

@@ -19,6 +19,7 @@ import {
 	CATCH_UP_ASK_HINT,
 	formParams,
 	formPreview,
+	type RecurrenceFormContext,
 	type RecurrenceFormValues
 } from './recurrence-rule';
 import { dayLabel } from './recurrence-text';
@@ -488,24 +489,35 @@ export const LATER_DAYS = 3;
 /**
  * The example sentence of the current values (plan "Wiederholungen verständlich machen",
  * recommendation 1 of part A): what these settings do with the next dates, from the same dates as
- * the preview. Null while the values are invalid.
+ * the preview. After completion it counts from the due date of the ticket (`context`, RV-1) when
+ * that lies today or later, else from today. Null while the values are invalid.
  */
-export function liveExample(values: RecurrenceFormValues, today: CalendarDate): string | null {
-	const preview = formPreview(values, today);
+export function liveExample(
+	values: RecurrenceFormValues,
+	today: CalendarDate,
+	context?: RecurrenceFormContext
+): string | null {
+	const preview = formPreview(values, today, context);
 	const [first, second] = preview.rows;
 	if (first === undefined) return null;
 	if (values.mode === 'after_completion') {
 		const params = formParams(values);
-		const later = addDays(today, LATER_DAYS);
+		// The first row completes on the due date of the ticket, or today without one.
+		const completed = first.completed ?? today;
+		const later = addDays(completed, LATER_DAYS);
 		const laterDue = afterCompletion(params, later);
 		// A lead time as long as the interval: the next ticket comes with the completion.
 		const appears =
-			first.appears <= today
+			first.appears <= completed
 				? 'erscheint sofort beim Erledigen'
 				: appearsPhrase(first.appears, today);
+		const when =
+			completed === today
+				? `heute (${dayLabel(today, today)})`
+				: `am Fälligkeitstag (${dayLabel(completed, today)})`;
 		return [
 			'Mit diesen Einstellungen:',
-			`Erledigst du es heute (${dayLabel(today, today)}), ist das nächste`,
+			`Erledigst du es ${when}, ist das nächste`,
 			`${dayLabel(first.due, today)} fällig und ${sentence(appears)}`,
 			`Erledigst du es ${LATER_DAYS} Tage später (${dayLabel(later, today)}), verschiebt sich`,
 			`das nächste auf ${sentence(dayLabel(laterDue, today))}`

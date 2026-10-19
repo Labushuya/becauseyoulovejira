@@ -1204,6 +1204,60 @@ describe('new ticket: repeat right away (plan OR-4)', () => {
 		expect(dues()).toEqual(['2026-09-30', '2026-10-02', '2026-10-07']);
 	});
 
+	// RV-1 (ADR-0022 addendum 18): untouched defaults still follow the due date; once the values are
+	// touched, a differing "Beginnt am" gets the hint with "Fälligkeit übernehmen" instead.
+	it('offers "Fälligkeit übernehmen" once the values are touched, and follows while untouched', async () => {
+		await openPlain();
+		const due = screen.getByLabelText<HTMLInputElement>('Fälligkeit');
+		await fireEvent.input(due, { target: { value: '2026-09-28' } });
+		await fireEvent.change(due);
+		await fireEvent.click(disclosure());
+		const form = within(section());
+		const takeDue = () => form.queryByRole('button', { name: 'Fälligkeit übernehmen' });
+		await fireEvent.input(due, { target: { value: '2026-09-30' } });
+		await fireEvent.change(due);
+		expect(form.getByLabelText<HTMLInputElement>('Beginnt am').value).toBe('2026-09-30');
+		expect(takeDue()).toBeNull();
+
+		await fireEvent.click(form.getByRole('checkbox', { name: 'Freitag' }));
+		await fireEvent.input(due, { target: { value: '2026-10-05' } });
+		await fireEvent.change(due);
+		expect(form.getByLabelText<HTMLInputElement>('Beginnt am').value).toBe('2026-09-30');
+		expect(
+			form.getByText('„Beginnt am“ weicht von der Fälligkeit des Tickets ab (Mo 05.10.).')
+		).toBeTruthy();
+		await fireEvent.click(takeDue() as HTMLElement);
+		expect(form.getByLabelText<HTMLInputElement>('Beginnt am').value).toBe('2026-10-05');
+		expect(takeDue()).toBeNull();
+		// Wednesday and Friday stay chosen; the dates start from the new start.
+		const dues = () =>
+			[...section().querySelectorAll<HTMLElement>('.preview li')].map((row) => row.dataset.due);
+		expect(dues()).toEqual(['2026-10-07', '2026-10-09', '2026-10-14']);
+	});
+
+	it('counts after completion from the due date of the form and hides "Beginnt am" (RV-1)', async () => {
+		await openPlain();
+		const due = screen.getByLabelText<HTMLInputElement>('Fälligkeit');
+		await fireEvent.input(due, { target: { value: '2026-10-03' } });
+		await fireEvent.change(due);
+		await fireEvent.click(disclosure());
+		const form = within(section());
+		await fireEvent.click(form.getByRole('radio', { name: 'Nach Erledigung' }));
+		expect(form.queryByLabelText('Beginnt am')).toBeNull();
+		const ticketLine = () => section().querySelector('.preview-ticket')?.textContent?.trim();
+		expect(ticketLine()).toBe('Dieses Ticket: fällig Sa 03.10.');
+		await fireEvent.input(due, { target: { value: '2026-10-08' } });
+		await fireEvent.change(due);
+		expect(ticketLine()).toBe('Dieses Ticket: fällig Do 08.10.');
+		// Without a due date the preview counts from today.
+		await fireEvent.input(due, { target: { value: '' } });
+		await fireEvent.change(due);
+		expect(ticketLine()).toBeUndefined();
+		expect(
+			(section().querySelector('.preview li')?.textContent ?? '').replace(/\s+/g, ' ').trim()
+		).toBe('Heute erledigt → erscheint Di 29.09. → fällig Fr 02.10.');
+	});
+
 	it('creates the ticket, then the rule with it, and shows it in its series at once', async () => {
 		await openPlain();
 		await fireEvent.input(titleField(), { target: { value: 'Müll rausbringen' } });

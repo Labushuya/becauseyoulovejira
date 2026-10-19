@@ -14,12 +14,19 @@
 	import {
 		CATCH_UP_TODAY_LABEL,
 		EACH_MAX_PER_RUN,
-		appearsText,
+		TAKE_DUE_LABEL,
+		anchorHint,
+		anchorOffer,
+		anchorOfferText,
+		anchorShown,
 		backlogText,
 		catchUpAllLabel,
 		formBacklog,
 		formPreview,
 		openBlockText,
+		previewRowText,
+		previewTicketText,
+		previewTitle,
 		seriesStartQuestion,
 		type RecurrenceFormContext,
 		type RecurrenceFormField,
@@ -28,7 +35,7 @@
 	import { liveExample } from '$lib/domain/recurrence-examples';
 	import { helpHref } from '$lib/settings-sections';
 	import SectionMessage from './guidance/SectionMessage.svelte';
-	import { WEEKDAY_NAMES, WEEKDAY_SHORT, dayLabel } from '$lib/domain/recurrence-text';
+	import { WEEKDAY_NAMES, WEEKDAY_SHORT } from '$lib/domain/recurrence-text';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import Field from './form/Field.svelte';
 	import { findAssignees, type AssigneeSource } from '$lib/stores/assignees.svelte';
@@ -54,6 +61,12 @@
 	// Since RG-1 the fields stand in a Field (ADR-0060: label above, then error and hint), the groups
 	// (kind, weekdays) carry a legend in the look of its label, and the weekdays are check boxes like
 	// every other choice of several (base.css, ADR-0029 G-5), without boxes of their own.
+	// Since RV-1 (ADR-0022 addendum 18) the preview after completion counts from the current due date
+	// of the ticket (`context`): "Dieses Ticket: fällig …", "Am Fälligkeitstag erledigt → nächstes
+	// erscheint … → fällig …" and, unless that is today, "Heute erledigt → …". There "Beginnt am"
+	// gives way (it takes no part); without a ticket it says that it only gives the first due date.
+	// Where "Beginnt am" differs from the current due date of the ticket, a hint offers "Fälligkeit
+	// übernehmen"; nothing follows by itself. Everything is derived; the button is the only writer.
 	let {
 		values = $bindable(),
 		errors = {},
@@ -99,11 +112,20 @@
 	};
 
 	const calendar = $derived(values.mode === 'calendar');
-	const preview = $derived(formPreview(values, today, withoutDue));
+	/** From the current due date of the ticket in `context` (RV-1). */
+	const preview = $derived(formPreview(values, today, context, withoutDue));
+	const ticketLine = $derived(previewTicketText(preview, today));
+	/** "Beginnt am" gives way after completion at a ticket (RV-1); an error at it keeps it. */
+	const anchorVisible = $derived(
+		anchorShown(values, context, withoutDue) || errors.anchor !== undefined
+	);
+	/** The current due date of the ticket while "Beginnt am" differs from it (RV-1). */
+	const dueOffer = $derived(anchorOffer(values, context));
+	let anchorInput = $state<HTMLInputElement>();
 	/** Where a series begins whose first date lies in the past (WH-2). */
 	const startQuestion = $derived(seriesStartQuestion(values, today, context, withoutDue));
 	/** The sentence of "So funktioniert’s" with the dates of these settings. */
-	const example = $derived(liveExample(values, today));
+	const example = $derived(liveExample(values, today, context));
 	/** Days 29 to 31 do not exist in every month: they are clamped (ADR-0021 section 2). */
 	const clamped = $derived(!values.lastDay && Number(values.monthDay) >= 29);
 	/** Missed dates the switch would make at once (ADR-0022 addendum 5). */
@@ -128,6 +150,12 @@
 			? [...values.weekdays, day]
 			: values.weekdays.filter((existing) => existing !== day);
 		values.weekdays = WEEKDAYS.filter((candidate) => next.includes(candidate));
+	}
+
+	/** "Fälligkeit übernehmen": the due date becomes "Beginnt am"; the hint goes, the focus stays. */
+	function takeDue(due: CalendarDate) {
+		values.anchor = due;
+		anchorInput?.focus();
 	}
 </script>
 
@@ -243,11 +271,31 @@
 		</Field>
 	{/if}
 
-	<Field label="Beginnt am" id={idOf('anchor')} error={errors.anchor ?? ''} width="auto">
-		{#snippet control(field)}
-			<input {...field} type="date" bind:value={values.anchor} />
-		{/snippet}
-	</Field>
+	{#if anchorVisible}
+		<Field
+			label="Beginnt am"
+			id={idOf('anchor')}
+			error={errors.anchor ?? ''}
+			hint={anchorHint(values, context, withoutDue)}
+			width="auto"
+		>
+			{#snippet control(field)}
+				<input {...field} type="date" bind:value={values.anchor} bind:this={anchorInput} />
+			{/snippet}
+		</Field>
+		{#if dueOffer !== null}
+			{@const due = dueOffer}
+			<!-- RV-1: the due date changed while the form is open (or never matched); no silent follow. -->
+			<SectionMessage tone="info" compact live>
+				{anchorOfferText(due, today)}
+				{#snippet actions()}
+					<button class="button-secondary button-small" type="button" onclick={() => takeDue(due)}>
+						{TAKE_DUE_LABEL}
+					</button>
+				{/snippet}
+			</SectionMessage>
+		{/if}
+	{/if}
 
 	<Field
 		label="Vorlauf (Tage)"
@@ -323,20 +371,27 @@
 	{/if}
 
 	<!-- Each date with the day its ticket appears, so the lead time shows (plan "Wiederholungen
-	     verständlich machen": "erscheint … → fällig …"). -->
+	     verständlich machen": "erscheint … → fällig …"); after completion each row starts with the
+	     day of the completion it assumes (RV-1). -->
 	<div class="preview" aria-live="polite">
 		{#if preview.rows.length === 0}
 			<p>Nächste Termine erscheinen, sobald alle Angaben stimmen.</p>
 		{:else}
-			<p class="preview-title">
-				{calendar ? 'Nächste Termine' : 'Wird das Ticket heute erledigt'}
-			</p>
-			<ol class="preview-rows">
-				{#each preview.rows as row (row.due)}
-					<li data-due={row.due}>
-						<span class="appears">{appearsText(row.appears, today)}</span>
+			<p class="preview-title">{previewTitle(values)}</p>
+			{#if ticketLine !== null}
+				<p class="preview-ticket" data-due={preview.ticketDue}>{ticketLine}</p>
+			{/if}
+			<ol class="preview-rows" class:completion={!calendar}>
+				{#each preview.rows as row (row.completed ?? row.due)}
+					{@const text = previewRowText(row, preview, today)}
+					<li data-due={row.due} data-completed={row.completed}>
+						{#if text.completed !== null}
+							<span class="completed">{text.completed}</span>
+							<span class="arrow" aria-hidden="true">→</span>
+						{/if}
+						<span class="appears">{text.appears}</span>
 						<span class="arrow" aria-hidden="true">→</span>
-						<span class="due">fällig {dayLabel(row.due, today)}</span>
+						<span class="due">{text.due}</span>
 					</li>
 				{/each}
 			</ol>
@@ -503,6 +558,19 @@
 		grid-template-columns: subgrid;
 	}
 
+	/* After completion (RV-1) at most two rows of five parts: they wrap in narrow columns (the card
+	   of the full view) instead of lining up. */
+	.preview-rows.completion {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.preview-rows.completion li {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0 0.5rem;
+	}
+
+	.completed,
 	.appears,
 	.arrow {
 		color: var(--color-text-muted);

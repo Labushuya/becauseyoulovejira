@@ -97,8 +97,9 @@ describe('RecurrenceForm', () => {
 		});
 		expect(screen.getByLabelText<HTMLInputElement>('Abstand nach Erledigung').value).toBe('3');
 		expect(screen.queryByRole('group', { name: 'Wochentage' })).toBeNull();
-		expect(previewTitle()).toBe('Wird das Ticket heute erledigt');
-		expect(rows()).toEqual(['erscheint heute → fällig Mo 28.09.']);
+		// Without a ticket (RV-1): neutral heading, the completion today named in the row.
+		expect(previewTitle()).toBe('So geht es weiter');
+		expect(rows()).toEqual(['Heute erledigt → erscheint heute → fällig Mo 28.09.']);
 	});
 
 	// Plan "Wiederholungen verständlich machen", part A: short hints and "So funktioniert’s".
@@ -389,8 +390,180 @@ describe('RecurrenceForm: preview with several weekdays (OR-1)', () => {
 		start({ weekdays: ['MO', 'WE', 'FR'] });
 		await fireEvent.click(screen.getByRole('radio', { name: 'Nach Erledigung' }));
 		expect(screen.queryByRole('group', { name: 'Wochentage' })).toBeNull();
-		expect(previewTitle()).toBe('Wird das Ticket heute erledigt');
+		expect(previewTitle()).toBe('So geht es weiter');
 		expect(dues()).toEqual(['2026-10-02']);
+	});
+});
+
+// RV-1 (ADR-0022 addendum 18): the preview refers to the current due date of the ticket; after
+// completion "Beginnt am" gives way at a ticket, and where it differs from the due date the form
+// offers "Fälligkeit übernehmen" instead of following by itself. Today is Friday 25.09.2026.
+describe('RecurrenceForm: preview from the due date of the ticket (RV-1)', () => {
+	const ticket = (due: string | null) => ({ kind: 'ticket' as const, due });
+	/** Weekly after completion, lead time 3, opened for a ticket due Saturday 03.10. */
+	const afterCompletion = (overrides: Partial<RecurrenceFormValues> = {}) => ({
+		...defaultFormValues('2026-10-03', TODAY),
+		mode: 'after_completion' as const,
+		...overrides
+	});
+	const ticketLine = () => document.querySelector('.preview-ticket')?.textContent?.trim();
+	const anchorField = () => screen.queryByLabelText<HTMLInputElement>('Beginnt am');
+	const takeDue = () => screen.queryByRole('button', { name: 'Fälligkeit übernehmen' });
+
+	it('names this ticket, the completion on its due date and the completion today', () => {
+		render(RecurrenceForm, {
+			props: { values: afterCompletion(), today: TODAY, context: ticket('2026-10-03') }
+		});
+		expect(previewTitle()).toBe('So geht es weiter');
+		expect(ticketLine()).toBe('Dieses Ticket: fällig Sa 03.10.');
+		expect(rows()).toEqual([
+			'Am Fälligkeitstag erledigt → nächstes erscheint Mi 07.10. → fällig Sa 10.10.',
+			'Heute erledigt → erscheint Di 29.09. → fällig Fr 02.10.'
+		]);
+		// The preview is one polite region with the line of the ticket and the list.
+		const region = document.querySelector('.preview[aria-live="polite"]');
+		expect(region?.querySelector('.preview-ticket')).not.toBeNull();
+		expect(region?.querySelector('ol')).not.toBeNull();
+	});
+
+	it('shows only the completion on the due date when that is today', () => {
+		render(RecurrenceForm, {
+			props: { values: afterCompletion(), today: TODAY, context: ticket(TODAY) }
+		});
+		expect(ticketLine()).toBe('Dieses Ticket: fällig Fr 25.09.');
+		expect(rows()).toEqual([
+			'Am Fälligkeitstag erledigt → nächstes erscheint Di 29.09. → fällig Fr 02.10.'
+		]);
+	});
+
+	it('counts from today without a due date, as before', () => {
+		render(RecurrenceForm, {
+			props: { values: afterCompletion(), today: TODAY, context: ticket(null), withoutDue: true }
+		});
+		expect(ticketLine()).toBeUndefined();
+		expect(rows()).toEqual(['Heute erledigt → erscheint Di 29.09. → fällig Fr 02.10.']);
+	});
+
+	it('follows a new due date of the ticket at once, without touching the values', async () => {
+		const { component, rerender } = render(RecurrenceFormHarness, {
+			props: { initial: afterCompletion(), today: TODAY, context: ticket('2026-10-03') }
+		});
+		expect(dues()).toEqual(['2026-10-10', '2026-10-02']);
+		await rerender({ context: ticket('2026-10-08') });
+		expect(ticketLine()).toBe('Dieses Ticket: fällig Do 08.10.');
+		expect(rows()[0]).toBe(
+			'Am Fälligkeitstag erledigt → nächstes erscheint Mo 12.10. → fällig Do 15.10.'
+		);
+		await rerender({ context: ticket(TODAY) });
+		expect(dues()).toEqual(['2026-10-02']);
+		await rerender({ context: ticket(null) });
+		expect(rows()).toEqual(['Heute erledigt → erscheint Di 29.09. → fällig Fr 02.10.']);
+		// The preview derives from the due date; the values of the form stay as they were.
+		expect(component.current().anchor).toBe('2026-10-03');
+	});
+
+	it('hides "Beginnt am" after completion at a ticket and shows it again for a fixed rhythm', async () => {
+		render(RecurrenceFormHarness, {
+			props: {
+				initial: defaultFormValues('2026-10-03', TODAY),
+				today: TODAY,
+				context: ticket('2026-10-03')
+			}
+		});
+		expect(anchorField()?.value).toBe('2026-10-03');
+		await fireEvent.click(screen.getByRole('radio', { name: 'Nach Erledigung' }));
+		expect(anchorField()).toBeNull();
+		await fireEvent.click(screen.getByRole('radio', { name: 'Fester Rhythmus' }));
+		expect(anchorField()?.value).toBe('2026-10-03');
+		expect(anchorField()?.getAttribute('aria-describedby')).toBeNull();
+	});
+
+	it('keeps "Beginnt am" without a ticket, with the hint that it gives only the first due date', () => {
+		render(RecurrenceForm, { props: { values: afterCompletion(), today: TODAY } });
+		const field = anchorField();
+		expect(field?.value).toBe('2026-10-03');
+		expect(
+			document.getElementById(field?.getAttribute('aria-describedby') ?? '')?.textContent
+		).toBe('Gilt nur als erste Fälligkeit; danach zählt der Abstand ab dem Erledigen.');
+		// The same for a rule of its own.
+		const { unmount } = render(RecurrenceForm, {
+			props: {
+				values: afterCompletion(),
+				today: TODAY,
+				context: { kind: 'rule', nextDue: null, each: false }
+			}
+		});
+		expect(screen.getAllByText(/Gilt nur als erste Fälligkeit/)).toHaveLength(2);
+		unmount();
+	});
+
+	it('keeps "Beginnt am" with its error at a ticket, so it can be fixed', () => {
+		render(RecurrenceForm, {
+			props: {
+				values: afterCompletion({ anchor: '' }),
+				today: TODAY,
+				context: ticket('2026-10-03')
+			}
+		});
+		expect(anchorField()).not.toBeNull();
+		expect(
+			screen.getByText('Nächste Termine erscheinen, sobald alle Angaben stimmen.')
+		).toBeTruthy();
+	});
+
+	it('offers "Fälligkeit übernehmen" when the due date changes, and takes it only on the click', async () => {
+		const { component, rerender } = render(RecurrenceFormHarness, {
+			props: { initial: values(), today: TODAY, context: ticket('2026-09-28') }
+		});
+		expect(takeDue()).toBeNull();
+		expect(dues()).toEqual(['2026-09-28', '2026-10-05', '2026-10-12']);
+
+		// The due date moves to Wednesday 30.09. (the details of the full view): nothing follows.
+		await rerender({ context: ticket('2026-09-30') });
+		const hint = screen.getByText(
+			'„Beginnt am“ weicht von der Fälligkeit des Tickets ab (Mi 30.09.).'
+		);
+		const message = hint.closest('.section-message');
+		expect(message?.getAttribute('data-tone')).toBe('info');
+		expect(message?.getAttribute('role')).toBe('status');
+		expect(component.current().anchor).toBe('2026-09-28');
+		expect(dues()).toEqual(['2026-09-28', '2026-10-05', '2026-10-12']);
+
+		await fireEvent.click(takeDue() as HTMLElement);
+		expect(component.current().anchor).toBe('2026-09-30');
+		expect(anchorField()?.value).toBe('2026-09-30');
+		expect(document.activeElement).toBe(anchorField());
+		expect(takeDue()).toBeNull();
+		// The weekdays stay as chosen; the dates now start from the new start.
+		expect(component.current().weekdays).toEqual(['MO']);
+		expect(dues()).toEqual(['2026-10-05', '2026-10-12', '2026-10-19']);
+	});
+
+	it('offers it for a start that never matched, and not for a rule or without a due date', async () => {
+		const { rerender } = render(RecurrenceFormHarness, {
+			props: {
+				initial: values({ anchor: '2026-10-31' }),
+				today: TODAY,
+				context: ticket('2026-09-28')
+			}
+		});
+		expect(takeDue()).not.toBeNull();
+		await rerender({ context: ticket(null) });
+		expect(takeDue()).toBeNull();
+		await rerender({ context: { kind: 'rule', nextDue: '2026-09-28', each: false } });
+		expect(takeDue()).toBeNull();
+		await rerender({ context: ticket('2026-10-31') });
+		expect(takeDue()).toBeNull();
+	});
+
+	it('offers nothing after completion at a ticket, where "Beginnt am" is hidden', async () => {
+		render(RecurrenceFormHarness, {
+			props: { initial: values(), today: TODAY, context: ticket('2026-09-30') }
+		});
+		expect(takeDue()).not.toBeNull();
+		await fireEvent.click(screen.getByRole('radio', { name: 'Nach Erledigung' }));
+		expect(takeDue()).toBeNull();
+		expect(anchorField()).toBeNull();
 	});
 });
 
