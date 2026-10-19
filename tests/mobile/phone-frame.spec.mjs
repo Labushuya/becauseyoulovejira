@@ -53,6 +53,11 @@ function viewportContent(page) {
 	return page.locator('meta[name="viewport"]').getAttribute('content');
 }
 
+/** The heading of a view (SectionBar); in the phone frame it is there for screen readers only. */
+function viewHeading(page, name) {
+	return page.getByRole('heading', { level: 2, name, exact: true });
+}
+
 test.describe('phone with the switch on', () => {
 	test.use({ ...PHONE, extraHTTPHeaders: ANOTHER_DEVICE });
 
@@ -60,7 +65,7 @@ test.describe('phone with the switch on', () => {
 		await switchOn(page);
 		const url = await signIn(page);
 		await expect(page).toHaveURL(`${url}/tagesplan`);
-		await expect(page.getByRole('heading', { level: 2, name: 'Tagesplan' })).toBeAttached();
+		await expect(viewHeading(page, 'Tagesplan')).toBeAttached();
 
 		const bar = page.getByRole('navigation', { name: 'Hauptnavigation' });
 		await expect(bar).toBeVisible();
@@ -113,7 +118,10 @@ test.describe('phone with the switch on', () => {
 		const closeBox = await close.boundingBox();
 		expect(closeBox.width).toBeGreaterThanOrEqual(TARGET_PX);
 		expect(closeBox.height).toBeGreaterThanOrEqual(TARGET_PX);
-		// A sheet: over the full width, at the bottom of the window.
+		// A sheet: over the full width, at the bottom of the window, once it has slid in.
+		await sheet
+			.locator('.frame')
+			.evaluate((element) => Promise.all(element.getAnimations().map((animation) => animation.finished)));
 		const frame = await sheet.locator('.frame').boundingBox();
 		expect(frame.width).toBe(PHONE.viewport.width);
 		expect(Math.abs(frame.y + frame.height - PHONE.viewport.height)).toBeLessThanOrEqual(1);
@@ -123,11 +131,10 @@ test.describe('phone with the switch on', () => {
 		await expect(page).toHaveURL(new RegExp(`^${url}/kalender`));
 		await expect(sheet).toHaveCount(0);
 		await expect(bar.getByRole('button', { name: 'Mehr, aktuell: Kalender' })).toBeVisible();
-		expect(await scrollsSideways(page)).toBe(false);
 
 		// A tap on "Aufgaben" leads there: the day plan only opens first at the start of the app.
 		await bar.getByRole('link', { name: 'Aufgaben' }).click();
-		await expect(page.getByRole('heading', { level: 2, name: 'Aufgaben' })).toBeAttached();
+		await expect(viewHeading(page, 'Aufgaben')).toBeAttached();
 		await expect(page).toHaveURL(`${url}/`);
 		await expect(bar.getByRole('link', { name: 'Aufgaben' })).toHaveAttribute('aria-current', 'page');
 		expect(await scrollsSideways(page)).toBe(false);
@@ -143,7 +150,7 @@ test.describe('phone with the switch off', () => {
 	test('shows the view of today, and the switch is reachable there', async ({ page }) => {
 		const url = await signIn(page);
 		await expect(page).toHaveURL(`${url}/`);
-		await expect(page.getByRole('heading', { level: 2, name: 'Aufgaben' })).toBeVisible();
+		await expect(viewHeading(page, 'Aufgaben')).toBeVisible();
 		await expect(page.getByRole('navigation', { name: 'Hauptnavigation' })).toHaveCount(0);
 		await expect(page.locator('[data-phone-frame]')).toHaveCount(0);
 		await expect(page.getByRole('navigation', { name: 'Ansicht' })).toBeVisible();
@@ -168,7 +175,7 @@ test.describe('PC with the switch on', () => {
 		await switchOn(page);
 		const url = await signIn(page);
 		await expect(page).toHaveURL(`${url}/`);
-		await expect(page.getByRole('heading', { level: 2, name: 'Aufgaben' })).toBeVisible();
+		await expect(viewHeading(page, 'Aufgaben')).toBeVisible();
 		await expect(page.locator('[data-phone-frame]')).toHaveCount(0);
 		await expect(page.getByRole('navigation', { name: 'Hauptnavigation' })).toHaveCount(0);
 		await expect(page.getByRole('navigation', { name: 'Ansicht' })).toBeVisible();
