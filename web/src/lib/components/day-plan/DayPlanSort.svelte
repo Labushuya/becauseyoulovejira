@@ -195,4 +195,14 @@
 			min-height: var(--control-height-touch);
 		}
 	}
+
+	/*
+	 * Phone frame (MO-2, ADR-0073 addendum MO-2): "Sortierung" is a target of 44 px, its menu a sheet
+	 * (MO-1b); the direction and "Als manuelle Reihenfolge übernehmen" have their 44 px from base.css.
+	 */
+	@media (max-width: 39.99rem) {
+		:global(:root[data-mobile-layout='on']) .sort-menu :global(.toggle) {
+			min-height: var(--control-height-touch);
+		}
+	}
 </style>

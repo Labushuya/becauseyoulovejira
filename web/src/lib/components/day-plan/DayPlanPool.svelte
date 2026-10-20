@@ -3,6 +3,7 @@
 	import { limitBlocks } from '$lib/domain/subtasks';
 	import { matchesWordsWithParent, searchWords } from '$lib/domain/ticket-picker';
 	import type { TicketSummary } from '$lib/domain/ticket';
+	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 	import type { DayPlanStore } from '$lib/stores/day-plan.svelte';
 	import { ticketLinks } from '$lib/stores/open-mode.svelte';
 	import CharmIcon from '../CharmIcon.svelte';
@@ -24,16 +25,29 @@
 	// or by dragging it onto the plan, at the place where it is dropped. A long pool shows the first
 	// POOL_LIMIT tickets in whole blocks of a parent with its sub-tasks and says how many more the
 	// search can find. On a wide screen the pool stands next to the plan, on a narrow one below it
-	// (the view decides).
+	// (the view decides). In the phone frame (MO-2, ADR-0073 addendum MO-2) it is the section
+	// "Hinzufügen …" below the plan, folded like the suggestions (the heading is the button,
+	// aria-expanded), with the same search and "+"; nothing is dragged there, a long press stays the
+	// browser's.
 	const POOL_LIMIT = 60;
 
-	let { store }: { store: DayPlanStore } = $props();
+	let {
+		store,
+		open = $bindable(false)
+	}: {
+		store: DayPlanStore;
+		/** Whether the folded section of the phone frame is open; the PC always shows the pool. */
+		open?: boolean;
+	} = $props();
 
 	const uid = $props.id();
 	const headingId = `${uid}-heading`;
 	const searchId = `${uid}-search`;
 	const hintId = `${uid}-hint`;
+	const bodyId = `${uid}-body`;
 	const links = ticketLinks();
+	const mobileLayout = getMobileLayoutStore();
+	const phone = $derived(mobileLayout.active);
 
 	let text = $state('');
 
@@ -56,10 +70,36 @@
 </script>
 
 <section class="pool" aria-labelledby={headingId}>
-	<h3 id={headingId}>Pool</h3>
+	{#if phone}
+		<h3 id={headingId}>
+			<button
+				class="disclosure"
+				type="button"
+				aria-expanded={open}
+				aria-controls={bodyId}
+				onclick={() => (open = !open)}
+			>
+				<svg class="chevron" class:open viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+					<path d="M6 4l4 4-4 4" />
+				</svg>
+				Hinzufügen …
+			</button>
+		</h3>
+		<div class="body" id={bodyId} hidden={!open}>{@render body()}</div>
+	{:else}
+		<h3 id={headingId}>Pool</h3>
+		{@render body()}
+	{/if}
+</section>
+
+{#snippet body()}
 	<p class="hint" id={hintId}>
-		Offene Tickets dieses Bereichs, die noch nicht im Plan stehen. Mit „+“ aufnehmen oder auf den
-		Plan ziehen.
+		{#if phone}
+			Offene Tickets dieses Bereichs, die noch nicht im Plan stehen. Mit „+“ in den Plan aufnehmen.
+		{:else}
+			Offene Tickets dieses Bereichs, die noch nicht im Plan stehen. Mit „+“ aufnehmen oder auf den
+			Plan ziehen.
+		{/if}
 	</p>
 	<div class="search-field">
 		<label for={searchId}>
@@ -91,7 +131,7 @@
 				<li
 					class="ticket"
 					class:nested
-					draggable="true"
+					draggable={phone ? undefined : 'true'}
 					data-pool-ticket={ticket.id}
 					aria-busy={pending ? 'true' : undefined}
 					ondragstart={(event) => onDragStart(event, ticket)}
@@ -140,7 +180,7 @@
 			<p class="hint">{more} weitere – die Suche grenzt ein.</p>
 		{/if}
 	{/if}
-</section>
+{/snippet}
 
 <style>
 	.pool {
@@ -240,6 +280,58 @@
 		.add {
 			min-width: var(--control-height-touch);
 			min-height: var(--control-height-touch);
+		}
+	}
+
+	/*
+	 * Phone frame (MO-2, ADR-0073 addendum MO-2): the folded section "Hinzufügen …", its heading a
+	 * button of 44 px like "Vorschläge"; open, its content in the gaps of the pool. "+" has its 44 px
+	 * from base.css.
+	 */
+	@media (max-width: 39.99rem) {
+		:global(:root[data-mobile-layout='on']) .disclosure {
+			display: inline-flex;
+			gap: 0.375rem;
+			align-items: center;
+			min-height: var(--control-height-touch);
+			padding: 0 0.25rem;
+			font: inherit;
+			color: var(--color-text);
+			background: none;
+			border: none;
+			border-radius: var(--radius-control);
+			cursor: pointer;
+		}
+
+		:global(:root[data-mobile-layout='on']) .chevron {
+			width: 0.875rem;
+			height: 0.875rem;
+			fill: none;
+			stroke: currentColor;
+			stroke-width: 1.5;
+			stroke-linecap: round;
+			stroke-linejoin: round;
+			transition: transform var(--motion-fast) var(--motion-ease);
+		}
+
+		:global(:root[data-mobile-layout='on']) .chevron.open {
+			transform: rotate(90deg);
+		}
+
+		:global(:root[data-mobile-layout='on']) .body:not([hidden]) {
+			display: grid;
+			gap: 0.5rem;
+			min-width: 0;
+		}
+
+		:global(:root[data-mobile-layout='on']) .ticket {
+			cursor: default;
+		}
+
+		@media (prefers-reduced-motion: reduce) {
+			:global(:root[data-mobile-layout='on']) .chevron {
+				transition: none;
+			}
 		}
 	}
 </style>

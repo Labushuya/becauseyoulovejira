@@ -23,6 +23,7 @@
 	import { SOURCE_LABELS, initialsOf, type DayPlanSource } from '$lib/domain/day-plan';
 	import { personLabel } from '$lib/domain/people';
 	import { auth } from '$lib/auth.svelte';
+	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 	import type { DayPlanStore, PlanRow } from '$lib/stores/day-plan.svelte';
 	import { ticketLinks } from '$lib/stores/open-mode.svelte';
 	import { findPeople } from '$lib/stores/people.svelte';
@@ -54,6 +55,10 @@
 	// unit, done entries last) and moves nothing: no handle, no "nach oben"/"nach unten", no Alt+arrow;
 	// the hint of the sort describes the list. A ticket of the pool dropped on a sorted plan comes in
 	// without a place, the server puts it (TP-4) and the sort shows it.
+	// In the phone frame (MO-2, ADR-0073 addendum MO-2) an entry is "Haken · Titel · •••": the check
+	// mark in a target of 44 px (its label), the title in the rest of the row, the initials below it,
+	// and "Nach oben"/"Nach unten" move from the row into "•••" (one level deeper, with the same steps
+	// and the same announcement); no handle, dragging is no way on a phone. Alt+arrow stays.
 	let {
 		store,
 		household = false,
@@ -93,6 +98,9 @@
 	const editable = $derived(store.editable);
 	/** Only the manual order changes (TP-5, S3). */
 	const movable = $derived(editable && !sorted);
+	/** The phone frame (MO-2): moving through "•••" instead of the buttons and the handle. */
+	const mobileLayout = getMobileLayoutStore();
+	const phone = $derived(mobileLayout.active);
 
 	/** Whether an entry, a parent with its block (TP-4), stands at the bottom of the plan. */
 	function atBottom(row: PlanRow, index: number): boolean {
@@ -132,10 +140,11 @@
 		return added;
 	}
 
-	function menuOf(row: PlanRow): MenuAction[] {
+	function menuOf(row: PlanRow, index: number): MenuAction[] {
 		const id = row.item.id;
 		const ticket = row.ticket;
 		const items: MenuAction[] = [];
+		const pending = store.isPending(id);
 		if (row.kind === 'task' && !row.done) {
 			items.push({ label: 'Nur für heute abhaken', onselect: () => void store.checkToday(id) });
 		}
@@ -156,6 +165,22 @@
 							label: 'Als laufendes Vorhaben markieren',
 							onselect: () => void store.setKind(ticket.id, 'ongoing')
 						}
+			);
+		}
+		if (phone && movable) {
+			// The buttons of the row, one level deeper in the frame (MO-2); locked like them.
+			items.push(
+				{
+					label: 'Nach oben',
+					separated: true,
+					locked: index === 0 || pending,
+					onselect: () => void move(row, -1)
+				},
+				{
+					label: 'Nach unten',
+					locked: atBottom(row, index) || pending,
+					onselect: () => void move(row, 1)
+				}
 			);
 		}
 		items.push({ label: 'Entfernen', separated: true, onselect: () => void store.remove(id) });
@@ -280,7 +305,9 @@
 				size="compact"
 				title={editable ? 'Noch nichts geplant' : 'Kein Eintrag an diesem Tag'}
 				description={editable
-					? 'Vorschläge übernehmen, im Pool mit „+“ aufnehmen oder ein Ticket hierher ziehen.'
+					? phone
+						? 'Vorschläge übernehmen oder unter „Hinzufügen …“ mit „+“ aufnehmen.'
+						: 'Vorschläge übernehmen, im Pool mit „+“ aufnehmen oder ein Ticket hierher ziehen.'
 					: undefined}
 			/>
 		</div>
@@ -303,7 +330,7 @@
 					aria-busy={pending ? 'true' : undefined}
 					onkeydown={(event) => onRowKeydown(event, row)}
 				>
-					{#if movable}
+					{#if movable && !phone}
 						<span
 							class="handle"
 							draggable="true"
@@ -319,16 +346,24 @@
 							</svg>
 						</span>
 					{/if}
-					<input
-						class="check"
-						type="checkbox"
-						aria-label={checkLabel(row)}
-						checked={row.done}
-						disabled={!editable}
-						aria-disabled={pending ? 'true' : undefined}
-						onclick={(event) => onCheckClick(event, row)}
-						onchange={(event) => onCheckChange(event, row)}
-					/>
+					{#snippet check()}
+						<input
+							class="check"
+							type="checkbox"
+							aria-label={checkLabel(row)}
+							checked={row.done}
+							disabled={!editable}
+							aria-disabled={pending ? 'true' : undefined}
+							onclick={(event) => onCheckClick(event, row)}
+							onchange={(event) => onCheckChange(event, row)}
+						/>
+					{/snippet}
+					{#if phone}
+						<!-- A tap anywhere in the target of 44 px checks (MO-2); the name stays the box's. -->
+						<label class="check-target">{@render check()}</label>
+					{:else}
+						{@render check()}
+					{/if}
 					<span class="title-cell">
 						{#if ticket !== null}
 							{@const parent = store.parentOf(ticket)}
@@ -367,7 +402,7 @@
 					{/if}
 					{#if editable}
 						<span class="actions">
-							{#if movable}
+							{#if movable && !phone}
 								<button
 									class="button-icon"
 									type="button"
@@ -401,7 +436,7 @@
 								label={`Aktionen für ${key}`}
 								buttonLabel={`Weitere Aktionen für ${key}`}
 								buttonTitle="Weitere Aktionen"
-								items={menuOf(row)}
+								items={menuOf(row, index)}
 							/>
 						</span>
 					{/if}
@@ -551,6 +586,52 @@
 
 		.handle {
 			display: none;
+		}
+	}
+
+	/*
+	 * Phone frame (MO-2, ADR-0073 addendum MO-2): "Haken · Titel · •••". The check mark has a target
+	 * of 44 px in both directions, "•••" has its 44 px from base.css, the title takes the rest of the
+	 * row (at 360 px about two thirds) and wraps; the initials of a household stand below it. Narrow
+	 * gaps and paddings, so the title gets the space.
+	 */
+	@media (max-width: 39.99rem) {
+		:global(:root[data-mobile-layout='on']) .entry {
+			display: grid;
+			grid-template-columns: auto minmax(0, 1fr) auto;
+			column-gap: 0.25rem;
+			min-height: var(--control-height-touch);
+			padding: 0 0.25rem 0 0;
+		}
+
+		:global(:root[data-mobile-layout='on']) .check-target {
+			display: inline-flex;
+			grid-row: 1 / span 2;
+			grid-column: 1;
+			align-items: center;
+			justify-content: center;
+			align-self: center;
+			min-width: var(--control-height-touch);
+			min-height: var(--control-height-touch);
+			cursor: pointer;
+		}
+
+		:global(:root[data-mobile-layout='on']) .title-cell {
+			grid-row: 1;
+			grid-column: 2;
+			padding: 0.375rem 0;
+		}
+
+		:global(:root[data-mobile-layout='on']) .people {
+			grid-row: 2;
+			grid-column: 2;
+			padding-bottom: 0.375rem;
+		}
+
+		:global(:root[data-mobile-layout='on']) .actions {
+			grid-row: 1 / span 2;
+			grid-column: 3;
+			align-self: center;
 		}
 	}
 </style>

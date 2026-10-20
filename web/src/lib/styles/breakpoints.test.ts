@@ -129,10 +129,16 @@ describe('breakpoints (MO-1a, ADR-0073)', () => {
 		}
 		// The margin of the pages, the end of the page above the bottom bar, the flags above it (and at
 		// the top while a sheet is open); since MO-1b the targets of 44 px, the options of 44 px of the
-		// suggestions and the safe areas of the panel as a page.
+		// suggestions and the safe areas of the panel as a page; since MO-2 the day plan (row, head,
+		// folded suggestions and pool, "Sortierung").
 		expect([...new Set(places)].sort()).toEqual([
 			'lib/components/SuggestionList.svelte',
 			'lib/components/ViewWithPanel.svelte',
+			'lib/components/day-plan/DayPlanList.svelte',
+			'lib/components/day-plan/DayPlanPool.svelte',
+			'lib/components/day-plan/DayPlanSort.svelte',
+			'lib/components/day-plan/DayPlanSuggestions.svelte',
+			'lib/components/day-plan/DayPlanView.svelte',
 			'lib/components/overlay/FlagGroup.svelte',
 			'lib/styles/base.css',
 			'lib/styles/tokens.css',
