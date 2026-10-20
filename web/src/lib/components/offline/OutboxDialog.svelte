@@ -2,6 +2,7 @@
 	import { untrack } from 'svelte';
 	import type { ResolvedPathname } from '$app/types';
 	import {
+		CLOCK_CODE,
 		OFFLINE_TEXTS,
 		OPEN_CHILDREN_CODE,
 		actionText,
@@ -24,8 +25,10 @@
 	// stands. A waiting one can be discarded (the flag offers "Rückgängig"); a conflict shows the
 	// own change and what happened meanwhile with "Meine Änderung übernehmen" (sends again, now based
 	// on the new value), "Verwerfen" and "Ticket öffnen"; open sub-tasks of a completion the known
-	// question; a refusal its reason with "Details"; one older than 48 hours "Trotzdem übertragen".
-	// It opens only through "Ansehen" or the symbol in the top bar, never on its own (ADR-0025).
+	// question; a refusal its reason with "Details"; one older than 48 hours or with a time of the
+	// device in the future (OF-2b) "Trotzdem übertragen". The buttons run steps of the outbox that
+	// never reject; a failing storage shows its own flag (OF-2b). It opens only through "Ansehen" or
+	// the symbol in the top bar, never on its own (ADR-0025).
 	let {
 		outbox,
 		onclose,
@@ -99,6 +102,13 @@
 
 	function asksChildren(action: OutboxAction): boolean {
 		return action.state === 'refused' && action.outcome?.code === OPEN_CHILDREN_CODE;
+	}
+
+	/** Why a change was not sent on its own: older than 48 hours, or the clock (OF-2b). */
+	function expiredHint(action: OutboxAction): string {
+		return action.outcome?.code === CLOCK_CODE
+			? OFFLINE_TEXTS.clockHint
+			: OFFLINE_TEXTS.expiredHint;
 	}
 </script>
 
@@ -177,7 +187,7 @@
 							{/if}
 						</div>
 					{:else if action.state === 'expired'}
-						<p class="detail">{OFFLINE_TEXTS.expiredHint}</p>
+						<p class="detail">{expiredHint(action)}</p>
 						<div class="buttons">
 							<button
 								class="button-primary button-small"

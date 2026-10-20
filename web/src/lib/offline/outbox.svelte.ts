@@ -1,27 +1,37 @@
-// The outbox of the SPA (OF-2, ADR-0074 and its addendum OF-2; concept OF-0 §3). It keeps single
-// changes of the status of a ticket that could not reach the server and sends them later over the
-// normal way (data layer → Record API → hooks), with the identifier of the action, the time of the
-// device and the value before. Never a copy of data: the stores keep the state of the server, the
-// outbox lays its waiting actions over it (`apply`) and marks the tickets (`markOf`).
+// The outbox of the SPA (OF-2, ADR-0074 and its addenda OF-2 and OF-2b; concept OF-0 §3). It keeps
+// single changes of the status of a ticket that could not reach the server and sends them later over
+// the normal way (data layer → Record API → hooks), with the identifier of the action, the time of
+// the device and the value before. Never a copy of data: the stores keep the state of the server,
+// the outbox lays its waiting actions over it (`apply`) and marks the tickets (`markOf`).
 //
 // - It works only while the server reports `offline_ops` and the phone frame applies (switch
 //   "Handy-Ansicht (Vorschau)" on and a narrow window, `setFrame`). Otherwise every change goes the
 //   way of today, without identifier, time limit or notice. Actions kept in the frame are still sent
-//   and shown when the frame no longer applies (the phone turned), so nothing hangs.
+//   and shown when the frame no longer applies (the phone turned), so nothing hangs; outside of the
+//   frame a change of a ticket goes through the outbox only behind one that waits to be sent.
 // - A change with a connection is sent at once, with its identifier only (the result and the
 //   messages stay the ones of today); only when the answer does not come (no connection, 12 s
-//   limit) it stays in the outbox, and the store gets the value as a provisional answer.
+//   limit) it stays in the outbox, and the store gets the value as a provisional answer. An action
+//   is marked as sent before every attempt and is never taken into another change after that
+//   (OF-2b): marking and taking in are compare-and-swaps of the storage, so they never overwrite
+//   each other, in one tab or across tabs.
 // - The actions belong to the signed-in account: another account never sends them, and they are
 //   deleted when another account signs in (decision of the user 4). "Abmelden" deletes them after
-//   the question (`clearUser`); an ended session keeps them.
+//   the question (`clearUser`), also when this tab never read the device; an ended session keeps
+//   them. Before every request the client has to be signed in with the account of the action.
 // - One tab sends (OutboxRunner with the lease of the device); the BroadcastChannel "byl-outbox"
-//   tells the other tabs to read the device again.
+//   tells the other tabs to read the device again. Its identifier and the channel come with the
+//   first watch, so without the capability nothing is created in the browser.
+// - A failing storage of the device shows as an error flag with "Details", never as an uncaught
+//   rejection.
 
 import { createContext } from 'svelte';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { DataError, problemOf, toDataError, withIntent } from '$lib/data/errors';
 import {
+	CLOCK_CODE,
 	FAILURES_BEFORE_NOTICE,
+	OFFLINE_INTENTS,
 	OFFLINE_TEXTS,
 	SEND_TIMEOUT_MS,
 	actionText,
@@ -29,6 +39,7 @@ import {
 	backoffDelay,
 	hasRoom,
 	inOrder,
+	isFromTheFuture,
 	isWaiting,
 	newOpId,
 	nextToSend,
@@ -36,9 +47,12 @@ import {
 	overlayStatus,
 	parseAction,
 	planStatusChange,
+	rebasedBehind,
 	requestFields,
+	sameAction,
 	supportsKind,
 	verdictOf,
+	type ChangePlan,
 	type OfflineOps,
 	type OutboxAction,
 	type OutboxFields
@@ -54,6 +68,11 @@ import { OutboxRunner } from './outbox-runner';
 import type { OutboxStorage } from './outbox-storage';
 
 export const OUTBOX_CHANNEL = 'byl-outbox';
+
+/** How often a change is planned again when the device changed meanwhile (another step or tab). */
+const PLAN_ROUNDS = 3;
+/** How often in a row the worker may find an action changed before it gives the run up. */
+const SWAP_MISSES = 3;
 
 /** The messages between the tabs: only "read the device again", never a value. */
 export interface OutboxChannel {
@@ -86,13 +105,16 @@ export interface OutboxDeps {
 	send(action: OutboxAction, fields: OutboxFields, signal: AbortSignal): Promise<Ticket>;
 	/** Reads a ticket again (after a conflict, a refusal, an action that arrived before). */
 	get(id: string): Promise<Ticket>;
-	/** The identifier of this tab. */
-	tab: string;
+	/** The identifier of this tab, or where to get it on the first watch (sessionStorage). */
+	tab: string | (() => string);
+	/** The account the client is signed in with now (`pb.authStore`); without it the attached one. */
+	account?: () => string | null;
 	now?: () => number;
 	random?: () => number;
 	fill?: (bytes: Uint8Array<ArrayBuffer>) => Uint8Array;
 	timers?: Timers;
-	channel?: OutboxChannel | null;
+	/** The channel between the tabs, or where to open it on the first watch; null without one. */
+	channel?: OutboxChannel | null | (() => OutboxChannel | null);
 	win?: Window | null;
 	/** Lets the monitor watch every request of the SDK (lib/pocketbase.ts), null stops it. */
 	observe?: (note: ((outcome: RequestOutcome) => void) | null) => void;
@@ -151,7 +173,6 @@ export class OutboxStore {
 	readonly #random: () => number;
 	readonly #fill: (bytes: Uint8Array<ArrayBuffer>) => Uint8Array;
 	readonly #timers: Timers;
-	readonly #channel: OutboxChannel | null;
 
 	#user = $state<string | null>(null);
 	#support = $state.raw<OfflineOps | null>(null);
@@ -172,6 +193,13 @@ export class OutboxStore {
 	#stopWatching: (() => void) | null = null;
 	#stopChannel: (() => void) | null = null;
 	#sentInRun = 0;
+	#swapMisses = 0;
+	/** The identifier of the tab and the channel, made on the first watch (G1). */
+	#opened = false;
+	#tab = '';
+	#channel: OutboxChannel | null = null;
+	/** The flag about a failing storage of the device while it is shown, so it comes once. */
+	#storageFlag: string | null = null;
 	/** The state of the server per ticket as last seen, for the display after a discarded action. */
 	readonly #base = new SvelteMap<string, TicketSummary>();
 	/** Tickets the outbox made itself (overlays), never taken as the state of the server. */
@@ -185,7 +213,6 @@ export class OutboxStore {
 		this.#random = deps.random ?? Math.random;
 		this.#fill = deps.fill ?? randomFill;
 		this.#timers = deps.timers ?? WINDOW_TIMERS;
-		this.#channel = deps.channel ?? null;
 		this.#connectivity.onChange((offline) => {
 			if (!offline) this.#runner?.kick();
 		});
@@ -210,6 +237,11 @@ export class OutboxStore {
 	/** The outbox watches the connection: armed, or actions of the account wait on the device. */
 	get watching(): boolean {
 		return this.#watching;
+	}
+
+	/** The outbox worked in this tab or keeps changes; the error page then watches the connection. */
+	get inUse(): boolean {
+		return this.armed || this.#actions.length > 0;
 	}
 
 	/** The server reports the outbox for the change of the status (`offline_ops`). */
@@ -273,10 +305,15 @@ export class OutboxStore {
 		return this.offline && this.#actions.length > 0;
 	}
 
-	/** Whether a change of this ticket goes through the outbox (armed, or it has actions waiting). */
+	/**
+	 * Whether a change of this ticket goes through the outbox: armed, or, outside of the frame, a
+	 * change of the ticket waits to be sent and asks for the order (G2). Behind one that waits for a
+	 * decision a change goes the way of before OF-2.
+	 */
 	routes(id: string): boolean {
 		if (this.armed) return true;
-		return this.#canSend && this.#loaded && this.#actions.some((action) => action.target === id);
+		if (!this.#canSend || !this.#loaded) return false;
+		return this.#actions.some((action) => action.target === id && isWaiting(action));
 	}
 
 	/** The mark of a ticket for rows, cards, the panel and the sub-tasks. */
@@ -422,9 +459,27 @@ export class OutboxStore {
 		}
 	}
 
+	/**
+	 * The identifier of the tab and the channel between the tabs, made on the first watch (G1): a
+	 * tab whose outbox never works creates neither. A listener that started before the channel
+	 * existed starts again with it (`#update` right after).
+	 */
+	#open(): void {
+		if (this.#opened) return;
+		this.#opened = true;
+		const { tab, channel } = this.#deps;
+		this.#tab = typeof tab === 'function' ? tab() : tab;
+		this.#channel = typeof channel === 'function' ? channel() : (channel ?? null);
+		if (this.#channel !== null && this.#stopChannel !== null) {
+			this.#stopChannel();
+			this.#stopChannel = null;
+		}
+	}
+
 	#watch(): void {
 		const storage = this.#storage;
 		if (storage === null) return;
+		this.#open();
 		const stops: (() => void)[] = [];
 		stops.push(this.#connectivity.start(this.#deps.win ?? null));
 		this.#deps.observe?.((outcome) => this.#connectivity.note(outcome));
@@ -433,12 +488,13 @@ export class OutboxStore {
 		stops.push(() => this.#deps.watchRealtime?.(null));
 		const runner = new OutboxRunner({
 			storage,
-			tab: this.#deps.tab,
+			tab: this.#tab,
 			now: this.#now,
 			timers: this.#timers,
 			ready: () => this.#ready(),
-			step: () => this.#step(),
-			settled: () => this.#settled()
+			step: () => withIntent(OFFLINE_INTENTS.send, () => this.#step()),
+			settled: () => this.#settled(),
+			failed: (error) => this.#report(error)
 		});
 		this.#runner = runner;
 		stops.push(() => runner.stop());
@@ -454,7 +510,10 @@ export class OutboxStore {
 		const user = this.#user;
 		if (storage === null || user === null) return;
 		const reread = () => {
-			if (this.#user === user) void this.#read(storage, user, false).then(() => this.#update());
+			if (this.#user !== user) return;
+			void this.#guard(OFFLINE_INTENTS.read, () => this.#read(storage, user, false)).then(() =>
+				this.#update()
+			);
 		};
 		const stops: (() => void)[] = [];
 		if (this.#channel !== null) stops.push(this.#channel.listen(reread));
@@ -482,6 +541,38 @@ export class OutboxStore {
 
 	#post(): void {
 		this.#channel?.post();
+	}
+
+	/** The client is signed in with `user` (pb.authStore, G3); without the hook the attached account. */
+	#signedIn(user: string): boolean {
+		const account = this.#deps.account;
+		return (account === undefined ? this.#user : account()) === user;
+	}
+
+	/**
+	 * An error of the storage of the device as an error flag with "Details" (G6b), one at a time;
+	 * the intent of the step comes with the error (`withIntent`).
+	 */
+	#report(error: unknown): void {
+		const sink = this.#sink;
+		if (sink === null || this.#storageFlag !== null) return;
+		this.#storageFlag = sink.flags.show({
+			tone: 'error',
+			title: OFFLINE_TEXTS.storageFailed,
+			problem: problemOf(error),
+			onclose: () => {
+				this.#storageFlag = null;
+			}
+		});
+	}
+
+	/** Runs a step on the device; a failure shows as the flag of `#report` instead of a rejection. */
+	async #guard(intent: string, run: () => Promise<void>): Promise<void> {
+		try {
+			await withIntent(intent, run);
+		} catch (error) {
+			this.#report(error);
+		}
 	}
 
 	// ----- the overlay -----
@@ -543,59 +634,94 @@ export class OutboxStore {
 		this.#remember(base);
 		// A storage that fails keeps nothing: a change with a connection then goes as today.
 		const seq = await storage.nextSeq().catch(() => 0);
-		const plan = planStatusChange(
-			this.#actions,
-			{
-				target: ticket.id,
-				key: ticket.key,
-				title: ticket.title,
-				scope: ticket.scope ?? '',
-				base: base.status,
-				status: request.status,
-				...(request.completion !== undefined && { completion: request.completion }),
-				...(request.children !== undefined && { children: request.children })
-			},
-			{ user, op: newOpId(this.#fill), seq, now: this.#now(), offline: this.offline }
-		);
-		if (plan.kind === 'none') return ticket;
-		if (plan.kind === 'send') {
-			if (!hasRoom(this.#actions, plan.action)) throw new OutboxFullError();
-			return this.#sendFirst(plan.action, base);
-		}
-		if (plan.kind !== 'cancel' && !hasRoom(this.#actions, plan.action)) {
-			throw new OutboxFullError();
-		}
-		try {
-			if (plan.kind === 'cancel') await this.#forget([plan.op]);
-			else await this.#keep(plan.action);
-		} catch (error) {
-			// The device keeps nothing: nothing was noted, as without the outbox.
-			throw new DataError('network', { cause: error });
+		const op = newOpId(this.#fill);
+		const now = this.#now();
+		for (let round = 1; ; round += 1) {
+			const plan = planStatusChange(
+				this.#actions,
+				{
+					target: ticket.id,
+					key: ticket.key,
+					title: ticket.title,
+					scope: ticket.scope ?? '',
+					base: base.status,
+					status: request.status,
+					...(request.completion !== undefined && { completion: request.completion }),
+					...(request.children !== undefined && { children: request.children })
+				},
+				{ user, op, seq, now, offline: this.offline }
+			);
+			if (plan.kind === 'none') return ticket;
+			// A full device keeps nothing more; with a connection the change goes as before OF-2 (G4).
+			if (plan.kind === 'send') {
+				return this.#sendFirst(plan.action, base, hasRoom(this.#actions, plan.action));
+			}
+			if (plan.kind !== 'cancel' && !hasRoom(this.#actions, plan.action)) {
+				throw new OutboxFullError();
+			}
+			let written: boolean;
+			try {
+				written = await this.#write(plan);
+				// The device changed meanwhile (the worker marked the action, another tab): read it and
+				// plan again, so a change never goes into an action that left the device (H1).
+				if (!written && round < PLAN_ROUNDS) await this.#read(storage, user, false);
+			} catch (error) {
+				// The device keeps nothing: nothing was noted, as without the outbox.
+				throw new DataError('network', { cause: error });
+			}
+			if (written) break;
+			if (round >= PLAN_ROUNDS) throw new DataError('network');
 		}
 		this.#runner?.kick();
 		return this.#shown(base);
 	}
 
 	/**
-	 * The first attempt right after the change, kept first, so a closed tab loses nothing. Without an
-	 * answer it stays for later; any answer of the server counts as today (refused: an error).
+	 * Writes the plan of a change that is not sent at once: a new action, or, as a compare-and-swap,
+	 * the action it takes the change into or drops. False when that action changed meanwhile.
 	 */
-	async #sendFirst<T extends TicketSummary>(action: OutboxAction, base: T): Promise<T> {
-		const kept = await this.#keep(action).then(
-			() => true,
-			() => false
-		);
+	async #write(plan: Exclude<ChangePlan, { kind: 'none' | 'send' }>): Promise<boolean> {
+		if (plan.kind === 'queue') {
+			await this.#keep(plan.action);
+			return true;
+		}
+		const op = plan.kind === 'cancel' ? plan.op : plan.action.op;
+		const before = this.#find(op);
+		if (before === undefined) return false;
+		return this.#swap(before, plan.kind === 'cancel' ? null : plan.action);
+	}
+
+	/**
+	 * The first attempt right after the change, kept first, so a closed tab loses nothing; on a full
+	 * device (`keep` false) as before OF-2, without keeping it (G4). Without an answer it stays for
+	 * later; any answer of the server counts as today (refused: an error). Only with the account of
+	 * the action (G3).
+	 */
+	async #sendFirst<T extends TicketSummary>(
+		action: OutboxAction,
+		base: T,
+		keep: boolean
+	): Promise<T> {
+		if (!this.#signedIn(action.user)) throw new DataError('session');
+		const kept =
+			keep &&
+			(await this.#keep(action).then(
+				() => true,
+				() => false
+			));
 		const result = await this.#attempt(action, true);
 		if (result.ok) {
 			if (kept) await this.#forget([action.op]).catch(() => undefined);
 			return this.apply(result.ticket as unknown as T);
 		}
-		if (kept && verdictOf(result.failure).result === 'network') {
+		const network = verdictOf(result.failure).result === 'network';
+		if (kept && network) {
 			await this.#keep(withoutSending({ ...action, state: 'queued' }));
 			void this.#connectivity.check();
 			return this.#shown(base);
 		}
 		if (kept) await this.#forget([action.op]).catch(() => undefined);
+		if (network) void this.#connectivity.check();
 		throw result.failure;
 	}
 
@@ -616,11 +742,8 @@ export class OutboxStore {
 		}
 	}
 
-	/** Stores an action of the signed-in account (new or changed) and tells the other tabs. */
-	async #keep(action: OutboxAction): Promise<void> {
-		const storage = this.#storage;
-		if (storage === null) throw new DataError('network');
-		await storage.put(action);
+	/** Takes a stored or changed action of the signed-in account in and tells the other tabs. */
+	#held(action: OutboxAction): void {
 		if (action.user !== this.#user) return;
 		const rest = this.#actions.filter((entry) => entry.op !== action.op);
 		this.#actions = inOrder([...rest, action]);
@@ -628,22 +751,60 @@ export class OutboxStore {
 		this.#update();
 	}
 
-	/** Deletes actions and tells the other tabs. */
-	async #forget(ops: readonly string[]): Promise<void> {
-		if (ops.length === 0) return;
-		await this.#storage?.remove(ops);
+	/** Lets deleted actions go and tells the other tabs. */
+	#gone(ops: readonly string[]): void {
 		this.#actions = this.#actions.filter((action) => !ops.includes(action.op));
 		for (const op of ops) this.#problems.delete(op);
 		this.#post();
 		this.#update();
 	}
 
+	/** Stores an action of the signed-in account (new or changed) and tells the other tabs. */
+	async #keep(action: OutboxAction): Promise<void> {
+		const storage = this.#storage;
+		if (storage === null) throw new DataError('network');
+		await storage.put(action);
+		this.#held(action);
+	}
+
+	/**
+	 * Replaces `before` by `next` (deletes it for null), but only while the device still holds it as
+	 * it is (OF-2b); false when another step or tab changed it meanwhile.
+	 */
+	async #swap(before: OutboxAction, next: OutboxAction | null): Promise<boolean> {
+		const storage = this.#storage;
+		if (storage === null) throw new DataError('network');
+		const wrote = await storage.swap(before.op, (current) => sameAction(current, before), next);
+		if (!wrote) return false;
+		if (next === null) this.#gone([before.op]);
+		else this.#held(next);
+		return true;
+	}
+
+	/** Deletes actions and tells the other tabs. */
+	async #forget(ops: readonly string[]): Promise<void> {
+		if (ops.length === 0) return;
+		await this.#storage?.remove(ops);
+		this.#gone(ops);
+	}
+
+	/**
+	 * Waiting actions older than 48 hours, or whose time lies in the future, wait for a decision; an
+	 * action from the future names the clock (G4). Those older than 7 days go.
+	 */
 	async #age(now: number): Promise<void> {
 		const { expire, drop } = agedActions(this.#actions, now);
 		await this.#forget(drop);
 		for (const op of expire) {
-			const action = this.#actions.find((entry) => entry.op === op);
-			if (action !== undefined) await this.#keep({ ...action, state: 'expired' });
+			const action = this.#find(op);
+			if (action === undefined) continue;
+			const clock = isFromTheFuture(action, now);
+			const expired = withoutSending({
+				...action,
+				state: 'expired',
+				...(clock && { outcome: { code: CLOCK_CODE, message: OFFLINE_TEXTS.clockHint } })
+			});
+			await this.#swap(action, expired);
 		}
 	}
 
@@ -653,6 +814,8 @@ export class OutboxStore {
 		return (
 			this.#canSend &&
 			this.#loaded &&
+			this.#user !== null &&
+			this.#signedIn(this.#user) &&
 			!this.#connectivity.offline &&
 			nextToSend(this.#actions, this.#now()) !== null
 		);
@@ -662,9 +825,21 @@ export class OutboxStore {
 		const now = this.#now();
 		await this.#age(now);
 		const next = nextToSend(this.#actions, now);
-		if (next === null || this.#connectivity.offline || this.#user === null) return false;
-		const sending: OutboxAction = { ...next, state: 'sending', sendingSince: now };
-		await this.#keep(sending);
+		const user = this.#user;
+		const storage = this.#storage;
+		if (next === null || this.#connectivity.offline || user === null || storage === null) {
+			return false;
+		}
+		if (!this.#signedIn(next.user)) return false;
+		// Marked as sent before the request, in one transaction with the check that nobody changed
+		// it meanwhile; a change of the same ticket then becomes an action of its own (H1).
+		const sending: OutboxAction = { ...next, state: 'sending', sendingSince: now, sent: true };
+		if (!(await this.#swap(next, sending))) {
+			this.#swapMisses += 1;
+			await this.#read(storage, user, false);
+			return this.#swapMisses < SWAP_MISSES;
+		}
+		this.#swapMisses = 0;
 		this.#progress = {
 			index: this.#sentInRun + 1,
 			count: this.#sentInRun + this.#actions.filter(isWaiting).length
@@ -748,37 +923,61 @@ export class OutboxStore {
 	/** "Erneut versuchen": asks the server and sends what waits, also after errors of the server. */
 	async retry(): Promise<void> {
 		this.#failing = null;
-		for (const action of this.#actions) {
-			if (action.state === 'queued' && action.nextAttemptAt > 0) {
-				await this.#keep({ ...action, nextAttemptAt: 0 });
+		await this.#guard(OFFLINE_INTENTS.retry, async () => {
+			for (const action of this.#actions) {
+				if (action.state === 'queued' && action.nextAttemptAt > 0) {
+					await this.#keep({ ...action, nextAttemptAt: 0 });
+				}
 			}
-		}
+		});
 		await this.#connectivity.check();
 		this.#runner?.kick();
 	}
 
+	/** The last known state of the server behind an action: of its conflict, else as last seen. */
+	#serverStatusOf(action: OutboxAction): Status | null {
+		const actual = action.outcome?.actual;
+		if (isStatus(actual)) return actual;
+		return this.#base.get(action.target)?.status ?? null;
+	}
+
+	/** The waiting actions right behind `op` are based on `status` from now on (G6c). */
+	async #rebase(op: string, status: Status | null): Promise<void> {
+		if (status === null) return;
+		for (const next of rebasedBehind(this.#actions, op, status)) await this.#keep(next);
+	}
+
 	/**
 	 * "Verwerfen" of an action that is not under way: it goes, the ticket shows as before, and a flag
-	 * offers "Rückgängig" (concept §2.1).
+	 * offers "Rückgängig" (concept §2.1). A change waiting behind it is based on the last known state
+	 * of the server from now on and may go (G6c); a failing storage shows its flag (G6b).
 	 */
 	async discard(op: string): Promise<void> {
 		const action = this.#find(op);
 		if (action === undefined || action.state === 'sending') return;
-		await this.#forget([op]);
-		const base = this.#base.get(action.target);
-		if (base !== undefined) this.#sink?.upsert(base);
-		this.#sink?.flags.show({
-			tone: 'success',
-			title: OFFLINE_TEXTS.discarded(actionText(action)),
-			action: { label: OFFLINE_TEXTS.undo, run: () => void this.#restore(action) }
+		await this.#guard(OFFLINE_INTENTS.discard(actionText(action)), async () => {
+			// First the ones behind it: they cannot go while it is there.
+			await this.#rebase(action.op, this.#serverStatusOf(action));
+			await this.#forget([op]);
+			const base = this.#base.get(action.target);
+			if (base !== undefined) this.#sink?.upsert(base);
+			this.#sink?.flags.show({
+				tone: 'success',
+				title: OFFLINE_TEXTS.discarded(actionText(action)),
+				action: { label: OFFLINE_TEXTS.undo, run: () => void this.#restore(action) }
+			});
 		});
+		this.#runner?.kick();
 	}
 
 	async #restore(action: OutboxAction): Promise<void> {
 		if (action.user !== this.#user) return;
-		await this.#keep(action);
-		const base = this.#base.get(action.target);
-		if (base !== undefined) this.#sink?.upsert(base);
+		await this.#guard(OFFLINE_INTENTS.restore(actionText(action)), async () => {
+			await this.#keep(action);
+			await this.#rebase(action.op, action.payload.status);
+			const base = this.#base.get(action.target);
+			if (base !== undefined) this.#sink?.upsert(base);
+		});
 		this.#runner?.kick();
 	}
 
@@ -787,14 +986,18 @@ export class OutboxStore {
 		const action = this.#find(op);
 		const actual = action?.outcome?.actual;
 		if (action === undefined || action.state !== 'conflict' || !isStatus(actual)) return;
-		await this.#requeue(action, { expected: { status: actual } });
+		await this.#guard(OFFLINE_INTENTS.takeMine(actionText(action)), () =>
+			this.#requeue(action, { expected: { status: actual } })
+		);
 	}
 
 	/** "Trotzdem übertragen" after 48 hours: sent without the time of the device (decision 2). */
 	async sendAnyway(op: string): Promise<void> {
 		const action = this.#find(op);
 		if (action === undefined || action.state !== 'expired') return;
-		await this.#requeue(action, { late: true });
+		await this.#guard(OFFLINE_INTENTS.sendAnyway(actionText(action)), () =>
+			this.#requeue(action, { late: true })
+		);
 	}
 
 	/** The answer to the open sub-tasks of a completion: "Trotzdem erledigen" or "… mit erledigen". */
@@ -803,10 +1006,12 @@ export class OutboxStore {
 		if (action === undefined || action.state !== 'refused') return;
 		const children =
 			choice === 'complete_children' ? [...(this.#sink?.childrenOf?.(action.target) ?? [])] : [];
-		await this.#requeue(action, {
-			completion: choice,
-			...(choice === 'complete_children' ? { children } : {})
-		});
+		await this.#guard(OFFLINE_INTENTS.answerChildren(actionText(action)), () =>
+			this.#requeue(action, {
+				completion: choice,
+				...(choice === 'complete_children' ? { children } : {})
+			})
+		);
 	}
 
 	async #requeue(action: OutboxAction, change: Partial<OutboxAction>): Promise<void> {
@@ -826,10 +1031,46 @@ export class OutboxStore {
 		this.#runner?.kick();
 	}
 
-	/** "Abmelden und verwerfen": every action of the signed-in account goes (decision 4). */
+	// ----- signing out -----
+
+	/**
+	 * "Abmelden" has to read the device itself (G3): this tab never read it (the server without
+	 * `offline_ops`, outside of the frame), but it may hold changes of the account.
+	 */
+	get readsOnSignOut(): boolean {
+		return !this.#loaded && this.#storage !== null && this.#user !== null;
+	}
+
+	/** The identifiers of the changes of the signed-in account on the device, without creating it. */
+	async #opsOfAccount(): Promise<string[]> {
+		const storage = this.#storage;
+		const user = this.#user;
+		if (storage === null || user === null) return [];
+		if (this.#deps.exists !== undefined && !(await this.#deps.exists())) return [];
+		const ops: string[] = [];
+		for (const entry of await storage.list()) {
+			const action = parseAction(entry);
+			if (action?.user === user) ops.push(action.op);
+		}
+		return ops;
+	}
+
+	/** How many changes of the signed-in account the device keeps, read directly (G3). */
+	async keptOfAccount(): Promise<number> {
+		return (await this.#opsOfAccount()).length;
+	}
+
+	/**
+	 * "Abmelden und verwerfen": every action of the signed-in account goes (decision 4), also when
+	 * this tab never read the device (G3).
+	 */
 	async clearUser(): Promise<void> {
-		const ops = this.#actions.map((action) => action.op);
-		await this.#forget(ops);
+		if (this.#loaded) {
+			await this.#forget(this.#actions.map((action) => action.op));
+			return;
+		}
+		const ops = await this.#opsOfAccount();
+		if (ops.length > 0) await this.#storage?.remove(ops);
 	}
 }
 

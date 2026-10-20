@@ -1,13 +1,19 @@
 // The hints, the symbol, the mark and the dialog of the outbox (OF-2, concept OF-0 §2.1, §2.3):
 // without a connection a warning without red with "Erneut versuchen" and the number of kept
-// changes; conflicts, refusals and changes older than 48 hours with "Ansehen"; the dialog
-// "Gemerkte Änderungen" with the choices of each state; the mark "Noch nicht übertragen" for
-// screen readers.
+// changes; conflicts, refusals, changes older than 48 hours and, since OF-2b, those whose time of
+// the device lies in the future with "Ansehen"; the dialog "Gemerkte Änderungen" with the choices of
+// each state; the mark "Noch nicht übertragen" for screen readers.
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AUTO_SEND_MS, type ActionOutcome, type OutboxAction } from '$lib/domain/offline';
+import {
+	AUTO_SEND_MS,
+	CLOCK_CODE,
+	OFFLINE_TEXTS,
+	type ActionOutcome,
+	type OutboxAction
+} from '$lib/domain/offline';
 import { ConnectivityStore } from '$lib/offline/connectivity.svelte';
 import { OutboxStore } from '$lib/offline/outbox.svelte';
 import { MemoryOutboxStorage } from '$lib/offline/outbox-storage';
@@ -141,6 +147,22 @@ describe('OfflineNotice', () => {
 		expect(tones).toEqual(['warning', 'error', 'warning']);
 		expect(screen.getAllByRole('button', { name: 'Ansehen' })).toHaveLength(3);
 	});
+
+	it('names a change whose time of the device lies in the future apart from the old ones (OF-2b)', async () => {
+		const clock: ActionOutcome = { code: CLOCK_CODE, message: OFFLINE_TEXTS.clockHint };
+		const actions = [stored({ state: 'expired', outcome: clock }), other(2, { createdAt: LATE })];
+		const outbox = await outboxWith(actions, true);
+		const { container } = render(OfflineNotice, { props: { outbox, onshow: vi.fn() } });
+		const text = statusText();
+		expect(text).toContain('1 Änderung ist älter als 48 Stunden und wurde nicht übertragen.');
+		expect(text).toContain(
+			'Bei 1 Änderung liegt die Zeit des Geräts in der Zukunft; sie wurde nicht übertragen.'
+		);
+		const tones = [...container.querySelectorAll('.section-message')].map((element) =>
+			element.getAttribute('data-tone')
+		);
+		expect(tones).toEqual(['warning', 'warning']);
+	});
 });
 
 describe('OutboxButton', () => {
@@ -223,5 +245,20 @@ describe('OutboxDialog', () => {
 		expect(buttons.getByRole('button', { name: 'Trotzdem erledigen' })).toBeTruthy();
 		expect(dialog().textContent).toContain('Älter als 48 Stunden, nicht von selbst übertragen.');
 		expect(buttons.getByRole('button', { name: 'Trotzdem übertragen' })).toBeTruthy();
+	});
+
+	it('says why a change from the future waits and offers "Trotzdem übertragen" and "Verwerfen" (OF-2b)', async () => {
+		const clock: ActionOutcome = { code: CLOCK_CODE, message: OFFLINE_TEXTS.clockHint };
+		const outbox = await outboxWith([stored({ state: 'expired', outcome: clock })], true);
+		render(OutboxDialog, { props: { outbox, onclose: vi.fn(), ticketHref: href } });
+		expect(dialog().textContent).toContain(
+			'Die Zeit des Geräts liegt in der Zukunft, deshalb nicht von selbst übertragen.'
+		);
+		expect(dialog().textContent).not.toContain('Älter als 48 Stunden');
+		const buttons = within(dialog());
+		expect(buttons.getByRole('button', { name: 'Trotzdem übertragen' })).toBeTruthy();
+		await fireEvent.click(buttons.getByRole('button', { name: 'Verwerfen' }));
+		await vi.advanceTimersByTimeAsync(0);
+		expect(outbox.count).toBe(0);
 	});
 });

@@ -16,26 +16,50 @@
 	// page offers "Neu laden". Both ways out load a new document, so a broken client state ends.
 	// Without a connection (known to the outbox, OF-2) a new document would not load: the page then
 	// says that the view is not loaded yet and offers "Zurück"; "Neu laden" asks first while changes
-	// are kept.
+	// are kept. Without the (app) layout nobody else watches the connection, so while the outbox
+	// worked in this tab or knew the connection to be missing, the page watches it itself as long as
+	// it is shown (OF-2b): back online it offers "Neu laden", and before it reloads on its own it asks
+	// the server once. On the PC without the outbox it asks nothing and reloads as before.
 	const connectivity = getConnectivity();
+	const outbox = getOutbox();
+	const watched = untrack(() => connectivity.offline || outbox.inUse);
 	let reloading = $state(false);
 	let asking = $state(false);
 	const offline = $derived(connectivity.offline);
 	const notLoaded = $derived(offline && page.error?.kind === 'module-load');
+
+	$effect(() =>
+		untrack(() => {
+			if (!watched) return;
+			const stop = connectivity.start(window);
+			if (connectivity.offline) void connectivity.check();
+			return stop;
+		})
+	);
+
+	function reloadOnce(href: string) {
+		if (!claimReload(sessionStorageOf(window), href, Date.now())) return;
+		reloading = true;
+		loadFully(href);
+	}
 
 	$effect(() => {
 		if (page.error?.kind !== 'module-load') return;
 		const href = page.url.href;
 		untrack(() => {
 			if (connectivity.offline) return;
-			if (!claimReload(sessionStorageOf(window), href, Date.now())) return;
-			reloading = true;
-			loadFully(href);
+			if (!watched) {
+				reloadOnce(href);
+				return;
+			}
+			void connectivity.check().then((reached) => {
+				if (reached) reloadOnce(href);
+			});
 		});
 	});
 
 	function reload() {
-		if (offline && getOutbox().count > 0) asking = true;
+		if (offline && outbox.count > 0) asking = true;
 		else reloadPage();
 	}
 
@@ -102,7 +126,7 @@
 		}}
 		oncancel={() => (asking = false)}
 	>
-		{OFFLINE_TEXTS.reloadText(getOutbox().count)}
+		{OFFLINE_TEXTS.reloadText(outbox.count)}
 	</ConfirmDialog>
 {/if}
 

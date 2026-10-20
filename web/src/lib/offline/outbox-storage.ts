@@ -21,6 +21,17 @@ export interface OutboxStorage {
 	list(): Promise<unknown[]>;
 	put(action: OutboxAction): Promise<void>;
 	remove(ops: readonly string[]): Promise<void>;
+	/**
+	 * Compare-and-swap of one entry over the tabs (OF-2b): in one transaction, when `matches` holds
+	 * for the stored entry of `op` (undefined without one), writes `next`, or deletes the entry for
+	 * null. True when it wrote. Marking an action as sent and taking a change into it go through
+	 * here, so neither overwrites the other.
+	 */
+	swap(
+		op: string,
+		matches: (current: unknown) => boolean,
+		next: OutboxAction | null
+	): Promise<boolean>;
 	/** The next number of the order on this device. */
 	nextSeq(): Promise<number>;
 	/**
@@ -68,6 +79,18 @@ export class MemoryOutboxStorage implements OutboxStorage {
 
 	async remove(ops: readonly string[]): Promise<void> {
 		for (const op of ops) this.entries.delete(op);
+	}
+
+	async swap(
+		op: string,
+		matches: (current: unknown) => boolean,
+		next: OutboxAction | null
+	): Promise<boolean> {
+		const current = this.entries.get(op);
+		if (!matches(current === undefined ? undefined : structuredClone(current))) return false;
+		if (next === null) this.entries.delete(op);
+		else this.entries.set(op, structuredClone(next));
+		return true;
 	}
 
 	async nextSeq(): Promise<number> {
@@ -164,6 +187,22 @@ export class IdbOutboxStorage implements OutboxStorage {
 		const store = transaction.objectStore(ACTIONS);
 		for (const op of ops) store.delete(op);
 		await finished(transaction);
+	}
+
+	async swap(
+		op: string,
+		matches: (current: unknown) => boolean,
+		next: OutboxAction | null
+	): Promise<boolean> {
+		const db = await this.#open();
+		const transaction = db.transaction(ACTIONS, 'readwrite');
+		const store = transaction.objectStore(ACTIONS);
+		const current: unknown = await done(store.get(op));
+		const take = matches(current);
+		if (take && next === null) store.delete(op);
+		else if (take && next !== null) store.put(next);
+		await finished(transaction);
+		return take;
 	}
 
 	async nextSeq(): Promise<number> {
