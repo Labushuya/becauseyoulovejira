@@ -40,6 +40,36 @@ function rule(type) {
 	return ruleset.rules.find((entry) => entry.type === type);
 }
 
+/** One job of a workflow as text, from its key to the next job; empty if there is none. */
+function jobText(text, id) {
+	const start = text.indexOf(`\n  ${id}:\n`);
+	if (start === -1) return '';
+	const next = text.slice(start + 1).search(/\n {2}[A-Za-z0-9_-]+:\n/);
+	return next === -1 ? text.slice(start) : text.slice(start, start + 1 + next);
+}
+
+/**
+ * What is wrong with the place of the smoke test of the phone frame in a workflow (MO-1a,
+ * ADR-0073); empty if nothing. It is the step "Mobile smoke test" with `npm run test:mobile` of the
+ * Linux job after its build (it needs app/pb_public), in no other job, and nothing downloads
+ * browsers.
+ */
+function smokeTestFindings(text) {
+	const findings = [];
+	const linux = jobText(text, 'linux');
+	const build = linux.indexOf('run: npm run build');
+	if (!/- name: Mobile smoke test\n {8}run: npm run test:mobile\n/.test(linux)) {
+		findings.push('no step "Mobile smoke test" with npm run test:mobile in the Linux job');
+	} else if (build === -1 || linux.indexOf('run: npm run test:mobile') < build) {
+		findings.push('the smoke test does not come after the build of the Linux job');
+	}
+	for (const id of ['build', 'changes']) {
+		if (/test:mobile|playwright/i.test(jobText(text, id))) findings.push(`the job ${id} runs the smoke test`);
+	}
+	if (/playwright install/.test(text)) findings.push('the workflow downloads browsers');
+	return findings;
+}
+
 function requiredChecks() {
 	return rule('required_status_checks').parameters.required_status_checks;
 }
@@ -96,23 +126,38 @@ describe('CI workflow and ruleset for main', () => {
 	});
 
 	// MO-1a (ADR-0073): the smoke test of the phone frame in the browser is a step of the Linux job,
-	// after the build it needs (app/pb_public) and the Chrome of the runner image; never on Windows.
+	// after the build it needs (app/pb_public) and the Chrome of the runner image; never on Windows,
+	// not in npm test and not in scripts\build.ps1, to spare the memory of the PC.
 	it('runs the smoke test of the phone frame only in the Linux job, after the build', () => {
-		const section = (id) => {
-			const start = workflow.indexOf(`\n  ${id}:\n`);
-			const next = workflow.slice(start + 1).search(/\n {2}[A-Za-z0-9_-]+:\n/);
-			return next === -1 ? workflow.slice(start) : workflow.slice(start, start + 1 + next);
-		};
-		const linux = section('linux');
-		const windows = section('build');
-		expect(linux).toContain('name: Linux build and test');
-		expect(windows).toContain('name: Check, lint, build and test');
-		expect(linux).toMatch(/- name: Mobile smoke test\n {8}run: npm run test:mobile\n/);
-		expect(linux.indexOf('run: npm run test:mobile')).toBeGreaterThan(linux.indexOf('run: npm run build'));
-		expect(windows).not.toContain('test:mobile');
-		expect(section('changes')).not.toContain('test:mobile');
-		// No download of browsers anywhere in the workflow.
-		expect(workflow).not.toMatch(/playwright install/);
+		expect(jobText(workflow, 'linux')).toContain('name: Linux build and test');
+		expect(jobText(workflow, 'build')).toContain('name: Check, lint, build and test');
+		expect(jobText(workflow, 'changes')).toContain('name: Detect code changes');
+		expect(smokeTestFindings(workflow)).toEqual([]);
+		const scripts = JSON.parse(readFileSync(new URL('package.json', ROOT), 'utf8')).scripts;
+		expect(scripts['test:mobile']).toBe('playwright test');
+		expect(scripts.test).not.toMatch(/test:mobile|playwright/);
+		expect(readFileSync(new URL('scripts/build.ps1', ROOT), 'utf8')).not.toMatch(/test:mobile|playwright/i);
+	});
+
+	// Counter-check: each wrong place of the smoke test, made from the real workflow, is found.
+	it('finds the smoke test missing, before the build, in another job or with a browser download', () => {
+		const step = '      - name: Mobile smoke test\n        run: npm run test:mobile\n';
+		expect(workflow).toContain(step);
+		const windowsStep = '      - name: Check, lint, build and test\n';
+		expect(workflow).toContain(windowsStep);
+		const linuxBuild = '      - name: Build\n        run: npm run build\n';
+		expect(workflow).toContain(linuxBuild);
+		const cases = [
+			[workflow.replace(step, ''), 'no step "Mobile smoke test" with npm run test:mobile in the Linux job'],
+			[workflow.replace(step, step.replace('test:mobile', 'test')), 'no step "Mobile smoke test" with npm run test:mobile in the Linux job'],
+			[workflow.replace(step, '').replace(linuxBuild, step + linuxBuild), 'the smoke test does not come after the build of the Linux job'],
+			[workflow.replace(windowsStep, step + windowsStep), 'the job build runs the smoke test'],
+			[`${workflow}      - run: npx playwright install chromium\n`, 'the workflow downloads browsers']
+		];
+		for (const [changed, finding] of cases) {
+			expect(changed).not.toBe(workflow);
+			expect(smokeTestFindings(changed), finding).toContain(finding);
+		}
 	});
 
 	it('runs on pull requests to main and cancels a superseded run', () => {

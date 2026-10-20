@@ -106,11 +106,14 @@ test.describe('phone with the switch on', () => {
 			'Erledigte',
 			'Papierkorb'
 		]);
+		await expect(sheet.getByRole('link', { name: 'Neues Ticket' })).toBeVisible();
 		const settings = sheet.getByRole('navigation', { name: 'Einstellungen' });
 		await expect(settings.getByRole('link', { name: 'Darstellung' })).toBeVisible();
 		await expect(settings.getByRole('link', { name: 'Hilfe' })).toBeAttached();
 		await expect(settings.getByText(/^Verwaltung/)).toContainText('nur am PC');
 		await expect(settings.getByRole('link', { name: 'Sicherheit nur am PC' })).toBeAttached();
+		await expect(sheet.getByText(/^Angemeldet als/)).toContainText(mobileInstance().email);
+		await expect(sheet.getByRole('button', { name: 'Abmelden' })).toBeAttached();
 		for (const box of await sizes(views.getByRole('link'))) {
 			expect(box.height).toBeGreaterThanOrEqual(TARGET_PX);
 		}
