@@ -2,6 +2,7 @@
 	import type { ResolvedPathname } from '$app/types';
 	import { areaMover } from '$lib/area-move-entry';
 	import { copyTicketLink } from '$lib/copy-link';
+	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 	import { findDayPlanEntryStore } from '$lib/stores/day-plan.svelte';
 	import type { FlagSink } from '$lib/stores/flags.svelte';
 	import { ticketShareUrl } from '$lib/ticket-links';
@@ -25,7 +26,9 @@
 	// layout, which has the store). Since ER-1 (ADR-0066) the view "Erledigte" puts "Wieder öffnen" at
 	// the same place for a done ticket (`onreopen`); every other entry is the one of every row. Since
 	// QT-1 (ADR-0067) "Folge-Ticket anlegen …" follows "Duplizieren …" (only with its store), for open
-	// and done tickets alike.
+	// and done tickets alike. In the phone frame (MO-4, ADR-0073 addendum MO-4) a row or card leaves
+	// out "In Vollansicht öffnen": the panel is a page there, the full view would show the same parts
+	// once more and close back into the panel.
 	let {
 		ticket,
 		flags,
@@ -97,12 +100,14 @@
 			: { label: 'Wieder öffnen', busy: reopenBusy, onselect: onreopen }
 	);
 
+	const mobileLayout = getMobileLayoutStore();
+
 	const items = $derived.by((): MenuAction[] => [
 		...(open === null
 			? []
 			: [
 					{ label: 'Im Seitenpanel öffnen', href: open.panel },
-					{ label: 'In Vollansicht öffnen', href: open.full }
+					...(mobileLayout.active ? [] : [{ label: 'In Vollansicht öffnen', href: open.full }])
 				]),
 		...(onmovedue === null
 			? []

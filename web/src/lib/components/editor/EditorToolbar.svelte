@@ -493,4 +493,25 @@
 			border-color: currentColor;
 		}
 	}
+
+	/*
+	 * Phone frame (MO-4, ADR-0073 addendum MO-4): every tool a target of 44 px, and the bar wraps
+	 * into a second row instead of running out of the frame; lists and blocks stay in their menu
+	 * below 560 px, "Markdown" at the end of its row.
+	 */
+	@media (max-width: 39.99rem) {
+		:global(:root[data-mobile-layout='on']) .toolbar {
+			flex-wrap: wrap;
+		}
+
+		:global(:root[data-mobile-layout='on']) .toolbar :global(.tool.button-icon) {
+			width: var(--control-height-touch);
+			height: var(--control-height-touch);
+		}
+
+		:global(:root[data-mobile-layout='on']) .toolbar :global(.tool.style),
+		:global(:root[data-mobile-layout='on']) .source {
+			height: var(--control-height-touch);
+		}
+	}
 </style>

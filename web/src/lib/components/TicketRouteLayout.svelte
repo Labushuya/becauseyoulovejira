@@ -22,6 +22,7 @@
 	import { appHref } from '$lib/ticket-links';
 	import { setTicketRoute } from '$lib/ticket-route';
 	import { registerUnsavedInput } from '$lib/unsaved-input';
+	import { findWayBack, goBack } from '$lib/way-back';
 	import DuplicateDialog from './DuplicateDialog.svelte';
 	import FollowUpDialog from './FollowUpDialog.svelte';
 	import ConfirmDialog from './overlay/ConfirmDialog.svelte';
@@ -174,6 +175,11 @@
 		await goto(back);
 	}
 
+	// The arrow of the page in the phone frame (MO-4): back through the history when the view lies
+	// right before the ticket, like the back gesture of Android (filters and scroll position of the
+	// view, no second entry of it); else the way of the ×.
+	const wayBack = findWayBack();
+
 	async function deleted() {
 		discarding = true;
 		await goto(back);
@@ -249,6 +255,7 @@
 		fullViewHref={full}
 		onfullview={() => modeStore?.choose('full')}
 		onclose={close}
+		onback={() => goBack(wayBack, back, () => void close())}
 		ondeleted={deleted}
 		sourceCount={sourceStore.ticketId === id ? sourceStore.items.length : 0}
 		{parent}

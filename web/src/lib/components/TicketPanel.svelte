@@ -5,6 +5,7 @@
 	import type { CalendarDate } from '$lib/domain/berlin-date';
 	import { ticketColorOf } from '$lib/domain/colors';
 	import type { ParentRef, Ticket } from '$lib/domain/ticket';
+	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 	import type { CatalogStore } from '$lib/stores/catalog.svelte';
 	import { SILENT_FLAGS, type FlagSink } from '$lib/stores/flags.svelte';
 	import { findPinStore } from '$lib/stores/pins.svelte';
@@ -39,6 +40,9 @@
 	// in the header instead of the key alone; a ticket in a sub project starts it with "Haus ›
 	// Garten" (ADR-0034), linking to the list filtered by the project. A dot in front shows the
 	// color of the ticket with its name (ADR-0052).
+	// In the phone frame (MO-4, ADR-0073 addendum MO-4) the panel is a page: the arrow back of the
+	// Drawer named like the way back ("Zur Liste", "Zum Tagesplan", …; `onback`), no "Vollansicht",
+	// the fields one below the other, and a fixed bar at the bottom with "Erledigt" and the status.
 	let {
 		store,
 		catalog,
@@ -47,6 +51,7 @@
 		fullViewHref = null,
 		onfullview,
 		onclose,
+		onback,
 		ondeleted,
 		activity,
 		recurrence,
@@ -74,6 +79,8 @@
 		/** A click on "Vollansicht": the owner remembers the choice (plan BI-1). */
 		onfullview?: () => void;
 		onclose: () => void;
+		/** The arrow back in the phone frame; without it the way of the ×. */
+		onback?: () => void;
 		/** Called after the ticket was deleted; the owner closes the panel. */
 		ondeleted: () => void;
 		/** Comments and history, right after the sub-tasks (TD-1). */
@@ -114,6 +121,9 @@
 	const headingId = `${uid}-title`;
 	/** The own pins (ADR-0064): the toggle before "•••"; none outside the app layout. */
 	const pins = findPinStore();
+	const mobileLayout = getMobileLayoutStore();
+	/** The phone frame applies: the fields in two parts, the bar at the bottom (MO-4). */
+	const framed = $derived(mobileLayout.active);
 
 	let heading = $state<HTMLElement>();
 	let messageHeading = $state<HTMLElement>();
@@ -147,11 +157,20 @@
 	});
 </script>
 
+{#snippet statusBar()}
+	{#if store.state === 'ready' && ticket}
+		<TicketFields {store} {catalog} {ticket} {today} part="bar" />
+	{/if}
+{/snippet}
+
 <Drawer
 	labelledby={headingId}
 	{onclose}
+	backLabel={listLabel}
+	{onback}
 	fullViewHref={store.state === 'ready' ? fullViewHref : null}
 	{onfullview}
+	footer={framed && store.state === 'ready' ? statusBar : undefined}
 >
 	{#snippet context()}
 		<div class="context-line">
@@ -233,7 +252,14 @@
 		</div>
 	{:else if store.state === 'ready' && ticket}
 		<EditableTitle {store} {headingId} bind:heading />
-		<TicketFields {store} {catalog} {ticket} {today} recurrenceShown={recurrence !== undefined}>
+		<TicketFields
+			{store}
+			{catalog}
+			{ticket}
+			{today}
+			recurrenceShown={recurrence !== undefined}
+			part={framed ? 'fields' : 'all'}
+		>
 			{#snippet parentRow()}
 				{@render parentField?.(ticket)}
 			{/snippet}

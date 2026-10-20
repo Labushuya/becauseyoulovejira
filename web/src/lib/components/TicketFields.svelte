@@ -4,7 +4,7 @@
 	import { colorOf, inheritLabel, projectColorOf } from '$lib/domain/colors';
 	import { overdueSinceText } from '$lib/domain/due-label';
 	import type { OngoingFinishQuestion } from '$lib/domain/ongoing-finish';
-	import type { Ticket } from '$lib/domain/ticket';
+	import { REOPEN_STATUS, type Ticket } from '$lib/domain/ticket';
 	import { insideModal } from '$lib/overlay/modal-context';
 	import { findAssignees, type AssigneeSource } from '$lib/stores/assignees.svelte';
 	import type { CatalogStore } from '$lib/stores/catalog.svelte';
@@ -13,6 +13,7 @@
 	import AssigneeField from './AssigneeField.svelte';
 	import CharmPicker from './CharmPicker.svelte';
 	import ColorChoice from './ColorChoice.svelte';
+	import DoneToggle from './DoneToggle.svelte';
 	import DueInput from './DueInput.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import KindSwitch from './KindSwitch.svelte';
@@ -48,6 +49,12 @@
 	// a refused reopening) stand in a row of their own right after the status, over both columns
 	// of the grid (QB-1, ADR-0025 addendum 19): in the value column of the narrow right column of the
 	// full view only about 120 px were left. The order in the DOM, and so the tab order, stays.
+	// In the phone frame (MO-4, ADR-0073 addendum MO-4) the panel shows the fields in two parts: the
+	// page holds every field but the status, one below the other with the label above its value
+	// (`part` "fields"); the fixed bar at its bottom holds "Erledigt" (one tap, the check mark of the
+	// list) and the status with its questions above them (`part` "bar"). The status is the same
+	// control with the same marker, so no option is new; on the PC and in the full view everything
+	// stays one grid (`part` "all").
 	let {
 		store,
 		catalog,
@@ -55,11 +62,17 @@
 		today,
 		recurrenceShown = false,
 		parentRow,
-		assignees = findAssignees()
+		assignees = findAssignees(),
+		part = 'all'
 	}: {
 		store: TicketDetailStore;
 		catalog: CatalogStore;
 		ticket: Ticket;
+		/**
+		 * Which part: everything (PC, full view), the fields without the status (the page of the
+		 * phone frame) or the bar with "Erledigt" and the status (its fixed footer).
+		 */
+		part?: 'all' | 'fields' | 'bar';
 		/** The Berlin day of the list store; without it no line "überfällig seit …". */
 		today?: CalendarDate;
 		/** The recurrence of the ticket is shown elsewhere; otherwise a plain line says so. */
@@ -140,6 +153,11 @@
 		);
 	}
 
+	/** "Erledigt" of the bar (phone frame): done like the status "Erledigt", or open again. */
+	function toggleDone(done: boolean) {
+		chooseStatus(done ? 'done' : REOPEN_STATUS);
+	}
+
 	/** After the question about open sub-tasks the focus goes back to the status (ADR-0033). */
 	async function endCompletion(choice: CompletionChoice | null) {
 		if (choice === null) store.cancelCompletion();
@@ -174,8 +192,7 @@
 	/>
 {/snippet}
 
-<div class="fields">
-	<label for={ids.status}>Status</label>
+{#snippet statusControl()}
 	<div class="control" data-ticket-option="status">
 		<StatusSelect
 			id={ids.status}
@@ -191,6 +208,9 @@
 		<!-- The panel: a dialog of its own in the top layer, outside the flow of the grid. -->
 		{@render finishQuestion(finishing.question)}
 	{/if}
+{/snippet}
+
+{#snippet statusQuestions()}
 	{#if questionShown}
 		<!-- The questions of the status in a row of their own over both columns (QB-1). -->
 		<div class="questions" data-status-questions>
@@ -215,159 +235,188 @@
 			{/if}
 		</div>
 	{/if}
+{/snippet}
 
-	<label for={ids.priority}>Priorität</label>
-	<div class="control" data-ticket-option="priority">
-		<PrioritySelect
-			id={ids.priority}
-			value={store.value('priority')}
-			busy={store.isSaving('priority')}
-			error={store.fieldError('priority')}
-			errorId={errorIdOf('priority')}
-			onchoose={(value) => store.choose('priority', value)}
-		/>
-		{@render fieldError('priority')}
-	</div>
-
-	{#if assigneeShown && assignees}
-		<label for={ids.assignee}>Zuständig</label>
-		<div class="control" data-ticket-option="assignee">
-			<AssigneeField
-				id={ids.assignee}
-				value={store.value('assignee')}
-				members={assignees.members}
-				context={assignees.context}
-				busy={store.isSaving('assignee')}
-				error={store.fieldError('assignee')}
-				errorId={errorIdOf('assignee')}
-				onchoose={(value) => store.choose('assignee', value)}
-			/>
-			<ProblemDetails problem={store.fieldProblem('assignee')} />
+{#if part === 'bar'}
+	<!-- The fixed bar of the page (phone frame, MO-4): the questions above, then the controls. -->
+	<div class="bar" data-ticket-bar>
+		{@render statusQuestions()}
+		<div class="bar-row">
+			<!-- One tap anywhere in the target of 44 px; the name stays the one of the check mark. -->
+			<label class="done-check">
+				<DoneToggle
+					key={ticket.key}
+					checked={store.value('status') === 'done'}
+					pending={store.isSaving('status')}
+					onchange={toggleDone}
+				/>
+				<span aria-hidden="true">Erledigt</span>
+			</label>
+			<label class="bar-label" for={ids.status}>Status</label>
+			{@render statusControl()}
 		</div>
-	{/if}
-
-	<label for={ids.due}>Fälligkeit</label>
-	<div class="control" data-ticket-option="due">
-		<DueInput
-			id={ids.due}
-			value={store.value('due')}
-			saving={store.isSaving('due')}
-			error={store.fieldError('due')}
-			errorId={errorIdOf('due')}
-			hintId={overdueSince === null ? undefined : ids.overdue}
-			onedit={() => store.edit('due')}
-			oninput={(value) => store.setDraft('due', value)}
-			onsave={() => store.save('due')}
-			oncancel={() => store.cancel('due')}
-			onreject={() => store.reject('due', 'Ungültiges Datum.')}
-			onclear={() => {
-				store.edit('due');
-				store.setDraft('due', '');
-				void store.save('due');
-			}}
-		/>
-		{#if overdueSince !== null}
-			<!-- Bold in text colour with the clock of the list, never red (ADR-0009). -->
-			<p class="overdue" id={ids.overdue}>
-				<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false">
-					<circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" stroke-width="1.5" />
-					<path
-						d="M8 4.75V8.5l2.25 1.5"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="1.5"
-						stroke-linecap="round"
-					/>
-				</svg>
-				<span>{overdueSince}</span>
-			</p>
+	</div>
+{:else}
+	<div class="fields">
+		{#if part === 'all'}
+			<label for={ids.status}>Status</label>
+			{@render statusControl()}
+			{@render statusQuestions()}
 		{/if}
-		{@render fieldError('due')}
-	</div>
 
-	<label for={ids.project}>Projekt</label>
-	<div class="control" data-ticket-option="project">
-		<ProjectSelect
-			id={ids.project}
-			value={store.value('project')}
-			projects={catalog.activeProjects}
-			current={catalog.projectOf(ticket)}
-			busy={store.isSaving('project')}
-			error={store.fieldError('project')}
-			errorId={errorIdOf('project')}
-			hintId={ids.projectHint}
-			onchoose={(value) => store.choose('project', value)}
-		/>
-		{@render fieldError('project')}
-	</div>
-
-	{#if colorShown}
-		<span class="term" id={ids.color}>Farbe</span>
-		<div class="control" data-ticket-option="color">
-			<ColorChoice
-				value={colorOf(store.value('color'))}
-				inheritLabel={inheritLabel('ticket', inherited)}
-				{inherited}
-				labelledby={ids.color}
-				busy={store.isSaving('color')}
-				error={store.fieldError('color')}
-				errorId={errorIdOf('color')}
-				onchoose={(value) => store.choose('color', value ?? '')}
+		<label for={ids.priority}>Priorität</label>
+		<div class="control" data-ticket-option="priority">
+			<PrioritySelect
+				id={ids.priority}
+				value={store.value('priority')}
+				busy={store.isSaving('priority')}
+				error={store.fieldError('priority')}
+				errorId={errorIdOf('priority')}
+				onchoose={(value) => store.choose('priority', value)}
 			/>
-			<ProblemDetails problem={store.fieldProblem('color')} />
+			{@render fieldError('priority')}
 		</div>
-	{/if}
 
-	{#if charmShown}
-		<span class="term">Charm</span>
-		<div class="control" data-ticket-option="charm">
-			<CharmPicker
-				value={store.value('charm') || null}
-				busy={store.isSaving('charm')}
-				error={store.fieldError('charm')}
-				errorId={errorIdOf('charm')}
-				onchoose={(value) => store.choose('charm', value ?? '')}
+		{#if assigneeShown && assignees}
+			<label for={ids.assignee}>Zuständig</label>
+			<div class="control" data-ticket-option="assignee">
+				<AssigneeField
+					id={ids.assignee}
+					value={store.value('assignee')}
+					members={assignees.members}
+					context={assignees.context}
+					busy={store.isSaving('assignee')}
+					error={store.fieldError('assignee')}
+					errorId={errorIdOf('assignee')}
+					onchoose={(value) => store.choose('assignee', value)}
+				/>
+				<ProblemDetails problem={store.fieldProblem('assignee')} />
+			</div>
+		{/if}
+
+		<label for={ids.due}>Fälligkeit</label>
+		<div class="control" data-ticket-option="due">
+			<DueInput
+				id={ids.due}
+				value={store.value('due')}
+				saving={store.isSaving('due')}
+				error={store.fieldError('due')}
+				errorId={errorIdOf('due')}
+				hintId={overdueSince === null ? undefined : ids.overdue}
+				onedit={() => store.edit('due')}
+				oninput={(value) => store.setDraft('due', value)}
+				onsave={() => store.save('due')}
+				oncancel={() => store.cancel('due')}
+				onreject={() => store.reject('due', 'Ungültiges Datum.')}
+				onclear={() => {
+					store.edit('due');
+					store.setDraft('due', '');
+					void store.save('due');
+				}}
 			/>
-			<ProblemDetails problem={store.fieldProblem('charm')} />
+			{#if overdueSince !== null}
+				<!-- Bold in text colour with the clock of the list, never red (ADR-0009). -->
+				<p class="overdue" id={ids.overdue}>
+					<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false">
+						<circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" stroke-width="1.5" />
+						<path
+							d="M8 4.75V8.5l2.25 1.5"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="1.5"
+							stroke-linecap="round"
+						/>
+					</svg>
+					<span>{overdueSince}</span>
+				</p>
+			{/if}
+			{@render fieldError('due')}
 		</div>
-	{/if}
 
-	{#if kindShown}
-		<span class="term">Art</span>
-		<div class="control" data-ticket-option="kind">
-			<!-- Saves at once; a refusal sets the switch back and stands below it. -->
-			<KindSwitch
-				{ongoing}
-				busy={store.isSaving('kind')}
-				error={store.fieldError('kind')}
-				onchange={(wanted) => store.choose('kind', wanted ? 'ongoing' : 'task')}
+		<label for={ids.project}>Projekt</label>
+		<div class="control" data-ticket-option="project">
+			<ProjectSelect
+				id={ids.project}
+				value={store.value('project')}
+				projects={catalog.activeProjects}
+				current={catalog.projectOf(ticket)}
+				busy={store.isSaving('project')}
+				error={store.fieldError('project')}
+				errorId={errorIdOf('project')}
+				hintId={ids.projectHint}
+				onchoose={(value) => store.choose('project', value)}
 			/>
-			<ProblemDetails problem={store.fieldProblem('kind')} />
+			{@render fieldError('project')}
 		</div>
-	{/if}
 
-	<label for={ids.tags}>Tags</label>
-	<div class="control" data-ticket-option="tags">
-		<TagPicker
-			id={ids.tags}
-			selected={ticketTags}
-			tags={catalog.tags}
-			bind:text={() => store.tagInput, (text) => store.setTagInput(text)}
-			busy={store.isSaving('tags')}
-			error={store.fieldError('tags')}
-			errorId={errorIdOf('tags')}
-			onadd={(tagId) => store.addTag(tagId)}
-			onremove={(tagId) => store.removeTag(tagId)}
-			oncreate={createTag}
-		/>
-		{@render fieldError('tags')}
+		{#if colorShown}
+			<span class="term" id={ids.color}>Farbe</span>
+			<div class="control" data-ticket-option="color">
+				<ColorChoice
+					value={colorOf(store.value('color'))}
+					inheritLabel={inheritLabel('ticket', inherited)}
+					{inherited}
+					labelledby={ids.color}
+					busy={store.isSaving('color')}
+					error={store.fieldError('color')}
+					errorId={errorIdOf('color')}
+					onchoose={(value) => store.choose('color', value ?? '')}
+				/>
+				<ProblemDetails problem={store.fieldProblem('color')} />
+			</div>
+		{/if}
+
+		{#if charmShown}
+			<span class="term">Charm</span>
+			<div class="control" data-ticket-option="charm">
+				<CharmPicker
+					value={store.value('charm') || null}
+					busy={store.isSaving('charm')}
+					error={store.fieldError('charm')}
+					errorId={errorIdOf('charm')}
+					onchoose={(value) => store.choose('charm', value ?? '')}
+				/>
+				<ProblemDetails problem={store.fieldProblem('charm')} />
+			</div>
+		{/if}
+
+		{#if kindShown}
+			<span class="term">Art</span>
+			<div class="control" data-ticket-option="kind">
+				<!-- Saves at once; a refusal sets the switch back and stands below it. -->
+				<KindSwitch
+					{ongoing}
+					busy={store.isSaving('kind')}
+					error={store.fieldError('kind')}
+					onchange={(wanted) => store.choose('kind', wanted ? 'ongoing' : 'task')}
+				/>
+				<ProblemDetails problem={store.fieldProblem('kind')} />
+			</div>
+		{/if}
+
+		<label for={ids.tags}>Tags</label>
+		<div class="control" data-ticket-option="tags">
+			<TagPicker
+				id={ids.tags}
+				selected={ticketTags}
+				tags={catalog.tags}
+				bind:text={() => store.tagInput, (text) => store.setTagInput(text)}
+				busy={store.isSaving('tags')}
+				error={store.fieldError('tags')}
+				errorId={errorIdOf('tags')}
+				onadd={(tagId) => store.addTag(tagId)}
+				onremove={(tagId) => store.removeTag(tagId)}
+				oncreate={createTag}
+			/>
+			{@render fieldError('tags')}
+		</div>
+		{@render parentRow?.()}
+		{#if ticket.recurring && !recurrenceShown}
+			<span class="term">Wiederholung</span>
+			<span class="detail">wiederkehrend</span>
+		{/if}
 	</div>
-	{@render parentRow?.()}
-	{#if ticket.recurring && !recurrenceShown}
-		<span class="term">Wiederholung</span>
-		<span class="detail">wiederkehrend</span>
-	{/if}
-</div>
+{/if}
 
 <style>
 	.fields {
@@ -411,5 +460,62 @@
 		font-size: var(--font-size-small);
 		font-weight: 600;
 		color: var(--color-text);
+	}
+
+	/*
+	 * Phone frame (MO-4, ADR-0073 addendum MO-4): one column, the label above its value, so every
+	 * control has the whole width of the page (the colors in two columns, the tags, the picker of
+	 * the parent). The bar at the bottom of the page: the questions of the status above, then
+	 * "Erledigt" in a target of 44 px and the status.
+	 */
+	@media (max-width: 39.99rem) {
+		:global(:root[data-mobile-layout='on']) .fields {
+			grid-template-columns: minmax(0, 1fr);
+			gap: 0.25rem;
+		}
+
+		:global(:root[data-mobile-layout='on']) .fields > :global(:is(label, .term):not(:first-child)) {
+			margin-top: 0.75rem;
+		}
+
+		:global(:root[data-mobile-layout='on']) .bar {
+			display: grid;
+			flex: 1 1 100%;
+			gap: 0.5rem;
+			min-width: 0;
+			font-size: var(--font-size-body);
+		}
+
+		:global(:root[data-mobile-layout='on']) .bar .questions {
+			max-height: 50dvh;
+			overflow-y: auto;
+		}
+
+		:global(:root[data-mobile-layout='on']) .bar-row {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 0.25rem 0.75rem;
+			align-items: center;
+		}
+
+		:global(:root[data-mobile-layout='on']) .done-check {
+			display: inline-flex;
+			gap: 0.5rem;
+			align-items: center;
+			min-height: var(--control-height-touch);
+			padding-right: 0.25rem;
+			font-weight: 600;
+			cursor: pointer;
+		}
+
+		:global(:root[data-mobile-layout='on']) .bar-label {
+			margin-left: auto;
+			color: var(--color-text-muted);
+		}
+
+		:global(:root[data-mobile-layout='on']) .bar :global(select) {
+			width: fit-content;
+			max-width: 100%;
+		}
 	}
 </style>

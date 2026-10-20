@@ -306,4 +306,16 @@
 			height: var(--control-height-touch);
 		}
 	}
+
+	/* Phone frame (MO-4, ADR-0073 addendum MO-4): the same 44 px, whatever the pointer. */
+	@media (max-width: 39.99rem) {
+		:global(:root[data-mobile-layout='on']) .group {
+			grid-template-columns: repeat(6, var(--control-height-touch));
+		}
+
+		:global(:root[data-mobile-layout='on']) .option {
+			width: var(--control-height-touch);
+			height: var(--control-height-touch);
+		}
+	}
 </style>

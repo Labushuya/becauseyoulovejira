@@ -132,4 +132,24 @@
 		font-size: var(--font-size-small);
 		color: var(--color-text-muted);
 	}
+
+	/*
+	 * Phone frame (MO-4, ADR-0073 addendum MO-4): "Kommentar hinzufügen …" as a target of 44 px, and
+	 * "Kommentieren" stays at the bottom of the page while the text is longer than the screen above
+	 * the keyboard (the page scrolls, the row sticks to its lower edge).
+	 */
+	@media (max-width: 39.99rem) {
+		:global(:root[data-mobile-layout='on']) .opener {
+			min-height: var(--control-height-touch);
+		}
+
+		:global(:root[data-mobile-layout='on']) .buttons {
+			position: sticky;
+			bottom: 0;
+			z-index: 1;
+			padding-block: 0.5rem;
+			background: var(--color-surface);
+			border-top: 1px solid var(--color-line);
+		}
+	}
 </style>

@@ -437,4 +437,27 @@
 	.option.create {
 		color: var(--color-brand-text);
 	}
+
+	/*
+	 * Phone frame (MO-4, ADR-0073 addendum MO-4): a chosen tag is 44 px high and its × a target of
+	 * 44 × 44 px at its end; the chips keep some room between them.
+	 */
+	@media (max-width: 39.99rem) {
+		:global(:root[data-mobile-layout='on']) .chips {
+			gap: 0.375rem;
+		}
+
+		:global(:root[data-mobile-layout='on']) .chip {
+			min-height: var(--control-height-touch);
+			padding: 0 0 0 0.625rem;
+			font-size: var(--font-size-body);
+		}
+
+		:global(:root[data-mobile-layout='on']) .remove {
+			align-items: center;
+			justify-content: center;
+			min-width: var(--control-height-touch);
+			min-height: var(--control-height-touch);
+		}
+	}
 </style>

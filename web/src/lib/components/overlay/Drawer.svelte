@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import type { ResolvedPathname } from '$app/types';
+	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 	import { getPanelHost } from '$lib/overlay/panel-host.svelte';
 
 	// Side panel building block (ADR-0025 section 6; plan UI-Konsistenz, package UI-6): right of the
@@ -11,9 +12,15 @@
 	// keep Escape, in form panels ("Neues Ticket", "Erfassen") it means "Abbrechen" from anywhere.
 	// ViewWithPanel places it (embedded column from 64rem, overlay below) and slides it in only when
 	// it opens; a click on its blanket closes like the × (package UI-6b).
+	// In the phone frame (MO-4, ADR-0073 addendum MO-4) every panel is a page over the whole screen:
+	// the head starts with an arrow back (`backLabel`, `onback`, else the way of the ×) and holds no ×
+	// and no "Vollansicht", which on the phone would show the same parts once more; margins of the
+	// page (--page-inline). Off, or from 40rem, the head stays as it is.
 	let {
 		labelledby,
 		onclose,
+		backLabel = 'Zurück',
+		onback,
 		closeFromFields = false,
 		fullViewHref = null,
 		onfullview,
@@ -27,6 +34,10 @@
 		labelledby: string;
 		/** × and Escape: back to the list (the owner navigates, and asks first if needed). */
 		onclose: () => void;
+		/** Name of the arrow back in the phone frame, e.g. "Zur Liste". */
+		backLabel?: string;
+		/** The arrow back in the phone frame; without it the way of the ×. */
+		onback?: () => void;
 		/** Form panels: Escape closes also from input fields. */
 		closeFromFields?: boolean;
 		/** Address of the full view (UI-7); without it there is no link. */
@@ -45,6 +56,9 @@
 	} = $props();
 
 	const host = getPanelHost();
+	const mobileLayout = getMobileLayoutStore();
+	/** The phone frame applies: the panel is a page with the arrow back. */
+	const framed = $derived(mobileLayout.active);
 
 	// The blanket of the overlay (below 64rem) closes the shown panel like its ×.
 	$effect(() => host?.register(() => onclose()));
@@ -70,10 +84,23 @@
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <aside class="drawer" aria-labelledby={labelledby} data-overlay {onkeydown}>
 	<header class="head">
+		{#if framed}
+			<button
+				class="button-icon back"
+				type="button"
+				aria-label={backLabel}
+				title={backLabel}
+				onclick={() => (onback ?? onclose)()}
+			>
+				<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
+					<path d="M13 8H3M7.5 3.5L3 8l4.5 4.5" />
+				</svg>
+			</button>
+		{/if}
 		<div class="context">{@render context?.()}</div>
 		<div class="head-actions">
 			{@render actions?.()}
-			{#if fullViewHref}
+			{#if fullViewHref && !framed}
 				<a
 					class="button-icon"
 					href={fullViewHref}
@@ -90,11 +117,13 @@
 					</svg>
 				</a>
 			{/if}
-			<button class="button-icon" type="button" aria-label="Panel schließen" onclick={onclose}>
-				<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
-					<path d="M4 4l8 8M12 4l-8 8" />
-				</svg>
-			</button>
+			{#if !framed}
+				<button class="button-icon" type="button" aria-label="Panel schließen" onclick={onclose}>
+					<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
+						<path d="M4 4l8 8M12 4l-8 8" />
+					</svg>
+				</button>
+			{/if}
 		</div>
 	</header>
 	<div class="body">
@@ -162,7 +191,8 @@
 		align-items: center;
 	}
 
-	.head-actions svg {
+	.head-actions svg,
+	.back svg {
 		fill: none;
 		stroke: currentColor;
 		stroke-width: 1.5;
@@ -207,6 +237,34 @@
 		from {
 			opacity: 0;
 			transform: translateX(1.5rem);
+		}
+	}
+
+	/*
+	 * Phone frame (MO-4, ADR-0073 addendum MO-4): a page over the whole screen. The arrow back stands
+	 * at the start of the head, the context fills the middle, the actions keep the end; all targets
+	 * have 44 px from base.css. No line at the left edge, the margins of the page.
+	 */
+	@media (max-width: 39.99rem) {
+		:global(:root[data-mobile-layout='on']) .drawer {
+			border-left: none;
+		}
+
+		:global(:root[data-mobile-layout='on']) .head {
+			gap: 0.25rem;
+			padding: 0.25rem;
+		}
+
+		:global(:root[data-mobile-layout='on']) .context {
+			flex: 1;
+		}
+
+		:global(:root[data-mobile-layout='on']) .body {
+			padding: 1rem var(--page-inline) 1.5rem;
+		}
+
+		:global(:root[data-mobile-layout='on']) .foot {
+			padding: 0.5rem var(--page-inline);
 		}
 	}
 </style>

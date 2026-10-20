@@ -170,10 +170,12 @@
 	/*
 	 * Phone frame (MO-1b, ADR-0073 addendum): the panel is a page over the whole screen; the safe
 	 * areas of the status bar and of the system bar stay free, so neither its head nor its footer
-	 * slides below them (only with viewport-fit=cover of the frame are they more than 0).
+	 * slides below them (only with viewport-fit=cover of the frame are they more than 0). Since MO-4
+	 * also between 36 and 40rem the full width, so no strip of the blanket stays beside the page.
 	 */
 	@media (max-width: 39.99rem) {
 		:global(:root[data-mobile-layout='on']) .covering .panel {
+			width: 100%;
 			padding-top: var(--safe-top);
 			padding-bottom: var(--safe-bottom);
 		}

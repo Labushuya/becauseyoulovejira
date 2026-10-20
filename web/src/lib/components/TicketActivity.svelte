@@ -152,4 +152,11 @@
 		outline: 2px solid var(--color-brand-text);
 		outline-offset: 2px;
 	}
+
+	/* Phone frame (MO-4, ADR-0073 addendum MO-4): "Kommentare" and "Verlauf" as targets of 44 px. */
+	@media (max-width: 39.99rem) {
+		:global(:root[data-mobile-layout='on']) [role='tab'] {
+			min-height: var(--control-height-touch);
+		}
+	}
 </style>
