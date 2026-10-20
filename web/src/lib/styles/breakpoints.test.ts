@@ -134,7 +134,9 @@ describe('breakpoints (MO-1a, ADR-0073)', () => {
 		// cards, the filter sheet with its parts, the bar of the selection below the top bar); since
 		// MO-4 the ticket as a page (the head of the panel, the fields one below the other and the bar
 		// at the bottom, the toolbar of the editor, the tabs, the rows of the sub-tasks, the tags, the
-		// path, the parent, the charms, the tasks of the text, the save buttons above the keyboard).
+		// path, the parent, the charms, the tasks of the text, the save buttons above the keyboard);
+		// since MO-5 the sheet of the quick entry (its two buttons side by side, the folded help, the
+		// link to the result).
 		expect([...new Set(places)].sort()).toEqual([
 			'lib/components/Breadcrumbs.svelte',
 			'lib/components/CharmPicker.svelte',
@@ -143,6 +145,7 @@ describe('breakpoints (MO-1a, ADR-0073)', () => {
 			'lib/components/FilterBar.svelte',
 			'lib/components/FilterSheet.svelte',
 			'lib/components/MarkdownEditor.svelte',
+			'lib/components/QuickCapture.svelte',
 			'lib/components/SectionBar.svelte',
 			'lib/components/SelectionBar.svelte',
 			'lib/components/SortChoice.svelte',

@@ -10,6 +10,7 @@
 	} from '$lib/domain/quick-syntax';
 	import type { CaptureTarget } from '$lib/domain/templates';
 	import type { ProjectRef, TagRef } from '$lib/domain/ticket';
+	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 	import { helpHref } from '$lib/settings-sections';
 	import type { CaptureSaveResult } from '$lib/stores/capture';
 	import ErrorIcon from './ErrorIcon.svelte';
@@ -26,6 +27,12 @@
 	// Escape and "Abbrechen" ask before it is lost. The modal returns the focus on closing.
 	// "Projekt" (ProjectSelect, ADR-0042 section 3) chooses the project from the list without
 	// knowing its code: the choice writes `@CODE` into the line, a typed `@CODE` shows in the list.
+	// The sheet of "＋" in the phone frame (MO-5, ADR-0073 addendum MO-5): the modal stands as a sheet
+	// there anyway (MO-1b); the line capitalises sentences, the result and failures stand right below
+	// it (above the on-screen keyboard), the help on the short syntax is folded and names no keys,
+	// and the footer holds only the two buttons that save, side by side ("Ticket anlegen" as the
+	// main one); the × closes. A tap on them keeps the focus in the line, so the keyboard stays open
+	// for the next one. Off, or from 40rem, the dialog stays as it was.
 	let {
 		projects = [],
 		tags = [],
@@ -51,6 +58,10 @@
 		projectHint: `${uid}-project-hint`,
 		projectError: `${uid}-project-error`
 	};
+
+	/** The phone frame applies (switch on, narrow window): the sheet of "＋" (MO-5). */
+	const mobileLayout = getMobileLayoutStore();
+	const phone = $derived(mobileLayout.active);
 
 	let input = $state<HTMLInputElement>();
 	let text = $state('');
@@ -102,6 +113,15 @@
 		event.preventDefault();
 		void save(event.altKey ? 'inbox' : 'ticket');
 	}
+
+	/**
+	 * In the phone frame a press on a button that saves leaves the focus in the line (MO-5): the
+	 * on-screen keyboard stays open for the next line instead of closing and opening again. The
+	 * click still runs. On the PC the button takes the focus as before.
+	 */
+	function keepLine(event: MouseEvent) {
+		if (phone) event.preventDefault();
+	}
 </script>
 
 <Modal
@@ -128,6 +148,7 @@
 			id={ids.input}
 			type="text"
 			enterkeyhint="done"
+			autocapitalize={phone ? 'sentences' : undefined}
 			autocomplete="off"
 			aria-describedby={`${ids.preview} ${ids.hint}`}
 			bind:value={text}
@@ -146,6 +167,10 @@
 				<p class="note">{hint}</p>
 			{/each}
 		</div>
+		{#if phone}
+			<!-- Right below the line, above the on-screen keyboard (MO-5). -->
+			{@render outcome()}
+		{/if}
 		<div class="project">
 			<label for={ids.project}>Projekt</label>
 			<ProjectSelect
@@ -158,57 +183,77 @@
 				onchoose={chooseProject}
 			/>
 		</div>
-		<p class="hint" id={ids.hint}>
-			Enter legt ein Ticket an, Alt+Enter legt es in den Eingang. Beispiel: „Zahnarzt anrufen @HAUS
-			!hoch #anruf“ (Priorität !niedrig, !mittel, !hoch, !dringend oder !1 bis !4).
-			<!-- A new tab, so typed text is never lost (plan UI-4) and the dialog stays as it is. -->
-			<a href={helpHref('kurzsyntax')} target="_blank" rel="noopener">
-				Mehr zur Kurzsyntax<NewTabHint />
-			</a>
-		</p>
-
-		<div aria-live="polite">
-			{#if result}
-				<p class="result">
-					{result.text}
-					<a href={result.href} onclick={() => onclose()}>
-						{result.target === 'ticket' ? 'Ticket ansehen' : 'Eintrag ansehen'}
-					</a>
-				</p>
-			{/if}
-		</div>
-		<div aria-live="assertive">
-			{#if message}
-				<p class="alert-error"><ErrorIcon /><span>{message}</span></p>
-			{/if}
-		</div>
-		{#if message}
-			<ProblemDetails problem={messageProblem} />
+		{#if phone}
+			<!-- Folded on the phone, without the keys: it has its two buttons (MO-5). -->
+			<details class="capture-help">
+				<summary>Hilfe zur Kurzsyntax</summary>
+				<p class="hint" id={ids.hint}>{@render syntaxHelp()}</p>
+			</details>
+		{:else}
+			<p class="hint" id={ids.hint}>
+				Enter legt ein Ticket an, Alt+Enter legt es in den Eingang. {@render syntaxHelp()}
+			</p>
+			{@render outcome()}
 		{/if}
 	</form>
 
 	{#snippet footer({ close })}
-		<button class="button-secondary" type="button" onclick={close}>
-			{saved ? 'Schließen' : 'Abbrechen'}
-		</button>
+		{#if !phone}
+			<button class="button-secondary" type="button" onclick={close}>
+				{saved ? 'Schließen' : 'Abbrechen'}
+			</button>
+		{/if}
 		<button
-			class="button-secondary"
+			class="button-secondary capture-save"
 			type="button"
 			aria-disabled={pending ? 'true' : undefined}
+			onmousedown={keepLine}
 			onclick={() => save('inbox')}
 		>
 			In den Eingang
 		</button>
 		<button
-			class="button-primary"
+			class="button-primary capture-save"
 			type="submit"
 			form={ids.form}
 			aria-disabled={pending ? 'true' : undefined}
+			onmousedown={keepLine}
 		>
 			{pending ? 'Wird gespeichert …' : 'Ticket anlegen'}
 		</button>
 	{/snippet}
 </Modal>
+
+{#snippet syntaxHelp()}
+	Beispiel: „Zahnarzt anrufen @HAUS !hoch #anruf“ (Priorität !niedrig, !mittel, !hoch, !dringend
+	oder !1 bis !4).
+	<!-- A new tab, so typed text is never lost (plan UI-4) and the dialog stays as it is. -->
+	<a href={helpHref('kurzsyntax')} target="_blank" rel="noopener">
+		Mehr zur Kurzsyntax<NewTabHint />
+	</a>
+{/snippet}
+
+<!-- What the last save did: the result with its link, or the failure. -->
+{#snippet outcome()}
+	<div aria-live="polite">
+		{#if result}
+			<p class="result">
+				{result.text}
+				<a href={result.href} onclick={() => onclose()}>
+					{result.target === 'ticket' ? 'Ticket ansehen' : 'Eintrag ansehen'}
+				</a>
+			</p>
+		{/if}
+	</div>
+	<div aria-live="assertive">
+		{#if message}
+			<p class="alert-error"><ErrorIcon /><span>{message}</span></p>
+		{/if}
+	</div>
+	{#if message}
+		<ProblemDetails problem={messageProblem} />
+	{/if}
+{/snippet}
 
 <style>
 	.form {
@@ -255,5 +300,35 @@
 	.result a,
 	.hint a {
 		color: var(--color-brand-text);
+	}
+
+	/*
+	 * The sheet of "＋" in the phone frame (MO-5, ADR-0073 addendum MO-5): the two buttons that save
+	 * share the footer side by side, each at least 44 px high (base.css), and wrap one below the
+	 * other only if their words do not fit; the opener of the folded help and "Ticket ansehen" are
+	 * targets of 44 px as well. Off, or from 40rem, nothing changes.
+	 */
+	@media (max-width: 39.99rem) {
+		:global(:root[data-mobile-layout='on']) .capture-save {
+			flex: 1 1 0;
+			white-space: nowrap;
+		}
+
+		:global(:root[data-mobile-layout='on']) .capture-help summary {
+			font-size: var(--font-size-control);
+			line-height: var(--control-height-touch);
+			color: var(--color-text-muted);
+			cursor: pointer;
+		}
+
+		:global(:root[data-mobile-layout='on']) .result {
+			align-items: center;
+		}
+
+		:global(:root[data-mobile-layout='on']) .result a {
+			display: inline-flex;
+			align-items: center;
+			min-height: var(--control-height-touch);
+		}
 	}
 </style>

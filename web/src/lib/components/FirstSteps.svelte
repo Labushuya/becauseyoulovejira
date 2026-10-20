@@ -9,6 +9,7 @@
 		showsFirstSteps,
 		type FirstStepId
 	} from '$lib/domain/first-steps';
+	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 	import { getQuickCaptureOpener } from '$lib/quick-capture-context';
 	import type { FirstStepsStore } from '$lib/stores/first-steps.svelte';
 	import GuidanceIcon from './guidance/GuidanceIcon.svelte';
@@ -31,6 +32,8 @@
 	const ids = { heading: `${uid}-heading`, progress: `${uid}-progress` };
 
 	const openQuickCapture = getQuickCaptureOpener();
+	/** The phone frame (MO-5): the quick entry has "＋" there, its key is no hint. */
+	const mobileLayout = getMobileLayoutStore();
 	const available = $derived(
 		FIRST_STEP_IDS.filter((id) => id !== 'tour' || onstarttour !== undefined)
 	);
@@ -83,8 +86,13 @@
 						{#if link}
 							<a class="button-subtle" href={link.href}>{link.text}</a>
 						{:else if item.id === 'quick' && openQuickCapture}
+							<!-- No key hint in the phone frame (MO-5): the phone has "＋" for it. -->
 							<button class="button-subtle" type="button" onclick={openQuickCapture}>
-								Öffnen <kbd>c</kbd>
+								{#if mobileLayout.active}
+									Öffnen
+								{:else}
+									Öffnen <kbd>c</kbd>
+								{/if}
 							</button>
 						{:else if item.id === 'tour' && onstarttour}
 							<button class="button-subtle" type="button" onclick={onstarttour}>Starten</button>
