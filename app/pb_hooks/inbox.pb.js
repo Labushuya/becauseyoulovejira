@@ -4,11 +4,25 @@
 // insert run in one transaction (lib/transaction.js). Until the migration 1790201200 has run,
 // the collection does not exist and none of these handlers fires.
 
+// The outbox of the SPA (ADR-0074): a new entry may name its action (`op_id`); the same action a second
+// time writes nothing and answers with the entry of the first time (lib/client-ops.js). An entry from
+// the outbox gets `source_meta.offline` ({ device_at }) from the server alone.
+onRecordCreateRequest(function (e) {
+  var ops = require(`${__hooks}/lib/client-ops.js`);
+  return ops.withOp(e, 'inbox.create', 'inbox_items', function () {
+    ops.applyInboxMarks(e);
+    e.next();
+  });
+}, 'inbox_items');
+
 onRecordCreate(function (e) {
   var service = require(`${__hooks}/lib/inbox-service.js`);
+  var ops = require(`${__hooks}/lib/client-ops.js`);
   require(`${__hooks}/lib/transaction.js`).inTransaction(e, function (txApp) {
+    ops.checkClaim(txApp, e.record);
     service.prepareCreate(txApp, e.record);
     e.next();
+    ops.saveClaim(txApp, e.record, 'inbox.create');
   });
 }, 'inbox_items');
 
