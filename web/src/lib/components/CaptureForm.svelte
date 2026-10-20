@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
+	import { beforeNavigate, goto } from '$app/navigation';
 	import type { ResolvedPathname } from '$app/types';
 	import { INBOX_BODY_MAX_LENGTH, INBOX_SOURCE_URL_MAX_LENGTH } from '$lib/domain/inbox';
 	import { projectChoiceLabel } from '$lib/domain/project-tree';
@@ -28,6 +29,7 @@
 	import type { CaptureSaveResult } from '$lib/stores/capture';
 	import type { ProblemEntry } from '$lib/domain/problems';
 	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
+	import { appHref } from '$lib/ticket-links';
 	import { registerUnsavedInput } from '$lib/unsaved-input';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import PrioritySelect from './PrioritySelect.svelte';
@@ -48,6 +50,9 @@
 	// while a required field follows and "done" where it saves, the hint names no keys, and a press on
 	// the button that saves keeps the focus in the field, so the keyboard stays open for the next
 	// object (as in the quick entry, MO-5). Off, or from 40rem, the form stays as it was.
+	// Since MO-6b (ADR-0073 addendum MO-6b, on the PC as well, user decision) leaving the page within
+	// the app with typed input asks the same question as "Schließen": a link, the bar, "Mehr", the
+	// back gesture and browser back.
 	let {
 		template,
 		initial = {},
@@ -155,6 +160,43 @@
 	// Leaving the page in the phone frame asks first while the form holds input (MO-1b).
 	$effect(() => registerUnsavedInput(() => dirty));
 
+	/** A navigation held up by the question: its target and, for back and forward, the step. */
+	let leaving = $state<{ url: URL; delta: number | undefined } | null>(null);
+	/** Set once the input is discarded on purpose ("Verwerfen"): leaving asks no more. */
+	let discarding = false;
+	/** The question is open, for "Schließen" or for a navigation. */
+	const asking = $derived(confirmingDiscard || leaving !== null);
+
+	// Leaving the page within the app (MO-6b) asks while the form holds input, the way the ticket and
+	// the panels of projects and rules do (ADR-0025 section 4): beforeNavigate cannot wait for a
+	// dialog, so the navigation is cancelled (SvelteKit restores the place in the history for back
+	// and forward), the question of "Schließen" opens, and "Verwerfen" starts it again. Another
+	// template changes only the query and keeps the form; leaving the app (reload, closing the tab)
+	// is the question of the browser (MO-1b); a save that runs keeps its input.
+	beforeNavigate((navigation) => {
+		const to = navigation.to;
+		if (discarding || pending || navigation.type === 'leave' || to === null) return;
+		if (!to.route.id?.startsWith('/(app)/')) return;
+		if (navigation.from !== null && to.url.pathname === navigation.from.url.pathname) return;
+		if (!dirty) return;
+		navigation.cancel();
+		leaving = {
+			url: to.url,
+			delta: navigation.type === 'popstate' ? navigation.delta : undefined
+		};
+	});
+
+	/** "Verwerfen": closes the form or continues the navigation that was held up. */
+	async function discard() {
+		const target = leaving;
+		confirmingDiscard = false;
+		leaving = null;
+		discarding = true;
+		if (target === null) onclose();
+		else if (target.delta !== undefined && target.delta !== 0) history.go(target.delta);
+		else await goto(appHref(target.url));
+	}
+
 	/** Focus on the first field of the template (on open and after saving). */
 	function focusFirst() {
 		form?.querySelector<HTMLElement>('[data-capture-field]')?.focus();
@@ -239,7 +281,7 @@
 	}
 
 	function onkeydown(event: KeyboardEvent) {
-		if (confirmingDiscard) return;
+		if (asking) return;
 		if (event.key === 'Enter' && event.altKey && !event.ctrlKey && !event.metaKey) {
 			event.preventDefault();
 			void save('inbox');
@@ -511,15 +553,15 @@
 </Drawer>
 
 <ConfirmDialog
-	open={confirmingDiscard}
+	open={asking}
 	title="Erfassung verwerfen?"
 	confirmLabel="Verwerfen"
 	cancelLabel="Weiter bearbeiten"
-	onconfirm={() => {
+	onconfirm={() => void discard()}
+	oncancel={() => {
 		confirmingDiscard = false;
-		onclose();
+		leaving = null;
 	}}
-	oncancel={() => (confirmingDiscard = false)}
 >
 	<p>Die Eingaben gehen verloren.</p>
 </ConfirmDialog>

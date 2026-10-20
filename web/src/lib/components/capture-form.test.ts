@@ -2,15 +2,18 @@
 // group of the templates, required fields with field errors (ADR-0009), target ticket or inbox
 // (switch, Alt+Enter, Ctrl+Enter), result with link, emptied form, and the route /eingang/neu
 // with the template in the URL. Since UI-3 the question before discarding is the confirmation of
-// ADR-0025 section 4 instead of window.confirm.
+// ADR-0025 section 4 instead of window.confirm; since MO-6b it asks also before a navigation within
+// the app leaves the form with input (beforeNavigate), on the PC and in the phone frame.
 
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ResolvedPathname } from '$app/types';
+import { PHONE_QUERY } from '$lib/domain/phone-layout';
 import type { Project } from '$lib/domain/project';
 import type { Capture, CaptureTarget } from '$lib/domain/templates';
 import type { Ticket } from '$lib/domain/ticket';
+import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 import type { CaptureSaveResult } from '$lib/stores/capture';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import CaptureForm from './CaptureForm.svelte';
@@ -20,6 +23,8 @@ useOverlayStubs();
 
 const mocks = vi.hoisted(() => ({
 	goto: vi.fn(async () => undefined),
+	/** The guards of beforeNavigate, run by `navigate` like SvelteKit before a navigation. */
+	guards: [] as ((navigation: unknown) => void)[],
 	page: { url: new URL('http://localhost:3000/eingang/neu?vorlage=anruf') },
 	detail: { create: vi.fn(), reset: vi.fn() },
 	catalog: {
@@ -34,7 +39,10 @@ const mocks = vi.hoisted(() => ({
 	tickets: { markRead: vi.fn(async () => undefined) }
 }));
 
-vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
+vi.mock('$app/navigation', () => ({
+	goto: mocks.goto,
+	beforeNavigate: (guard: (navigation: unknown) => void) => mocks.guards.push(guard)
+}));
 vi.mock('$app/state', () => ({ page: mocks.page }));
 vi.mock('$lib/stores/ticket-detail.svelte', async (importOriginal) => ({
 	...(await importOriginal<object>()),
@@ -91,6 +99,7 @@ const submitButton = () =>
 
 beforeEach(() => {
 	mocks.goto.mockClear();
+	mocks.guards.length = 0;
 	mocks.page.url = new URL('http://localhost:3000/eingang/neu?vorlage=anruf');
 });
 
@@ -262,6 +271,144 @@ describe('capture form', () => {
 			})
 		);
 		expect(onclose).toHaveBeenCalledTimes(2);
+	});
+});
+
+/** A navigation as beforeNavigate gets it, from "Erfassen" to `path`; runs the guards like SvelteKit. */
+function navigate(
+	path: string,
+	route: string | null,
+	overrides: Record<string, unknown> = {}
+): { cancel: ReturnType<typeof vi.fn> } {
+	const navigation = {
+		type: 'link',
+		from: { url: new URL('http://localhost:3000/eingang/neu?vorlage=todo') },
+		to: { url: new URL(path, 'http://localhost:3000'), route: { id: route } },
+		cancel: vi.fn(),
+		...overrides
+	};
+	for (const guard of mocks.guards) guard(navigation);
+	return navigation;
+}
+
+const question = () =>
+	screen.queryByRole<HTMLDialogElement>('dialog', { name: 'Erfassung verwerfen?' });
+
+async function answer(name: 'Verwerfen' | 'Weiter bearbeiten') {
+	await tick();
+	await fireEvent.click(within(question() as HTMLElement).getByRole('button', { name }));
+	await tick();
+}
+
+describe('capture form: leaving with typed input (MO-6b)', () => {
+	it('asks before a link or the bar leaves, keeps the input with "Weiter bearbeiten" and goes on after "Verwerfen"', async () => {
+		const { onclose } = renderForm();
+		await fireEvent.input(field(/^Was\?/), { target: { value: 'Milch kaufen' } });
+
+		const link = navigate('/eingang?quelle=mail', '/(app)/eingang');
+		expect(link.cancel).toHaveBeenCalledOnce();
+		await tick();
+		// The question of "Schließen", with its words and buttons; the first focus on "Weiter bearbeiten".
+		expect(question()?.open).toBe(true);
+		expect(
+			within(question() as HTMLElement).getByText('Die Eingaben gehen verloren.')
+		).toBeTruthy();
+		await vi.waitFor(() =>
+			expect(document.activeElement).toBe(
+				within(question() as HTMLElement).getByRole('button', { name: 'Weiter bearbeiten' })
+			)
+		);
+		await answer('Weiter bearbeiten');
+		expect(question()).toBeNull();
+		expect(field(/^Was\?/).value).toBe('Milch kaufen');
+		expect(mocks.goto).not.toHaveBeenCalled();
+
+		const bar = navigate('/tagesplan?tag=2031-05-15', '/(app)/tagesplan');
+		expect(bar.cancel).toHaveBeenCalledOnce();
+		await answer('Verwerfen');
+		expect(mocks.goto).toHaveBeenCalledWith('/tagesplan?tag=2031-05-15');
+		expect(onclose).not.toHaveBeenCalled();
+		// The navigation that "Verwerfen" starts again passes.
+		expect(navigate('/tagesplan?tag=2031-05-15', '/(app)/tagesplan').cancel).not.toHaveBeenCalled();
+	});
+
+	it('asks before back and the back gesture, and steps through the history after "Verwerfen"', async () => {
+		const go = vi.spyOn(history, 'go').mockImplementation(() => undefined);
+		renderForm();
+		await fireEvent.input(field(/^Was\?/), { target: { value: 'Idee' } });
+		const back = navigate('/eingang', '/(app)/eingang', { type: 'popstate', delta: -1 });
+		expect(back.cancel).toHaveBeenCalledOnce();
+		await answer('Verwerfen');
+		expect(go).toHaveBeenCalledWith(-1);
+		expect(mocks.goto).not.toHaveBeenCalled();
+	});
+
+	it('lets a navigation pass without input, for another template, out of the app and after saving', async () => {
+		renderForm();
+		expect(navigate('/eingang', '/(app)/eingang').cancel).not.toHaveBeenCalled();
+
+		await fireEvent.input(field(/^Was\?/), { target: { value: 'A' } });
+		// Another template changes only the query: the form and its input stay.
+		expect(
+			navigate('/eingang/neu?vorlage=termin', '/(app)/eingang/neu').cancel
+		).not.toHaveBeenCalled();
+		// Leaving the app is the question of the browser; the login page and other sites pass.
+		expect(navigate('/eingang', null, { type: 'leave', to: null }).cancel).not.toHaveBeenCalled();
+		expect(navigate('/login', '/login').cancel).not.toHaveBeenCalled();
+		expect(navigate('https://example.com/', null).cancel).not.toHaveBeenCalled();
+		expect(question()).toBeNull();
+
+		// Saved, the form is empty: "Ticket ansehen" and every other way pass.
+		await fireEvent.click(submitButton());
+		await screen.findByRole('link', { name: 'Ticket ansehen' });
+		expect(
+			navigate('/tickets/tick00000000001', '/(app)/(tickets)/tickets/[id]').cancel
+		).not.toHaveBeenCalled();
+		expect(question()).toBeNull();
+	});
+
+	it('asks once on "Schließen": after "Verwerfen" the navigation of closing passes', async () => {
+		const { onclose } = renderForm();
+		await fireEvent.input(field(/^Was\?/), { target: { value: 'A' } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Schließen' }));
+		await answer('Verwerfen');
+		expect(onclose).toHaveBeenCalledOnce();
+		expect(navigate('/eingang', '/(app)/eingang').cancel).not.toHaveBeenCalled();
+		expect(question()).toBeNull();
+	});
+
+	describe('the same in every window', () => {
+		let stop: (() => void) | null = null;
+
+		afterEach(() => {
+			stop?.();
+			stop = null;
+			getMobileLayoutStore().choose(false);
+			vi.unstubAllGlobals();
+			localStorage.clear();
+		});
+
+		it.each([
+			['a PC with the switch on', false, true],
+			['a phone with the switch off', true, false],
+			['the phone frame', true, true]
+		])('asks before back on %s and keeps the input', async (_name, narrow, enabled) => {
+			vi.stubGlobal('matchMedia', (media: string) => ({
+				matches: media === PHONE_QUERY ? narrow : false,
+				media,
+				addEventListener: () => undefined,
+				removeEventListener: () => undefined
+			}));
+			stop = getMobileLayoutStore().connect();
+			getMobileLayoutStore().choose(enabled);
+			renderForm({ backLabel: 'Zum Eingang' });
+			expect(getMobileLayoutStore().active).toBe(narrow && enabled);
+			await fireEvent.input(field(/^Was\?/), { target: { value: 'Rasen mähen' } });
+			const back = navigate('/eingang', '/(app)/eingang', { type: 'popstate', delta: -1 });
+			expect(back.cancel).toHaveBeenCalledOnce();
+			await answer('Weiter bearbeiten');
+			expect(field(/^Was\?/).value).toBe('Rasen mähen');
+		});
 	});
 });
 
