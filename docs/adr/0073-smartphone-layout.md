@@ -1,6 +1,6 @@
 # ADR-0073: Smartphone-Layout als responsive Variante der SPA hinter dem Vorschau-Schalter „Handy-Ansicht“
 
-- **Status:** Angenommen; umgesetzt sind das Grundgerüst (Paket MO-1a) und Overlays, Bedienziele und Eingabe (Paket MO-1b, Nachtrag unten). Die einzelnen Ansichten folgen in den Paketen MO-2 bis MO-8. Fälle im Test-Manifest BYL-E6-1907 bis BYL-E6-1929 (manuelle Prüfungen BYL-E6-1925 bis BYL-E6-1929) und BYL-E6-1950 bis BYL-E6-1964 (manuelle Prüfungen BYL-E6-1959 bis BYL-E6-1964)
+- **Status:** Angenommen; umgesetzt sind das Grundgerüst (Paket MO-1a), Overlays, Bedienziele und Eingabe (Paket MO-1b, Nachtrag unten) und der Tagesplan (Paket MO-2, Nachtrag unten). Die übrigen Ansichten folgen in den Paketen MO-3 bis MO-8. Fälle im Test-Manifest BYL-E6-1907 bis BYL-E6-1929 (manuelle Prüfungen BYL-E6-1925 bis BYL-E6-1929), BYL-E6-1950 bis BYL-E6-1964 (manuelle Prüfungen BYL-E6-1959 bis BYL-E6-1964) und BYL-E6-1965 bis BYL-E6-1976 (manuelle Prüfungen BYL-E6-1972 bis BYL-E6-1976)
 - **Datum:** 2026-10-20
 - **Entscheidung durch:** Nutzer (Ziel „unterwegs am Android-Handy“, die Ansicht dort sei „zu gequetscht und überladen“; Entscheidungen vom 2026-10-20: VPN mit `http`, Installierbarkeit später, untere Leiste „Tagesplan · Aufgaben · ＋ · Eingang · Mehr“, Startansicht Tagesplan nur am Handy, nichts verschwindet ganz, „＋“ öffnet vorerst die vorhandene Schnellerfassung (Umbau in MO-5), keine Wischgesten, `@playwright/test` als Dev-Abhängigkeit, Auslieferung am Stück hinter einem Vorschau-Schalter), Advisor (Auftrag MO-1a mit Grundsätzen und Abgrenzung zu MO-1b), Executor (Konzept MO-0, Breakpoint, Bedingung, Umsetzung, Tests)
 - **Bezug:** [ADR-0025](0025-ui-konsistenz-overlay-system.md) (sechs Overlay-Bausteine), [ADR-0029](0029-glas-materialien.md) (Glas der Bedienebene), [ADR-0030](0030-spalten-breiten-und-kompakte-zeilen.md) (keine Container Queries), [ADR-0053](0053-kalenderansicht.md) §7 (Agenda unter 40rem), [ADR-0057](0057-kontextabhaengige-oberflaeche.md) (Kontext „nur am PC“), [ADR-0060](0060-einheitliche-eingabeelemente.md) §2 (44 px auf Touch), [ADR-0065](0065-tagesplan.md) (Tagesplan), [ADR-0066](0066-ansicht-erledigte.md) §1 (feste Reihenfolge der Navigation, Nachtrag MO-1a), [ADR-0028](0028-plattform-strategie.md) §3 (HTTPS, Nachtrag MO-1a zum Zugriff über VPN), [Plan Heimnetz](../plan/heimnetz.md) (HN-1)
@@ -159,3 +159,37 @@ Jedes Sheet und jede Seite hat damit einen sichtbaren Knopf zum Schließen: das 
 
 - Der Smoke-Test dauert nicht „etwa eine Minute“: Mit MO-1a lief er in etwa 20 s, mit den zwei Fällen von MO-1b liegen die sechs Tests lokal bei etwa 9 s Testzeit.
 - Er ist ein Schritt im Job „Linux build and test“. Dieser Job ist seit AR-3 ein Pflicht-Check des Rulesets „main“ (CLAUDE.md §12), ein roter Smoke-Test blockiert also jeden Merge: Der Smoke-Test ist damit faktisch Pflicht. Das Konzept MO-0 sah ihn zunächst als freiwilligen Check vor; ein eigener Job oder eine Ausnahme wäre eine neue Entscheidung.
+
+## Nachtrag (2026-10-20, MO-2): Tagesplan
+
+Gilt wie alles hier nur im Rahmen (`MobileLayoutStore.active`); am PC und mit ausgeschaltetem Schalter bleibt der Tagesplan, wie er ist, Tests belegen das. Nur Oberfläche, Tests und Doku, keine Hooks und keine Migration: nach dem Build F5. Entscheidung durch den Advisor (Auftrag MO-2 mit Umfang und Abgrenzung zu MO-3 ff.), den Nutzer („alles nach Empfehlung“ für die Fragen des Konzepts; „kein totales Verschwinden, sondern eher ausblenden, was weniger gebraucht wird“) und den Executor (Wahl zwischen den Varianten, die das Konzept offenlässt, Umsetzung, Tests). Umfang laut Konzept MO-0 §6: Zeile „Haken · Titel · •••“, Reihenfolge über „•••“ oder einen Modus, Vorschläge eingeklappt nach dem Plan, Pool als Abschnitt bzw. Sheet „Hinzufügen …“, Sortierung als Blatt, kompakter Kopf.
+
+### 1. Zeile „Haken · Titel · •••“
+
+- Ein Eintrag ist im Rahmen ein Raster aus drei Spalten: der Haken in einem Ziel von 44 × 44 px (ein `label` um das Kästchen, `.check-target`; ein Tipp irgendwo darin hakt ab, der Name bleibt der des Kästchens), der Titel im Rest der Zeile und „•••“ (44 px aus `base.css`). Ränder und Abstände sind knapp; bei 360 px nimmt der Titel etwa zwei Drittel der Zeile ein (Smoke: mindestens 60 %, auch eingerückt und bei 412 px).
+- Nichts verschwindet: Charm, Key, „Vorhaben“, Zuständigkeit, „2/5“ und die Kontextzeile einer Unteraufgabe bleiben im Titelblock und brechen um; die Initialen im Haushalt stehen unter dem Titel statt daneben.
+- Das `label` gibt es nur im Rahmen. Ohne Schalter würde es auf Touch-Bildschirmen über die Regel für Labels von Häkchen in `base.css` 44 px hoch, und die Zeile wüchse; deshalb verzweigt das Markup an dieser Stelle nach `active`.
+- Kein Griff im Rahmen: Ziehen ist am Handy kein Weg (auf Touch-Bildschirmen war er schon ausgeblendet). Aus demselben Grund sind die Tickets des Pools im Rahmen nicht `draggable`; langes Drücken bleibt das des Browsers (Konzept 3.3).
+
+### 2. Reihenfolge über „•••“
+
+- Das Konzept nennt zwei Wege: „Nach oben/unten“ in „•••“ oder ein Modus „Reihenfolge ändern“ mit sichtbaren Pfeilen. Gewählt ist „•••“: kein neuer Modus und kein neuer Zustand, dasselbe Menü wie jede andere Aktion des Eintrags, dieselben Schritte wie die Knöpfe (`moveUp`/`moveDown`, ein Hauptticket mit seinem Block, TP-4), dieselbe Sperre an den Enden (`aria-disabled`) und dieselbe Ansage in der Statusregion („KEY steht jetzt an Stelle 2 von 5.“). Der Fokus bleibt auf „•••“ des verschobenen Eintrags. `Alt`+Pfeil bleibt für eine Tastatur.
+- Die Einträge stehen nach den Aktionen des Eintrags und vor „Entfernen“, mit einer Linie davor; sortiert (TP-5) gibt es sie nicht, wie die Knöpfe.
+- **Offen:** Mehrere Stellen kosten je zwei Tipps. Zeigt sich das am Gerät als lästig, wäre der Modus „Reihenfolge ändern“ die Erweiterung (Rückmeldung des Nutzers nach den manuellen Fällen).
+
+### 3. Vorschläge und Pool nach dem Plan, eingeklappt
+
+- Im Rahmen kommt zuerst der Plan. Die Vorschläge folgen ihm, eingeklappt mit ihrer Zahl (Konzept); der Pool folgt ihnen als Abschnitt „Hinzufügen …“, ebenso eingeklappt, mit derselben Suche und „+“. Das Markup ändert die Reihenfolge, nicht `order` in CSS, damit Lese- und Fokusreihenfolge dem Bild folgen. Auf- oder zugeklappt bleibt, solange die Ansicht steht; beim nächsten Öffnen ist beides wieder zu.
+- Das Konzept lässt für den Pool Abschnitt oder Sheet offen. Gewählt ist der Abschnitt: Seine Tickets sind Links, die das Ticket öffnen, und Flags nach „+“ bleiben über der Leiste sichtbar; ein Sheet müsste sich dafür schließen. Eingeklappt ist er eine Ebene tiefer (Grundsatz §8), nicht verschwunden. Sein Hinweis nennt im Rahmen nur „+“, nicht das Ziehen; ebenso der leere Plan („Vorschläge übernehmen oder unter „Hinzufügen …“ mit „+“ aufnehmen.“).
+
+### 4. Sortierung, Kopf, vergangene Tage
+
+- „Sortierung“ steht seit MO-1b als Sheet; ihr Knopf hat im Rahmen 44 px, Richtung und „Als manuelle Reihenfolge übernehmen“ haben sie aus `base.css`.
+- Der Kopf ist ein Block: der Tag über die volle Breite zwischen seinen Pfeilen (zentriert, er bricht um, statt etwas hinauszuschieben), darunter Fortschritt und Hinweis auf den anderen Bereich. Pfeile, „Heute“ und der Wechsel des Bereichs haben 44 px aus `base.css`; die Überschrift der Ansicht steht in der oberen Leiste (MO-1a). Die Abschnittsleiste hält im Rahmen nur noch die unsichtbare Überschrift (Ziel des Fokus) und nimmt im Tagesplan keinen Platz mehr ein (`position: absolute`); der Kopf beginnt direkt unter der oberen Leiste.
+- Aufgeklappt trägt das Chevron der Vorschläge die Klasse `open`, die auf Touch-Bildschirmen auch die Regel für den Knopf „Öffnen“ trifft und es auf 44 px aufbläht. Im Rahmen behält es seine Größe; ohne Schalter bleibt die Ansicht unverändert (Grundsatz „Desktop unverändert“), der Fehler dort ist ein eigener Punkt.
+- Vergangene Tage bleiben nur lesend: Kästchen gesperrt, kein „•••“, kein Pool, keine Vorschläge.
+
+### 5. Tests
+
+- Vitest (`components/day-plan/day-plan-phone.test.ts`): Zeile, Abhaken über das Ziel, Verschieben über „•••“ samt Sperre, Ansage und Fokus, `Alt`+Pfeil, sortiert ohne Verschieben, Reihenfolge und Einklappen von Vorschlägen und „Hinzufügen …“, Hinweise ohne Ziehen, vergangene Tage; Gegenprobe am PC mit Schalter an und am Handy mit Schalter aus; statisch die Regeln im Block des Rahmens. Die bestehenden Tests des Tagesplans laufen unverändert als Tests des PC.
+- Smoke bei 360 × 800 und 412 × 915: Ziele, Anteil des Titels, Menü als Sheet mit „Nach unten“, Ansage und Fokus, Abhaken mit einem Tipp neben dem Kästchen, Vorschläge und „Hinzufügen …“ unter dem Plan, „Sortierung“ als Sheet, „+“, kein seitliches Scrollen; am PC Pfeile, Griff, Vorschläge vor dem Plan und der Pool daneben.

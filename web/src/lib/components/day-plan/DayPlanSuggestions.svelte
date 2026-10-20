@@ -315,4 +315,22 @@
 			min-width: var(--control-height-touch);
 		}
 	}
+
+	/*
+	 * Phone frame (MO-2, ADR-0073 addendum MO-2): the heading that folds is a target of 44 px; the
+	 * choices, "Öffnen" and the buttons have theirs from base.css. The view puts the section after the
+	 * plan, folded.
+	 */
+	@media (max-width: 39.99rem) {
+		:global(:root[data-mobile-layout='on']) .disclosure {
+			min-height: var(--control-height-touch);
+		}
+
+		/* Turned, the chevron carries the class "open", which the rule of touch screens above gives
+		   44 px for "Öffnen"; it keeps its own size. */
+		:global(:root[data-mobile-layout='on']) .chevron {
+			min-width: 0;
+			min-height: 0;
+		}
+	}
 </style>

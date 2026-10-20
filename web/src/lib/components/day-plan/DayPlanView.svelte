@@ -3,6 +3,7 @@
 	import { dayTitle, otherAreaText, progressText } from '$lib/domain/day-plan';
 	import { ongoingFinishOf } from '$lib/domain/ongoing-finish';
 	import { restartNeeded } from '$lib/guidance/texts';
+	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 	import type { AreaStore } from '$lib/stores/area.svelte';
 	import type { DayPlanStore, PlanRow } from '$lib/stores/day-plan.svelte';
 	import { dayPlanDateHref } from '$lib/ticket-links';
@@ -28,7 +29,10 @@
 	// abschließen …") are confirmations of the app (ADR-0025 §4); since VH-1 the latter is the one
 	// question of every way to complete an ongoing project (OngoingFinishDialog). Next to the heading
 	// "Plan" stands "Sortierung" (TP-5): a view of this device; sorted, the list names the hint as its
-	// description.
+	// description. In the phone frame (MO-2, ADR-0073 addendum MO-2) the plan comes first: the head is
+	// one compact block (the day between its arrows, the progress below), the suggestions follow the
+	// plan, folded with their number, and the pool follows them as the folded section "Hinzufügen …".
+	// Both are one level deeper, nothing is gone; folded or open is a choice of this view.
 	let {
 		store,
 		area = null,
@@ -48,7 +52,12 @@
 	const sortHintId = `${uid}-sort-hint`;
 
 	let heading = $state<HTMLElement>();
-	let suggestionsOpen = $state(true);
+	const mobileLayout = getMobileLayoutStore();
+	/** The phone frame (MO-2): the plan first, suggestions and pool after it and folded. */
+	const phone = $derived(mobileLayout.active);
+	// Folded at the start in the frame only; the PC keeps the suggestions open and the pool shown.
+	let suggestionsOpen = $state(!mobileLayout.active);
+	let poolOpen = $state(false);
 	/** The ongoing project whose "Vorhaben abschließen …" asks. */
 	let finishing = $state<PlanRow | null>(null);
 	let finishBusy = $state(false);
@@ -151,10 +160,15 @@
 		{#if !store.editable}
 			<SectionMessage tone="info" compact>Vergangene Tage sind schreibgeschützt.</SectionMessage>
 		{/if}
+		{#snippet suggestions()}
+			{#if store.isToday && store.editable}
+				<DayPlanSuggestions {store} {household} bind:open={suggestionsOpen} />
+			{/if}
+		{/snippet}
 		<div class="day-grid" class:with-pool={store.editable}>
 			<div class="main">
-				{#if store.isToday && store.editable}
-					<DayPlanSuggestions {store} {household} bind:open={suggestionsOpen} />
+				{#if !phone}
+					{@render suggestions()}
 				{/if}
 				<section class="plan" aria-labelledby={`${uid}-plan`}>
 					<div class="plan-head">
@@ -168,9 +182,12 @@
 						onfinish={(row) => (finishing = row)}
 					/>
 				</section>
+				{#if phone}
+					{@render suggestions()}
+				{/if}
 			</div>
 			{#if store.editable}
-				<DayPlanPool {store} />
+				<DayPlanPool {store} bind:open={poolOpen} />
 			{/if}
 		</div>
 	{:else}
@@ -298,6 +315,33 @@
 		.day-nav :global(.button-icon) {
 			min-width: var(--control-height-touch);
 			min-height: var(--control-height-touch);
+		}
+	}
+
+	/*
+	 * Phone frame (MO-2, ADR-0073 addendum MO-2): a compact head, the day between its arrows over the
+	 * full width (it wraps instead of pushing anything out), the progress and the other area below.
+	 * The arrows and "Heute" have their 44 px from base.css.
+	 */
+	@media (max-width: 39.99rem) {
+		/* The bar of the view holds only its heading for screen readers here (MO-1a): no room. */
+		:global(:root[data-mobile-layout='on']) .day-plan-view > :global(.section-bar) {
+			position: absolute;
+		}
+
+		:global(:root[data-mobile-layout='on']) .day-head {
+			gap: 0.25rem 0.75rem;
+		}
+
+		:global(:root[data-mobile-layout='on']) .day-nav {
+			flex: 1 1 100%;
+			min-width: 0;
+		}
+
+		:global(:root[data-mobile-layout='on']) .day-title {
+			flex: 1;
+			min-width: 0;
+			text-align: center;
 		}
 	}
 </style>
