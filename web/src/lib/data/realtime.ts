@@ -13,7 +13,8 @@ import type { RecurrenceRule } from '../domain/recurrence-rule';
 import type { Tag } from '../domain/tag';
 import type { Comment, HistoryEntry, Ticket, TicketSummary } from '../domain/ticket';
 import { COMMENT_FIELDS, toComment, type CommentRecord } from './comments';
-import { HISTORY_FIELDS, toHistoryEntry, type HistoryRecord } from './history';
+import { toHistoryEntry, type HistoryRecord } from './history';
+import { historyFields } from './history-marks';
 import type { TicketPin } from '../domain/pins';
 import { INBOX_EXPAND, INBOX_LIST_FIELDS, toInboxItemSummary, type InboxRecord } from './inbox';
 import { PIN_FIELDS, toTicketPin } from './pins';
@@ -120,7 +121,7 @@ export function subscribeHistory(
 		.collection('ticket_history')
 		.subscribe<HistoryRecord>('*', changes(toHistoryEntry, onChange), {
 			filter: pb.filter('ticket = {:ticket}', { ticket: ticketId }),
-			fields: HISTORY_FIELDS
+			fields: historyFields()
 		});
 }
 

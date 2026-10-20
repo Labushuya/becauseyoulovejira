@@ -20,6 +20,7 @@ import {
 } from '../domain/duplicate';
 import { isInboxChannel } from '../domain/inbox';
 import { NO_PROJECT } from '../domain/list-query';
+import type { OutboxFields } from '../domain/offline';
 import type { SourceHandling } from '../domain/sources';
 import type { CompletionChoice } from '../domain/subtasks';
 import { isPriority, isStatus, type Status } from '../domain/status';
@@ -716,20 +717,40 @@ export interface CompletionOptions {
 	completion?: CompletionChoice;
 }
 
+/**
+ * A change from the outbox (OF-2, ADR-0074 §2 to §4): its identifier, the time of the device or
+ * only the mark "offline", and the values it was based on. Sent only once the server reports
+ * `offline_ops`; none of the fields is stored.
+ */
+export interface OutboxOptions {
+	outbox?: OutboxFields;
+}
+
 /** Options of an update besides the request options. */
-export type UpdateOptions = DescriptionGuard & CompletionOptions;
+export type UpdateOptions = DescriptionGuard & CompletionOptions & OutboxOptions;
+
+/** The body fields of the outbox. */
+function outboxBody(fields: OutboxFields): Record<string, unknown> {
+	return {
+		op_id: fields.opId,
+		...(fields.clientAt !== undefined && { client_at: fields.clientAt }),
+		...(fields.offline === true && { offline: true }),
+		...(fields.expected !== undefined && { expected: { ...fields.expected } })
+	};
+}
 
 /** Sends only the changed fields; the answer of the server replaces the ticket. */
 export function updateTicket(
 	pb: PocketBase,
 	id: string,
 	patch: TicketPatch,
-	{ signal, expectedUpdated, completion }: RequestOptions & UpdateOptions = {}
+	{ signal, expectedUpdated, completion, outbox }: RequestOptions & UpdateOptions = {}
 ) {
 	return withDataErrors(signal, async (): Promise<Ticket> => {
-		const body = patchBody(patch);
+		const body: Record<string, unknown> = patchBody(patch);
 		if (expectedUpdated !== undefined) body.expected_updated = expectedUpdated;
 		if (completion !== undefined) body[completion] = true;
+		if (outbox !== undefined) Object.assign(body, outboxBody(outbox));
 		const record = await pb.collection(TICKETS).update<TicketRecord>(id, body, {
 			fields: TICKET_DETAIL_FIELDS,
 			expand: TICKET_EXPAND,

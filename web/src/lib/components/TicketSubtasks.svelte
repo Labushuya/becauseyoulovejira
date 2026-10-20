@@ -41,6 +41,7 @@
 	import StatusSelect from './StatusSelect.svelte';
 	import SubtaskTransferDialog from './SubtaskTransferDialog.svelte';
 	import StatusMenu from './table/StatusMenu.svelte';
+	import PendingMark from './offline/PendingMark.svelte';
 
 	// Section "Unteraufgaben" (ADR-0033 section 4), shared by the side panel and the full view: the
 	// sub-tasks of a top-level ticket with check mark, key, title (link to their panel) and status,
@@ -313,7 +314,7 @@
 							onchange={(done) => toggleDone(child, done)}
 						/>
 					{/if}
-					<span class="key">{child.key}</span>
+					<span class="key">{child.key}<PendingMark id={child.id} /></span>
 					<a class="child-title" href={hrefOf(child.id)}>{child.title}</a>
 					<span class="status-menu">
 						<StatusMenu

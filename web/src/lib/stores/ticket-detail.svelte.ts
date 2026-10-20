@@ -57,11 +57,13 @@ import type {
 import { SILENT_FLAGS, type FlagSink } from './flags.svelte';
 import { hold, type LiveSource } from './realtime';
 import {
+	NO_OVERLAY,
 	completedChildren,
 	openChildrenOf,
 	reopenRefusalOf,
 	type CompletedChild,
-	type SessionGuard
+	type SessionGuard,
+	type TicketOverlay
 } from './ticket-list.svelte';
 import {
 	moveTicketToTrash,
@@ -288,6 +290,8 @@ export class TicketDetailStore implements CommentPinControl {
 	readonly #changes: TicketChangeSink;
 	/** "Angepinnter Kommentar ersetzt." with "Rückgängig" (ADR-0044 section 2). */
 	readonly #flags: FlagSink;
+	/** The kept changes of the outbox laid over the shown ticket (OF-2). */
+	readonly #overlay: Pick<TicketOverlay, 'apply'>;
 
 	readonly #drafts = new SvelteMap<EditableField, string>();
 	readonly #saving = new SvelteSet<FieldKey>();
@@ -358,7 +362,8 @@ export class TicketDetailStore implements CommentPinControl {
 		trash: TrashUndo | null = null,
 		series: SeriesChangeSink = NO_SERIES,
 		flags: FlagSink = SILENT_FLAGS,
-		changes: TicketChangeSink = seriesChanges(series)
+		changes: TicketChangeSink = seriesChanges(series),
+		overlay: Pick<TicketOverlay, 'apply'> = NO_OVERLAY
 	) {
 		this.#data = data;
 		this.#session = session;
@@ -366,6 +371,7 @@ export class TicketDetailStore implements CommentPinControl {
 		this.#trash = trash;
 		this.#changes = changes;
 		this.#flags = flags;
+		this.#overlay = overlay;
 	}
 
 	get id(): string | null {
@@ -798,8 +804,9 @@ export class TicketDetailStore implements CommentPinControl {
 	 * Replaces the ticket with a newer version (own answer or realtime event). Drafts stay, so a
 	 * running input keeps its text; an older `updated` is ignored.
 	 */
-	upsert(ticket: Ticket): void {
-		if (ticket.id !== this.#id || this.#state === 'deleted') return;
+	upsert(incoming: Ticket): void {
+		if (incoming.id !== this.#id || this.#state === 'deleted') return;
+		const ticket = this.#overlay.apply(incoming);
 		if (this.#own !== null && this.#own.updated > ticket.updated) return;
 		this.#own = ticket;
 		if (this.#state !== 'ready') {
@@ -1337,7 +1344,7 @@ export class TicketDetailStore implements CommentPinControl {
 		try {
 			const ticket = await this.#data.get(id, { signal: controller.signal });
 			if (controller.signal.aborted) return;
-			this.#own = ticket;
+			this.#own = this.#overlay.apply(ticket);
 			this.#state = 'ready';
 		} catch (error) {
 			if (controller.signal.aborted) return;

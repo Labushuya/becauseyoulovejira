@@ -136,7 +136,12 @@ describe('what the server knows (GET /api/byl/tickets/create)', () => {
 			assignee: true,
 			subtaskStatus: true,
 			duplicateSubtaskStatus: true,
-			subtaskTransfer: true
+			subtaskTransfer: true,
+			// The outbox (OF-1, ADR-0074 §7): the hooks name it, the SPA reads it since OF-2.
+			offlineOps: {
+				version: 1,
+				kinds: ['ticket.create', 'ticket.update', 'comment.create', 'inbox.create', 'dayplan.check', 'dayplan.uncheck']
+			}
 		});
 	});
 

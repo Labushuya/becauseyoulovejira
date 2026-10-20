@@ -6,7 +6,7 @@ Hinweise mitkommen. Sie stehen in dieser Datei und in licenses-libraries.txt dan
 
 1. Symbole
 
-Die Symbole der Charms und der angehefteten Tickets stammen unverändert aus Lucide
+Die Symbole der Charms, der angehefteten Tickets und des Postausgangs stammen unverändert aus Lucide
 (https://lucide.dev), Paket lucide-static, Version 1.52.0
 (https://github.com/lucide-icons/lucide). Einige davon stammen aus dem Projekt Feather; welche,
 nennt der Lizenztext. Lizenztext dieser Version, kopiert aus ihrer Datei LICENSE:

@@ -161,6 +161,39 @@ describe('history list', () => {
 		]);
 	});
 
+	it('names a change from the outbox with the time of the device beside the one of the server (OF-2)', async () => {
+		await renderActivity([
+			entry({
+				id: 'h6',
+				field: 'status',
+				oldValue: 'open',
+				newValue: 'done',
+				user: 'user0000000002',
+				created: '2026-09-24 12:30:00.000Z',
+				offline: true,
+				deviceAt: '2026-09-24 12:03:00.000Z'
+			}),
+			entry({
+				id: 'h5',
+				field: 'status',
+				oldValue: 'done',
+				newValue: 'open',
+				created: '2026-09-24 12:40:00.000Z',
+				offline: true,
+				deviceAt: null
+			})
+		]);
+		await fireEvent.click(tab('Verlauf'));
+		const panel = screen.getByRole('tabpanel', { name: 'Verlauf' });
+		const items = within(panel).getAllByRole('listitem');
+		const texts = items.map((item) => item.textContent?.replace(/\s+/g, ' ').trim());
+		expect(texts).toEqual([
+			'Anderes Konto 24.09.2026 14:30 Status: Offen → Erledigt' +
+				' offline um 14:03 (laut Gerät), abgeglichen um 14:30',
+			'Du 24.09.2026 14:40 Status: Erledigt → Offen offline geändert, abgeglichen um 14:40'
+		]);
+	});
+
 	it('opens the old and new description as plain text', async () => {
 		await renderActivity();
 		await fireEvent.click(tab('Verlauf'));

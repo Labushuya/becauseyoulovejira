@@ -4,6 +4,7 @@
 // limits and texts are the same as in app/pb_hooks/lib/ticket-create-rules.js
 // (tests/unit/web-ticket-create.test.mjs).
 
+import { toOfflineOps, type OfflineOps } from './offline';
 import type { TemplateSubtask } from './series-template';
 import type { RecurrenceFormField } from './recurrence-rule';
 import type { TicketDraft } from './ticket';
@@ -193,6 +194,11 @@ export interface CreateSupport {
 	 * server does not know the route yet.
 	 */
 	subtaskTransfer: boolean;
+	/**
+	 * The outbox (OF-1, ADR-0074 §7): left out while the server does not name `offline_ops` (before
+	 * the restart after OF-1), null before its migration, else the version and the actions it takes.
+	 */
+	offlineOps?: OfflineOps | null;
 }
 
 /** The answer of the GET, or null when it is not one. */
@@ -200,6 +206,7 @@ export function toCreateSupport(value: unknown): CreateSupport | null {
 	if (!isRecord(value)) return null;
 	const flag = (name: string) => value[name] === true;
 	return {
+		...(Object.hasOwn(value, 'offline_ops') && { offlineOps: toOfflineOps(value.offline_ops) }),
 		recurrence: flag('recurrence'),
 		pin: flag('pin'),
 		dayPlan: flag('day_plan'),

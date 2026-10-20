@@ -1172,6 +1172,94 @@ test.describe('small phone with the switch on: the inbox (MO-6)', () => {
 	});
 });
 
+test.describe('small phone with the switch on: changes without a connection (OF-2)', () => {
+	test.use({ ...SMALL_PHONE, extraHTTPHeaders: ANOTHER_DEVICE });
+
+	/** Open tickets of the account (a run mark appended) with the token, for checks through the API. */
+	async function seedOpen(titles) {
+		const { email, password } = mobileInstance();
+		const { token, record } = await api('POST', '/api/collections/users/auth-with-password', { identity: email, password });
+		const mark = randomBytes(3).toString('hex');
+		const tickets = [];
+		for (const title of titles) {
+			tickets.push(await api('POST', '/api/collections/tickets/records', { owner: record.id, title: `${title} ${mark}` }, token));
+		}
+		return { token, tickets };
+	}
+
+	/** Signs in, waits until the outbox knows the server and has its storage, and opens "Aufgaben". */
+	async function openTasks(page) {
+		const asked = page.waitForResponse((response) => response.url().endsWith('/api/byl/tickets/create') && response.request().method() === 'GET');
+		await switchOn(page);
+		const url = await signIn(page);
+		await asked;
+		await page.waitForFunction(async () => (await indexedDB.databases()).some((database) => database.name === 'byl-offline'));
+		await page.getByRole('navigation', { name: 'Hauptnavigation' }).getByRole('link', { name: 'Aufgaben' }).click();
+		await expect(viewHeading(page, 'Aufgaben')).toBeAttached();
+		return url;
+	}
+
+	test('keeps a check mark without a connection, sends it once the connection is back, and the history says "offline … laut Gerät"', async ({ page, context }) => {
+		const { token, tickets } = await seedOpen(['Müll rausbringen']);
+		const [trash] = tickets;
+		await openTasks(page);
+		const card = page.locator(`li[data-ticket-id="${trash.id}"]`);
+		await expect(card).toBeVisible();
+
+		await context.setOffline(true);
+		await card.locator('.check-target').tap({ position: { x: 3, y: 3 } });
+		await expect(card).toHaveCount(0);
+		const flags = page.getByRole('region', { name: 'Benachrichtigungen' });
+		const flag = flags.getByRole('listitem').filter({ hasText: `${trash.key} erledigt.` });
+		await expect(flag).toContainText('Wird übertragen, sobald die Verbindung zurück ist.');
+		await expectTarget(flag.getByRole('button', { name: 'Rückgängig' }));
+		const symbol = page.getByRole('button', { name: 'Offline, 1 Änderung gemerkt' });
+		await expect(symbol).toBeVisible();
+		await expectTarget(symbol);
+		await expect(page.getByText('Keine Verbindung. 1 Änderung ist gemerkt und wird übertragen, sobald die Verbindung zurück ist.')).toBeVisible();
+		expect(await scrollsSideways(page)).toBe(false);
+		expect((await api('GET', `/api/collections/tickets/records/${trash.id}`, undefined, token)).status).toBe('open');
+
+		await context.setOffline(false);
+		await expect(flags.getByRole('listitem').filter({ hasText: '1 Änderung übertragen.' })).toBeVisible();
+		await expect(symbol).toHaveCount(0);
+		expect((await api('GET', `/api/collections/tickets/records/${trash.id}`, undefined, token)).status).toBe('done');
+		const history = await api('GET', `/api/collections/ticket_history/records?filter=${encodeURIComponent(`ticket='${trash.id}' && field='status'`)}`, undefined, token);
+		expect(history.items).toHaveLength(1);
+		expect(history.items[0]).toMatchObject({ offline: true });
+		expect(history.items[0].device_at).not.toBe('');
+	});
+
+	test('shows a conflict with another device in the dialog instead of overwriting, and "Meine Änderung übernehmen" sends it', async ({ page, context }) => {
+		const { token, tickets } = await seedOpen(['Strom ablesen']);
+		const [meter] = tickets;
+		await openTasks(page);
+		const card = page.locator(`li[data-ticket-id="${meter.id}"]`);
+		await expect(card).toBeVisible();
+
+		await context.setOffline(true);
+		await card.locator('.check-target').tap({ position: { x: 3, y: 3 } });
+		await expect(page.getByRole('button', { name: 'Offline, 1 Änderung gemerkt' })).toBeVisible();
+		// Meanwhile another device sets the status to "Wartet".
+		await api('PATCH', `/api/collections/tickets/records/${meter.id}`, { status: 'waiting' }, token);
+
+		await context.setOffline(false);
+		const notice = page.getByText(`1 Änderung braucht deine Entscheidung: ${meter.key} wurde inzwischen geändert.`);
+		await expect(notice).toBeVisible();
+		expect((await api('GET', `/api/collections/tickets/records/${meter.id}`, undefined, token)).status).toBe('waiting');
+		await page.locator('.offline-notice').getByRole('button', { name: 'Ansehen' }).click();
+		const dialog = page.getByRole('dialog', { name: 'Gemerkte Änderungen' });
+		await expectSheet(dialog.locator('.frame'), SMALL_PHONE.viewport);
+		await expect(dialog).toContainText('Inzwischen: Der Status steht auf „Wartet“');
+		const mine = dialog.getByRole('button', { name: 'Meine Änderung übernehmen' });
+		await expectTarget(mine);
+		expect(await scrollsSideways(page)).toBe(false);
+		await mine.click();
+		await expect(dialog).toContainText('Keine gemerkten Änderungen.');
+		expect((await api('GET', `/api/collections/tickets/records/${meter.id}`, undefined, token)).status).toBe('done');
+	});
+});
+
 test.describe('phone with the switch off', () => {
 	test.use({ ...PHONE, extraHTTPHeaders: ANOTHER_DEVICE });
 

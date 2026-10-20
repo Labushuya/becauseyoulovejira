@@ -76,6 +76,29 @@ export interface HistoryLine {
 	text: string;
 	/** Old and new text of a changed description, shown collapsed as plain text. */
 	details: { before: string; after: string } | null;
+	/**
+	 * A change from the outbox (OF-2, ADR-0074 §4): "offline um 14:03 (laut Gerät), abgeglichen um
+	 * 14:30"; left out for every other entry.
+	 */
+	offline?: string;
+}
+
+/**
+ * The mark of a change from the outbox: the time of the device always "laut Gerät" next to the time
+ * of the server, which stays the one that counts (ADR-0074 §4). Without an accepted time of the
+ * device only "offline geändert". The date stands in the head of the entry; a time of the device on
+ * another day names its date.
+ */
+export function offlineHistoryText(entry: Pick<HistoryEntry, 'created' | 'deviceAt'>): string {
+	const synced = formatBerlinDateTime(entry.created);
+	const at = `abgeglichen um ${synced.slice(11)}`;
+	if (!entry.deviceAt) return `offline geändert, ${at}`;
+	const device = formatBerlinDateTime(entry.deviceAt);
+	const when =
+		device.slice(0, 10) === synced.slice(0, 10)
+			? `um ${device.slice(11)}`
+			: `am ${device.slice(0, 10)} um ${device.slice(11)}`;
+	return `offline ${when} (laut Gerät), ${at}`;
 }
 
 const orEmpty = (value: string) => (value === '' ? EMPTY_VALUE : value);
@@ -360,6 +383,7 @@ export function describeHistoryEntry(
 			: personLabel(entry.user, selfId, lookups.people ?? null),
 		text: describe(entry, lookups, selfId),
 		details:
-			entry.field === 'description' ? { before: entry.oldValue, after: entry.newValue } : null
+			entry.field === 'description' ? { before: entry.oldValue, after: entry.newValue } : null,
+		...(entry.offline === true && { offline: offlineHistoryText(entry) })
 	};
 }

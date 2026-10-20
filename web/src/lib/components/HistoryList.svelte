@@ -82,6 +82,10 @@
 				{:else}
 					<p class="text-line">{line.text}</p>
 				{/if}
+				{#if line.offline}
+					<!-- A change from the outbox (OF-2): the time of the device beside the one of the server. -->
+					<p class="offline-line">{line.offline}</p>
+				{/if}
 			</li>
 		{/each}
 	</ol>
@@ -113,7 +117,8 @@
 
 	.time,
 	.label,
-	.muted {
+	.muted,
+	.offline-line {
 		color: var(--color-text-muted);
 	}
 

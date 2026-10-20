@@ -16,6 +16,7 @@ import { DUPLICATE_MESSAGES } from '../domain/duplicate';
 import { FOLDER_MESSAGES } from '../domain/folders';
 import { GITHUB_MESSAGES } from '../domain/github';
 import { INBOX_KEY_MESSAGES } from '../domain/inbox-keys';
+import { OFFLINE_MESSAGES, OFFLINE_TEXTS } from '../domain/offline';
 import { TICKET_PIN_MESSAGES } from '../domain/pins';
 import { PROJECT_PARENT_MESSAGES } from '../domain/project-tree';
 import {
@@ -58,13 +59,25 @@ export interface FieldError {
 	params?: Readonly<Record<string, unknown>>;
 }
 
+let missingConnection: () => boolean = () => false;
+
+/**
+ * The outbox tells whether it knows the connection to be missing (OF-2, ADR-0074 addendum OF-2):
+ * then a request that is not kept says so instead of "Server nicht erreichbar".
+ */
+export function provideMissingConnection(check: () => boolean): void {
+	missingConnection = check;
+}
+
 /**
  * German default texts per kind; the UI may use more specific ones. "network" names start.bat only
- * for the administrator on the machine of the app (KOB-1, ADR-0057).
+ * for the administrator on the machine of the app (KOB-1, ADR-0057); while the outbox knows the
+ * connection to be missing, that nothing was kept (OF-2).
  */
 export const DATA_ERROR_MESSAGES: Readonly<Record<DataErrorKind, string>> = Object.freeze({
 	aborted: 'Die Anfrage wurde abgebrochen.',
 	get network(): string {
+		if (missingConnection()) return OFFLINE_TEXTS.notKept;
 		return `Server nicht erreichbar. ${unreachableHint(currentCapabilities())}`;
 	},
 	not_found: 'Nicht gefunden. Der Eintrag wurde gelöscht oder ist nicht sichtbar.',
@@ -153,7 +166,9 @@ const FIELD_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
 	// "Neues Ticket" with everything at once (ADR-0069), the same texts as the route.
 	...CREATE_MESSAGES,
 	// "Auf Unteraufgaben übertragen …" (ADR-0070), the same texts as the route.
-	...TRANSFER_MESSAGES
+	...TRANSFER_MESSAGES,
+	// The outbox (ADR-0074 §6), the same texts as the hook.
+	...OFFLINE_MESSAGES
 });
 
 /** Texts that depend on the field as well, keyed by `<field>:<code>`; they win over the above. */

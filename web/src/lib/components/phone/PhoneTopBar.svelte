@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte';
 	import { page } from '$app/state';
 	import { viewOfRoute } from '$lib/domain/area';
 	import { isSettingsPath } from '$lib/settings-sections';
@@ -12,12 +13,16 @@
 	// screen readers hear the heading of the view (SectionBar, hidden on the screen in the frame) and,
 	// as on the PC, the name of the app as the heading of the page. It stays at the top while the page
 	// scrolls, with the safe area of the status bar above it, and is inert while a side panel covers
-	// the view, like the header.
+	// the view, like the header. Since OF-2 the symbol of the outbox stands before the area switch
+	// while it has something to say (`status`).
 	let {
-		covered = false
+		covered = false,
+		status
 	}: {
 		/** A side panel lies over the view; the bar is then not reachable either. */
 		covered?: boolean;
+		/** The symbol of the outbox ("Offline · 3"), before the area switch. */
+		status?: Snippet;
 	} = $props();
 
 	const view = $derived(viewOfRoute(page.route.id));
@@ -33,7 +38,10 @@
 <header class="top-bar" inert={covered} data-phone-frame="top-bar">
 	<h1 class="visually-hidden">becauseyoulovejira</h1>
 	<p class="title" aria-hidden="true">{title}</p>
-	<AreaSwitch phone />
+	<div class="end">
+		{@render status?.()}
+		<AreaSwitch phone />
+	</div>
 </header>
 
 <style>
@@ -63,5 +71,12 @@
 		font-weight: 600;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+
+	.end {
+		display: flex;
+		flex: none;
+		gap: 0.25rem;
+		align-items: center;
 	}
 </style>
