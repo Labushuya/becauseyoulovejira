@@ -9,6 +9,7 @@ import { resolve } from '$app/paths';
 import type { ResolvedPathname } from '$app/types';
 import { safeRedirect } from '$lib/guard';
 import { isSettingsPath } from '$lib/settings-sections';
+import { VIEW_LABELS } from '$lib/views';
 
 /** Key in sessionStorage. */
 export const LAST_VIEW_KEY = 'byl-last-view';
@@ -33,7 +34,8 @@ export function isViewPath(pathname: string): boolean {
 /**
  * Label of the way back for a checked address: the view, or the open panel ("Zurück zu BYL-12",
  * "Zurück zum Eintrag", "Zurück zur Regel"), a ticket in any place it opens (ADR-0054).
- * `ticketKey` finds the key of a ticket in the list, if it is loaded.
+ * `ticketKey` finds the key of a ticket in the list, if it is loaded. Since MO-6b also the day plan
+ * ("Zurück zum Tagesplan", with the name of the view in lib/views.ts) and a ticket next to it.
  */
 export function lastViewLabel(
 	href: string,
@@ -47,10 +49,13 @@ export function lastViewLabel(
 	const rules = resolve('/wiederholungen');
 	const trash = resolve('/papierkorb');
 	const done = resolve('/erledigt');
+	const dayPlan = resolve('/tagesplan');
 	const within = (base: string) => pathname === base || pathname.startsWith(`${base}/`);
-	// A ticket next to the list, the calendar (ADR-0053 §6), "Erledigte" (ADR-0066) or in an area
-	// (ADR-0054).
-	const areas = [calendar, projects, inbox, rules, done].map((base) => `${base}/tickets`).join('|');
+	// A ticket next to the list, the calendar (ADR-0053 §6), "Erledigte" (ADR-0066), the day plan
+	// (ADR-0065) or in an area (ADR-0054).
+	const areas = [calendar, projects, inbox, rules, done, dayPlan]
+		.map((base) => `${base}/tickets`)
+		.join('|');
 	const ticket = new RegExp(`^(?:${tickets}|${areas})/([^/]+)/?$`).exec(pathname)?.[1];
 	if (ticket !== undefined && ticket !== 'neu') {
 		const key = ticketKey(decodeURIComponent(ticket));
@@ -73,6 +78,7 @@ export function lastViewLabel(
 	if (within(rules)) return 'Zurück zu Wiederholungen';
 	if (within(trash)) return 'Zurück zum Papierkorb';
 	if (within(done)) return 'Zurück zu Erledigte';
+	if (within(dayPlan)) return `Zurück zum ${VIEW_LABELS.dayplan}`;
 	return 'Zurück zu Aufgaben';
 }
 

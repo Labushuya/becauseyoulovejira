@@ -5,11 +5,13 @@
 // ("Hinzufügen …") follow it folded; days before stay read-only. The counter-checks: on a PC with
 // the switch on and on a phone with the switch off the view stays as before. The layout itself
 // (44 px, the title in the rest of the row, no sideways scrolling) is checked statically here and
-// in a browser by tests/mobile/phone-frame.spec.mjs.
+// in a browser by tests/mobile/phone-frame.spec.mjs. Since MO-6b (ADR-0073 addendum MO-6b): the
+// short date in the head, the sections open for an empty plan, and the chevron that the rule of
+// "Öffnen" for touch screens no longer hits, outside the frame as well.
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { fireEvent, render, screen, within } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { DayPlanAnswer, DayPlanItem } from '$lib/data/day-plan';
@@ -94,13 +96,19 @@ afterEach(() => {
 async function renderPlan({
 	answer = planAnswer(),
 	date = null,
-	sorting = new DayPlanSortStore()
-}: { answer?: DayPlanAnswer; date?: string | null; sorting?: DayPlanSortStore } = {}) {
+	sorting = new DayPlanSortStore(),
+	items = standardItems()
+}: {
+	answer?: DayPlanAnswer;
+	date?: string | null;
+	sorting?: DayPlanSortStore;
+	items?: DayPlanItem[];
+} = {}) {
 	mocks.page.url = new URL(
 		date === null ? '/tagesplan' : `/tagesplan?tag=${date}`,
 		'http://localhost:3000'
 	);
-	const data = fakeDayPlanData(standardItems(), answer, [A2]);
+	const data = fakeDayPlanData(items, answer, [A2]);
 	const store = new DayPlanStore(data, fakeTickets(standardTickets()), fakeSession(), {
 		flags: fakeFlags().flags,
 		scope: () => answer.scope,
@@ -349,6 +357,158 @@ describe('the day plan outside the phone frame stays as before (MO-2)', () => {
 	);
 });
 
+const TOMORROW = '2031-05-15';
+const suggestionsButton = () => screen.getByRole('button', { name: /^Vorschläge/ });
+const addButton = () => screen.getByRole('button', { name: 'Hinzufügen …' });
+const shownPart = (button: HTMLElement) =>
+	document.getElementById(button.getAttribute('aria-controls') ?? '') as HTMLElement;
+
+/** Loads the shown day again as a change of the area does, and waits until it stands. */
+async function loadAgain(store: DayPlanStore) {
+	store.rescope();
+	expect(store.state).toBe('loading');
+	await vi.waitFor(() => expect(store.state).toBe('ready'));
+	await tick();
+}
+
+describe('the head and an empty plan in the phone frame (MO-6b)', () => {
+	it('names the day short in the head and keeps the whole date for screen readers', async () => {
+		useWindow(true, true);
+		await renderPlan();
+		const heading = screen.getByRole('heading', { name: 'Heute, Mittwoch, 14. Mai 2031' });
+		expect(heading.querySelector('[aria-hidden="true"]')?.textContent).toBe('Heute, Mi., 14. Mai');
+		expect(heading.querySelector('.visually-hidden')?.textContent).toBe(
+			'Heute, Mittwoch, 14. Mai 2031'
+		);
+		// The announcement of another day reads the whole date as well.
+		expect(heading.getAttribute('aria-live')).toBe('polite');
+		cleanup();
+
+		await renderPlan({ date: TOMORROW, answer: planAnswer({ date: TOMORROW }) });
+		const tomorrow = screen.getByRole('heading', { name: 'Morgen, Donnerstag, 15. Mai 2031' });
+		expect(tomorrow.querySelector('[aria-hidden="true"]')?.textContent).toBe(
+			'Morgen, Do., 15. Mai'
+		);
+	});
+
+	it('starts with the suggestions and "Hinzufügen …" open when the plan is empty; a first entry folds nothing', async () => {
+		useWindow(true, true);
+		const { data } = await renderPlan({ items: [] });
+		expect(screen.getByText('Noch nichts geplant')).toBeTruthy();
+		// The plan still comes first, then the suggestions and the pool, now open.
+		expect(follows(screen.getByRole('heading', { name: 'Plan' }), suggestionsButton())).toBe(true);
+		expect(suggestionsButton().getAttribute('aria-expanded')).toBe('true');
+		expect(shownPart(suggestionsButton()).hidden).toBe(false);
+		expect(screen.getByText('– heute fällig')).toBeTruthy();
+		expect(addButton().getAttribute('aria-expanded')).toBe('true');
+		expect(shownPart(addButton()).hidden).toBe(false);
+
+		const pool = within(screen.getByRole('region', { name: 'Hinzufügen …' }));
+		await fireEvent.click(pool.getByRole('button', { name: 'TASK-a4 zum Tagesplan' }));
+		await vi.waitFor(() => expect(data.add).toHaveBeenCalled());
+		await vi.waitFor(() => expect(entryKeys()).toEqual(['TASK-a4']));
+		expect(suggestionsButton().getAttribute('aria-expanded')).toBe('true');
+		expect(addButton().getAttribute('aria-expanded')).toBe('true');
+
+		// Folding stays the choice of the user.
+		await fireEvent.click(addButton());
+		await fireEvent.click(suggestionsButton());
+		expect(addButton().getAttribute('aria-expanded')).toBe('false');
+		expect(suggestionsButton().getAttribute('aria-expanded')).toBe('false');
+	});
+
+	it('opens them when an empty day loads, also after folding; a day with entries starts folded', async () => {
+		useWindow(true, true);
+		const { store } = await renderPlan({ items: [] });
+		await fireEvent.click(addButton());
+		await fireEvent.click(suggestionsButton());
+		expect(addButton().getAttribute('aria-expanded')).toBe('false');
+		await loadAgain(store);
+		expect(addButton().getAttribute('aria-expanded')).toBe('true');
+		expect(suggestionsButton().getAttribute('aria-expanded')).toBe('true');
+		cleanup();
+
+		// With entries the sections start folded (MO-2); an empty day loaded later opens the pool,
+		// the suggestions belong to today only.
+		const planned = await renderPlan();
+		expect(addButton().getAttribute('aria-expanded')).toBe('false');
+		expect(suggestionsButton().getAttribute('aria-expanded')).toBe('false');
+		planned.data.fetch.mockResolvedValueOnce({
+			kind: 'ok',
+			value: planAnswer({ date: TOMORROW, plan: null })
+		});
+		planned.store.show(TOMORROW);
+		await vi.waitFor(() => expect(planned.store.state).toBe('ready'));
+		await tick();
+		expect(entryKeys()).toEqual([]);
+		expect(addButton().getAttribute('aria-expanded')).toBe('true');
+		expect(screen.queryByRole('button', { name: /^Vorschläge/ })).toBeNull();
+	});
+});
+
+describe('the head and an empty plan outside the phone frame stay as before (MO-6b)', () => {
+	it.each([
+		['a PC with the switch on', false, true],
+		['a phone with the switch off', true, false]
+	])(
+		'shows the whole date, the suggestions open as the user leaves them and the pool on %s',
+		async (_name, narrow, enabled) => {
+			useWindow(narrow, enabled);
+			const { store } = await renderPlan({ items: [] });
+			const heading = screen.getByRole('heading', { name: 'Heute, Mittwoch, 14. Mai 2031' });
+			expect(heading.textContent?.trim()).toBe('Heute, Mittwoch, 14. Mai 2031');
+			expect(heading.querySelector('[aria-hidden="true"], .visually-hidden')).toBeNull();
+			expect(suggestionsButton().getAttribute('aria-expanded')).toBe('true');
+			expect(screen.getByRole('heading', { name: 'Pool' })).toBeTruthy();
+			expect(screen.queryByRole('button', { name: 'Hinzufügen …' })).toBeNull();
+			// Folded by the user, the suggestions stay folded when the day loads again, as before.
+			await fireEvent.click(suggestionsButton());
+			await loadAgain(store);
+			expect(suggestionsButton().getAttribute('aria-expanded')).toBe('false');
+		}
+	);
+});
+
+describe('the chevron of the suggestions on touch screens (MO-6b)', () => {
+	const source = readFileSync(join(import.meta.dirname, 'DayPlanSuggestions.svelte'), 'utf8');
+
+	/** Every selector of the rules for touch screens, `@media (pointer: coarse)`. */
+	function touchSelectors(): string[] {
+		const start = source.indexOf('@media (pointer: coarse) {');
+		expect(start).toBeGreaterThan(-1);
+		const block = source.slice(source.indexOf('{', start) + 1, source.indexOf('\n\t}', start));
+		return [...block.matchAll(/([^{}]+)\{[^{}]*\}/g)].flatMap((match) =>
+			(match[1] ?? '').split(',').map((selector) => selector.trim())
+		);
+	}
+
+	it.each([
+		['a PC with the switch on', false, true],
+		['a phone with the switch off', true, false],
+		['the phone frame', true, true]
+	])(
+		'turns the open chevron without the rule of "Öffnen" for touch screens on %s',
+		async (_name, narrow, enabled) => {
+			useWindow(narrow, enabled);
+			await renderPlan();
+			if (suggestionsButton().getAttribute('aria-expanded') !== 'true') {
+				await fireEvent.click(suggestionsButton());
+			}
+			const chevron = suggestionsButton().querySelector('svg') as SVGElement;
+			// Open, the chevron is turned by its class "open".
+			expect(chevron.classList.contains('chevron')).toBe(true);
+			expect(chevron.classList.contains('open')).toBe(true);
+			const selectors = touchSelectors();
+			expect(selectors).toEqual(['.choice', '.disclosure', '.open-ticket', '.open-ticket']);
+			expect(selectors.filter((selector) => chevron.matches(selector))).toEqual([]);
+			// "Öffnen" keeps its 44 px on touch screens.
+			expect(screen.getByRole('link', { name: 'TASK-a3 öffnen' }).matches('.open-ticket')).toBe(
+				true
+			);
+		}
+	);
+});
+
 describe('styles of the day plan in the phone frame (MO-2)', () => {
 	const read = (name: string) => readFileSync(join(import.meta.dirname, name), 'utf8');
 	const FRAME = ":global(:root[data-mobile-layout='on'])";
@@ -391,9 +551,12 @@ describe('styles of the day plan in the phone frame (MO-2)', () => {
 		expect(rule('DayPlanSuggestions.svelte', '.disclosure')).toMatch(
 			/min-height: var\(--control-height-touch\);/
 		);
-		// The turned chevron carries "open", like "Öffnen" whose rule gives 44 px on touch screens.
-		expect(read('DayPlanSuggestions.svelte')).toMatch(/@media \(pointer: coarse\)[\s\S]*\.open \{/);
-		expect(rule('DayPlanSuggestions.svelte', '.chevron')).toMatch(/min-width: 0;\s*min-height: 0;/);
+		// The turned chevron carries "open"; since MO-6b the rule of touch screens names "Öffnen" by a
+		// class of its own, so the chevron keeps its size without a rule of the frame.
+		expect(read('DayPlanSuggestions.svelte')).toMatch(
+			/@media \(pointer: coarse\)[\s\S]*\.open-ticket \{/
+		);
+		expect(frameBlock(read('DayPlanSuggestions.svelte'))).not.toMatch(/\.chevron/);
 		// The bar of the view holds only its hidden heading in the frame and takes no room (since MO-3
 		// the rule of the bar itself for every view without controls in the frame, see below).
 		expect(rule('../SectionBar.svelte', '.section-bar.bare')).toMatch(/position: absolute;/);

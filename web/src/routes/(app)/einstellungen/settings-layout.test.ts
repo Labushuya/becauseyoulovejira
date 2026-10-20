@@ -309,6 +309,38 @@ describe('settings layout', () => {
 		expect(nav.getAllByRole('link')[0]).toBe(back);
 	});
 
+	// MO-6b: the way back names the day plan, on the PC as in the phone frame (before: "Zurück zu
+	// Aufgaben", though the link led to the day plan).
+	it.each([
+		['the PC', false, false],
+		['a PC with the switch on', false, true],
+		['a phone with the switch off', true, false],
+		['the phone frame', true, true]
+	])('names the way back to the day plan on %s', async (_name, narrow, enabled) => {
+		vi.stubGlobal('matchMedia', (media: string) => ({
+			matches: media === PHONE_QUERY ? narrow : false,
+			media,
+			addEventListener: () => undefined,
+			removeEventListener: () => undefined
+		}));
+		const stop = getMobileLayoutStore().connect();
+		getMobileLayoutStore().choose(enabled);
+		try {
+			await renderSettings('/einstellungen/darstellung', '/tagesplan?tag=2031-05-15');
+			expect(getMobileLayoutStore().active).toBe(narrow && enabled);
+			const nav = within(screen.getByRole('navigation', { name: 'Einstellungen' }));
+			const back = nav.getByRole('link', { name: 'Zurück zum Tagesplan' });
+			expect(back.getAttribute('href')).toBe('/tagesplan?tag=2031-05-15');
+			expect(nav.getAllByRole('link')[0]).toBe(back);
+			expect(nav.queryByRole('link', { name: 'Zurück zu Aufgaben' })).toBeNull();
+		} finally {
+			getMobileLayoutStore().choose(false);
+			stop();
+			vi.unstubAllGlobals();
+			localStorage.clear();
+		}
+	});
+
 	it('moves the focus to the heading after a change of the page, not when coming from a view', async () => {
 		await renderSettings('/einstellungen/datei-importe');
 		const heading = screen.getByRole('heading', { level: 2 });

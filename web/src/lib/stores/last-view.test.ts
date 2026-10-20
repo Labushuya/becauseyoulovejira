@@ -143,7 +143,11 @@ describe('lastViewLabel', () => {
 		['/papierkorb/ticket00000000a', 'Zurück zum Papierkorb'],
 		// The view "Erledigte" and a ticket next to it (ADR-0066).
 		['/erledigt?q=Miete', 'Zurück zu Erledigte'],
-		['/erledigt/tickets/unknown00000001?charm=auto', 'Zurück zum Ticket']
+		['/erledigt/tickets/unknown00000001?charm=auto', 'Zurück zum Ticket'],
+		// The day plan and a ticket next to it (MO-6b; before: "Zurück zu Aufgaben").
+		['/tagesplan', 'Zurück zum Tagesplan'],
+		['/tagesplan?tag=2031-05-15', 'Zurück zum Tagesplan'],
+		['/tagesplan/tickets/unknown00000001?tag=2031-05-15', 'Zurück zum Ticket']
 	])('labels %s as "%s"', (href, label) => {
 		expect(lastViewLabel(href)).toBe(label);
 	});
@@ -155,5 +159,6 @@ describe('lastViewLabel', () => {
 		expect(lastViewLabel('/projekte/tickets/abc123def456ghi?q=Haus', keyOf)).toBe(
 			'Zurück zu BYL-12'
 		);
+		expect(lastViewLabel('/tagesplan/tickets/abc123def456ghi', keyOf)).toBe('Zurück zu BYL-12');
 	});
 });
