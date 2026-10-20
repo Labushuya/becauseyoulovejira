@@ -6,20 +6,25 @@
 // options beyond the main fields stand under "Weitere Optionen" (new-ticket-more.test.ts); the route
 // tests here run as before the restart of the server after NT-1 (two steps for a series), those of
 // one request in new-ticket-more.test.ts as well. Tests of color and series open the area first.
+// Since MO-6c the question asks also before a navigation within the app leaves the form with input
+// (beforeNavigate), on the PC and in the phone frame, the conversion of an entry included.
 
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { InboxItem } from '$lib/domain/inbox';
+import { PHONE_QUERY } from '$lib/domain/phone-layout';
 import type { Project } from '$lib/domain/project';
 import type { Ticket, TicketDraft } from '$lib/domain/ticket';
 import { MORE_OPTIONS_KEY, NO_EXTRAS } from '$lib/domain/ticket-create';
+import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 import { fixedAssignees } from '$lib/stores/assignees.svelte';
 import { CatalogStore } from '$lib/stores/catalog.svelte';
 import type { CreateResult } from '$lib/stores/ticket-detail.svelte';
 import type { Editor } from '@tiptap/core';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import { typeText, useProseMirrorStubs } from '$lib/test/prosemirror-stubs';
+import { WayBack } from '$lib/way-back';
 import NewTicketForm from './NewTicketForm.svelte';
 import NewTicketPage from '../../routes/(app)/(tickets)/tickets/neu/+page.svelte';
 
@@ -41,6 +46,10 @@ async function answer(choice: 'Weiter bearbeiten' | 'Verwerfen') {
 
 const mocks = vi.hoisted(() => ({
 	goto: vi.fn(async () => undefined),
+	/** The guards of beforeNavigate, run by `navigate` like SvelteKit before a navigation (MO-6c). */
+	guards: [] as ((navigation: unknown) => void)[],
+	/** The way back of the (app) layout; null as outside of it (MO-6). */
+	wayBack: null as unknown,
 	page: { url: new URL('http://localhost:3000/tickets/neu?erledigte=1') },
 	// The server of before the restart after NT-1: it knows no request with everything at once.
 	detail: {
@@ -60,8 +69,15 @@ const mocks = vi.hoisted(() => ({
 	rules: { state: 'ready', statusReady: false, subtasksReady: false, repeatCreated: vi.fn() }
 }));
 
-vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
+vi.mock('$app/navigation', () => ({
+	goto: mocks.goto,
+	beforeNavigate: (guard: (navigation: unknown) => void) => mocks.guards.push(guard)
+}));
 vi.mock('$app/state', () => ({ page: mocks.page }));
+vi.mock('$lib/way-back', async (importOriginal) => ({
+	...(await importOriginal<object>()),
+	findWayBack: () => mocks.wayBack
+}));
 vi.mock('$lib/stores/ticket-detail.svelte', async (importOriginal) => ({
 	...(await importOriginal<object>()),
 	getTicketDetailStore: () => mocks.detail
@@ -183,6 +199,8 @@ async function descriptionSource(): Promise<HTMLTextAreaElement> {
 
 beforeEach(() => {
 	mocks.goto.mockClear();
+	mocks.guards.length = 0;
+	mocks.wayBack = null;
 	mocks.page.url = new URL('http://localhost:3000/tickets/neu?erledigte=1');
 	catalog().release();
 });
@@ -1537,4 +1555,326 @@ describe('new ticket: a due date in the past (WH-2)', () => {
 			noteOf(within(startQuestion()).getByRole('radio', { name: 'Serie ab heute beginnen' }))
 		).toBe('Erstes Vorkommen: Di 29.09.');
 	});
+});
+
+/** A navigation as beforeNavigate gets it, from the page of the form to `path`; runs the guards. */
+function navigate(
+	path: string,
+	route: string | null,
+	overrides: Record<string, unknown> = {}
+): { cancel: ReturnType<typeof vi.fn> } {
+	const navigation = {
+		type: 'link',
+		from: { url: new URL(mocks.page.url) },
+		to: { url: new URL(path, 'http://localhost:3000'), route: { id: route } },
+		cancel: vi.fn(),
+		...overrides
+	};
+	for (const guard of mocks.guards) guard(navigation);
+	return navigation;
+}
+
+// MO-6c (ADR-0073 addendum MO-6c, on every device, user decision): "Neues Ticket" asks before a
+// navigation within the app leaves the form with typed input, with the question of "Abbrechen", the
+// way "Erfassen" does since MO-6b. Every way runs on a PC with the switch on, on a phone with the
+// switch off and in the phone frame.
+describe('new ticket: leaving with typed input (MO-6c)', () => {
+	const WINDOWS = [
+		['a PC with the switch on', false, true],
+		['a phone with the switch off', true, false],
+		['the phone frame', true, true]
+	] as const;
+	const ITEM_ID = 'item00000000001';
+	/** Routes of the targets: the list, the form, a ticket, the inbox and the day plan. */
+	const LIST = '/(app)/(tickets)';
+	const FORM = '/(app)/(tickets)/tickets/neu';
+	const TICKET = '/(app)/(tickets)/tickets/[id]';
+	const INBOX = '/(app)/eingang';
+	const DAY_PLAN = '/(app)/tagesplan';
+	/** Browser back or the back gesture: one step back through the history. */
+	const BACK = { type: 'popstate', delta: -1 };
+	const CREATED_HREF = '/tickets/new000000000000?erledigte=1';
+	const ENTRY: InboxItem = {
+		id: ITEM_ID,
+		channel: 'eml',
+		kind: 'mail',
+		title: 'Rechnung September',
+		body: 'Bitte bis Monatsende zahlen.',
+		sourceUrl: '',
+		sourceRef: '<a@b>',
+		sourceDate: null,
+		sourceMeta: { from: 'Shop <shop@example.com>' },
+		original: '',
+		state: 'new',
+		ticketId: null,
+		handledAt: null,
+		created: '2026-09-25 08:00:00.000Z',
+		updated: '2026-09-25 08:00:00.000Z'
+	};
+	let stop: (() => void) | null = null;
+
+	/** The window of the test: narrow or not, and the switch "Handy-Ansicht (Vorschau)". */
+	function inWindow(narrow: boolean, enabled: boolean) {
+		vi.stubGlobal('matchMedia', (media: string) => ({
+			matches: media === PHONE_QUERY ? narrow : false,
+			media,
+			addEventListener: () => undefined,
+			removeEventListener: () => undefined
+		}));
+		stop = getMobileLayoutStore().connect();
+		getMobileLayoutStore().choose(enabled);
+		expect(getMobileLayoutStore().active).toBe(narrow && enabled);
+	}
+
+	/** "Umwandeln" of a card of the inbox led to the form (a link of the app, MO-6). */
+	function openConversion() {
+		const wayBack = new WayBack();
+		wayBack.arrived({ type: 'link', from: new URL('http://localhost:3000/eingang') });
+		mocks.wayBack = wayBack;
+		mocks.page.url = new URL(`http://localhost:3000/tickets/neu?aus=${ITEM_ID}`);
+		mocks.inbox.fetch.mockReset();
+		mocks.inbox.fetch.mockResolvedValue(ENTRY);
+		mocks.detail.create.mockReset();
+		render(NewTicketPage);
+	}
+
+	beforeEach(() => {
+		mocks.detail.create.mockReset();
+	});
+
+	afterEach(() => {
+		stop?.();
+		stop = null;
+		getMobileLayoutStore().choose(false);
+		vi.unstubAllGlobals();
+		localStorage.clear();
+	});
+
+	it.each(WINDOWS)(
+		'asks on %s before a link, the bar, "Mehr" and the bar of the views, keeps the input with "Weiter bearbeiten" and goes on after "Verwerfen"',
+		async (_name, narrow, enabled) => {
+			inWindow(narrow, enabled);
+			const { oncancel } = renderForm();
+			await fireEvent.input(titleField(), { target: { value: 'Rasen mähen' } });
+
+			for (const [path, route] of [
+				['/eingang?quelle=mail', INBOX],
+				['/tagesplan', DAY_PLAN],
+				['/kalender', '/(app)/kalender'],
+				['/projekte', '/(app)/projekte']
+			] as const) {
+				expect(navigate(path, route).cancel).toHaveBeenCalledOnce();
+				// The question of "Abbrechen" with its words; the first focus on "Weiter bearbeiten".
+				const question = await discardQuestion();
+				expect(question?.open).toBe(true);
+				expect(
+					within(question as HTMLElement).getByText('Die Eingaben gehen verloren.')
+				).toBeTruthy();
+				await vi.waitFor(() =>
+					expect(document.activeElement).toBe(
+						within(question as HTMLElement).getByRole('button', { name: 'Weiter bearbeiten' })
+					)
+				);
+				await answer('Weiter bearbeiten');
+				expect(await discardQuestion()).toBeNull();
+				expect(titleField().value).toBe('Rasen mähen');
+			}
+			expect(mocks.goto).not.toHaveBeenCalled();
+
+			expect(navigate('/tagesplan?tag=2031-05-15', DAY_PLAN).cancel).toHaveBeenCalledOnce();
+			await answer('Verwerfen');
+			expect(mocks.goto).toHaveBeenCalledExactlyOnceWith('/tagesplan?tag=2031-05-15');
+			expect(oncancel).not.toHaveBeenCalled();
+			expect(await discardQuestion()).toBeNull();
+			// The navigation that "Verwerfen" starts again passes.
+			expect(navigate('/tagesplan?tag=2031-05-15', DAY_PLAN).cancel).not.toHaveBeenCalled();
+		}
+	);
+
+	it.each(WINDOWS)(
+		'asks on %s before browser back and the back gesture, and goes the step after "Verwerfen"',
+		async (_name, narrow, enabled) => {
+			inWindow(narrow, enabled);
+			const go = vi.spyOn(history, 'go').mockImplementation(() => undefined);
+			const back = vi.spyOn(history, 'back').mockImplementation(() => undefined);
+			const { oncancel } = renderForm();
+			await fireEvent.input(titleField(), { target: { value: 'Idee' } });
+
+			expect(navigate('/?erledigte=1', LIST, BACK).cancel).toHaveBeenCalledOnce();
+			await answer('Weiter bearbeiten');
+			expect(go).not.toHaveBeenCalled();
+			expect(titleField().value).toBe('Idee');
+
+			expect(navigate('/?erledigte=1', LIST, BACK).cancel).toHaveBeenCalledOnce();
+			await answer('Verwerfen');
+			expect(go).toHaveBeenCalledExactlyOnceWith(-1);
+			expect(back).not.toHaveBeenCalled();
+			expect(mocks.goto).not.toHaveBeenCalled();
+			expect(oncancel).not.toHaveBeenCalled();
+			// The step that "Verwerfen" starts again passes; no second question.
+			expect(navigate('/?erledigte=1', LIST, BACK).cancel).not.toHaveBeenCalled();
+			expect(await discardQuestion()).toBeNull();
+		}
+	);
+
+	it.each(WINDOWS)(
+		'lets a navigation pass on %s without input, for another query, out of the app and to the login page',
+		async (_name, narrow, enabled) => {
+			inWindow(narrow, enabled);
+			renderForm();
+			expect(navigate('/eingang', INBOX).cancel).not.toHaveBeenCalled();
+			expect(navigate('/?erledigte=1', LIST, BACK).cancel).not.toHaveBeenCalled();
+
+			await fireEvent.input(titleField(), { target: { value: 'A' } });
+			// A filter of the list beside the form and "Neues Ticket" once more change only the query:
+			// the form and its input stay.
+			const filtered = `/tickets/neu?erledigte=1&projekt=${HOUSE.id}`;
+			expect(navigate(filtered, FORM).cancel).not.toHaveBeenCalled();
+			expect(navigate('/tickets/neu?erledigte=1', FORM).cancel).not.toHaveBeenCalled();
+			// Leaving the app is the question of the browser; the login page and other sites pass.
+			const leave = { type: 'leave', to: null };
+			expect(navigate('/eingang', null, leave).cancel).not.toHaveBeenCalled();
+			expect(navigate('/login', '/login').cancel).not.toHaveBeenCalled();
+			expect(navigate('https://example.com/', null).cancel).not.toHaveBeenCalled();
+			expect(await discardQuestion()).toBeNull();
+			expect(titleField().value).toBe('A');
+		}
+	);
+
+	it.each(WINDOWS)(
+		'lets a navigation pass on %s while the ticket is created and after "Anlegen"',
+		async (_name, narrow, enabled) => {
+			inWindow(narrow, enabled);
+			const request = deferred<CreateResult>();
+			mocks.detail.create.mockReturnValueOnce(request.promise);
+			render(NewTicketPage);
+			await fireEvent.input(titleField(), { target: { value: 'Neu' } });
+			await fireEvent.click(createButton());
+			expect(createButton().textContent?.trim()).toBe('Wird angelegt …');
+
+			// A request that runs keeps its input (as in "Erfassen").
+			expect(navigate('/eingang', INBOX).cancel).not.toHaveBeenCalled();
+			request.resolve({ ok: true, ticket: CREATED });
+			await vi.waitFor(() =>
+				expect(mocks.goto).toHaveBeenCalledWith(CREATED_HREF, { replaceState: true })
+			);
+			// Created: the switch to the new ticket and every other way pass.
+			expect(navigate(CREATED_HREF, TICKET, { type: 'goto' }).cancel).not.toHaveBeenCalled();
+			expect(navigate('/tagesplan', DAY_PLAN).cancel).not.toHaveBeenCalled();
+			expect(await discardQuestion()).toBeNull();
+		}
+	);
+
+	it.each(WINDOWS)(
+		'lets a navigation pass on %s after creating with Ctrl+Enter',
+		async (_name, narrow, enabled) => {
+			inWindow(narrow, enabled);
+			mocks.detail.create.mockResolvedValueOnce({ ok: true, ticket: CREATED });
+			render(NewTicketPage);
+			await fireEvent.input(titleField(), { target: { value: 'Neu' } });
+			await fireEvent.keyDown(titleField(), { key: 'Enter', ctrlKey: true });
+
+			await vi.waitFor(() =>
+				expect(mocks.goto).toHaveBeenCalledWith(CREATED_HREF, { replaceState: true })
+			);
+			expect(navigate(CREATED_HREF, TICKET, { type: 'goto' }).cancel).not.toHaveBeenCalled();
+			expect(navigate('/?erledigte=1', LIST, BACK).cancel).not.toHaveBeenCalled();
+			expect(await discardQuestion()).toBeNull();
+		}
+	);
+
+	it.each(WINDOWS)(
+		'asks once on %s for "Abbrechen", the × or the arrow and Escape: after "Verwerfen" the navigation of closing passes',
+		async (_name, narrow, enabled) => {
+			inWindow(narrow, enabled);
+			render(NewTicketPage);
+			await fireEvent.input(titleField(), { target: { value: 'Entwurf' } });
+
+			// The way of the head: the arrow in the phone frame, else the ×.
+			const head = narrow && enabled ? 'Zurück' : 'Panel schließen';
+			await fireEvent.click(screen.getByRole('button', { name: head }));
+			expect((await discardQuestion())?.open).toBe(true);
+			await answer('Weiter bearbeiten');
+			await fireEvent.keyDown(titleField(), { key: 'Escape' });
+			expect((await discardQuestion())?.open).toBe(true);
+			await answer('Weiter bearbeiten');
+			expect(mocks.goto).not.toHaveBeenCalled();
+
+			await fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }));
+			await answer('Verwerfen');
+			expect(mocks.goto).toHaveBeenCalledExactlyOnceWith('/?erledigte=1');
+			// The navigation of closing passes without a second question.
+			expect(navigate('/?erledigte=1', LIST, { type: 'goto' }).cancel).not.toHaveBeenCalled();
+			expect(await discardQuestion()).toBeNull();
+		}
+	);
+
+	it.each(WINDOWS)(
+		'cancels the conversion of an entry on %s with one question: after "Verwerfen" no second one and no loop',
+		async (_name, narrow, enabled) => {
+			inWindow(narrow, enabled);
+			const framed = narrow && enabled;
+			const back = vi.spyOn(history, 'back').mockImplementation(() => undefined);
+			const go = vi.spyOn(history, 'go').mockImplementation(() => undefined);
+			openConversion();
+			await vi.waitFor(() => expect(titleField().value).toBe('Rechnung September'));
+			await fireEvent.input(titleField(), { target: { value: 'Rechnung bezahlen' } });
+
+			// The arrow in the phone frame, "Abbrechen" elsewhere (both cancel the same way).
+			const cancel = framed ? 'Zurück' : 'Abbrechen';
+			await fireEvent.click(screen.getByRole('button', { name: cancel }));
+			await answer('Verwerfen');
+			// In the phone frame back through the history to the card (backThroughHistory, MO-6), else
+			// to the entry as before.
+			expect(back).toHaveBeenCalledTimes(framed ? 1 : 0);
+			expect(mocks.goto.mock.calls).toEqual(framed ? [] : [[`/eingang/${ITEM_ID}`]]);
+			// The navigation of cancelling passes: no second question, no further step.
+			const leaving = framed
+				? navigate('/eingang', INBOX, BACK)
+				: navigate(`/eingang/${ITEM_ID}`, '/(app)/eingang/[id]', { type: 'goto' });
+			expect(leaving.cancel).not.toHaveBeenCalled();
+			expect(await discardQuestion()).toBeNull();
+			expect(back).toHaveBeenCalledTimes(framed ? 1 : 0);
+			expect(go).not.toHaveBeenCalled();
+		}
+	);
+
+	it.each(WINDOWS)(
+		'asks on %s before the back gesture leaves a conversion and goes one step after "Verwerfen"',
+		async (_name, narrow, enabled) => {
+			inWindow(narrow, enabled);
+			const back = vi.spyOn(history, 'back').mockImplementation(() => undefined);
+			const go = vi.spyOn(history, 'go').mockImplementation(() => undefined);
+			openConversion();
+			await vi.waitFor(() => expect(titleField().value).toBe('Rechnung September'));
+			await fireEvent.input(titleField(), { target: { value: 'Rechnung bezahlen' } });
+
+			expect(navigate('/eingang', INBOX, BACK).cancel).toHaveBeenCalledOnce();
+			await answer('Verwerfen');
+			expect(go).toHaveBeenCalledExactlyOnceWith(-1);
+			expect(back).not.toHaveBeenCalled();
+			expect(mocks.goto).not.toHaveBeenCalled();
+			expect(navigate('/eingang', INBOX, BACK).cancel).not.toHaveBeenCalled();
+			expect(await discardQuestion()).toBeNull();
+		}
+	);
+
+	it.each(WINDOWS)(
+		'asks on %s when the same path leaves the entry to convert (another form), not for a filter',
+		async (_name, narrow, enabled) => {
+			inWindow(narrow, enabled);
+			openConversion();
+			await vi.waitFor(() => expect(titleField().value).toBe('Rechnung September'));
+			await fireEvent.input(titleField(), { target: { value: 'Rechnung bezahlen' } });
+
+			// "Ticket anlegen" of "Erste Schritte" opens the form without the entry.
+			expect(navigate('/tickets/neu', FORM).cancel).toHaveBeenCalledOnce();
+			await answer('Weiter bearbeiten');
+			expect(titleField().value).toBe('Rechnung bezahlen');
+			// A filter of the list keeps `?aus=` and the form.
+			const filtered = `/tickets/neu?aus=${ITEM_ID}&projekt=${HOUSE.id}`;
+			expect(navigate(filtered, FORM).cancel).not.toHaveBeenCalled();
+			expect(await discardQuestion()).toBeNull();
+		}
+	);
 });

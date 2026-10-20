@@ -29,7 +29,7 @@ import NewTicketForm from '$lib/components/NewTicketForm.svelte';
 import TicketFields from '$lib/components/TicketFields.svelte';
 
 const mocks = vi.hoisted(() => ({ page: { url: new URL('http://localhost:3000/') } }));
-vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
+vi.mock('$app/navigation', () => ({ goto: vi.fn(), beforeNavigate: vi.fn() }));
 vi.mock('$app/state', () => ({ page: mocks.page }));
 
 useOverlayStubs();

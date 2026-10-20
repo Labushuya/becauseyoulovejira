@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { tick, untrack } from 'svelte';
+	import { beforeNavigate, goto } from '$app/navigation';
 	import { NOBODY_LABEL } from '$lib/domain/assignee';
 	import type { CalendarDate } from '$lib/domain/berlin-date';
 	import { inheritLabel, projectColorOf, type ProjectColor } from '$lib/domain/colors';
@@ -54,6 +55,7 @@
 		findTicketPickerSource,
 		type TicketPickerSource
 	} from '$lib/stores/ticket-picker.svelte';
+	import { appHref, convertFrom } from '$lib/ticket-links';
 	import { registerUnsavedInput } from '$lib/unsaved-input';
 	import BlocksParentSwitch from './BlocksParentSwitch.svelte';
 	import CharmPicker from './CharmPicker.svelte';
@@ -123,6 +125,10 @@
 	// calendar series (E5 plan, package 6; ADR-0024 section 1) shows its rhythm with "Als Wiederholung
 	// übernehmen"; that click opens "Weitere Optionen" and the section with the suggested values. A
 	// series the rules cannot express gets a neutral hint. Nothing is set without a click (P-5).
+	//
+	// Since MO-6c (ADR-0073 addendum MO-6c, on the PC as well, user decision) leaving the page within
+	// the app with typed input asks the same question as "Abbrechen", the way "Erfassen" does since
+	// MO-6b: a link, the bar, "Mehr", the bar of the views, the back gesture and browser back.
 	let {
 		projects = [],
 		initialProject = null,
@@ -481,6 +487,51 @@
 	$effect(() => registerUnsavedInput(() => dirty));
 	const dueError = $derived(dueInvalid ? 'Ungültiges Datum.' : (fieldErrors.due ?? null));
 
+	/** A navigation held up by the question: its target and, for back and forward, the step. */
+	let leaving = $state<{ url: URL; delta: number | undefined } | null>(null);
+	/** Set once the input is discarded on purpose ("Verwerfen"): leaving asks no more. */
+	let discarding = false;
+	/** The question is open, for "Abbrechen" or for a navigation. */
+	const asking = $derived(confirmingDiscard || leaving !== null);
+
+	// Leaving the page within the app (MO-6c) asks while the form holds input, the way "Erfassen"
+	// (MO-6b), the ticket and the panels of projects and rules do (ADR-0025 section 4): beforeNavigate
+	// cannot wait for a dialog, so the navigation is cancelled (SvelteKit restores the place in the
+	// history for back and forward), the question of "Abbrechen" opens, and "Verwerfen" starts it
+	// again. A change of the query keeps the form (the filters of the list beside it), unless it
+	// changes the entry to convert (`?aus=`), which opens another form. Leaving the app (reload,
+	// closing the tab) is the question of the browser (MO-1b); a request that runs keeps its input,
+	// and after creating the request stays locked (`pending`) while the route switches to the ticket.
+	beforeNavigate((navigation) => {
+		const to = navigation.to;
+		const from = navigation.from;
+		if (discarding || pending || navigation.type === 'leave' || to === null) return;
+		if (!to.route.id?.startsWith('/(app)/')) return;
+		if (
+			from !== null &&
+			to.url.pathname === from.url.pathname &&
+			convertFrom(to.url) === convertFrom(from.url)
+		)
+			return;
+		if (!dirty) return;
+		navigation.cancel();
+		leaving = {
+			url: to.url,
+			delta: navigation.type === 'popstate' ? navigation.delta : undefined
+		};
+	});
+
+	/** "Verwerfen": cancels the form or continues the navigation that was held up. */
+	async function discard() {
+		const target = leaving;
+		confirmingDiscard = false;
+		leaving = null;
+		discarding = true;
+		if (target === null) oncancel();
+		else if (target.delta !== undefined && target.delta !== 0) history.go(target.delta);
+		else await goto(appHref(target.url));
+	}
+
 	$effect(() => {
 		titleInput?.focus();
 	});
@@ -740,7 +791,7 @@
 	}
 
 	function onkeydown(event: KeyboardEvent) {
-		if (confirmingDiscard) return;
+		if (asking) return;
 		if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
 			event.preventDefault();
 			void submit();
@@ -1335,15 +1386,15 @@
 </Drawer>
 
 <ConfirmDialog
-	open={confirmingDiscard}
+	open={asking}
 	title="Neues Ticket verwerfen?"
 	confirmLabel="Verwerfen"
 	cancelLabel="Weiter bearbeiten"
-	onconfirm={() => {
+	onconfirm={() => void discard()}
+	oncancel={() => {
 		confirmingDiscard = false;
-		oncancel();
+		leaving = null;
 	}}
-	oncancel={() => (confirmingDiscard = false)}
 >
 	<p>Die Eingaben gehen verloren.</p>
 </ConfirmDialog>
