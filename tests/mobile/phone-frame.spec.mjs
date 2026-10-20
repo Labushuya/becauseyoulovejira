@@ -157,6 +157,11 @@ async function seed(entries) {
 	return titles;
 }
 
+/** Scrolls the element to the middle of the window, away from the bottom bar and its flags (MO-3). */
+function toCentre(locator) {
+	return locator.evaluate((element) => element.scrollIntoView({ block: 'center' }));
+}
+
 /** The share of the row that the title takes (MO-2: at least 60 % at 360 px). */
 async function titleShare(row) {
 	const whole = await row.boundingBox();
@@ -336,23 +341,29 @@ test.describe('small phone with the switch on: overlays (MO-1b)', () => {
 		await quick.getByRole('button', { name: 'Schließen', exact: true }).click();
 		await expect(quick).toHaveCount(0);
 
-		// A picker (the panel "Gruppieren" with its choices) is a sheet with the button "Schließen".
-		// Its button in the bar of the view comes with the view itself (MO-3).
+		// A picker is a sheet with the button "Schließen". Since MO-3 the choices of "Gruppieren" stand
+		// in the filter sheet of "Aufgaben" (a sheet itself), and the picker "Projekt" in it opens as a
+		// panel over the sheet.
 		await bar.getByRole('link', { name: 'Aufgaben' }).click();
 		await expect(viewHeading(page, 'Aufgaben')).toBeAttached();
-		const grouping = page.getByRole('button', { name: 'Gruppieren', exact: true });
-		await grouping.click();
-		const picker = page.getByRole('dialog', { name: 'Gruppieren' });
-		await expectSheet(picker, viewport);
-		const none = picker.getByRole('group', { name: 'Gruppieren', exact: true }).getByRole('radio', { name: 'Keine' });
+		await page.getByRole('button', { name: 'Filter', exact: true }).click();
+		const filterSheet = page.getByRole('dialog', { name: 'Filter' });
+		await expectSheet(filterSheet.locator('.frame'), viewport);
+		const none = filterSheet.getByRole('group', { name: 'Gruppieren', exact: true }).getByRole('radio', { name: 'Keine' });
 		await expect(none).toBeChecked();
 		expect((await none.locator('xpath=..').boundingBox()).height).toBeGreaterThanOrEqual(TARGET_MIN_PX);
+		const project = filterSheet.getByRole('button', { name: /^Projekt:/ });
+		expect((await project.boundingBox()).height).toBeGreaterThanOrEqual(TARGET_MIN_PX);
+		await project.click();
+		const picker = page.getByRole('dialog', { name: 'Projekt' });
+		await expectSheet(picker, viewport);
+		await expect(picker.getByRole('radio', { name: 'Alle' })).toBeChecked();
 		expect(await scrollsSideways(page)).toBe(false);
 		const done = picker.getByRole('button', { name: 'Schließen', exact: true });
 		await expectTarget(done);
 		await done.click();
 		await expect(picker).toBeHidden();
-		await expect(grouping).toBeFocused();
+		await expect(project).toBeFocused();
 	});
 });
 
@@ -479,6 +490,115 @@ test.describe('small phone with the switch on: the day plan (MO-2)', () => {
 	});
 });
 
+test.describe('small phone with the switch on: "Aufgaben" (MO-3)', () => {
+	test.use({ ...SMALL_PHONE, extraHTTPHeaders: ANOTHER_DEVICE });
+	/** The window of the first screen of the concept (MO-0 §6: first card above 400 px at 360 × 780). */
+	const viewport = { width: 360, height: 780 };
+
+	test('shows the tasks as cards, filters and sorts in the sheet, checks with one tap and chooses by tap', async ({ page }) => {
+		const [taxes, invoice, plants] = await seed([
+			{ title: 'Steuererklärung für das vergangene Jahr fertig machen und dafür alle Belege der Handwerker zusammensuchen', dueToday: true },
+			{ title: 'Strom ablesen' },
+			{ title: 'Pflanzen umtopfen' }
+		]);
+		await switchOn(page);
+		const url = await signIn(page);
+		await expect(page).toHaveURL(`${url}/tagesplan`);
+		await page.getByRole('navigation', { name: 'Hauptnavigation' }).getByRole('link', { name: 'Aufgaben' }).click();
+		await expect(viewHeading(page, 'Aufgaben')).toBeAttached();
+		const cardOf = (title) => page.locator('li[data-ticket-id]').filter({ hasText: title });
+
+		// Cards instead of the table; at 360 × 780 the first one starts in the first screen, above 400 px.
+		await page.setViewportSize(viewport);
+		await expect(cardOf(invoice)).toBeVisible();
+		await expect(page.getByRole('table')).toHaveCount(0);
+		expect((await page.locator('li[data-ticket-id]').first().boundingBox()).y).toBeLessThan(400);
+		expect(await scrollsSideways(page)).toBe(false);
+
+		// Each card: the check mark, "•••" and the status pill as targets of 44 px; the title whole up to three lines.
+		for (const title of [taxes, invoice, plants]) {
+			await expectTarget(cardOf(title).locator('.check-target'));
+			await expectTarget(cardOf(title).getByRole('button', { name: /^Weitere Aktionen für / }));
+			expect((await cardOf(title).getByRole('button', { name: /^Status von / }).boundingBox()).height).toBeGreaterThanOrEqual(TARGET_MIN_PX);
+		}
+		const line = (await cardOf(invoice).locator('.title').boundingBox()).height;
+		const long = (await cardOf(taxes).locator('.title').boundingBox()).height;
+		expect(long).toBeGreaterThan(line * 1.5);
+		expect(long).toBeLessThanOrEqual(line * 3 + 1);
+
+		// "Filter" opens the sheet at the bottom; the sort is a choice there, a navigation with a history entry.
+		const filter = page.getByRole('button', { name: 'Filter', exact: true });
+		await expectTarget(filter);
+		await filter.click();
+		const sheet = page.getByRole('dialog', { name: 'Filter' });
+		await expectSheet(sheet.locator('.frame'), viewport);
+		const sortBy = sheet.getByRole('group', { name: 'Sortieren nach' });
+		const byTitle = sortBy.getByRole('radio', { name: 'Titel' });
+		expect((await byTitle.locator('xpath=..').boundingBox()).height).toBeGreaterThanOrEqual(TARGET_MIN_PX);
+		expect(await scrollsSideways(page)).toBe(false);
+		await byTitle.check();
+		await expect(page).toHaveURL(`${url}/?sort=titel`);
+		const show = sheet.getByRole('button', { name: /Tickets? anzeigen$/ });
+		await expectTarget(show);
+		await show.click();
+		await expect(sheet).toHaveCount(0);
+		await expect(filter).toBeFocused();
+		await expect(page.getByText('Sortiert nach Titel, A bis Z')).toBeVisible();
+		const titles = await page.locator('li[data-ticket-id] .title-link').allTextContents();
+		expect(titles.indexOf(plants)).toBeLessThan(titles.indexOf(taxes));
+		expect(titles.indexOf(taxes)).toBeLessThan(titles.indexOf(invoice));
+		// Back and forward as today.
+		await page.goBack();
+		await expect(page).toHaveURL(`${url}/`);
+		await expect(page.getByText('Sortiert nach Titel, A bis Z')).toBeHidden();
+		await page.goForward();
+		await expect(page).toHaveURL(`${url}/?sort=titel`);
+
+		// One tap anywhere in the target of the check mark completes; "Rückgängig" brings the card back.
+		await cardOf(plants).locator('.check-target').tap({ position: { x: 3, y: 3 } });
+		await expect(cardOf(plants)).toHaveCount(0);
+		const flags = page.getByRole('region', { name: 'Benachrichtigungen' });
+		await flags.getByRole('button', { name: 'Rückgängig' }).click();
+		await expect(cardOf(plants)).toBeVisible();
+		// The flag "… wieder offen." stands above the bottom bar for 8 s; closed, it covers no card.
+		const closeFlag = flags.getByRole('button', { name: 'Benachrichtigung schließen' });
+		await expect(flags.getByRole('listitem').filter({ hasText: 'wieder offen' })).toBeVisible();
+		while ((await closeFlag.count()) > 0) await closeFlag.first().click();
+		await expect(flags.getByRole('listitem')).toHaveCount(0);
+
+		// "Auswählen" is in the menu of the list; "Bereich" chooses up to the next card tapped.
+		await page.getByRole('button', { name: 'Weitere Aktionen der Liste' }).click();
+		const list = page.getByRole('menu', { name: 'Aktionen der Liste' });
+		await expectSheet(list, viewport);
+		await list.getByRole('menuitem', { name: 'Auswählen' }).click();
+		const choosing = page.getByRole('group', { name: 'Auswahl' });
+		await expect(choosing).toBeVisible();
+		await expectTarget(cardOf(plants).locator('.check-target'));
+		await toCentre(cardOf(plants));
+		await cardOf(plants).locator('.check-target').tap();
+		const range = choosing.getByRole('button', { name: 'Bereich' });
+		expect((await range.boundingBox()).height).toBeGreaterThanOrEqual(TARGET_MIN_PX);
+		await range.click();
+		await toCentre(cardOf(invoice));
+		await cardOf(invoice).locator('.check-target').tap();
+		for (const title of [plants, taxes, invoice]) {
+			await expect(cardOf(title).getByRole('checkbox', { name: /auswählen$/ })).toBeChecked();
+		}
+		const chosen = page.getByRole('region', { name: /Tickets ausgewählt$/ });
+		await expect(chosen).toBeVisible();
+		expect((await chosen.getByRole('button', { name: 'Erledigen' }).boundingBox()).height).toBeGreaterThanOrEqual(TARGET_MIN_PX);
+		expect(await scrollsSideways(page)).toBe(false);
+		await choosing.getByRole('button', { name: 'Fertig' }).click();
+		await expect(choosing).toHaveCount(0);
+		await expect(chosen).toHaveCount(0);
+
+		// A large phone: no sideways scrolling either, the cards stay.
+		await page.setViewportSize({ width: 412, height: 915 });
+		await expect(cardOf(taxes)).toBeVisible();
+		expect(await scrollsSideways(page)).toBe(false);
+	});
+});
+
 test.describe('phone with the switch off', () => {
 	test.use({ ...PHONE, extraHTTPHeaders: ANOTHER_DEVICE });
 
@@ -543,6 +663,24 @@ test.describe('PC with the switch on', () => {
 		await expect(pool).toBeVisible();
 		await expect(page.getByRole('button', { name: 'Hinzufügen …' })).toHaveCount(0);
 		expect((await pool.boundingBox()).x).toBeGreaterThan((await plan.boundingBox()).x + 200);
+		expect(await scrollsSideways(page)).toBe(false);
+	});
+
+	test('keeps the table of "Aufgaben" on the PC: the filter bar, "Gruppieren", "Spalten", no cards (MO-3)', async ({ page }) => {
+		const [open] = await seed([{ title: 'Garage aufräumen' }]);
+		await switchOn(page);
+		await signIn(page);
+		await expect(viewHeading(page, 'Aufgaben')).toBeVisible();
+		await expect(page.getByRole('table')).toBeVisible();
+		await expect(page.getByRole('row').filter({ hasText: open })).toBeVisible();
+		await expect(page.locator('li[data-ticket-id]')).toHaveCount(0);
+		await expect(page.getByRole('group', { name: 'Filter-Karten' })).toBeVisible();
+		await expect(page.getByRole('region', { name: 'Filter' })).toBeVisible();
+		await expect(page.getByRole('searchbox', { name: 'Suche' })).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Gruppieren', exact: true })).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Spalten' })).toBeVisible();
+		await expect(page.getByRole('checkbox', { name: 'Alle angezeigten Tickets auswählen' })).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Filter', exact: true })).toHaveCount(0);
 		expect(await scrollsSideways(page)).toBe(false);
 	});
 });
