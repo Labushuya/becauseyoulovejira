@@ -3,7 +3,8 @@
 // send the same action at the same time (the identifier makes a second time harmless anyway). The
 // lease lasts 8 s and is renewed every 3 s while there is work; a tab that dies or freezes loses it,
 // and another one takes over. What one step does, the outbox decides (`step`); here are only the
-// loop, the lease and the waking up.
+// loop, the lease and the waking up. A step that fails (the storage of the device, OF-2b) ends the
+// run and goes to `failed`, never out as an uncaught rejection.
 
 import { LEASE_MS, LEASE_RENEW_MS } from '$lib/domain/offline';
 import type { Timers } from './connectivity.svelte';
@@ -21,6 +22,8 @@ export interface RunnerDeps {
 	step: () => Promise<boolean>;
 	/** The run ended. */
 	settled: () => void;
+	/** A step failed (the storage of the device); the run ended with it. */
+	failed?: (error: unknown) => void;
 }
 
 export class OutboxRunner {
@@ -90,6 +93,9 @@ export class OutboxRunner {
 					if (!(await this.#deps.step())) break;
 				}
 			} while (this.#again && !this.#stopped);
+		} catch (error) {
+			this.#again = false;
+			this.#deps.failed?.(error);
 		} finally {
 			this.#deps.timers.clear(this.#renew);
 			this.#renew = null;

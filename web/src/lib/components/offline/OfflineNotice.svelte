@@ -1,12 +1,13 @@
 <script lang="ts">
-	import { OFFLINE_TEXTS, reasonOf } from '$lib/domain/offline';
+	import { CLOCK_CODE, OFFLINE_TEXTS, reasonOf } from '$lib/domain/offline';
 	import type { OutboxStore } from '$lib/offline/outbox.svelte';
 	import SectionMessage from '../guidance/SectionMessage.svelte';
 
 	// The hints of the outbox above the page (OF-2, concept OF-0 §2.1): without a connection a
 	// warning without red (it replaces LiveUpdateNotice) with "Erneut versuchen" and, with kept
-	// changes, their number and "Ansehen"; a conflict and an action older than 48 hours as a warning,
-	// a refusal and errors of the server several times in a row as an error with "Details".
+	// changes, their number and "Ansehen"; a conflict, an action older than 48 hours and one whose
+	// time of the device lies in the future (OF-2b) as a warning, a refusal and errors of the server
+	// several times in a row as an error with "Details".
 	// "Ansehen" opens the dialog "Gemerkte Änderungen"; nothing opens on its own (ADR-0025). The
 	// status region is always there while the outbox works, so screen readers hear a hint when it
 	// appears and the progress of the transfer; the focus never moves because of it.
@@ -16,6 +17,8 @@
 	const conflicts = $derived(outbox.conflicts);
 	const refusals = $derived(outbox.refusals);
 	const expired = $derived(outbox.expired);
+	const aged = $derived(expired.filter((action) => action.outcome?.code !== CLOCK_CODE));
+	const clocked = $derived(expired.filter((action) => action.outcome?.code === CLOCK_CODE));
 	const failing = $derived(outbox.failing);
 	const progress = $derived(outbox.progress);
 	const busy = $derived(outbox.checking ? 'true' : undefined);
@@ -86,9 +89,17 @@
 			{/snippet}
 		</SectionMessage>
 	{/if}
-	{#if expired.length > 0}
+	{#if aged.length > 0}
 		<SectionMessage tone="warning">
-			{OFFLINE_TEXTS.expired(expired.length)}
+			{OFFLINE_TEXTS.expired(aged.length)}
+			{#snippet actions()}
+				<button class="button-subtle" type="button" onclick={onshow}>{OFFLINE_TEXTS.show}</button>
+			{/snippet}
+		</SectionMessage>
+	{/if}
+	{#if clocked.length > 0}
+		<SectionMessage tone="warning">
+			{OFFLINE_TEXTS.clockExpired(clocked.length)}
 			{#snippet actions()}
 				<button class="button-subtle" type="button" onclick={onshow}>{OFFLINE_TEXTS.show}</button>
 			{/snippet}

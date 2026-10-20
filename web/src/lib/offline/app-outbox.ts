@@ -1,7 +1,9 @@
-// The outbox of the app and what it asks the server (OF-2, ADR-0074 addendum OF-2): one instance
-// for the whole tab, bound to the client of the app, so the error page and the hints of a reload see
-// the same state as the layout that starts it. The capability `offline_ops` comes from the same
-// question as "Neues Ticket" (GET /api/byl/tickets/create, ADR-0074 §7).
+// The outbox of the app and what it asks the server (OF-2, ADR-0074 addenda OF-2 and OF-2b): one
+// instance for the whole tab, bound to the client of the app, so the error page and the hints of a
+// reload see the same state as the layout that starts it. The capability `offline_ops` comes from
+// the same question as "Neues Ticket" (GET /api/byl/tickets/create, ADR-0074 §7). Without it the
+// outbox creates nothing in the browser: the identifier of the tab and the BroadcastChannel come
+// with its first watch (OF-2b).
 
 import { provideMissingConnection } from '$lib/data/errors';
 import { askOfflineMarks } from '$lib/data/history-marks';
@@ -71,8 +73,10 @@ export function getOutbox(): OutboxStore {
 				}
 			),
 		get: (id) => getTicket(pb, id),
-		tab: tabIdOf(sessionStorageOf()),
-		channel: broadcastChannel(OUTBOX_CHANNEL),
+		tab: () => tabIdOf(sessionStorageOf()),
+		channel: () => broadcastChannel(OUTBOX_CHANNEL),
+		// Sent only with the account the client is signed in with now (another tab may have changed it).
+		account: () => pb.authStore.record?.id ?? null,
 		win: window,
 		observe: (note) => observeRequests(note),
 		watchRealtime: (check) => {
@@ -105,33 +109,44 @@ export async function keptOnDevice(): Promise<number> {
 	}
 }
 
+/** An answer without `offline_ops` is asked again at most this often (OF-2b). */
+export const SUPPORT_RETRY_MS = 5 * 60 * 1000;
+
 let support: Promise<OfflineOps | null> | null = null;
+/** When the last question went out that did not bring the capability; null once known or forgotten. */
+let missingSince: number | null = null;
 
 /**
  * Whether the server reports `offline_ops`, asked once per sign-in. An answer without it (before the
- * restart after OF-1) or a failed question is asked again on the next call, so a restart of the
- * server shows up after the next reconnection without a reload. Once known, the history asks for
- * the mark of the outbox too.
+ * restart after OF-1) or a failed question is asked again on a later call, at most every 5 minutes
+ * (OF-2b: the tab asks again when it becomes visible), so a restart of the server shows up without a
+ * reload. Once known, the history asks for the mark of the outbox too.
  */
 export function offlineSupport(): Promise<OfflineOps | null> {
-	support ??= fetchCreateSupport(pb).then(
+	const now = Date.now();
+	if (support !== null && (missingSince === null || now - missingSince < SUPPORT_RETRY_MS)) {
+		return support;
+	}
+	missingSince = null;
+	support = fetchCreateSupport(pb).then(
 		(answer) => {
 			const ops = answer?.offlineOps ?? null;
 			const known = supportsKind(ops, 'ticket.update');
 			askOfflineMarks(known);
-			if (!known) support = null;
+			if (!known) missingSince = now;
 			return ops;
 		},
 		() => {
-			support = null;
+			missingSince = now;
 			return null;
 		}
 	);
 	return support;
 }
 
-/** Forgets the answer (sign-out): the next account asks again. */
+/** Forgets the answer (sign-out): the next account asks again at once. */
 export function forgetOfflineSupport(): void {
 	support = null;
+	missingSince = null;
 	askOfflineMarks(false);
 }

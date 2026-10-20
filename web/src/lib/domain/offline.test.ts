@@ -10,6 +10,7 @@ import {
 	AUTO_SEND_MS,
 	BROKEN_CODE,
 	CONFLICT_TEXTS,
+	DEVICE_FUTURE_MS,
 	KEEP_MS,
 	OFFLINE_MESSAGES,
 	OFFLINE_TEXTS,
@@ -24,13 +25,16 @@ import {
 	checkDelay,
 	deviceTimeText,
 	hasRoom,
+	isFromTheFuture,
 	newOpId,
 	nextToSend,
 	nextWakeOf,
 	overlayStatus,
 	parseAction,
 	planStatusChange,
+	rebasedBehind,
 	requestFields,
+	sameAction,
 	serverTimeText,
 	supportsKind,
 	toOfflineOps,
@@ -241,6 +245,67 @@ describe('the plan of a change of the status (concept OF-0 §3.3)', () => {
 	});
 });
 
+describe('an action that may have left the device (OF-2b, H1 and H2)', () => {
+	it('is marked as sent before a change goes at once', () => {
+		const plan = planStatusChange([], change(), CONTEXT);
+		expect(plan.kind === 'send' && plan.action.sent).toBe(true);
+		expect(planStatusChange([], change(), OFFLINE)).toMatchObject({ action: { state: 'queued' } });
+		const queued = planStatusChange([], change(), OFFLINE);
+		expect(queued.kind === 'queue' && queued.action.sent).toBeUndefined();
+	});
+
+	it('is never taken into a later change: that one waits for it, based on its wish', () => {
+		const sent = action({ sent: true, payload: { status: 'in_progress' } });
+		const plan = planStatusChange([sent], change({ status: 'done' }), OFFLINE);
+		expect(plan.kind).toBe('queue');
+		if (plan.kind !== 'queue') return;
+		expect(plan.action.op).toBe(OFFLINE.op);
+		expect(plan.action.dependsOn).toEqual([FIRST]);
+		expect(plan.action.expected).toEqual({ status: 'in_progress' });
+		expect(plan.action.payload).toEqual({ status: 'done' });
+	});
+
+	it('is not dropped when the wish is the value before again: a counter action goes', () => {
+		const sent = action({ sent: true });
+		const plan = planStatusChange([sent], change({ status: 'open' }), CONTEXT);
+		expect(plan.kind).toBe('queue');
+		if (plan.kind !== 'queue') return;
+		expect(plan.action).toMatchObject({
+			dependsOn: [FIRST],
+			expected: { status: 'done' },
+			payload: { status: 'open' }
+		});
+	});
+
+	it('keeps its mark on the device', () => {
+		const sent = action({ sent: true });
+		expect(parseAction(JSON.parse(JSON.stringify(sent)))).toEqual(sent);
+		expect(parseAction({ ...sent, sent: 'yes' })).not.toHaveProperty('sent');
+	});
+
+	it('is compared with the device whatever the order of the keys', () => {
+		const known = action({ completion: 'complete_children', children: ['tick9'] });
+		const reordered = Object.fromEntries(Object.entries(known).reverse());
+		expect(sameAction(reordered, known)).toBe(true);
+		expect(sameAction({ ...known, state: 'sending' }, known)).toBe(false);
+		expect(sameAction(undefined, known)).toBe(false);
+	});
+});
+
+describe('a change behind a discarded one (OF-2b, G6c)', () => {
+	it('is based on the given state of the server, only right behind it and not while under way', () => {
+		const first = action({ state: 'conflict' });
+		const behind = action({ op: SECOND, seq: 2, dependsOn: [FIRST], expected: { status: 'done' } });
+		const further = action({ op: THIRD, seq: 3, dependsOn: [FIRST, SECOND] });
+		const sending = action({ op: FOURTH, seq: 4, dependsOn: [FIRST], state: 'sending' });
+		const rebased = rebasedBehind([first, behind, further, sending], FIRST, 'waiting');
+		expect(rebased.map((entry) => [entry.op, entry.expected])).toEqual([
+			[SECOND, { status: 'waiting' }]
+		]);
+		expect(rebasedBehind([behind], FIRST, 'done')).toEqual([]);
+	});
+});
+
 describe('the overlay of the display (concept OF-0 §3.5)', () => {
 	const ticket = { id: 'tick00000000001', status: 'open' as const, completedAt: null };
 
@@ -308,6 +373,29 @@ describe('the time (decision of the user 2)', () => {
 		const gone = action({ op: FOURTH, createdAt: NOW - KEEP_MS, state: 'conflict' });
 		const aged = agedActions([young, old, late, gone], NOW);
 		expect(aged).toEqual({ expire: [SECOND], drop: [FOURTH] });
+	});
+
+	it('lets a change from the future wait for a decision, never sent or deleted on its own (OF-2b, G4)', () => {
+		const ahead = NOW + DEVICE_FUTURE_MS + 1;
+		const kept = action({ op: FIRST, createdAt: ahead });
+		const marked = action({ op: SECOND, state: 'sending', sendingSince: ahead });
+		const close = action({ op: THIRD, createdAt: NOW + DEVICE_FUTURE_MS });
+		const decided = action({ op: FOURTH, createdAt: ahead, late: true });
+		expect(isFromTheFuture(kept, NOW)).toBe(true);
+		expect(isFromTheFuture(marked, NOW)).toBe(true);
+		expect(isFromTheFuture(close, NOW)).toBe(false);
+		expect(isFromTheFuture(decided, NOW)).toBe(false);
+		expect(agedActions([kept, marked, close, decided], NOW)).toEqual({
+			expire: [FIRST, SECOND],
+			drop: []
+		});
+	});
+
+	it('lets an orphaned action "sending" age, but not one under way (OF-2b, G4)', () => {
+		const old = NOW - AUTO_SEND_MS;
+		const orphan = action({ op: FIRST, state: 'sending', sendingSince: old, createdAt: old });
+		const underway = action({ op: SECOND, state: 'sending', sendingSince: NOW, createdAt: old });
+		expect(agedActions([orphan, underway], NOW)).toEqual({ expire: [FIRST], drop: [] });
 	});
 
 	it('waits 2, 5, 10, 30 and 60 s after errors of the server, with a spread of ±20 %', () => {
@@ -410,6 +498,16 @@ describe('limits and words', () => {
 		const next = action({ op: 'cccccccccccccccccccc' });
 		expect(hasRoom(many, next)).toBe(true);
 		expect(hasRoom([...many, action({ op: 'dddddddddddddddddddd' })], next)).toBe(false);
+	});
+
+	it('counts taking a change into an action as no action more (OF-2b, G4)', () => {
+		const opOf = (index: number) => `op${String(index).padStart(18, '0')}`;
+		const full = Array.from({ length: OUTBOX_MAX_ACTIONS }, (_, index) =>
+			action({ op: opOf(index) })
+		);
+		const merged = action({ op: opOf(7), payload: { status: 'waiting' } });
+		expect(hasRoom(full, merged)).toBe(true);
+		expect(hasRoom(full, action({ op: 'cccccccccccccccccccc' }))).toBe(false);
 	});
 
 	it('names what an action does and when, in the time of Berlin', () => {

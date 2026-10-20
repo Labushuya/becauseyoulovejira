@@ -8,10 +8,13 @@
 //   (the check mark in "Aufgaben", the status in the cell, the panel and the full view). It carries
 //   its identifier (`op`) from the first attempt on, so sending it twice changes nothing the second
 //   time.
-// - Actions of one ticket follow each other: a change that is not sent yet takes the next one in
-//   (`expected` stays the one of the first, the wish the one of the last), and one that falls back
-//   to the value before goes. A change behind one that is under way or waits for a decision waits
-//   for it (`dependsOn`).
+// - Actions of one ticket follow each other: a change that never left the device takes the next one
+//   in (`expected` stays the one of the first, the wish the one of the last), and one that falls
+//   back to the value before goes. Once a request with its identifier may have left the device
+//   (`sent`, OF-2b), it is never taken in again: the server answers a known identifier like the
+//   first time without comparing the content, so a new wish would be lost. A change behind it, or
+//   behind one that waits for a decision, is a new action that waits for it (`dependsOn`), also
+//   taking a change back (a counter action, concept §3.3).
 // - The display lays the waiting actions over the state of the server (`overlayStatus`); the
 //   stores keep the state of the server.
 // - After 48 hours an action is no longer sent on its own (decision of the user 2), after 7 days
@@ -183,6 +186,8 @@ export interface ActionOutcome {
 
 /** The code of an entry of the device that this SPA cannot read (another format, damaged). */
 export const BROKEN_CODE = 'broken';
+/** The code of an action whose time of the device lies in the future (OF-2b): it waits like an old one. */
+export const CLOCK_CODE = 'clock';
 /** The refusal of a completion with open blocking sub-tasks (ADR-0033 §2). */
 export const OPEN_CHILDREN_CODE = 'validation_parent_open_children';
 
@@ -219,6 +224,11 @@ export interface OutboxAction {
 	attempts: number;
 	nextAttemptAt: number;
 	sendingSince?: number;
+	/**
+	 * A request with the identifier may have left the device (set before every attempt, OF-2b): the
+	 * action is never taken into another change again.
+	 */
+	sent?: true;
 	/** "Trotzdem übertragen" after 48 hours: sent without the time of the device. */
 	late?: boolean;
 	outcome?: ActionOutcome;
@@ -306,9 +316,20 @@ export function parseAction(raw: unknown): OutboxAction | null {
 		attempts: finite(raw.attempts) ? raw.attempts : 0,
 		nextAttemptAt: finite(raw.nextAttemptAt) ? raw.nextAttemptAt : 0,
 		...(finite(raw.sendingSince) && { sendingSince: raw.sendingSince }),
+		...(raw.sent === true && { sent: true as const }),
 		...(raw.late === true && { late: true }),
 		...(outcome !== undefined && { outcome })
 	};
+}
+
+/**
+ * Whether an entry of the device is still the action as `known` (same content and state), for the
+ * compare-and-swap of the storage (OF-2b): both are read the same way, so the order of their keys
+ * does not matter.
+ */
+export function sameAction(stored: unknown, known: OutboxAction): boolean {
+	const parsed = parseAction(stored);
+	return parsed !== null && JSON.stringify(parsed) === JSON.stringify(parseAction(known));
 }
 
 function brokenAction(op: string, user: string, raw: Record<string, unknown>): OutboxAction {
@@ -442,11 +463,12 @@ function completionFields(
 
 /**
  * The plan for a change of the status of `change.target` (concept OF-0 §3.3):
- * - an action of the ticket that waits and has not left yet takes the change in (the completion
- *   follows the last wish) or goes, when the wish is the value before again;
- * - behind any other open action of the ticket a new one waits for it;
- * - without an open action a change goes at once (`send`) or, offline, is kept (`queue`); offline
- *   a change to the value the ticket has does nothing.
+ * - an action of the ticket that waits and never left the device takes the change in (the
+ *   completion follows the last wish) or goes, when the wish is the value before again;
+ * - behind any other open action of the ticket, also one sent without an answer (`sent`, OF-2b), a
+ *   new one waits for it, based on its wish; taking it back is such a counter action;
+ * - without an open action a change goes at once (`send`, marked as sent before it leaves) or,
+ *   offline, is kept (`queue`); offline a change to the value the ticket has does nothing.
  */
 export function planStatusChange(
 	open: readonly OutboxAction[],
@@ -455,7 +477,7 @@ export function planStatusChange(
 ): ChangePlan {
 	const mine = inOrder(open.filter((action) => action.target === change.target));
 	const last = mine.at(-1);
-	if (last !== undefined && last.state === 'queued') {
+	if (last !== undefined && last.state === 'queued' && last.sent !== true) {
 		if (change.status === last.expected.status) return { kind: 'cancel', op: last.op };
 		const completion = change.completion ?? last.completion;
 		const children = change.children ?? last.children;
@@ -490,15 +512,35 @@ export function planStatusChange(
 		nextAttemptAt: 0
 	};
 	if (mine.length === 0 && !context.offline) {
-		return { kind: 'send', action: { ...action, state: 'sending', sendingSince: context.now } };
+		return {
+			kind: 'send',
+			action: { ...action, state: 'sending', sendingSince: context.now, sent: true }
+		};
 	}
 	return { kind: 'queue', action };
+}
+
+/** The time of an action lies more than 5 minutes ahead of the clock (OF-2b). */
+function ahead(at: number | undefined, now: number): boolean {
+	return at !== undefined && at - now > DEVICE_FUTURE_MS;
 }
 
 /** Whether an action "sending" lost its sender: longer under way than a request may take. */
 function isStale(action: OutboxAction, now: number): boolean {
 	if (action.state !== 'sending') return false;
 	return now - (action.sendingSince ?? 0) >= STALE_SENDING_MS;
+}
+
+/**
+ * Whether the time of the device of a waiting action lies in the future (OF-2b): it was kept, or
+ * marked as under way, more than 5 minutes after now. The clock went back or was wrong; such an
+ * action is neither sent nor deleted on its own, it waits for a decision like an old one. After
+ * "Trotzdem übertragen" (`late`) its time no longer counts.
+ */
+export function isFromTheFuture(action: OutboxAction, now: number): boolean {
+	if (action.state === 'sending' && ahead(action.sendingSince, now)) return true;
+	const free = action.state === 'queued' || isStale(action, now);
+	return free && action.late !== true && ahead(action.createdAt, now);
 }
 
 /**
@@ -538,9 +580,17 @@ export function nextWakeOf(actions: readonly OutboxAction[], now: number): numbe
 	return next;
 }
 
+/** Whether a waiting action is older than 48 hours: queued, or "sending" without its sender. */
+function isOld(action: OutboxAction, now: number): boolean {
+	const free = action.state === 'queued' || isStale(action, now);
+	return free && action.late !== true && now - action.createdAt >= AUTO_SEND_MS;
+}
+
 /**
  * What the time does to the actions: waiting ones older than 48 hours are no longer sent on their
- * own (`expire`; not after "Trotzdem übertragen"), any older than 7 days goes (`drop`).
+ * own (`expire`; not after "Trotzdem übertragen"), also one "sending" whose sender died (OF-2b), and
+ * so are those whose time lies in the future (`isFromTheFuture`); any older than 7 days goes
+ * (`drop`).
  */
 export function agedActions(
 	actions: readonly OutboxAction[],
@@ -549,13 +599,26 @@ export function agedActions(
 	const expire: string[] = [];
 	const drop: string[] = [];
 	for (const action of actions) {
-		const age = now - action.createdAt;
-		if (age >= KEEP_MS) drop.push(action.op);
-		else if (action.state === 'queued' && action.late !== true && age >= AUTO_SEND_MS) {
-			expire.push(action.op);
-		}
+		if (now - action.createdAt >= KEEP_MS) drop.push(action.op);
+		else if (isOld(action, now) || isFromTheFuture(action, now)) expire.push(action.op);
 	}
 	return { expire, drop };
+}
+
+/**
+ * The actions right behind `op` (their value before was its wish), now based on `status`, the last
+ * known state of the server, once `op` is discarded (OF-2b); back on its wish when it returns.
+ * Actions under way keep what they were sent with.
+ */
+export function rebasedBehind(
+	actions: readonly OutboxAction[],
+	op: string,
+	status: Status
+): OutboxAction[] {
+	return actions
+		.filter((action) => action.state !== 'sending' && action.dependsOn.at(-1) === op)
+		.filter((action) => action.expected.status !== status)
+		.map((action) => ({ ...action, expected: { status } }));
 }
 
 /** The fields of the outbox in a request (ADR-0074 §2 to §4); see data/tickets.ts. */
@@ -658,10 +721,14 @@ export function sizeOf(actions: readonly OutboxAction[]): number {
 	return new TextEncoder().encode(JSON.stringify(actions)).length;
 }
 
-/** Whether one more action still fits on the device. */
+/**
+ * Whether `next` still fits on the device; taking a change into an action of the same identifier
+ * replaces it and is no action more (OF-2b).
+ */
 export function hasRoom(actions: readonly OutboxAction[], next: OutboxAction): boolean {
-	if (actions.length >= OUTBOX_MAX_ACTIONS) return false;
-	return sizeOf([...actions, next]) <= OUTBOX_MAX_BYTES;
+	const rest = actions.filter((action) => action.op !== next.op);
+	if (rest.length >= OUTBOX_MAX_ACTIONS) return false;
+	return sizeOf([...rest, next]) <= OUTBOX_MAX_BYTES;
 }
 
 function changes(count: number): string {
@@ -732,6 +799,15 @@ export const OFFLINE_TEXTS = Object.freeze({
 		count === 1
 			? '1 Änderung ist älter als 48 Stunden und wurde nicht übertragen.'
 			: `${count} Änderungen sind älter als 48 Stunden und wurden nicht übertragen.`,
+	/** Changes whose time of the device lies in the future (OF-2b). */
+	clockExpired: (count: number) =>
+		count === 1
+			? 'Bei 1 Änderung liegt die Zeit des Geräts in der Zukunft; sie wurde nicht übertragen.'
+			: `Bei ${count} Änderungen liegt die Zeit des Geräts in der Zukunft; sie wurden nicht übertragen.`,
+	clockHint:
+		'Die Zeit des Geräts liegt in der Zukunft, deshalb nicht von selbst übertragen. „Trotzdem übertragen“ sendet sie ohne die Zeit des Geräts.',
+	/** The storage of the device failed (OF-2b); the flag carries "Details". */
+	storageFailed: 'Gemerkte Änderungen ließen sich auf diesem Gerät nicht lesen oder speichern.',
 	failed:
 		'Übertragen gescheitert. Der Server hat mehrmals mit einem Fehler geantwortet; die Änderungen bleiben gemerkt.',
 	signIn: (count: number) =>
@@ -788,6 +864,21 @@ export const OFFLINE_TEXTS = Object.freeze({
 		'Diese Ansicht ist ohne Verbindung noch nicht geladen. Gemerkte Änderungen bleiben erhalten.',
 	back: 'Zurück',
 	notLoadedTitle: 'Ohne Verbindung nicht verfügbar'
+});
+
+/**
+ * What the outbox did when its storage failed, for "Details" (ADR-0071 §3, OF-2b): the intent of
+ * the step, with the change in words where there is one.
+ */
+export const OFFLINE_INTENTS = Object.freeze({
+	send: 'Gemerkte Änderungen übertragen',
+	read: 'Gemerkte Änderungen auf diesem Gerät lesen',
+	retry: 'Gemerkte Änderungen erneut versuchen',
+	discard: (text: string) => `Gemerkte Änderung verwerfen: ${text}`,
+	restore: (text: string) => `Verwerfen rückgängig machen: ${text}`,
+	takeMine: (text: string) => `Meine Änderung übernehmen: ${text}`,
+	sendAnyway: (text: string) => `Trotzdem übertragen: ${text}`,
+	answerChildren: (text: string) => `Offene Unteraufgaben beantworten: ${text}`
 });
 
 /** The words of a refusal for the notice: the reason of the server, or why it waits. */

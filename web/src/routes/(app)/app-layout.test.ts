@@ -10,9 +10,13 @@ import { createRawSnippet, tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import AppHeader from '$lib/components/AppHeader.svelte';
 import { EMPTY_LIST_QUERY, type ListQuery } from '$lib/domain/list-query';
+import type { OutboxAction } from '$lib/domain/offline';
 import { PHONE_QUERY, VIEWPORT_BASE, VIEWPORT_PHONE } from '$lib/domain/phone-layout';
 import type { TicketSummary } from '$lib/domain/ticket';
 import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
+import { ConnectivityStore } from '$lib/offline/connectivity.svelte';
+import { OutboxStore } from '$lib/offline/outbox.svelte';
+import { MemoryOutboxStorage } from '$lib/offline/outbox-storage';
 import { pb } from '$lib/pocketbase';
 import { appContext } from '$lib/stores/context.svelte';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
@@ -318,6 +322,26 @@ vi.mock('$lib/data/area', async (importOriginal) => ({
 	...(await importOriginal<object>()),
 	recordScope: areaMocks.recordScope
 }));
+// The outbox (OF-2b): the question about its capability and, for single tests, an outbox with a
+// storage in memory; without a test of its own the real ones.
+const outboxMocks = vi.hoisted(() => ({
+	outbox: null as unknown,
+	fetchSupport: vi.fn(),
+	realFetchSupport: null as unknown
+}));
+vi.mock('$lib/data/ticket-create', async (importOriginal) => {
+	const original = await importOriginal<typeof import('$lib/data/ticket-create')>();
+	outboxMocks.realFetchSupport = original.fetchCreateSupport;
+	outboxMocks.fetchSupport.mockImplementation(original.fetchCreateSupport);
+	return { ...original, fetchCreateSupport: outboxMocks.fetchSupport };
+});
+vi.mock('$lib/offline/app-outbox', async (importOriginal) => {
+	const original = await importOriginal<typeof import('$lib/offline/app-outbox')>();
+	return {
+		...original,
+		getOutbox: () => (outboxMocks.outbox as OutboxStore | null) ?? original.getOutbox()
+	};
+});
 
 function ticket(id: string, status: TicketSummary['status'] = 'open'): TicketSummary {
 	return {
@@ -1251,5 +1275,90 @@ describe('app layout: phone frame (MO-1a, ADR-0073)', () => {
 		getMobileLayoutStore().choose(false);
 		await tick();
 		expect(leaveAsks()).toBe(false);
+	});
+});
+
+describe('app layout: the outbox (OF-2b, ADR-0074 addendum OF-2b)', () => {
+	useOverlayStubs();
+	const USER = 'user00000000001';
+	const START = Date.UTC(2026, 9, 20, 12, 30, 0);
+
+	/** A change of the status the device kept for `user`. */
+	function kept(op: string, user: string): OutboxAction {
+		return {
+			v: 1,
+			op,
+			seq: 1,
+			user,
+			scope: `u:${user}`,
+			kind: 'ticket.update',
+			target: 'tick00000000001',
+			dependsOn: [],
+			payload: { status: 'done' },
+			expected: { status: 'open' },
+			key: 'HAUS-12',
+			title: 'Müll rausbringen',
+			createdAt: START - 60_000,
+			state: 'queued',
+			attempts: 0,
+			nextAttemptAt: 0
+		};
+	}
+
+	afterEach(() => {
+		outboxMocks.outbox = null;
+		outboxMocks.fetchSupport.mockImplementation(outboxMocks.realFetchSupport as never);
+		Reflect.deleteProperty(document, 'visibilityState');
+		vi.useRealTimers();
+	});
+
+	it('asks the server about the outbox on becoming visible at most once in 5 minutes (G1)', async () => {
+		vi.useFakeTimers({ toFake: ['Date'] });
+		vi.setSystemTime(START);
+		outboxMocks.fetchSupport.mockImplementation(async () => null);
+		mocks.session.valid = true;
+		mocks.auth.userId = USER;
+		await renderLayout();
+		await vi.waitFor(() => expect(outboxMocks.fetchSupport).toHaveBeenCalledTimes(1));
+		Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+		for (const minutes of [1, 2, 4]) {
+			vi.setSystemTime(START + minutes * 60_000);
+			document.dispatchEvent(new Event('visibilitychange'));
+			await tick();
+		}
+		expect(outboxMocks.fetchSupport).toHaveBeenCalledTimes(1);
+		vi.setSystemTime(START + 5 * 60_000);
+		document.dispatchEvent(new Event('visibilitychange'));
+		await vi.waitFor(() => expect(outboxMocks.fetchSupport).toHaveBeenCalledTimes(2));
+	});
+
+	it('asks before "Abmelden" also when the tab never read the device, and deletes the changes of the account (G3)', async () => {
+		const storage = new MemoryOutboxStorage();
+		await storage.put(kept('zzzzzzzzzzzzzzzzzzz1', USER));
+		await storage.put(kept('zzzzzzzzzzzzzzzzzzz2', USER));
+		await storage.put(kept('zzzzzzzzzzzzzzzzzzz3', 'user00000000002'));
+		const refuse = async (): Promise<never> => {
+			throw new Error('not in this test');
+		};
+		// The server does not report the outbox (support null), so the tab never reads the device.
+		outboxMocks.outbox = new OutboxStore({
+			storage,
+			exists: async () => true,
+			connectivity: new ConnectivityStore(async () => true),
+			send: refuse,
+			get: refuse,
+			tab: 'tab-a'
+		});
+		mocks.auth.userId = USER;
+		await renderLayout('/');
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Abmelden' }));
+		const question = await vi.waitFor(() =>
+			screen.getByRole('dialog', { name: 'Abmelden und 2 gemerkte Änderungen verwerfen?' })
+		);
+		expect(mocks.auth.logout).not.toHaveBeenCalled();
+		await fireEvent.click(within(question).getByRole('button', { name: 'Abmelden und verwerfen' }));
+		await vi.waitFor(() => expect(mocks.auth.logout).toHaveBeenCalledOnce());
+		expect([...storage.entries.keys()]).toEqual(['zzzzzzzzzzzzzzzzzzz3']);
 	});
 });

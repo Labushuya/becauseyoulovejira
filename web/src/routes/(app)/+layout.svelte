@@ -238,7 +238,8 @@
 		untrack(() => outbox.attach(user));
 	});
 	// Whether the server takes the outbox: asked once per sign-in with the question of "Neues Ticket",
-	// again when the tab comes back while it did not (a restart of the server meanwhile).
+	// again when the tab comes back while it did not (a restart of the server meanwhile), at most
+	// every 5 minutes (OF-2b, `offlineSupport`).
 	$effect(() => {
 		if (!auth.userId) return;
 		const ask = () => {
@@ -284,10 +285,22 @@
 		auth.logout();
 		await goto(target, { replaceState: true });
 	}
-	setSignOut((target) => {
-		const count = outbox.count;
+	function askBeforeLeaving(target: ResolvedPathname, count: number) {
 		if (count > 0) logoutQuestion = { target, count };
 		else void leave(target);
+	}
+	// A tab that never read the device (the server without `offline_ops`, outside of the frame)
+	// reads the changes of the account there first, so "Abmelden" asks and deletes them as well
+	// (OF-2b). Without a database nothing is created; a failing read signs out, the changes stay.
+	setSignOut((target) => {
+		if (!outbox.readsOnSignOut) {
+			askBeforeLeaving(target, outbox.count);
+			return;
+		}
+		void outbox.keptOfAccount().then(
+			(count) => askBeforeLeaving(target, count),
+			() => void leave(target)
+		);
 	});
 	async function confirmLogout() {
 		const question = logoutQuestion;

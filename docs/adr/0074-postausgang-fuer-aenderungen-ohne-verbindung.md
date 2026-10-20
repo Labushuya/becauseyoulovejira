@@ -1,6 +1,6 @@
 # ADR-0074: Postausgang für Änderungen ohne Verbindung
 
-- **Status:** Angenommen. Der Server-Teil ist umgesetzt (Paket OF-1, Migration `1790205000_client_ops.js`); Fälle im Test-Manifest BYL-E6-1930 bis BYL-E6-1949, manuelle Prüfungen BYL-E6-1948 und BYL-E6-1949. Der Client-Kern mit Abhaken und Status ist umgesetzt (Paket OF-2, Nachtrag unten); Fälle BYL-E6-2041 bis BYL-E6-2059, manuelle Prüfungen BYL-E6-2055 bis BYL-E6-2059. Tagesplan und Fälligkeit folgen in OF-3, ＋ und Kommentare in OF-4, die Stufe 2 in OF-5.
+- **Status:** Angenommen. Der Server-Teil ist umgesetzt (Paket OF-1, Migration `1790205000_client_ops.js`); Fälle im Test-Manifest BYL-E6-1930 bis BYL-E6-1949, manuelle Prüfungen BYL-E6-1948 und BYL-E6-1949. Der Client-Kern mit Abhaken und Status ist umgesetzt (Paket OF-2, Nachtrag unten); Fälle BYL-E6-2041 bis BYL-E6-2059, manuelle Prüfungen BYL-E6-2055 bis BYL-E6-2059. Korrekturen nach einer Durchsicht sind umgesetzt (Paket OF-2b, Nachtrag unten); Fälle BYL-E6-2072 bis BYL-E6-2084, manuelle Prüfungen BYL-E6-2082 bis BYL-E6-2084. Tagesplan und Fälligkeit folgen in OF-3, ＋ und Kommentare in OF-4, die Stufe 2 in OF-5.
 - **Datum:** 2026-10-20
 - **Entscheidung durch:**
   - Nutzer: Wunsch „Reißt das VPN ab, sollen Änderungen trotzdem möglich sein und später automatisch eingespielt werden.“ Am 2026-10-20 hat er alle Produktfragen des Konzepts nach Empfehlung entschieden: CLAUDE.md §10 eng gelockert; nach 48 Stunden „Trotzdem übertragen“ oder „Verwerfen“, nach 7 Tagen gelöscht; Tagesplan ohne Ausnahme für vergangene Tage; Abmelden und Kontowechsel im Client; Stufe 2 später.
@@ -211,3 +211,68 @@ Nur Oberfläche, Tests und Doku, keine Hooks und keine Migration: nach dem Build
 - Ob Chrome für Android bei `beforeunload` eine Frage zeigt, ist nur am Gerät zu sehen (manueller Fall).
 - Ein Abbruch des VPN lässt Anfragen oft hängen statt scheitern; die App merkt die Änderung dann nach 12 s.
 - Gemerkte Änderungen sieht nur das Gerät, das sie gemerkt hat.
+
+## Nachtrag (2026-10-20, OF-2b): Korrekturen am Postausgang
+
+Nur Oberfläche, Tests und Doku, keine Hooks und keine Migration: nach dem Build F5, kein Neustart. Anlass ist eine unabhängige Durchsicht nach OF-2 (Merge `6e8e3c6f`). Entscheidung durch den Advisor (Auftrag OF-2b mit den Befunden, den Behebungen und der Abgrenzung) und den Executor (Umsetzung, Varianten, wo der Auftrag offenlässt, Tests). Jeder Befund wurde zuerst mit einem Vitest-Test am Stand `dc4e4b49` belegt, der dort rot war; danach behoben. Online-Verhalten und PC bleiben wie nach OF-2, außer wo §3 und §4 sie näher an den Stand vor OF-2 bringen.
+
+### 1. Merkmal „gesendet“ (Befunde 3 und 12a)
+
+- **Befund:** Blieb die Antwort aus (Status 0, Zeitgrenze), setzte der Client die Aktion wieder auf `queued`; eine weitere Änderung desselben Tickets ging dann mit derselben `op_id` in sie ein. Der Hook beantwortet eine bekannte Kennung aber wie beim ersten Mal, ohne den Inhalt zu vergleichen (§2 oben). Hatte die erste Anfrage den Server erreicht, ging der neue Wunsch still verloren, und der Client meldete „1 Änderung übertragen.“. Dasselbe geschah, wenn eine Änderung genau dann einging, während der Abarbeiter die Aktion als „sending“ speicherte, oder in einem anderen Tab, bevor er den Speicher neu gelesen hatte.
+- **Entscheidung:** Eine Aktion trägt ab dem Augenblick, in dem eine Anfrage mit ihrer Kennung das Gerät verlassen könnte, dauerhaft `sent: true` (Feld des Formats 1, optional). Es wird **vor** jedem Versuch gesetzt: beim ersten direkten Versuch mit dem Plan `send`, bei jedem späteren im Schritt des Abarbeiters. Eine solche Aktion wird nie mehr zusammengefasst. Eine weitere Änderung desselben Tickets wird eine neue, abhängige Aktion: neue `op_id`, `dependsOn` auf die vorige, `expected` gleich deren Wunsch. Aktionen, die das Gerät nie verlassen haben, fasst die App weiter zusammen.
+- **Wettlauf:** Der Speicher hat einen Vergleich mit Tausch je Eintrag (`OutboxStorage.swap`, eine Lese-Schreib-Transaktion in IndexedDB). Der Abarbeiter markiert eine Aktion nur, solange der gespeicherte Eintrag noch der gelesene ist; das Zusammenfassen und das Verwerfen beim Rückweg zum Wert vorher schreiben ebenso nur gegen die geplante Fassung. Scheitert der Tausch, liest der Tab den Speicher neu und plant noch einmal (höchstens dreimal, dann gilt die Änderung als nicht gemerkt); der Abarbeiter liest neu und beendet einen Lauf nach drei Fehlschlägen in Folge. Verglichen wird die gelesene Form beider Seiten (`sameAction` über `parseAction`), die Reihenfolge der Schlüssel zählt nicht.
+- **Server unverändert:** Dass der Hook eine bekannte Kennung ohne Vergleich des Inhalts beantwortet, ist für die Wiederholung richtig. Der Client verwendet eine Kennung nie für einen anderen Wunsch.
+
+### 2. Rücknahme als Gegenaktion (Befund 4)
+
+- **Befund:** Nach einem Senden ohne Antwort löschte der Rückweg zum alten Wert (etwa „Rückgängig“ im Flag) die Aktion nur auf dem Gerät. Der Server blieb auf dem gesendeten Wert, der Client zeigte den alten.
+- **Entscheidung:** Mit `sent` wird die Rücknahme eine Gegenaktion (Konzept §3.3, letzter Punkt): neue `op_id`, `dependsOn` auf die erste, `expected` gleich dem gesendeten Wunsch, Wunsch gleich dem alten Wert. Kam die erste nie an, setzt sie der Server beim Abgleich, und die Gegenaktion nimmt sie zurück; im Verlauf stehen dann beide. Ohne `sent` bleibt das Löschen.
+
+### 3. Ohne Fähigkeit wie vorher (Befund 1)
+
+- Die Tab-Kennung (`sessionStorage` `byl-outbox-tab`) und der `BroadcastChannel` `byl-outbox` entstehen erst beim ersten Beobachten des Postausgangs, nicht schon beim Anlegen. Ein Tab, dessen Postausgang nie arbeitet (kein `offline_ops`, am PC ohne Datenbank), legt beides nicht an.
+- Die erneute Frage `GET /api/byl/tickets/create`, wenn der Tab sichtbar wird und die Fähigkeit fehlte, geht höchstens einmal je 5 Minuten (`SUPPORT_RETRY_MS` in `offline/app-outbox.ts`), auch nach einer gescheiterten Frage. Nach dem Abmelden fragt das nächste Konto sofort; ist die Fähigkeit bekannt, fragt der Tab nicht mehr.
+- **Bewusste Ausnahme:** Die Anmeldeseite fragt den Browser mit `indexedDB.databases()`, ob es die Datenbank `byl-offline` gibt, und liest sie nur dann (Zahl der wartenden Änderungen, OF-2 §3). Ohne Sitzung kennt sie die Fähigkeit nicht; die Frage geht nicht ans Netz und legt nichts an. Auf einem Gerät ohne Postausgang antwortet der Browser ohne die Datenbank, und die Seite bleibt wie vorher. Dieselbe Frage stellt seit OF-2b „Abmelden“ in einem Tab, der das Gerät nie gelesen hat (§5), also auch am PC ohne Fähigkeit; ohne Datenbank meldet es danach ohne Frage ab wie bisher.
+
+### 4. Außerhalb des Rahmens (Befund 2)
+
+- **Befund:** Außerhalb des Rahmens nahm der Postausgang eine Änderung, sobald für das Ticket irgendeine Aktion gemerkt war, auch eine im Konflikt oder eine abgelehnte.
+- **Entscheidung:** Außerhalb des Rahmens geht eine Änderung nur dann durch den Postausgang, wenn eine wartende Aktion desselben Tickets (`queued` oder `sending`) die Reihenfolge verlangt. Hinter einer Aktion, die auf eine Entscheidung wartet, geht sie am PC direkt wie vor OF-2 (ohne Kennung und Zeitgrenze). Das ist eine bewusste Ausnahme von „hinter einer Entscheidung wartet eine neue“ (OF-2 §2): Am PC soll eine Änderung nicht wegen einer Entscheidung des Handys liegen bleiben. Die wartende Entscheidung bleibt; „Meine Änderung übernehmen“ vergleicht dann mit dem neuen Stand des Servers.
+
+### 5. Abmelden und Konto (Befund 7)
+
+- „Abmelden“ fragte und löschte nur, was der Tab geladen hatte. Hat der Tab das Gerät nie gelesen (der Server ohne `offline_ops`, außerhalb des Rahmens) und gibt es die Datenbank, liest „Abmelden“ die Einträge des Kontos jetzt direkt, fragt mit ihrer Zahl und löscht sie nach „Abmelden und verwerfen“ (`readsOnSignOut`, `keptOfAccount`, `clearUser`). Ohne Datenbank legt es keine an; scheitert das Lesen, meldet es ohne Frage ab, und die Einträge warten auf dasselbe Konto.
+- Vor jedem Senden, im Schritt des Abarbeiters wie beim ersten direkten Versuch, prüft der Postausgang, dass der Client mit dem Konto der Aktion angemeldet ist (`pb.authStore.record?.id === action.user`). Sonst sendet er nicht: Der Abarbeiter wartet, eine direkte Änderung scheitert mit „Die Sitzung ist abgelaufen. Bitte erneut anmelden.“ und wird nicht gemerkt.
+
+### 6. Grenzen und Uhr (Befund 9)
+
+- **Volles Gerät:** Sind 200 Aktionen oder etwa 1 MB gemerkt und besteht Verbindung, geht der direkte Versuch wie vor OF-2, ohne zu merken (nur `op_id`, Zeitgrenze 12 s); ohne Antwort kommt der Fehler wie bisher. Das Zusammenfassen in eine wartende Aktion zählt nicht als neue Aktion.
+- **Zeit aus der Zukunft:** Liegt `createdAt` oder `sendingSince` mehr als 5 Minuten nach der Uhr des Geräts (die Uhr ging zurück oder stand falsch), wird die Aktion wie eine abgelaufene behandelt: Sie wird weder gesendet noch still gelöscht, sondern wartet auf „Trotzdem übertragen“ (ohne die Zeit des Geräts) oder „Verwerfen“. Sie trägt den Grund `clock`; Hinweis und Dialog sagen „Bei 1 Änderung liegt die Zeit des Geräts in der Zukunft; sie wurde nicht übertragen.“ bzw. „Die Zeit des Geräts liegt in der Zukunft, deshalb nicht von selbst übertragen. …“ statt „älter als 48 Stunden“. Nach „Trotzdem übertragen“ zählt `createdAt` nicht mehr.
+- **Verwaiste Aktion:** Auch eine Aktion „sending“ ohne Absender altert: Nach 48 Stunden wartet sie auf eine Entscheidung, statt von selbst zu gehen.
+
+### 7. Fehlerseite (Befund 11)
+
+- **Befund:** Ohne das `(app)`-Layout war der Monitor gestoppt; die Fehlerseite zeigte „Ohne Verbindung nicht verfügbar“, bis jemand neu lud.
+- **Entscheidung:** Hat der Postausgang im Tab gearbeitet oder Änderungen gemerkt (`inUse`), oder kannte er die Verbindung als abgerissen, startet die Fehlerseite den Monitor selbst, solange sie zu sehen ist: ohne Verbindung sofort eine Prüfung, dann nach 2, 5, 10, 30 und alle 60 s und bei `online`, Fokus und Sichtbarwerden. Ist die Verbindung zurück, zeigt sie wieder den Text zum fehlenden Modul mit „Neu laden“, ohne von selbst neu zu laden. Bevor sie ein fehlendes Modul von selbst neu lädt, prüft sie einmal den Server; ohne Antwort bleibt sie bei „Ohne Verbindung nicht verfügbar“. Am PC ohne Postausgang fragt sie nichts und lädt wie bisher sofort neu.
+
+### 8. Fehler des Speichers und abhängige Aktionen (Befunde 12b und 12c)
+
+- **Fehler des Speichers:** Ein Schritt des Abarbeiters, das Neulesen auf eine Nachricht eines anderen Tabs, „Rückgängig“ nach „Verwerfen“ und die Knöpfe des Dialogs und des Hinweises („Verwerfen“, „Meine Änderung übernehmen“, „Trotzdem übertragen“, die Antworten zu offenen Unteraufgaben, „Erneut versuchen“) werfen keine unbehandelte Ablehnung mehr. Ein Fehler von IndexedDB zeigt das Fehler-Flag „Gemerkte Änderungen ließen sich auf diesem Gerät nicht lesen oder speichern.“ mit „Details“ (ADR-0071, Absicht des Schritts, etwa „Gemerkte Änderung verwerfen: HAUS-12 erledigt“), höchstens eins zugleich.
+- **Abhängige Aktion:** Eine Aktion hinter einer im Konflikt oder einer abgelehnten übernimmt deren Wunsch als `expected`. Wird die erste verworfen, bekommt die direkt dahinter (`dependsOn` endet auf sie) den letzten bekannten Stand des Servers als `expected`: aus dem Konflikt `actual`, sonst den zuletzt gelesenen Stand des Tickets. Das geschieht, bevor die erste gelöscht wird; danach darf sie sofort gehen. „Rückgängig“ setzt sie wieder auf den Wunsch der ersten.
+
+### 9. Nicht enthalten
+
+- Befund 12d (`#base` merkt sich jedes Ticket, das die Stores zeigen) bleibt als Kleinpunkt.
+- Die Befunde 5, 6, 8 und 10 waren in Ordnung.
+- OF-3 ff., „Neues Ticket“ und MO-7.
+
+### 10. Tests
+
+- Vitest, neu: `offline/outbox-corrections.test.ts` (ein Fake-Server, der die Änderung übernimmt, eine Antwort verlieren kann und bekannte Kennungen wie `answerReplay` beantwortet; ein Speicher, dessen Schreibvorgänge erst auf Kommando ausgeführt werden; je Befund die Fälle aus dem Auftrag), `offline/app-outbox.test.ts` (ohne Fähigkeit keine Tab-Kennung und kein Kanal, Frage höchstens alle 5 Minuten); ergänzt: `domain/offline.test.ts` (`sent`, Gegenaktion, `sameAction`, Zukunft, verwaiste Aktion, Platz beim Zusammenfassen, `rebasedBehind`), `offline/outbox-storage.test.ts` (`swap`), `components/offline/offline-components.test.ts` (Grund `clock` in Hinweis und Dialog), `routes/error-page-offline.test.ts` (Monitor der Fehlerseite) und `routes/(app)/app-layout.test.ts` (Frage beim Sichtbarwerden, „Abmelden“ ohne gelesenes Gerät). Bestehende Erwartungen blieben unverändert.
+- Smoke unverändert, keine neuen Fälle; die IndexedDB-Fassung von `swap` läuft in den beiden Fällen von OF-2 mit (jeder Versuch markiert über sie).
+
+### 11. Grenzen
+
+- Ein Tab mit dem Build von OF-2 neben einem neuen kennt `sent` nicht und lässt es beim Schreiben weg; nach dem nächsten Laden der neuen Version (F5 oder ein Link nach dem Hinweis „Neue Version“) ist das vorbei.
+- Ohne `BroadcastChannel` erfährt ein anderer Tab erst, wenn die Aktion vor seiner als verwaist gilt (15 s), dass sie angekommen ist; erst dann sendet er die eigene.
+- „Verwerfen“ im Dialog löscht auch eine Aktion mit `sent` nur auf dem Gerät; kam ihre Anfrage an, steht der Server auf ihrem Wunsch. Der nächste Abgleich der Liste zeigt den Stand des Servers.
