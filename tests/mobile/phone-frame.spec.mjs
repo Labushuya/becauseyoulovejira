@@ -23,6 +23,12 @@
 // shrinks like with interactive-widget=resizes-content), Enter and both buttons save and keep the
 // focus in the empty line, the result stands right below it, and "Ticket ansehen" goes back to the
 // day plan through the history without the sheet; on a PC the dialog of today.
+// Since MO-6 (manifest BYL-E6-2022 ff.) the inbox on a small phone: cards instead of the table with
+// targets of 44 px and nothing scrolling sideways (a subject of one long word, a long sender and a
+// long link), the filter sheet, the entry as a page whose arrow goes back to the list through the
+// history, "Verwerfen" with "Rückgängig" above the bottom bar, "Umwandeln" as a page and back,
+// "Erfassen" with the keys of the keyboard, "Aus Zwischenablage" with the field to paste into, and
+// "Eintrag ansehen" of "＋" back to the day plan; on a PC the table of today.
 //
 // The phone stands for another device in the home network (header X-Byl-Test-Remote-Address of the
 // test hooks, only in instances of the harness), so the pages of the administrator are "nur am PC".
@@ -225,6 +231,30 @@ async function seedTicket(others) {
 		titles.push(name);
 	}
 	return { ticket, title, subtask, tag: tag.name, others: titles };
+}
+
+/**
+ * Entries of the inbox for MO-6 (a run mark appended to their titles), made up, never real mails: a
+ * mail with a subject of one long word, a long sender, a long link and a text with a long link and
+ * code, and two plain notes. Returns their records with the titles.
+ */
+async function seedInbox() {
+	const { email, password } = mobileInstance();
+	const { token, record } = await api('POST', '/api/collections/users/auth-with-password', { identity: email, password });
+	const mark = randomBytes(3).toString('hex');
+	const create = (body) => api('POST', '/api/collections/inbox_items/records', { owner: record.id, ...body }, token);
+	const mail = await create({
+		channel: 'eml',
+		kind: 'mail',
+		title: `Rechnung_über_die_Reparatur_der_Heizungsanlage_im_Keller_vom_vergangenen_Winter_${mark}`,
+		body: `Guten Tag,\n\nhier die Rechnung: ${LONG_LINK}\n\n\`\`\`\nRechnungsnummer-2026-0001-0002-0003-0004-0005-0006-0007-0008\n\`\`\``,
+		source_url: LONG_LINK,
+		source_ref: `<${mark}@example.com>`,
+		source_meta: { from: `Anna Beispiel <anna.beispiel.mit.einer.sehr.langen.adresse.${mark}@example.com>` }
+	});
+	const note = await create({ channel: 'manual', kind: 'todo', title: `Paket abholen ${mark}` });
+	const other = await create({ channel: 'manual', kind: 'todo', title: `Fahrrad reparieren ${mark}` });
+	return { mail, note, other, mark };
 }
 
 /**
@@ -952,6 +982,196 @@ test.describe('small phone with the switch on: the quick entry (MO-5)', () => {
 	});
 });
 
+test.describe('small phone with the switch on: the inbox (MO-6)', () => {
+	test.use({ ...SMALL_PHONE, extraHTTPHeaders: ANOTHER_DEVICE });
+	const viewport = SMALL_PHONE.viewport;
+
+	/** The page fills the window: the panel of an entry or a form in the phone frame (MO-4). */
+	async function expectPage(locator) {
+		await expect(locator).toBeVisible();
+		await settled(locator);
+		const box = await locator.boundingBox();
+		expect(Math.abs(box.x)).toBeLessThanOrEqual(1);
+		expect(Math.abs(box.width - viewport.width)).toBeLessThanOrEqual(1);
+		expect(Math.abs(box.y + box.height - viewport.height)).toBeLessThanOrEqual(1);
+	}
+
+	test('shows the inbox as cards, opens an entry as a page and back without a loop, discards with "Rückgängig" and converts as a page', async ({ page }) => {
+		const { mail, note, other } = await seedInbox();
+		await switchOn(page);
+		const url = await signIn(page);
+		await expect(page).toHaveURL(`${url}/tagesplan`);
+		const bar = page.getByRole('navigation', { name: 'Hauptnavigation' });
+		await bar.getByRole('link', { name: /^Eingang/ }).click();
+		await expect(viewHeading(page, 'Eingang')).toBeAttached();
+		const cardOf = (title) => page.locator('li[data-item-id]').filter({ hasText: title });
+
+		// Cards instead of the table; the subject of one long word, the long sender and the link wrap.
+		await expect(cardOf(mail.title)).toBeVisible();
+		await expect(page.getByRole('table')).toHaveCount(0);
+		expect(await scrollsSideways(page)).toBe(false);
+		const title = cardOf(mail.title).locator('.card-title');
+		expect(await scrollsSidewaysInside(title)).toBe(false);
+		expect((await title.boundingBox()).width).toBeLessThan(viewport.width);
+		expect(await smallTargets(page.locator('.card-list'))).toEqual([]);
+		await expectTarget(cardOf(mail.title).getByRole('link', { name: /^Umwandeln/ }));
+		await expectTarget(cardOf(mail.title).getByRole('button', { name: /^Verwerfen/ }));
+		await expectTarget(cardOf(mail.title).getByRole('button', { name: /^Weitere Aktionen/ }));
+		const tools = page.locator('.phone-tools');
+		await expectTarget(tools.getByRole('link', { name: 'Erfassen' }));
+		await expectTarget(tools.getByRole('button', { name: 'Filter', exact: true }));
+		await expectTarget(tools.getByRole('button', { name: 'Weitere Aktionen der Liste' }));
+
+		// "Filter" opens the sheet with the chips, "Zielprojekt" and the grouping, all 44 px.
+		await tools.getByRole('button', { name: 'Filter', exact: true }).click();
+		const sheet = page.getByRole('dialog', { name: 'Filter' });
+		await expectSheet(sheet.locator('.frame'), viewport);
+		await expect(sheet.getByRole('group', { name: 'Quelle' })).toBeVisible();
+		await expect(sheet.getByRole('group', { name: 'Zustand' })).toBeVisible();
+		expect(await smallTargets(sheet)).toEqual([]);
+		expect(await scrollsSideways(page)).toBe(false);
+		await sheet.getByRole('button', { name: /Einträge? anzeigen$/ }).click();
+		await expect(sheet).toHaveCount(0);
+
+		// A tap on the card opens the entry as a page: the arrow instead of ×, nothing scrolls sideways.
+		const entries = () => page.evaluate(() => history.length);
+		const start = await entries();
+		await cardOf(mail.title).locator('.card-meta').tap();
+		await expect(page).toHaveURL(`${url}/eingang/${mail.id}`);
+		const panel = page.getByRole('complementary', { name: mail.title });
+		await expectPage(panel);
+		const back = panel.getByRole('button', { name: 'Zum Eingang' });
+		await expectTarget(back);
+		await expect(panel.getByRole('button', { name: 'Panel schließen' })).toHaveCount(0);
+		expect(await scrollsSideways(page)).toBe(false);
+		expect(await scrollsSidewaysInside(panel.locator('.body').first())).toBe(false);
+		expect(await smallTargets(panel)).toEqual([]);
+		// The main actions side by side in the footer, the rest in "•••" as a sheet.
+		const discard = panel.locator('footer').getByRole('button', { name: 'Verwerfen' });
+		const convert = panel.locator('footer').getByRole('link', { name: 'Umwandeln' });
+		expect(Math.abs((await discard.boundingBox()).y - (await convert.boundingBox()).y)).toBeLessThanOrEqual(1);
+		await panel.getByRole('button', { name: 'Weitere Aktionen', exact: true }).click();
+		const menu = page.getByRole('menu', { name: /^Weitere Aktionen für / });
+		await expectSheet(menu, viewport);
+		await expect(menu.getByRole('menuitem', { name: 'Mit Ticket verknüpfen …' })).toBeVisible();
+		await menu.getByRole('menuitem', { name: 'Schließen', exact: true }).click();
+		await expect(menu).toBeHidden();
+
+		// The arrow goes back to the list through the history: no second entry, "Vor" opens it again.
+		await back.tap();
+		await expect(page).toHaveURL(`${url}/eingang`);
+		await expect(panel).toHaveCount(0);
+		expect(await entries()).toBe(start + 1);
+		await page.goForward();
+		await expect(panel).toBeVisible();
+		// The back gesture of Android does the same.
+		await page.goBack();
+		await expect(page).toHaveURL(`${url}/eingang`);
+		await expect(panel).toHaveCount(0);
+
+		// "Verwerfen" on a card: it leaves, the flag above the bottom bar offers "Rückgängig".
+		await cardOf(note.title).getByRole('button', { name: /^Verwerfen/ }).tap();
+		await expect(cardOf(note.title)).toHaveCount(0);
+		const flag = page.getByRole('region', { name: 'Benachrichtigungen' }).getByRole('listitem').filter({ hasText: 'verworfen' });
+		await expect(flag).toBeVisible();
+		await settled(flag);
+		const flagBox = await expectUncovered(flag, viewport);
+		expect(flagBox.y + flagBox.height).toBeLessThanOrEqual((await bar.boundingBox()).y);
+		const undo = flag.getByRole('button', { name: 'Rückgängig' });
+		await expectTarget(undo);
+		await undo.tap();
+		await expect(cardOf(note.title)).toBeVisible();
+
+		// "Umwandeln" opens "Neues Ticket" from the entry as a page; its arrow goes back to the list.
+		await cardOf(other.title).getByRole('link', { name: /^Umwandeln/ }).tap();
+		await expect(page).toHaveURL(`${url}/tickets/neu?aus=${other.id}`);
+		const form = page.getByRole('complementary', { name: 'Neues Ticket' });
+		await expectPage(form);
+		expect(await scrollsSideways(page)).toBe(false);
+		await form.getByRole('button', { name: 'Zurück', exact: true }).tap();
+		await expect(page).toHaveURL(`${url}/eingang`);
+		await expect(form).toHaveCount(0);
+		await expect(cardOf(other.title)).toBeVisible();
+
+		// A large phone: no sideways scrolling either, in the list and in the entry.
+		await page.setViewportSize({ width: 412, height: 915 });
+		await expect(cardOf(mail.title)).toBeVisible();
+		expect(await scrollsSideways(page)).toBe(false);
+		await cardOf(mail.title).locator('.card-meta').tap();
+		await expect(panel).toBeVisible();
+		await settled(panel);
+		expect(await scrollsSideways(page)).toBe(false);
+		expect(await scrollsSidewaysInside(panel.locator('.body').first())).toBe(false);
+		expect(await smallTargets(panel)).toEqual([]);
+	});
+
+	test('captures with "Erfassen", pastes with "Aus Zwischenablage", and "Eintrag ansehen" of "＋" goes back to the day plan', async ({ page }) => {
+		const mark = randomBytes(3).toString('hex');
+		await switchOn(page);
+		const url = await signIn(page);
+		await expect(page).toHaveURL(`${url}/tagesplan`);
+		const bar = page.getByRole('navigation', { name: 'Hauptnavigation' });
+		await bar.getByRole('link', { name: /^Eingang/ }).click();
+		await expect(viewHeading(page, 'Eingang')).toBeAttached();
+
+		// "Erfassen" is a page; the keyboard starts sentences with a capital and says what Enter does.
+		const entries = () => page.evaluate(() => history.length);
+		const start = await entries();
+		await page.locator('.phone-tools').getByRole('link', { name: 'Erfassen' }).tap();
+		const form = page.getByRole('complementary', { name: 'Erfassen' });
+		await expectPage(form);
+		const what = form.getByLabel(/^Was\?/);
+		await expect(what).toHaveAttribute('autocapitalize', 'sentences');
+		await expect(what).toHaveAttribute('enterkeyhint', 'done');
+		await expect(form.getByText(/Strg\+Enter/)).toHaveCount(0);
+		expect(await smallTargets(form)).toEqual([]);
+		expect(await scrollsSideways(page)).toBe(false);
+		// The arrow goes back to the list through the history.
+		await form.getByRole('button', { name: 'Zum Eingang' }).tap();
+		await expect(page).toHaveURL(`${url}/eingang`);
+		expect(await entries()).toBe(start + 1);
+
+		// "Aus Zwischenablage": the browser does not let the page read, so the dialog opens to paste into.
+		await page.getByRole('button', { name: 'Weitere Aktionen der Liste' }).tap();
+		const list = page.getByRole('menu', { name: 'Aktionen der Liste' });
+		await expectSheet(list, viewport);
+		await list.getByRole('menuitem', { name: 'Aus Zwischenablage' }).tap();
+		const paste = page.getByRole('dialog', { name: 'Aus der Zwischenablage' });
+		await expectSheet(paste.locator('.frame'), viewport);
+		await expect(paste.getByText(/Lange ins Feld drücken/)).toBeVisible();
+		await paste.getByLabel('Text').fill(`Notiz vom Handy ${mark}`);
+		await paste.getByRole('button', { name: 'In den Eingang' }).tap();
+		await expect(paste).toHaveCount(0);
+		await expect(page.locator('li[data-item-id]').filter({ hasText: `Notiz vom Handy ${mark}` })).toBeVisible();
+
+		// "＋" on the day plan, "In den Eingang", "Eintrag ansehen": the arrow leads back to the day plan.
+		await bar.getByRole('link', { name: 'Tagesplan' }).tap();
+		await expect(page).toHaveURL(`${url}/tagesplan`);
+		await bar.getByRole('button', { name: 'Erfassen' }).tap();
+		const quick = page.getByRole('dialog', { name: 'Schnellerfassung' });
+		await quick.getByLabel('Titel mit Kurzsyntax').fill(`Idee am Handy ${mark}`);
+		await quick.getByRole('button', { name: 'In den Eingang', exact: true }).tap();
+		const shown = quick.getByRole('link', { name: 'Eintrag ansehen' });
+		await expect(shown).toBeVisible();
+		const before = await entries();
+		await shown.tap();
+		const entry = page.getByRole('complementary', { name: `Idee am Handy ${mark}` });
+		await expectPage(entry);
+		await expect(quick).toHaveCount(0);
+		expect(await entries()).toBe(before + 1);
+		await entry.getByRole('button', { name: 'Zum Tagesplan' }).tap();
+		await expect(page).toHaveURL(`${url}/tagesplan`);
+		await expect(entry).toHaveCount(0);
+		await expect(quick).toHaveCount(0);
+		expect(await entries()).toBe(before + 1);
+		await page.goForward();
+		await expect(entry).toBeVisible();
+		await page.goBack();
+		await expect(page).toHaveURL(`${url}/tagesplan`);
+		await expect(quick).toHaveCount(0);
+	});
+});
+
 test.describe('phone with the switch off', () => {
 	test.use({ ...PHONE, extraHTTPHeaders: ANOTHER_DEVICE });
 
@@ -1082,5 +1302,29 @@ test.describe('PC with the switch on', () => {
 		expect(priority.x).toBeGreaterThan(label.x + label.width);
 		await expect(panel.getByLabel('Status')).toBeVisible();
 		expect(await scrollsSideways(page)).toBe(false);
+	});
+
+	test('keeps the inbox of the PC: the table, the chips, the bulk actions and the panel with × (MO-6)', async ({ page }) => {
+		const { mail } = await seedInbox();
+		await switchOn(page);
+		await signIn(page);
+		await expect(viewHeading(page, 'Aufgaben')).toBeVisible();
+		await page.getByRole('navigation', { name: 'Ansicht' }).getByRole('link', { name: /^Eingang/ }).click();
+		await expect(viewHeading(page, 'Eingang')).toBeVisible();
+		await expect(page.getByRole('table')).toBeVisible();
+		await expect(page.locator('li[data-item-id]')).toHaveCount(0);
+		await expect(page.getByRole('group', { name: 'Quelle' })).toBeVisible();
+		await expect(page.getByRole('group', { name: 'Zustand' })).toBeVisible();
+		await expect(page.getByRole('button', { name: /^Gesammelt umwandeln/ })).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Spalten' })).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Filter', exact: true })).toHaveCount(0);
+		await page.getByRole('row').filter({ hasText: mail.title }).getByRole('link', { name: mail.title, exact: true }).click();
+		const panel = page.getByRole('complementary', { name: mail.title });
+		await expect(panel).toBeVisible();
+		await expect(panel.getByRole('button', { name: 'Panel schließen' })).toBeVisible();
+		await expect(panel.getByRole('button', { name: 'Zum Eingang' })).toHaveCount(0);
+		await expect(panel.locator('footer').getByRole('button', { name: 'Mit Ticket verknüpfen …' })).toBeVisible();
+		// The columns of the table fit themselves to the narrower list once the panel stands beside it.
+		await expect.poll(() => scrollsSideways(page)).toBe(false);
 	});
 });

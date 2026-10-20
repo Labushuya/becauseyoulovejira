@@ -16,7 +16,26 @@ export const CLIPBOARD_DENIED_MESSAGE =
 export const CLIPBOARD_EMPTY_MESSAGE = 'Die Zwischenablage enthält keinen Text.';
 export const CLIPBOARD_TOO_MANY_MESSAGE = `Höchstens ${CLIPBOARD_MAX_LINES} Zeilen auf einmal.`;
 
+/**
+ * The hint of the dialog that opens without a text in the phone frame (MO-6): there is no Ctrl+V,
+ * and over http the browser never lets the page read the clipboard, but pasting into a field works.
+ */
+export const CLIPBOARD_PASTE_MESSAGE =
+	'Die Zwischenablage ließ sich nicht lesen. Lange ins Feld drücken und „Einfügen“ wählen.';
+
 export type ClipboardRead = { ok: true; text: string } | { ok: false; message: string };
+
+/**
+ * What "Aus Zwischenablage" does when reading failed with `message`: on the PC the neutral hint
+ * (Ctrl+V, or an empty clipboard); in the phone frame (MO-6), which has no Ctrl+V, the dialog with
+ * an empty field to paste into and a hint how.
+ */
+export function clipboardFallback(
+	message: string,
+	phone: boolean
+): { kind: 'hint' | 'paste'; message: string } {
+	return phone ? { kind: 'paste', message: CLIPBOARD_PASTE_MESSAGE } : { kind: 'hint', message };
+}
 
 /** The part of `navigator` that is read; tests pass a fake. */
 export interface ClipboardSource {

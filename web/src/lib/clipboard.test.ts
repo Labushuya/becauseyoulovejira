@@ -6,8 +6,10 @@ import {
 	CLIPBOARD_DENIED_MESSAGE,
 	CLIPBOARD_EMPTY_MESSAGE,
 	CLIPBOARD_MAX_LINES,
+	CLIPBOARD_PASTE_MESSAGE,
 	CLIPBOARD_TOO_MANY_MESSAGE,
 	clipboardDrafts,
+	clipboardFallback,
 	pastedText,
 	readClipboardText,
 	textLines,
@@ -161,5 +163,28 @@ describe('pastedText (Ctrl+V in the inbox view)', () => {
 		).toBeNull();
 		expect(pastedText({ target: document.querySelector('main'), clipboardData: null })).toBeNull();
 		document.body.innerHTML = '';
+	});
+});
+
+describe('clipboardFallback (MO-6)', () => {
+	it('keeps the hint of the PC: Ctrl+V or an empty clipboard', () => {
+		expect(clipboardFallback(CLIPBOARD_DENIED_MESSAGE, false)).toEqual({
+			kind: 'hint',
+			message: CLIPBOARD_DENIED_MESSAGE
+		});
+		expect(clipboardFallback(CLIPBOARD_EMPTY_MESSAGE, false)).toEqual({
+			kind: 'hint',
+			message: CLIPBOARD_EMPTY_MESSAGE
+		});
+	});
+
+	it('opens the dialog to paste into in the phone frame, which has no Ctrl+V', () => {
+		for (const message of [CLIPBOARD_DENIED_MESSAGE, CLIPBOARD_EMPTY_MESSAGE]) {
+			expect(clipboardFallback(message, true)).toEqual({
+				kind: 'paste',
+				message: CLIPBOARD_PASTE_MESSAGE
+			});
+		}
+		expect(CLIPBOARD_PASTE_MESSAGE).not.toMatch(/Strg/);
 	});
 });

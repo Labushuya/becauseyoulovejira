@@ -4,7 +4,9 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { areaMover } from '$lib/area-move-entry';
+	import { isCardTap } from '$lib/card-tap';
 	import { INBOX_TABLE } from '$lib/domain/columns';
+	import { withConnectionName } from '$lib/domain/connections';
 	import { berlinDateOf, formatBerlinDateTime, formatCalendarDate } from '$lib/domain/format';
 	import {
 		CHANNEL_LABELS,
@@ -28,10 +30,13 @@
 		targetText
 	} from '$lib/domain/target-project';
 	import type { TicketSummary } from '$lib/domain/ticket';
+	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 	import { rowMenus } from '$lib/overlay/context-menu';
 	import { getColumnPrefs } from '$lib/stores/column-prefs.svelte';
+	import { findConnectionNames } from '$lib/stores/connection-names.svelte';
 	import type { FlagSink } from '$lib/stores/flags.svelte';
 	import { INBOX_UNAVAILABLE_MESSAGE, type InboxStore } from '$lib/stores/inbox.svelte';
+	import type { SyncAllStore } from '$lib/stores/sync-all.svelte';
 	import type { TicketPickerSource } from '$lib/stores/ticket-picker.svelte';
 	import type { TicketSourcesStore } from '$lib/stores/ticket-sources.svelte';
 	import { captureHref, convertHref, inboxItemHref, withInboxQuery } from '$lib/ticket-links';
@@ -40,6 +45,8 @@
 	import ColumnsPopover from './ColumnsPopover.svelte';
 	import FilterPopover from './FilterPopover.svelte';
 	import EmptyState from './guidance/EmptyState.svelte';
+	import FilterButton from './FilterButton.svelte';
+	import FilterSheet from './FilterSheet.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
 	import MoveSourceDialog from './MoveSourceDialog.svelte';
 	import SectionBar from './SectionBar.svelte';
@@ -76,6 +83,17 @@
 	// (a group of rows per project with its path as heading, "Ohne Zielprojekt" last) and the column
 	// "Zielprojekt" in the menu "Spalten", off by default and the first to give way (ADR-0030). All
 	// three wait until the server knows the field (`store.targetsReady`).
+	// Phone frame (MO-6, ADR-0073 addendum MO-6): with the switch "Handy-Ansicht (Vorschau)" on and
+	// below 40rem the same component shows cards instead of the table, from the same store, groups,
+	// menus and links. A card holds the title (up to three lines, the link to the entry), the hint on a
+	// possible duplicate, a muted line with kind, source with its connection, the date the list is
+	// ordered by, the date at the sender and the target project, the main actions "Umwandeln" and
+	// "Verwerfen" (or "Wiederherstellen", or the chip "→ HAUS-12") with 44 px and "•••" with the menu
+	// of the row; a tap on the card opens the entry. The row of the view holds "Erfassen", "Filter (n)"
+	// (the chips "Quelle" and "Zustand", "Zielprojekt" and the grouping in the filter sheet) and the
+	// menu of the list ("Auswählen", "Aus Zwischenablage", "Alle Kanäle jetzt abrufen"); the files come
+	// after the list. "Auswählen" shows a box on every new entry for "Gesammelt umwandeln" and "Mit
+	// Ticket verknüpfen …". "Spalten" has no place without columns; the entry shows every value.
 	let {
 		store,
 		flags,
@@ -87,6 +105,7 @@
 		selected = $bindable([]),
 		projectsNewCount = 0,
 		clipboardHint = null,
+		syncAll = null,
 		onclipboard,
 		onbulk,
 		onlink,
@@ -124,6 +143,11 @@
 		onclipboard?: () => void;
 		/** Why the clipboard could not be read, with the way through Ctrl+V; neutral, no error. */
 		clipboardHint?: string | null;
+		/**
+		 * "Alle Kanäle jetzt abrufen" in the menu of the list in the phone frame (MO-6), with its
+		 * status; on the PC the button of `actions` stands in the bar.
+		 */
+		syncAll?: SyncAllStore | null;
 		/** Further ways into the inbox under the chips (drop zone for files, package 8). */
 		tools?: Snippet;
 		/** First actions of the section bar ("Alle Kanäle jetzt abrufen", package A item 4). */
@@ -256,19 +280,25 @@
 		selected = on ? selectable.map((item) => item.id) : [];
 	}
 
+	/** The title links of the rows of the table, or of the cards in the phone frame (MO-6). */
 	function titleLinks(): HTMLElement[] {
-		return [...(root?.querySelectorAll<HTMLElement>('tbody tr[data-item-id] a.title-link') ?? [])];
+		return [...(root?.querySelectorAll<HTMLElement>('[data-item-id] a.title-link') ?? [])];
+	}
+
+	/** The entry of the row or card a title link stands in. */
+	function itemOfLink(link: HTMLElement): string | undefined {
+		return link.closest<HTMLElement>('[data-item-id]')?.dataset.itemId;
 	}
 
 	/** Position of the row of an entry among the rows, -1 without one. */
 	function rowIndex(id: string): number {
-		return titleLinks().findIndex((link) => link.closest('tr')?.dataset.itemId === id);
+		return titleLinks().findIndex((link) => itemOfLink(link) === id);
 	}
 
 	/** The row of an entry left: the focus goes to the row at its place, else the last, else the heading. */
 	async function focusNear(id: string, index: number) {
 		await tick();
-		const links = titleLinks().filter((link) => link.closest('tr')?.dataset.itemId !== id);
+		const links = titleLinks().filter((link) => itemOfLink(link) !== id);
 		const next = links[Math.min(index, links.length - 1)];
 		(next ?? heading)?.focus();
 	}
@@ -446,7 +476,7 @@
 		void tick().then(() => {
 			const active = document.activeElement;
 			if (active !== null && active !== document.body) return;
-			const link = titleLinks().find((entry) => entry.closest('tr')?.dataset.itemId === previous);
+			const link = titleLinks().find((entry) => itemOfLink(entry) === previous);
 			(link ?? heading)?.focus();
 		});
 	});
@@ -457,6 +487,57 @@
 		if (item.sourceDate === null) return null;
 		const date = berlinDateOf(item.sourceDate);
 		return { date, text: formatCalendarDate(date), title: formatBerlinDateTime(item.sourceDate) };
+	}
+
+	/** The phone frame (MO-6): cards instead of the table, the filters in a sheet. */
+	const mobileLayout = getMobileLayoutStore();
+	const phone = $derived(mobileLayout.active);
+	/** Names of the connections (ADR-0026, addendum KK-3), as the panel names the source. */
+	const connectionNames = findConnectionNames();
+
+	/** The filter sheet and the number of the filters "Zurücksetzen" clears (source, target). */
+	let filtersOpen = $state(false);
+	const filterCount = $derived((query.source !== null ? 1 : 0) + (target !== null ? 1 : 0));
+
+	/** "Zurücksetzen" of the sheet: like "Filter zurücksetzen", the sheet stays open. */
+	function resetInSheet() {
+		void navigate({ ...query, source: null, target: null });
+	}
+
+	// "Auswählen" in the phone frame (MO-6, the way of MO-3): the boxes of the selection show on the
+	// new entries while the mode is on or something is chosen; "Fertig" leaves it and clears it.
+	let selectMode = $state(false);
+	const selecting = $derived(phone && showsNew && (selectMode || chosen.length > 0));
+
+	function leaveSelectMode() {
+		selectMode = false;
+		selected = [];
+	}
+
+	/** The menu "•••" of the list in the phone frame: what the bar of the PC shows besides. */
+	const listActions = $derived.by((): MenuAction[] => {
+		const entries: MenuAction[] = [];
+		if (showsNew && selectable.length > 0) {
+			entries.push({ label: 'Auswählen', locked: selecting, onselect: () => (selectMode = true) });
+		}
+		const clipboard = onclipboard;
+		if (clipboard) entries.push({ label: 'Aus Zwischenablage', onselect: () => clipboard() });
+		const sync = syncAll;
+		if (sync !== null) {
+			entries.push({
+				label: 'Alle Kanäle jetzt abrufen',
+				busy: sync.running,
+				onselect: () => void sync.runAll()
+			});
+		}
+		return entries;
+	});
+
+	/** A tap on a card opens its entry, or chooses it while choosing (MO-6). */
+	function tapCard(event: MouseEvent, item: InboxItemSummary) {
+		if (!isCardTap(event)) return;
+		if (selecting && item.state === 'new') toggle(item.id, !selected.includes(item.id));
+		else void goto(inboxItemHref(item.id, page.url));
 	}
 </script>
 
@@ -613,12 +694,232 @@
 	</tr>
 {/snippet}
 
+<!-- An entry as a card in the phone frame (MO-6): the counterpart of a row, with its parts. -->
+{#snippet card(item: InboxItemSummary)}
+	{@const pending = store.isPending(item.id)}
+	{@const sourceDate = sourceDateOf(item)}
+	{@const arrival = byArrival ? item.created : (item.handledAt ?? item.created)}
+	{@const linkedTicket =
+		item.state === 'converted' && item.ticket?.id === item.ticketId ? item.ticket : null}
+	{@const targetLabel = targetsReady ? targetText(targetOfItem(item, projects)) : ''}
+	{@const choosing = selecting && item.state === 'new'}
+	<!-- The title link is the keyboard target of the card; the tap on the card is a shortcut for it. -->
+	<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
+	<li
+		class="inbox-card"
+		class:active={item.id === activeId}
+		class:linked={item.state === 'converted' && item.ticketId !== null}
+		class:chosen={choosing && selected.includes(item.id)}
+		data-item-id={item.id}
+		data-menu-row
+		onclick={(event) => tapCard(event, item)}
+	>
+		{#if choosing}
+			<!-- The whole target is the label: a tap anywhere in it chooses. -->
+			<label class="check-target">
+				<input
+					type="checkbox"
+					aria-label={`Eintrag „${item.title}“ auswählen`}
+					checked={selected.includes(item.id)}
+					onchange={(event) => toggle(item.id, event.currentTarget.checked)}
+				/>
+			</label>
+		{/if}
+		<div class="card-body">
+			<!-- Up to three lines, cut off only visually; screen readers read the whole title. -->
+			<p class="card-title">
+				<a
+					class="title-link"
+					href={inboxItemHref(item.id, page.url)}
+					data-row-link
+					title={item.title.length >= LONG_TITLE ? item.title : undefined}
+					aria-current={item.id === activeId ? 'page' : undefined}>{item.title}</a
+				>
+			</p>
+			{#if item.state === 'new'}
+				{@render duplicateHint(item)}
+			{/if}
+			<p class="card-meta">
+				<span>{KIND_LABELS[item.kind]}</span>
+				<span
+					>{withConnectionName(
+						CHANNEL_LABELS[item.channel],
+						connectionNames?.nameOf(item.connectionId) ?? null
+					)}</span
+				>
+				<span class="card-date">
+					{byArrival ? 'Eingang' : VIEW_LABELS[query.state]}
+					<time datetime={berlinDateOf(arrival)} title={formatBerlinDateTime(arrival)}>
+						{formatCalendarDate(berlinDateOf(arrival))}
+					</time>
+				</span>
+				{#if sourceDate !== null}
+					<span class="card-date">
+						Quelldatum
+						<time datetime={sourceDate.date} title={sourceDate.title}>{sourceDate.text}</time>
+					</span>
+				{/if}
+				{#if targetLabel !== ''}
+					<span>{TARGET_LABEL} {targetLabel}</span>
+				{/if}
+			</p>
+			<div
+				class="card-actions"
+				aria-busy={downloading === item.id ||
+				saving === item.id ||
+				(sources?.isPending(item.id) ?? false)
+					? 'true'
+					: undefined}
+			>
+				{#if item.state === 'new'}
+					<a class="button-secondary card-convert" href={convertHref(item.id)}
+						>Umwandeln<span class="visually-hidden">: „{item.title}“</span></a
+					>
+					<button
+						class="button-secondary"
+						type="button"
+						disabled={pending}
+						aria-busy={pending ? 'true' : undefined}
+						onclick={() => discard(item)}
+					>
+						Verwerfen<span class="visually-hidden">: „{item.title}“</span>
+					</button>
+				{:else if item.state === 'discarded'}
+					<button
+						class="button-secondary"
+						type="button"
+						disabled={pending}
+						aria-busy={pending ? 'true' : undefined}
+						onclick={() => act(() => store.restore(item.id))}
+					>
+						Wiederherstellen<span class="visually-hidden">: „{item.title}“</span>
+					</button>
+				{:else if linkedTicket !== null}
+					<a
+						class="ticket-chip"
+						href={links.path(linkedTicket.id)}
+						data-ticket-link={linkedTicket.id}
+						title={`${linkedTicket.key} · ${linkedTicket.title}`}
+						aria-label={`Ticket ${linkedTicket.key} öffnen: „${item.title}“`}
+						>→ <span class="ticket-key">{linkedTicket.key}</span></a
+					>
+				{:else if item.ticketId !== null}
+					<a
+						class="button-secondary"
+						href={links.path(item.ticketId)}
+						data-ticket-link={item.ticketId}
+						>Ticket ansehen<span class="visually-hidden">: „{item.title}“</span></a
+					>
+				{/if}
+			</div>
+		</div>
+		<div class="card-end">
+			<ActionsMenu
+				label={`Weitere Aktionen für „${item.title}“`}
+				buttonLabel={`Weitere Aktionen für „${item.title}“`}
+				buttonTitle="Weitere Aktionen"
+				buttonClass="button-icon row-menu"
+				items={menuOf(item, linkedTicket?.key ?? null)}
+			/>
+		</div>
+	</li>
+{/snippet}
+
+<!-- "Gesammelt umwandeln" and "Mit Ticket verknüpfen …" for the chosen new entries. -->
+{#snippet bulkButtons()}
+	<button
+		class="bulk"
+		type="button"
+		aria-disabled={chosen.length === 0 ? 'true' : undefined}
+		aria-describedby={chosen.length === 0 ? ids.bulkHint : undefined}
+		onclick={() => {
+			if (chosen.length > 0) onbulk();
+		}}
+	>
+		Gesammelt umwandeln{chosen.length > 0 ? ` (${chosen.length})` : ''}
+	</button>
+	{#if onlink}
+		<button
+			class="bulk"
+			type="button"
+			aria-disabled={chosen.length === 0 ? 'true' : undefined}
+			aria-describedby={chosen.length === 0 ? ids.bulkHint : undefined}
+			onclick={() => {
+				if (chosen.length > 0) onlink();
+			}}
+		>
+			Mit Ticket verknüpfen …{chosen.length > 0 ? ` (${chosen.length})` : ''}
+		</button>
+	{/if}
+	{#if chosen.length === 0}
+		<span class="hint" id={ids.bulkHint}>Erst Einträge auswählen.</span>
+	{/if}
+{/snippet}
+
+<!-- The chips of the URL, the target project and the grouping: above the table, in the sheet (MO-6). -->
+{#snippet filterParts()}
+	<ChipGroup
+		legend="Quelle"
+		name={`${uid}-source`}
+		options={SOURCE_CHIPS}
+		value={query.source}
+		onchange={(value: SourceFamily | null) => navigate({ ...query, source: value })}
+	/>
+	<ChipGroup
+		legend="Zustand"
+		name={`${uid}-state`}
+		options={STATE_CHIPS}
+		value={query.state}
+		all={null}
+		onchange={(value: InboxView | null) => navigate({ ...query, state: value ?? 'new' })}
+	/>
+	{#if targetsReady}
+		<div class="target-tools">
+			<FilterPopover
+				legend={TARGET_LABEL}
+				name={`${uid}-target`}
+				options={targetOptions}
+				value={target}
+				onchange={(value) => navigate({ ...query, target: value })}
+			/>
+			<label class="group-switch" for={groupSwitchId}>
+				<span>Nach Zielprojekt gruppieren</span>
+				<input
+					id={groupSwitchId}
+					type="checkbox"
+					role="switch"
+					checked={grouped}
+					onchange={(event) => navigate({ ...query, grouped: event.currentTarget.checked })}
+				/>
+			</label>
+		</div>
+	{/if}
+{/snippet}
+
+{#snippet sheetFilters()}
+	<div class="sheet-filters">{@render filterParts()}</div>
+{/snippet}
+
+<!-- The row of the view in the phone frame (MO-6): "Erfassen", "Filter (n)" and the menu of the list. -->
+{#snippet phoneTools()}
+	<a class="button-secondary" href={captureHref(page.url)}>Erfassen</a>
+	<FilterButton count={filterCount} onclick={() => (filtersOpen = true)} />
+	{#if listActions.length > 0}
+		<ActionsMenu
+			label="Aktionen der Liste"
+			buttonLabel="Weitere Aktionen der Liste"
+			items={listActions}
+		/>
+	{/if}
+{/snippet}
+
 <section class="inbox-table" aria-labelledby={ids.heading} bind:this={root}>
 	<SectionBar
 		title="Eingang"
 		headingId={ids.heading}
 		count={ready ? `${rows.length}${store.handledHasMore ? '+' : ''}` : null}
 		{countLabel}
+		phone={phoneTools}
 		bind:heading
 	>
 		{#snippet start()}
@@ -633,78 +934,41 @@
 				</button>
 			{/if}
 			{#if showsNew}
-				<button
-					class="bulk"
-					type="button"
-					aria-disabled={chosen.length === 0 ? 'true' : undefined}
-					aria-describedby={chosen.length === 0 ? ids.bulkHint : undefined}
-					onclick={() => {
-						if (chosen.length > 0) onbulk();
-					}}
-				>
-					Gesammelt umwandeln{chosen.length > 0 ? ` (${chosen.length})` : ''}
-				</button>
-				{#if onlink}
-					<button
-						class="bulk"
-						type="button"
-						aria-disabled={chosen.length === 0 ? 'true' : undefined}
-						aria-describedby={chosen.length === 0 ? ids.bulkHint : undefined}
-						onclick={() => {
-							if (chosen.length > 0) onlink();
-						}}
-					>
-						Mit Ticket verknüpfen …{chosen.length > 0 ? ` (${chosen.length})` : ''}
-					</button>
-				{/if}
-				{#if chosen.length === 0}
-					<span class="hint" id={ids.bulkHint}>Erst Einträge auswählen.</span>
-				{/if}
+				{@render bulkButtons()}
 			{/if}
 			<ColumnsPopover fit={columnFit} always="Auswahl, Titel und Aktionen sind immer sichtbar." />
 		{/snippet}
 	</SectionBar>
 
-	<div class="chips">
-		<ChipGroup
-			legend="Quelle"
-			name={`${uid}-source`}
-			options={SOURCE_CHIPS}
-			value={query.source}
-			onchange={(value: SourceFamily | null) => navigate({ ...query, source: value })}
-		/>
-		<ChipGroup
-			legend="Zustand"
-			name={`${uid}-state`}
-			options={STATE_CHIPS}
-			value={query.state}
-			all={null}
-			onchange={(value: InboxView | null) => navigate({ ...query, state: value ?? 'new' })}
-		/>
-		{#if targetsReady}
-			<div class="target-tools">
-				<FilterPopover
-					legend={TARGET_LABEL}
-					name={`${uid}-target`}
-					options={targetOptions}
-					value={target}
-					onchange={(value) => navigate({ ...query, target: value })}
-				/>
-				<label class="group-switch" for={groupSwitchId}>
-					<span>Nach Zielprojekt gruppieren</span>
+	{#if phone}
+		{#if syncAll !== null}
+			<!-- The status of "Alle Kanäle jetzt abrufen" from the menu of the list; the result is a flag. -->
+			<p class="sync-status" role="status">{syncAll.running ? syncAll.status : ''}</p>
+		{/if}
+		{#if selecting}
+			<!-- "Auswählen" (MO-6): all new entries shown, the bulk actions, and the way out. -->
+			<div class="select-mode" role="group" aria-label="Auswahl">
+				<label class="select-all">
 					<input
-						id={groupSwitchId}
 						type="checkbox"
-						role="switch"
-						checked={grouped}
-						onchange={(event) => navigate({ ...query, grouped: event.currentTarget.checked })}
+						aria-label="Alle angezeigten Einträge auswählen"
+						checked={allChosen}
+						disabled={selectable.length === 0}
+						onchange={(event) => toggleAll(event.currentTarget.checked)}
 					/>
+					Alle
 				</label>
+				<button class="button-secondary" type="button" onclick={leaveSelectMode}>Fertig</button>
+				<div class="select-bulk">{@render bulkButtons()}</div>
 			</div>
 		{/if}
-	</div>
+	{:else}
+		<div class="chips">
+			{@render filterParts()}
+		</div>
 
-	{@render tools?.()}
+		{@render tools?.()}
+	{/if}
 
 	<div role="status">
 		{#if clipboardHint}
@@ -786,7 +1050,35 @@
 		<p class="loading" role="status">Eingang wird geladen …</p>
 	{/if}
 
-	{#if rows.length > 0}
+	{#if phone && rows.length > 0}
+		<!-- Cards instead of the table (MO-6): the same groups and order. -->
+		<div class="card-list" {@attach rowMenus}>
+			<p class="cards-caption" class:visually-hidden={showsNew && !grouped}>{caption}</p>
+			{#each groups as group (group.key)}
+				{#if grouped}
+					{@const headId = `${uid}-group-${group.key}`}
+					<section class="card-section" aria-labelledby={headId}>
+						<h3 class="card-head" id={headId}>
+							{group.label}<span class="group-count"
+								>{group.items.length === 1 ? '1 Eintrag' : `${group.items.length} Einträge`}</span
+							>
+						</h3>
+						<ol class="inbox-cards">
+							{#each group.items as item (item.id)}
+								{@render card(item)}
+							{/each}
+						</ol>
+					</section>
+				{:else}
+					<ol class="inbox-cards" aria-label="Einträge">
+						{#each group.items as item (item.id)}
+							{@render card(item)}
+						{/each}
+					</ol>
+				{/if}
+			{/each}
+		</div>
+	{:else if rows.length > 0}
 		<div class="frame" bind:this={frame}>
 			<table {@attach rowMenus}>
 				<caption id={ids.caption}
@@ -858,7 +1150,24 @@
 			{store.loadingMoreHandled ? 'Wird geladen …' : 'Weitere laden'}
 		</button>
 	{/if}
+	{#if phone}
+		<!-- The files after the list in the phone frame (MO-6): one level deeper, still there. -->
+		<div class="cards-tools">{@render tools?.()}</div>
+	{/if}
 </section>
+
+<!-- The filter sheet of the phone frame (MO-6); the modal gives the focus back to "Filter". -->
+{#if phone && filtersOpen}
+	<FilterSheet
+		count={ready && !store.handledHasMore ? rows.length : null}
+		{filtered}
+		onreset={resetInSheet}
+		onclose={() => (filtersOpen = false)}
+		filters={sheetFilters}
+		ticketOrder={false}
+		noun={{ one: 'Eintrag', many: 'Einträge' }}
+	/>
+{/if}
 
 <!-- "Anderem Ticket zuordnen …" of a row (AM-5), the dialog of the panel; the list is no modal. -->
 {#if moving !== null && movingFrom !== null && sources !== null}
@@ -1170,5 +1479,197 @@
 		border: 1px solid currentColor;
 		border-radius: var(--radius-control);
 		cursor: pointer;
+	}
+
+	/*
+	 * Phone frame (MO-6, ADR-0073 addendum MO-6): the cards in a framed list per group like the
+	 * table, each a row of the box of the selection (while choosing), the body and "•••"; the title in
+	 * up to three lines, long words, addresses and names wrap; the actions of a card, the bulk
+	 * actions, "Dem Ticket … zuordnen", "Weitere laden" and the choices of the sheet are targets of
+	 * 44 px. Off, or from 40rem, the table stays as it was.
+	 */
+	@media (max-width: 39.99rem) {
+		:global(:root[data-mobile-layout='on']) .sync-status {
+			margin: 0;
+			font-size: var(--font-size-small);
+			color: var(--color-text-muted);
+		}
+
+		:global(:root[data-mobile-layout='on']) .sync-status:not(:empty) {
+			margin-bottom: 0.5rem;
+		}
+
+		:global(:root[data-mobile-layout='on']) .select-mode {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 0.5rem;
+			align-items: center;
+			margin-bottom: 0.75rem;
+		}
+
+		:global(:root[data-mobile-layout='on']) .select-all {
+			display: inline-flex;
+			gap: 0.5rem;
+			align-items: center;
+			padding-right: 0.5rem;
+			font-size: var(--font-size-body);
+		}
+
+		:global(:root[data-mobile-layout='on']) .select-bulk {
+			display: flex;
+			flex: 1 1 100%;
+			flex-wrap: wrap;
+			gap: 0.5rem;
+			align-items: center;
+		}
+
+		:global(:root[data-mobile-layout='on']) .bulk,
+		:global(:root[data-mobile-layout='on']) .more,
+		:global(:root[data-mobile-layout='on']) .duplicate .text-button {
+			min-height: var(--control-height-touch);
+		}
+
+		:global(:root[data-mobile-layout='on']) .sheet-filters {
+			display: grid;
+			gap: 1rem;
+		}
+
+		:global(:root[data-mobile-layout='on']) .sheet-filters :global(.toggle) {
+			min-height: var(--control-height-touch);
+		}
+
+		:global(:root[data-mobile-layout='on']) .card-list {
+			display: grid;
+			gap: 0.75rem;
+		}
+
+		:global(:root[data-mobile-layout='on']) .cards-caption {
+			margin: 0;
+			font-size: var(--font-size-small);
+			color: var(--color-text-muted);
+		}
+
+		:global(:root[data-mobile-layout='on']) .card-section {
+			display: grid;
+			gap: 0.375rem;
+			min-width: 0;
+		}
+
+		:global(:root[data-mobile-layout='on']) .card-head {
+			margin: 0;
+			font-size: var(--font-size-control);
+			font-weight: 600;
+		}
+
+		:global(:root[data-mobile-layout='on']) .inbox-cards {
+			min-width: 0;
+			margin: 0;
+			padding: 0;
+			overflow: hidden;
+			list-style: none;
+			background: var(--color-surface);
+			border: 1px solid var(--color-line);
+			border-radius: var(--radius-surface);
+		}
+
+		:global(:root[data-mobile-layout='on']) .inbox-card {
+			display: flex;
+			gap: 0.25rem;
+			align-items: flex-start;
+			padding: 0.5rem 0.25rem 0.75rem 0.75rem;
+			border-top: 1px solid var(--color-line);
+			cursor: pointer;
+		}
+
+		:global(:root[data-mobile-layout='on']) .inbox-card:first-child {
+			border-top: none;
+		}
+
+		:global(:root[data-mobile-layout='on']) .inbox-card.active,
+		:global(:root[data-mobile-layout='on']) .inbox-card.chosen {
+			background: var(--color-brand-soft-bg);
+		}
+
+		/* The open or linked entry: a bar at its start, not only a colour (as in the table). */
+		:global(:root[data-mobile-layout='on']) .inbox-card.active,
+		:global(:root[data-mobile-layout='on']) .inbox-card.linked {
+			box-shadow: inset 3px 0 0 var(--color-brand);
+		}
+
+		:global(:root[data-mobile-layout='on']) .check-target {
+			display: flex;
+			flex: none;
+			align-items: center;
+			justify-content: center;
+			min-width: var(--control-height-touch);
+			min-height: var(--control-height-touch);
+			margin-left: -0.5rem;
+			cursor: pointer;
+		}
+
+		:global(:root[data-mobile-layout='on']) .card-body {
+			display: grid;
+			flex: 1 1 auto;
+			gap: 0.375rem;
+			min-width: 0;
+			padding-top: 0.625rem;
+		}
+
+		/* Up to three lines; the clamp is visual only, screen readers read the whole title. */
+		:global(:root[data-mobile-layout='on']) .card-title {
+			display: -webkit-box;
+			margin: 0;
+			overflow: hidden;
+			font-size: var(--font-size-body);
+			overflow-wrap: anywhere;
+			-webkit-box-orient: vertical;
+			-webkit-line-clamp: 3;
+			line-clamp: 3;
+		}
+
+		:global(:root[data-mobile-layout='on']) .card-meta {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 0 0.75rem;
+			min-width: 0;
+			margin: 0;
+			font-size: var(--font-size-control);
+			color: var(--color-text-muted);
+			overflow-wrap: anywhere;
+		}
+
+		:global(:root[data-mobile-layout='on']) .card-meta > span {
+			min-width: 0;
+		}
+
+		:global(:root[data-mobile-layout='on']) .card-date {
+			font-variant-numeric: tabular-nums;
+		}
+
+		:global(:root[data-mobile-layout='on']) .card-actions {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 0.5rem;
+			align-items: center;
+			min-width: 0;
+		}
+
+		:global(:root[data-mobile-layout='on']) .card-convert {
+			color: var(--color-brand-text);
+			border-color: var(--color-brand);
+		}
+
+		:global(:root[data-mobile-layout='on']) .card-actions .ticket-chip {
+			min-height: var(--control-height-touch);
+			padding-inline: 0.75rem;
+		}
+
+		:global(:root[data-mobile-layout='on']) .card-end {
+			flex: none;
+		}
+
+		:global(:root[data-mobile-layout='on']) .cards-tools {
+			margin-top: 1rem;
+		}
 	}
 </style>

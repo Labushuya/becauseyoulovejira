@@ -3,7 +3,7 @@
 // navigates like the × of the PC.
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { WayBack, entryOf, goBack, previousEntry } from './way-back';
+import { WayBack, backThroughHistory, entryOf, goBack, previousEntry } from './way-back';
 
 const LIST = new URL('http://localhost:3000/?sort=titel&karte=heute');
 
@@ -72,5 +72,29 @@ describe('goBack', () => {
 		goBack(null, '/tagesplan', navigate);
 		expect(back).not.toHaveBeenCalled();
 		expect(navigate).toHaveBeenCalledTimes(2);
+	});
+});
+
+describe('the way back of a form page (MO-6)', () => {
+	it('names the entry before the page while the app knows it', () => {
+		const wayBack = new WayBack();
+		expect(wayBack.previous).toBeNull();
+		wayBack.arrived({
+			type: 'link',
+			from: new URL('http://localhost:3000/eingang/item1?quelle=mail')
+		});
+		expect(wayBack.previous).toBe('/eingang/item1?quelle=mail');
+		wayBack.arrived({ type: 'popstate', from: LIST, delta: -1 });
+		expect(wayBack.previous).toBeNull();
+	});
+
+	it('goes back through the history only in the phone frame and only after a link of the app', () => {
+		const wayBack = new WayBack();
+		wayBack.arrived({ type: 'link', from: new URL('http://localhost:3000/eingang') });
+		expect(backThroughHistory(true, wayBack)).toBe(true);
+		expect(backThroughHistory(false, wayBack)).toBe(false);
+		expect(backThroughHistory(true, null)).toBe(false);
+		wayBack.arrived({ type: 'enter', from: null });
+		expect(backThroughHistory(true, wayBack)).toBe(false);
 	});
 });

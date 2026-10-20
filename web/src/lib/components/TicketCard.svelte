@@ -8,6 +8,7 @@
 	import type { Status } from '$lib/domain/status';
 	import type { SubtaskProgress } from '$lib/domain/subtasks';
 	import type { ParentRef, ProjectRef, TagRef, TicketSummary } from '$lib/domain/ticket';
+	import { isCardTap } from '$lib/card-tap';
 	import type { AssigneeSource } from '$lib/stores/assignees.svelte';
 	import AssigneeBadge from './AssigneeBadge.svelte';
 	import CharmIcon from './CharmIcon.svelte';
@@ -112,14 +113,8 @@
 	const tagNames = $derived(tags.map((tag) => tag.name).join(', '));
 
 	/** Controls of the card handle their own taps; the card only takes taps outside of them. */
-	const CONTROLS = 'a, button, input, select, textarea, label, [popover]';
-
 	function onclick(event: MouseEvent) {
-		if (event.defaultPrevented || event.button !== 0) return;
-		if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
-		if (event.target instanceof Element && event.target.closest(CONTROLS)) return;
-		// Selecting text on the card does not open the ticket.
-		if ((window.getSelection()?.toString() ?? '') !== '') return;
+		if (!isCardTap(event)) return;
 		if (selecting) onselect?.(!selected);
 		else void goto(href);
 	}

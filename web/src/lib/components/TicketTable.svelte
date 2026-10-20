@@ -79,6 +79,7 @@
 	import CompletionDialog from './CompletionDialog.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import EmptyState from './guidance/EmptyState.svelte';
+	import FilterButton from './FilterButton.svelte';
 	import FilterSheet from './FilterSheet.svelte';
 	import FilterSummary from './FilterSummary.svelte';
 	import GroupPopover from './GroupPopover.svelte';
@@ -846,20 +847,7 @@
 <!-- The row of the view in the phone frame (MO-3): search, "Filter (n)" and the menu of the list. -->
 {#snippet phoneTools()}
 	{@render search?.()}
-	<button
-		class="button-secondary filter-open"
-		class:active={filterCount > 0}
-		type="button"
-		aria-haspopup="dialog"
-		aria-label={filterCount > 0 ? `Filter, ${filterCount} aktiv` : 'Filter'}
-		onclick={() => (filtersOpen = true)}
-	>
-		<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-			<path d="M2.5 3.5h11l-4.25 5v4l-2.5 1.25V8.5z" />
-		</svg>
-		Filter
-		{#if filterCount > 0}<span class="filter-count" aria-hidden="true">{filterCount}</span>{/if}
-	</button>
+	<FilterButton count={filterCount} onclick={() => (filtersOpen = true)} />
 	<ActionsMenu
 		label="Aktionen der Liste"
 		buttonLabel="Weitere Aktionen der Liste"
@@ -1508,43 +1496,11 @@
 	}
 
 	/*
-	 * Phone frame (MO-3, ADR-0073 addendum MO-3): "Filter" and the heads of the sections as targets of
-	 * 44 px, the cards in a framed list per section like the table, the bar of "Auswählen" above them.
+	 * Phone frame (MO-3, ADR-0073 addendum MO-3): the heads of the sections as targets of 44 px, the
+	 * cards in a framed list per section like the table, the bar of "Auswählen" above them; "Filter"
+	 * styles its own button (FilterButton, shared with the inbox since MO-6).
 	 */
 	@media (max-width: 39.99rem) {
-		:global(:root[data-mobile-layout='on']) .filter-open {
-			flex: none;
-			gap: 0.375rem;
-		}
-
-		:global(:root[data-mobile-layout='on']) .filter-open svg {
-			width: 0.875rem;
-			height: 0.875rem;
-			fill: none;
-			stroke: currentColor;
-			stroke-width: 1.5;
-			stroke-linejoin: round;
-		}
-
-		/* Set filters: the accent surface and the number, never colour alone (WCAG 1.4.1). */
-		:global(:root[data-mobile-layout='on']) .filter-open.active {
-			font-weight: 600;
-			color: var(--color-brand-soft-text);
-			background: var(--color-brand-soft-bg);
-			border-color: var(--color-brand);
-		}
-
-		:global(:root[data-mobile-layout='on']) .filter-count {
-			min-width: 1.25rem;
-			padding: 0 0.3125rem;
-			font-size: var(--font-size-small);
-			line-height: 1.125rem;
-			text-align: center;
-			font-variant-numeric: tabular-nums;
-			border: 1px solid var(--color-brand);
-			border-radius: var(--radius-pill);
-		}
-
 		:global(:root[data-mobile-layout='on']) .select-mode {
 			display: flex;
 			flex-wrap: wrap;

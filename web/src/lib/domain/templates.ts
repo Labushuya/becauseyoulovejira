@@ -173,6 +173,32 @@ export const TEMPLATE_FIELDS: Readonly<Record<CaptureTemplate, readonly CaptureF
 		link: [spec('url', 'Adresse', true), spec('what', 'Titel', true), spec('excerpt', 'Auszug')]
 	});
 
+/**
+ * Fields of prose that start with a capital letter on the on-screen keyboard of the phone frame
+ * (MO-6, `autocapitalize="sentences"`): titles, names, places, the articles and the excerpt; not the
+ * number, the address of a link, dates and choices.
+ */
+export const SENTENCE_FIELDS: ReadonlySet<CaptureField> = new Set<CaptureField>([
+	'what',
+	'who',
+	'reason',
+	'items',
+	'store',
+	'place',
+	'excerpt'
+]);
+
+/**
+ * The Enter key of the on-screen keyboard at a one-line field of the phone frame (MO-6,
+ * `enterkeyhint`): "next" while a required field follows (the browser of the phone moves there),
+ * "done" otherwise, because Enter in a field of the form saves it, as on the PC.
+ */
+export function enterKeyOf(template: CaptureTemplate, field: CaptureField): 'next' | 'done' {
+	const fields = TEMPLATE_FIELDS[template];
+	const index = fields.findIndex((entry) => entry.field === field);
+	return fields.slice(index + 1).some((entry) => entry.required) ? 'next' : 'done';
+}
+
 /** Everything the form can hold; a template reads only its own fields. */
 export interface CaptureInput {
 	what: string;

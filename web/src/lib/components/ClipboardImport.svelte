@@ -11,13 +11,18 @@
 	// the rest the text, or with "Jede Zeile als eigener Eintrag" one entry per line (at most 100).
 	// Failures stay listed with their reason, and the footer then says "Schließen", because some
 	// entries are saved already. The modal returns the focus on closing.
+	// In the phone frame the dialog opens without a text when the clipboard could not be read (MO-6):
+	// `hint` says how to paste into the field, and the empty field shows no error.
 	let {
 		text: initialText,
+		hint = null,
 		onsave,
 		onclose
 	}: {
-		/** Text read from the clipboard or pasted with Ctrl+V. */
+		/** Text read from the clipboard or pasted with Ctrl+V; empty with `hint`. */
 		text: string;
+		/** Why the field is empty and how to paste into it; neutral, above the field. */
+		hint?: string | null;
 		onsave: (drafts: InboxDraft[]) => Promise<DraftsOutcome>;
 		onclose: (outcome: DraftsOutcome | null) => void;
 	} = $props();
@@ -26,7 +31,8 @@
 	const ids = {
 		form: `${uid}-form`,
 		text: `${uid}-text`,
-		preview: `${uid}-preview`
+		preview: `${uid}-preview`,
+		hint: `${uid}-hint`
 	};
 
 	let area = $state<HTMLTextAreaElement>();
@@ -68,11 +74,14 @@
 	onclose={() => onclose(outcome)}
 >
 	<form id={ids.form} class="form" novalidate onsubmit={save}>
+		{#if hint !== null}
+			<p class="hint" id={ids.hint}>{hint}</p>
+		{/if}
 		<label for={ids.text}>Text</label>
 		<textarea
 			id={ids.text}
 			rows="6"
-			aria-describedby={ids.preview}
+			aria-describedby={hint === null ? ids.preview : `${ids.hint} ${ids.preview}`}
 			aria-invalid={!planned.ok && text.trim() !== '' ? 'true' : undefined}
 			bind:value={text}
 			bind:this={area}></textarea>
@@ -83,7 +92,7 @@
 		<div id={ids.preview} aria-live="polite">
 			{#if planned.ok}
 				<p class="hint">{preview}</p>
-			{:else}
+			{:else if hint === null || text.trim() !== ''}
 				<p class="field-error"><ErrorIcon /><span>{planned.message}</span></p>
 			{/if}
 		</div>

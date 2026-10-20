@@ -14,43 +14,54 @@
 	// in the URL, back and forward included. The footer: "Zurücksetzen" (cards, filters and search,
 	// keeps sort and grouping, like the bar of the PC; locked while nothing is set) and "N Tickets
 	// anzeigen", which closes the sheet. The modal gives the focus back to "Filter".
+	// Since MO-6 the inbox has the same sheet with its own parts ("Quelle", "Zustand", "Zielprojekt"
+	// and its grouping in `filters`): without `ticketOrder` the sheet leaves out "Gruppieren" and
+	// "Sortieren nach" of the tickets, and `noun` names what the list shows ("N Einträge anzeigen").
 	let {
 		count,
 		filtered,
 		onreset,
 		onclose,
 		filters,
-		display
+		display,
+		ticketOrder = true,
+		noun = { one: 'Ticket', many: 'Tickets' }
 	}: {
-		/** Tickets the list shows with these filters; null while they load. */
+		/** Entries the list shows with these filters; null while they load or are not all known. */
 		count: number | null;
 		/** A card, a filter or the search is set. */
 		filtered: boolean;
-		/** "Zurücksetzen": back to "Alle offenen" without filters and search. */
+		/** "Zurücksetzen": back to the list without filters. */
 		onreset: () => void;
 		onclose: () => void;
-		/** Filter cards and the filters of the filter bar. */
+		/** Filter cards and the filters of the filter bar, or the filters of another view. */
 		filters?: Snippet;
 		/** Switches of the display, e.g. the sub-tasks below their parent. */
 		display?: Snippet;
+		/** "Gruppieren" and "Sortieren nach" of the ticket list (MO-3); off for the inbox (MO-6). */
+		ticketOrder?: boolean;
+		/** What the list shows, for "N … anzeigen". */
+		noun?: { one: string; many: string };
 	} = $props();
 
 	const uid = $props.id();
 	const resetHint = `${uid}-reset-hint`;
 	const showLabel = $derived(
 		count === null
-			? 'Tickets anzeigen'
+			? `${noun.many} anzeigen`
 			: count === 1
-				? '1 Ticket anzeigen'
-				: `${count} Tickets anzeigen`
+				? `1 ${noun.one} anzeigen`
+				: `${count} ${noun.many} anzeigen`
 	);
 </script>
 
 <Modal open size="m" title="Filter" {onclose}>
 	<div class="filter-sheet">
 		{@render filters?.()}
-		<GroupPopover inline />
-		<SortChoice />
+		{#if ticketOrder}
+			<GroupPopover inline />
+			<SortChoice />
+		{/if}
 		{@render display?.()}
 	</div>
 	{#snippet footer({ close })}

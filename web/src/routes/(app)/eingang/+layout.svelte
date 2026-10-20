@@ -15,7 +15,8 @@
 	import WhatsAppImport from '$lib/components/WhatsAppImport.svelte';
 	import type { InboxItemSummary } from '$lib/domain/inbox';
 	import { parseInboxQuery } from '$lib/domain/inbox-query';
-	import { pastedText, readClipboardText } from '$lib/clipboard';
+	import { clipboardFallback, pastedText, readClipboardText } from '$lib/clipboard';
+	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 	import { readMailFile } from '$lib/mail-file';
 	import { getImportKeywords } from '$lib/data/import-keywords';
 	import { lookupDrafts, previewCalendarFile } from '$lib/data/inbox';
@@ -139,14 +140,30 @@
 	/** Text for the dialog "Aus der Zwischenablage", null while it is closed. */
 	let clipboardText = $state<string | null>(null);
 	let clipboardHint = $state<string | null>(null);
+	/** Why the dialog opened without a text: the clipboard could not be read (phone frame, MO-6). */
+	let pasteHint = $state<string | null>(null);
+
+	const mobileLayout = getMobileLayoutStore();
 
 	// "Aus Zwischenablage" (E4 plan, package 6): reading needs the permission of the browser; if
-	// it refuses, the hint names Ctrl+V, which works through the paste event without one.
+	// it refuses, the hint names Ctrl+V, which works through the paste event without one. The phone
+	// has no Ctrl+V, and over http the browser never lets the page read (MO-6): in the phone frame the
+	// dialog opens without a text instead, to paste into its field.
 	async function fromClipboard() {
 		clipboardHint = null;
+		pasteHint = null;
 		const read = await readClipboardText();
-		if (read.ok) clipboardText = read.text;
-		else clipboardHint = read.message;
+		if (read.ok) {
+			clipboardText = read.text;
+			return;
+		}
+		const fallback = clipboardFallback(read.message, mobileLayout.active);
+		if (fallback.kind === 'paste') {
+			pasteHint = fallback.message;
+			clipboardText = '';
+		} else {
+			clipboardHint = fallback.message;
+		}
 	}
 
 	/** Ctrl+V in the inbox view, unless the user pastes into a field or a dialog is open. */
@@ -180,6 +197,7 @@
 
 	function closeClipboard(outcome: DraftsOutcome | null) {
 		clipboardText = null;
+		pasteHint = null;
 		announceDrafts(outcome);
 	}
 
@@ -295,6 +313,7 @@
 			onlinkitem={openLinkOne}
 			onclipboard={fromClipboard}
 			{clipboardHint}
+			{syncAll}
 		>
 			{#snippet actions()}
 				<SyncAllButton store={syncAll} />
@@ -316,6 +335,7 @@
 {#if clipboardText !== null}
 	<ClipboardImport
 		text={clipboardText}
+		hint={pasteHint}
 		onsave={(drafts) => saveDrafts(drafts, (draft) => inbox.create(draft))}
 		onclose={closeClipboard}
 	/>

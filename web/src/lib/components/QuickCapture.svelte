@@ -120,7 +120,7 @@
 	 * click still runs. On the PC the button takes the focus as before.
 	 */
 	function keepLine(event: MouseEvent) {
-		if (phone) event.preventDefault();
+		mobileLayout.keepFocus(event);
 	}
 </script>
 

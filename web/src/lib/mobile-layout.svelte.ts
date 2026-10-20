@@ -95,6 +95,16 @@ export class MobileLayoutStore {
 		return isPhoneLayout(this.enabled, this.narrow);
 	}
 
+	/**
+	 * A press (mousedown) on a button that saves leaves the focus in the field in the phone frame
+	 * (MO-5, since MO-6 also in "Erfassen"): the on-screen keyboard stays open for the next line
+	 * instead of closing and opening again; the click still runs. Elsewhere the button takes the focus
+	 * as before.
+	 */
+	keepFocus(event: MouseEvent): void {
+		if (this.active) event.preventDefault();
+	}
+
 	choose(enabled: boolean): void {
 		this.enabled = enabled;
 		applyMobileLayout(this.#win.document.documentElement, enabled);

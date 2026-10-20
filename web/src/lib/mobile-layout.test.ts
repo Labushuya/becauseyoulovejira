@@ -182,4 +182,23 @@ describe('mobile layout: store', () => {
 		expect(viewport().content).toBe(VIEWPORT_BASE);
 		stop();
 	});
+
+	it('keeps the focus in the field on a press of a button that saves, only in the frame (MO-5, MO-6)', () => {
+		const query = fakeQuery(true);
+		query.stub();
+		const store = new MobileLayoutStore(window);
+		const press = () => new MouseEvent('mousedown', { cancelable: true });
+		const off = press();
+		store.keepFocus(off);
+		expect(off.defaultPrevented).toBe(false);
+		store.choose(true);
+		const on = press();
+		store.keepFocus(on);
+		expect(on.defaultPrevented).toBe(true);
+		// A wider window (turned to landscape): the button takes the focus again.
+		store.narrow = false;
+		const wide = press();
+		store.keepFocus(wide);
+		expect(wide.defaultPrevented).toBe(false);
+	});
 });
