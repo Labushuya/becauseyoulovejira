@@ -18,6 +18,11 @@
 // bottom, the toolbar of the editor wrapping, "Kommentieren" in view, the suggestions of the tags at
 // their field, and the arrow back to the list with its sort and scroll position; on a PC the panel
 // of today.
+// Since MO-5 (manifest BYL-E6-2009 ff.) the quick entry on a small phone: one tap on "＋" and the
+// line has the focus, its two buttons side by side stay in view above a keyboard (the window
+// shrinks like with interactive-widget=resizes-content), Enter and both buttons save and keep the
+// focus in the empty line, the result stands right below it, and "Ticket ansehen" goes back to the
+// day plan through the history without the sheet; on a PC the dialog of today.
 //
 // The phone stands for another device in the home network (header X-Byl-Test-Remote-Address of the
 // test hooks, only in instances of the harness), so the pages of the administrator are "nur am PC".
@@ -354,12 +359,13 @@ test.describe('small phone with the switch on: overlays (MO-1b)', () => {
 		await expect(page).toHaveURL(`${url}/tagesplan`);
 		const bar = page.getByRole('navigation', { name: 'Hauptnavigation' });
 
-		// A dialog (the quick entry, size M) is a sheet; its × and its buttons have 44 px.
+		// A dialog (the quick entry, size M) is a sheet; its × and its buttons have 44 px. Since MO-5
+		// its footer holds only the two buttons that save; the × closes.
 		await bar.getByRole('button', { name: 'Erfassen' }).click();
 		const quick = page.getByRole('dialog', { name: 'Schnellerfassung' });
 		await expectSheet(quick.locator('.frame'), viewport);
 		await expectTarget(quick.getByRole('button', { name: 'Schließen', exact: true }));
-		for (const name of ['Abbrechen', 'In den Eingang', 'Ticket anlegen']) {
+		for (const name of ['In den Eingang', 'Ticket anlegen']) {
 			expect((await quick.getByRole('button', { name, exact: true }).boundingBox()).height).toBeGreaterThanOrEqual(TARGET_MIN_PX);
 		}
 		expect(await scrollsSideways(page)).toBe(false);
@@ -834,6 +840,118 @@ test.describe('small phone with the switch on: the ticket as a page (MO-4)', () 
 	});
 });
 
+test.describe('small phone with the switch on: the quick entry (MO-5)', () => {
+	test.use({ ...SMALL_PHONE, extraHTTPHeaders: ANOTHER_DEVICE });
+	const viewport = SMALL_PHONE.viewport;
+	/** The window above an on-screen keyboard of 300 px: resizes-content shrinks it like this. */
+	const typing = { width: 360, height: 500 };
+
+	test('captures with "＋", typing and one tap, keeps the keyboard for the next line, and "Ticket ansehen" goes back without a loop', async ({ page }) => {
+		const mark = randomBytes(3).toString('hex');
+		await switchOn(page);
+		const url = await signIn(page);
+		await expect(page).toHaveURL(`${url}/tagesplan`);
+		const bar = page.getByRole('navigation', { name: 'Hauptnavigation' });
+
+		// One tap on "＋": the sheet, the focus in the line, ready to type; the bottom bar gives way.
+		await bar.getByRole('button', { name: 'Erfassen' }).tap();
+		const quick = page.getByRole('dialog', { name: 'Schnellerfassung' });
+		await expectSheet(quick.locator('.frame'), viewport);
+		const line = quick.getByLabel('Titel mit Kurzsyntax');
+		await expect(line).toBeFocused();
+		await expect(line).toHaveAttribute('enterkeyhint', 'done');
+		await expect(line).toHaveAttribute('autocapitalize', 'sentences');
+		await expect(bar).toBeHidden();
+
+		// Two buttons side by side, "Ticket anlegen" on the right; no "Abbrechen", no keys, the help folded.
+		const inbox = quick.getByRole('button', { name: 'In den Eingang', exact: true });
+		const create = quick.getByRole('button', { name: 'Ticket anlegen', exact: true });
+		await expect(quick.locator('.foot').getByRole('button')).toHaveText(['In den Eingang', 'Ticket anlegen']);
+		const left = await inbox.boundingBox();
+		const right = await create.boundingBox();
+		expect(Math.abs(left.y - right.y)).toBeLessThanOrEqual(1);
+		expect(left.x + left.width).toBeLessThanOrEqual(right.x);
+		await expect(quick.getByText(/Alt\+Enter/)).toHaveCount(0);
+		const help = quick.locator('summary', { hasText: 'Hilfe zur Kurzsyntax' });
+		await expectTarget(help);
+		await expect(quick.locator('details')).not.toHaveAttribute('open', /.*/);
+		expect(await smallTargets(quick)).toEqual([]);
+		expect(await scrollsSideways(page)).toBe(false);
+
+		// The keyboard takes the lower part of the window: the line and both buttons stay in view.
+		await page.setViewportSize(typing);
+		await expectUncovered(line, typing);
+		await expectUncovered(inbox, typing);
+		await expectUncovered(create, typing);
+
+		// Enter of the keyboard creates the ticket; the result stands right below the line, which is
+		// empty and keeps the focus.
+		await line.fill(`Fenster putzen ${mark}`);
+		await line.press('Enter');
+		const shown = quick.getByRole('link', { name: 'Ticket ansehen' });
+		await expect(shown).toBeVisible();
+		await expect(quick.getByText(/^Ticket .+ angelegt\./)).toBeVisible();
+		await expectUncovered(shown, typing);
+		await expectTarget(shown);
+		await expect(line).toHaveValue('');
+		await expect(line).toBeFocused();
+
+		// "In den Eingang" without Alt, and "Ticket anlegen": one tap each, the focus stays in the line
+		// all along (it never leaves it, so the keyboard does not close and open again).
+		await line.evaluate((element) => {
+			window.bylLineBlurs = 0;
+			element.addEventListener('blur', () => (window.bylLineBlurs += 1));
+		});
+		const blurs = () => page.evaluate(() => window.bylLineBlurs);
+		await line.fill(`Idee fürs Wochenende ${mark}`);
+		await inbox.tap();
+		await expect(quick.getByRole('link', { name: 'Eintrag ansehen' })).toBeVisible();
+		await expect(line).toHaveValue('');
+		await expect(line).toBeFocused();
+		const title = `Rasen mähen ${mark}`;
+		await line.fill(title);
+		await create.tap();
+		await expect(shown).toBeVisible();
+		await expect(line).toHaveValue('');
+		await expect(line).toBeFocused();
+		expect(await blurs()).toBe(0);
+		await expectUncovered(create, typing);
+		await page.setViewportSize(viewport);
+		expect(await scrollsSideways(page)).toBe(false);
+
+		// "Ticket ansehen" opens the ticket as a page of the day plan. Its arrow goes back through the
+		// history to the day plan without the sheet; "Vor" opens the ticket again: no second entry.
+		const entries = () => page.evaluate(() => history.length);
+		const start = await entries();
+		await shown.tap();
+		const ticket = page.getByRole('complementary', { name: title });
+		await expect(ticket).toBeVisible();
+		await expect(quick).toHaveCount(0);
+		expect(await entries()).toBe(start + 1);
+		await ticket.getByRole('button', { name: 'Zum Tagesplan' }).tap();
+		await expect(page).toHaveURL(`${url}/tagesplan`);
+		await expect(ticket).toHaveCount(0);
+		await expect(quick).toHaveCount(0);
+		expect(await entries()).toBe(start + 1);
+		await page.goForward();
+		await expect(ticket).toBeVisible();
+		// The back gesture of Android does the same.
+		await page.goBack();
+		await expect(page).toHaveURL(`${url}/tagesplan`);
+		await expect(ticket).toHaveCount(0);
+		await expect(quick).toHaveCount(0);
+		await expect(bar).toBeVisible();
+
+		// A large phone: the sheet keeps to its width.
+		const large = { width: 412, height: 915 };
+		await page.setViewportSize(large);
+		await bar.getByRole('button', { name: 'Erfassen' }).tap();
+		await expectSheet(quick.locator('.frame'), large);
+		expect(await smallTargets(quick)).toEqual([]);
+		expect(await scrollsSideways(page)).toBe(false);
+	});
+});
+
 test.describe('phone with the switch off', () => {
 	test.use({ ...PHONE, extraHTTPHeaders: ANOTHER_DEVICE });
 
@@ -917,6 +1035,28 @@ test.describe('PC with the switch on', () => {
 		await expect(page.getByRole('checkbox', { name: 'Alle angezeigten Tickets auswählen' })).toBeVisible();
 		await expect(page.getByRole('button', { name: 'Filter', exact: true })).toHaveCount(0);
 		expect(await scrollsSideways(page)).toBe(false);
+	});
+
+	test('keeps the quick entry of the PC: in the middle with "Abbrechen", the keys in the hint, no folded help (MO-5)', async ({ page }) => {
+		await switchOn(page);
+		await signIn(page);
+		await expect(viewHeading(page, 'Aufgaben')).toBeVisible();
+		await page.getByRole('banner').getByRole('button', { name: /Schnellerfassung/ }).click();
+		const quick = page.getByRole('dialog', { name: 'Schnellerfassung' });
+		const frame = quick.locator('.frame');
+		await expect(frame).toBeVisible();
+		await settled(frame);
+		const box = await frame.boundingBox();
+		expect(box.width).toBeLessThan(DESKTOP.viewport.width / 2);
+		expect(box.y + box.height).toBeLessThan(DESKTOP.viewport.height - 1);
+		await expect(quick.locator('.foot').getByRole('button')).toHaveText(['Abbrechen', 'In den Eingang', 'Ticket anlegen']);
+		await expect(quick.getByText(/^Enter legt ein Ticket an, Alt\+Enter legt es in den Eingang\./)).toBeVisible();
+		await expect(quick.locator('details')).toHaveCount(0);
+		const line = quick.getByLabel('Titel mit Kurzsyntax');
+		await expect(line).toBeFocused();
+		expect(await line.evaluate((element) => element.hasAttribute('autocapitalize'))).toBe(false);
+		await quick.getByRole('button', { name: 'Abbrechen' }).click();
+		await expect(quick).toHaveCount(0);
 	});
 
 	test('keeps the side panel of the PC: ×, "Vollansicht", the status in the fields, no bar (MO-4)', async ({ page }) => {
