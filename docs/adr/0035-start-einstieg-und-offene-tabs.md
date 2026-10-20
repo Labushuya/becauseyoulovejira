@@ -1,6 +1,6 @@
 # ADR-0035: Start, Einstieg per Datei und Wiederverwenden offener Tabs, mit installierbarer Web-App
 
-- **Status:** Angenommen und umgesetzt in den Paketen SF-1 bis SF-6 nach [docs/plan/start-fenster.md](../plan/start-fenster.md) (#137 bis #142); manuelle Browser-Prüfungen stehen im Test-Manifest; Nachtrag HN-1 (nur Tabs dieses Rechners zählen)
+- **Status:** Angenommen und umgesetzt in den Paketen SF-1 bis SF-6 nach [docs/plan/start-fenster.md](../plan/start-fenster.md) (#137 bis #142); manuelle Browser-Prüfungen stehen im Test-Manifest; Nachtrag HN-1 (nur Tabs dieses Rechners zählen); Nachtrag OF-1 (Postausgang ohne Service Worker, §8 bleibt, [ADR-0074](0074-postausgang-fuer-aenderungen-ohne-verbindung.md))
 - **Datum:** 2026-09-28
 - **Entscheidung durch:** Nutzer (Datei-Aufruf mit Serverprüfung und Countdown, kein zweiter Tab durch `start.bat`, Selbstschließen doppelter Tabs mit „Hier weiterarbeiten“, Windows-Benachrichtigung als Opt-in, installierbare Web-App mit `focus-existing`, Fail-open, kein Win32-Fensterfokus; 2026-09-28), Advisor (Konzept „Start, Landing per `file://` und Wiederverwenden des Browser-Tabs“), Executor (Routen, Sicherheitsregeln, Einzelheiten)
 - **Ergänzt:** [ADR-0002](0002-erststart-und-superuser.md) §6 (neue Routen, aber keine Setup-Route), [ADR-0007](0007-realtime-und-sitzungspflege.md) (eigenes Realtime-Thema `byl/attention`)
@@ -140,3 +140,10 @@
 - **Entscheidung:** `onRealtimeConnectRequest` (`presence.pb.js`, `markClient`) merkt sich an jeder Realtime-Verbindung, ob ihre Adresse Loopback ist (`byl.local`, `e.remoteIP()`, nie eine Kopfzeile). `GET /api/byl/presence` zählt und `POST /api/byl/attention` benachrichtigt nur diese Tabs. Präsenz und Hinweis selbst bleiben nur von diesem Rechner (§4, `e.remoteIP()`), auch für die Landing-Seite.
 - Tabs anderer Geräte bekommen damit auch „wurde beendet“ (`stop`) nicht; dass der Server weg ist, zeigen sie über `LiveUpdateNotice`.
 - Belegt in `lan-access.test.mjs` (ein Tab eines simulierten Geräts zählt nicht und bekommt keinen Hinweis, ein Tab dieses Rechners schon; in der CI über eine echte Verbindung an `0.0.0.0`).
+
+## Nachtrag (2026-10-20, Nutzerentscheidung, OF-1): Postausgang ohne Service Worker
+
+- **§8 bleibt:** Der Service Worker speichert weiter nur `offline.html`, keine App-Daten und keine Module. Auch die Alternative „Offline-Caching der App im Service Worker“ bleibt verworfen.
+- **Neu daneben:** Seit [ADR-0074](0074-postausgang-fuer-aenderungen-ohne-verbindung.md) gibt es einen Postausgang. Er merkt bei fehlender Verbindung einzelne Aktionen in IndexedDB und spielt sie später über die normalen Wege ein. Er braucht keinen Service Worker und gilt für einen geöffneten Tab, auch über `http` im Heimnetz, wo es keinen Service Worker gibt.
+- **Präzisierung:** „kein Offline-Modus (CLAUDE.md §10)“ in §8 heißt seither „kein Offline-Modus mit Datenkopie oder Kaltstart“. Weiterhin zeigt die App nie veraltete Daten als aktuell.
+- **Später:** Eine App-Shell im Service Worker (Kaltstart und Neuladen offline) und ein Abgleich im Hintergrund brauchen HTTPS und eine eigene Entscheidung (MO-8). Erst sie ändern §8.
