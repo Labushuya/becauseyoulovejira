@@ -1,6 +1,6 @@
 # ADR-0073: Smartphone-Layout als responsive Variante der SPA hinter dem Vorschau-Schalter „Handy-Ansicht“
 
-- **Status:** Angenommen; umgesetzt ist das Grundgerüst (Paket MO-1a). Die Anpassung der Overlays und der einzelnen Ansichten folgt in den Paketen MO-1b bis MO-8. Fälle im Test-Manifest BYL-E6-1907 bis BYL-E6-1929, manuelle Prüfungen BYL-E6-1925 bis BYL-E6-1929
+- **Status:** Angenommen; umgesetzt sind das Grundgerüst (Paket MO-1a) und Overlays, Bedienziele und Eingabe (Paket MO-1b, Nachtrag unten). Die einzelnen Ansichten folgen in den Paketen MO-2 bis MO-8. Fälle im Test-Manifest BYL-E6-1907 bis BYL-E6-1929 (manuelle Prüfungen BYL-E6-1925 bis BYL-E6-1929) und BYL-E6-1950 bis BYL-E6-1964 (manuelle Prüfungen BYL-E6-1959 bis BYL-E6-1964)
 - **Datum:** 2026-10-20
 - **Entscheidung durch:** Nutzer (Ziel „unterwegs am Android-Handy“, die Ansicht dort sei „zu gequetscht und überladen“; Entscheidungen vom 2026-10-20: VPN mit `http`, Installierbarkeit später, untere Leiste „Tagesplan · Aufgaben · ＋ · Eingang · Mehr“, Startansicht Tagesplan nur am Handy, nichts verschwindet ganz, „＋“ öffnet vorerst die vorhandene Schnellerfassung (Umbau in MO-5), keine Wischgesten, `@playwright/test` als Dev-Abhängigkeit, Auslieferung am Stück hinter einem Vorschau-Schalter), Advisor (Auftrag MO-1a mit Grundsätzen und Abgrenzung zu MO-1b), Executor (Konzept MO-0, Breakpoint, Bedingung, Umsetzung, Tests)
 - **Bezug:** [ADR-0025](0025-ui-konsistenz-overlay-system.md) (sechs Overlay-Bausteine), [ADR-0029](0029-glas-materialien.md) (Glas der Bedienebene), [ADR-0030](0030-spalten-breiten-und-kompakte-zeilen.md) (keine Container Queries), [ADR-0053](0053-kalenderansicht.md) §7 (Agenda unter 40rem), [ADR-0057](0057-kontextabhaengige-oberflaeche.md) (Kontext „nur am PC“), [ADR-0060](0060-einheitliche-eingabeelemente.md) §2 (44 px auf Touch), [ADR-0065](0065-tagesplan.md) (Tagesplan), [ADR-0066](0066-ansicht-erledigte.md) §1 (feste Reihenfolge der Navigation, Nachtrag MO-1a), [ADR-0028](0028-plattform-strategie.md) §3 (HTTPS, Nachtrag MO-1a zum Zugriff über VPN), [Plan Heimnetz](../plan/heimnetz.md) (HN-1)
@@ -101,3 +101,61 @@ Neue Nicht-Farb-Tokens nur in `:root` (`tokens.test.ts`): `--page-inline` (1.5re
 - Ohne HTTPS gibt es keine Installation als App, nur eine Verknüpfung auf dem Startbildschirm, keinen Service Worker über die LAN-Adresse und eine unsichere Zwischenablage (MO-8, eigene ADR).
 - Tastatur, Safe Areas, Zurück-Geste und Lesbarkeit lassen sich nur am Gerät prüfen.
 - Die Ansichten selbst sind noch nicht angepasst (Tabellen, Filterleiste, Panel, Overlays): MO-1b und folgende. Im Rahmen zeigen sie sich bis dahin wie heute.
+
+## Nachtrag (2026-10-20, MO-1b): Overlays, Bedienziele und Eingabe
+
+Gilt wie das Grundgerüst nur, solange der Rahmen gilt (Schalter „Handy-Ansicht (Vorschau)“ an und unter 40rem, `MobileLayoutStore.active`); am PC und mit ausgeschaltetem Schalter ändert sich nichts, Tests belegen das. Nur Oberfläche, Tests und Doku, keine Hooks und keine Migration: nach dem Build F5. Entscheidung durch den Advisor (Auftrag MO-1b mit Umfang und Abgrenzung zu MO-2 ff.) und den Executor (Umsetzung, Zuordnung Sheet oder Seite, Tests).
+
+### 1. Overlays: im Baustein entschieden, Sheet oder Seite
+
+Die Entscheidung fällt in den Bausteinen, nicht an den Aufrufstellen: `Modal` fragt `modalPlacement(size, placement, active)` (`lib/domain/phone-layout.ts`), `Popover` fragt `active`. Es bleibt bei den sechs Bausteinen von ADR-0025; Sheet und Seite sind Platzierungen, keine neue Art. Regeln, Fokus beim Öffnen, Fokusfalle (`<dialog>`), Rückgabe des Fokus, Esc, Schleier, Verwerfen-Frage, „kein Dialog aus einem Dialog“ und Flags bleiben die der Bausteine.
+
+| Baustein | Im Rahmen | Begründung |
+|---|---|---|
+| Modal S (Bestätigungen über `ConfirmDialog`, „Die App ist schon offen“, Fälligkeit und Projekt der Sammelaktionen) | Sheet | Fragen und kurze Formulare unten in Reichweite des Daumens, × und Knöpfe des Fußes ab 44 px. Das Konzept MO-0 (2.6) ließ S mittig wie einen Dialog von Android; der Auftrag verlangt jedes Overlay als Sheet oder Seite, so stehen die Knöpfe an derselben Stelle wie in jedem anderen Sheet. |
+| Modal M (Schnellerfassung, Duplizieren, Folge-Ticket, Quellen, Verknüpfen, Wiederholen, Tags, Dialoge der Kanäle und des Haushalts, „Tastaturkürzel“, „Mehr“) | Sheet | höchstens `--sheet-max-height`, oben bleibt ein Streifen des Schleiers zum Antippen; langer Inhalt scrollt zwischen festem Kopf und Fuß. |
+| Modal L (Einrichten der Kanäle, Datei-Import, WhatsApp, Notion, Postfach-Auswahl, vorhandene Dateien eines Ordners) | Seite | groß und voller Felder: der ganze Bildschirm (`100dvh`), ohne Schleier und Ecken, `--safe-top` und `--safe-bottom` innen, × in `--phone-target`. |
+| Modal XL (Vollansicht) | Seite | war unter 48rem schon Vollbild; dazu die Safe Areas und das × in `--phone-target`. Links öffnen am Handy ohnehin das Panel. |
+| Popover `menu` (alle Menüs „•••“ samt Kontextmenü, Status und Priorität in Zellen und Sammelaktionen, Menüs des Editors) | Sheet | unten über die volle Breite, Zeilen ab 44 px, am Ende der Eintrag „Schließen“ (`menuitem`, die Pfeiltasten erreichen ihn). Rechtsklick und Umschalt+F10 öffnen dasselbe Sheet; langes Drücken auf Touch behält das Menü des Browsers (unverändert). |
+| Popover `panel` (Filter, „Gruppieren“, „Spalten“, „Ebenen“, Fälligkeit und Tags in Zellen, Charm, Link im Editor, „+N weitere“ des Kalenders, Einstellungen und Sortierung des Tagesplans, Schritte der Anleitungen) | Sheet | wie die Menüs; der Inhalt scrollt allein, am Ende der Knopf „Schließen“. Ohne Schleier: Ein Tipp daneben schließt weiter (Light Dismiss), und die Flags oben bleiben antippbar. |
+| Vorschlagsliste `SuggestionList` (Tag-Eingabe, `TicketPicker`, „/“-Menü des Editors) | unverändert am Feld | Beim Tippen bleibt die Bildschirmtastatur offen, ein Sheet läge unter ihr oder verdeckte das Feld. Mit `interactive-widget=resizes-content` sieht `place()` den Platz über der Tastatur und klappt die Liste nach oben. Optionen ab 44 px. Wie im Konzept (2.6). |
+| Seitenpanel (Drawer) | Seite, wie bisher volle Breite unter 36rem | dazu lässt `ViewWithPanel`, das das Panel platziert, `--safe-top` und `--safe-bottom` frei (der Drawer bleibt ohne Media Query), und die Knöpfe des Kopfs haben 44 px (§2). Kopf mit Zurück-Pfeil statt × und ohne „Vollansicht öffnen“ (Konzept MO-1) folgen mit dem Ticket-Detail in MO-4. |
+| Native Auswahllisten und Datumsfelder | unverändert | Das Handy zeigt seine eigene Auswahl; die Felder haben 44 px (§2). |
+| Flags | über der unteren Leiste; oben, solange ein Sheet oder eine Seite offen ist | §5 |
+
+Jedes Sheet und jede Seite hat damit einen sichtbaren Knopf zum Schließen: das × des Modals (48 px) bzw. „Schließen“ der Popover (44 px). Die Zurück-Geste von Android schließt Modals über den Close Watcher (manueller Fall). Bedienung nur per Hover, Tastatur oder Ziehen gab es in den Overlays nicht; Rechtsklick hat „•••“, Ziehen hat Knöpfe (Tagesplan, Kalender, Spalten, Dateien). Offen bleibt die Auswahl eines Bereichs mit Umschalt+Klick (Produktfrage 4 des Konzepts, MO-3).
+
+### 2. Bedienziele ab 44 px
+
+- Ein Block in `base.css` unter `@media (max-width: 39.99rem)` und `:root[data-mobile-layout='on']`, unabhängig vom Zeiger: `.button-primary`, `.button-secondary` und `.button-subtle` (auch mit `.button-small`) mindestens 44 px hoch, `.button-icon` 44 × 44 px (auch „•••“ der Zeilen, × der Panels und Flags), Segmente, Labels von Häkchen und Optionsfeldern (auch Chips) und Felder wie auf Touch-Bildschirmen mit 16 px Schrift (ADR-0060 §2). Der Block steht vor dem Block für Touch, der in `base.css` zuletzt bleibt.
+- **Nicht in Zellen von Tabellen** (`:not(:is(td, th) *)`): Ihre Spalten rechnen mit den Größen des PC (ADR-0030), größere Knöpfe würden in der Zelle abgeschnitten. Die Ansichten zeigen am Handy Karten statt Tabellen (MO-3, MO-6, MO-7).
+- In den Bausteinen: Menüzeilen im Sheet, Optionen der Vorschlagsliste, × von Sheet und Seite (`--phone-target`).
+- Eigene Knöpfe der Ansichten (etwa „Gruppieren“, „Spalten“, die Chips der Filterleiste) und die Werkzeuge des Editors behalten ihre Größe bis zu ihren Paketen (MO-3, MO-4); die Leiste des Editors bricht nicht um, mit 44 px liefe sie über.
+
+### 3. Eingabe
+
+- **`enterkeyhint`** ist ein reines Attribut und steht auch am PC im DOM: jedes Suchfeld `search` (statisch geprüft), die Schnellerfassung und der Titel im Panel `done` (Enter legt an bzw. speichert), die Anmeldung `next` (E-Mail) und `done` (Passwort). Wo Enter etwas anderes tut (Tag-Eingabe, `TicketPicker`, mehrzeilige Felder), bleibt die Taste des Systems. `autocapitalize` und das eigene Sheet der Schnellerfassung folgen in MO-5.
+- **Viewport:** `interactive-widget=resizes-content` setzt der Store seit MO-1a zusammen mit `viewport-fit=cover`, nur solange der Rahmen gilt, und nimmt beides beim Verlassen zurück (§6, Tests BYL-E6-1908 und Smoke). MO-1b ändert daran nichts.
+- **Bildschirmtastatur:** Sheets stehen unten im Top Layer mit einer Höhe aus `dvh`, Seiten haben `100dvh`. Mit `resizes-content` schrumpft der Viewport mit der Tastatur, Fuß und Absende-Knopf bleiben darüber. Prüfbar nur am Gerät (manueller Fall).
+
+### 4. Warnung vor dem Verlassen
+
+- Das Konzept (2.5) empfahl statt einer Warnung `overscroll-behavior-y: none`, also kein Ziehen zum Aktualisieren. Der Auftrag verlangt die Warnung; Ziehen zum Aktualisieren bleibt, weil es am Handy der Weg zum Neuladen ist und die Startansicht damit rechnet (§5).
+- Nur im Rahmen hängt das `(app)`-Layout einen `beforeunload`-Listener an; er ruft `preventDefault()`, wenn `warnsBeforeLeaving(active, hasUnsavedInput())` gilt, und der Browser fragt mit seinem eigenen Text (Neuladen, Ziehen zum Aktualisieren, Schließen des Tabs, Link aus der App). Ohne Rahmen gibt es den Listener nicht, am PC ändert sich nichts.
+- Was ungespeichert ist, melden die Stellen selbst über `registerUnsavedInput` (`lib/unsaved-input.ts`, reine Funktionen, gelesen erst beim Verlassen): jedes offene Modal mit `dirty` (Schnellerfassung und die Formulare der Dialoge), das Ticket mit denselben Bedingungen wie seine Frage beim Navigieren (Felder, Beschreibung, Tag-Eingabe, Kommentar, Vorlage), „Neues Ticket“, „Erfassen“ im Eingang, Projekt- und Regel-Panel. Navigationen in der App fragen weiter mit ihren eigenen Fragen.
+
+### 5. Hinweise (Flags)
+
+- Im Rahmen über der unteren Leiste und ihrer Safe Area (seit MO-1a).
+- Solange ein Sheet oder eine Seite offen ist, oben unter der Statusleiste (`top: calc(0.5rem + var(--safe-top))`), damit sie weder Fuß noch Knöpfe verdecken: im Modal, in dem sie seit FL-1 stehen (Klasse `in-modal`), und neben einem Popover als Sheet (`:has([data-sheet]:popover-open)`).
+- Ihre Knöpfe („Rückgängig“, „Übertragen …“, ×) haben über den Block in `base.css` 44 px.
+
+### 6. Tests
+
+- Vitest: `modalPlacement` und `warnsBeforeLeaving`; Modal (S und M als Sheet, L und XL als Seite, mittig ohne Rahmen, Wechsel im offenen Zustand, ungespeicherte Eingabe), Popover (Menü und Panel als Sheet mit „Schließen“ und Rückgabe des Fokus, am PC unverändert), Flags (Marke im Modal, Regeln), Layout (Warnung nur im Rahmen und nur mit Eingabe), statisch die 44 px in `base.css`, Panel und Vorschlagsliste, `enterkeyhint`.
+- Smoke bei 360 × 800 mit Schalter: Schnellerfassung, Menü „•••“, die Frage „… in den Papierkorb verschieben?“ und die Auswahl „Gruppieren“ stehen unten über die volle Breite, „Schließen“ ab 44 px, kein waagerechtes Scrollen; ein Flag steht über der Leiste und vor einem offenen Sheet oben, nichts verdeckt es, „Rückgängig“ und × ab 44 px. Gegenprobe mit Schalter aus: Dialog mittig, Auswahl am Knopf, ohne „Schließen“.
+
+### 7. Korrektur zu §9 und zu den Konsequenzen
+
+- Der Smoke-Test dauert nicht „etwa eine Minute“: Mit MO-1a lief er in etwa 20 s, mit den zwei Fällen von MO-1b liegen die sechs Tests lokal bei etwa 9 s Testzeit.
+- Er ist ein Schritt im Job „Linux build and test“. Dieser Job ist seit AR-3 ein Pflicht-Check des Rulesets „main“ (CLAUDE.md §12), ein roter Smoke-Test blockiert also jeden Merge: Der Smoke-Test ist damit faktisch Pflicht. Das Konzept MO-0 sah ihn zunächst als freiwilligen Check vor; ein eigener Job oder eine Ausnahme wäre eine neue Entscheidung.
