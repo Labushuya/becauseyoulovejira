@@ -176,7 +176,7 @@ Die Bezeichnungen A bis C gelten nur für diese Evaluierung, nicht für die HTTP
   4. **Entwickler-Verifizierung auch beim Sideloading,** weltweit ab 2027.
 - **Empfohlen, falls das Thema wieder aufgenommen wird:**
   - **Weg A:** APK als Client des zentralen Servers, wie in ADR-0028 §4 und S2b geplant.
-  - **Weg C:** Weg A plus eine Warteschlange zum Offline-Erfassen, die über den eigenen Eingang ([ADR-0038](../adr/0038-eigener-eingang-und-whatsapp-web.md) §1) einliefert. CLAUDE.md §10 und ADR-0028 §1 schließen einen Offline-Modus bisher aus; Weg C bräuchte dafür eine eigene Entscheidung.
+  - **Weg C:** Weg A plus eine Warteschlange zum Offline-Erfassen, die über den eigenen Eingang ([ADR-0038](../adr/0038-eigener-eingang-und-whatsapp-web.md) §1) einliefert. CLAUDE.md §10 und ADR-0028 §1 schließen einen Offline-Modus bisher aus; Weg C bräuchte dafür eine eigene Entscheidung. Seit dem 2026-10-20 erlaubt [ADR-0074](../adr/0074-postausgang-fuer-aenderungen-ohne-verbindung.md) einen Postausgang für einzelne Aktionen über die normalen Wege; eine Warteschlange von Weg C könnte ihn nutzen.
 - **Unabhängig vom Weg nötig:**
   - **Mobile Tauglichkeit der Oberfläche:** Die Titelspalte ist bei 360 px Breite rechnerisch 0–32 px breit, die Tippflächen sind 24–36 px statt 48 dp groß, eine Safe-Area fehlt.
   - **Sicherheits-Härtung.**

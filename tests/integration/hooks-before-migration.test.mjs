@@ -1312,3 +1312,53 @@ describe('E7-5 hooks before the migration of the assignees (ADR-0068)', () => {
 		expect(state.household).toBeNull();
 	});
 });
+
+describe('OF-1 hooks before the migration of the outbox (ADR-0074)', () => {
+	const CLIENT_OPS_MIGRATION = '1790205000_client_ops.js';
+	let before;
+	let pb;
+	let userId;
+	const op = 'abcdefghij0123456789';
+
+	beforeAll(async () => {
+		before = await startPocketBase({ migrationFilter: (name) => name < CLIENT_OPS_MIGRATION });
+		const superuser = new PocketBase(before.url);
+		superuser.autoCancellation(false);
+		await superuser.collection('_superusers').authWithPassword(before.email, before.password);
+		const email = `user-${randomBytes(12).toString('hex')}@example.com`;
+		const password = randomBytes(24).toString('base64url');
+		userId = (await superuser.collection('users').create({ email, password, passwordConfirm: password })).id;
+		pb = new PocketBase(before.url);
+		pb.autoCancellation(false);
+		await pb.collection('users').authWithPassword(email, password);
+	});
+
+	afterAll(async () => {
+		await before?.stop();
+	});
+
+	it('names no capability of the outbox and has no notes', async () => {
+		const support = await pb.send('/api/byl/tickets/create', { method: 'GET' });
+		expect(support.offline_ops).toBeNull();
+		await expect(pb.collection('client_ops').getList(1, 1)).rejects.toMatchObject({ status: 404 });
+	});
+
+	it('ignores identifier, time of the device and expectation: everything works as before', async () => {
+		const body = { owner: userId, title: 'Vor dem Postausgang', op_id: op, offline: true, client_at: new Date().toISOString() };
+		const first = await pb.collection('tickets').create(body);
+		const second = await pb.collection('tickets').create(body);
+		expect(second.id).not.toBe(first.id);
+		const changed = await pb.collection('tickets').update(first.id, { status: 'done', op_id: op, expected: { status: 'waiting' } });
+		expect(changed.status).toBe('done');
+		const reused = await pb.collection('tickets').update(second.id, { status: 'done', op_id: 'kurz' });
+		expect(reused.status).toBe('done');
+		const comment = await pb.collection('comments').create({ ticket: first.id, author: userId, body: 'Vorher', op_id: op, offline: true });
+		expect(comment).not.toHaveProperty('offline');
+		const item = await pb.collection('inbox_items').create({ owner: userId, channel: 'quick', kind: 'todo', title: 'Vorher', op_id: op, offline: true });
+		expect(item.source_meta).toBeNull();
+		const third = await pb.collection('tickets').create({ owner: userId, title: 'Im Plan' });
+		const { item: entry } = await pb.send('/api/byl/dayplan/items', { method: 'POST', body: { ticket: third.id } });
+		const checked = await pb.send(`/api/byl/dayplan/items/${entry.id}/check`, { method: 'POST', body: { mode: 'check', op_id: op, expected: { status: 'waiting' } } });
+		expect(checked.ticket.status).toBe('done');
+	});
+});

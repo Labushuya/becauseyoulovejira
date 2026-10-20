@@ -11,6 +11,7 @@ var errors = require(__hooks + '/lib/errors.js');
 var inbox = require(__hooks + '/lib/inbox-service.js');
 var trashRules = require(__hooks + '/lib/trash-rules.js');
 var assignees = require(__hooks + '/lib/assignee-service.js');
+var clientOps = require(__hooks + '/lib/client-ops.js');
 
 // Transient record key for the acting user (E1 plan OF-4, variant A). Field names cannot contain
 // "@", PocketBase neither stores nor exports unknown keys, and the Record API does not load
@@ -172,6 +173,7 @@ function prepareCompletion(txApp, record) {
 // onRecordUpdate after e.next(), in the same transaction: completes the blocking sub-tickets. Each
 // save runs the ticket hooks of the sub-ticket (completed_at, history with the acting user, and for
 // an instance of a series the next date; its follow-up comes after the commit, ADR-0022 section 4).
+// A completion from the outbox marks their history too (ADR-0074 §4).
 function completeChildren(txApp, record, children) {
   var actor = actorOf(record);
   for (var i = 0; i < children.length; i++) {
@@ -180,6 +182,7 @@ function completeChildren(txApp, record, children) {
     if (actor !== '') {
       child.set(ACTOR_KEY, actor);
     }
+    clientOps.copyOffline(record, child);
     txApp.save(child);
   }
 }
@@ -389,13 +392,17 @@ function historyValues(record) {
   return values;
 }
 
+// One entry of ticket_history; a save of an action from the outbox (ADR-0074 §4) marks it with
+// `offline` and the time of the device, `created` stays the time of the server.
 function saveHistoryEntry(txApp, record, entry) {
-  var item = new Record(txApp.findCollectionByNameOrId('ticket_history'));
+  var collection = txApp.findCollectionByNameOrId('ticket_history');
+  var item = new Record(collection);
   item.set('ticket', record.id);
   item.set('field', entry.field);
   item.set('old_value', entry.old_value);
   item.set('new_value', entry.new_value);
   item.set('user', actorOf(record));
+  clientOps.markHistory(item, record, collection);
   txApp.save(item);
 }
 

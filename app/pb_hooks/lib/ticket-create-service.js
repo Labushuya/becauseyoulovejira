@@ -363,11 +363,14 @@ function planToday(txApp, ticket, actor) {
  * says the same for "Duplizieren": the route takes `subtask_status` for the new sub-tasks, a server of
  * before would drop it and create open ones, so the dialog asks only once it is named.
  * `subtask_transfer` (UE-1, no migration) says that the route "Auf Unteraufgaben übertragen …" exists;
- * before the restart the dialog shows the hint to restart instead of sending.
+ * before the restart the dialog shows the hint to restart instead of sending. `offline_ops` (OF-1,
+ * ADR-0074) is { version, kinds } once client_ops exists, null before its migration; a server before
+ * the restart after OF-1 does not name it, and the SPA keeps no action then.
  */
 function support(e) {
   var tickets = e.app.findCollectionByNameOrId(TICKETS);
   return {
+    offline_ops: require(__hooks + '/lib/client-ops.js').capability(e.app),
     recurrence: recurrenceService.schemaReady(e.app),
     pin: pins.pinsReady(e.app),
     day_plan: dayPlans.ready(e.app),

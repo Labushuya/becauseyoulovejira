@@ -1,6 +1,6 @@
 # ADR-0028: Plattform-Strategie – ein Server je Datenbestand (PC oder Raspberry Pi), Clients als Web-App, Android-APK mit Capacitor, Windows mit Tray-Option
 
-- **Status:** Angenommen (nur Planung; umgesetzt wird stufenweise nach [docs/plan/plattformen.md](../plan/plattformen.md)); weiterer Ausbau zurückgestellt auf Nutzerentscheidung (2026-09-28), siehe Nachtrag unten; Zugang im Heimnetz über HTTP unabhängig davon (Nachtrag 2026-10-04); Zugriff von unterwegs über das VPN mit HTTP als begründete Risiko-Annahme (Nachtrag 2026-10-20, MO-1a)
+- **Status:** Angenommen (nur Planung; umgesetzt wird stufenweise nach [docs/plan/plattformen.md](../plan/plattformen.md)); weiterer Ausbau zurückgestellt auf Nutzerentscheidung (2026-09-28), siehe Nachtrag unten; Zugang im Heimnetz über HTTP unabhängig davon (Nachtrag 2026-10-04); Zugriff von unterwegs über das VPN mit HTTP als begründete Risiko-Annahme (Nachtrag 2026-10-20, MO-1a); §1 präzisiert: Postausgang statt Offline-Modus (Nachtrag 2026-10-20, OF-1, [ADR-0074](0074-postausgang-fuer-aenderungen-ohne-verbindung.md))
 - **Datum:** 2026-09-27
 - **Entscheidung durch:** Nutzer (Server-Orte, echte APK mit Updater als Sideload, Verbreitung, Push zurückgestellt, Windows mit Web-App und Tray-Option; 2026-09-27), Advisor (Architektur, Stufen, Abweichung vom Flutter-Grundsatz)
 - **Ergänzt:** [ADR-0001](0001-betriebsmodell-lokal-mehrgeraete-spaeter.md) (Mehrgeräte: zweiter Weg über Traefik neben Tailscale), [ADR-0018](0018-secrets.md) (Quelle der `BYL_*`-Variablen im Container; Nachtrag folgt mit Stufe S3)
@@ -183,3 +183,9 @@ Der Plattform-Ausbau bleibt **zurückgestellt auf Nutzerentscheidung** (Nachtrag
   - BYLJ ist aus dem Internet nicht erreichbar.
 - **Grenzen:** ohne HTTPS keine Installation als App (nur eine Verknüpfung auf dem Startbildschirm), kein Service Worker über die LAN-Adresse, eine unsichere Zwischenablage. Der Schutz hängt am VPN; wer im Heimnetz mitlesen kann, sieht den Verkehr wie bei HN-1.
 - **Neu bewerten,** sobald HTTPS kommt (MO-8, eigene ADR) oder eine der Bedingungen nicht mehr gilt, etwa durch eine Portfreigabe oder ein anderes VPN.
+
+## Nachtrag (2026-10-20, Nutzerentscheidung, OF-1): Postausgang statt Offline-Modus, §1 präzisiert
+
+- **Entscheidung:** §1 („kein Offline-Modus“) gilt weiter für jede Datenkopie und jeden Kaltstart ohne Server. Erlaubt ist seit dem 2026-10-20 ein **Postausgang**: Er merkt bei fehlender Verbindung einzelne Aktionen der Stufe 1 und spielt sie später über die normalen Wege des einen Servers ein ([ADR-0074](0074-postausgang-fuer-aenderungen-ohne-verbindung.md), CLAUDE.md §10 im neuen Wortlaut).
+- **Warum das §1 nicht aufhebt:** Es entsteht weder ein Server je Gerät noch ein zweiter Datenbestand oder ein Sync. Gemerkt werden Aktionen, keine Daten. Rechte und Prüfungen gelten beim Einspielen wie bei jeder Anfrage. Der Grund des Ausschlusses (veraltete Daten, zwei Wahrheiten) greift nicht.
+- **Zum Nachtrag vom 2026-10-03:** Eine Warteschlange zum Offline-Erfassen einer späteren APK bräuchte keine neue Freigabe mehr, solange sie diesen Postausgang nutzt. Der Plattform-Ausbau selbst bleibt zurückgestellt.

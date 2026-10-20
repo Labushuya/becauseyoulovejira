@@ -1,6 +1,6 @@
 # ADR-0040: Veröffentlichen ohne Unterbrechung – Build im Staging-Ordner, Austausch ohne Lücke, alte Module bleiben, Hinweis auf die neue Version
 
-- **Status:** Angenommen und umgesetzt (Fehlerbehebung, [Plan](../plan/deploy-ohne-unterbrechung.md)). Nachtrag RS-2 (Build und Abhängigkeiten, [Plan Robuste Skripte](../plan/robuste-skripte.md)). Nachtrag RS-1 (Fehler des Builds aus dem Katalog, [ADR-0048](0048-fehlerkatalog-der-skripte.md)).
+- **Status:** Angenommen und umgesetzt (Fehlerbehebung, [Plan](../plan/deploy-ohne-unterbrechung.md)). Nachtrag RS-2 (Build und Abhängigkeiten, [Plan Robuste Skripte](../plan/robuste-skripte.md)). Nachtrag RS-1 (Fehler des Builds aus dem Katalog, [ADR-0048](0048-fehlerkatalog-der-skripte.md)). Nachtrag OF-1 (Postausgang; Module bleiben aus dem Service Worker, offline kein Neuladen von selbst, [ADR-0074](0074-postausgang-fuer-aenderungen-ohne-verbindung.md)).
 - **Datum:** 2026-09-29
 - **Entscheidung durch:** Advisor (Arbeitshypothese, Maßnahmen), Executor (Nachweis im Browser, Umsetzung, Einzelheiten)
 - **Bezug:** [ADR-0007](0007-realtime-und-sitzungspflege.md) (`LiveUpdateNotice` als Vorbild), [ADR-0009](0009-fehlerfarbe.md) (kein Rot für Hinweise), [ADR-0025](0025-ui-konsistenz-overlay-system.md) (Bestätigung „Änderungen verwerfen?“), [ADR-0026](0026-einstellungsbereich-und-hinweis-bausteine.md) §2 (`SectionMessage`), [ADR-0035](0035-start-einstieg-und-offene-tabs.md) §1 und §8 (Landing-Seite, installierte App, Service Worker), [ADR-0039](0039-betriebsskripte.md) (Fingerabdruck liest `_app/version.json`; Hooks wirken erst nach einem Neustart)
@@ -88,3 +88,11 @@ Im Live-Ordner wird nur über `scripts\build.ps1` bzw. das Root-`npm run build` 
 - **Entscheidung:** `build.ps1`, `build-mail-helper.ps1`, `build-backup-helper.ps1` und `fetch-pocketbase.ps1` melden jeden Fehler über den Katalog `app\byl-problems.ps1` (`Write-BylBuildProblem` in `scripts\build-functions.ps1`), deutsch und mit den Pfaden dieses Repositorys: Node fehlt (mit dem gefundenen Node-Ordner für den `PATH`), Node in falscher oder zu alter Version, npm fehlt, Lockfile fehlt, `npm ci` scheitert, ein Schritt (check, lint, build, test) scheitert mit dem Befehl, der ihn allein wiederholt, ein Hilfsprogramm baut, prüft oder installiert nicht, PocketBase lädt nicht (Netz), hat die falsche Prüfsumme oder Version, lässt sich nicht schreiben oder passt nicht zum System (`fetch-pocketbase.mjs` endet dafür mit den Codes 2 bis 6), und jeder andere Fehler mit seiner Stelle. Ein Log gibt es nicht: Die Ausgabe über dem Eintrag ist das Detail.
 - **Unverändert:** Exit 0 und „Build complete!“ für einen grünen Build; jeder Fehler endet mit 1. Der Austausch ohne Lücke (§1) bleibt, ein gescheiterter Build veröffentlicht nichts.
 - Belegt in `tests/unit/script-problems.test.mjs` (statisch: kein `exit` ohne Eintrag, kein `throw` mit Text, jeder Code im Katalog).
+
+## Nachtrag (2026-10-20, Nutzerentscheidung, OF-1): Postausgang, Module bleiben aus dem Service Worker
+
+- **Alternative „Module im Service Worker zwischenspeichern“ bleibt verworfen.** Der Grund ist seit [ADR-0074](0074-postausgang-fuer-aenderungen-ohne-verbindung.md) genauer: Ausgeschlossen ist ein Offline-Modus mit Datenkopie oder Kaltstart (CLAUDE.md §10 im neuen Wortlaut). Ein Kaltstart offline wäre genau das, und ohne HTTPS gibt es den Service Worker über die LAN-Adresse ohnehin nicht. Neu bewertet wird das erst mit HTTPS (MO-8).
+- **Was der Postausgang für §5 und §6 bedeutet** (umgesetzt mit dem Client in OF-2, nicht in OF-1):
+  - Ohne Verbindung laden „Neu laden“ der Hinweise, der nächste Link nach einer neuen Version und die Fehlerseite bei einem fehlenden Modul nicht mehr von selbst neu. Ohne Service Worker zeigte der Tab sonst die Offline-Seite des Browsers.
+  - Die Module der Ansichten mit Offline-Aktionen lädt die App vorher, solange sie verbunden ist.
+  - Online bleibt alles wie in §5 und §6.

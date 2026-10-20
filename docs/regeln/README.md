@@ -11,7 +11,7 @@ Geschnitten ist nach Themen, so wie Arbeitspakete entstehen: Was zu einem Thema 
 | Dokument | Inhalt |
 |---|---|
 | [datenmodell.md](datenmodell.md) | Collections und Felder, Status und Priorität, Fälligkeit, Historie, Scopes und Nummernkreise, Bereiche in der Datenschicht, allgemeine API-Regeln |
-| [sicherheit.md](sicherheit.md) | Sicherheitsregeln für Routen, Mail-Flows |
+| [sicherheit.md](sicherheit.md) | Sicherheitsregeln für Routen, Postausgang, Mail-Flows |
 | [tickets.md](tickets.md) | Angepinnter Kommentar und Kommentare, Duplizieren, Unterprojekte, Farben, Charms, angeheftete Tickets, „Neu“, vollständiges Anlegen |
 | [unteraufgaben.md](unteraufgaben.md) | Parent und Unteraufgaben, Übertragen auf Unteraufgaben |
 | [papierkorb.md](papierkorb.md) | Papierkorb in Datenmodell, API-Regeln und Oberfläche |

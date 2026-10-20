@@ -703,27 +703,55 @@ function ticketJson(ticket, previous) {
 }
 
 /**
+ * The answer of a check mark the account sent before under the same identifier (ADR-0074 §2): the entry
+ * and its ticket as they are now, with the action and the status before of the first time.
+ */
+function replayAnswer(e, id, claim, withAction) {
+  var item = findById(e.app, ITEMS, id);
+  var ticket = item === null ? null : findById(e.app, TICKETS, item.getString('ticket'));
+  if (item === null || ticket === null) {
+    throw new NotFoundError(NOT_FOUND);
+  }
+  var result = claim.result || {};
+  var body = { item: itemJson(item), ticket: ticketJson(ticket, String(result.previous_status || '')) };
+  if (withAction) {
+    body.action = String(result.action || '');
+  }
+  return answer(e, body);
+}
+
+/**
  * POST /api/byl/dayplan/items/{id}/check { mode, completion? }: the check mark of an entry. `check`
  * completes a task through the save of the ticket (completion, history with the acting user, the next
  * ticket of a series, the pins) and checks an ongoing project for the day only; `today` is "Nur für
  * heute abhaken", `complete` is "Vorhaben abschließen …". With open blocking sub-tickets the ticket
  * refuses like in the list (validation_parent_open_children) unless `completion` answers the question.
+ * The outbox of the SPA (ADR-0074) adds `op_id` (the same action twice checks once and answers the same,
+ * also after midnight; a new action on a day before stays refused), `offline` and `client_at` (they mark
+ * the history of the ticket) and `expected` ({ checked, status }: a conflict only where the stored value
+ * is neither the expected nor the desired one).
  */
 function check(e, id) {
   if (!ready(e.app)) {
     return unavailable(e);
   }
+  var ops = require(__hooks + '/lib/client-ops.js');
   var actor = actorOf(e);
   var body = bodyOf(e);
+  var request = ops.dayPlanRequest(e);
   var mode = typeof body.mode === 'string' ? body.mode : 'check';
   var completion = typeof body.completion === 'string' ? body.completion : '';
   if (completion !== '' && COMPLETIONS.indexOf(completion) === -1) {
     throw fail('completion', 'validation_dayplan_mode');
   }
   var days = daysOf(e.app);
-  var outcome = { item: null, ticket: null, action: '', previous: '' };
+  var outcome = { item: null, ticket: null, action: '', previous: '', replay: null };
   e.app.runInTransaction(function (txApp) {
     var entry = entryOf(txApp, actor, id);
+    outcome.replay = ops.replayOfRoute(txApp, request, 'dayplan.check', entry.item.id);
+    if (outcome.replay !== null) {
+      return;
+    }
     assertEditable(entry.plan.getString('date'), days);
     var ticket = findById(txApp, TICKETS, entry.item.getString('ticket'));
     if (ticket === null || ticket.getString('deleted_at') !== '') {
@@ -734,6 +762,12 @@ function check(e, id) {
       throw fail('mode', 'validation_dayplan_mode');
     }
     outcome.previous = ticket.getString('status');
+    ops.checkDayPlanExpected(
+      request,
+      { checked: rules.isDone({ done_today: entry.item.getBool('done_today') }, outcome.previous), status: outcome.previous },
+      { checked: true, status: action === 'complete' ? 'done' : outcome.previous },
+      ticket.getString('updated')
+    );
     if (action === 'complete' && outcome.previous !== 'done') {
       var service = require(__hooks + '/lib/ticket-service.js');
       ticket.set('status', 'done');
@@ -743,6 +777,7 @@ function check(e, id) {
       } else if (completion === 'complete_children') {
         ticket.set(service.COMPLETE_CHILDREN_KEY, true);
       }
+      ops.markOffline(ticket, request);
       txApp.save(ticket);
     }
     var item = entry.item;
@@ -752,10 +787,14 @@ function check(e, id) {
     item.set('checked_by', actor);
     item.set('done_at', new Date(nowOf(txApp)).toISOString());
     txApp.save(item);
+    ops.claimRoute(txApp, request, 'dayplan.check', item.id, { action: action, previous_status: outcome.previous });
     outcome.item = findById(txApp, ITEMS, item.id);
     outcome.ticket = findById(txApp, TICKETS, ticket.id);
     outcome.action = action;
   });
+  if (outcome.replay !== null) {
+    return replayAnswer(e, id, outcome.replay, true);
+  }
   return answer(e, {
     item: itemJson(outcome.item),
     ticket: ticketJson(outcome.ticket, outcome.previous),
@@ -768,14 +807,17 @@ function check(e, id) {
  * or the check mark itself). `today` only clears the mark of the day; `complete` opens the ticket
  * again with `status` (the status before, "Offen" by default) through the save of the ticket, whose
  * hooks decide about the series (a refusal comes back like in the list). Without `action` the mark of
- * the day goes first, else the ticket opens again.
+ * the day goes first, else the ticket opens again. `op_id`, `offline`, `client_at` and `expected` as
+ * for `check` (ADR-0074).
  */
 function uncheck(e, id) {
   if (!ready(e.app)) {
     return unavailable(e);
   }
+  var ops = require(__hooks + '/lib/client-ops.js');
   var actor = actorOf(e);
   var body = bodyOf(e);
+  var request = ops.dayPlanRequest(e);
   var action = typeof body.action === 'string' ? body.action : '';
   if (action !== '' && action !== 'today' && action !== 'complete') {
     throw fail('action', 'validation_dayplan_mode');
@@ -785,9 +827,13 @@ function uncheck(e, id) {
     throw fail('status', 'validation_dayplan_status');
   }
   var days = daysOf(e.app);
-  var outcome = { item: null, ticket: null, previous: '' };
+  var outcome = { item: null, ticket: null, previous: '', replay: null };
   e.app.runInTransaction(function (txApp) {
     var entry = entryOf(txApp, actor, id);
+    outcome.replay = ops.replayOfRoute(txApp, request, 'dayplan.uncheck', entry.item.id);
+    if (outcome.replay !== null) {
+      return;
+    }
     assertEditable(entry.plan.getString('date'), days);
     var item = entry.item;
     var ticket = findById(txApp, TICKETS, item.getString('ticket'));
@@ -796,9 +842,18 @@ function uncheck(e, id) {
     }
     var clearDay = action === 'today' || (action === '' && item.getBool('done_today'));
     outcome.previous = ticket.getString('status');
-    if (!clearDay && outcome.previous === 'done') {
+    var reopens = !clearDay && outcome.previous === 'done';
+    // What the action wants: open the ticket again with `status`, unless it only clears the day.
+    ops.checkDayPlanExpected(
+      request,
+      { checked: rules.isDone({ done_today: item.getBool('done_today') }, outcome.previous), status: outcome.previous },
+      { checked: false, status: clearDay ? outcome.previous : status },
+      ticket.getString('updated')
+    );
+    if (reopens) {
       ticket.set('status', status);
       ticket.set(require(__hooks + '/lib/ticket-service.js').ACTOR_KEY, actor);
+      ops.markOffline(ticket, request);
       txApp.save(ticket);
     }
     if (clearDay) {
@@ -807,9 +862,13 @@ function uncheck(e, id) {
     item.set('checked_by', '');
     item.set('done_at', '');
     txApp.save(item);
+    ops.claimRoute(txApp, request, 'dayplan.uncheck', item.id, { previous_status: outcome.previous });
     outcome.item = findById(txApp, ITEMS, item.id);
     outcome.ticket = findById(txApp, TICKETS, ticket.id);
   });
+  if (outcome.replay !== null) {
+    return replayAnswer(e, id, outcome.replay, false);
+  }
   return answer(e, { item: itemJson(outcome.item), ticket: ticketJson(outcome.ticket, outcome.previous) });
 }
 

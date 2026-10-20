@@ -11,33 +11,46 @@
 // and the model hook cannot tell "false" from "not sent". A client never sets `recurrence`, it
 // may only clear it (ADR-0023 section 1; lib/recurrence-service.js, only after the E5 migrations).
 // The fields of the trash belong to the server (ADR-0037, lib/trash-service.js).
+// The outbox of the SPA (ADR-0074): a request may name its action (`op_id`); the same action a second
+// time changes nothing and answers with the ticket of the first time (lib/client-ops.js). `offline` and
+// `client_at` mark the history of an action from the outbox, `expected` makes a change conditional per
+// field. Without these fields everything stays as before.
 onRecordCreateRequest(function (e) {
-  require(`${__hooks}/lib/recurrence-service.js`).guardTicketCreate(e);
-  require(`${__hooks}/lib/trash-service.js`).guardTrashFields(e, true);
-  require(`${__hooks}/lib/ticket-service.js`).rememberActor(e);
-  if (e.requestInfo().body['blocks_parent'] === undefined) {
-    e.record.set('blocks_parent', true);
-  }
-  e.next();
+  return require(`${__hooks}/lib/client-ops.js`).withOp(e, 'ticket.create', 'tickets', function () {
+    require(`${__hooks}/lib/recurrence-service.js`).guardTicketCreate(e);
+    require(`${__hooks}/lib/trash-service.js`).guardTrashFields(e, true);
+    require(`${__hooks}/lib/ticket-service.js`).rememberActor(e);
+    if (e.requestInfo().body['blocks_parent'] === undefined) {
+      e.record.set('blocks_parent', true);
+    }
+    e.next();
+  });
 }, 'tickets');
 
 onRecordUpdateRequest(function (e) {
-  var service = require(`${__hooks}/lib/ticket-service.js`);
-  service.guardSourceChange(e.record);
-  require(`${__hooks}/lib/recurrence-service.js`).guardTicketUpdate(e);
-  require(`${__hooks}/lib/trash-service.js`).guardTrashFields(e, false);
-  service.rememberActor(e);
-  service.rememberExpectedUpdated(e);
-  service.rememberCompletion(e);
-  e.next();
+  return require(`${__hooks}/lib/client-ops.js`).withOp(e, 'ticket.update', 'tickets', function () {
+    var service = require(`${__hooks}/lib/ticket-service.js`);
+    service.guardSourceChange(e.record);
+    require(`${__hooks}/lib/recurrence-service.js`).guardTicketUpdate(e);
+    require(`${__hooks}/lib/trash-service.js`).guardTrashFields(e, false);
+    service.rememberActor(e);
+    service.rememberExpectedUpdated(e);
+    service.rememberCompletion(e);
+    e.next();
+  });
 }, 'tickets');
 
+// The identifier of the action (ADR-0074 §2) is looked up first and noted last, in the transaction of
+// the ticket: a second request with it writes nothing, not even a number of the counter.
 onRecordCreate(function (e) {
   var service = require(`${__hooks}/lib/ticket-service.js`);
+  var ops = require(`${__hooks}/lib/client-ops.js`);
   require(`${__hooks}/lib/transaction.js`).inTransaction(e, function (txApp) {
+    ops.checkClaim(txApp, e.record);
     var item = service.prepareCreate(txApp, e.record);
     e.next();
     service.recordCreation(txApp, e.record, item);
+    ops.saveClaim(txApp, e.record, 'ticket.create');
   });
 }, 'tickets');
 
@@ -62,6 +75,9 @@ onRecordAfterCreateSuccess(function (e) {
 // theirs through their own save. An assignment by someone else deletes the read row of the assignee
 // (ADR-0068 §4); a membership that ends clears the assignee itself (lib/assignee-service.js) and writes
 // its history, so its saves skip this hook like those of the trash and of a move.
+// An action from the outbox (ADR-0074): its identifier first, so a second request writes nothing; then
+// `expected`, per field against the ticket read again in the transaction (a conflict only where the
+// stored value is neither the expected nor the desired one); the identifier is noted last.
 onRecordUpdate(function (e) {
   if (
     require(`${__hooks}/lib/trash-service.js`).skipsTicketHooks(e.record) ||
@@ -75,8 +91,11 @@ onRecordUpdate(function (e) {
   var recurrence = require(`${__hooks}/lib/recurrence-service.js`);
   var pins = require(`${__hooks}/lib/pin-service.js`);
   var assignees = require(`${__hooks}/lib/assignee-service.js`);
+  var ops = require(`${__hooks}/lib/client-ops.js`);
   require(`${__hooks}/lib/transaction.js`).inTransaction(e, function (txApp) {
+    ops.checkClaim(txApp, e.record);
     service.checkExpectedUpdated(txApp, e.record);
+    ops.checkExpected(txApp, e.record);
     var before = service.prepareUpdate(txApp, e.record);
     var children = service.prepareCompletion(txApp, e.record);
     var completes = pins.completes(e.record);
@@ -88,6 +107,7 @@ onRecordUpdate(function (e) {
       pins.releaseTicket(txApp, e.record.id);
     }
     assignees.afterTicketUpdate(txApp, e.record);
+    ops.saveClaim(txApp, e.record, 'ticket.update');
   });
 }, 'tickets');
 

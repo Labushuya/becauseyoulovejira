@@ -331,7 +331,10 @@ export const EXPECTED_COLLECTIONS = {
 			ticket: relation('tickets', { required: true, cascadeDelete: true }),
 			author: relation('users', { required: true }),
 			body: text({ required: true, max: 20000 }),
-			...timestamps()
+			...timestamps(),
+			// A comment from the outbox and the time of the device (ADR-0074, migration 1790205000).
+			offline: bool(),
+			device_at: date()
 		},
 		indexes: ['CREATE INDEX idx_comments_ticket_created ON comments (ticket, created)']
 	},
@@ -342,7 +345,10 @@ export const EXPECTED_COLLECTIONS = {
 			old_value: text({ max: 100000 }),
 			new_value: text({ max: 100000 }),
 			user: relation('users'),
-			created: created()
+			created: created(),
+			// An entry of an action from the outbox and the time of the device (ADR-0074, migration 1790205000).
+			offline: bool(),
+			device_at: date()
 		},
 		indexes: [
 			'CREATE INDEX idx_ticket_history_ticket_created ON ticket_history (ticket, created)'
@@ -462,6 +468,21 @@ export const EXPECTED_COLLECTIONS = {
 			...timestamps()
 		},
 		indexes: ['CREATE UNIQUE INDEX idx_day_plan_settings_scope ON day_plan_settings (scope)']
+	},
+	// The notes of the outbox (ADR-0074, migration 1790205000): one row per action of an account.
+	client_ops: {
+		fields: {
+			user: relation('users', { required: true, cascadeDelete: true }),
+			op: text({ required: true, min: 16, max: 64, pattern: '^[A-Za-z0-9_-]+$' }),
+			kind: select(['ticket.create', 'ticket.update', 'comment.create', 'inbox.create', 'dayplan.check', 'dayplan.uncheck'], true),
+			record: text({ required: true, max: 50 }),
+			result: { type: 'json', required: false, maxSize: 2000 },
+			created: created()
+		},
+		indexes: [
+			'CREATE UNIQUE INDEX idx_client_ops_user_op ON client_ops (user, op)',
+			'CREATE INDEX idx_client_ops_created ON client_ops (created)'
+		]
 	},
 	// Failed sign-ins for the page "Sicherheit" (ADR-0055 §8, migration 1790203600); never a password.
 	login_failures: {
@@ -607,7 +628,9 @@ export const EXPECTED_RULES = {
 	day_plan_settings: { listRule: OWNED, viewRule: OWNED, ...READ_ONLY },
 	// Tickets as sources (ADR-0067): read while both tickets are visible (each with its own alias of
 	// the memberships) and alive, written only by the routes.
-	ticket_sources: { listRule: TICKET_SOURCES_READ, viewRule: TICKET_SOURCES_READ, ...READ_ONLY }
+	ticket_sources: { listRule: TICKET_SOURCES_READ, viewRule: TICKET_SOURCES_READ, ...READ_ONLY },
+	// Only the hooks read and write the notes of the outbox (ADR-0074).
+	client_ops: { listRule: null, viewRule: null, ...READ_ONLY }
 };
 
 // The own record, every record for the administrator of the app and the accounts of the own
