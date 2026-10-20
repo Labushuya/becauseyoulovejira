@@ -3,7 +3,8 @@
 // the day plan as the start view) applies only while the switch of this device is on **and** the
 // window is narrow. Off, or from 40rem on, everything stays as it was. Pure: no SvelteKit, no DOM;
 // the store in lib/mobile-layout.svelte.ts reads the storage and the media query and applies the
-// viewport and the root attribute.
+// viewport and the root attribute. Since MO-1b also where a modal stands in the frame and when
+// leaving the page asks first.
 
 import type { AreaView } from './area';
 
@@ -49,6 +50,38 @@ export const VIEWPORT_PHONE = `${VIEWPORT_BASE}, viewport-fit=cover, interactive
 /** The content of the meta viewport for the frame that applies. */
 export function viewportContent(phone: boolean): string {
 	return phone ? VIEWPORT_PHONE : VIEWPORT_BASE;
+}
+
+/** The sizes of the modal building block (ADR-0025 section 3). */
+export type ModalSize = 's' | 'm' | 'l' | 'xl';
+
+/** Where a modal stands: in the middle, as a sheet at the bottom, or as a page over the screen. */
+export type ModalPlacement = 'center' | 'sheet' | 'page';
+
+/**
+ * Where a modal stands (MO-1b, ADR-0073 addendum): outside the phone frame where its owner asks
+ * (the middle, or the sheet "Mehr"). In the frame the sizes S and M (questions, short forms, the
+ * quick entry) stand as a sheet at the bottom, within reach of the thumb; L and XL (assistants,
+ * imports, the full view) are large and full of fields and take the whole screen as a page. One
+ * rule in the building block, so no caller decides it again.
+ */
+export function modalPlacement(
+	size: ModalSize,
+	requested: 'center' | 'sheet',
+	phone: boolean
+): ModalPlacement {
+	if (requested === 'sheet') return 'sheet';
+	if (!phone) return 'center';
+	return size === 'l' || size === 'xl' ? 'page' : 'sheet';
+}
+
+/**
+ * Whether leaving the page (reload, pulling down to refresh, closing the tab, a link out of the
+ * app) asks the browser's question first (MO-1b): only in the phone frame and only while typed
+ * input is not saved. On the PC nothing changes; there the view keeps its own questions.
+ */
+export function warnsBeforeLeaving(phone: boolean, unsaved: boolean): boolean {
+	return phone && unsaved;
 }
 
 /** What the start of the app needs to know about the address it opened. */

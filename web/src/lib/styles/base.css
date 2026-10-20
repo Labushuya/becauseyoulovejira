@@ -714,6 +714,65 @@ a.button-subtle {
 }
 
 /*
+ * Phone frame (MO-1b, ADR-0073 addendum): with the switch "Handy-Ansicht (Vorschau)" on and below
+ * the one breakpoint, every shared target has at least 44 px, whatever the pointer: buttons with
+ * text, icon buttons (also the ×, the menus "•••" and the actions of list rows), segments, the
+ * labels of checkboxes and radios (chips too) and fields, which keep 16 px against the zoom of the
+ * browser. Not inside the cells of the tables: their columns still count with the sizes of the PC
+ * (ADR-0030), until the views show cards instead (MO-3 ff.). Off, or from 40rem, nothing changes.
+ */
+@media (max-width: 39.99rem) {
+	/* Specificity 0 like the rule of touch screens, so components still place a field. */
+	:where(:root[data-mobile-layout='on'])
+		:where(
+			input:not(
+				[type='checkbox'],
+				[type='radio'],
+				[type='hidden'],
+				[type='file'],
+				[type='range'],
+				[type='color'],
+				[type='button'],
+				[type='submit'],
+				[type='reset'],
+				[type='image']
+			),
+			select,
+			textarea
+		) {
+		min-height: var(--control-height-touch);
+		font-size: var(--font-size-field-touch);
+	}
+
+	:root[data-mobile-layout='on'] .search-field {
+		min-height: var(--control-height-touch);
+	}
+
+	:root[data-mobile-layout='on'] .search-field input {
+		font-size: var(--font-size-field-touch);
+	}
+
+	:root[data-mobile-layout='on']
+		:is(.button-primary, .button-secondary, .button-subtle):not(:is(td, th) *) {
+		min-height: var(--control-height-touch);
+	}
+
+	:root[data-mobile-layout='on'] .button-icon:not(:is(td, th) *) {
+		width: var(--control-height-touch);
+		height: var(--control-height-touch);
+	}
+
+	:root[data-mobile-layout='on'] .segmented > :is(a, button) {
+		min-height: var(--control-height-touch);
+	}
+
+	:root[data-mobile-layout='on']
+		label:has(> input:is([type='checkbox'], [type='radio'])):not(:is(td, th) *) {
+		min-height: var(--control-height-touch);
+	}
+}
+
+/*
  * Touch screens (UI-1, ADR-0060), for phones in the home network: fields keep 16 px, so iOS does
  * not zoom into the page when one gets the focus, and fields, buttons with text and the labels of
  * checkboxes and radios are at least 44 px high (Apple HIG). Icon buttons keep their size, because

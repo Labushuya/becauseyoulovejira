@@ -5,7 +5,9 @@
 
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { PHONE_QUERY } from '$lib/domain/phone-layout';
+import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 import PopoverHarness from '$lib/test/PopoverHarness.svelte';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import source from './Popover.svelte?raw';
@@ -183,6 +185,111 @@ describe('popover: panel', () => {
 
 		expect(panelButton().getAttribute('aria-expanded')).toBe('false');
 		expect(document.activeElement).toBe(panelButton());
+	});
+});
+
+// MO-1b (ADR-0073 addendum): in the phone frame every popover is a sheet at the bottom with a
+// visible "Schließen"; without the frame (switch off, or a wide window) it stays at its button.
+describe('popover in the phone frame (MO-1b)', () => {
+	let stop: (() => void) | null = null;
+
+	/** A window narrower than 40rem (or not), with the switch of this device on or off. */
+	function frame(narrow: boolean, enabled: boolean) {
+		vi.stubGlobal('matchMedia', (media: string) => ({
+			matches: media === PHONE_QUERY ? narrow : false,
+			media,
+			addEventListener: () => undefined,
+			removeEventListener: () => undefined
+		}));
+		stop = getMobileLayoutStore().connect();
+		getMobileLayoutStore().choose(enabled);
+	}
+
+	afterEach(() => {
+		getMobileLayoutStore().choose(false);
+		stop?.();
+		stop = null;
+		vi.unstubAllGlobals();
+		localStorage.clear();
+	});
+
+	const close = (role: 'menuitem' | 'button') =>
+		screen.queryByRole(role, { hidden: true, name: 'Schließen' });
+
+	it('opens a menu as a sheet, not at its button, with "Schließen" as its last entry', async () => {
+		frame(true, true);
+		await openMenu();
+
+		expect(menu().classList.contains('sheet')).toBe(true);
+		expect(menu().hasAttribute('data-sheet')).toBe(true);
+		expect(menu().style.top).toBe('');
+		expect(menu().style.left).toBe('');
+		const entries = screen.getAllByRole('menuitem', { hidden: true });
+		expect(entries.at(-1)?.textContent?.trim()).toBe('Schließen');
+		// The keys reach it like every entry: End is the last one.
+		await fireEvent.keyDown(document.activeElement as Element, { key: 'End' });
+		expect(document.activeElement).toBe(close('menuitem'));
+
+		await fireEvent.click(close('menuitem') as HTMLElement);
+		expect(menuButton().getAttribute('aria-expanded')).toBe('false');
+		expect(document.activeElement).toBe(menuButton());
+	});
+
+	it('opens a panel as a sheet with the button "Schließen", which returns the focus', async () => {
+		frame(true, true);
+		render(PopoverHarness, { props: { kind: 'panel' } });
+		const opener = screen.getByRole('button', { name: 'Filter' });
+		await fireEvent.click(opener);
+		await tick();
+
+		const panel = screen.getByRole('dialog', { hidden: true });
+		expect(panel.classList.contains('sheet')).toBe(true);
+		// The content keeps its first focus; "Schließen" comes after it.
+		expect(document.activeElement).toBe(
+			screen.getByRole('radio', { hidden: true, name: 'Wert B' })
+		);
+		await fireEvent.click(close('button') as HTMLElement);
+		expect(opener.getAttribute('aria-expanded')).toBe('false');
+		expect(document.activeElement).toBe(opener);
+	});
+
+	it.each([
+		['a phone with the switch off', true, false],
+		['a wide window with the switch on', false, true]
+	])('stays at its button on %s, without "Schließen"', async (_name, narrow, enabled) => {
+		frame(narrow, enabled);
+		render(PopoverHarness, { props: { kind: 'menu' } });
+		vi.spyOn(menuButton(), 'getBoundingClientRect').mockReturnValue({
+			x: 300,
+			y: 40,
+			top: 40,
+			left: 300,
+			bottom: 72,
+			right: 332,
+			width: 32,
+			height: 32,
+			toJSON: () => ({})
+		});
+		await fireEvent.click(menuButton());
+
+		expect(menu().classList.contains('sheet')).toBe(false);
+		expect(menu().hasAttribute('data-sheet')).toBe(false);
+		expect(menu().style.top).toBe('76px');
+		expect(close('menuitem')).toBeNull();
+		expect(screen.getAllByRole('menuitemradio', { hidden: true })).toHaveLength(3);
+	});
+
+	it('draws the sheet at the bottom over the full width, with 44 px rows and the safe area', () => {
+		const sheet = /\.popover\.sheet \{([^}]*)\}/.exec(source)?.[1] ?? '';
+		expect(sheet).toMatch(/inset:\s*auto 0 0/);
+		expect(sheet).toMatch(/width:\s*100%/);
+		expect(sheet).toMatch(/max-width:\s*none/);
+		expect(sheet).toMatch(/max-height:\s*var\(--sheet-max-height\)/);
+		expect(sheet).toMatch(/var\(--safe-bottom\)/);
+		expect(sheet).toMatch(/border-radius:\s*var\(--radius-overlay\) var\(--radius-overlay\) 0 0/);
+		expect(source).toMatch(/\.popover\.sheet:popover-open \{[^}]*animation-name:\s*sheet-in/);
+		const rows = /\.sheet\.menu :global\([^{]*\{([^}]*)\}/.exec(source)?.[1] ?? '';
+		expect(rows).toMatch(/min-height:\s*var\(--control-height-touch\)/);
 	});
 });
 

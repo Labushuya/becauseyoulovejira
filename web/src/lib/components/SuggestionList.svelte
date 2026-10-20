@@ -137,4 +137,16 @@
 		background: var(--color-brand-soft-bg);
 		box-shadow: inset 3px 0 0 var(--color-brand);
 	}
+
+	/*
+	 * Phone frame (MO-1b, ADR-0073 addendum): options of 44 px. The list stays at its field and is no
+	 * sheet, because the on-screen keyboard stays open while it is typed in; with
+	 * interactive-widget=resizes-content place() sees the room above the keyboard and flips it up.
+	 */
+	@media (max-width: 39.99rem) {
+		:global(:root[data-mobile-layout='on']) .suggestion-list :global(.option) {
+			min-height: var(--control-height-touch);
+			padding-block: 0.5rem;
+		}
+	}
 </style>

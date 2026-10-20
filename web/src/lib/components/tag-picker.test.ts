@@ -357,6 +357,16 @@ describe('tag picker: list in the top layer (UI-9)', () => {
 			/\.suggestion-list \{[^}]*backdrop-filter: var\(--glass-filter-thick\)/
 		);
 	});
+
+	// MO-1b (ADR-0073 addendum): the list stays at its field in the phone frame (the keyboard stays
+	// open while it is typed in), its options get 44 px there and only there.
+	it('gives the options 44 px in the phone frame and stays at its field', () => {
+		const css = /@media \(max-width: 39\.99rem\) \{([\s\S]*?)\n\t\}\n/.exec(listSource)?.[1] ?? '';
+		expect(css).toMatch(
+			/:global\(:root\[data-mobile-layout='on'\]\) \.suggestion-list :global\(\.option\) \{[^}]*min-height: var\(--control-height-touch\)/
+		);
+		expect(listSource).not.toMatch(/getMobileLayoutStore/);
+	});
 });
 
 describe('tag input: comma, Enter, paste and Backspace (user request, plan e6-spalten)', () => {

@@ -346,3 +346,43 @@ describe('flags in front of modals (FL-1)', () => {
 		expect(within(output).getAllByRole('listitem')).toHaveLength(1);
 	});
 });
+
+// MO-1b (ADR-0073 addendum): in the phone frame the flags stand above the bottom bar, and at the top
+// of the screen while a sheet or a page is open, so they cover neither its footer nor its buttons.
+// Where they stand is a rule of the CSS behind the breakpoint and the switch (the place itself is
+// measured by the smoke test, tests/mobile/phone-frame.spec.mjs); here the mark of the output in a
+// modal and the rules.
+describe('flags in the phone frame (MO-1b)', () => {
+	it('marks the output in a modal, not the one of the layout', async () => {
+		const store = new FlagStore();
+		render(FlagModalHarness, { props: { store } });
+		store.show({ tone: 'info', title: 'Link kopiert' });
+		await tick();
+		expect(screen.getByRole('region', { name: 'Benachrichtigungen' }).classList).not.toContain(
+			'in-modal'
+		);
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Zweiten Dialog öffnen' }));
+		await tick();
+		const output = screen.getByRole('region', { name: 'Benachrichtigungen' });
+		expect(output.closest('dialog')).not.toBeNull();
+		expect(output.classList).toContain('in-modal');
+	});
+
+	it('moves them to the top below the status bar only in the frame, in a modal and beside a sheet', () => {
+		const style = /<style>([\s\S]*)<\/style>/.exec(source)?.[1] ?? '';
+		const phone = /@media \(max-width: 39\.99rem\) \{([\s\S]*?)\n\t\}\n/.exec(style)?.[1] ?? '';
+		expect(phone).toMatch(
+			/:global\(:root\[data-mobile-layout='on'\]\) \.flags \{\s*bottom: calc\(1rem \+ var\(--bottom-bar-height\) \+ var\(--safe-bottom\)\);/
+		);
+		const top = /([^{}]+)\{\s*top: calc\(0\.5rem \+ var\(--safe-top\)\);\s*bottom: auto;\s*\}/.exec(
+			phone
+		);
+		expect(top?.[1]).toMatch(/:global\(:root\[data-mobile-layout='on'\]\) \.flags\.in-modal/);
+		expect(top?.[1]).toMatch(
+			/:global\(:root\[data-mobile-layout='on'\]:has\(\[data-sheet\]:popover-open\)\) \.flags/
+		);
+		// Outside the block they stay bottom left, as on the PC.
+		expect(/\.flags \{([^}]*)\}/.exec(style)?.[1]).toMatch(/bottom:\s*1rem;[\s\S]*left:\s*1rem/);
+	});
+});

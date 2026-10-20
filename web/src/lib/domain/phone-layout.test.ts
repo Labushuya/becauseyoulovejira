@@ -1,6 +1,7 @@
 // Rules of the phone layout (MO-1a, ADR-0073): the one breakpoint, the switch and the decision, the
 // meta viewport of the frame, the start with the day plan, the order of the bottom bar and of
-// "Mehr", what the bar marks and which focus opens the on-screen keyboard.
+// "Mehr", what the bar marks and which focus opens the on-screen keyboard; since MO-1b where a
+// modal stands and when leaving the page asks first.
 
 import { describe, expect, it } from 'vitest';
 import { CALENDAR_NARROW_QUERY } from './calendar';
@@ -16,10 +17,13 @@ import {
 	VIEW_ORDER,
 	isPhoneLayout,
 	isPhoneStart,
+	modalPlacement,
 	opensKeyboard,
 	parseMobileLayout,
 	phoneBarTarget,
 	viewportContent,
+	warnsBeforeLeaving,
+	type ModalSize,
 	type StartAddress
 } from './phone-layout';
 
@@ -139,6 +143,41 @@ describe('phone layout: bottom bar and "Mehr"', () => {
 		for (const view of PHONE_MORE_VIEWS) expect(phoneBarTarget(view, false), view).toBe('more');
 		expect(phoneBarTarget(null, true)).toBe('more');
 		expect(phoneBarTarget(null, false)).toBeNull();
+	});
+});
+
+// MO-1b: one rule for every modal of the app, in the building block.
+describe('phone layout: where a modal stands', () => {
+	const SIZES: readonly ModalSize[] = ['s', 'm', 'l', 'xl'];
+
+	it('keeps every size where its owner asks outside the frame (the PC unchanged)', () => {
+		for (const size of SIZES) {
+			expect(modalPlacement(size, 'center', false), size).toBe('center');
+			expect(modalPlacement(size, 'sheet', false), size).toBe('sheet');
+		}
+	});
+
+	it('shows questions and short forms (S, M) as a sheet in the frame', () => {
+		expect(modalPlacement('s', 'center', true)).toBe('sheet');
+		expect(modalPlacement('m', 'center', true)).toBe('sheet');
+	});
+
+	it('shows large dialogs full of fields (L) and the full view (XL) as a page in the frame', () => {
+		expect(modalPlacement('l', 'center', true)).toBe('page');
+		expect(modalPlacement('xl', 'center', true)).toBe('page');
+	});
+
+	it('keeps a sheet asked for ("Mehr") a sheet in every size', () => {
+		for (const size of SIZES) expect(modalPlacement(size, 'sheet', true), size).toBe('sheet');
+	});
+});
+
+describe('phone layout: leaving the page with unsaved input', () => {
+	it('asks only in the frame and only with unsaved input', () => {
+		expect(warnsBeforeLeaving(true, true)).toBe(true);
+		expect(warnsBeforeLeaving(true, false)).toBe(false);
+		expect(warnsBeforeLeaving(false, true)).toBe(false);
+		expect(warnsBeforeLeaving(false, false)).toBe(false);
 	});
 });
 

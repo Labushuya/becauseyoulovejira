@@ -6,9 +6,12 @@
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { createRawSnippet, tick } from 'svelte';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { PHONE_QUERY, type ModalSize } from '$lib/domain/phone-layout';
+import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 import ModalHarness from '$lib/test/ModalHarness.svelte';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
+import { hasUnsavedInput } from '$lib/unsaved-input';
 import Modal from './Modal.svelte';
 import source from './Modal.svelte?raw';
 
@@ -292,6 +295,95 @@ describe('modal: sheet (MO-1a)', () => {
 	});
 });
 
+// MO-1b (ADR-0073 addendum): in the phone frame the building block decides where every modal
+// stands, S and M as a sheet, L and XL as a page; without the frame nothing changes.
+describe('modal in the phone frame (MO-1b)', () => {
+	let stop: (() => void) | null = null;
+
+	/** A window narrower than 40rem (or not), with the switch of this device on or off. */
+	function frame(narrow: boolean, enabled: boolean) {
+		vi.stubGlobal('matchMedia', (media: string) => ({
+			matches: media === PHONE_QUERY ? narrow : false,
+			media,
+			addEventListener: () => undefined,
+			removeEventListener: () => undefined
+		}));
+		stop = getMobileLayoutStore().connect();
+		getMobileLayoutStore().choose(enabled);
+	}
+
+	afterEach(() => {
+		getMobileLayoutStore().choose(false);
+		stop?.();
+		stop = null;
+		vi.unstubAllGlobals();
+		localStorage.clear();
+	});
+
+	const children = createRawSnippet(() => ({ render: () => '<p>Inhalt</p>' }));
+
+	async function show(size: ModalSize) {
+		render(Modal, { props: { open: true, title: 'Frage', size, onclose: vi.fn(), children } });
+		await tick();
+		return dialog('Frage');
+	}
+
+	it.each([
+		['s', 'sheet'],
+		['m', 'sheet'],
+		['l', 'page'],
+		['xl', 'page']
+	] as const)('shows size %s as a %s', async (size, shown) => {
+		frame(true, true);
+		const modal = await show(size);
+		expect(modal.classList.contains(shown)).toBe(true);
+		expect(modal.classList.contains(shown === 'sheet' ? 'page' : 'sheet')).toBe(false);
+		// The same name, × and rules as on the PC.
+		expect(within(modal).getByRole('button', { name: 'Schließen' })).toBeTruthy();
+	});
+
+	it.each([
+		['a phone with the switch off', true, false],
+		['a wide window with the switch on', false, true]
+	])('stays in the middle on %s', async (_name, narrow, enabled) => {
+		frame(narrow, enabled);
+		for (const size of ['s', 'm', 'l'] as const) {
+			const { unmount } = render(Modal, {
+				props: { open: true, title: `Frage ${size}`, size, onclose: vi.fn(), children }
+			});
+			await tick();
+			const modal = dialog(`Frage ${size}`);
+			expect(modal.classList.contains('sheet'), size).toBe(false);
+			expect(modal.classList.contains('page'), size).toBe(false);
+			unmount();
+		}
+	});
+
+	it('follows the frame while open: turning the switch off brings it back to the middle', async () => {
+		frame(true, true);
+		const modal = await show('m');
+		expect(modal.classList.contains('sheet')).toBe(true);
+		getMobileLayoutStore().choose(false);
+		await tick();
+		expect(modal.classList.contains('sheet')).toBe(false);
+	});
+
+	it('counts its unsaved input for leaving the page only while open with it', async () => {
+		const { view } = await openModal({ dirty: true });
+		expect(hasUnsavedInput()).toBe(true);
+		await view.rerender({ dirty: false });
+		expect(hasUnsavedInput()).toBe(false);
+		await view.rerender({ dirty: true });
+		await fireEvent.click(within(dialog()).getByRole('button', { name: 'Schließen' }));
+		await fireEvent.click(within(dialog()).getByRole('button', { name: 'Verwerfen' }));
+		await tick();
+		expect(isOpen()).toBe(false);
+		expect(hasUnsavedInput()).toBe(false);
+		view.unmount();
+		expect(hasUnsavedInput()).toBe(false);
+	});
+});
+
 describe('modal: flags', () => {
 	it('renders no flags without the flags of the app (a single component)', async () => {
 		await openModal();
@@ -382,6 +474,24 @@ describe('modal source', () => {
 		expect(close).toMatch(/width:\s*var\(--phone-target\)/);
 		expect(close).toMatch(/height:\s*var\(--phone-target\)/);
 		expect(rule('.modal.sheet[open] .frame')).toMatch(/animation-name:\s*sheet-in/);
+	});
+
+	// MO-1b: the page of the phone frame takes the whole screen, the safe areas inside; its <dialog>
+	// stays free of anything that would hold the flags (FL-1).
+	it('places a page over the whole screen, with both safe areas and the target of the frame', () => {
+		const page = rule('.modal.page');
+		expect(page).toMatch(/width:\s*100%/);
+		expect(page).toMatch(/height:\s*100dvh/);
+		expect(page).toMatch(/max-height:\s*100dvh/);
+		expect(page).toMatch(/margin:\s*0/);
+		expect(page).not.toMatch(/transform|filter|perspective|contain|will-change|animation/);
+		const frame = rule('.page .frame');
+		expect(frame).toMatch(/padding-top:\s*var\(--safe-top\)/);
+		expect(frame).toMatch(/padding-bottom:\s*var\(--safe-bottom\)/);
+		expect(frame).toMatch(/border-radius:\s*0/);
+		const close = rule('.page .head-actions .button-icon');
+		expect(close).toMatch(/width:\s*var\(--phone-target\)/);
+		expect(close).toMatch(/height:\s*var\(--phone-target\)/);
 	});
 
 	it('lets a footer button with margin-right: auto stand on the left (fix 2026-09-30)', () => {

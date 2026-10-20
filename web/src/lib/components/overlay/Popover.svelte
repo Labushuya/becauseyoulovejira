@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { tick, type Snippet } from 'svelte';
+	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 	import {
 		place,
 		placeAtPoint,
@@ -17,6 +18,10 @@
 	// Opened by code (`open`), it may stand at a virtual anchor instead (plan aktionsmenues, AM-3):
 	// at the pointer of a right click (placeAtPoint) or below another element; the focus then goes
 	// back to the element that had it before, if there was one.
+	// In the phone frame (MO-1b, ADR-0073 addendum) every popover is a sheet at the bottom over the
+	// full width instead, wherever it was opened: rows of a menu with 44 px, and at its end a visible
+	// "Schließen" (a menu entry in a menu, a button in a panel), so closing never needs Escape or a
+	// tap beside it. Keys, focus and light dismiss stay those of the popover.
 	let {
 		kind,
 		label,
@@ -80,6 +85,9 @@
 
 	let popover = $state<HTMLElement>();
 	let expanded = $state(false);
+	/** In the phone frame the popover stands as a sheet at the bottom, not at its button. */
+	const mobileLayout = getMobileLayoutStore();
+	const sheet = $derived(mobileLayout.active);
 	/**
 	 * Where `open` put the popover instead of below the button: the pointer, kept as its distance
 	 * to the button so the popover follows its row while the page scrolls, or another element.
@@ -95,6 +103,13 @@
 
 	function position() {
 		if (!popover || !trigger) return;
+		if (sheet) {
+			// The sheet stands by its CSS; nothing of a place at the button stays.
+			popover.style.top = '';
+			popover.style.left = '';
+			popover.style.maxHeight = '';
+			return;
+		}
 		const size = { width: popover.offsetWidth, height: popover.scrollHeight };
 		const viewport = { width: window.innerWidth, height: window.innerHeight };
 		let at: Position;
@@ -184,6 +199,12 @@
 		};
 	});
 
+	// Turning the phone or the switch while it is open: from the sheet to the button and back.
+	$effect(() => {
+		void sheet;
+		if (expanded) position();
+	});
+
 	$effect(() => {
 		if (!expanded) return;
 		const update = () => position();
@@ -251,6 +272,7 @@
 <div
 	class="popover"
 	class:menu={kind === 'menu'}
+	class:sheet
 	id={popoverId}
 	popover="auto"
 	role={kind === 'menu' ? 'menu' : 'dialog'}
@@ -258,11 +280,29 @@
 	aria-labelledby={labelledby}
 	tabindex="-1"
 	data-overlay
+	data-sheet={sheet ? '' : undefined}
 	bind:this={popover}
 	{onkeydown}
 	{onfocusout}
 >
-	{@render children({ close })}
+	{#if sheet}
+		<!-- The content scrolls alone, "Schließen" stays in view at the end of the sheet. -->
+		<div class="sheet-content" class:menu-items={kind === 'menu'}>
+			{@render children({ close })}
+		</div>
+		{#if kind === 'menu'}
+			<div role="separator"></div>
+			<button class="sheet-close" type="button" role="menuitem" tabindex="-1" onclick={close}>
+				Schließen
+			</button>
+		{:else}
+			<div class="sheet-foot">
+				<button class="button-secondary" type="button" onclick={close}>Schließen</button>
+			</div>
+		{/if}
+	{:else}
+		{@render children({ close })}
+	{/if}
 </div>
 
 <style>
@@ -340,6 +380,67 @@
 		height: 1px;
 		margin: 0.25rem 0.5rem;
 		background: var(--color-separator);
+	}
+
+	/*
+	 * Sheet of the phone frame (MO-1b, ADR-0073 addendum): at the bottom over the full width, at
+	 * most --sheet-max-height high, with round upper corners and the safe area of the system bar
+	 * below. The content scrolls alone, "Schließen" stays at the end. Rows of a menu have 44 px. It
+	 * slides up from below; reduced motion shows it at once (base.css).
+	 */
+	.popover.sheet {
+		inset: auto 0 0;
+		width: 100%;
+		min-width: 0;
+		max-width: none;
+		max-height: var(--sheet-max-height);
+		padding: 0.5rem 0.5rem calc(0.5rem + var(--safe-bottom));
+		overflow: hidden;
+		border-bottom: none;
+		border-radius: var(--radius-overlay) var(--radius-overlay) 0 0;
+	}
+
+	.popover.sheet:popover-open {
+		display: flex;
+		flex-direction: column;
+		gap: 0.125rem;
+		animation-name: sheet-in;
+	}
+
+	.sheet-content {
+		flex: 1 1 auto;
+		min-height: 0;
+		overflow-y: auto;
+	}
+
+	.sheet-content.menu-items {
+		display: grid;
+		gap: 0.125rem;
+		align-content: start;
+	}
+
+	.sheet.menu :global(:is([role='menuitem'], [role='menuitemradio'], [role='menuitemcheckbox'])) {
+		min-height: var(--control-height-touch);
+		padding: 0.5rem 0.75rem;
+	}
+
+	.sheet-close {
+		flex: none;
+		font-weight: 600;
+	}
+
+	.sheet-foot {
+		display: flex;
+		flex: none;
+		justify-content: flex-end;
+		padding-top: 0.5rem;
+		border-top: 1px solid var(--color-separator);
+	}
+
+	@keyframes sheet-in {
+		from {
+			transform: translateY(100%);
+		}
 	}
 
 	@keyframes popover-in {

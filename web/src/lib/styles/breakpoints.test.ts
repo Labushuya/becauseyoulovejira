@@ -127,9 +127,14 @@ describe('breakpoints (MO-1a, ADR-0073)', () => {
 				expect(preludes.at(-1), source.file).toMatch(/:root\[data-mobile-layout='on'\]/);
 			}
 		}
-		// The margin of the pages, the end of the page above the bottom bar, the flags above it.
+		// The margin of the pages, the end of the page above the bottom bar, the flags above it (and at
+		// the top while a sheet is open); since MO-1b the targets of 44 px, the options of 44 px of the
+		// suggestions and the safe areas of the panel as a page.
 		expect([...new Set(places)].sort()).toEqual([
+			'lib/components/SuggestionList.svelte',
+			'lib/components/ViewWithPanel.svelte',
 			'lib/components/overlay/FlagGroup.svelte',
+			'lib/styles/base.css',
 			'lib/styles/tokens.css',
 			'routes/(app)/+layout.svelte'
 		]);
