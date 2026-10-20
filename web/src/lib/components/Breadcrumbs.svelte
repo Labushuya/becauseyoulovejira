@@ -67,4 +67,23 @@
 	a:hover {
 		text-decoration: underline;
 	}
+
+	/*
+	 * Phone frame (MO-4, ADR-0073 addendum MO-4): every step with a link is a target of 44 px, the
+	 * path in the head of a page keeps one line per row of targets.
+	 */
+	@media (max-width: 39.99rem) {
+		:global(:root[data-mobile-layout='on']) ol {
+			align-items: center;
+			row-gap: 0;
+		}
+
+		:global(:root[data-mobile-layout='on']) a {
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			min-width: var(--control-height-touch);
+			min-height: var(--control-height-touch);
+		}
+	}
 </style>

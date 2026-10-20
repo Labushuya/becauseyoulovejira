@@ -131,15 +131,29 @@ describe('breakpoints (MO-1a, ADR-0073)', () => {
 		// the top while a sheet is open); since MO-1b the targets of 44 px, the options of 44 px of the
 		// suggestions and the safe areas of the panel as a page; since MO-2 the day plan (row, head,
 		// folded suggestions and pool, "Sortierung"); since MO-3 "Aufgaben" (the bar of the view, the
-		// cards, the filter sheet with its parts, the bar of the selection below the top bar).
+		// cards, the filter sheet with its parts, the bar of the selection below the top bar); since
+		// MO-4 the ticket as a page (the head of the panel, the fields one below the other and the bar
+		// at the bottom, the toolbar of the editor, the tabs, the rows of the sub-tasks, the tags, the
+		// path, the parent, the charms, the tasks of the text, the save buttons above the keyboard).
 		expect([...new Set(places)].sort()).toEqual([
+			'lib/components/Breadcrumbs.svelte',
+			'lib/components/CharmPicker.svelte',
+			'lib/components/CommentForm.svelte',
+			'lib/components/CommentItem.svelte',
 			'lib/components/FilterBar.svelte',
 			'lib/components/FilterSheet.svelte',
+			'lib/components/MarkdownEditor.svelte',
 			'lib/components/SectionBar.svelte',
 			'lib/components/SelectionBar.svelte',
 			'lib/components/SortChoice.svelte',
 			'lib/components/SuggestionList.svelte',
+			'lib/components/TagPicker.svelte',
+			'lib/components/TicketActivity.svelte',
 			'lib/components/TicketCard.svelte',
+			'lib/components/TicketDescription.svelte',
+			'lib/components/TicketFields.svelte',
+			'lib/components/TicketParentField.svelte',
+			'lib/components/TicketSubtasks.svelte',
 			'lib/components/TicketTable.svelte',
 			'lib/components/ViewWithPanel.svelte',
 			'lib/components/day-plan/DayPlanList.svelte',
@@ -147,8 +161,11 @@ describe('breakpoints (MO-1a, ADR-0073)', () => {
 			'lib/components/day-plan/DayPlanSort.svelte',
 			'lib/components/day-plan/DayPlanSuggestions.svelte',
 			'lib/components/day-plan/DayPlanView.svelte',
+			'lib/components/editor/EditorToolbar.svelte',
+			'lib/components/overlay/Drawer.svelte',
 			'lib/components/overlay/FlagGroup.svelte',
 			'lib/styles/base.css',
+			'lib/styles/prose.css',
 			'lib/styles/tokens.css',
 			'routes/(app)/+layout.svelte'
 		]);

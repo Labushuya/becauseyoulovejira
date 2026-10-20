@@ -171,8 +171,14 @@ describe('view with panel', () => {
 			/@media \(max-width: 35\.99rem\) \{\s*\.covering \.panel \{\s*width:\s*100%;/
 		);
 		expect(source).not.toMatch(/32rem|47\.99rem|48rem/);
-		// The drawer fills the column and leaves the placing to the view.
-		expect(drawerSource).not.toMatch(/@media|position:\s*fixed/);
+		// The drawer fills the column and leaves the placing to the view. Since MO-4 its only media
+		// query is the block of the phone frame (head, margins and line of the page), which places
+		// nothing either.
+		const drawerFrame =
+			/@media \(max-width: 39\.99rem\) \{([\s\S]*?)\n\t\}\n/.exec(drawerSource)?.[0] ?? '';
+		expect(drawerFrame).not.toBe('');
+		expect(drawerFrame).not.toMatch(/(?<![-\w])(position|inset|width|top|bottom|left|right):/);
+		expect(drawerSource.replace(drawerFrame, '')).not.toMatch(/@media|position:\s*fixed/);
 		expect(drawerSource).toMatch(/height:\s*100%/);
 	});
 

@@ -263,4 +263,14 @@
 		font-size: var(--font-size-small);
 		color: var(--color-text-muted);
 	}
+
+	/* Phone frame (MO-4, ADR-0073 addendum MO-4): the key of the parent as a target of 44 px. */
+	@media (max-width: 39.99rem) {
+		:global(:root[data-mobile-layout='on']) .parent-key {
+			display: inline-flex;
+			align-items: center;
+			min-width: var(--control-height-touch);
+			min-height: var(--control-height-touch);
+		}
+	}
 </style>

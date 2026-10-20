@@ -164,6 +164,7 @@
 	import { ticketHrefIn } from '$lib/ticket-host';
 	import { dayPlanHref, inboxItemHref, recurrenceHref, recurrencesHref } from '$lib/ticket-links';
 	import { hasUnsavedInput } from '$lib/unsaved-input';
+	import { WayBack, setWayBack } from '$lib/way-back';
 
 	// Shell of every signed-in page (E2 plan, T-4). The root layout renders it only with a
 	// session; the login page stays outside this group.
@@ -247,6 +248,12 @@
 	afterNavigate(({ to }) => {
 		if (to) lastView.remember(to.url);
 	});
+	// The entry of the history before the page (MO-4, ADR-0073 addendum MO-4): the arrow of a panel
+	// shown as a page in the phone frame goes back through the history when it holds the view.
+	const wayBack = setWayBack(new WayBack());
+	afterNavigate(({ type, from, delta }) =>
+		wayBack.arrived({ type, from: from?.url ?? null, delta })
+	);
 	// Recurrence rules (E5 plan, T-7): all of them, for the table, the panel and the overview;
 	// results of their actions go out as flags (package 5). They come first: a change of an open
 	// ticket of a series in the panel, a cell or a bulk action offers the same for the template of

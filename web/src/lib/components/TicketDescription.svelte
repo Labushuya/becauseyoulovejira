@@ -203,4 +203,19 @@
 		font-size: var(--font-size-body);
 		color: var(--color-text-muted);
 	}
+
+	/*
+	 * Phone frame (MO-4, ADR-0073 addendum MO-4): "Speichern" and "Abbrechen" stay at the bottom of
+	 * the page while the description is longer than the screen above the keyboard.
+	 */
+	@media (max-width: 39.99rem) {
+		:global(:root[data-mobile-layout='on']) .buttons {
+			position: sticky;
+			bottom: 0;
+			z-index: 1;
+			padding-block: 0.5rem;
+			background: var(--color-surface);
+			border-top: 1px solid var(--color-line);
+		}
+	}
 </style>

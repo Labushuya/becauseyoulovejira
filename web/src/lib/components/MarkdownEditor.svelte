@@ -131,4 +131,12 @@
 		font-size: 0.8125rem;
 		color: var(--color-text-muted);
 	}
+
+	/* Phone frame (MO-4, ADR-0073 addendum MO-4): "Schreiben" and "Vorschau" as targets of 44 px. */
+	@media (max-width: 39.99rem) {
+		:global(:root[data-mobile-layout='on']) .modes button {
+			min-height: var(--control-height-touch);
+			padding-inline: 0.75rem;
+		}
+	}
 </style>

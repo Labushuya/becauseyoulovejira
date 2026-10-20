@@ -19,6 +19,7 @@
 		type TagChangeNames
 	} from '$lib/domain/subtask-transfer-change';
 	import { TITLE_MAX_LENGTH, type TicketSummary } from '$lib/domain/ticket';
+	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 	import { flagOutlets } from '$lib/overlay/flag-outlets.svelte';
 	import { insideModal } from '$lib/overlay/modal-context';
 	import { findAssignees, type AssigneeSource } from '$lib/stores/assignees.svelte';
@@ -62,6 +63,8 @@
 	// a change of the ticket opens the same dialog here in its mode "nach Änderung"; the focus goes to
 	// "Auf Unteraufgaben übertragen …" first, so it comes back there. In the side panel the dialog
 	// waits while another dialog is open (the flag stood in front of it): no dialog over a dialog.
+	// In the phone frame (MO-4, ADR-0073 addendum MO-4) the check mark stands in a target of 44 px
+	// (a label around it, as in the cards of "Aufgaben"), the title and the status menu as well.
 	let {
 		ticket,
 		list,
@@ -96,6 +99,10 @@
 		/** Members of the household for the name of the assignee; none outside the layout. */
 		assignees?: AssigneeSource | null;
 	} = $props();
+
+	const mobileLayout = getMobileLayoutStore();
+	/** The phone frame applies: the check mark in a target of 44 px (MO-4). */
+	const framed = $derived(mobileLayout.active);
 
 	const uid = $props.id();
 	const ids = {
@@ -288,12 +295,24 @@
 		<ul class="list" aria-labelledby={ids.title}>
 			{#each subtasks as child (child.id)}
 				<li class="item" class:done={child.status === 'done'}>
-					<DoneToggle
-						key={child.key}
-						checked={list.isChecked(child)}
-						pending={list.isPending(child.id)}
-						onchange={(done) => toggleDone(child, done)}
-					/>
+					{#if framed}
+						<!-- One tap anywhere in the target completes; the name stays the one of the box. -->
+						<label class="check-target">
+							<DoneToggle
+								key={child.key}
+								checked={list.isChecked(child)}
+								pending={list.isPending(child.id)}
+								onchange={(done) => toggleDone(child, done)}
+							/>
+						</label>
+					{:else}
+						<DoneToggle
+							key={child.key}
+							checked={list.isChecked(child)}
+							pending={list.isPending(child.id)}
+							onchange={(done) => toggleDone(child, done)}
+						/>
+					{/if}
 					<span class="key">{child.key}</span>
 					<a class="child-title" href={hrefOf(child.id)}>{child.title}</a>
 					<span class="status-menu">
@@ -586,6 +605,35 @@
 	/* Touch screens: the menu of the status is as easy to hit as the other controls (44 px). */
 	@media (pointer: coarse) {
 		.status-menu :global(button.cell-edit) {
+			min-height: var(--control-height-touch);
+		}
+	}
+
+	/*
+	 * Phone frame (MO-4, ADR-0073 addendum MO-4), whatever the pointer: the check mark in a target of
+	 * 44 × 44 px, the title as a link over the height of the row, the menu of the status 44 px.
+	 */
+	@media (max-width: 39.99rem) {
+		:global(:root[data-mobile-layout='on']) .item {
+			gap: 0.25rem 0.5rem;
+			padding: 0;
+		}
+
+		:global(:root[data-mobile-layout='on']) .check-target {
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			min-width: var(--control-height-touch);
+			min-height: var(--control-height-touch);
+			cursor: pointer;
+		}
+
+		/* One line with the ellipsis of the PC, the height of the target. */
+		:global(:root[data-mobile-layout='on']) .child-title {
+			line-height: var(--control-height-touch);
+		}
+
+		:global(:root[data-mobile-layout='on']) .status-menu :global(button.cell-edit) {
 			min-height: var(--control-height-touch);
 		}
 	}

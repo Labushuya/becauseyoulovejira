@@ -128,3 +128,29 @@
 	flex: 1;
 	min-width: 0;
 }
+
+/*
+ * Phone frame (MO-4, ADR-0073 addendum MO-4): a task of the text is a target of 44 px. Its box keeps
+ * its size in the text; an invisible area of 44 × 44 px around it takes the tap, and the tasks of a
+ * list stand far enough apart that two areas never meet. The editor has a label around each box,
+ * which base.css already makes 44 px high.
+ */
+@media (max-width: 39.99rem) {
+	:root[data-mobile-layout='on'] .prose li[data-task] {
+		padding-block: 0.875rem;
+	}
+
+	:root[data-mobile-layout='on']
+		.prose
+		:is(li[data-task] > input, li[data-task] > p:first-child > input) {
+		position: relative;
+	}
+
+	:root[data-mobile-layout='on']
+		.prose
+		:is(li[data-task] > input, li[data-task] > p:first-child > input)::after {
+		position: absolute;
+		inset: calc((var(--control-height-touch) - 1rem) / -2);
+		content: '';
+	}
+}
