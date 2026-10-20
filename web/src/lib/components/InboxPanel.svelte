@@ -41,7 +41,9 @@
 		isMainSource,
 		pageCopyText
 	} from '$lib/domain/sources';
+	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 	import { convertHref } from '$lib/ticket-links';
+	import ActionsMenu, { type MenuAction } from './ActionsMenu.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import ProblemDetails from './problems/ProblemDetails.svelte';
 	import TrashNotice from './TrashNotice.svelte';
@@ -73,6 +75,12 @@
 	// "Herunterladen" ask the server for the current file; why nothing opened (gone, moved out of the
 	// folders) stands neutral at the entry. Tickets open in the inbox instead of the entry (ADR-0054);
 	// back from one, the focus goes to its link once the entry is loaded (`initialFocus`).
+	// In the phone frame (MO-6, ADR-0073 addendum MO-6) the panel is a page like the ticket (MO-4):
+	// the head holds the arrow back (`backLabel`, `onback`) and "•••" with what is needed less often
+	// ("Mit Ticket verknüpfen …", moving to the other area, the files), the footer only the main
+	// actions, "Verwerfen" and "Umwandeln" side by side, or "Wiederherstellen"; nothing goes away.
+	// Values that are links and the links of a possible duplicate are targets of 44 px. Off, or from
+	// 40rem, the panel stays as it was.
 	let {
 		id,
 		store,
@@ -83,6 +91,8 @@
 		sources = null,
 		picker,
 		onclose,
+		backLabel,
+		onback,
 		initialFocus = null
 	}: {
 		id: string;
@@ -101,6 +111,10 @@
 		picker?: TicketPickerSource;
 		/** × and Escape: back to the list with the chips of the URL. */
 		onclose: () => void;
+		/** Name of the arrow back of the page in the phone frame (MO-6), e.g. "Zum Eingang". */
+		backLabel?: string;
+		/** The arrow back in the phone frame; without it the way of the ×. */
+		onback?: () => void;
 		/**
 		 * Where the focus goes once the entry is loaded instead of its title: the link of the ticket
 		 * the user came back from (ADR-0054 §7); null or no element keeps the title.
@@ -299,57 +313,132 @@
 			savingPage = false;
 		}
 	}
+
+	/** The phone frame applies: the panel is a page with "•••" and the main actions below (MO-6). */
+	const mobileLayout = getMobileLayoutStore();
+	const phone = $derived(mobileLayout.active);
+
+	/**
+	 * "•••" of the page in the phone frame (MO-6): the actions of the panel that are needed less
+	 * often, one level deeper; the same that the panel of the PC shows as buttons.
+	 */
+	function moreOf(entry: InboxItem): MenuAction[] {
+		const entries: MenuAction[] = [];
+		if (entry.state === 'new' && sources !== null) {
+			entries.push({
+				label: 'Mit Ticket verknüpfen …',
+				dialog: true,
+				locked: store.isPending(entry.id),
+				onselect: () => (linking = true)
+			});
+		}
+		// Moving between the areas (E7-4, ADR-0061): an entry with a ticket moves with it.
+		if (entry.ticketId === null) {
+			const move = mover.entry({
+				kind: 'item',
+				records: [entry],
+				label: `Eintrag „${entry.title}“`
+			});
+			if (move !== null) entries.push({ label: move.label, dialog: true, onselect: move.run });
+		}
+		if (entry.channel === 'folder' && viewer !== null && filesHere) {
+			const busy = viewer.isBusy(entry.id);
+			entries.push(
+				{
+					label: 'Ansehen',
+					separated: entries.length > 0,
+					busy,
+					onselect: () => void view(entry, false)
+				},
+				{ label: 'Herunterladen', busy, onselect: () => void view(entry, true) }
+			);
+		}
+		if (entry.original !== '') {
+			entries.push({
+				label: 'Originaldatei herunterladen',
+				separated: entries.length > 0,
+				busy: downloading,
+				onselect: () => void download(entry)
+			});
+		}
+		return entries;
+	}
+
+	/** The footer of the page holds only the main actions; a linked entry has none (MO-6). */
+	const footerShown = $derived(!phone || (item !== null && item.state !== 'converted'));
 </script>
 
 {#snippet entryActions(entry: InboxItem)}
-	{#if entry.channel === 'folder' && viewer !== null && filesHere}
-		<button
-			class="button-secondary"
-			type="button"
-			aria-busy={viewer.isBusy(entry.id) ? 'true' : undefined}
-			onclick={() => void view(entry, false)}>Ansehen</button
-		>
-		<button
-			class="button-secondary"
-			type="button"
-			aria-busy={viewer.isBusy(entry.id) ? 'true' : undefined}
-			onclick={() => void view(entry, true)}>Herunterladen</button
-		>
-	{/if}
-	{#if entry.original !== ''}
-		<button
-			class="button-secondary"
-			type="button"
-			aria-busy={downloading ? 'true' : undefined}
-			onclick={() => download(entry)}>Originaldatei herunterladen</button
-		>
-	{/if}
-	{#if entry.state === 'new'}
-		<button
-			class="button-secondary"
-			type="button"
-			disabled={store.isPending(entry.id)}
-			aria-busy={store.isPending(entry.id) ? 'true' : undefined}
-			onclick={() => run(() => store.discard(entry.id))}>Verwerfen</button
-		>
-		{#if sources !== null}
+	{#if phone}
+		<!-- The main actions of the page side by side; the rest is in "•••" of the head (MO-6). -->
+		{#if entry.state === 'new'}
+			<button
+				class="button-secondary entry-main"
+				type="button"
+				disabled={store.isPending(entry.id)}
+				aria-busy={store.isPending(entry.id) ? 'true' : undefined}
+				onclick={() => run(() => store.discard(entry.id))}>Verwerfen</button
+			>
+			<a class="button-primary entry-action entry-main" href={convertHref(entry.id)}>Umwandeln</a>
+		{:else if entry.state === 'discarded'}
+			<button
+				class="button-secondary entry-main"
+				type="button"
+				disabled={store.isPending(entry.id)}
+				aria-busy={store.isPending(entry.id) ? 'true' : undefined}
+				onclick={() => run(() => store.restore(entry.id))}>Wiederherstellen</button
+			>
+		{/if}
+	{:else}
+		{#if entry.channel === 'folder' && viewer !== null && filesHere}
+			<button
+				class="button-secondary"
+				type="button"
+				aria-busy={viewer.isBusy(entry.id) ? 'true' : undefined}
+				onclick={() => void view(entry, false)}>Ansehen</button
+			>
+			<button
+				class="button-secondary"
+				type="button"
+				aria-busy={viewer.isBusy(entry.id) ? 'true' : undefined}
+				onclick={() => void view(entry, true)}>Herunterladen</button
+			>
+		{/if}
+		{#if entry.original !== ''}
+			<button
+				class="button-secondary"
+				type="button"
+				aria-busy={downloading ? 'true' : undefined}
+				onclick={() => download(entry)}>Originaldatei herunterladen</button
+			>
+		{/if}
+		{#if entry.state === 'new'}
 			<button
 				class="button-secondary"
 				type="button"
 				disabled={store.isPending(entry.id)}
 				aria-busy={store.isPending(entry.id) ? 'true' : undefined}
-				onclick={() => (linking = true)}>Mit Ticket verknüpfen …</button
+				onclick={() => run(() => store.discard(entry.id))}>Verwerfen</button
+			>
+			{#if sources !== null}
+				<button
+					class="button-secondary"
+					type="button"
+					disabled={store.isPending(entry.id)}
+					aria-busy={store.isPending(entry.id) ? 'true' : undefined}
+					onclick={() => (linking = true)}>Mit Ticket verknüpfen …</button
+				>
+			{/if}
+			<a class="button-primary entry-action" href={convertHref(entry.id)}>Umwandeln</a>
+		{:else if entry.state === 'discarded'}
+			<button
+				class="button-secondary"
+				type="button"
+				disabled={store.isPending(entry.id)}
+				aria-busy={store.isPending(entry.id) ? 'true' : undefined}
+				onclick={() => run(() => store.restore(entry.id))}>Wiederherstellen</button
 			>
 		{/if}
-		<a class="button-primary entry-action" href={convertHref(entry.id)}>Umwandeln</a>
-	{:else if entry.state === 'discarded'}
-		<button
-			class="button-secondary"
-			type="button"
-			disabled={store.isPending(entry.id)}
-			aria-busy={store.isPending(entry.id) ? 'true' : undefined}
-			onclick={() => run(() => store.restore(entry.id))}>Wiederherstellen</button
-		>
 	{/if}
 {/snippet}
 
@@ -396,11 +485,34 @@
 	</section>
 {/snippet}
 
-<Drawer labelledby={headingId} closeFromFields {onclose}>
+{#snippet panelFooter()}
+	{#if item !== null}
+		{@render entryActions(item)}
+	{/if}
+{/snippet}
+
+<Drawer
+	labelledby={headingId}
+	closeFromFields
+	{onclose}
+	{backLabel}
+	{onback}
+	footer={footerShown ? panelFooter : undefined}
+>
 	{#snippet context()}Eintrag im Eingang{/snippet}
 	{#snippet actions()}
-		<!-- Moving between the areas (E7-4, ADR-0061): an entry with a ticket moves with it. -->
-		{#if item !== null && item.ticketId === null}
+		<!-- In the phone frame "•••" holds what the panel of the PC shows besides (MO-6). Moving
+		     between the areas (E7-4, ADR-0061): an entry with a ticket moves with it. -->
+		{#if phone}
+			{#if item !== null && moreOf(item).length > 0}
+				<ActionsMenu
+					label={`Weitere Aktionen für „${item.title}“`}
+					buttonLabel="Weitere Aktionen"
+					buttonTitle="Weitere Aktionen"
+					items={moreOf(item)}
+				/>
+			{/if}
+		{:else if item !== null && item.ticketId === null}
 			{@const move = mover.entry({
 				kind: 'item',
 				records: [item],
@@ -411,11 +523,6 @@
 					{move.label}
 				</button>
 			{/if}
-		{/if}
-	{/snippet}
-	{#snippet footer()}
-		{#if item !== null}
-			{@render entryActions(item)}
 		{/if}
 	{/snippet}
 
@@ -724,5 +831,24 @@
 
 	.assign {
 		margin-left: 0.5rem;
+	}
+
+	/*
+	 * Phone frame (MO-6, ADR-0073 addendum MO-6): the main actions share the footer of the page in
+	 * equal widths; a link that is the value of a row (the address of the source) and the tickets of
+	 * a possible duplicate are targets of 44 px. Long values wrap (overflow-wrap above).
+	 */
+	@media (max-width: 39.99rem) {
+		:global(:root[data-mobile-layout='on']) .entry-main {
+			flex: 1 1 0;
+			white-space: nowrap;
+		}
+
+		:global(:root[data-mobile-layout='on']) dd a,
+		:global(:root[data-mobile-layout='on']) .duplicate li > a {
+			display: inline-flex;
+			align-items: center;
+			min-height: var(--control-height-touch);
+		}
 	}
 </style>

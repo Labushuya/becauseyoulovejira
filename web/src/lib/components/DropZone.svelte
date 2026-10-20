@@ -1,13 +1,15 @@
 <script lang="ts">
 	import type { ResolvedPathname } from '$app/types';
 	import { MAIL_MAX_MB } from '$lib/domain/inbox-mail';
+	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 	import { importCounts, type FileImportResult } from '$lib/stores/mail-import';
 	import ErrorIcon from './ErrorIcon.svelte';
 
 	// Drop zone of the inbox view (E4 plan, packages 8, 14 and 16): mail files (.eml), calendar files
 	// (.ics) and WhatsApp exports (.txt, .zip; they open the selection view) by drag and drop or, for the keyboard, with "Datei wählen"; several at once. Each file
 	// gets its own result: "neu" and "schon vorhanden" with a link, the counts of a calendar file,
-	// or an error with icon and reason.
+	// or an error with icon and reason. In the phone frame (MO-6) nothing is dragged: the hint names
+	// only "Datei wählen".
 	let {
 		busy = false,
 		results = [],
@@ -25,6 +27,7 @@
 
 	const uid = $props.id();
 	const hintId = `${uid}-hint`;
+	const mobileLayout = getMobileLayoutStore();
 
 	let picker = $state<HTMLInputElement>();
 	let active = $state(false);
@@ -69,7 +72,9 @@
 >
 	<p id={hintId}>
 		Mail-Dateien (.eml; über {MAIL_MAX_MB} MB ohne Originaldatei), Kalenderdateien (.ics) und WhatsApp-Chatexporte
-		(.txt, .zip; je höchstens 20 MB) hierher ziehen. Bilder und Links der Mail werden nicht geladen.
+		(.txt, .zip; je höchstens 20 MB) {mobileLayout.active
+			? 'mit „Datei wählen“ übernehmen'
+			: 'hierher ziehen'}. Bilder und Links der Mail werden nicht geladen.
 	</p>
 	<button
 		class="button-secondary"

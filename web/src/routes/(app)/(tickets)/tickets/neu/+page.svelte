@@ -20,6 +20,7 @@
 	import { getRecurrenceStore } from '$lib/stores/recurrence.svelte';
 	import { getTicketDetailStore, type CreateResult } from '$lib/stores/ticket-detail.svelte';
 	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
+	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 	import {
 		convertFrom,
 		inboxItemHref,
@@ -27,6 +28,7 @@
 		ticketHref,
 		withoutConvert
 	} from '$lib/ticket-links';
+	import { backThroughHistory, findWayBack } from '$lib/way-back';
 
 	// "Neues Ticket" (E2 plan, T-8; E3 plan, T-13 and T-14; NT-1, ADR-0069): after creating, the panel
 	// switches to the new ticket in place (replaceState), so "back" leads to the list and not to an
@@ -43,6 +45,17 @@
 	// "Wiederholen" with it as its instance (if that fails, the ticket stays and its panel offers
 	// "Wiederholen…" with the same values). A calendar series may bring a rule (E5 plan, package 6;
 	// ADR-0024 section 1).
+	// Cancelling a conversion in the phone frame (MO-6): back through the history to where
+	// "Umwandeln" was tapped (the card of the inbox or the page of the entry), when a link of the app
+	// led here; else, and on the PC, to the entry. So the history gets no loop of form and entry.
+	const mobileLayout = getMobileLayoutStore();
+	const wayBack = findWayBack();
+
+	function cancelConversion(id: string) {
+		if (backThroughHistory(mobileLayout.active, wayBack)) history.back();
+		else void goto(inboxItemHref(id));
+	}
+
 	const detail = getTicketDetailStore();
 	const rules = getRecurrenceStore();
 	const catalog = getCatalogStore();
@@ -192,8 +205,10 @@
 			goto(ticketHref(id, item === null ? page.url : withoutConvert(page.url)), {
 				replaceState: true
 			})}
-		oncancel={() =>
-			goto(item === null || convert === null ? listHref(page.url) : inboxItemHref(convert))}
+		oncancel={() => {
+			if (item === null || convert === null) void goto(listHref(page.url));
+			else cancelConversion(convert);
+		}}
 	/>
 {/snippet}
 

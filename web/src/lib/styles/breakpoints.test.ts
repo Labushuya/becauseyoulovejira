@@ -136,14 +136,19 @@ describe('breakpoints (MO-1a, ADR-0073)', () => {
 		// at the bottom, the toolbar of the editor, the tabs, the rows of the sub-tasks, the tags, the
 		// path, the parent, the charms, the tasks of the text, the save buttons above the keyboard);
 		// since MO-5 the sheet of the quick entry (its two buttons side by side, the folded help, the
-		// link to the result).
+		// link to the result); since MO-6 the inbox (its cards, the bar of the selection, the filter
+		// sheet, the page of an entry with its main actions) and the button "Filter" shared with
+		// "Aufgaben".
 		expect([...new Set(places)].sort()).toEqual([
 			'lib/components/Breadcrumbs.svelte',
 			'lib/components/CharmPicker.svelte',
 			'lib/components/CommentForm.svelte',
 			'lib/components/CommentItem.svelte',
 			'lib/components/FilterBar.svelte',
+			'lib/components/FilterButton.svelte',
 			'lib/components/FilterSheet.svelte',
+			'lib/components/InboxPanel.svelte',
+			'lib/components/InboxTable.svelte',
 			'lib/components/MarkdownEditor.svelte',
 			'lib/components/QuickCapture.svelte',
 			'lib/components/SectionBar.svelte',

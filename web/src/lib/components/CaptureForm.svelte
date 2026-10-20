@@ -9,10 +9,12 @@
 		DEFAULT_CAPTURE_TARGET,
 		EMPTY_CAPTURE_INPUT,
 		FIXED_TARGETS,
+		SENTENCE_FIELDS,
 		TEMPLATE_FIELDS,
 		TEMPLATE_LABELS,
 		TEMPLATE_TAGS,
 		buildCapture,
+		enterKeyOf,
 		targetOf,
 		type Capture,
 		type CaptureErrors,
@@ -25,6 +27,7 @@
 	import type { EnsureTagResult } from '$lib/stores/catalog.svelte';
 	import type { CaptureSaveResult } from '$lib/stores/capture';
 	import type { ProblemEntry } from '$lib/domain/problems';
+	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 	import { registerUnsavedInput } from '$lib/unsaved-input';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import PrioritySelect from './PrioritySelect.svelte';
@@ -40,6 +43,11 @@
 	// template and announces the result with a link. A web link (package 7, bookmarklet) always
 	// goes into the inbox; the form comes filled from the page, and nothing is saved before the
 	// click. A duplicate is named neutrally with a link to what exists.
+	// In the phone frame (MO-6, ADR-0073 addendum MO-6) the page is a page of the frame (MO-4): the
+	// fields of prose start sentences with a capital letter, the Enter key of the keyboard says "next"
+	// while a required field follows and "done" where it saves, the hint names no keys, and a press on
+	// the button that saves keeps the focus in the field, so the keyboard stays open for the next
+	// object (as in the quick entry, MO-5). Off, or from 40rem, the form stays as it was.
 	let {
 		template,
 		initial = {},
@@ -51,6 +59,7 @@
 		onsave,
 		onsavepage,
 		onclose,
+		backLabel,
 		resultHref
 	}: {
 		template: CaptureTemplate;
@@ -76,9 +85,20 @@
 			title: string
 		) => Promise<{ ok: true; truncated: boolean } | { ok: false; message: string | null }>;
 		onclose: () => void;
+		/** Name of the arrow back of the page in the phone frame (MO-6), e.g. "Zum Eingang". */
+		backLabel?: string;
 		/** Address of a saved ticket or entry, for the link in the result. */
 		resultHref: (target: CaptureTarget, id: string) => ResolvedPathname;
 	} = $props();
+
+	/** The phone frame applies: keyboard hints of the fields and no keys in the hint (MO-6). */
+	const mobileLayout = getMobileLayoutStore();
+	const phone = $derived(mobileLayout.active);
+
+	/** `autocapitalize` of a field: sentences for prose, only in the phone frame (MO-6). */
+	function capitalize(field: CaptureField): 'sentences' | undefined {
+		return phone && SENTENCE_FIELDS.has(field) ? 'sentences' : undefined;
+	}
 
 	/** The question before entered data is lost (ADR-0025 section 4); "Weiter bearbeiten" keeps it. */
 	let confirmingDiscard = $state(false);
@@ -257,7 +277,7 @@
 	</label>
 {/snippet}
 
-<Drawer labelledby={headingId} closeFromFields onclose={close} {onkeydown}>
+<Drawer labelledby={headingId} closeFromFields onclose={close} {backLabel} {onkeydown}>
 	{#snippet context()}Eingang{/snippet}
 	{#snippet footer()}
 		<button class="button-secondary" type="button" onclick={close}>Schließen</button>
@@ -267,6 +287,7 @@
 			form={formId}
 			aria-disabled={pending ? 'true' : undefined}
 			aria-busy={pending ? 'true' : undefined}
+			onmousedown={(event) => mobileLayout.keepFocus(event)}
 		>
 			{pending
 				? 'Wird gespeichert …'
@@ -333,6 +354,7 @@
 						id={fieldId(field)}
 						data-capture-field
 						rows="5"
+						autocapitalize={capitalize(field)}
 						maxlength={field === 'excerpt' ? INBOX_BODY_MAX_LENGTH : undefined}
 						required={required || undefined}
 						aria-required={required ? 'true' : undefined}
@@ -363,6 +385,7 @@
 						data-capture-field
 						type="url"
 						inputmode="url"
+						enterkeyhint={phone ? enterKeyOf(template, field) : undefined}
 						maxlength={INBOX_SOURCE_URL_MAX_LENGTH}
 						required={required || undefined}
 						aria-required={required ? 'true' : undefined}
@@ -435,6 +458,8 @@
 						id={fieldId(field)}
 						data-capture-field
 						type={field === 'phone' ? 'tel' : 'text'}
+						autocapitalize={capitalize(field)}
+						enterkeyhint={phone ? enterKeyOf(template, field) : undefined}
 						maxlength={TITLE_MAX_LENGTH}
 						required={required || undefined}
 						aria-required={required ? 'true' : undefined}
@@ -456,7 +481,7 @@
 				<input
 					type="checkbox"
 					checked={target === 'inbox'}
-					aria-describedby={targetHintId}
+					aria-describedby={phone ? undefined : targetHintId}
 					onchange={(event) => (target = event.currentTarget.checked ? 'inbox' : 'ticket')}
 				/>
 				In den Eingang statt direkt als Ticket
@@ -476,7 +501,12 @@
 			</p>
 		{/if}
 
-		<p class="hint" id={targetHintId}>Tipp: Strg+Enter speichert, Alt+Enter legt in den Eingang.</p>
+		{#if !phone}
+			<!-- The phone has no such keys (MO-6); its keyboard says what Enter does. -->
+			<p class="hint" id={targetHintId}>
+				Tipp: Strg+Enter speichert, Alt+Enter legt in den Eingang.
+			</p>
+		{/if}
 	</form>
 </Drawer>
 

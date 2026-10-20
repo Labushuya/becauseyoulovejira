@@ -13,6 +13,7 @@ import {
 	INVALID_TIME_MESSAGE,
 	INVALID_URL_MESSAGE,
 	REQUIRED_MESSAGE,
+	SENTENCE_FIELDS,
 	TEMPLATE_FIELDS,
 	TEMPLATE_KINDS,
 	TEMPLATE_PARAM,
@@ -20,6 +21,7 @@ import {
 	buildCapture,
 	captureInboxDraft,
 	captureTicketDraft,
+	enterKeyOf,
 	fitTitle,
 	shoppingItems,
 	targetOf,
@@ -359,5 +361,28 @@ describe('templates: web link (E4 plan, package 7)', () => {
 		const capture = built('link', { url: 'http://example.com', what: 'T' });
 		expect(capture.body).toBe('');
 		expect(capture.description).toBe('- **Link:** <http://example.com>');
+	});
+});
+
+describe('templates: the on-screen keyboard of the phone frame (MO-6)', () => {
+	it('says "next" while a required field follows and "done" where Enter saves', () => {
+		expect(enterKeyOf('todo', 'what')).toBe('done');
+		expect(enterKeyOf('call', 'who')).toBe('done');
+		expect(enterKeyOf('call', 'phone')).toBe('done');
+		expect(enterKeyOf('shopping', 'store')).toBe('done');
+		expect(enterKeyOf('event', 'what')).toBe('next');
+		expect(enterKeyOf('event', 'place')).toBe('done');
+		expect(enterKeyOf('project_task', 'what')).toBe('done');
+		expect(enterKeyOf('link', 'url')).toBe('next');
+		expect(enterKeyOf('link', 'what')).toBe('done');
+	});
+
+	it('starts sentences with a capital letter in the fields of prose only', () => {
+		expect([...SENTENCE_FIELDS].sort()).toEqual(
+			['excerpt', 'items', 'place', 'reason', 'store', 'what', 'who'].sort()
+		);
+		for (const field of ['phone', 'url', 'date', 'time', 'due', 'project', 'priority', 'tags']) {
+			expect(SENTENCE_FIELDS.has(field as never), field).toBe(false);
+		}
 	});
 });

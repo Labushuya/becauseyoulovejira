@@ -10,8 +10,11 @@
 	import { getInboxStore } from '$lib/stores/inbox.svelte';
 	import { getTicketDetailStore } from '$lib/stores/ticket-detail.svelte';
 	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
+	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
+	import { INBOX_HOST } from '$lib/ticket-host';
 	import { inboxHref, inboxItemHref, withTemplate } from '$lib/ticket-links';
 	import { ticketLinks } from '$lib/stores/open-mode.svelte';
+	import { findWayBack, goBack } from '$lib/way-back';
 
 	// Ticket links open the panel or the full view, as the user last chose (plan BI-1).
 	const links = ticketLinks();
@@ -43,6 +46,18 @@
 			: null
 	);
 
+	// Closing in the phone frame (MO-6): back through the history when the inbox lies right before the
+	// page ("Erfassen" there), like the back gesture, so the list keeps its place and the history gets
+	// no second entry of it; from elsewhere (the bookmarklet) to the inbox, as on the PC.
+	const mobileLayout = getMobileLayoutStore();
+	const wayBack = findWayBack();
+
+	function close() {
+		const inbox = inboxHref(page.url);
+		if (mobileLayout.active) goBack(wayBack, inbox, () => void goto(inbox));
+		else void goto(inbox);
+	}
+
 	const deps: CaptureDeps = {
 		ensureTag: (name) => catalog.ensureTag(name),
 		createTicket: async (draft) => {
@@ -72,7 +87,8 @@
 			goto(withTemplate(page.url, next), { replaceState: true, keepFocus: true, noScroll: true })}
 		onsave={(capture, target) => saveCapture(capture, target, deps)}
 		onsavepage={(id, title) => inbox.savePage({ id, title })}
-		onclose={() => goto(inboxHref(page.url))}
+		onclose={close}
+		backLabel={INBOX_HOST.backLabel}
 		resultHref={(target, id) =>
 			target === 'ticket' ? links.path(id) : inboxItemHref(id, page.url)}
 	/>

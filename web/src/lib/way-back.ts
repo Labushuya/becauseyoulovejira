@@ -50,6 +50,23 @@ export class WayBack {
 	isPrevious(href: string): boolean {
 		return this.#previous !== null && this.#previous === href;
 	}
+
+	/**
+	 * The entry before the current page (path and query), null when the app does not know it. Read
+	 * when the arrow is pressed (MO-6): it is set after the page has rendered.
+	 */
+	get previous(): string | null {
+		return this.#previous;
+	}
+}
+
+/**
+ * Whether the arrow of a form page goes back through the history (MO-6): only in the phone frame
+ * and only when a link or `goto` of the app led to the page, so the page before is where the form
+ * was opened ("Umwandeln" of a card or an entry). Otherwise the form keeps its way of the PC.
+ */
+export function backThroughHistory(phone: boolean, wayBack: WayBack | null): boolean {
+	return phone && wayBack !== null && wayBack.previous !== null;
 }
 
 const [getWayBack, setWayBack, hasWayBack] = createContext<WayBack>();
