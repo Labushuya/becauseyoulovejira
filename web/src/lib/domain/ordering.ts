@@ -142,6 +142,16 @@ export function nextSort(spec: SortSpec | null, key: SortKey): SortSpec | null {
 }
 
 /**
+ * The sort chosen in the filter sheet of the phone frame (MO-3, ADR-0073 addendum MO-3), where the
+ * cards have no column headers to click: null is the default order, another column starts in its
+ * natural direction like a first click, the column already sorted keeps its direction.
+ */
+export function chooseSortKey(spec: SortSpec | null, key: SortKey | null): SortSpec | null {
+	if (key === null) return null;
+	return spec !== null && spec.key === key ? spec : { key, reversed: false };
+}
+
+/**
  * German order for text (T-5): case and accents do not count ("Äpfel" next to "Apfel"), digits
  * count as numbers ("Ticket 2" before "Ticket 10").
  */

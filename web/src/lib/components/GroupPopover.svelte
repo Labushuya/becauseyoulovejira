@@ -18,11 +18,17 @@
 	// (disabled) with a hint while there is no first level; choosing the second level as first
 	// clears the second. "Nach Zuständigkeit" (ADR-0068 §3) only in a household, or while the address
 	// asks for it.
+	// In the filter sheet of the phone frame (MO-3, ADR-0073 addendum MO-3) the same fieldsets stand
+	// in the sheet itself (`inline`), without the button and the popover: a choice applies at once and
+	// leaves the sheet open, like every filter in it.
 	let {
-		household
+		household,
+		inline = false
 	}: {
 		/** The area of the tab is the household; without it the directory of the layout decides. */
 		household?: boolean;
+		/** The choices without button and popover, inside another overlay (the filter sheet). */
+		inline?: boolean;
 	} = $props();
 
 	const uid = $props.id();
@@ -96,66 +102,76 @@
 	}
 </script>
 
-<div class="group-popover">
-	<Popover
-		kind="panel"
-		labelledby={legendId}
-		placement="bottom-end"
-		buttonClass={grouping === null ? 'toggle' : 'toggle active'}
+{#snippet fieldsets(close: () => void)}
+	<fieldset>
+		<legend id={legendId}>Gruppieren</legend>
+		{#each choices as choice, index (choice.value)}
+			{@const checked = (grouping ?? NONE) === choice.value}
+			<label class="choice" class:checked class:after-none={index === 1}>
+				<input
+					type="radio"
+					name={`${uid}-grouping`}
+					value={choice.value}
+					{checked}
+					onchange={chooseFirst}
+					onclick={(event) => closeOnClick(event, close)}
+					onkeydown={(event) => closeOnEnter(event, close)}
+				/>
+				{choice.label}
+			</label>
+		{/each}
+	</fieldset>
+	<fieldset
+		class="second"
+		disabled={grouping === null}
+		aria-describedby={grouping === null ? secondHintId : undefined}
 	>
-		{#snippet button()}
-			<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-				<path d="M2.5 3.5h11M2.5 8h11M2.5 12.5h11M5 3.5v9" />
-			</svg>
-			{buttonLabel}
-		{/snippet}
-		{#snippet children({ close })}
-			<fieldset>
-				<legend id={legendId}>Gruppieren</legend>
-				{#each choices as choice, index (choice.value)}
-					{@const checked = (grouping ?? NONE) === choice.value}
-					<label class="choice" class:checked class:after-none={index === 1}>
-						<input
-							type="radio"
-							name={`${uid}-grouping`}
-							value={choice.value}
-							{checked}
-							onchange={chooseFirst}
-							onclick={(event) => closeOnClick(event, close)}
-							onkeydown={(event) => closeOnEnter(event, close)}
-						/>
-						{choice.label}
-					</label>
-				{/each}
-			</fieldset>
-			<fieldset
-				class="second"
-				disabled={grouping === null}
-				aria-describedby={grouping === null ? secondHintId : undefined}
-			>
-				<legend>Danach gruppieren</legend>
-				{#each secondChoices as choice, index (choice.value)}
-					{@const checked = (subGrouping ?? NONE) === choice.value}
-					<label class="choice" class:checked class:after-none={index === 1}>
-						<input
-							type="radio"
-							name={`${uid}-sub-grouping`}
-							value={choice.value}
-							{checked}
-							onchange={chooseSecond}
-							onclick={(event) => closeOnClick(event, close)}
-							onkeydown={(event) => closeOnEnter(event, close)}
-						/>
-						{choice.label}
-					</label>
-				{/each}
-				{#if grouping === null}
-					<p class="hint" id={secondHintId}>Erst eine erste Ebene wählen.</p>
-				{/if}
-			</fieldset>
-		{/snippet}
-	</Popover>
-</div>
+		<legend>Danach gruppieren</legend>
+		{#each secondChoices as choice, index (choice.value)}
+			{@const checked = (subGrouping ?? NONE) === choice.value}
+			<label class="choice" class:checked class:after-none={index === 1}>
+				<input
+					type="radio"
+					name={`${uid}-sub-grouping`}
+					value={choice.value}
+					{checked}
+					onchange={chooseSecond}
+					onclick={(event) => closeOnClick(event, close)}
+					onkeydown={(event) => closeOnEnter(event, close)}
+				/>
+				{choice.label}
+			</label>
+		{/each}
+		{#if grouping === null}
+			<p class="hint" id={secondHintId}>Erst eine erste Ebene wählen.</p>
+		{/if}
+	</fieldset>
+{/snippet}
+
+{#if inline}
+	<div class="group-choices">
+		{@render fieldsets(() => undefined)}
+	</div>
+{:else}
+	<div class="group-popover">
+		<Popover
+			kind="panel"
+			labelledby={legendId}
+			placement="bottom-end"
+			buttonClass={grouping === null ? 'toggle' : 'toggle active'}
+		>
+			{#snippet button()}
+				<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+					<path d="M2.5 3.5h11M2.5 8h11M2.5 12.5h11M5 3.5v9" />
+				</svg>
+				{buttonLabel}
+			{/snippet}
+			{#snippet children({ close })}
+				{@render fieldsets(close)}
+			{/snippet}
+		</Popover>
+	</div>
+{/if}
 
 <style>
 	.group-popover {

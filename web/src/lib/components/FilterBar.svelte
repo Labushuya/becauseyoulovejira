@@ -48,9 +48,14 @@
 	// chooses tasks or ongoing projects after "Wiederkehrend", only in "Aufgaben".
 	// "Zuständig" (E7-5, ADR-0068 §3) is a popover like "Tag", only in a household: "Niemand" and the
 	// members, the own account first.
+	// In the phone frame (MO-3, ADR-0073 addendum MO-3) "Aufgaben" shows the same bar in two parts, with
+	// the same state and the same rules: the search alone in the row of the view (`part` "search", with
+	// its failure below it), the chip groups and the choices in the filter sheet (`part` "filters",
+	// without search and "Zurücksetzen", which the sheet has in its footer). "bar" is the bar of the PC.
 	let {
 		catalog,
 		calendar = false,
+		part = 'bar',
 		searchBusy = false,
 		searchError = null,
 		onretrysearch = () => undefined,
@@ -59,6 +64,8 @@
 		catalog: CatalogStore;
 		/** The bar of the calendar: without "Fällig" and the search. */
 		calendar?: boolean;
+		/** The whole bar, only its search (phone row) or only its filters (filter sheet). */
+		part?: 'bar' | 'search' | 'filters';
 		/** A changed search waits for its pause or its answer. */
 		searchBusy?: boolean;
 		/** Failure of the search; the table then shows the tickets without search. */
@@ -216,7 +223,7 @@
 	}
 </script>
 
-<section class="filter-bar" aria-label="Filter" data-tour="filter-bar">
+{#snippet chipGroups()}
 	<ChipGroup
 		legend="Status"
 		name={`${uid}-status`}
@@ -263,110 +270,96 @@
 			onchange={(value: TicketKind | null) => setFilter('kind', value)}
 		/>
 	{/if}
+{/snippet}
 
-	<div class="selects">
-		{#if !calendar}
-			<div class="search-field">
-				<label for={ids.search}>
-					<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-						<circle cx="7" cy="7" r="4.25" />
-						<path d="M10.25 10.25L13.5 13.5" />
-					</svg>
-					<span class="visually-hidden">Suche</span>
-				</label>
-				<input
-					id={ids.search}
-					type="search"
-					enterkeyhint="search"
-					autocomplete="off"
-					spellcheck="false"
-					placeholder="Titel, Beschreibung oder Key"
-					maxlength={SEARCH_MAX_LENGTH}
-					value={searchValue}
-					aria-busy={searchBusy}
-					aria-describedby={searchError === null
-						? ids.searchHint
-						: `${ids.searchError} ${ids.searchHint}`}
-					oninput={(event) => void search(event.currentTarget.value)}
-					onkeydown={onSearchKeydown}
-					onblur={() => (typed = null)}
-				/>
-				<span class="visually-hidden" id={ids.searchHint}>
-					Die Suche beginnt ab {SEARCH_MIN_LENGTH} Zeichen.
-				</span>
-			</div>
-		{/if}
-
-		<FilterPopover
-			legend="Projekt"
-			name={`${uid}-project`}
-			options={projectOptions}
-			value={query.project}
-			valueNote={subProjects.length > 0 && !query.subProjects ? 'ohne Unterprojekte' : null}
-			onchange={setProject}
-		>
-			{#snippet footer()}
-				<label class="sub-projects">
-					<input
-						type="checkbox"
-						checked={query.subProjects}
-						aria-disabled={subProjects.length === 0 ? 'true' : undefined}
-						aria-describedby={ids.subProjectsHint}
-						onchange={toggleSubProjects}
-					/>
-					Unterprojekte einbeziehen
-				</label>
-				<span class="sub-projects-hint" id={ids.subProjectsHint}>
-					{#if subProjects.length === 0}
-						{query.project === null || query.project === NO_PROJECT
-							? 'Gilt, sobald ein Projekt mit Unterprojekten gewählt ist.'
-							: 'Das gewählte Projekt hat keine Unterprojekte.'}
-					{:else}
-						{subProjects.length === 1
-							? '1 Unterprojekt: '
-							: `${subProjects.length} Unterprojekte: `}{subProjects
-							.map((project) => project.name)
-							.join(', ')}
-					{/if}
-				</span>
-			{/snippet}
-		</FilterPopover>
-
-		<FilterPopover
-			legend="Tag"
-			name={`${uid}-tag`}
-			options={tagOptions}
-			value={query.tag}
-			onchange={(value) => setFilter('tag', value)}
-		/>
-
-		{#if assigneeShown}
-			<FilterPopover
-				legend="Zuständig"
-				name={`${uid}-assignee`}
-				options={assigneeOptions}
-				value={query.assignee}
-				onchange={(value) => setFilter('assignee', value)}
-			/>
-		{/if}
-
-		<button
-			class="button-secondary button-small reset"
-			type="button"
-			aria-disabled={filtered ? undefined : 'true'}
-			aria-describedby={filtered ? undefined : ids.resetHint}
-			onclick={reset}
-		>
+{#snippet searchField()}
+	<div class="search-field">
+		<label for={ids.search}>
 			<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-				<path d="M4 4l8 8M12 4l-8 8" />
+				<circle cx="7" cy="7" r="4.25" />
+				<path d="M10.25 10.25L13.5 13.5" />
 			</svg>
-			Zurücksetzen
-		</button>
-		{#if !filtered}
-			<span class="visually-hidden" id={ids.resetHint}>Kein Filter gesetzt.</span>
-		{/if}
+			<span class="visually-hidden">Suche</span>
+		</label>
+		<input
+			id={ids.search}
+			type="search"
+			enterkeyhint="search"
+			autocomplete="off"
+			spellcheck="false"
+			placeholder="Titel, Beschreibung oder Key"
+			maxlength={SEARCH_MAX_LENGTH}
+			value={searchValue}
+			aria-busy={searchBusy}
+			aria-describedby={searchError === null
+				? ids.searchHint
+				: `${ids.searchError} ${ids.searchHint}`}
+			oninput={(event) => void search(event.currentTarget.value)}
+			onkeydown={onSearchKeydown}
+			onblur={() => (typed = null)}
+		/>
+		<span class="visually-hidden" id={ids.searchHint}>
+			Die Suche beginnt ab {SEARCH_MIN_LENGTH} Zeichen.
+		</span>
 	</div>
+{/snippet}
 
+{#snippet choices()}
+	<FilterPopover
+		legend="Projekt"
+		name={`${uid}-project`}
+		options={projectOptions}
+		value={query.project}
+		valueNote={subProjects.length > 0 && !query.subProjects ? 'ohne Unterprojekte' : null}
+		onchange={setProject}
+	>
+		{#snippet footer()}
+			<label class="sub-projects">
+				<input
+					type="checkbox"
+					checked={query.subProjects}
+					aria-disabled={subProjects.length === 0 ? 'true' : undefined}
+					aria-describedby={ids.subProjectsHint}
+					onchange={toggleSubProjects}
+				/>
+				Unterprojekte einbeziehen
+			</label>
+			<span class="sub-projects-hint" id={ids.subProjectsHint}>
+				{#if subProjects.length === 0}
+					{query.project === null || query.project === NO_PROJECT
+						? 'Gilt, sobald ein Projekt mit Unterprojekten gewählt ist.'
+						: 'Das gewählte Projekt hat keine Unterprojekte.'}
+				{:else}
+					{subProjects.length === 1
+						? '1 Unterprojekt: '
+						: `${subProjects.length} Unterprojekte: `}{subProjects
+						.map((project) => project.name)
+						.join(', ')}
+				{/if}
+			</span>
+		{/snippet}
+	</FilterPopover>
+
+	<FilterPopover
+		legend="Tag"
+		name={`${uid}-tag`}
+		options={tagOptions}
+		value={query.tag}
+		onchange={(value) => setFilter('tag', value)}
+	/>
+
+	{#if assigneeShown}
+		<FilterPopover
+			legend="Zuständig"
+			name={`${uid}-assignee`}
+			options={assigneeOptions}
+			value={query.assignee}
+			onchange={(value) => setFilter('assignee', value)}
+		/>
+	{/if}
+{/snippet}
+
+{#snippet searchFailure()}
 	{#if searchError !== null}
 		<div class="alert-error search-error" id={ids.searchError} role="alert">
 			<ErrorIcon />
@@ -378,7 +371,49 @@
 			</button>
 		</div>
 	{/if}
-</section>
+{/snippet}
+
+{#if part === 'search'}
+	<div class="list-search">
+		{@render searchField()}
+		{@render searchFailure()}
+	</div>
+{:else if part === 'filters'}
+	<div class="filter-fields">
+		{@render chipGroups()}
+		<div class="choices">{@render choices()}</div>
+	</div>
+{:else}
+	<section class="filter-bar" aria-label="Filter" data-tour="filter-bar">
+		{@render chipGroups()}
+
+		<div class="selects">
+			{#if !calendar}
+				{@render searchField()}
+			{/if}
+
+			{@render choices()}
+
+			<button
+				class="button-secondary button-small reset"
+				type="button"
+				aria-disabled={filtered ? undefined : 'true'}
+				aria-describedby={filtered ? undefined : ids.resetHint}
+				onclick={reset}
+			>
+				<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+					<path d="M4 4l8 8M12 4l-8 8" />
+				</svg>
+				Zurücksetzen
+			</button>
+			{#if !filtered}
+				<span class="visually-hidden" id={ids.resetHint}>Kein Filter gesetzt.</span>
+			{/if}
+		</div>
+
+		{@render searchFailure()}
+	</section>
+{/if}
 
 <style>
 	.filter-bar {
@@ -436,5 +471,43 @@
 		stroke: currentColor;
 		stroke-width: 2;
 		stroke-linecap: round;
+	}
+
+	/*
+	 * Phone frame (MO-3, ADR-0073 addendum MO-3): the search takes the rest of the row of the view;
+	 * in the filter sheet the groups stand below each other and the choices "Projekt", "Tag" and
+	 * "Zuständig" have 44 px (the chips have them from base.css).
+	 */
+	@media (max-width: 39.99rem) {
+		:global(:root[data-mobile-layout='on']) .list-search {
+			display: grid;
+			flex: 1 1 auto;
+			gap: 0.5rem;
+			min-width: 0;
+		}
+
+		:global(:root[data-mobile-layout='on']) .list-search .search-field {
+			display: flex;
+			width: 100%;
+		}
+
+		:global(:root[data-mobile-layout='on']) .list-search .search-field input[type='search'] {
+			width: 100%;
+		}
+
+		:global(:root[data-mobile-layout='on']) .filter-fields {
+			display: grid;
+			gap: 1rem;
+		}
+
+		:global(:root[data-mobile-layout='on']) .choices {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 0.5rem;
+		}
+
+		:global(:root[data-mobile-layout='on']) .choices :global(.toggle) {
+			min-height: var(--control-height-touch);
+		}
 	}
 </style>

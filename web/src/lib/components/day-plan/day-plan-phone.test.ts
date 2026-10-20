@@ -153,6 +153,14 @@ const follows = (first: Element, second: Element) =>
 	(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
 
 describe('the day plan in the phone frame (MO-2)', () => {
+	it('keeps only the hidden heading in the bar of the view, which takes no room (SectionBar, MO-3)', async () => {
+		useWindow(true, true);
+		await renderPlan();
+		const heading = screen.getByRole('heading', { level: 2, name: 'Tagesplan' });
+		expect(heading.classList.contains('visually-hidden')).toBe(true);
+		expect(heading.closest('.section-bar')?.classList.contains('bare')).toBe(true);
+	});
+
 	it('shows each entry as "Haken · Titel · •••": the check mark in a target of its own, no arrows, no handle', async () => {
 		useWindow(true, true);
 		const { data } = await renderPlan();
@@ -386,10 +394,9 @@ describe('styles of the day plan in the phone frame (MO-2)', () => {
 		// The turned chevron carries "open", like "Öffnen" whose rule gives 44 px on touch screens.
 		expect(read('DayPlanSuggestions.svelte')).toMatch(/@media \(pointer: coarse\)[\s\S]*\.open \{/);
 		expect(rule('DayPlanSuggestions.svelte', '.chevron')).toMatch(/min-width: 0;\s*min-height: 0;/);
-		// The bar of the view holds only its hidden heading in the frame and takes no room.
-		expect(rule('DayPlanView.svelte', '.day-plan-view > :global(.section-bar)')).toMatch(
-			/position: absolute;/
-		);
+		// The bar of the view holds only its hidden heading in the frame and takes no room (since MO-3
+		// the rule of the bar itself for every view without controls in the frame, see below).
+		expect(rule('../SectionBar.svelte', '.section-bar.bare')).toMatch(/position: absolute;/);
 		expect(rule('DayPlanPool.svelte', '.disclosure')).toMatch(
 			/min-height: var\(--control-height-touch\);/
 		);
