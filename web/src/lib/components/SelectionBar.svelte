@@ -100,6 +100,13 @@
 		}
 	}
 
+	/* Phone frame (MO-3, ADR-0073 addendum MO-3): below the top bar, which is sticky as well. */
+	@media (max-width: 39.99rem) {
+		:global(:root[data-mobile-layout='on']) .bulk-bar {
+			top: calc(var(--top-bar-height) + var(--safe-top) + 0.5rem);
+		}
+	}
+
 	.count {
 		font-size: var(--font-size-body);
 		font-weight: 600;

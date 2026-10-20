@@ -382,6 +382,16 @@ export function hasFilters(query: ListQuery): boolean {
 }
 
 /**
+ * How many filters are set, for the button "Filter" of the phone frame (MO-3, ADR-0073 addendum
+ * MO-3): every chosen card and every detail filter. The search stands in its own field beside the
+ * button and does not count; sort and grouping are view settings, not filters.
+ */
+export function activeFilterCount(query: ListQuery): number {
+	const filters = FILTER_KEYS.filter((key) => key !== 'search' && query[key] !== null);
+	return query.cards.length + filters.length;
+}
+
+/**
  * Search text that applies (E3 plan, T-15): the search of the query from SEARCH_MIN_LENGTH
  * characters on, else null. A shorter one stays in the URL but narrows nothing.
  */

@@ -20,6 +20,7 @@
 		sortOrderLabel
 	} from '$lib/domain/labels';
 	import {
+		activeFilterCount,
 		hasDetailFilters,
 		hasFilters,
 		parseListQuery,
@@ -58,6 +59,7 @@
 		ticketHref,
 		withListQuery
 	} from '$lib/ticket-links';
+	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 	import { rowMenus } from '$lib/overlay/context-menu';
 	import { getQuickCaptureOpener } from '$lib/quick-capture-context';
 	import { ticketLinks } from '$lib/stores/open-mode.svelte';
@@ -70,12 +72,14 @@
 		type Selection
 	} from '$lib/domain/selection';
 	import type { BulkEditStore } from '$lib/stores/bulk-edit.svelte';
+	import ActionsMenu, { type MenuAction } from './ActionsMenu.svelte';
 	import BulkActionBar from './BulkActionBar.svelte';
 	import ColorMark from './ColorMark.svelte';
 	import ColumnsPopover from './ColumnsPopover.svelte';
 	import CompletionDialog from './CompletionDialog.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import EmptyState from './guidance/EmptyState.svelte';
+	import FilterSheet from './FilterSheet.svelte';
 	import FilterSummary from './FilterSummary.svelte';
 	import GroupPopover from './GroupPopover.svelte';
 	import OngoingFinishDialog from './OngoingFinishDialog.svelte';
@@ -87,6 +91,7 @@
 	import { naturalWidth } from './table/measure';
 	import ResizableHeader from './table/ResizableHeader.svelte';
 	import TicketActions from './TicketActions.svelte';
+	import TicketCard from './TicketCard.svelte';
 	import TicketPinToggle from './TicketPinToggle.svelte';
 	import TicketRowDialogs from './TicketRowDialogs.svelte';
 	import TicketTableRow from './TicketTableRow.svelte';
@@ -133,6 +138,17 @@
 	// like a group, kept on this device. Every row has the pin toggle at the end of its title.
 	// Ongoing projects (VH-1, ADR-0065 addendum VH-1): the check mark and "Erledigt" of the status cell
 	// ask "Vorhaben abschließen?" first, the question of the day plan; "Abbrechen" changes nothing.
+	// Phone frame (MO-3, ADR-0073 addendum MO-3): with the switch "Handy-Ansicht (Vorschau)" on and
+	// below 40rem the same component shows cards (TicketCard) instead of the table, from the same
+	// store, sections, groups and links: "Angeheftet", the groups with their heads and the indented
+	// sub-tasks stay. The bar of the view is one row with the search (`search`), "Filter (n)" and a
+	// menu "•••" of the list ("Auswählen", "Alle als gelesen markieren", "Erledigte ansehen"); the
+	// filter cards and the filter bar of the PC move into the filter sheet (`filters`, FilterSheet)
+	// together with "Gruppieren" and the sort. "Spalten" has no place without columns; what the card
+	// leaves out is in the ticket. The selection of the bulk actions is one level deeper: "Auswählen"
+	// shows a box on every card, "Alle" chooses every shown ticket, and "Bereich" makes the next tap
+	// choose up to there, the way of Shift+click for a finger. No virtualization, as for the table:
+	// the cards render the rows the table renders, with fewer elements (no editors of the cells).
 	let {
 		store,
 		catalog,
@@ -147,6 +163,8 @@
 		pins = findPinStore(),
 		assignees = findAssignees(),
 		tools,
+		search,
+		filters,
 		emptyExtra
 	}: {
 		store: TicketListStore;
@@ -179,6 +197,10 @@
 		 * Eingang" stands at the same place in every view (ADR-0025 section 10, package UI-8).
 		 */
 		tools?: Snippet;
+		/** The search in the row of the view of the phone frame (MO-3); `tools` stays the PC's. */
+		search?: Snippet;
+		/** Filter cards and filters in the filter sheet of the phone frame (MO-3). */
+		filters?: Snippet;
 		/** Below the empty state "Keine offenen Tickets", e.g. "Erste Schritte" (plan EH-12). */
 		emptyExtra?: Snippet;
 	} = $props();
@@ -189,8 +211,12 @@
 	const ids = {
 		heading: `${uid}-heading`,
 		caption: `${uid}-caption`,
-		pinned: `${uid}-pinned`
+		pinned: `${uid}-pinned`,
+		rangeHint: `${uid}-range-hint`
 	};
+	/** The phone frame (MO-3): cards instead of the table, the filters in a sheet. */
+	const mobileLayout = getMobileLayoutStore();
+	const phone = $derived(mobileLayout.active);
 	const query = $derived(store.query);
 	const filtered = $derived(hasFilters(query));
 	const hasOpenRows = $derived(store.visible.length > 0);
@@ -377,16 +403,21 @@
 		});
 	}
 
+	/** A row of the table, or a card in the phone frame (MO-3), and the section around it. */
+	const ROW = $derived(phone ? 'li[data-ticket-id]' : 'tr[data-ticket-id]');
+	const SECTION = $derived(phone ? 'ol' : 'tbody');
+	/** The check mark "erledigt" of a row or a card. */
+	const CHECK = $derived(phone ? '[data-card-check] input' : '[data-col="actions"] input');
+
 	function rowsOf(section: string): HTMLElement[] {
 		return [
-			...(root?.querySelectorAll<HTMLElement>(
-				`tbody[data-section="${section}"] > tr[data-ticket-id]`
-			) ?? [])
+			...(root?.querySelectorAll<HTMLElement>(`${SECTION}[data-section="${section}"] > ${ROW}`) ??
+				[])
 		];
 	}
 
 	function rowOf(id: string): HTMLElement | undefined {
-		return [...(root?.querySelectorAll<HTMLElement>('tr[data-ticket-id]') ?? [])].find(
+		return [...(root?.querySelectorAll<HTMLElement>(ROW) ?? [])].find(
 			(row) => row.dataset.ticketId === id
 		);
 	}
@@ -397,7 +428,7 @@
 	}
 
 	function onfocusin(event: FocusEvent) {
-		const row = event.target instanceof Element ? event.target.closest('tr[data-ticket-id]') : null;
+		const row = event.target instanceof Element ? event.target.closest(ROW) : null;
 		if (!(row instanceof HTMLElement)) return;
 		const section = row.parentElement?.dataset.section;
 		const id = row.dataset.ticketId;
@@ -420,7 +451,7 @@
 	function restoreFocus() {
 		if (lastFocus === null || !focusLost()) return;
 		const { id, section, index } = lastFocus;
-		const moved = rowOf(id)?.querySelector<HTMLElement>('[data-col="actions"] input');
+		const moved = rowOf(id)?.querySelector<HTMLElement>(CHECK);
 		const rows = rowsOf(section);
 		const neighbour =
 			rows[Math.min(index, rows.length - 1)]?.querySelector<HTMLElement>('a.title-link');
@@ -468,7 +499,7 @@
 
 	/** IDs of the rendered rows in their order on screen, for a Shift range. */
 	function rowOrder(): string[] {
-		return [...(root?.querySelectorAll<HTMLElement>('tr[data-ticket-id]') ?? [])].flatMap((row) =>
+		return [...(root?.querySelectorAll<HTMLElement>(ROW) ?? [])].flatMap((row) =>
 			row.dataset.ticketId ? [row.dataset.ticketId] : []
 		);
 	}
@@ -480,6 +511,51 @@
 	function clearSelection() {
 		selection = EMPTY_SELECTION;
 	}
+
+	// "Auswählen" in the phone frame (MO-3): the boxes of the selection show on the cards while the
+	// mode is on or something is chosen. "Bereich" makes the next tap choose a range from the last
+	// chosen card, as Shift+click does (domain/selection.ts), and turns itself off.
+	let selectMode = $state(false);
+	let rangeNext = $state(false);
+	const selecting = $derived(phone && (selectMode || selection.ids.length > 0));
+	let cardHeadBox = $state<HTMLInputElement>();
+
+	$effect(() => {
+		if (cardHeadBox) cardHeadBox.indeterminate = head === 'some';
+	});
+
+	/** The box of a card or a tap on it while choosing; with "Bereich" a range. */
+	function chooseCard(id: string, on: boolean) {
+		const range = rangeNext;
+		rangeNext = false;
+		select(id, on, range);
+	}
+
+	function leaveSelectMode() {
+		selectMode = false;
+		rangeNext = false;
+		clearSelection();
+	}
+
+	/** The filter sheet of the phone frame (MO-3) and the number of filters on its button. */
+	let filtersOpen = $state(false);
+	const filterCount = $derived(activeFilterCount(query));
+
+	/** "Zurücksetzen" of the sheet: like the bar, the sheet stays open and keeps the focus. */
+	function resetInSheet() {
+		void goto(withListQuery(page.url, resetFilters(query)), { keepFocus: true, noScroll: true });
+	}
+
+	/** The menu "•••" of the list in the phone frame: what the bar of the PC shows besides. */
+	const listActions = $derived<MenuAction[]>([
+		...(bulk
+			? [{ label: 'Auswählen', locked: selecting, onselect: () => (selectMode = true) }]
+			: []),
+		...(store.newCount > 0
+			? [{ label: 'Alle als gelesen markieren', onselect: () => store.markAllRead() }]
+			: []),
+		{ label: 'Erledigte ansehen', href: doneLink }
+	]);
 
 	/** Escape in the table or the bar clears the selection, unless a field or popover took it. */
 	function onkeydown(event: KeyboardEvent) {
@@ -673,6 +749,124 @@
 	{/if}
 {/snippet}
 
+<!-- One section as cards in the phone frame (MO-3): the same arrangement as the rows. -->
+{#snippet cards(tickets: readonly TicketSummary[], nestRows: boolean = nest)}
+	{#each arrangeRows(tickets, nestRows, (id) => store.find(id)) as row (row.ticket.id)}
+		{@const ticket = row.ticket}
+		<TicketCard
+			{ticket}
+			nested={row.nested}
+			parent={row.parent}
+			progress={store.progressOf(ticket.id)}
+			project={catalog.projectOf(ticket)}
+			tags={catalog.tagsOf(ticket)}
+			href={links.href(ticket.id, page.url)}
+			today={store.today}
+			checked={store.isChecked(ticket)}
+			pending={store.isPending(ticket.id)}
+			active={ticket.id === activeId}
+			isNew={store.isNew(ticket)}
+			recurrenceText={ticket.recurring ? recurrenceTextOf(ticket) : ''}
+			{selecting}
+			selected={selection.ids.includes(ticket.id)}
+			onselect={(on) => chooseCard(ticket.id, on)}
+			statusBusy={store.isPending(ticket.id)}
+			onstatus={(status) => void saveCell(ticket, { status })}
+			assignees={assigneesShown ? assignees : null}
+			menu={rowActions ? rowMenu : undefined}
+			menuBusy={rowActions?.isPreparing(ticket.id) ?? false}
+			pin={pins?.available && (ticket.status !== 'done' || pins.isPinned(ticket.id))
+				? pinToggle
+				: undefined}
+			ontoggle={(done) => toggleDone(ticket, done)}
+		/>
+	{/each}
+{/snippet}
+
+<!-- Head of a group above its cards: the same disclosure button as in the table (plan OR-3). -->
+{#snippet cardGroupHead(group: GroupNode<TicketSummary>, id: string, level: 1 | 2)}
+	{@const count = openCount(group)}
+	{@const folded = collapsed.has(group.path)}
+	{@const color = groupColorOf(group, level)}
+	<svelte:element
+		this={level === 1 ? 'h3' : 'h4'}
+		class="card-head"
+		class:level-2={level === 2}
+		{id}
+	>
+		<button
+			class="group-toggle"
+			type="button"
+			aria-expanded={!folded}
+			title={folded ? 'Gruppe aufklappen' : 'Gruppe zuklappen'}
+			onclick={() => toggleGroup(group.path)}
+		>
+			<svg class="fold" viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+				<path d={folded ? 'M4.5 3l3 3-3 3' : 'M3 4.5l3 3 3-3'} />
+			</svg>
+			{#if color}<ColorMark shown={color} named={false} />{/if}
+			{group.label}<span class="group-count"
+				><span aria-hidden="true">{count}</span><span class="visually-hidden"
+					>, {count === 1 ? '1 Ticket' : `${count} Tickets`}</span
+				></span
+			>
+		</button>
+	</svelte:element>
+{/snippet}
+
+<!-- "Keine weiteren …" below the pinned tickets when nothing else passes. -->
+{#snippet restFoot()}
+	{#if filtered}
+		<p class="muted">Keine weiteren Tickets für diese Filter.</p>
+		<button class="button-secondary button-small reset" type="button" onclick={clearFilters}>
+			Filter zurücksetzen
+		</button>
+	{:else}
+		<p class="muted">Keine weiteren offenen Tickets.</p>
+	{/if}
+{/snippet}
+
+<!-- The switches of "Spalten" that apply to cards too, in the filter sheet (MO-3): no columns there. -->
+{#snippet displayOptions()}
+	<fieldset class="display-options">
+		<legend>Darstellung</legend>
+		{#each columnFit.store.table.options as option (option.id)}
+			<label class="display-option">
+				<input
+					type="checkbox"
+					checked={columnFit.store.option(option.id)}
+					onchange={(event) => columnFit.store.setOption(option.id, event.currentTarget.checked)}
+				/>
+				{option.label}
+			</label>
+		{/each}
+	</fieldset>
+{/snippet}
+
+<!-- The row of the view in the phone frame (MO-3): search, "Filter (n)" and the menu of the list. -->
+{#snippet phoneTools()}
+	{@render search?.()}
+	<button
+		class="button-secondary filter-open"
+		class:active={filterCount > 0}
+		type="button"
+		aria-haspopup="dialog"
+		aria-label={filterCount > 0 ? `Filter, ${filterCount} aktiv` : 'Filter'}
+		onclick={() => (filtersOpen = true)}
+	>
+		<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+			<path d="M2.5 3.5h11l-4.25 5v4l-2.5 1.25V8.5z" />
+		</svg>
+		Filter
+		{#if filterCount > 0}<span class="filter-count" aria-hidden="true">{filterCount}</span>{/if}
+	</button>
+	<ActionsMenu
+		label="Aktionen der Liste"
+		buttonLabel="Weitere Aktionen der Liste"
+		items={listActions}
+	/>
+{/snippet}
+
 {#snippet failure(message: string, retryLabel: string, onretry: () => void)}
 	<div class="alert-error failure">
 		<ErrorIcon />
@@ -698,6 +892,7 @@
 		headingId={ids.heading}
 		count={countReady ? countText : null}
 		{countLabel}
+		phone={phoneTools}
 		bind:heading
 	>
 		{#snippet start()}
@@ -725,7 +920,9 @@
 		{/snippet}
 	</SectionBar>
 
-	{@render tools?.()}
+	{#if !phone}
+		{@render tools?.()}
+	{/if}
 
 	{#if countReady && query.cards.length > 0}
 		<FilterSummary
@@ -738,6 +935,41 @@
 	{/if}
 
 	<p class="visually-hidden" aria-live="polite">{store.announcement}</p>
+
+	{#if bulk && selecting}
+		<!-- "Auswählen" in the phone frame (MO-3): all shown, a range by tap, and the way out. -->
+		<div class="select-mode" role="group" aria-label="Auswahl">
+			<label class="select-all">
+				<input
+					type="checkbox"
+					aria-label="Alle angezeigten Tickets auswählen"
+					checked={head === 'all'}
+					disabled={filteredIds.length === 0}
+					bind:this={cardHeadBox}
+					onchange={() => (selection = toggleAll(selection, filteredIds))}
+				/>
+				Alle
+			</label>
+			<button
+				class="button-secondary"
+				type="button"
+				aria-pressed={rangeNext}
+				aria-disabled={selection.anchor === null ? 'true' : undefined}
+				aria-describedby={ids.rangeHint}
+				onclick={() => {
+					if (selection.anchor !== null) rangeNext = !rangeNext;
+				}}
+			>
+				Bereich
+			</button>
+			<button class="button-secondary" type="button" onclick={leaveSelectMode}>Fertig</button>
+			<p class="range-hint" id={ids.rangeHint} aria-live="polite">
+				{rangeNext
+					? 'Jetzt das letzte Ticket des Bereichs antippen.'
+					: 'Bereich: erst ein Ticket wählen, dann „Bereich“ und das letzte Ticket.'}
+			</p>
+		</div>
+	{/if}
 
 	{#if bulk && (chosenTickets.length > 0 || bulk.busy || bulk.result !== null)}
 		<BulkActionBar
@@ -776,8 +1008,13 @@
 				{/snippet}
 				{#snippet secondary()}
 					{#if openQuickCapture}
+						<!-- No key hint in the phone frame (MO-3): the phone has "＋" for it. -->
 						<button class="button-subtle" type="button" onclick={openQuickCapture}>
-							Schnellerfassung <kbd>c</kbd>
+							{#if phone}
+								Schnellerfassung
+							{:else}
+								Schnellerfassung <kbd>c</kbd>
+							{/if}
 						</button>
 					{/if}
 				{/snippet}
@@ -788,7 +1025,80 @@
 		<p class="loading" role="status">Tickets werden geladen …</p>
 	{/if}
 
-	{#if hasOpenRows || hasPinnedRows}
+	{#if phone && (hasOpenRows || hasPinnedRows)}
+		<!-- Cards instead of the table (MO-3): the same sections, groups and order. -->
+		<div class="card-list" {@attach rowMenus}>
+			<p class="cards-caption" class:visually-hidden={query.sort === null}>
+				{query.sort === null ? 'Standard-Reihenfolge' : `Sortiert nach ${sortLabel(query.sort)}`}
+			</p>
+			{#if hasPinnedRows}
+				<section class="card-section" aria-labelledby={ids.pinned}>
+					<h3 class="card-head" id={ids.pinned}>
+						<button
+							class="group-toggle"
+							type="button"
+							aria-expanded={!pinnedFolded}
+							title={pinnedFolded ? 'Abschnitt aufklappen' : 'Abschnitt zuklappen'}
+							onclick={togglePinned}
+						>
+							<svg class="fold" viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+								<path d={pinnedFolded ? 'M4.5 3l3 3-3 3' : 'M3 4.5l3 3 3-3'} />
+							</svg>
+							<PinIcon />
+							{PINNED_SECTION}<span class="group-count"
+								><span aria-hidden="true">{pinnedCount}</span><span class="visually-hidden"
+									>, {pinnedCountText(pinnedCount)}</span
+								></span
+							>
+						</button>
+					</h3>
+					{#if !pinnedFolded}
+						<ol class="cards" data-section="pinned">
+							{@render cards(store.pinned, false)}
+						</ol>
+					{/if}
+				</section>
+				{#if !hasOpenRows && store.openState === 'ready'}
+					<div class="cards-foot">{@render restFoot()}</div>
+				{/if}
+			{/if}
+			{#if hasOpenRows && store.groups !== null}
+				{#each store.groups as group (group.path)}
+					{@const headId = `${uid}-group-${group.key}`}
+					<section class="card-section" data-group={group.key} aria-labelledby={headId}>
+						{@render cardGroupHead(group, headId, 1)}
+						{#if !collapsed.has(group.path)}
+							{#if group.subgroups === null}
+								<ol class="cards" data-section="open">
+									{@render cards(group.tickets)}
+								</ol>
+							{:else}
+								{#each group.subgroups as sub (sub.path)}
+									{@const subId = `${uid}-group-${group.key}-${sub.key}`}
+									<section
+										class="card-section level-2"
+										data-group={`${group.key}/${sub.key}`}
+										aria-labelledby={`${headId} ${subId}`}
+									>
+										{@render cardGroupHead(sub, subId, 2)}
+										{#if !collapsed.has(sub.path)}
+											<ol class="cards" data-section="open">
+												{@render cards(sub.tickets)}
+											</ol>
+										{/if}
+									</section>
+								{/each}
+							{/if}
+						{/if}
+					</section>
+				{/each}
+			{:else if hasOpenRows}
+				<ol class="cards" data-section="open" aria-label="Offene Tickets">
+					{@render cards(store.visible)}
+				</ol>
+			{/if}
+		</div>
+	{:else if hasOpenRows || hasPinnedRows}
 		<div class="frame" bind:this={frame}>
 			<table {@attach rowMenus}>
 				<caption id={ids.caption}>
@@ -874,18 +1184,7 @@
 						<tbody data-section="open" aria-label="Offene Tickets">
 							<tr class="section-foot">
 								<td colspan={fit.visible.length}>
-									{#if filtered}
-										<p class="muted">Keine weiteren Tickets für diese Filter.</p>
-										<button
-											class="button-secondary button-small reset"
-											type="button"
-											onclick={clearFilters}
-										>
-											Filter zurücksetzen
-										</button>
-									{:else}
-										<p class="muted">Keine weiteren offenen Tickets.</p>
-									{/if}
+									{@render restFoot()}
 								</td>
 							</tr>
 						</tbody>
@@ -951,6 +1250,18 @@
 		parentKeyOf={(ticket) => parentOf(ticket, (id) => store.find(id))?.key ?? null}
 		onopen={(id) => void goto(links.href(id, page.url))}
 		moveToTrash={moveRowToTrash}
+	/>
+{/if}
+
+<!-- The filter sheet of the phone frame (MO-3); the modal gives the focus back to "Filter". -->
+{#if filtersOpen}
+	<FilterSheet
+		count={countReady ? store.visibleCount : null}
+		{filtered}
+		onreset={resetInSheet}
+		onclose={() => (filtersOpen = false)}
+		{filters}
+		display={columnFit.store.table.options.length > 0 ? displayOptions : undefined}
 	/>
 {/if}
 
@@ -1194,5 +1505,131 @@
 
 	.failure-text {
 		flex: 1;
+	}
+
+	/*
+	 * Phone frame (MO-3, ADR-0073 addendum MO-3): "Filter" and the heads of the sections as targets of
+	 * 44 px, the cards in a framed list per section like the table, the bar of "Auswählen" above them.
+	 */
+	@media (max-width: 39.99rem) {
+		:global(:root[data-mobile-layout='on']) .filter-open {
+			flex: none;
+			gap: 0.375rem;
+		}
+
+		:global(:root[data-mobile-layout='on']) .filter-open svg {
+			width: 0.875rem;
+			height: 0.875rem;
+			fill: none;
+			stroke: currentColor;
+			stroke-width: 1.5;
+			stroke-linejoin: round;
+		}
+
+		/* Set filters: the accent surface and the number, never colour alone (WCAG 1.4.1). */
+		:global(:root[data-mobile-layout='on']) .filter-open.active {
+			font-weight: 600;
+			color: var(--color-brand-soft-text);
+			background: var(--color-brand-soft-bg);
+			border-color: var(--color-brand);
+		}
+
+		:global(:root[data-mobile-layout='on']) .filter-count {
+			min-width: 1.25rem;
+			padding: 0 0.3125rem;
+			font-size: var(--font-size-small);
+			line-height: 1.125rem;
+			text-align: center;
+			font-variant-numeric: tabular-nums;
+			border: 1px solid var(--color-brand);
+			border-radius: var(--radius-pill);
+		}
+
+		:global(:root[data-mobile-layout='on']) .select-mode {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 0.5rem;
+			align-items: center;
+			margin-bottom: 0.75rem;
+		}
+
+		:global(:root[data-mobile-layout='on']) .select-all {
+			display: inline-flex;
+			gap: 0.5rem;
+			align-items: center;
+			padding-right: 0.5rem;
+			font-size: var(--font-size-body);
+		}
+
+		:global(:root[data-mobile-layout='on']) .range-hint {
+			flex: 1 1 100%;
+			margin: 0;
+			font-size: var(--font-size-small);
+			color: var(--color-text-muted);
+		}
+
+		:global(:root[data-mobile-layout='on']) .card-list {
+			display: grid;
+			gap: 0.75rem;
+		}
+
+		:global(:root[data-mobile-layout='on']) .display-options {
+			display: grid;
+			border: none;
+		}
+
+		:global(:root[data-mobile-layout='on']) .display-options legend {
+			font-size: var(--font-size-small);
+			font-weight: 600;
+			color: var(--color-text-muted);
+		}
+
+		:global(:root[data-mobile-layout='on']) .display-option {
+			display: flex;
+			gap: 0.5rem;
+			align-items: center;
+			font-size: var(--font-size-body);
+		}
+
+		:global(:root[data-mobile-layout='on']) .cards-caption {
+			margin: 0;
+			font-size: var(--font-size-small);
+			color: var(--color-text-muted);
+		}
+
+		:global(:root[data-mobile-layout='on']) .card-section {
+			display: grid;
+			gap: 0.375rem;
+			min-width: 0;
+		}
+
+		:global(:root[data-mobile-layout='on']) .card-section.level-2 {
+			padding-left: 1rem;
+		}
+
+		:global(:root[data-mobile-layout='on']) .card-head {
+			margin: 0;
+			font-size: var(--font-size-control);
+			font-weight: 600;
+		}
+
+		:global(:root[data-mobile-layout='on']) .card-head.level-2 {
+			font-weight: 500;
+		}
+
+		:global(:root[data-mobile-layout='on']) .card-head .group-toggle {
+			min-height: var(--control-height-touch);
+		}
+
+		:global(:root[data-mobile-layout='on']) .cards {
+			min-width: 0;
+			margin: 0;
+			padding: 0;
+			overflow: hidden;
+			list-style: none;
+			background: var(--color-surface);
+			border: 1px solid var(--color-line);
+			border-radius: var(--radius-surface);
+		}
 	}
 </style>

@@ -24,7 +24,8 @@
 	// which stands as a full column on the right from 64rem (ADR-0025 section 6, package UI-6b). The
 	// section bar with the navigation comes first, as in the other views (package UI-8). Since ER-1
 	// (ADR-0066) only open work: +layout.ts leads old addresses that asked for done tickets to
-	// "Erledigte".
+	// "Erledigte". In the phone frame (MO-3, ADR-0073 addendum MO-3) the same parts stand elsewhere:
+	// the search in the row of the view, the cards and the filters in the filter sheet.
 	let { children } = $props();
 
 	const tickets = getTicketListStore();
@@ -79,6 +80,20 @@
 					searchError={tickets.searchError}
 					onretrysearch={() => tickets.retrySearch()}
 				/>
+			{/snippet}
+			<!-- The phone frame (MO-3, ADR-0073): the search in the row of the view, the rest in the sheet. -->
+			{#snippet search()}
+				<FilterBar
+					{catalog}
+					part="search"
+					searchBusy={tickets.searchBusy}
+					searchError={tickets.searchError}
+					onretrysearch={() => tickets.retrySearch()}
+				/>
+			{/snippet}
+			{#snippet filters()}
+				<FilterCards counts={tickets.openState === 'ready' ? tickets.cardCounts : null} />
+				<FilterBar {catalog} part="filters" />
 			{/snippet}
 			{#snippet emptyExtra()}
 				{#if firstSteps}
