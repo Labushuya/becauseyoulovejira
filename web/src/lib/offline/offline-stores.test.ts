@@ -44,6 +44,7 @@ function ticket(id: string, status: Status = 'open', updated = '2026-10-20 08:00
 }
 
 const A = 'tick00000000001';
+const B = 'tick00000000002';
 
 async function settle() {
 	await vi.advanceTimersByTimeAsync(0);
@@ -152,6 +153,20 @@ describe('the check mark without a connection', () => {
 		expect(send).toHaveBeenCalledTimes(1);
 		expect(outbox.count).toBe(0);
 		expect(flags.flags.map((flag) => flag.title)).toContain('1 Änderung übertragen.');
+	});
+
+	it('says for a ticket of a series that its next ticket comes after the transfer', async () => {
+		const { server, connectivity, list, flags } = setup();
+		const series = { ...ticket(B), recurring: true, recurrenceId: 'rule00000000001' };
+		server.tickets.push(series);
+		list.activate(EMPTY_LIST_QUERY);
+		await settle();
+		server.reachable = false;
+		await connectivity.check();
+		await list.setDone(B, true);
+		expect(flags.flags[0]?.description).toBe(
+			'Wird übertragen, sobald die Verbindung zurück ist. Das nächste Ticket der Serie erscheint nach dem Abgleich.'
+		);
 	});
 
 	it('"Rückgängig" of a kept completion only drops it from the outbox', async () => {

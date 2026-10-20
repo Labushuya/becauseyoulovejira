@@ -715,6 +715,11 @@ export const OFFLINE_TEXTS = Object.freeze({
 		`Verbindung wieder da. Übertrage ${index} von ${changes(count)} …`,
 	sent: (count: number) => `${changes(count)} übertragen.`,
 	pendingFlag: 'Wird übertragen, sobald die Verbindung zurück ist.',
+	/** The flag of a kept completion; a series names that its next ticket comes later (§3.5). */
+	pendingDone: (recurring: boolean) =>
+		recurring
+			? 'Wird übertragen, sobald die Verbindung zurück ist. Das nächste Ticket der Serie erscheint nach dem Abgleich.'
+			: 'Wird übertragen, sobald die Verbindung zurück ist.',
 	conflicts: (count: number, key: string) =>
 		count === 1
 			? `1 Änderung braucht deine Entscheidung: ${key} wurde inzwischen geändert.`

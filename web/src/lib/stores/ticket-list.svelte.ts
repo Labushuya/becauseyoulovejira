@@ -966,8 +966,10 @@ export class TicketListStore {
 				children.length === 0
 					? `${ticket.key} erledigt.`
 					: `${ticket.key} und ${subtaskCountText(children.length)} erledigt.`,
-			// Kept by the outbox (OF-2): it says so.
-			...(this.#overlay.isPending(id) && { description: OFFLINE_TEXTS.pendingFlag }),
+			// Kept by the outbox (OF-2): it says so, and that the next ticket of a series comes later.
+			...(this.#overlay.isPending(id) && {
+				description: OFFLINE_TEXTS.pendingDone(ticket.recurring)
+			}),
 			action: { label: 'Rückgängig', run: () => void this.undo(id) },
 			onclose: () => {
 				if (this.#undoable.get(id)?.flagId === flagId) this.#undoable.delete(id);
