@@ -14,6 +14,7 @@
 		type ThemePreference
 	} from '$lib/theme.svelte';
 	import { getNotifyStore } from '$lib/attention-notify.svelte';
+	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 	import { appContext } from '$lib/stores/context.svelte';
 	import { getTransparencyStore } from '$lib/transparency.svelte';
 
@@ -30,6 +31,10 @@
 	// Group "Hinweise" (ADR-0035 section 5, SF-6): the Windows notification is an opt-in; the
 	// browser asks for the permission only when the switch is turned on.
 	const notifyStore = getNotifyStore();
+	// Group "Handy" (MO-1a, ADR-0073): the preview of the phone frame, off by default; it applies
+	// only below 40rem. Reachable in the view of today on the phone (the gear, then "Darstellung")
+	// and in the frame under "Mehr". The (app) layout follows the width.
+	const mobileLayout = getMobileLayoutStore();
 	// start.bat is named only to the administrator on the machine of the app (KOB-1, ADR-0057).
 	const scripts = $derived(appContext.capabilities.scripts);
 	const uid = $props.id();
@@ -60,8 +65,8 @@
 </svelte:head>
 
 <p class="intro">
-	Die Wahl gilt sofort und nur in diesem Browser auf diesem Gerät. Dasselbe geht über das Symbol
-	„Darstellung“ oben rechts.
+	Die Wahl gilt sofort und nur in diesem Browser auf diesem Gerät.{#if !mobileLayout.active}
+		Dasselbe geht über das Symbol „Darstellung“ oben rechts.{/if}
 </p>
 
 <fieldset class="themes" aria-describedby={`${uid}-note`}>
@@ -139,6 +144,33 @@
 		<SectionMessage tone="info" compact>
 			Die Systemeinstellung reduziert die Transparenz bereits. Alles bleibt undurchsichtig, egal wie
 			der Schalter steht.
+		</SectionMessage>
+	{/if}
+</fieldset>
+
+<fieldset class="themes">
+	<legend>Handy</legend>
+	<label class="setting">
+		<span class="setting-name">Handy-Ansicht (Vorschau)</span>
+		<input
+			type="checkbox"
+			role="switch"
+			checked={mobileLayout.enabled}
+			aria-describedby={`${uid}-mobile-note`}
+			onchange={(event) => mobileLayout.choose(event.currentTarget.checked)}
+		/>
+	</label>
+	<p class="note" id={`${uid}-mobile-note`}>
+		Für schmale Bildschirme unter etwa 640 Pixel Breite, etwa ein Handy hochkant: oben eine Leiste
+		mit dem Namen der Ansicht, unten eine Leiste mit Tagesplan, Aufgaben, Erfassen, Eingang und
+		„Mehr“ für alles Weitere. Beim Öffnen der App steht dort zuerst der Tagesplan. Noch eine
+		Vorschau: Die einzelnen Ansichten werden nach und nach für das Handy angepasst. Gilt nur in
+		diesem Browser auf diesem Gerät; auf breiteren Bildschirmen bleibt alles, wie es ist.
+	</p>
+	{#if mobileLayout.enabled && !mobileLayout.narrow}
+		<SectionMessage tone="info" compact>
+			Dieses Fenster ist zu breit für die Handy-Ansicht. Hier bleibt die gewohnte Ansicht; die
+			Handy-Ansicht erscheint, sobald das Fenster schmaler als etwa 640 Pixel ist.
 		</SectionMessage>
 	{/if}
 </fieldset>

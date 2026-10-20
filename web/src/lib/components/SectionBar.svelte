@@ -1,9 +1,12 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 
 	// Section bar above a view (E3 plan, T-3 and package 5): on the left the heading with the
 	// number of shown entries, on the right the controls of the view. Later packages add their
-	// controls through the snippets (view switch, grouping).
+	// controls through the snippets (view switch, grouping). In the phone frame (MO-1a, ADR-0073)
+	// the top bar shows the name of the view; the heading stays for screen readers and as the target
+	// of the focus, but only once on the screen.
 	let {
 		title,
 		headingId,
@@ -26,11 +29,21 @@
 		/** Controls on the right. */
 		end?: Snippet;
 	} = $props();
+
+	const mobileLayout = getMobileLayoutStore();
 </script>
 
 <div class="section-bar">
 	<div class="start">
-		<h2 id={headingId} tabindex="-1" data-view-heading bind:this={heading}>{title}</h2>
+		<h2
+			id={headingId}
+			tabindex="-1"
+			data-view-heading
+			class:visually-hidden={mobileLayout.active}
+			bind:this={heading}
+		>
+			{title}
+		</h2>
 		{#if count !== null}
 			<span class="count">
 				<span aria-hidden="true">{count}</span>

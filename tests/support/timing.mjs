@@ -56,6 +56,16 @@ export const SHARED_TEST_MS = scaled(15_000);
 export const SHARED_HOOK_MS = scaled(30_000);
 
 /**
+ * One test of the smoke test of the phone frame in the browser (MO-1a, ADR-0073, playwright.config.mjs):
+ * signing in, a few pages and the sheet "Mehr" take a few seconds; the limit only bounds a page that
+ * never reaches its state. Its own instance comes up within SERVER_READY_MS in the global setup.
+ */
+export const BROWSER_TEST_MS = scaled(60_000);
+
+/** One step of it, an action or an expectation of the page, until its target state. */
+export const BROWSER_STEP_MS = scaled(15_000);
+
+/**
  * Files with processes at the same time: one fewer than the processors, at most four. Twelve at a
  * time made each PocketBase start several times slower under load (see above). With four the group
  * takes about three minutes instead of two and a half on this machine without load, but stays

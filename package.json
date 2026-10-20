@@ -15,12 +15,14 @@
 		"test:web": "npm --prefix web test",
 		"test:extension": "npm --prefix extensions/whatsapp-web test",
 		"test:clean": "node scripts/clean-test-temp.mjs",
+		"test:mobile": "playwright test",
 		"check": "npm --prefix web run check && npm --prefix helpers/mail run check && npm --prefix helpers/backup run check && npm --prefix extensions/whatsapp-web run check",
 		"lint": "npm --prefix web run lint && npm --prefix extensions/whatsapp-web run lint",
 		"format": "npm --prefix web run format",
 		"build": "npm --prefix web run build && node scripts/publish-web.mjs && npm --prefix extensions/whatsapp-web run build"
 	},
 	"devDependencies": {
+		"@playwright/test": "^1.64.1",
 		"pocketbase": "^0.28.1",
 		"vitest": "^5.0.5"
 	}

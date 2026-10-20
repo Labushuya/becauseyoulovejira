@@ -25,6 +25,9 @@ const GLASS_FILES = [
 	// The bar of the chosen rows above the tables "Aufgaben" and "Papierkorb" (plan BI-2, ADR-0036
 	// §3; ADR-0037), thick material; BulkActionBar and TrashView put their actions into it.
 	'lib/components/SelectionBar.svelte',
+	// The top bar and the bottom bar of the phone frame (MO-1a, ADR-0073), regular like the header.
+	'lib/components/phone/PhoneTopBar.svelte',
+	'lib/components/phone/PhoneTabBar.svelte',
 	'lib/styles/tour.css'
 ];
 
@@ -32,11 +35,20 @@ const GLASS_FILES = [
 const REGULAR_FILES = [
 	'lib/components/AppHeader.svelte',
 	'lib/components/overlay/Drawer.svelte',
-	'lib/components/SettingsNav.svelte'
+	'lib/components/SettingsNav.svelte',
+	'lib/components/phone/PhoneTopBar.svelte',
+	'lib/components/phone/PhoneTabBar.svelte'
 ];
 
-/** Elements with a backdrop-filter must not hold fixed descendants of their own. */
-const NO_FIXED_FILES = ['lib/components/AppHeader.svelte', 'lib/components/overlay/Drawer.svelte'];
+/**
+ * Elements with a backdrop-filter must not hold fixed descendants of their own. The bottom bar of
+ * the phone frame is fixed itself and holds none: its sheet "Mehr" is a sibling (top layer).
+ */
+const NO_FIXED_FILES = [
+	'lib/components/AppHeader.svelte',
+	'lib/components/overlay/Drawer.svelte',
+	'lib/components/phone/PhoneTopBar.svelte'
+];
 
 /** Opaque on purpose (ADR-0029 section 1): the full view and the blanket never get glass. */
 const OPAQUE_FILES = [

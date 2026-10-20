@@ -202,6 +202,13 @@
 		pointer-events: none;
 	}
 
+	/* Phone frame (MO-1a, ADR-0073): above the bottom bar and the system bar, never below them. */
+	@media (max-width: 39.99rem) {
+		:global(:root[data-mobile-layout='on']) .flags {
+			bottom: calc(1rem + var(--bottom-bar-height) + var(--safe-bottom));
+		}
+	}
+
 	.list {
 		display: grid;
 		gap: 0.5rem;

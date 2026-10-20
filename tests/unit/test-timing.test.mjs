@@ -7,6 +7,8 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { integrationGroups } from '../support/test-groups.mjs';
 import {
+	BROWSER_STEP_MS,
+	BROWSER_TEST_MS,
 	LOG_WRITE_MS,
 	PROCESS_HOOK_MS,
 	PROCESS_TEST_MS,
@@ -42,6 +44,20 @@ describe('time limits of the tests with processes (RS-3)', () => {
 	it('keeps the limits of the shared instance and scales them as well', () => {
 		expect(SHARED_TEST_MS).toBe(scaled(15_000));
 		expect(SHARED_HOOK_MS).toBe(scaled(30_000));
+	});
+
+	// MO-1a: the smoke test of the phone frame in the browser takes its limits from here as well.
+	it('gives the smoke test in the browser scaled limits from this place only', () => {
+		expect(BROWSER_TEST_MS).toBe(scaled(60_000));
+		expect(BROWSER_STEP_MS).toBe(scaled(15_000));
+		const config = read('playwright.config.mjs');
+		expect(config).toMatch(/timeout: BROWSER_TEST_MS/);
+		expect(config).toMatch(/expect: \{ timeout: BROWSER_STEP_MS \}/);
+		expect(config).toMatch(/actionTimeout: BROWSER_STEP_MS/);
+		expect(config).toMatch(/navigationTimeout: BROWSER_STEP_MS/);
+		for (const file of ['playwright.config.mjs', 'tests/mobile/global-setup.mjs', 'tests/mobile/phone-frame.spec.mjs']) {
+			expect(read(file), file).not.toMatch(/timeout: *\d|\}, \d[\d_]*\)/);
+		}
 	});
 
 	it('runs at most four files with processes at a time, one fewer than the processors', () => {

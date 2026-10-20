@@ -38,6 +38,15 @@ export const OPAQUE_BLOCKS = [
 	'@supports not (backdrop-filter: blur(1px)) :root'
 ] as const;
 
+/**
+ * The block of the phone layout (MO-1a, ADR-0073): with the switch on and below the one breakpoint
+ * of PHONE_QUERY. It overrides only the tokens of PHONE_TOKENS.
+ */
+export const PHONE_BLOCK = "@media (max-width: 39.99rem) :root[data-mobile-layout='on']";
+
+/** What the phone block sets: the margin of the pages. */
+export const PHONE_TOKENS: Readonly<Record<string, string>> = { '--page-inline': '1rem' };
+
 export function accentSelector(accent: string, mode: Mode): string {
 	const root = `:root[data-accent='${accent}']`;
 	switch (mode) {

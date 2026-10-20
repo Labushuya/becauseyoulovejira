@@ -166,6 +166,19 @@ const VIEW_BASES: readonly (readonly [string, AreaView])[] = [
 ];
 
 /**
+ * The view a route belongs to (its panel, full view and forms included), or null for the settings
+ * and every other page; the phone frame names it in its top bar and marks it in its bottom bar
+ * (MO-1a, ADR-0073).
+ */
+export function viewOfRoute(routeId: string | null | undefined): AreaView | null {
+	if (typeof routeId !== 'string') return null;
+	const base = VIEW_BASES.find(
+		([prefix]) => routeId === prefix || routeId.startsWith(`${prefix}/`)
+	);
+	return base === undefined ? null : base[1];
+}
+
+/**
  * Parameters of the addresses that name a record of an area: the project and tag filters (with the
  * switch of the sub projects), the target project of the inbox, the origin of a ticket in an area,
  * the parent of a new project and the entry a new ticket is made from. Another area does not know

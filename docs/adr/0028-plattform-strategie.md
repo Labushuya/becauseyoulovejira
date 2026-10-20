@@ -1,6 +1,6 @@
 # ADR-0028: Plattform-Strategie – ein Server je Datenbestand (PC oder Raspberry Pi), Clients als Web-App, Android-APK mit Capacitor, Windows mit Tray-Option
 
-- **Status:** Angenommen (nur Planung; umgesetzt wird stufenweise nach [docs/plan/plattformen.md](../plan/plattformen.md)); weiterer Ausbau zurückgestellt auf Nutzerentscheidung (2026-09-28), siehe Nachtrag unten; Zugang im Heimnetz über HTTP unabhängig davon (Nachtrag 2026-10-04)
+- **Status:** Angenommen (nur Planung; umgesetzt wird stufenweise nach [docs/plan/plattformen.md](../plan/plattformen.md)); weiterer Ausbau zurückgestellt auf Nutzerentscheidung (2026-09-28), siehe Nachtrag unten; Zugang im Heimnetz über HTTP unabhängig davon (Nachtrag 2026-10-04); Zugriff von unterwegs über das VPN mit HTTP als begründete Risiko-Annahme (Nachtrag 2026-10-20, MO-1a)
 - **Datum:** 2026-09-27
 - **Entscheidung durch:** Nutzer (Server-Orte, echte APK mit Updater als Sideload, Verbreitung, Push zurückgestellt, Windows mit Web-App und Tray-Option; 2026-09-27), Advisor (Architektur, Stufen, Abweichung vom Flutter-Grundsatz)
 - **Ergänzt:** [ADR-0001](0001-betriebsmodell-lokal-mehrgeraete-spaeter.md) (Mehrgeräte: zweiter Weg über Traefik neben Tailscale), [ADR-0018](0018-secrets.md) (Quelle der `BYL_*`-Variablen im Container; Nachtrag folgt mit Stufe S3)
@@ -168,3 +168,18 @@ Der Plattform-Ausbau bleibt **zurückgestellt auf Nutzerentscheidung** (Nachtrag
 - **Unabhängig von S2 und Tailscale:** kein HTTPS, kein Proxy, keine Proxy-Kopfzeilen; §3 („Pflicht ist HTTPS“) gilt weiter für S2 und den Zugriff von unterwegs. Der Heimnetz-Zugang ist bewusst die unverschlüsselte Vorstufe im eigenen Netz.
 - **Die Zurückstellung von S2 bis S6 bleibt sonst bestehen** (Nachtrag vom 2026-09-28): kein Pi, kein Traefik, kein Tailscale, keine APK, kein Tray, kein SemVer. HTTPS über Traefik kommt mit S3; dann wird dieser Zugang ersetzt oder auf HTTPS umgestellt.
 - **§1 („ein Server je Datenbestand“)** bleibt: Die Geräte im Heimnetz sind Clients des einen Servers auf dem PC.
+
+## Nachtrag (2026-10-20, Nutzerentscheidung, MO-1a): Zugriff von unterwegs über das VPN mit `http`
+
+Der Plattform-Ausbau bleibt **zurückgestellt auf Nutzerentscheidung** (Nachtrag vom 2026-09-28). Dieser Nachtrag legt eine begründete Risiko-Annahme zu §3 fest; umgesetzt wird nichts am Betrieb.
+
+- **Entscheidung:** Der Nutzer öffnet BYLJ unterwegs am Handy über das WireGuard-VPN seiner FRITZ!Box im Heimnetz unter der Adresse für andere Geräte, also mit `http://<LAN-Adresse>:8090` (Zugriff im Heimnetz, HN-1). Das ist als Zugriff von unterwegs freigegeben, obwohl §3 und der Nachtrag vom 2026-10-04 dafür HTTPS verlangen. Anlass ist die Handy-Ansicht ([ADR-0073](0073-smartphone-layout.md)).
+- **Begründung:**
+  - WireGuard verschlüsselt und authentifiziert die Strecke vom Handy bis zur FRITZ!Box; außerhalb des Heimnetzes läuft kein Klartext.
+  - Ab der FRITZ!Box gilt dasselbe wie beim Zugriff im Heimnetz (HN-1): unverschlüsselt im eigenen Netz, nur unter den gewählten Adressen (Host-Allowlist), mit Anmeldung, Rate-Limit und den Prüfungen der Routen nach [docs/regeln/sicherheit.md](../regeln/sicherheit.md). Für den Server ist das Handy ein Gerät im Heimnetz: Verwalter-Seiten, Neustart und Skripte zeigt es nur als „nur am PC“ (ADR-0057).
+- **Bedingungen (alle zugleich):**
+  - nur über das VPN;
+  - keine Portfreigabe am Router, weder für 8090 noch für einen anderen Port zur App;
+  - BYLJ ist aus dem Internet nicht erreichbar.
+- **Grenzen:** ohne HTTPS keine Installation als App (nur eine Verknüpfung auf dem Startbildschirm), kein Service Worker über die LAN-Adresse, eine unsichere Zwischenablage. Der Schutz hängt am VPN; wer im Heimnetz mitlesen kann, sieht den Verkehr wie bei HN-1.
+- **Neu bewerten,** sobald HTTPS kommt (MO-8, eigene ADR) oder eine der Bedingungen nicht mehr gilt, etwa durch eine Portfreigabe oder ein anderes VPN.
