@@ -232,7 +232,7 @@ Nur Oberfläche, Tests und Doku, keine Hooks und keine Migration: nach dem Build
 
 - Die Tab-Kennung (`sessionStorage` `byl-outbox-tab`) und der `BroadcastChannel` `byl-outbox` entstehen erst beim ersten Beobachten des Postausgangs, nicht schon beim Anlegen. Ein Tab, dessen Postausgang nie arbeitet (kein `offline_ops`, am PC ohne Datenbank), legt beides nicht an.
 - Die erneute Frage `GET /api/byl/tickets/create`, wenn der Tab sichtbar wird und die Fähigkeit fehlte, geht höchstens einmal je 5 Minuten (`SUPPORT_RETRY_MS` in `offline/app-outbox.ts`), auch nach einer gescheiterten Frage. Nach dem Abmelden fragt das nächste Konto sofort; ist die Fähigkeit bekannt, fragt der Tab nicht mehr.
-- **Bewusste Ausnahme:** Die Anmeldeseite fragt den Browser mit `indexedDB.databases()`, ob es die Datenbank `byl-offline` gibt, und liest sie nur dann (Zahl der wartenden Änderungen, OF-2 §3). Ohne Sitzung kennt sie die Fähigkeit nicht; die Frage geht nicht ans Netz und legt nichts an. Auf einem Gerät ohne Postausgang antwortet der Browser ohne die Datenbank, und die Seite bleibt wie vorher.
+- **Bewusste Ausnahme:** Die Anmeldeseite fragt den Browser mit `indexedDB.databases()`, ob es die Datenbank `byl-offline` gibt, und liest sie nur dann (Zahl der wartenden Änderungen, OF-2 §3). Ohne Sitzung kennt sie die Fähigkeit nicht; die Frage geht nicht ans Netz und legt nichts an. Auf einem Gerät ohne Postausgang antwortet der Browser ohne die Datenbank, und die Seite bleibt wie vorher. Dieselbe Frage stellt seit OF-2b „Abmelden“ in einem Tab, der das Gerät nie gelesen hat (§5), also auch am PC ohne Fähigkeit; ohne Datenbank meldet es danach ohne Frage ab wie bisher.
 
 ### 4. Außerhalb des Rahmens (Befund 2)
 
