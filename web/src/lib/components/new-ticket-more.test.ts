@@ -70,7 +70,7 @@ const mocks = vi.hoisted(() => ({
 	}
 }));
 
-vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
+vi.mock('$app/navigation', () => ({ goto: mocks.goto, beforeNavigate: vi.fn() }));
 vi.mock('$app/state', () => ({ page: mocks.page }));
 vi.mock('$lib/stores/ticket-detail.svelte', async (importOriginal) => ({
 	...(await importOriginal<object>()),
