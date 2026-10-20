@@ -321,14 +321,10 @@
 	/*
 	 * Phone frame (MO-2, ADR-0073 addendum MO-2): a compact head, the day between its arrows over the
 	 * full width (it wraps instead of pushing anything out), the progress and the other area below.
-	 * The arrows and "Heute" have their 44 px from base.css.
+	 * The arrows and "Heute" have their 44 px from base.css. The bar of the view holds only its
+	 * heading for screen readers here and takes no room (SectionBar, since MO-3).
 	 */
 	@media (max-width: 39.99rem) {
-		/* The bar of the view holds only its heading for screen readers here (MO-1a): no room. */
-		:global(:root[data-mobile-layout='on']) .day-plan-view > :global(.section-bar) {
-			position: absolute;
-		}
-
 		:global(:root[data-mobile-layout='on']) .day-head {
 			gap: 0.25rem 0.75rem;
 		}
