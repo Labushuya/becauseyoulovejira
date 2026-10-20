@@ -1,6 +1,7 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { addDays } from '$lib/domain/berlin-date';
-	import { dayTitle, otherAreaText, progressText } from '$lib/domain/day-plan';
+	import { dayTitle, otherAreaText, progressText, shortDayTitle } from '$lib/domain/day-plan';
 	import { ongoingFinishOf } from '$lib/domain/ongoing-finish';
 	import { restartNeeded } from '$lib/guidance/texts';
 	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
@@ -32,7 +33,9 @@
 	// description. In the phone frame (MO-2, ADR-0073 addendum MO-2) the plan comes first: the head is
 	// one compact block (the day between its arrows, the progress below), the suggestions follow the
 	// plan, folded with their number, and the pool follows them as the folded section "Hinzufügen …".
-	// Both are one level deeper, nothing is gone; folded or open is a choice of this view.
+	// Both are one level deeper, nothing is gone; folded or open is a choice of this view. Since MO-6b
+	// (ADR-0073 addendum MO-6b) the head names the day short there ("Heute, Di., 20. Okt."), screen
+	// readers keep the whole date, and a plan that is empty when its day loads starts with both open.
 	let {
 		store,
 		area = null,
@@ -58,6 +61,22 @@
 	// Folded at the start in the frame only; the PC keeps the suggestions open and the pool shown.
 	let suggestionsOpen = $state(!mobileLayout.active);
 	let poolOpen = $state(false);
+	const ready = $derived(store.state === 'ready');
+
+	// An empty plan in the frame (MO-6b): when a day is loaded (the start, another day, the other
+	// area, again after an error) and its plan has no entry, the suggestions and "Hinzufügen …" open,
+	// so the ways to fill it are there at once. Only the load decides, the effect follows `ready`
+	// alone: a first entry, an event of the server or a reload of the same day fold nothing, and
+	// folding stays a choice of the user. A plan with entries keeps what was there before; on the PC
+	// nothing changes.
+	$effect(() => {
+		if (!ready) return;
+		untrack(() => {
+			if (!mobileLayout.active || store.rows.length > 0) return;
+			if (store.isToday && store.editable) suggestionsOpen = true;
+			if (store.editable) poolOpen = true;
+		});
+	});
 	/** The ongoing project whose "Vorhaben abschließen …" asks. */
 	let finishing = $state<PlanRow | null>(null);
 	let finishBusy = $state(false);
@@ -112,7 +131,16 @@
 					><path d="M10 3.5L5.5 8l4.5 4.5" /></svg
 				>
 			</a>
-			<h3 id={dayId} class="day-title" aria-live="polite">{dayTitle(date, today)}</h3>
+			<h3 id={dayId} class="day-title" aria-live="polite">
+				{#if phone}
+					<!-- Short in the frame (MO-6b), so the day fits between its arrows at 360 px; the
+					     heading keeps the whole date as its name and for the announcement. -->
+					<span aria-hidden="true">{shortDayTitle(date, today)}</span>
+					<span class="visually-hidden">{dayTitle(date, today)}</span>
+				{:else}
+					{dayTitle(date, today)}
+				{/if}
+			</h3>
 			{#if nextHref !== null}
 				<a class="button-icon" href={nextHref} aria-label="Folgetag" title="Folgetag">
 					<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"

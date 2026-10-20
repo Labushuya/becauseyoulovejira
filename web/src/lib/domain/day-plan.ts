@@ -516,14 +516,49 @@ const MONTHS = [
 	'Dezember'
 ];
 
+/** The short forms of the head on a phone (MO-6b), with the dot of German abbreviations. */
+const WEEKDAYS_SHORT = ['So.', 'Mo.', 'Di.', 'Mi.', 'Do.', 'Fr.', 'Sa.'];
+const MONTHS_SHORT = [
+	'Jan.',
+	'Feb.',
+	'März',
+	'Apr.',
+	'Mai',
+	'Juni',
+	'Juli',
+	'Aug.',
+	'Sept.',
+	'Okt.',
+	'Nov.',
+	'Dez.'
+];
+
+/** "Heute", "Morgen" or "Gestern" before the date, or nothing for another day. */
+function withRelativeDay(text: string, date: CalendarDate, today: CalendarDate): string {
+	if (date === today) return `Heute, ${text}`;
+	if (date === addDays(today, 1)) return `Morgen, ${text}`;
+	if (date === addDays(today, -1)) return `Gestern, ${text}`;
+	return text;
+}
+
 /** "Heute", "Morgen", "Gestern" or the weekday, then the date: "Heute, Montag, 5. Oktober 2026". */
 export function dayTitle(date: CalendarDate, today: CalendarDate): string {
 	const day = new Date(parseCalendarDate(date));
 	const full = `${WEEKDAYS[day.getUTCDay()]}, ${day.getUTCDate()}. ${MONTHS[day.getUTCMonth()]} ${day.getUTCFullYear()}`;
-	if (date === today) return `Heute, ${full}`;
-	if (date === addDays(today, 1)) return `Morgen, ${full}`;
-	if (date === addDays(today, -1)) return `Gestern, ${full}`;
-	return full;
+	return withRelativeDay(full, date, today);
+}
+
+/**
+ * The same day short, for the head of the plan in the phone frame (MO-6b, ADR-0073 addendum
+ * MO-6b), where the whole date wraps at 360 px: "Heute, Di., 20. Okt.", "Do., 22. Okt."; the year
+ * only when it is not the year of today ("Morgen, Fr., 1. Jan. 2027"). Screen readers keep the
+ * whole date of dayTitle.
+ */
+export function shortDayTitle(date: CalendarDate, today: CalendarDate): string {
+	const day = new Date(parseCalendarDate(date));
+	const year = date.slice(0, 4) === today.slice(0, 4) ? '' : ` ${day.getUTCFullYear()}`;
+	const short = `${WEEKDAYS_SHORT[day.getUTCDay()]}, ${day.getUTCDate()}. ${MONTHS_SHORT[day.getUTCMonth()]}${year}`;
+	return withRelativeDay(short, date, today);
 }
 
 /** The hint at the other area: "Im Haushalt: 3 Einträge für heute". */

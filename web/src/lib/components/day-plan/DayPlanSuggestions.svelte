@@ -113,7 +113,7 @@
 							<span class="reason">– {entry.suggestion.reasons.join(' · ')}</span>
 						</label>
 						<a
-							class="button-icon open"
+							class="button-icon open-ticket"
 							href={links.href(ticket.id, page.url)}
 							data-ticket-link={ticket.id}
 							aria-label={`${ticket.key} öffnen`}
@@ -282,7 +282,7 @@
 		color: var(--color-text-muted);
 	}
 
-	.open svg {
+	.open-ticket svg {
 		width: 0.875rem;
 		height: 0.875rem;
 		fill: none;
@@ -304,14 +304,16 @@
 		}
 	}
 
+	/* "Öffnen" has a class of its own: the turned chevron carries "open", which this rule must not
+	   make 44 px wide (MO-6b, ADR-0073 addendum MO-6b). */
 	@media (pointer: coarse) {
 		.choice,
 		.disclosure,
-		.open {
+		.open-ticket {
 			min-height: var(--control-height-touch);
 		}
 
-		.open {
+		.open-ticket {
 			min-width: var(--control-height-touch);
 		}
 	}
@@ -324,13 +326,6 @@
 	@media (max-width: 39.99rem) {
 		:global(:root[data-mobile-layout='on']) .disclosure {
 			min-height: var(--control-height-touch);
-		}
-
-		/* Turned, the chevron carries the class "open", which the rule of touch screens above gives
-		   44 px for "Öffnen"; it keeps its own size. */
-		:global(:root[data-mobile-layout='on']) .chevron {
-			min-width: 0;
-			min-height: 0;
 		}
 	}
 </style>

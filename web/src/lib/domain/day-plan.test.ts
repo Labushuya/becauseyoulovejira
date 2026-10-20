@@ -20,6 +20,7 @@ import {
 	movedBlock,
 	otherAreaText,
 	progressText,
+	shortDayTitle,
 	withOrder
 } from './day-plan';
 
@@ -113,6 +114,18 @@ describe('texts of the page', () => {
 		expect(dayTitle('2031-05-13', '2031-05-14')).toBe('Gestern, Dienstag, 13. Mai 2031');
 		expect(dayTitle('2031-03-01', '2031-05-14')).toBe('Samstag, 1. März 2031');
 		expect(dayTitle('2032-01-01', '2031-12-31')).toBe('Morgen, Donnerstag, 1. Januar 2032');
+	});
+
+	it('names the same days short for the head on a phone, the year only when it is another (MO-6b)', () => {
+		expect(shortDayTitle('2026-10-20', '2026-10-20')).toBe('Heute, Di., 20. Okt.');
+		expect(shortDayTitle('2026-10-21', '2026-10-20')).toBe('Morgen, Mi., 21. Okt.');
+		expect(shortDayTitle('2026-10-19', '2026-10-20')).toBe('Gestern, Mo., 19. Okt.');
+		expect(shortDayTitle('2026-10-15', '2026-10-20')).toBe('Do., 15. Okt.');
+		expect(shortDayTitle('2031-05-14', '2031-05-14')).toBe('Heute, Mi., 14. Mai');
+		expect(shortDayTitle('2031-03-01', '2031-05-14')).toBe('Sa., 1. März');
+		expect(shortDayTitle('2031-09-07', '2031-09-08')).toBe('Gestern, So., 7. Sept.');
+		expect(shortDayTitle('2032-01-01', '2031-12-31')).toBe('Morgen, Do., 1. Jan. 2032');
+		expect(shortDayTitle('2030-12-30', '2031-01-02')).toBe('Mo., 30. Dez. 2030');
 	});
 
 	it('counts done entries, also for a screen reader', () => {
