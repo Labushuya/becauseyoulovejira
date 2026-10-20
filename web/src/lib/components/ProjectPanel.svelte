@@ -24,6 +24,7 @@
 	import { restartNeeded } from '$lib/guidance/texts';
 	import type { EditResult } from '$lib/stores/catalog-editor';
 	import { appHref } from '$lib/ticket-links';
+	import { registerUnsavedInput } from '$lib/unsaved-input';
 	import Breadcrumbs from './Breadcrumbs.svelte';
 	import ColorChoice from './ColorChoice.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
@@ -244,6 +245,8 @@
 			(chosenParent !== null && chosenParent !== storedParent) ||
 			(chosenColor !== undefined && chosenColor !== storedColor)
 	);
+	// Leaving the page in the phone frame asks first while the form holds input (MO-1b).
+	$effect(() => registerUnsavedInput(() => dirty));
 
 	let heading = $state<HTMLElement>();
 	let ticketsHeading = $state<HTMLElement>();

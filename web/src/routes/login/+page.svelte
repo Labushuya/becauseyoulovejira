@@ -93,6 +93,7 @@
 				id="login-email"
 				name="email"
 				type="email"
+				enterkeyhint="next"
 				autocomplete="username"
 				required
 				bind:value={email}
@@ -105,6 +106,7 @@
 				id="login-password"
 				name="password"
 				type="password"
+				enterkeyhint="done"
 				autocomplete="current-password"
 				required
 				bind:value={password}

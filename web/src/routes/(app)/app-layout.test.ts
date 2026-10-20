@@ -1189,4 +1189,67 @@ describe('app layout: phone frame (MO-1a, ADR-0073)', () => {
 		expect(screen.queryByRole('button', { name: 'Hilfe' })).toBeNull();
 		expect(tourMocks.startTour).not.toHaveBeenCalled();
 	});
+
+	/** Leaving the page (reload, closing the tab): whether the browser would ask first. */
+	function leaveAsks(): boolean {
+		const event = new Event('beforeunload', { cancelable: true });
+		window.dispatchEvent(event);
+		return event.defaultPrevented;
+	}
+
+	// MO-1b: the browser's question before leaving, only in the frame and only with unsaved input.
+	it('asks before leaving the page in the frame while the quick entry holds typed text', async () => {
+		windowOf(true);
+		getMobileLayoutStore().choose(true);
+		await enter('/tagesplan', '/(app)/tagesplan');
+		expect(leaveAsks()).toBe(false);
+
+		await fireEvent.click(
+			within(bottomBar() as HTMLElement).getByRole('button', { name: 'Erfassen' })
+		);
+		expect(leaveAsks()).toBe(false);
+		await fireEvent.input(screen.getByLabelText('Titel mit Kurzsyntax'), {
+			target: { value: 'Zahnarzt anrufen' }
+		});
+		expect(leaveAsks()).toBe(true);
+
+		await fireEvent.input(screen.getByLabelText('Titel mit Kurzsyntax'), {
+			target: { value: '' }
+		});
+		expect(leaveAsks()).toBe(false);
+	});
+
+	it.each([
+		['a phone with the switch off', true, false],
+		['a wide window with the switch on', false, true]
+	])('never asks before leaving on %s, as before', async (_name, narrow, enabled) => {
+		windowOf(narrow);
+		getMobileLayoutStore().choose(enabled);
+		await enter('/', '/(app)/(tickets)');
+
+		await fireEvent.click(
+			within(screen.getByRole('banner')).getByRole('button', { name: /Schnellerfassung/ })
+		);
+		await fireEvent.input(screen.getByLabelText('Titel mit Kurzsyntax'), {
+			target: { value: 'Zahnarzt anrufen' }
+		});
+		expect(leaveAsks()).toBe(false);
+	});
+
+	it('stops asking when the frame ends, e.g. the switch is turned off', async () => {
+		windowOf(true);
+		getMobileLayoutStore().choose(true);
+		await enter('/tagesplan', '/(app)/tagesplan');
+		await fireEvent.click(
+			within(bottomBar() as HTMLElement).getByRole('button', { name: 'Erfassen' })
+		);
+		await fireEvent.input(screen.getByLabelText('Titel mit Kurzsyntax'), {
+			target: { value: 'Zahnarzt anrufen' }
+		});
+		expect(leaveAsks()).toBe(true);
+
+		getMobileLayoutStore().choose(false);
+		await tick();
+		expect(leaveAsks()).toBe(false);
+	});
 });

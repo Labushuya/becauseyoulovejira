@@ -554,6 +554,7 @@
 				<input
 					id={ids.search}
 					type="search"
+					enterkeyhint="search"
 					autocomplete="off"
 					spellcheck="false"
 					placeholder="Name oder Code"

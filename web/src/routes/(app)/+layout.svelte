@@ -14,7 +14,7 @@
 	import PhoneTopBar from '$lib/components/phone/PhoneTopBar.svelte';
 	import QuickCapture from '$lib/components/QuickCapture.svelte';
 	import { isHelpKey, isQuickCaptureKey, isTypingTarget } from '$lib/domain/keyboard';
-	import { isPhoneStart } from '$lib/domain/phone-layout';
+	import { isPhoneStart, warnsBeforeLeaving } from '$lib/domain/phone-layout';
 	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 	import { pb } from '$lib/pocketbase';
 	import { setQuickCaptureOpener } from '$lib/quick-capture-context';
@@ -163,6 +163,7 @@
 	} from '$lib/stores/day-plan.svelte';
 	import { ticketHrefIn } from '$lib/ticket-host';
 	import { dayPlanHref, inboxItemHref, recurrenceHref, recurrencesHref } from '$lib/ticket-links';
+	import { hasUnsavedInput } from '$lib/unsaved-input';
 
 	// Shell of every signed-in page (E2 plan, T-4). The root layout renders it only with a
 	// session; the login page stays outside this group.
@@ -192,6 +193,18 @@
 			navigation: typeof kind === 'string' ? kind : ''
 		});
 		if (mobileLayout.active && start) void goto(dayPlanHref(), { replaceState: true });
+	});
+	// Leaving the page in the phone frame (MO-1b): reloading, pulling down to refresh, closing the
+	// tab or a link out of the app asks the browser's question first while typed input is not saved
+	// (quick entry, comment, a field of the ticket, a form; lib/unsaved-input.ts). Only while the
+	// frame applies; on the PC no listener, nothing changes.
+	$effect(() => {
+		if (!phone) return;
+		const onbeforeunload = (event: BeforeUnloadEvent) => {
+			if (warnsBeforeLeaving(mobileLayout.active, hasUnsavedInput())) event.preventDefault();
+		};
+		window.addEventListener('beforeunload', onbeforeunload);
+		return () => window.removeEventListener('beforeunload', onbeforeunload);
 	});
 
 	// The area of the tab (E7-3, ADR-0059): "Privat" or the household, remembered on this device per

@@ -179,6 +179,7 @@
 					<input
 						id={ids.search}
 						type="search"
+						enterkeyhint="search"
 						autocomplete="off"
 						spellcheck="false"
 						aria-label="Charm suchen"

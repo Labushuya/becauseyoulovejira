@@ -104,6 +104,7 @@
 					</svg>
 					<input
 						type="search"
+						enterkeyhint="search"
 						aria-labelledby={`${uid}-search`}
 						placeholder="Titel oder Beschreibung"
 						bind:value={search}

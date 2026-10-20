@@ -21,6 +21,7 @@
 	import { findTicketHost } from '$lib/ticket-host';
 	import { appHref } from '$lib/ticket-links';
 	import { setTicketRoute } from '$lib/ticket-route';
+	import { registerUnsavedInput } from '$lib/unsaved-input';
 	import DuplicateDialog from './DuplicateDialog.svelte';
 	import FollowUpDialog from './FollowUpDialog.svelte';
 	import ConfirmDialog from './overlay/ConfirmDialog.svelte';
@@ -148,6 +149,17 @@
 			delta: navigation.type === 'popstate' ? navigation.delta : undefined
 		};
 	});
+
+	// Leaving the page itself (reload, closing the tab) asks the browser's question in the phone
+	// frame for the same unsaved text (MO-1b, the (app) layout); on the PC it stays uncovered.
+	$effect(() =>
+		registerUnsavedInput(
+			() =>
+				!discarding &&
+				detail.state === 'ready' &&
+				(detail.hasUnsavedInput || comments.dirty || rules.templateDirty)
+		)
+	);
 
 	async function discardAndLeave() {
 		const target = leaving;

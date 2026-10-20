@@ -25,6 +25,7 @@
 	import type { EnsureTagResult } from '$lib/stores/catalog.svelte';
 	import type { CaptureSaveResult } from '$lib/stores/capture';
 	import type { ProblemEntry } from '$lib/domain/problems';
+	import { registerUnsavedInput } from '$lib/unsaved-input';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import PrioritySelect from './PrioritySelect.svelte';
 	import TagPicker from './TagPicker.svelte';
@@ -131,6 +132,8 @@
 				: value !== baseline[key as keyof CaptureInput]
 		) || tagText.trim() !== ''
 	);
+	// Leaving the page in the phone frame asks first while the form holds input (MO-1b).
+	$effect(() => registerUnsavedInput(() => dirty));
 
 	/** Focus on the first field of the template (on open and after saving). */
 	function focusFirst() {
