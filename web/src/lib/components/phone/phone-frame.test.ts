@@ -135,6 +135,17 @@ describe('phone frame: bottom bar', () => {
 		const more = within(nav).getByRole('button', { name: `Mehr, aktuell: ${label}` });
 		expect(more.classList.contains('current')).toBe(true);
 		expect(nav.querySelector('[aria-current]')).toBeNull();
+		// The name comes from aria-label, so no browser adds a space around a block-level part of
+		// it (jsdom has no layout and would not show that); visible stays "Mehr" at its start.
+		expect(more.getAttribute('aria-label')).toBe(`Mehr, aktuell: ${label}`);
+		expect(more.textContent?.trim()).toBe('Mehr');
+	});
+
+	it('names "Mehr" by its visible label alone while a view of the bar is shown', () => {
+		at('/tagesplan', '/(app)/tagesplan');
+		const { nav } = showBar();
+		const more = within(nav).getByRole('button', { name: 'Mehr' });
+		expect(more.hasAttribute('aria-label')).toBe(false);
 	});
 
 	it('leads to the same addresses as the navigation of the PC, with the state of the view shown', () => {

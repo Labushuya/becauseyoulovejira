@@ -39,6 +39,11 @@
 	const moreLabel = $derived(
 		target !== 'more' ? null : view !== null ? VIEW_LABELS[view] : 'Einstellungen'
 	);
+	// Its name for screen readers, beginning with the visible "Mehr". An aria-label and no hidden
+	// text after the label: browsers put a space around each block-level part of a name, and both
+	// the label and a visually hidden span are block-level in this flex column, which would read
+	// "Mehr , aktuell: …".
+	const moreName = $derived(moreLabel === null ? undefined : `Mehr, aktuell: ${moreLabel}`);
 
 	let moreOpen = $state(false);
 
@@ -125,6 +130,7 @@
 				class:current={target === 'more'}
 				type="button"
 				aria-haspopup="dialog"
+				aria-label={moreName}
 				onclick={() => (moreOpen = true)}
 			>
 				<span class="indicator">
@@ -134,9 +140,7 @@
 						<circle cx="12.5" cy="8" r="1.1" />
 					</svg>
 				</span>
-				<span class="label">Mehr</span>{#if moreLabel !== null}<span class="visually-hidden"
-						>, aktuell: {moreLabel}</span
-					>{/if}
+				<span class="label">Mehr</span>
 			</button>
 		</li>
 	</ul>
