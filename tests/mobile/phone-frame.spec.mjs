@@ -12,6 +12,12 @@
 // through "•••" with its announcement, a check with one tap, the folded suggestions and
 // "Hinzufügen …" after the plan, "Sortierung" as a sheet, no sideways scrolling at 360 and 412 px;
 // on a PC the day plan as before.
+// Since MO-4 (manifest BYL-E6-1995 ff.) the ticket as a page on a small phone: the arrow back
+// instead of × and "Vollansicht", every target of 44 px, nothing scrolls sideways (long title, link,
+// code, table), the fields one below the other, the bar with "Erledigt" and the status at the
+// bottom, the toolbar of the editor wrapping, "Kommentieren" in view, the suggestions of the tags at
+// their field, and the arrow back to the list with its sort and scroll position; on a PC the panel
+// of today.
 //
 // The phone stands for another device in the home network (header X-Byl-Test-Remote-Address of the
 // test hooks, only in instances of the harness), so the pages of the administrator are "nur am PC".
@@ -169,6 +175,86 @@ async function titleShare(row) {
 	return title.width / whole.width;
 }
 
+const LONG_LINK = 'https://example.com/ein/sehr/langer/pfad/ohne/leerzeichen/der/nie/umbricht/und/weiter/geht/index.html?mit=vielen&parametern=1234567890';
+
+/**
+ * A ticket for the page of MO-4 (a run mark appended to its title): a title of one long word, a
+ * description with a long link, a code block, a wide table and two tasks, a tag, a sub-task and a
+ * comment with a long link and code; `others` further open tickets, so the list scrolls. Returns its
+ * record and the titles.
+ */
+async function seedTicket(others) {
+	const { email, password } = mobileInstance();
+	const { token, record } = await api('POST', '/api/collections/users/auth-with-password', { identity: email, password });
+	const mark = randomBytes(3).toString('hex');
+	const tag = await api('POST', '/api/collections/tags/records', { owner: record.id, name: `Garten ${mark}` }, token);
+	const description = [
+		`Ein langer Link: ${LONG_LINK}`,
+		'',
+		'```',
+		'const eineSehrLangeZeileImCodeblock = "die nicht umbricht und breiter ist als jedes Handy";',
+		'```',
+		'',
+		'| Spalte 1 | Spalte 2 | Spalte 3 | Spalte 4 | Spalte 5 | Spalte 6 | Spalte 7 |',
+		'|---|---|---|---|---|---|---|',
+		'| Inhalt | Inhalt | Inhalt | Inhalt | Inhalt | Inhalt | Inhalt |',
+		'',
+		'- [ ] Erste Aufgabe',
+		'- [ ] Zweite Aufgabe'
+	].join('\n');
+	// Sorted by title, the ticket stands after the others, so the list has scrolled to reach it.
+	const title = `Mmm_Steuererklärung_für_das_vergangene_Jahr_mit_allen_Belegen_der_Handwerker_${mark}`;
+	const ticket = await api('POST', '/api/collections/tickets/records', { owner: record.id, title, description, tags: [tag.id], priority: 'high' }, token);
+	const subtask = `Belege sortieren ${mark}`;
+	await api('POST', '/api/collections/tickets/records', { owner: record.id, title: subtask, parent: ticket.id }, token);
+	await api(
+		'POST',
+		'/api/collections/comments/records',
+		{ ticket: ticket.id, author: record.id, body: `Siehe ${LONG_LINK}\n\n\`\`\`\nnoch_eine_lange_zeile_im_codeblock_des_kommentars_die_nicht_umbricht\n\`\`\`` },
+		token
+	);
+	const titles = [];
+	for (let index = 0; index < others; index++) {
+		const name = `Ccc Füller ${String(index + 1).padStart(2, '0')} ${mark}`;
+		await api('POST', '/api/collections/tickets/records', { owner: record.id, title: name }, token);
+		titles.push(name);
+	}
+	return { ticket, title, subtask, tag: tag.name, others: titles };
+}
+
+/**
+ * The visible targets inside `root` below 44 px: buttons, links, tabs, fields, the labels of check
+ * marks and the entries of menus. Links inside a sentence or the text of a ticket (WCAG 2.5.8,
+ * "inline") and the boxes inside their label count with the label; a task of the text counts with
+ * the area around its box (prose.css).
+ */
+function smallTargets(root) {
+	return root.evaluate((element) => {
+		const small = [];
+		for (const target of element.querySelectorAll('a[href], button, [role=tab], select, input:not([type=hidden]), [role=menuitem], label')) {
+			if (target.tagName === 'A' && target.closest('p, .prose')) continue;
+			if (target.tagName === 'LABEL' && target.querySelector('input[type=checkbox], input[type=radio]') === null) continue;
+			if (target.tagName === 'INPUT' && target.closest('label') !== null && /^(checkbox|radio)$/.test(target.type)) continue;
+			let rect = target.getBoundingClientRect();
+			if (rect.width === 0 || rect.height === 0 || getComputedStyle(target).visibility === 'hidden') continue;
+			if (target.tagName === 'INPUT' && target.closest('.prose li[data-task]') !== null) {
+				const inset = Number.parseFloat(getComputedStyle(target, '::after').top) || 0;
+				rect = { width: rect.width - 2 * inset, height: rect.height - 2 * inset };
+			}
+			if (rect.width < 43.99 || rect.height < 43.99) {
+				const name = (target.getAttribute('aria-label') ?? target.textContent ?? '').trim().replace(/\s+/g, ' ').slice(0, 40);
+				small.push(`${target.tagName.toLowerCase()} "${name}" ${Math.round(rect.width)}×${Math.round(rect.height)}`);
+			}
+		}
+		return small;
+	});
+}
+
+/** Whether the element scrolls sideways itself. */
+function scrollsSidewaysInside(locator) {
+	return locator.evaluate((element) => element.scrollWidth > element.clientWidth);
+}
+
 test.describe('phone with the switch on', () => {
 	test.use({ ...PHONE, extraHTTPHeaders: ANOTHER_DEVICE });
 
@@ -284,9 +370,10 @@ test.describe('small phone with the switch on: overlays (MO-1b)', () => {
 		await quick.getByRole('link', { name: 'Ticket ansehen' }).click();
 
 		// The panel of the ticket is a page; its menu "•••" is a sheet with "Schließen" at its end.
+		// Since MO-4 the arrow back to the day plan takes the place of the × in its head.
 		const panel = page.getByRole('complementary', { name: 'Fenster putzen' });
 		await expect(panel).toBeVisible();
-		await expectTarget(panel.getByRole('button', { name: 'Panel schließen' }));
+		await expectTarget(panel.getByRole('button', { name: 'Zum Tagesplan' }));
 		const more = panel.getByRole('button', { name: 'Weitere Aktionen', exact: true });
 		await expectTarget(more);
 		await more.click();
@@ -599,6 +686,154 @@ test.describe('small phone with the switch on: "Aufgaben" (MO-3)', () => {
 	});
 });
 
+test.describe('small phone with the switch on: the ticket as a page (MO-4)', () => {
+	test.use({ ...SMALL_PHONE, extraHTTPHeaders: ANOTHER_DEVICE });
+	const viewport = SMALL_PHONE.viewport;
+
+	test('opens the ticket as a page with targets of 44 px, edits it and goes back to the list with its sort and place', async ({ page }) => {
+		const { ticket, title, subtask } = await seedTicket(12);
+		await switchOn(page);
+		const url = await signIn(page);
+		await expect(page).toHaveURL(`${url}/tagesplan`);
+		await page.goto(`${url}/?sort=titel`);
+		const card = page.locator('li[data-ticket-id]').filter({ hasText: title });
+		await expect(card).toBeVisible();
+		await toCentre(card);
+		const scrolled = () => page.evaluate(() => window.scrollY);
+		const place = await scrolled();
+		expect(place).toBeGreaterThan(200);
+
+		// A tap on the title opens the ticket as a page over the whole screen.
+		await card.locator('.title-link').click();
+		await expect(page).toHaveURL(`${url}/tickets/${ticket.id}?sort=titel`);
+		const panel = page.getByRole('complementary', { name: title });
+		await expect(panel).toBeVisible();
+		await settled(panel);
+		const box = await panel.boundingBox();
+		expect(Math.abs(box.x)).toBeLessThanOrEqual(1);
+		expect(Math.abs(box.width - viewport.width)).toBeLessThanOrEqual(1);
+		expect(Math.abs(box.y + box.height - viewport.height)).toBeLessThanOrEqual(1);
+
+		// The head: the arrow back, the pin and "•••", no × and no "Vollansicht öffnen".
+		const back = panel.getByRole('button', { name: 'Zur Liste' });
+		await expectTarget(back);
+		await expectTarget(panel.getByRole('button', { name: /anheften$/ }));
+		await expectTarget(panel.getByRole('button', { name: 'Weitere Aktionen', exact: true }));
+		await expect(panel.getByRole('button', { name: 'Panel schließen' })).toHaveCount(0);
+		await expect(panel.getByRole('link', { name: 'Vollansicht öffnen' })).toHaveCount(0);
+
+		// Nothing scrolls sideways (one long word as title, link, code, table), every target has 44 px.
+		const body = panel.locator('.body');
+		expect(await scrollsSideways(page)).toBe(false);
+		expect(await scrollsSidewaysInside(body)).toBe(false);
+		expect(await smallTargets(panel)).toEqual([]);
+
+		// The fields one below the other: the label above its value, over the width of the page.
+		const label = await panel.getByText('Priorität', { exact: true }).boundingBox();
+		const priority = await panel.getByLabel('Priorität').boundingBox();
+		expect(label.y + label.height).toBeLessThanOrEqual(priority.y);
+		expect(Math.abs(label.x - priority.x)).toBeLessThanOrEqual(1);
+
+		// The bar at the bottom: "Erledigt" and the status; a tap asks about the open sub-task above them.
+		const bar = panel.locator('[data-ticket-bar]');
+		const done = bar.getByRole('checkbox', { name: /erledigt$/ });
+		await expectTarget(done.locator('xpath=..'));
+		await expectTarget(bar.getByLabel('Status'));
+		const barTop = (await bar.boundingBox()).y;
+		const foot = await panel.locator('footer').boundingBox();
+		expect(Math.abs(foot.y + foot.height - viewport.height)).toBeLessThanOrEqual(1);
+		await done.locator('xpath=..').tap();
+		const question = bar.getByRole('heading', { name: /noch offen – trotzdem erledigen\?$/ });
+		await expect(question).toBeVisible();
+		await expectUncovered(question, viewport);
+		await expectTarget(bar.getByRole('button', { name: 'Abbrechen' }));
+		await bar.getByRole('button', { name: 'Abbrechen' }).click();
+		await expect(question).toHaveCount(0);
+		await expect(bar.getByLabel('Status')).toHaveValue('open');
+		await expect(panel.getByRole('link', { name: subtask })).toBeAttached();
+
+		// A task of the text takes a tap beside its small box.
+		const task = panel.getByRole('checkbox', { name: 'Erste Aufgabe' });
+		await toCentre(task);
+		const taskBox = await task.boundingBox();
+		await page.touchscreen.tap(taskBox.x - 8, taskBox.y + taskBox.height / 2);
+		await expect(task).toBeChecked();
+
+		// The description: "Speichern" stays in view above the bar.
+		await panel.getByRole('button', { name: /^Bearbeiten\s*:\s*Beschreibung$/ }).click();
+		const save = panel.getByRole('button', { name: 'Speichern' });
+		await expect(save).toBeVisible();
+		expect(await smallTargets(panel)).toEqual([]);
+		const saveBox = await expectUncovered(save, viewport);
+		expect(saveBox.y + saveBox.height).toBeLessThanOrEqual(barTop);
+		await panel.getByRole('button', { name: 'Abbrechen' }).click();
+
+		// A comment: the toolbar of the editor wraps with tools of 44 px, "Kommentieren" stays in view.
+		await panel.getByRole('button', { name: 'Kommentar hinzufügen …' }).click();
+		const toolbar = panel.getByRole('toolbar', { name: 'Formatierung' });
+		await expect(toolbar).toBeVisible();
+		expect(await scrollsSidewaysInside(toolbar)).toBe(false);
+		expect((await toolbar.boundingBox()).height).toBeGreaterThan(2 * TARGET_PX);
+		for (const tool of await toolbar.getByRole('button').all()) await expectTarget(tool);
+		await expect(panel.getByRole('textbox', { name: 'Neuer Kommentar' })).toBeFocused();
+		await page.keyboard.type('Am Handy angesehen');
+		const send = panel.getByRole('button', { name: 'Kommentieren' });
+		const sendBox = await expectUncovered(send, viewport);
+		expect(sendBox.height).toBeGreaterThanOrEqual(TARGET_MIN_PX);
+		expect(sendBox.y + sendBox.height).toBeLessThanOrEqual(barTop);
+		await send.click();
+		await expect(panel.getByText('Am Handy angesehen')).toBeVisible();
+
+		// The suggestions of the tags stay at their field, with options of 44 px.
+		const tags = panel.getByLabel('Tags', { exact: true });
+		await toCentre(tags);
+		await tags.fill('Neu');
+		const suggestions = page.getByRole('listbox', { name: 'Vorschläge' });
+		await expect(suggestions).toBeVisible();
+		const field = await tags.boundingBox();
+		const list = await suggestions.boundingBox();
+		expect(list.width).toBeLessThan(viewport.width);
+		expect(Math.min(Math.abs(list.y - (field.y + field.height)), Math.abs(list.y + list.height - field.y))).toBeLessThanOrEqual(8);
+		for (const option of await suggestions.getByRole('option').all()) {
+			expect((await option.boundingBox()).height).toBeGreaterThanOrEqual(TARGET_MIN_PX);
+		}
+		await tags.press('Escape');
+		await tags.fill('');
+		expect(await scrollsSideways(page)).toBe(false);
+
+		// The arrow goes back to the list with its sort and its place, through the history: "Vor"
+		// opens the ticket again, there is no second entry of the list.
+		await back.click();
+		await expect(page).toHaveURL(`${url}/?sort=titel`);
+		await expect(panel).toHaveCount(0);
+		await expect.poll(async () => Math.abs((await scrolled()) - place)).toBeLessThanOrEqual(1);
+		await page.goForward();
+		await expect(panel).toBeVisible();
+		// The back gesture of Android does the same.
+		await page.goBack();
+		await expect(page).toHaveURL(`${url}/?sort=titel`);
+		await expect.poll(async () => Math.abs((await scrolled()) - place)).toBeLessThanOrEqual(1);
+
+		// The menu of the card leaves out "In Vollansicht öffnen".
+		await card.getByRole('button', { name: /^Weitere Aktionen für / }).click();
+		const menu = page.getByRole('menu', { name: /^Weitere Aktionen für / });
+		await expectSheet(menu, viewport);
+		await expect(menu.getByRole('menuitem', { name: 'Im Seitenpanel öffnen' })).toBeVisible();
+		await expect(menu.getByRole('menuitem', { name: 'In Vollansicht öffnen' })).toHaveCount(0);
+		await menu.getByRole('menuitem', { name: 'Schließen', exact: true }).click();
+		await expect(menu).toBeHidden();
+
+		// A large phone: the page keeps to its width as well.
+		await page.setViewportSize({ width: 412, height: 915 });
+		await card.locator('.title-link').click();
+		await expect(panel).toBeVisible();
+		await settled(panel);
+		expect(await scrollsSideways(page)).toBe(false);
+		expect(await scrollsSidewaysInside(body)).toBe(false);
+		expect(await smallTargets(panel)).toEqual([]);
+	});
+});
+
 test.describe('phone with the switch off', () => {
 	test.use({ ...PHONE, extraHTTPHeaders: ANOTHER_DEVICE });
 
@@ -681,6 +916,31 @@ test.describe('PC with the switch on', () => {
 		await expect(page.getByRole('button', { name: 'Spalten' })).toBeVisible();
 		await expect(page.getByRole('checkbox', { name: 'Alle angezeigten Tickets auswählen' })).toBeVisible();
 		await expect(page.getByRole('button', { name: 'Filter', exact: true })).toHaveCount(0);
+		expect(await scrollsSideways(page)).toBe(false);
+	});
+
+	test('keeps the side panel of the PC: ×, "Vollansicht", the status in the fields, no bar (MO-4)', async ({ page }) => {
+		const [open] = await seed([{ title: 'Keller entrümpeln' }]);
+		await switchOn(page);
+		await signIn(page);
+		await expect(page.getByRole('table')).toBeVisible();
+		const row = page.getByRole('row').filter({ hasText: open });
+		await row.getByRole('button', { name: /^Weitere Aktionen für / }).click();
+		const menu = page.getByRole('menu', { name: /^Weitere Aktionen für / });
+		await expect(menu.getByRole('menuitem', { name: 'In Vollansicht öffnen' })).toBeVisible();
+		await page.keyboard.press('Escape');
+		await row.getByRole('link', { name: open }).click();
+		const panel = page.getByRole('complementary', { name: open });
+		await expect(panel).toBeVisible();
+		await expect(panel.getByRole('button', { name: 'Panel schließen' })).toBeVisible();
+		await expect(panel.getByRole('link', { name: 'Vollansicht öffnen' })).toBeVisible();
+		await expect(panel.getByRole('button', { name: 'Zur Liste' })).toHaveCount(0);
+		await expect(panel.locator('[data-ticket-bar]')).toHaveCount(0);
+		await expect(panel.locator('footer')).toHaveCount(0);
+		const label = await panel.getByText('Priorität', { exact: true }).boundingBox();
+		const priority = await panel.getByLabel('Priorität').boundingBox();
+		expect(priority.x).toBeGreaterThan(label.x + label.width);
+		await expect(panel.getByLabel('Status')).toBeVisible();
 		expect(await scrollsSideways(page)).toBe(false);
 	});
 });
