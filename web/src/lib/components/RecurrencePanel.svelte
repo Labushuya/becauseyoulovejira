@@ -46,6 +46,7 @@
 	import type { EnsureTagResult } from '$lib/stores/catalog.svelte';
 	import { helpHref } from '$lib/settings-sections';
 	import { appHref } from '$lib/ticket-links';
+	import { registerUnsavedInput } from '$lib/unsaved-input';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import Lozenge from './guidance/Lozenge.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
@@ -292,6 +293,8 @@
 			tagText.trim() !== '' ||
 			(askStatus && chosenStatus !== '')
 	);
+	// Leaving the page in the phone frame asks first while the form holds input (MO-1b).
+	$effect(() => registerUnsavedInput(() => dirty));
 
 	// Focus when the panel opens: the title for "Neue Regel", else the heading (ADR-0025 section 6),
 	// or the link of the ticket the user came back from (ADR-0054 §7).

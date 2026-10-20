@@ -81,4 +81,34 @@ describe('base.css', () => {
 	it('draws the focus ring in the accent as text (ADR-0029 section 5)', () => {
 		expect(rule(':focus-visible')).toMatch(/outline:\s*2px solid var\(--color-brand-text\)/);
 	});
+
+	// MO-1b (ADR-0073 addendum): in the phone frame every shared target has 44 px, whatever the
+	// pointer; outside the frame the sizes of the PC stay (the rules of the rows above).
+	it('gives every shared target 44 px in the phone frame, but not in the cells of the tables', () => {
+		const frame = /@media \(max-width: 39\.99rem\) \{([\s\S]*?)\n\}\n/.exec(SOURCE)?.[1] ?? '';
+		const rules = [...frame.matchAll(/([^{}]+)\{([^{}]*)\}/g)];
+		const declarations = (selector: RegExp) =>
+			rules.find(([, list = '']) => selector.test(list))?.[2] ?? '';
+		const touch = /min-height:\s*var\(--control-height-touch\)/;
+		expect(declarations(/\.button-primary, \.button-secondary, \.button-subtle/)).toMatch(touch);
+		const icon = declarations(/\.button-icon:not/);
+		expect(icon).toMatch(/width:\s*var\(--control-height-touch\)/);
+		expect(icon).toMatch(/height:\s*var\(--control-height-touch\)/);
+		expect(declarations(/\.segmented > :is\(a, button\)/)).toMatch(touch);
+		const label = /label:has\(> input:is\(\[type='checkbox'\], \[type='radio'\]\)\)/;
+		expect(declarations(label)).toMatch(touch);
+		const field = declarations(/:where\(\s*input:not\(/);
+		expect(field).toMatch(touch);
+		expect(field).toMatch(/font-size:\s*var\(--font-size-field-touch\)/);
+		// Every rule of the block stands behind the switch, the cells of the tables keep their sizes.
+		const lists = [...frame.matchAll(/([^{}]+)\{/g)].map(([, list = '']) => list.trim());
+		expect(lists.length).toBeGreaterThanOrEqual(6);
+		for (const list of lists) expect(list).toMatch(/:root\[data-mobile-layout='on'\]/);
+		for (const list of lists.filter((entry) => /\.button-/.test(entry))) {
+			expect(list).toMatch(/:not\(:is\(td, th\) \*\)/);
+		}
+		// The sizes of the PC stay outside the block.
+		expect(rule('.button-icon')).toMatch(/width:\s*2rem/);
+		expect(rule('.button-icon.row-menu')).toMatch(/width:\s*var\(--control-height-s\)/);
+	});
 });

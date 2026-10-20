@@ -72,6 +72,7 @@
 		<input
 			id={searchId}
 			type="search"
+			enterkeyhint="search"
 			autocomplete="off"
 			spellcheck="false"
 			placeholder="Key, Titel oder Hauptticket"

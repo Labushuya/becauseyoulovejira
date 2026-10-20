@@ -66,6 +66,7 @@
 		<input
 			id={ids.field}
 			type="search"
+			enterkeyhint="search"
 			autocomplete="off"
 			spellcheck="false"
 			{placeholder}

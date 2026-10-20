@@ -54,6 +54,7 @@
 			id={`${uid}-input`}
 			class="input"
 			type="text"
+			enterkeyhint="done"
 			aria-label="Titel"
 			maxlength={TITLE_MAX_LENGTH}
 			value={store.value('title')}

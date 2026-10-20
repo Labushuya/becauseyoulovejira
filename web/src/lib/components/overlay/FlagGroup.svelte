@@ -99,6 +99,7 @@
 {#if active}
 	<section
 		class="flags"
+		class:in-modal={host !== null}
 		aria-label="Benachrichtigungen"
 		bind:this={section}
 		onpointerenter={() => store.pause('hover')}
@@ -202,10 +203,21 @@
 		pointer-events: none;
 	}
 
-	/* Phone frame (MO-1a, ADR-0073): above the bottom bar and the system bar, never below them. */
+	/*
+	 * Phone frame (MO-1a, ADR-0073): above the bottom bar and the system bar, never below them.
+	 * While a sheet or a page is open (MO-1b), they stand at the top of the screen instead, below the
+	 * status bar, so they cover neither its footer nor its buttons: in a modal (this group renders in
+	 * it) and while a popover stands as a sheet (data-sheet, the flags of the layout).
+	 */
 	@media (max-width: 39.99rem) {
 		:global(:root[data-mobile-layout='on']) .flags {
 			bottom: calc(1rem + var(--bottom-bar-height) + var(--safe-bottom));
+		}
+
+		:global(:root[data-mobile-layout='on']) .flags.in-modal,
+		:global(:root[data-mobile-layout='on']:has([data-sheet]:popover-open)) .flags {
+			top: calc(0.5rem + var(--safe-top));
+			bottom: auto;
 		}
 	}
 

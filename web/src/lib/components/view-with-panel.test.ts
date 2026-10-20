@@ -175,4 +175,15 @@ describe('view with panel', () => {
 		expect(drawerSource).not.toMatch(/@media|position:\s*fixed/);
 		expect(drawerSource).toMatch(/height:\s*100%/);
 	});
+
+	// MO-1b (ADR-0073 addendum): in the phone frame the panel is a page over the whole screen; the
+	// safe areas of the status bar and of the system bar stay free, only there and only as overlay.
+	it('keeps the safe areas free around the panel in the phone frame, and only there', () => {
+		const css = source.slice(source.indexOf('<style>'));
+		const frame = /@media \(max-width: 39\.99rem\) \{([\s\S]*?)\n\t\}\n/.exec(css)?.[1] ?? '';
+		expect(frame).toMatch(/:global\(:root\[data-mobile-layout='on'\]\) \.covering \.panel \{/);
+		expect(frame).toMatch(/padding-top:\s*var\(--safe-top\)/);
+		expect(frame).toMatch(/padding-bottom:\s*var\(--safe-bottom\)/);
+		expect(css.replace(frame, '')).not.toMatch(/--safe-(top|bottom)/);
+	});
 });

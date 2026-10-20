@@ -54,6 +54,7 @@
 		findTicketPickerSource,
 		type TicketPickerSource
 	} from '$lib/stores/ticket-picker.svelte';
+	import { registerUnsavedInput } from '$lib/unsaved-input';
 	import BlocksParentSwitch from './BlocksParentSwitch.svelte';
 	import CharmPicker from './CharmPicker.svelte';
 	import ColorChoice from './ColorChoice.svelte';
@@ -476,6 +477,8 @@
 			sources.length > 0 ||
 			ticketSources.length > 0
 	);
+	// Leaving the page in the phone frame asks first while the form holds input (MO-1b).
+	$effect(() => registerUnsavedInput(() => dirty));
 	const dueError = $derived(dueInvalid ? 'Ungültiges Datum.' : (fieldErrors.due ?? null));
 
 	$effect(() => {

@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { tick, untrack, type Snippet } from 'svelte';
+	import { modalPlacement } from '$lib/domain/phone-layout';
+	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 	import { closeAction, type CloseTrigger } from '$lib/overlay/close-rules';
 	import { flagOutlets } from '$lib/overlay/flag-outlets.svelte';
 	import {
@@ -8,6 +10,7 @@
 		reportNestedModal
 	} from '$lib/overlay/modal-context';
 	import { findFlagStore } from '$lib/stores/flags.svelte';
+	import { registerUnsavedInput } from '$lib/unsaved-input';
 	import FlagGroup from './FlagGroup.svelte';
 
 	// Modal building block (ADR-0025 section 3): a native <dialog> with showModal() for top layer,
@@ -28,6 +31,9 @@
 	// Sheet (MO-1a, ADR-0073): the same modal with `placement="sheet"` stands at the bottom over the
 	// full width, with round upper corners and the safe area of the system bar below its content, as
 	// a sheet of the phone frame ("Mehr"); size, rules, focus and flags stay those of the modal.
+	// In the phone frame (MO-1b, ADR-0073 addendum) every modal decides it here, not its owner
+	// (modalPlacement): S and M stand as a sheet, L and XL as a page over the whole screen. While it
+	// is open with unsaved input, leaving the page in the frame asks first (unsaved-input.ts).
 	let {
 		open,
 		size = 'm',
@@ -83,6 +89,13 @@
 	const uid = $props.id();
 	const titleId = `${uid}-title`;
 	const discardId = `${uid}-discard`;
+
+	/** The phone frame decides where the modal stands; on the PC its owner does. */
+	const mobileLayout = getMobileLayoutStore();
+	const shownAs = $derived(modalPlacement(size, placement, mobileLayout.active));
+
+	// Typed input in an open modal counts as unsaved for leaving the page (MO-1b).
+	$effect(() => registerUnsavedInput(() => open && dirty));
 
 	/** The flags of the app (null outside of the app layout, e.g. tests of a single component). */
 	const flags = findFlagStore();
@@ -255,7 +268,8 @@
 
 <dialog
 	class={`modal size-${size}`}
-	class:sheet={placement === 'sheet'}
+	class:sheet={shownAs === 'sheet'}
+	class:page={shownAs === 'page'}
 	aria-labelledby={titleId}
 	aria-describedby={describedBy}
 	aria-busy={busy}
@@ -536,6 +550,34 @@
 
 	.modal.sheet[open] .frame {
 		animation-name: sheet-in;
+	}
+
+	/*
+	 * Page of the phone frame (MO-1b, ADR-0073 addendum): the sizes L and XL take the whole screen,
+	 * without a strip of the blanket and without round corners; the safe areas of the status bar and
+	 * of the system bar lie inside, above the head and below the content. The × gets the target of
+	 * the frame. With interactive-widget=resizes-content the page shrinks with the on-screen
+	 * keyboard (100dvh), so its footer stays above it.
+	 */
+	.modal.page {
+		width: 100%;
+		height: 100dvh;
+		max-height: 100dvh;
+		margin: 0;
+	}
+
+	.page .frame {
+		height: 100%;
+		max-height: 100dvh;
+		padding-top: var(--safe-top);
+		padding-bottom: var(--safe-bottom);
+		border: none;
+		border-radius: 0;
+	}
+
+	.page .head-actions .button-icon {
+		width: var(--phone-target);
+		height: var(--phone-target);
 	}
 
 	@keyframes sheet-in {

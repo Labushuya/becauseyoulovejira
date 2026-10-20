@@ -277,6 +277,7 @@
 				<input
 					id={ids.search}
 					type="search"
+					enterkeyhint="search"
 					autocomplete="off"
 					spellcheck="false"
 					placeholder="Titel, Beschreibung oder Key"

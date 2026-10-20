@@ -583,6 +583,7 @@
 					<input
 						id={ids.search}
 						type="search"
+						enterkeyhint="search"
 						autocomplete="off"
 						placeholder="Nach Titel suchen"
 						bind:value={query}

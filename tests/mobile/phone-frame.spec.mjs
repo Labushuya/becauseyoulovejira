@@ -3,6 +3,10 @@
 // "Handy-Ansicht (Vorschau)" on: the bottom bar at the bottom with targets of at least 44 px, no
 // horizontal scrolling, "Mehr" as a sheet with every other view and the pages "nur am PC", the start
 // at the day plan. With the switch off the view of today; on a PC no element of the frame.
+// Since MO-1b (manifest BYL-E6-1950 ff.) on a small phone (360 × 800): a dialog, a menu and a picker
+// as sheets at the bottom, a confirmation too, each with a visible "Schließen" of at least 44 px and
+// without horizontal scrolling; the flags above the bottom bar and at the top while a sheet is open,
+// never covered, their buttons of 44 px. With the switch off the same overlays stay as today.
 //
 // The phone stands for another device in the home network (header X-Byl-Test-Remote-Address of the
 // test hooks, only in instances of the harness), so the pages of the administrator are "nur am PC".
@@ -16,9 +20,13 @@ const PHONE = {
 	hasTouch: true,
 	deviceScaleFactor: 3
 };
+/** A small phone (MO-1b): the narrowest width the views must serve. */
+const SMALL_PHONE = { ...PHONE, viewport: { width: 360, height: 800 } };
 const DESKTOP = { viewport: { width: 1280, height: 800 } };
 const ANOTHER_DEVICE = { 'X-Byl-Test-Remote-Address': '192.168.178.66' };
 const TARGET_PX = 44;
+/** 44 px as the browser reports it at a device scale of 3 (see expectTarget). */
+const TARGET_MIN_PX = TARGET_PX - 0.01;
 const VIEWPORT_BASE = 'width=device-width, initial-scale=1';
 const VIEWPORT_PHONE = `${VIEWPORT_BASE}, viewport-fit=cover, interactive-widget=resizes-content`;
 
@@ -56,6 +64,48 @@ function viewportContent(page) {
 /** The heading of a view (SectionBar); in the phone frame it is there for screen readers only. */
 function viewHeading(page, name) {
 	return page.getByRole('heading', { level: 2, name, exact: true });
+}
+
+/** Waits until the element has slid or faded in (its animations are over). */
+function settled(locator) {
+	return locator.evaluate((element) => Promise.all(element.getAnimations().map((animation) => animation.finished)));
+}
+
+/** The element stands at the bottom of the window over its full width, as a sheet; its box. */
+async function expectSheet(locator, viewport) {
+	await expect(locator).toBeVisible();
+	await settled(locator);
+	const box = await locator.boundingBox();
+	expect(Math.abs(box.x)).toBeLessThanOrEqual(1);
+	expect(Math.abs(box.width - viewport.width)).toBeLessThanOrEqual(1);
+	expect(Math.abs(box.y + box.height - viewport.height)).toBeLessThanOrEqual(1);
+	return box;
+}
+
+/**
+ * A target of at least 44 × 44 px. The box comes back in CSS pixels converted from device pixels
+ * (deviceScaleFactor 3), so 2.75rem may read as 43.99998; a hundredth of a pixel is no smaller target.
+ */
+async function expectTarget(locator) {
+	const box = await locator.boundingBox();
+	expect(box.width).toBeGreaterThanOrEqual(TARGET_MIN_PX);
+	expect(box.height).toBeGreaterThanOrEqual(TARGET_MIN_PX);
+}
+
+/** Nothing lies over the middle of the element, and it stands inside the window. */
+async function expectUncovered(locator, viewport) {
+	const box = await locator.boundingBox();
+	expect(box.x).toBeGreaterThanOrEqual(0);
+	expect(box.y).toBeGreaterThanOrEqual(0);
+	expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
+	expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
+	const onTop = await locator.evaluate((element) => {
+		const rect = element.getBoundingClientRect();
+		const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+		return hit !== null && element.contains(hit);
+	});
+	expect(onTop).toBe(true);
+	return box;
 }
 
 test.describe('phone with the switch on', () => {
@@ -144,6 +194,137 @@ test.describe('phone with the switch on', () => {
 
 		await bar.getByRole('button', { name: 'Erfassen' }).click();
 		await expect(page.getByRole('dialog', { name: 'Schnellerfassung' })).toBeVisible();
+	});
+});
+
+test.describe('small phone with the switch on: overlays (MO-1b)', () => {
+	test.use({ ...SMALL_PHONE, extraHTTPHeaders: ANOTHER_DEVICE });
+	const viewport = SMALL_PHONE.viewport;
+
+	test('shows dialogs, menus, pickers and questions as sheets with "Schließen", and the flags uncovered', async ({ page }) => {
+		await switchOn(page);
+		const url = await signIn(page);
+		await expect(page).toHaveURL(`${url}/tagesplan`);
+		const bar = page.getByRole('navigation', { name: 'Hauptnavigation' });
+
+		// A dialog (the quick entry, size M) is a sheet; its × and its buttons have 44 px.
+		await bar.getByRole('button', { name: 'Erfassen' }).click();
+		const quick = page.getByRole('dialog', { name: 'Schnellerfassung' });
+		await expectSheet(quick.locator('.frame'), viewport);
+		await expectTarget(quick.getByRole('button', { name: 'Schließen', exact: true }));
+		for (const name of ['Abbrechen', 'In den Eingang', 'Ticket anlegen']) {
+			expect((await quick.getByRole('button', { name, exact: true }).boundingBox()).height).toBeGreaterThanOrEqual(TARGET_MIN_PX);
+		}
+		expect(await scrollsSideways(page)).toBe(false);
+		const line = quick.getByLabel('Titel mit Kurzsyntax');
+		await expect(line).toHaveAttribute('enterkeyhint', 'done');
+		await line.fill('Fenster putzen');
+		await line.press('Enter');
+		await quick.getByRole('link', { name: 'Ticket ansehen' }).click();
+
+		// The panel of the ticket is a page; its menu "•••" is a sheet with "Schließen" at its end.
+		const panel = page.getByRole('complementary', { name: 'Fenster putzen' });
+		await expect(panel).toBeVisible();
+		await expectTarget(panel.getByRole('button', { name: 'Panel schließen' }));
+		const more = panel.getByRole('button', { name: 'Weitere Aktionen', exact: true });
+		await expectTarget(more);
+		await more.click();
+		const menu = page.getByRole('menu', { name: /^Weitere Aktionen für / });
+		await expectSheet(menu, viewport);
+		for (const box of await sizes(menu.getByRole('menuitem'))) {
+			expect(box.height).toBeGreaterThanOrEqual(TARGET_MIN_PX);
+		}
+		await expect(menu.getByRole('menuitem').last()).toHaveText('Schließen');
+		expect(await scrollsSideways(page)).toBe(false);
+		await menu.getByRole('menuitem', { name: 'Link kopieren' }).click();
+		await expect(menu).toBeHidden();
+
+		// The flag stands above the bottom bar, nothing covers it, its × has 44 px.
+		const flags = page.getByRole('region', { name: 'Benachrichtigungen' });
+		// "Link kopiert", or the error where the browser refuses the clipboard: a flag either way.
+		const copied = flags.getByRole('listitem').filter({ hasText: /Link kopiert|Link konnte nicht/ });
+		await expect(copied).toBeVisible();
+		await settled(copied);
+		const below = await expectUncovered(copied, viewport);
+		expect(below.y + below.height).toBeLessThanOrEqual((await bar.boundingBox()).y);
+		await expectTarget(copied.getByRole('button', { name: 'Benachrichtigung schließen' }));
+
+		// While a sheet is open the flags stand at the top, above it.
+		await more.click();
+		const sheet = await expectSheet(menu, viewport);
+		const above = await expectUncovered(copied, viewport);
+		expect(above.y + above.height).toBeLessThanOrEqual(sheet.y);
+		await menu.getByRole('menuitem', { name: 'Schließen', exact: true }).click();
+		await expect(menu).toBeHidden();
+		await expect(more).toBeFocused();
+
+		// A question (size S) is a sheet as well, with buttons of 44 px.
+		await more.click();
+		await menu.getByRole('menuitem', { name: 'In den Papierkorb …' }).click();
+		const question = page.getByRole('dialog', { name: /in den Papierkorb verschieben\?$/ });
+		await expectSheet(question.locator('.frame'), viewport);
+		for (const name of ['Schließen', 'Abbrechen', 'In den Papierkorb']) {
+			await expectTarget(question.getByRole('button', { name, exact: true }));
+		}
+		await question.getByRole('button', { name: 'In den Papierkorb', exact: true }).click();
+		await expect(panel).toBeHidden();
+
+		// A flag in front of an open sheet stands at its top, uncovered, "Rückgängig" with 44 px.
+		await bar.getByRole('button', { name: 'Erfassen' }).click();
+		const frame = await expectSheet(quick.locator('.frame'), viewport);
+		const moved = quick.getByRole('region', { name: 'Benachrichtigungen' }).getByRole('listitem').filter({ hasText: 'Papierkorb' });
+		await expect(moved).toBeVisible();
+		const top = await expectUncovered(moved, viewport);
+		expect(top.y + top.height).toBeLessThanOrEqual(frame.y);
+		await expectTarget(moved.getByRole('button', { name: 'Rückgängig' }));
+		await quick.getByRole('button', { name: 'Schließen', exact: true }).click();
+		await expect(quick).toHaveCount(0);
+
+		// A picker (the panel "Gruppieren" with its choices) is a sheet with the button "Schließen".
+		// Its button in the bar of the view comes with the view itself (MO-3).
+		await bar.getByRole('link', { name: 'Aufgaben' }).click();
+		await expect(viewHeading(page, 'Aufgaben')).toBeAttached();
+		const grouping = page.getByRole('button', { name: 'Gruppieren', exact: true });
+		await grouping.click();
+		const picker = page.getByRole('dialog', { name: 'Gruppieren' });
+		await expectSheet(picker, viewport);
+		const none = picker.getByRole('group', { name: 'Gruppieren', exact: true }).getByRole('radio', { name: 'Keine' });
+		await expect(none).toBeChecked();
+		expect((await none.locator('xpath=..').boundingBox()).height).toBeGreaterThanOrEqual(TARGET_MIN_PX);
+		expect(await scrollsSideways(page)).toBe(false);
+		const done = picker.getByRole('button', { name: 'Schließen', exact: true });
+		await expectTarget(done);
+		await done.click();
+		await expect(picker).toBeHidden();
+		await expect(grouping).toBeFocused();
+	});
+});
+
+test.describe('small phone with the switch off: overlays as today (MO-1b)', () => {
+	test.use({ ...SMALL_PHONE, extraHTTPHeaders: ANOTHER_DEVICE });
+
+	test('keeps a dialog in the middle and a picker at its button, without "Schließen"', async ({ page }) => {
+		await signIn(page);
+		await expect(viewHeading(page, 'Aufgaben')).toBeVisible();
+
+		await page.getByRole('banner').getByRole('button', { name: /Schnellerfassung/ }).click();
+		const quick = page.getByRole('dialog', { name: 'Schnellerfassung' });
+		const frame = quick.locator('.frame');
+		await expect(frame).toBeVisible();
+		await settled(frame);
+		const box = await frame.boundingBox();
+		expect(box.width).toBeLessThan(SMALL_PHONE.viewport.width);
+		expect(box.y + box.height).toBeLessThan(SMALL_PHONE.viewport.height - 1);
+		await quick.getByRole('button', { name: 'Schließen', exact: true }).click();
+		await expect(quick).toHaveCount(0);
+
+		await page.getByRole('button', { name: 'Gruppieren', exact: true }).click();
+		const picker = page.getByRole('dialog', { name: 'Gruppieren' });
+		await expect(picker).toBeVisible();
+		await settled(picker);
+		expect((await picker.boundingBox()).width).toBeLessThan(SMALL_PHONE.viewport.width);
+		await expect(picker.getByRole('button', { name: 'Schließen' })).toHaveCount(0);
+		expect(await scrollsSideways(page)).toBe(false);
 	});
 });
 

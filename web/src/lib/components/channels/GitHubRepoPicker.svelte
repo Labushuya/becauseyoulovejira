@@ -91,6 +91,7 @@
 				</svg>
 				<input
 					type="search"
+					enterkeyhint="search"
 					autocomplete="off"
 					spellcheck="false"
 					aria-label="Repositorys filtern"

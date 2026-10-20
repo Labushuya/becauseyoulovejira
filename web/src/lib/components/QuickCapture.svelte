@@ -127,6 +127,7 @@
 		<input
 			id={ids.input}
 			type="text"
+			enterkeyhint="done"
 			autocomplete="off"
 			aria-describedby={`${ids.preview} ${ids.hint}`}
 			bind:value={text}

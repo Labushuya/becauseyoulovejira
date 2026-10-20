@@ -176,6 +176,7 @@
 					<input
 						id={ids.filter}
 						type="search"
+						enterkeyhint="search"
 						autocomplete="off"
 						spellcheck="false"
 						aria-label="Filtern"
