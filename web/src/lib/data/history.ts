@@ -3,9 +3,10 @@
 import type PocketBase from 'pocketbase';
 import type { HistoryEntry } from '../domain/ticket';
 import { withDataErrors } from './errors';
+import { HISTORY_FIELDS, historyFields } from './history-marks';
 import type { RequestOptions } from './options';
 
-export const HISTORY_FIELDS = 'id,ticket,field,old_value,new_value,user,created';
+export { HISTORY_FIELDS };
 
 export interface HistoryRecord {
 	id: string;
@@ -15,6 +16,9 @@ export interface HistoryRecord {
 	new_value: string;
 	user: string;
 	created: string;
+	/** Missing before the migration of OF-1 and while the fields are not asked for. */
+	offline?: boolean;
+	device_at?: string;
 }
 
 export function toHistoryEntry(record: HistoryRecord): HistoryEntry {
@@ -25,7 +29,9 @@ export function toHistoryEntry(record: HistoryRecord): HistoryEntry {
 		oldValue: record.old_value,
 		newValue: record.new_value,
 		user: record.user,
-		created: record.created
+		created: record.created,
+		// Only an entry of the outbox carries the mark; every other one keeps its form.
+		...(record.offline === true && { offline: true as const, deviceAt: record.device_at || null })
 	};
 }
 
@@ -43,7 +49,7 @@ export function listHistory(
 			batch: 500,
 			filter: pb.filter('ticket = {:ticket}', { ticket: ticketId }),
 			sort: '-created,-@rowid',
-			fields: HISTORY_FIELDS,
+			fields: historyFields(),
 			signal
 		});
 		return records.map(toHistoryEntry);

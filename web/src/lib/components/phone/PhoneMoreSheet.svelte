@@ -16,6 +16,7 @@
 	import { appContext } from '$lib/stores/context.svelte';
 	import { findHostStore } from '$lib/stores/host.svelte';
 	import { findTrashStore } from '$lib/stores/trash.svelte';
+	import { findSignOut } from '$lib/sign-out';
 	import { newTicketHref } from '$lib/ticket-links';
 	import { VIEW_LABELS, viewHref } from '$lib/views';
 	import Modal from '../overlay/Modal.svelte';
@@ -56,10 +57,17 @@
 		settingsSubpageOf(page.url.pathname)?.parent ?? settingsSectionOf(page.url.pathname)?.id ?? null
 	);
 
-	// The same way out as the header of the PC: the login page with the current page as redirect.
+	// The same way out as the header of the PC: the login page with the current page as redirect. The
+	// sheet closes first, so the question of the layout about kept changes (OF-2) is no dialog out of
+	// a dialog (ADR-0025).
+	const signOut = findSignOut();
 	async function logout() {
 		const target = loginUrlFor(page.url);
 		onclose();
+		if (signOut !== null) {
+			signOut(target);
+			return;
+		}
 		auth.logout();
 		await goto(target, { replaceState: true });
 	}

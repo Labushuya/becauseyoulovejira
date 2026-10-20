@@ -1,0 +1,212 @@
+// Where the outbox keeps its actions on the device (OF-2, ADR-0074 addendum OF-2; concept OF-0
+// §3.2 and §5): IndexedDB "byl-offline", because it has transactions (the lease of the tabs and the
+// running number) and more room than localStorage. A small wrapper of its own, no dependency;
+// MemoryOutboxStorage stands in for it in the tests (jsdom has no IndexedDB). Kept are only the
+// actions themselves, never a copy of a ticket, a list or a plan.
+//
+// - Store "actions", key `op`; indexes byUserSeq [user, seq] and byTarget [user, target].
+// - Store "meta": `seq` (running number of the device) and `lease` ({ tab, until }).
+// - Deleting goes by key, never with deleteDatabase (that blocks while another tab has it open).
+
+import type { OutboxAction } from '$lib/domain/offline';
+
+export const OUTBOX_DATABASE = 'byl-offline';
+const VERSION = 1;
+const ACTIONS = 'actions';
+const META = 'meta';
+
+/** What the outbox needs of its storage; every call is one transaction. */
+export interface OutboxStorage {
+	/** Every stored entry of every account, unread (the outbox checks each one). */
+	list(): Promise<unknown[]>;
+	put(action: OutboxAction): Promise<void>;
+	remove(ops: readonly string[]): Promise<void>;
+	/** The next number of the order on this device. */
+	nextSeq(): Promise<number>;
+	/**
+	 * Takes or renews the lease of `tab` until `now + ms` when it is free, ran out or is its own;
+	 * true while `tab` holds it. IndexedDB runs transactions of one store one after another, so this
+	 * is the compare-and-swap the tabs need without Web Locks (no secure context, concept §3.9).
+	 */
+	lease(tab: string, now: number, ms: number): Promise<boolean>;
+	/** Gives the lease up, if `tab` holds it. */
+	release(tab: string): Promise<void>;
+}
+
+interface Lease {
+	tab: string;
+	until: number;
+}
+
+function isLease(value: unknown): value is Lease {
+	return (
+		typeof value === 'object' &&
+		value !== null &&
+		typeof (value as Lease).tab === 'string' &&
+		typeof (value as Lease).until === 'number'
+	);
+}
+
+/** The rule of the lease: free, ran out or the own one. */
+export function mayLease(current: unknown, tab: string, now: number): boolean {
+	return !isLease(current) || current.tab === tab || current.until <= now;
+}
+
+/** The storage of the tests: one instance stands for one device, several outboxes may share it. */
+export class MemoryOutboxStorage implements OutboxStorage {
+	readonly entries = new Map<string, unknown>();
+	#seq = 0;
+	#lease: Lease | null = null;
+
+	async list(): Promise<unknown[]> {
+		return [...this.entries.values()].map((entry) => structuredClone(entry));
+	}
+
+	async put(action: OutboxAction): Promise<void> {
+		this.entries.set(action.op, structuredClone(action));
+	}
+
+	async remove(ops: readonly string[]): Promise<void> {
+		for (const op of ops) this.entries.delete(op);
+	}
+
+	async nextSeq(): Promise<number> {
+		this.#seq += 1;
+		return this.#seq;
+	}
+
+	async lease(tab: string, now: number, ms: number): Promise<boolean> {
+		if (!mayLease(this.#lease, tab, now)) return false;
+		this.#lease = { tab, until: now + ms };
+		return true;
+	}
+
+	async release(tab: string): Promise<void> {
+		if (this.#lease?.tab === tab) this.#lease = null;
+	}
+
+	/** Who holds the lease now (tests). */
+	get holder(): string | null {
+		return this.#lease?.tab ?? null;
+	}
+}
+
+function done<T>(request: IDBRequest<T>): Promise<T> {
+	return new Promise((resolve, reject) => {
+		request.onsuccess = () => resolve(request.result);
+		request.onerror = () => reject(request.error);
+	});
+}
+
+function finished(transaction: IDBTransaction): Promise<void> {
+	return new Promise((resolve, reject) => {
+		transaction.oncomplete = () => resolve();
+		transaction.onerror = () => reject(transaction.error);
+		transaction.onabort = () => reject(transaction.error);
+	});
+}
+
+/** IndexedDB of the browser. The database opens on first use, so a device without the outbox has none. */
+export class IdbOutboxStorage implements OutboxStorage {
+	readonly #factory: IDBFactory;
+	#db: Promise<IDBDatabase> | null = null;
+
+	constructor(factory: IDBFactory) {
+		this.#factory = factory;
+	}
+
+	#open(): Promise<IDBDatabase> {
+		this.#db ??= new Promise<IDBDatabase>((resolve, reject) => {
+			const request = this.#factory.open(OUTBOX_DATABASE, VERSION);
+			request.onupgradeneeded = () => {
+				const db = request.result;
+				if (!db.objectStoreNames.contains(ACTIONS)) {
+					const actions = db.createObjectStore(ACTIONS, { keyPath: 'op' });
+					actions.createIndex('byUserSeq', ['user', 'seq']);
+					actions.createIndex('byTarget', ['user', 'target']);
+				}
+				if (!db.objectStoreNames.contains(META)) db.createObjectStore(META);
+			};
+			request.onsuccess = () => {
+				const db = request.result;
+				// Another tab of a newer build asks for a new version: this one steps aside.
+				db.onversionchange = () => {
+					db.close();
+					this.#db = null;
+				};
+				resolve(db);
+			};
+			request.onerror = () => reject(request.error);
+			request.onblocked = () => reject(new Error('The outbox of the device is blocked.'));
+		}).catch((error: unknown) => {
+			this.#db = null;
+			throw error;
+		});
+		return this.#db;
+	}
+
+	async list(): Promise<unknown[]> {
+		const db = await this.#open();
+		return done(db.transaction(ACTIONS, 'readonly').objectStore(ACTIONS).getAll());
+	}
+
+	async put(action: OutboxAction): Promise<void> {
+		const db = await this.#open();
+		const transaction = db.transaction(ACTIONS, 'readwrite');
+		transaction.objectStore(ACTIONS).put(action);
+		await finished(transaction);
+	}
+
+	async remove(ops: readonly string[]): Promise<void> {
+		if (ops.length === 0) return;
+		const db = await this.#open();
+		const transaction = db.transaction(ACTIONS, 'readwrite');
+		const store = transaction.objectStore(ACTIONS);
+		for (const op of ops) store.delete(op);
+		await finished(transaction);
+	}
+
+	async nextSeq(): Promise<number> {
+		const db = await this.#open();
+		const transaction = db.transaction(META, 'readwrite');
+		const store = transaction.objectStore(META);
+		const current = await done(store.get('seq'));
+		const next = (typeof current === 'number' ? current : 0) + 1;
+		store.put(next, 'seq');
+		await finished(transaction);
+		return next;
+	}
+
+	async lease(tab: string, now: number, ms: number): Promise<boolean> {
+		const db = await this.#open();
+		const transaction = db.transaction(META, 'readwrite');
+		const store = transaction.objectStore(META);
+		const current: unknown = await done(store.get('lease'));
+		const take = mayLease(current, tab, now);
+		if (take) store.put({ tab, until: now + ms } satisfies Lease, 'lease');
+		await finished(transaction);
+		return take;
+	}
+
+	async release(tab: string): Promise<void> {
+		const db = await this.#open();
+		const transaction = db.transaction(META, 'readwrite');
+		const store = transaction.objectStore(META);
+		const current: unknown = await done(store.get('lease'));
+		if (isLease(current) && current.tab === tab) store.delete('lease');
+		await finished(transaction);
+	}
+}
+
+/**
+ * Whether this browser already has the database of the outbox, without creating it
+ * (`indexedDB.databases()`); false where the browser cannot say.
+ */
+export async function hasOutboxDatabase(factory: IDBFactory | undefined): Promise<boolean> {
+	if (factory === undefined || typeof factory.databases !== 'function') return false;
+	try {
+		return (await factory.databases()).some((info) => info.name === OUTBOX_DATABASE);
+	} catch {
+		return false;
+	}
+}

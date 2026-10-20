@@ -3,8 +3,28 @@
 	import { page } from '$app/state';
 	import { auth, type LoginFailure } from '$lib/auth.svelte';
 	import CenteredCard from '$lib/components/CenteredCard.svelte';
+	import SectionMessage from '$lib/components/guidance/SectionMessage.svelte';
+	import { OFFLINE_TEXTS } from '$lib/domain/offline';
 	import { safeRedirect } from '$lib/guard';
 	import { serverUnreachable } from '$lib/guidance/texts';
+	import { keptOnDevice } from '$lib/offline/app-outbox';
+
+	// Changes the outbox kept for an account whose session ended (OF-2, concept OF-0 §2.1): the page
+	// says how many wait and that they go out after the sign-in with the same account; another
+	// account deletes them (decision of the user 4). Only the number, never what they are.
+	let kept = $state(0);
+	$effect(() => {
+		let active = true;
+		void keptOnDevice().then(
+			(count) => {
+				if (active) kept = count;
+			},
+			() => undefined
+		);
+		return () => {
+			active = false;
+		};
+	});
 
 	// One message for every refusal, so the page never reveals whether an e-mail exists. Too many
 	// attempts and server errors do not depend on the account (E2 plan, T-18).
@@ -68,6 +88,12 @@
 <CenteredCard labelledby="login-title">
 	<p class="brand">becauseyoulovejira</p>
 	<h1 id="login-title">Anmelden</h1>
+
+	{#if kept > 0}
+		<div class="kept">
+			<SectionMessage tone="info">{OFFLINE_TEXTS.signIn(kept)}</SectionMessage>
+		</div>
+	{/if}
 
 	<div aria-live="polite">
 		{#if message}
@@ -151,7 +177,8 @@
 		font-weight: 600;
 	}
 
-	.message {
+	.message,
+	.kept {
 		margin-top: 1.25rem;
 	}
 

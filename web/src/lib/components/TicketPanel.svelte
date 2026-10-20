@@ -12,6 +12,7 @@
 	import type { TicketDetailStore } from '$lib/stores/ticket-detail.svelte';
 	import { ticketPathSteps } from '$lib/ticket-links';
 	import Breadcrumbs from './Breadcrumbs.svelte';
+	import PendingMark from './offline/PendingMark.svelte';
 	import ColorMark from './ColorMark.svelte';
 	import Drawer from './overlay/Drawer.svelte';
 	import EditableTitle from './EditableTitle.svelte';
@@ -181,6 +182,9 @@
 				<Breadcrumbs label="Pfad des Tickets" items={path} />
 			{:else}
 				<span class="key">{ticket?.key ?? ''}</span>
+			{/if}
+			{#if store.state === 'ready' && ticket}
+				<PendingMark id={ticket.id} />
 			{/if}
 		</div>
 	{/snippet}

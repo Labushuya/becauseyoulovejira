@@ -20,7 +20,7 @@ describe('licenses.txt (AR-4)', () => {
 		expect(license).toContain('Copyright (c) 2013-present Cole Bemis');
 		expect(SHIPPED).toContain(license);
 		expect(SHIPPED).toContain('lucide-static, Version 1.52.0');
-		for (const file of ['charm-icons.ts', 'pin-icon.ts']) {
+		for (const file of ['charm-icons.ts', 'pin-icon.ts', 'offline-icons.ts']) {
 			expect(read('src', 'lib', 'domain', file), file).toContain(
 				'@license lucide-static v1.52.0 - ISC'
 			);

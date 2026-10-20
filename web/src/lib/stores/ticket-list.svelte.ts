@@ -67,6 +67,7 @@ import {
 	type TicketSummary
 } from '$lib/domain/ticket';
 import { countNew, isNew, unreadSinceOf, type UnreadTicket } from '$lib/domain/unread';
+import { OFFLINE_TEXTS } from '$lib/domain/offline';
 import { pinnedTickets } from '$lib/domain/pins';
 import { SILENT_FLAGS, type FlagSink } from './flags.svelte';
 import type { PinnedSource } from './pins.svelte';
@@ -104,6 +105,25 @@ export interface TicketListData {
 	/** `expectedUpdated` refuses the change if the ticket changed since (ADR-0032 section 6). */
 	update(id: string, patch: TicketPatch, options?: DescriptionGuard): Promise<TicketSummary>;
 }
+
+/**
+ * The changes of the outbox laid over the tickets (OF-2, ADR-0074 addendum OF-2): every ticket the
+ * store takes in (load, answer, event, reconciliation) shows the kept status; a reconciliation keeps
+ * a ticket a kept change holds open. Without it every ticket shows as the server has it.
+ */
+export interface TicketOverlay {
+	apply<T extends TicketSummary>(ticket: T): T;
+	/** A kept change holds the ticket as shown (a reconciliation does not remove it). */
+	holds(id: string): boolean;
+	/** A change of the ticket waits to be sent (the flag says so). */
+	isPending(id: string): boolean;
+}
+
+export const NO_OVERLAY: TicketOverlay = Object.freeze({
+	apply: <T extends TicketSummary>(ticket: T): T => ticket,
+	holds: () => false,
+	isPending: () => false
+});
 
 /** Session checks before and after requests (ADR-0006 section 4); `auth` provides both. */
 export interface SessionGuard {
@@ -278,6 +298,8 @@ export interface TicketListOptions {
 	 * "mir", and every account stays "Anderes Konto".
 	 */
 	assignees?: () => AssigneeContext;
+	/** The outbox (OF-2); without it every ticket shows as the server has it. */
+	overlay?: TicketOverlay;
 }
 
 const NO_ASSIGNEES: AssigneeContext = Object.freeze({ selfId: null, selfName: '', names: null });
@@ -289,6 +311,7 @@ export class TicketListStore {
 	readonly #projectOf: ResolveProject<TicketSummary>;
 	readonly #subProjectsOf: SubProjectsOf;
 	readonly #assignees: () => AssigneeContext;
+	readonly #overlay: TicketOverlay;
 	/** The signed-in account for "Mir zugewiesen" and "neu" after an assignment (ADR-0068). */
 	#selfId = $derived.by(() => this.#assignees().selfId);
 
@@ -462,7 +485,8 @@ export class TicketListStore {
 			series = NO_SERIES,
 			changes = seriesChanges(series),
 			pins,
-			assignees = () => NO_ASSIGNEES
+			assignees = () => NO_ASSIGNEES,
+			overlay = NO_OVERLAY
 		}: TicketListOptions = {}
 	) {
 		this.#data = data;
@@ -471,6 +495,7 @@ export class TicketListStore {
 		this.#projectOf = projectOf;
 		this.#subProjectsOf = subProjectsOf;
 		this.#assignees = assignees;
+		this.#overlay = overlay;
 		this.#today = berlinToday(now());
 		this.#pins = pins ?? null;
 		this.#reads = reads ?? null;
@@ -870,8 +895,10 @@ export class TicketListStore {
 	 * one in the store is ignored, so a late event does not overwrite a newer answer. A done ticket
 	 * leaves the list; the view "Erledigte" shows it (ADR-0066).
 	 */
-	upsert(ticket: TicketSummary): void {
-		if (this.#deleted.has(ticket.id)) return;
+	upsert(incoming: TicketSummary): void {
+		if (this.#deleted.has(incoming.id)) return;
+		// A kept change of the outbox stays laid over it (OF-2).
+		const ticket = this.#overlay.apply(incoming);
 		this.#touched?.add(ticket.id);
 		const existing = this.find(ticket.id);
 		if (existing !== null && existing.updated > ticket.updated) return;
@@ -939,6 +966,8 @@ export class TicketListStore {
 				children.length === 0
 					? `${ticket.key} erledigt.`
 					: `${ticket.key} und ${subtaskCountText(children.length)} erledigt.`,
+			// Kept by the outbox (OF-2): it says so.
+			...(this.#overlay.isPending(id) && { description: OFFLINE_TEXTS.pendingFlag }),
 			action: { label: 'Rückgängig', run: () => void this.undo(id) },
 			onclose: () => {
 				if (this.#undoable.get(id)?.flagId === flagId) this.#undoable.delete(id);
@@ -974,7 +1003,11 @@ export class TicketListStore {
 				this.completed(saved, ticket.status);
 			} else {
 				this.upsert(saved);
-				this.#flags.show({ tone: 'success', title: `${saved.key} wieder offen.` });
+				this.#flags.show({
+					tone: 'success',
+					title: `${saved.key} wieder offen.`,
+					...(this.#overlay.isPending(id) && { description: OFFLINE_TEXTS.pendingFlag })
+				});
 			}
 			this.#changes.changed({ before: ticket, after: saved });
 		} catch (error) {
@@ -1392,12 +1425,16 @@ export class TicketListStore {
 			]);
 			if (controller.signal.aborted) return;
 			this.#open.clear();
-			// A just checked ticket may still be open in an answer that started before the check.
+			// A just checked ticket may still be open in an answer that started before the check; one
+			// a kept change of the outbox completed stays out as well (OF-2).
 			for (const ticket of tickets) {
-				if (!this.#undoable.has(ticket.id)) this.#open.set(ticket.id, ticket);
+				const shown = this.#overlay.apply(ticket);
+				if (!this.#undoable.has(ticket.id) && shown.status !== 'done') {
+					this.#open.set(ticket.id, shown);
+				}
 			}
 			this.#subtasks.clear();
-			for (const ticket of subtasks) this.#subtasks.set(ticket.id, ticket);
+			for (const ticket of subtasks) this.#subtasks.set(ticket.id, this.#overlay.apply(ticket));
 			this.#openState = 'ready';
 			void this.#loadReads();
 		} catch (error) {
@@ -1424,7 +1461,8 @@ export class TicketListStore {
 	#mergeOpen(open: readonly TicketSummary[], touched: ReadonlySet<string>): void {
 		const ids = new SvelteSet(open.map((ticket) => ticket.id));
 		for (const id of [...this.#open.keys()]) {
-			if (!ids.has(id) && !touched.has(id)) this.#open.delete(id);
+			// A ticket a kept change reopened is not open on the server yet (OF-2).
+			if (!ids.has(id) && !touched.has(id) && !this.#overlay.holds(id)) this.#open.delete(id);
 		}
 		// A just checked ticket may still be open in a snapshot that started before the check.
 		for (const ticket of open) {
@@ -1443,9 +1481,10 @@ export class TicketListStore {
 		for (const id of [...this.#subtasks.keys()]) {
 			if (!ids.has(id) && !touched.has(id)) this.#subtasks.delete(id);
 		}
-		for (const ticket of subtasks) {
-			this.#revive(ticket.id, touched);
-			if (this.#deleted.has(ticket.id) || touched.has(ticket.id)) continue;
+		for (const incoming of subtasks) {
+			this.#revive(incoming.id, touched);
+			if (this.#deleted.has(incoming.id) || touched.has(incoming.id)) continue;
+			const ticket = this.#overlay.apply(incoming);
 			const existing = this.#subtasks.get(ticket.id);
 			if (existing === undefined || existing.updated <= ticket.updated) {
 				this.#subtasks.set(ticket.id, ticket);

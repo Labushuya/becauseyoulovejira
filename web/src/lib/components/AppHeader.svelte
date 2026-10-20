@@ -6,6 +6,7 @@
 	import { QUICK_CAPTURE_KEYSHORTCUTS } from '$lib/domain/shortcuts';
 	import { loginUrlFor } from '$lib/guard';
 	import { isSettingsPath } from '$lib/settings-sections';
+	import { findSignOut } from '$lib/sign-out';
 	import { NEW_TICKET_LINK_ID, newTicketHref } from '$lib/ticket-links';
 	import AreaSwitch from './AreaSwitch.svelte';
 	import HelpMenu from './help/HelpMenu.svelte';
@@ -61,9 +62,14 @@
 	});
 
 	// Same target as the layout guard, which reacts to the ended session as well: the login page
-	// with the current page as redirect.
+	// with the current page as redirect. The layout asks first while the outbox keeps changes (OF-2).
+	const signOut = findSignOut();
 	async function logout() {
 		const target = loginUrlFor(page.url);
+		if (signOut !== null) {
+			signOut(target);
+			return;
+		}
 		auth.logout();
 		await goto(target, { replaceState: true });
 	}

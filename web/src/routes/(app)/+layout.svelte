@@ -9,6 +9,10 @@
 	import AreaMoveDialog from '$lib/components/AreaMoveDialog.svelte';
 	import LiveUpdateNotice from '$lib/components/LiveUpdateNotice.svelte';
 	import ShortcutsModal from '$lib/components/help/ShortcutsModal.svelte';
+	import OfflineNotice from '$lib/components/offline/OfflineNotice.svelte';
+	import OutboxButton from '$lib/components/offline/OutboxButton.svelte';
+	import OutboxDialog from '$lib/components/offline/OutboxDialog.svelte';
+	import ConfirmDialog from '$lib/components/overlay/ConfirmDialog.svelte';
 	import FlagGroup from '$lib/components/overlay/FlagGroup.svelte';
 	import PhoneTabBar from '$lib/components/phone/PhoneTabBar.svelte';
 	import PhoneTopBar from '$lib/components/phone/PhoneTopBar.svelte';
@@ -163,8 +167,18 @@
 	} from '$lib/stores/day-plan.svelte';
 	import { ticketHrefIn } from '$lib/ticket-host';
 	import { dayPlanHref, inboxItemHref, recurrenceHref, recurrencesHref } from '$lib/ticket-links';
-	import { hasUnsavedInput } from '$lib/unsaved-input';
+	import { hasUnsavedInput, registerUnsavedInput } from '$lib/unsaved-input';
 	import { WayBack, setWayBack } from '$lib/way-back';
+	import { listHistory } from '$lib/data/history';
+	import { OFFLINE_TEXTS, type OutboxAction } from '$lib/domain/offline';
+	import { personLabel } from '$lib/domain/people';
+	import type { TicketChangeSink } from '$lib/domain/subtask-transfer-change';
+	import type { Ticket, TicketSummary } from '$lib/domain/ticket';
+	import { forgetOfflineSupport, getOutbox, offlineSupport } from '$lib/offline/app-outbox';
+	import { offlineTicketDetailData, offlineTicketListData } from '$lib/offline/offline-data';
+	import { setOutboxContext } from '$lib/offline/outbox.svelte';
+	import { preloadOfflineViews } from '$lib/offline/preload';
+	import { setSignOut } from '$lib/sign-out';
 
 	// Shell of every signed-in page (E2 plan, T-4). The root layout renders it only with a
 	// session; the login page stays outside this group.
@@ -207,6 +221,94 @@
 		window.addEventListener('beforeunload', onbeforeunload);
 		return () => window.removeEventListener('beforeunload', onbeforeunload);
 	});
+
+	// The outbox (OF-2, ADR-0074 addendum OF-2): while the server reports `offline_ops` and the phone
+	// frame applies, a check mark or a status that does not reach the server is kept on this device
+	// and sent later over the normal way. Without either, every change goes as before. It belongs to
+	// the signed-in account; the layout tells it the account, the frame and the answer of the server,
+	// and shows its hints, its symbol, its dialog and its questions.
+	const outbox = getOutbox();
+	setOutboxContext(outbox);
+	$effect(() => {
+		const active = phone;
+		untrack(() => outbox.setFrame(active));
+	});
+	$effect(() => {
+		const user = auth.userId ?? null;
+		untrack(() => outbox.attach(user));
+	});
+	// Whether the server takes the outbox: asked once per sign-in with the question of "Neues Ticket",
+	// again when the tab comes back while it did not (a restart of the server meanwhile).
+	$effect(() => {
+		if (!auth.userId) return;
+		const ask = () => {
+			if (!auth.ensureValid()) return;
+			void offlineSupport().then((ops) => outbox.setSupport(ops));
+		};
+		untrack(ask);
+		const onvisible = () => {
+			if (document.visibilityState === 'visible' && !outbox.supported) ask();
+		};
+		document.addEventListener('visibilitychange', onvisible);
+		return () => {
+			document.removeEventListener('visibilitychange', onvisible);
+			forgetOfflineSupport();
+		};
+	});
+	// Reloading without a connection would leave the app unopenable until the server is back: the
+	// browser asks first while changes are kept (only in the frame, the listener above).
+	$effect(() => registerUnsavedInput(() => outbox.reloadRisky));
+	// The modules of the views of the outbox, once it works and the server answers.
+	let preloaded = false;
+	$effect(() => {
+		if (preloaded || !outbox.armed || outbox.offline) return;
+		preloaded = true;
+		untrack(() => preloadOfflineViews());
+	});
+	let outboxOpen = $state(false);
+	/** The question before reloading without a connection, with what to run on "Neu laden". */
+	let reloadQuestion = $state<{ run: () => void } | null>(null);
+	function guardedReload(run: () => void) {
+		if (outbox.reloadRisky) reloadQuestion = { run };
+		else run();
+	}
+	function confirmReload() {
+		const question = reloadQuestion;
+		reloadQuestion = null;
+		question?.run();
+	}
+	/** The question before signing out with kept changes (decision of the user 4). */
+	let logoutQuestion = $state<{ target: ResolvedPathname; count: number } | null>(null);
+	let loggingOut = $state(false);
+	async function leave(target: ResolvedPathname) {
+		auth.logout();
+		await goto(target, { replaceState: true });
+	}
+	setSignOut((target) => {
+		const count = outbox.count;
+		if (count > 0) logoutQuestion = { target, count };
+		else void leave(target);
+	});
+	async function confirmLogout() {
+		const question = logoutQuestion;
+		if (question === null || loggingOut) return;
+		loggingOut = true;
+		try {
+			await outbox.clearUser();
+		} catch {
+			// The device keeps them; they belong to this account and wait for its next sign-in.
+		}
+		loggingOut = false;
+		logoutQuestion = null;
+		await leave(question.target);
+	}
+	/** Who changed the status of a conflicted ticket meanwhile, from its history; null for oneself. */
+	async function changedBy(action: OutboxAction): Promise<string | null> {
+		const entries = await listHistory(pb, action.target);
+		const entry = entries.find((candidate) => candidate.field === 'status');
+		if (entry === undefined || entry.user === auth.userId) return null;
+		return personLabel(entry.user, auth.userId, people);
+	}
 
 	// The area of the tab (E7-3, ADR-0059): "Privat" or the household, remembered on this device per
 	// account. It comes before every store, so the first loads already ask only for this area; a
@@ -277,6 +379,13 @@
 		})
 	);
 	afterNavigate(() => transferOffers.navigated());
+	// A change the outbox keeps for later offers nothing yet: "Übertragen …" and the offer of the
+	// series need the server (OF-2); once sent, the stores report changes as before.
+	const changeOffers: TicketChangeSink = {
+		changed: (change) => {
+			if (!outbox.isPending(change.after.id)) transferOffers.changed(change);
+		}
+	};
 	// The own pinned tickets (ADR-0064) of every area, live in every tab of the account; they come
 	// before the list, which shows them in the section "Angeheftet" instead of below.
 	const pins = setPinStore(new PinStore(pinData(pb), auth, flags));
@@ -288,18 +397,25 @@
 	setAssignees(assigneeDirectory);
 	// The column sort "Projekt" resolves projects through the catalog (E3 plan, package 9); the
 	// "new" mark follows the own read rows and base line (E4 plan, package 4).
+	// The check mark and the status of a cell go through the outbox while it works (OF-2).
+	const blockingIds = (id: string) => tickets.openBlockingOf(id).map((child) => child.id);
 	const tickets = setTicketListStore(
-		new TicketListStore(ticketListData(pb), auth, {
-			projectOf: (ticket) => catalog.projectOf(ticket),
-			// A project filter takes the sub projects in (ADR-0034).
-			subProjectsOf: (projectId) => catalog.subProjectsOf(projectId).map((project) => project.id),
-			reads: readsData(pb),
-			flags,
-			series: rules,
-			changes: transferOffers,
-			pins,
-			assignees: () => assigneeDirectory.context
-		})
+		new TicketListStore(
+			offlineTicketListData(ticketListData(pb), outbox, (id) => tickets.find(id), blockingIds),
+			auth,
+			{
+				projectOf: (ticket) => catalog.projectOf(ticket),
+				// A project filter takes the sub projects in (ADR-0034).
+				subProjectsOf: (projectId) => catalog.subProjectsOf(projectId).map((project) => project.id),
+				reads: readsData(pb),
+				flags,
+				series: rules,
+				changes: changeOffers,
+				pins,
+				assignees: () => assigneeDirectory.context,
+				overlay: outbox
+			}
+		)
 	);
 	// Ticket picker (ADR-0042): every ticket choice lists the open tickets of the list store, the
 	// recently viewed ones of this device first; done ones come page by page from the server.
@@ -325,9 +441,39 @@
 	$effect(() => untrack(() => trash.start()));
 	$effect(() => untrack(() => trash.connect(trashLive(pb))));
 	// Replacing a pinned comment offers "Rückgängig" as a flag (ADR-0044).
+	// The status of the panel and the full view goes through the outbox while it works (OF-2).
 	const detail = setTicketDetailStore(
-		new TicketDetailStore(ticketDetailData(pb), auth, tickets, trash, rules, flags, transferOffers)
+		new TicketDetailStore(
+			offlineTicketDetailData(
+				ticketDetailData(pb),
+				outbox,
+				(id) => (detail.ticket?.id === id ? detail.ticket : null),
+				blockingIds
+			),
+			auth,
+			tickets,
+			trash,
+			rules,
+			flags,
+			changeOffers,
+			outbox
+		)
 	);
+	// The outbox shows what the server answered later in the list and the panel.
+	function showFromOutbox(ticket: TicketSummary) {
+		tickets.upsert(ticket);
+		const shown = detail.ticket;
+		if (shown?.id !== ticket.id) return;
+		if ('description' in ticket) detail.upsert(ticket as Ticket);
+		else detail.upsert({ ...shown, ...ticket, description: shown.description });
+	}
+	const outboxSink = {
+		upsert: showFromOutbox,
+		flags,
+		sessionEnded: () => auth.logout(),
+		childrenOf: blockingIds
+	};
+	$effect(() => untrack(() => outbox.connect(outboxSink)));
 	// "Ticket duplizieren" (ADR-0045): one request, the result as a flag with the way back. Whether the
 	// server takes the status of the new sub-tasks comes from the same answer as "Neues Ticket" (UT-2).
 	setTicketDuplicateStore(new TicketDuplicateStore(ticketDuplicateData(pb), auth, flags, detail));
@@ -737,7 +883,11 @@
 	<div class="area-mark" aria-hidden="true"></div>
 {/if}
 {#if phone}
-	<PhoneTopBar covered={panelShell.covering} />
+	<PhoneTopBar covered={panelShell.covering}>
+		{#snippet status()}
+			<OutboxButton {outbox} onshow={() => (outboxOpen = true)} />
+		{/snippet}
+	</PhoneTopBar>
 {:else}
 	<AppHeader
 		covered={panelShell.covering}
@@ -748,13 +898,22 @@
 	/>
 {/if}
 <main class="content">
+	<!-- The outbox (OF-2): without a connection its warning takes the place of the live hint; kept
+	     changes, conflicts and refusals with "Ansehen". Only while it works or keeps something. -->
+	{#if outbox.watching || outbox.count > 0}
+		<OfflineNotice {outbox} onshow={() => (outboxOpen = true)} />
+	{/if}
 	<!-- A failed realtime subscription is tried again; meanwhile a hint says so (ADR-0011 E6). -->
-	<LiveUpdateNotice />
+	{#if !outbox.offline}
+		<LiveUpdateNotice reload={() => guardedReload(() => window.location.reload())} />
+	{/if}
 	<!-- A new build while this tab is open (ADR-0040): hint, and the next link loads it, unless
-	     typed text of the ticket, a running bulk action or an offered "Rückgängig" would be lost. -->
+	     typed text of the ticket, a running bulk action or an offered "Rückgängig" would be lost,
+	     or the connection is missing (OF-2: a new document would not load). -->
 	<AppUpdateNotice
 		unsaved={() => detail.hasUnsavedInput || activity.dirty}
-		pending={() => bulk.busy || flags.flags.some((flag) => flag.action !== null)}
+		pending={() => bulk.busy || flags.flags.some((flag) => flag.action !== null) || outbox.offline}
+		reload={() => guardedReload(() => window.location.reload())}
 	/>
 	{@render children()}
 </main>
@@ -787,6 +946,42 @@
 
 {#if areaMove.request !== null && areaMove.request.inline !== true}
 	<AreaMoveDialog store={areaMove} />
+{/if}
+
+{#if outboxOpen}
+	<OutboxDialog
+		{outbox}
+		onclose={() => (outboxOpen = false)}
+		ticketHref={(id) => ticketHrefIn(id, page.route.id, page.url, openMode.effective)}
+		{changedBy}
+	/>
+{/if}
+
+<!-- Questions of the outbox (OF-2): before reloading without a connection, before signing out with
+     kept changes; "Abbrechen" has the first focus. -->
+{#if reloadQuestion !== null}
+	<ConfirmDialog
+		open
+		title={OFFLINE_TEXTS.reloadTitle}
+		confirmLabel={OFFLINE_TEXTS.reloadConfirm}
+		onconfirm={confirmReload}
+		oncancel={() => (reloadQuestion = null)}
+	>
+		{OFFLINE_TEXTS.reloadText(outbox.count)}
+	</ConfirmDialog>
+{/if}
+
+{#if logoutQuestion !== null}
+	<ConfirmDialog
+		open
+		title={OFFLINE_TEXTS.logoutTitle(logoutQuestion.count)}
+		confirmLabel={OFFLINE_TEXTS.logoutConfirm}
+		busy={loggingOut}
+		onconfirm={() => void confirmLogout()}
+		oncancel={() => (logoutQuestion = null)}
+	>
+		{OFFLINE_TEXTS.logoutText(logoutQuestion.count)}
+	</ConfirmDialog>
 {/if}
 
 <style>

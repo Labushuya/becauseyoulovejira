@@ -62,6 +62,7 @@
 	import MenuChoice from './table/MenuChoice.svelte';
 	import StatusMenu from './table/StatusMenu.svelte';
 	import type { RowEdit } from './table/row-edit';
+	import PendingMark from './offline/PendingMark.svelte';
 
 	// One row of the ticket table (E3 plan, T-4): key, priority, status, title with the symbol of
 	// its source (ADR-0019 section 4), its charm (ADR-0062) and the recurring icon, project, tags, due date, creation
@@ -327,7 +328,7 @@
 		{#if !(onselect && shows('select'))}{@render colorStripe()}{/if}{#if isNew}<span
 				class="new-dot"
 				title="Neu"><span class="visually-hidden">neu,</span></span
-			>{/if}{ticket.key}
+			>{/if}{ticket.key}<PendingMark id={ticket.id} />
 	</td>
 	{#if shows('priority')}
 		<td class="priority" class:editable={edit} data-col="priority">

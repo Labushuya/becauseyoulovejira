@@ -4,23 +4,40 @@
 	import { page } from '$app/state';
 	import { claimReload, sessionStorageOf } from '$lib/app-update';
 	import CenteredCard from '$lib/components/CenteredCard.svelte';
+	import ConfirmDialog from '$lib/components/overlay/ConfirmDialog.svelte';
+	import { OFFLINE_TEXTS } from '$lib/domain/offline';
+	import { getOutbox } from '$lib/offline/app-outbox';
+	import { getConnectivity } from '$lib/offline/connectivity.svelte';
 	import { loadFully, reloadPage } from '$lib/page-reload';
 
 	// Rendered inside the root layout, so the route guard has already run (E1.1). A module that
 	// could not be loaded, usually because a new build replaced it (ADR-0040), makes the page load
 	// the address once more by itself; the guard in sessionStorage stops a loop, after that the
 	// page offers "Neu laden". Both ways out load a new document, so a broken client state ends.
+	// Without a connection (known to the outbox, OF-2) a new document would not load: the page then
+	// says that the view is not loaded yet and offers "Zurück"; "Neu laden" asks first while changes
+	// are kept.
+	const connectivity = getConnectivity();
 	let reloading = $state(false);
+	let asking = $state(false);
+	const offline = $derived(connectivity.offline);
+	const notLoaded = $derived(offline && page.error?.kind === 'module-load');
 
 	$effect(() => {
 		if (page.error?.kind !== 'module-load') return;
 		const href = page.url.href;
 		untrack(() => {
+			if (connectivity.offline) return;
 			if (!claimReload(sessionStorageOf(window), href, Date.now())) return;
 			reloading = true;
 			loadFully(href);
 		});
 	});
+
+	function reload() {
+		if (offline && getOutbox().count > 0) asking = true;
+		else reloadPage();
+	}
 
 	const notFound = $derived(page.status === 404);
 	const title = $derived(
@@ -28,16 +45,20 @@
 			? 'Neue Version wird geladen …'
 			: notFound
 				? 'Seite nicht gefunden'
-				: 'Etwas ist schiefgelaufen'
+				: notLoaded
+					? OFFLINE_TEXTS.notLoadedTitle
+					: 'Etwas ist schiefgelaufen'
 	);
 	const body = $derived(
 		reloading
 			? 'becauseyoulovejira wurde aktualisiert. Die Seite lädt gleich neu.'
 			: notFound
 				? 'Diese Adresse gibt es in becauseyoulovejira nicht.'
-				: page.error?.kind === 'module-load'
-					? 'Ein Teil der App konnte nicht geladen werden, vermutlich wurde sie gerade aktualisiert oder neu gestartet. Lade die Seite neu.'
-					: 'Die Seite konnte nicht geladen werden. Lade sie neu oder versuche es später erneut.'
+				: notLoaded
+					? OFFLINE_TEXTS.notLoaded
+					: page.error?.kind === 'module-load'
+						? 'Ein Teil der App konnte nicht geladen werden, vermutlich wurde sie gerade aktualisiert oder neu gestartet. Lade die Seite neu.'
+						: 'Die Seite konnte nicht geladen werden. Lade sie neu oder versuche es später erneut.'
 	);
 </script>
 
@@ -49,11 +70,17 @@
 	<p class="brand">becauseyoulovejira</p>
 	<h1 id="error-title">{title}</h1>
 	<p class="body">{body}</p>
-	{#if !reloading}
+	{#if notLoaded}
+		<div class="actions">
+			<button class="button-primary" type="button" onclick={() => window.history.back()}
+				>{OFFLINE_TEXTS.back}</button
+			>
+		</div>
+	{:else if !reloading}
 		<p class="status">Fehlercode {page.status}</p>
 		<div class="actions">
 			{#if !notFound}
-				<button class="button-primary" type="button" onclick={reloadPage}>Neu laden</button>
+				<button class="button-primary" type="button" onclick={reload}>Neu laden</button>
 			{/if}
 			<a
 				class={notFound ? 'button-primary' : 'button-secondary'}
@@ -63,6 +90,21 @@
 		</div>
 	{/if}
 </CenteredCard>
+
+{#if asking}
+	<ConfirmDialog
+		open
+		title={OFFLINE_TEXTS.reloadTitle}
+		confirmLabel={OFFLINE_TEXTS.reloadConfirm}
+		onconfirm={() => {
+			asking = false;
+			reloadPage();
+		}}
+		oncancel={() => (asking = false)}
+	>
+		{OFFLINE_TEXTS.reloadText(getOutbox().count)}
+	</ConfirmDialog>
+{/if}
 
 <style>
 	.brand {

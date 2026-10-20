@@ -22,6 +22,7 @@
 	import SubtaskPath from './SubtaskPath.svelte';
 	import SubtaskProgressChip from './SubtaskProgressChip.svelte';
 	import StatusMenu from './table/StatusMenu.svelte';
+	import PendingMark from './offline/PendingMark.svelte';
 
 	// A ticket of "Aufgaben" as a card in the phone frame (MO-3, ADR-0073 addendum MO-3; concept MO-0
 	// §3.2): the counterpart of a row of the table (TicketTableRow), rendered by the same TicketTable
@@ -175,7 +176,7 @@
 			<span class="key"
 				>{#if isNew}<span class="new-dot" title="Neu"
 						><span class="visually-hidden">neu,</span></span
-					>{/if}{ticket.key}</span
+					>{/if}{ticket.key}<PendingMark id={ticket.id} /></span
 			>
 			<StatusMenu
 				ticketKey={ticket.key}

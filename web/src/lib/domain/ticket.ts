@@ -239,6 +239,10 @@ export interface HistoryEntry {
 	/** Acting user, '' for system and superuser changes (T-9: "System"). */
 	user: string;
 	created: string;
+	/** A change from the outbox (OF-2, ADR-0074 §4); left out for every other entry. */
+	offline?: true;
+	/** Its time of the device as the server kept it, null without an accepted time. */
+	deviceAt?: string | null;
 }
 
 const STORED_DATE = /^(\d{4}-\d{2}-\d{2}) 00:00:00(?:\.000)?Z$/;
