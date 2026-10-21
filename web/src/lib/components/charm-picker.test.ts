@@ -211,6 +211,14 @@ describe('dialog', () => {
 		expect(pickerSource).toContain('class="search-field"');
 		expect(pickerSource).toContain('button-secondary button-small');
 	});
+
+	it('keeps the status region in the tree while it is empty, only visually empty (OF-4b round 2, K-8)', async () => {
+		show();
+		await open();
+		expect(screen.getByRole('status', { hidden: true }).textContent).toBe('');
+		// A region shown with `display: none` leaves the tree, and its first words would not be read.
+		expect(pickerSource).not.toMatch(/\.count[^{]*\{[^}]*display:\s*none/);
+	});
 });
 
 describe('symbol before a title', () => {

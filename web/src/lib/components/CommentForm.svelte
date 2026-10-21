@@ -136,8 +136,16 @@
 		color: var(--color-text-muted);
 	}
 
+	/*
+	 * Empty, the status region stays in the tree (OF-4b round 2, K-8): a live region that appears with
+	 * its words is often not read. It only takes no room, like `visually-hidden`.
+	 */
 	.note:empty {
-		display: none;
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
 	}
 
 	/*
