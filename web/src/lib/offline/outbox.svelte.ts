@@ -1569,8 +1569,7 @@ export class OutboxStore {
 		if (action === undefined) return;
 		await this.#guard(OFFLINE_INTENTS.discard(actionText(action)), () =>
 			this.#locked(async () => {
-				const state = this.#serverStateOf(action);
-				const done = await this.#transform((before) => this.#discardPlan(before, op, state));
+				const done = await this.#transform((before) => this.#discardPlan(before, op));
 				if (done !== null) this.#discardFlag(done);
 			})
 		);
@@ -1580,12 +1579,12 @@ export class OutboxStore {
 	/** The plan of "Verwerfen" of `op` on the actions as read (OF-3b). */
 	async #discardPlan(
 		before: readonly KeptAction[],
-		op: string,
-		state: ServerState
+		op: string
 	): Promise<Planned<Discarded> | null> {
 		const action = before.find((entry) => entry.op === op);
 		if (action === undefined) return null;
 		const present = opsOf(before);
+		const state = this.#serverStateOf(action);
 		const decided: Leave = needsDecision(action) ? { how: 'decided', state } : { how: 'nothing' };
 		const deleted = async (): Promise<Planned<Discarded>> => ({
 			after: await this.#pure((context) =>
