@@ -10,12 +10,27 @@
 //
 // Where it differs from the server on purpose: it knows no rules of the Record API (403 and 404 come
 // from the tests), no `updated` of its own and no series; the time of the device is not checked.
+//
+// Since OF-4a it creates tickets and entries of the inbox as the hooks do (tickets.pb.js, inbox.pb.js,
+// lib/client-ops.js `withOp`, `answerReplay`): a known identifier answers with the record of the first
+// time (another kind or another ID: `validation_op_reused`; one no longer to be seen:
+// `validation_op_applied` with its ID), an ID that is taken is refused at `id` with
+// `validation_not_unique`, a refusal of the hook (`refuseCreate`, e.g. an archived project) comes
+// before the key, and only a real creation draws a number of the counter (`counter`). With `strict` a
+// change or a read of a record the server does not have answers 404.
 
 import { expect, vi } from 'vitest';
 import type { DayPlanItem } from '$lib/data/day-plan';
 import { DataError } from '$lib/data/errors';
 import type { CalendarDate } from '$lib/domain/berlin-date';
-import type { ActionOutcome, KeptAction, OfflineOps, OutboxAction } from '$lib/domain/offline';
+import type { InboxItem } from '$lib/domain/inbox';
+import type {
+	ActionOutcome,
+	CreateAction,
+	KeptAction,
+	OfflineOps,
+	OutboxAction
+} from '$lib/domain/offline';
 import type { Status } from '$lib/domain/status';
 import type { CompletionChoice } from '$lib/domain/subtasks';
 import type { Ticket } from '$lib/domain/ticket';
@@ -163,6 +178,18 @@ function stamp(due: CalendarDate | null): string {
 	return due === null ? '' : `${due} 00:00:00.000Z`;
 }
 
+/** A record the fake server created for "＋" (OF-4a). */
+export interface CreatedRecord {
+	collection: 'tickets' | 'inbox_items';
+	key: string;
+	title: string;
+	project: string | null;
+	tags: string[];
+	household: string;
+	/** `source_meta.offline` / the history: the request came from the outbox with a time or not. */
+	offline: boolean;
+}
+
 /**
  * The server of the outbox as the hook behaves (client-ops.js): it takes a change and notes its
  * identifier; a known identifier answers with the ticket as it is now and changes nothing
@@ -190,10 +217,65 @@ export function fakeServer() {
 		reachable: true,
 		/** The check of the server (/api/health) answers. */
 		health: true,
-		lose: 0
+		lose: 0,
+		/** Records "＋" created (OF-4a), by their ID. */
+		records: new Map<string, CreatedRecord>(),
+		/** The identifiers of creations with the kind and the ID they wrote (`client_ops`). */
+		claims: new Map<string, { kind: string; record: string }>(),
+		/** Numbers of the counter drawn (`counters.nextValue`); only a real creation draws one. */
+		counter: 0,
+		/**
+		 * The hook refuses a creation of a ticket at this field (an archived project: only one with a
+		 * project), before the key; nothing is written.
+		 */
+		refuseCreate: null as { field: string; code: string } | null,
+		/** The hook refuses a creation of an entry of the inbox (an area that is no longer one's own). */
+		refuseItem: false,
+		/** Records the account no longer sees (the trash): a repetition names only their ID. */
+		hidden: new Set<string>(),
+		/** Changes and reads of a ticket the server does not have answer 404 (OF-4a). */
+		strict: false
 	};
-	const current = (id: string) =>
-		ticket(id, server.status.get(id) ?? 'open', SAVED_AT, server.due.get(id) ?? null);
+	const current = (id: string) => {
+		const record = server.records.get(id);
+		const shown = ticket(id, server.status.get(id) ?? 'open', SAVED_AT, server.due.get(id) ?? null);
+		if (record === undefined) return shown;
+		return {
+			...shown,
+			key: record.key,
+			title: record.title,
+			projectId: record.project,
+			tagIds: [...record.tags],
+			source: 'quick' as const
+		};
+	};
+	/** A record the server does not have (or the account does not see) is not found. */
+	const missing = (id: string) =>
+		(server.strict && !server.records.has(id) && !server.status.has(id)) || server.hidden.has(id);
+	const notFound = () => new DataError('not_found', { status: 404 });
+	/**
+	 * The way of `withOp` before anything is written: a known identifier answers like the first time
+	 * (another kind or ID: reused; not to be seen: applied), an ID that is taken is not unique.
+	 */
+	const claimed = (action: CreateAction, op: string): string | null => {
+		const claim = server.claims.get(op);
+		if (claim !== undefined) {
+			if (claim.kind !== action.kind || claim.record !== action.target) {
+				throw refusal('op_id', 'validation_op_reused');
+			}
+			if (server.hidden.has(claim.record)) {
+				throw refusal('op_id', 'validation_op_applied', {
+					record: claim.record,
+					kind: claim.kind
+				});
+			}
+			return claim.record;
+		}
+		if (server.records.has(action.target) || server.status.has(action.target)) {
+			throw refusal('id', 'validation_not_unique');
+		}
+		return null;
+	};
 	/** The answer gets lost after the change was written. */
 	const lost = () => {
 		if (server.lose > 0) {
@@ -223,6 +305,7 @@ export function fakeServer() {
 	const send = vi.fn<OutboxDeps['send']>(async (action, fields) => {
 		server.sent.push(fields.opId);
 		if (!server.reachable) throw new DataError('network');
+		if (missing(action.target)) throw notFound();
 		const now = server.status.get(action.target) ?? 'open';
 		if (server.applied.has(fields.opId)) return current(action.target);
 		const expected = fields.expected?.status;
@@ -244,6 +327,7 @@ export function fakeServer() {
 	const sendDue = vi.fn<NonNullable<OutboxDeps['sendDue']>>(async (action, fields) => {
 		server.sent.push(fields.opId);
 		if (!server.reachable) throw new DataError('network');
+		if (missing(action.target)) throw notFound();
 		if (server.applied.has(fields.opId)) return current(action.target);
 		const now = stamp(server.due.get(action.target) ?? null);
 		const expected = fields.expected?.due;
@@ -311,7 +395,93 @@ export function fakeServer() {
 		lost();
 		return answer();
 	});
-	return { server, send, sendDue, sendDayPlan };
+	/**
+	 * "＋" as a ticket (OF-4a), like tickets.pb.js: the identifier first (`withOp`), then the ID, then
+	 * the checks of the hook, the key from the counter, the record and the identifier in one step.
+	 */
+	const sendCreate = vi.fn<NonNullable<OutboxDeps['sendCreate']>>(async (action, fields) => {
+		server.sent.push(fields.opId);
+		if (!server.reachable) throw new DataError('network');
+		const known = claimed(action, fields.opId);
+		if (known !== null) return current(known);
+		// The hook refuses a creation at a field it names (an archived project: only with a project).
+		const refuse = server.refuseCreate;
+		const named = refuse?.field !== 'project' || action.payload.project !== null;
+		if (refuse !== null && named) throw refusal(refuse.field, refuse.code);
+		server.counter += 1;
+		const { payload } = action;
+		server.records.set(action.target, {
+			collection: 'tickets',
+			key: `TASK-${server.counter}`,
+			title: payload.title,
+			project: payload.project,
+			tags: [...payload.tags],
+			household: payload.household,
+			offline: fields.clientAt !== undefined || fields.offline === true
+		});
+		server.status.set(action.target, payload.status);
+		server.due.set(action.target, payload.due);
+		server.claims.set(fields.opId, { kind: 'ticket.create', record: action.target });
+		server.applied.add(fields.opId);
+		lost();
+		return current(action.target);
+	});
+	/** The entry of the inbox as the server has it (channel "quick", kind "todo"). */
+	const itemOf = (id: string): InboxItem => {
+		const record = server.records.get(id);
+		return {
+			id,
+			channel: 'quick',
+			kind: 'todo',
+			title: record?.title ?? '',
+			sourceUrl: '',
+			sourceRef: '',
+			sourceDate: null,
+			sourceMeta: {},
+			original: '',
+			state: 'new',
+			ticketId: null,
+			ticket: null,
+			handledAt: null,
+			targetProjectId: null,
+			created: SAVED_AT,
+			updated: SAVED_AT,
+			body: ''
+		};
+	};
+	/** "＋" into the inbox (OF-4a), like inbox.pb.js: no key, no counter. */
+	const sendItem = vi.fn<NonNullable<OutboxDeps['sendItem']>>(async (action, fields) => {
+		server.sent.push(fields.opId);
+		if (!server.reachable) throw new DataError('network');
+		const known = claimed(action, fields.opId);
+		if (known !== null) return itemOf(known);
+		if (server.refuseItem) throw refusal('household', 'validation_household_member');
+		server.records.set(action.target, {
+			collection: 'inbox_items',
+			key: '',
+			title: action.payload.title,
+			project: action.payload.preset.project,
+			tags: [...action.payload.preset.tags],
+			household: action.payload.household,
+			offline: fields.clientAt !== undefined || fields.offline === true
+		});
+		server.claims.set(fields.opId, { kind: 'inbox.create', record: action.target });
+		server.applied.add(fields.opId);
+		lost();
+		return itemOf(action.target);
+	});
+	/** Reading a ticket: one the server does not have (or hides) is not found with `strict`. */
+	const read = (id: string): Ticket => {
+		if (missing(id) || server.records.get(id)?.collection === 'inbox_items') throw notFound();
+		return current(id);
+	};
+	const readItem = (id: string): InboxItem => {
+		if (server.records.get(id)?.collection !== 'inbox_items' || server.hidden.has(id)) {
+			throw notFound();
+		}
+		return itemOf(id);
+	};
+	return { server, send, sendDue, sendDayPlan, sendCreate, sendItem, read, readItem };
 }
 
 export interface HarnessOptions {
@@ -325,21 +495,31 @@ export interface HarnessOptions {
 	shared?: ReturnType<typeof fakeServer>;
 	/** An app without the way of the due date (OF-3c, R3-2): kept due dates find none. */
 	withoutDue?: boolean;
+	/** The area of the client for new records (OF-4a). */
+	area?: () => string | null;
 }
 
 export function harness(options: HarnessOptions = {}) {
 	const storage = options.storage ?? new MemoryOutboxStorage();
-	const { server, send, sendDue, sendDayPlan } = options.shared ?? fakeServer();
+	const fake = options.shared ?? fakeServer();
+	const { server, send, sendDue, sendDayPlan, sendCreate, sendItem } = fake;
 	const connectivity = new ConnectivityStore(async () => server.health);
-	const get = vi.fn<OutboxDeps['get']>(async (id) =>
-		ticket(id, server.status.get(id) ?? 'open', SAVED_AT, server.due.get(id) ?? null)
-	);
+	// As before OF-4a: reading a ticket ignores `reachable` (the existing runs rely on it).
+	const get = vi.fn<OutboxDeps['get']>(async (id) => fake.read(id));
+	const getItem = vi.fn<NonNullable<OutboxDeps['getItem']>>(async (id) => {
+		if (!server.reachable) throw new DataError('network');
+		return fake.readItem(id);
+	});
 	const outbox = new OutboxStore({
 		storage,
 		connectivity,
 		send,
 		...(options.withoutDue !== true && { sendDue }),
 		sendDayPlan,
+		sendCreate,
+		sendItem,
+		getItem,
+		...(options.area !== undefined && { area: options.area }),
 		get,
 		tab: options.tab ?? 'tab-a',
 		channel: options.channel ?? null,
@@ -348,7 +528,14 @@ export function harness(options: HarnessOptions = {}) {
 		...(options.account !== undefined && { account: options.account })
 	});
 	const flags = { show: vi.fn<(input: FlagInput) => string>(() => 'flag'), dismiss: vi.fn() };
-	const sink = { upsert: vi.fn(), flags, sessionEnded: vi.fn(), childrenOf: vi.fn(() => []) };
+	const sink = {
+		upsert: vi.fn(),
+		flags,
+		sessionEnded: vi.fn(),
+		childrenOf: vi.fn(() => []),
+		upsertItem: vi.fn(),
+		markRead: vi.fn()
+	};
 	outbox.attach(USER);
 	outbox.setSupport(options.support === undefined ? OPS : options.support);
 	outbox.setFrame(options.frame ?? true);
@@ -361,7 +548,10 @@ export function harness(options: HarnessOptions = {}) {
 		send,
 		sendDue,
 		sendDayPlan,
+		sendCreate,
+		sendItem,
 		get,
+		getItem,
 		sink,
 		flags,
 		stop
