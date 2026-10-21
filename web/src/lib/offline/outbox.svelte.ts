@@ -1,8 +1,10 @@
-// The outbox of the SPA (OF-2, ADR-0074 and its addenda OF-2 and OF-2b; concept OF-0 §3). It keeps
-// single changes of the status of a ticket that could not reach the server and sends them later over
-// the normal way (data layer → Record API → hooks), with the identifier of the action, the time of
-// the device and the value before. Never a copy of data: the stores keep the state of the server,
-// the outbox lays its waiting actions over it (`apply`) and marks the tickets (`markOf`).
+// The outbox of the SPA (OF-2, ADR-0074 and its addenda OF-2, OF-2b and OF-3; concept OF-0 §3). It
+// keeps single changes that could not reach the server and sends them later over the normal way (data
+// layer → Record API or route → hooks), with the identifier of the action, the time of the device and
+// the value before: the status of a ticket (OF-2), its due date and the check mark of an entry of the
+// day plan with its taking back (OF-3). Never a copy of data: the stores keep the state of the server,
+// the outbox lays its waiting actions over it (`apply`, `checkRow`) and marks tickets and entries
+// (`markOf`).
 //
 // - It works only while the server reports `offline_ops` and the phone frame applies (switch
 //   "Handy-Ansicht (Vorschau)" on and a narrow window, `setFrame`). Otherwise every change goes the
@@ -14,7 +16,10 @@
 //   limit) it stays in the outbox, and the store gets the value as a provisional answer. An action
 //   is marked as sent before every attempt and is never taken into another change after that
 //   (OF-2b): marking and taking in are compare-and-swaps of the storage, so they never overwrite
-//   each other, in one tab or across tabs.
+//   each other, in one tab or across tabs. After a first attempt that arrived the worker looks for a
+//   change that waits behind it (OF-3).
+// - "Verwerfen" of an action that may have arrived keeps it to the end and lets a counter action
+//   take it back behind it; a refusal of the first drops both without a word (OF-3).
 // - The actions belong to the signed-in account: another account never sends them, and they are
 //   deleted when another account signs in (decision of the user 4). "Abmelden" deletes them after
 //   the question (`clearUser`), also when this tab never read the device; an ended session keeps
@@ -27,7 +32,10 @@
 
 import { createContext } from 'svelte';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
+import type { CheckedTicket, DayPlanItem } from '$lib/data/day-plan';
 import { DataError, problemOf, toDataError, withIntent } from '$lib/data/errors';
+import type { CalendarDate } from '$lib/domain/berlin-date';
+import { kindOf, type CheckAction, type CheckMode } from '$lib/domain/day-plan';
 import {
 	CLOCK_CODE,
 	FAILURES_BEFORE_NOTICE,
@@ -37,25 +45,47 @@ import {
 	actionText,
 	agedActions,
 	backoffDelay,
+	canCompleteAnyway,
+	changesSomething,
+	completionInstead,
+	counterOf,
+	dueOfServer,
 	hasRoom,
 	inOrder,
+	isDayPlanAction,
+	isDueAction,
 	isFromTheFuture,
+	isStatusAction,
 	isWaiting,
+	mayHaveArrived,
 	newOpId,
 	nextToSend,
 	nextWakeOf,
+	overlayDoneToday,
+	overlayDue,
 	overlayStatus,
 	parseAction,
+	planCheckChange,
+	planDueChange,
 	planStatusChange,
 	rebasedBehind,
 	requestFields,
 	sameAction,
 	supportsKind,
+	ticketOf,
 	verdictOf,
+	wishOf,
+	type ActionOutcome,
 	type ChangePlan,
+	type CheckChange,
+	type DayPlanAction,
+	type DueAction,
+	type KeptAction,
 	type OfflineOps,
 	type OutboxAction,
-	type OutboxFields
+	type OutboxFields,
+	type PlanContext,
+	type ServerState
 } from '$lib/domain/offline';
 import type { ProblemEntry } from '$lib/domain/problems';
 import { isStatus, type Status } from '$lib/domain/status';
@@ -94,6 +124,14 @@ export function broadcastChannel(name: string): OutboxChannel | null {
 	};
 }
 
+/** The answer of a check mark of the day plan (OF-3); `kept`: the outbox keeps it for later. */
+export interface CheckAnswer {
+	item: DayPlanItem;
+	ticket: CheckedTicket;
+	action: CheckAction;
+	kept?: true;
+}
+
 /** What the outbox needs from the app; tests pass fakes. */
 export interface OutboxDeps {
 	/** The storage of the device; null without IndexedDB (the outbox then never works). */
@@ -103,6 +141,14 @@ export interface OutboxDeps {
 	connectivity: ConnectivityStore;
 	/** Sends the status of `action` over the Record API with the fields of the outbox. */
 	send(action: OutboxAction, fields: OutboxFields, signal: AbortSignal): Promise<Ticket>;
+	/** Sends the due date of `action` (OF-3); without it the outbox keeps no due date. */
+	sendDue?(action: DueAction, fields: OutboxFields, signal: AbortSignal): Promise<Ticket>;
+	/** Sends a check mark of the day plan or its taking back (OF-3); without it none is kept. */
+	sendDayPlan?(
+		action: DayPlanAction,
+		fields: OutboxFields,
+		signal: AbortSignal
+	): Promise<CheckAnswer>;
 	/** Reads a ticket again (after a conflict, a refusal, an action that arrived before). */
 	get(id: string): Promise<Ticket>;
 	/** The identifier of this tab, or where to get it on the first watch (sessionStorage). */
@@ -150,12 +196,32 @@ export interface StatusRequest {
 	children?: readonly string[];
 }
 
-/** The mark of a ticket: a change not sent yet, or one that waits for a decision. */
+/** A check mark of the day plan or its taking back a store asks for (OF-3). */
+export type CheckRequest =
+	| {
+			kind: 'dayplan.check';
+			mode: CheckMode;
+			completion?: CompletionChoice;
+			children?: readonly string[];
+	  }
+	| { kind: 'dayplan.uncheck'; action?: CheckAction; status?: Status };
+
+/** An entry of the day plan with its ticket, as the server has them. */
+export interface CheckEntry {
+	item: DayPlanItem;
+	ticket: TicketSummary;
+}
+
+/** The kinds of changes the outbox takes: the status, the due date, the check mark (OF-3). */
+export type ChangeKind = 'status' | 'due' | 'check';
+
+/** The mark of a ticket or an entry: a change not sent yet, or one that waits for a decision. */
 export type OutboxMark = 'pending' | 'decision' | null;
 
-type Attempt = { ok: true; ticket: Ticket } | { ok: false; failure: DataError };
+type Answer = Ticket | CheckAnswer;
+type Attempt = { ok: true; value: Answer } | { ok: false; failure: DataError };
 
-function withoutSending(action: OutboxAction): OutboxAction {
+function withoutSending<A extends KeptAction>(action: A): A {
 	const copy = { ...action };
 	delete copy.sendingSince;
 	return copy;
@@ -177,7 +243,7 @@ export class OutboxStore {
 	#user = $state<string | null>(null);
 	#support = $state.raw<OfflineOps | null>(null);
 	#frame = $state(false);
-	#actions = $state.raw<readonly OutboxAction[]>([]);
+	#actions = $state.raw<readonly KeptAction[]>([]);
 	#loaded = $state(false);
 	#watching = $state(false);
 	#progress = $state.raw<{ index: number; count: number } | null>(null);
@@ -202,6 +268,10 @@ export class OutboxStore {
 	#storageFlag: string | null = null;
 	/** The state of the server per ticket as last seen, for the display after a discarded action. */
 	readonly #base = new SvelteMap<string, TicketSummary>();
+	/** The mark of the day per entry of the day plan as the server had it at the last change (OF-3). */
+	readonly #items = new SvelteMap<string, boolean>();
+	/** Who waits for the answers of kept check marks: the day plan of the view (OF-3). */
+	readonly #checkWatchers = new SvelteSet<(answer: CheckAnswer | null) => void>();
 	/** Tickets the outbox made itself (overlays), never taken as the state of the server. */
 	readonly #provisional = new WeakSet<object>();
 
@@ -224,6 +294,20 @@ export class OutboxStore {
 	get #canSend(): boolean {
 		if (this.#storage === null || this.#user === null) return false;
 		return supportsKind(this.#support, 'ticket.update');
+	}
+
+	/** Whether the outbox takes this kind of change: the server and the app can send it (OF-3). */
+	#supports(change: ChangeKind): boolean {
+		if (!this.#canSend) return false;
+		if (change === 'due') return this.#deps.sendDue !== undefined;
+		if (change === 'check') {
+			return (
+				this.#deps.sendDayPlan !== undefined &&
+				supportsKind(this.#support, 'dayplan.check') &&
+				supportsKind(this.#support, 'dayplan.uncheck')
+			);
+		}
+		return true;
 	}
 
 	/**
@@ -260,7 +344,7 @@ export class OutboxStore {
 	}
 
 	/** The actions of the signed-in account in their order. */
-	get actions(): readonly OutboxAction[] {
+	get actions(): readonly KeptAction[] {
 		return this.#actions;
 	}
 
@@ -269,19 +353,19 @@ export class OutboxStore {
 	}
 
 	/** Actions that wait for the connection or are under way. */
-	get waiting(): readonly OutboxAction[] {
+	get waiting(): readonly KeptAction[] {
 		return this.#actions.filter(isWaiting);
 	}
 
-	get conflicts(): readonly OutboxAction[] {
+	get conflicts(): readonly KeptAction[] {
 		return this.#actions.filter((action) => action.state === 'conflict');
 	}
 
-	get refusals(): readonly OutboxAction[] {
+	get refusals(): readonly KeptAction[] {
 		return this.#actions.filter((action) => action.state === 'refused');
 	}
 
-	get expired(): readonly OutboxAction[] {
+	get expired(): readonly KeptAction[] {
 		return this.#actions.filter((action) => action.state === 'expired');
 	}
 
@@ -306,30 +390,41 @@ export class OutboxStore {
 	}
 
 	/**
-	 * Whether a change of this ticket goes through the outbox: armed, or, outside of the frame, a
-	 * change of the ticket waits to be sent and asks for the order (G2). Behind one that waits for a
-	 * decision a change goes the way of before OF-2.
+	 * Whether a change of this ticket goes through the outbox: the outbox takes this kind of change
+	 * and is armed, or, outside of the frame, a change of the ticket waits to be sent and asks for the
+	 * order (G2). Behind one that waits for a decision a change goes the way of before OF-2. A check
+	 * mark of the day plan asks with the ID of its ticket (OF-3).
 	 */
-	routes(id: string): boolean {
+	routes(id: string, change: ChangeKind = 'status'): boolean {
+		if (!this.#supports(change)) return false;
 		if (this.armed) return true;
-		if (!this.#canSend || !this.#loaded) return false;
-		return this.#actions.some((action) => action.target === id && isWaiting(action));
+		if (!this.#loaded) return false;
+		return this.#actions.some(
+			(action) => (action.target === id || ticketOf(action) === id) && isWaiting(action)
+		);
 	}
 
-	/** The mark of a ticket for rows, cards, the panel and the sub-tasks. */
+	/**
+	 * The mark of a ticket for rows, cards, the panel and the sub-tasks, and of an entry of the day
+	 * plan (OF-3); a waiting check mark that completes a ticket marks the ticket as well.
+	 */
 	markOf(id: string): OutboxMark {
 		let mark: OutboxMark = null;
 		for (const action of this.#actions) {
 			const child =
-				action.completion === 'complete_children' && action.children?.includes(id) === true;
-			if (action.target !== id && !child) continue;
+				!isDueAction(action) &&
+				action.completion === 'complete_children' &&
+				action.children?.includes(id) === true;
+			const completes =
+				isDayPlanAction(action) && action.ticket === id && action.payload.action === 'complete';
+			if (action.target !== id && !child && !completes) continue;
 			if (isWaiting(action)) return 'pending';
 			if (action.target === id) mark = 'decision';
 		}
 		return mark;
 	}
 
-	/** A change of this ticket waits to be sent. */
+	/** A change of this ticket or entry waits to be sent. */
 	isPending(id: string): boolean {
 		return this.markOf(id) === 'pending';
 	}
@@ -360,6 +455,7 @@ export class OutboxStore {
 		this.#loading = null;
 		this.#loadingFor = null;
 		this.#base.clear();
+		this.#items.clear();
 		this.#problems.clear();
 		this.#failing = null;
 		this.#update();
@@ -379,6 +475,18 @@ export class OutboxStore {
 			if (this.#sink === sink) this.#sink = null;
 			this.#halt();
 		};
+	}
+
+	/** The answers of kept check marks once sent, null to read the plan again (OF-3); the cleanup. */
+	watchChecks(listener: (answer: CheckAnswer | null) => void): () => void {
+		this.#checkWatchers.add(listener);
+		return () => {
+			this.#checkWatchers.delete(listener);
+		};
+	}
+
+	#notifyChecks(answer: CheckAnswer | null): void {
+		for (const listener of this.#checkWatchers) listener(answer);
 	}
 
 	#update(): void {
@@ -429,7 +537,7 @@ export class OutboxStore {
 	 */
 	async #read(storage: OutboxStorage, user: string, start: boolean): Promise<void> {
 		const raw = await storage.list();
-		const mine: OutboxAction[] = [];
+		const mine: KeptAction[] = [];
 		const gone: string[] = [];
 		for (const entry of raw) {
 			const action = parseAction(entry);
@@ -448,15 +556,20 @@ export class OutboxStore {
 	}
 
 	/** Shows the tickets whose actions changed elsewhere anew (with the overlay of now). */
-	#refreshChanged(before: readonly OutboxAction[], after: readonly OutboxAction[]): void {
-		const key = (actions: readonly OutboxAction[], target: string) =>
-			JSON.stringify(actions.filter((action) => action.target === target));
-		const targets = new SvelteSet([...before, ...after].map((action) => action.target));
-		for (const target of targets) {
-			if (key(before, target) === key(after, target)) continue;
-			const base = this.#base.get(target);
-			if (base !== undefined) this.#sink?.upsert(base);
+	#refreshChanged(before: readonly KeptAction[], after: readonly KeptAction[]): void {
+		const key = (actions: readonly KeptAction[], ticket: string) =>
+			JSON.stringify(actions.filter((action) => ticketOf(action) === ticket));
+		const tickets = new SvelteSet([...before, ...after].map(ticketOf));
+		for (const ticket of tickets) {
+			if (key(before, ticket) === key(after, ticket)) continue;
+			this.#refreshTicket(ticket);
 		}
+	}
+
+	/** Shows the ticket as the server had it, with the actions of now laid over it. */
+	#refreshTicket(id: string): void {
+		const base = this.#base.get(id);
+		if (base !== undefined) this.#sink?.upsert(base);
 	}
 
 	/**
@@ -584,6 +697,13 @@ export class OutboxStore {
 		if (known === undefined || known.updated <= ticket.updated) this.#base.set(ticket.id, ticket);
 	}
 
+	/** The ticket with the waiting actions laid over it; a changed one is marked as made here. */
+	#shown<T extends TicketSummary>(base: T): T {
+		const shown = overlayDue(overlayStatus(base, this.#actions), this.#actions);
+		if (shown !== base) this.#provisional.add(shown);
+		return shown;
+	}
+
 	/**
 	 * The ticket as the stores show it: the state of the server with the waiting actions laid over
 	 * it. Called by the stores for every ticket they take in; without an action the ticket itself.
@@ -591,9 +711,7 @@ export class OutboxStore {
 	apply<T extends TicketSummary>(ticket: T): T {
 		this.#remember(ticket);
 		if (this.#actions.length === 0) return ticket;
-		const shown = overlayStatus(ticket, this.#actions);
-		if (shown !== ticket) this.#provisional.add(shown);
-		return shown;
+		return this.#shown(ticket);
 	}
 
 	/** Whether a waiting action keeps this ticket as the stores show it (a reconciliation keeps it). */
@@ -610,13 +728,35 @@ export class OutboxStore {
 		return base === undefined ? null : this.#shown(base);
 	}
 
-	#shown<T extends TicketSummary>(base: T): T {
-		const shown = overlayStatus(base, this.#actions);
-		if (shown !== base) this.#provisional.add(shown);
-		return shown;
+	/**
+	 * An entry of the day plan and its ticket as the plan shows them (OF-3): the kept check marks and
+	 * changes of the ticket laid over the state of the server. Pure for the derivations of the store.
+	 */
+	checkRow(
+		item: DayPlanItem,
+		ticket: TicketSummary | null
+	): { doneToday: boolean; ticket: TicketSummary | null } {
+		if (this.#actions.length === 0) return { doneToday: item.doneToday, ticket };
+		return {
+			doneToday: overlayDoneToday(item, this.#actions),
+			ticket: ticket === null ? null : this.#shown(ticket)
+		};
 	}
 
 	// ----- changes -----
+
+	/** Throws without a storage or an account; waits until the device is read. */
+	async #begin(): Promise<void> {
+		if (this.#storage === null || this.#user === null) throw new DataError('session');
+		await this.#loading?.catch(() => undefined);
+	}
+
+	/** The state of the server a change of the ticket is based on: as last seen while actions wait. */
+	#baseOf<T extends TicketSummary>(ticket: T): T {
+		const open = this.#actions.some((action) => ticketOf(action) === ticket.id);
+		const known = this.#base.get(ticket.id);
+		return (open && known !== undefined ? known : ticket) as T;
+	}
 
 	/**
 	 * A change of the status of `ticket` (as the store shows it). Resolves to the answer of the
@@ -624,44 +764,156 @@ export class OutboxStore {
 	 * the server refuses (the store shows its message as today).
 	 */
 	async changeStatus<T extends TicketSummary>(ticket: T, request: StatusRequest): Promise<T> {
+		await this.#begin();
+		const base = this.#baseOf(ticket);
+		this.#remember(base);
+		return this.#change(
+			(context) =>
+				planStatusChange(
+					this.#actions,
+					{
+						target: ticket.id,
+						key: ticket.key,
+						title: ticket.title,
+						scope: ticket.scope ?? '',
+						base: base.status,
+						status: request.status,
+						...(request.completion !== undefined && { completion: request.completion }),
+						...(request.children !== undefined && { children: request.children })
+					},
+					context
+				),
+			async (action, keep) => {
+				const answer = await this.#sendFirst(action, keep);
+				return answer === null ? this.#shown(base) : this.apply(answer as unknown as T);
+			},
+			() => this.#shown(base),
+			() => ticket
+		);
+	}
+
+	/** A change of the due date of `ticket` (OF-3), like the status. */
+	async changeDue<T extends TicketSummary>(ticket: T, due: CalendarDate | null): Promise<T> {
+		await this.#begin();
+		const base = this.#baseOf(ticket);
+		this.#remember(base);
+		return this.#change(
+			(context) =>
+				planDueChange(
+					this.#actions,
+					{
+						target: ticket.id,
+						key: ticket.key,
+						title: ticket.title,
+						scope: ticket.scope ?? '',
+						base: base.due,
+						due
+					},
+					context
+				),
+			async (action, keep) => {
+				const answer = await this.#sendFirst(action, keep);
+				return answer === null ? this.#shown(base) : this.apply(answer as unknown as T);
+			},
+			() => this.#shown(base),
+			() => ticket
+		);
+	}
+
+	/**
+	 * A check mark of the day plan or its taking back (OF-3). Resolves to the answer of the route, or,
+	 * kept, to the entry and the ticket as the server has them with `kept` (the overlay shows the
+	 * change); rejects like the data layer when the server refuses.
+	 */
+	async changeCheck(entry: CheckEntry, request: CheckRequest): Promise<CheckAnswer> {
+		await this.#begin();
+		const ticket = this.#baseOf(entry.ticket);
+		this.#remember(ticket);
+		this.#items.set(entry.item.id, entry.item.doneToday);
+		const change: CheckChange = {
+			kind: request.kind,
+			target: entry.item.id,
+			ticket: ticket.id,
+			ticketKind: kindOf(ticket.kind),
+			key: ticket.key,
+			title: ticket.title,
+			scope: ticket.scope ?? '',
+			base: { doneToday: entry.item.doneToday, status: ticket.status },
+			...(request.kind === 'dayplan.check'
+				? {
+						mode: request.mode,
+						...(request.completion !== undefined && { completion: request.completion }),
+						...(request.children !== undefined && { children: request.children })
+					}
+				: {
+						...(request.action !== undefined && { action: request.action }),
+						...(request.status !== undefined && { status: request.status })
+					})
+		};
+		let planned: DayPlanAction | null = null;
+		const kept = (): CheckAnswer => ({
+			item: entry.item,
+			ticket: {
+				id: ticket.id,
+				key: ticket.key,
+				status: ticket.status,
+				previousStatus: planned?.expected.status ?? ticket.status
+			},
+			action:
+				planned?.payload.action ??
+				(request.kind === 'dayplan.uncheck' ? (request.action ?? 'complete') : 'complete'),
+			kept: true
+		});
+		return this.#change(
+			(context) => {
+				const plan = planCheckChange(this.#actions, change, context);
+				if (plan.kind === 'send' || plan.kind === 'queue') planned = plan.action;
+				return plan;
+			},
+			async (action, keep) => {
+				const answer = await this.#sendFirst(action, keep);
+				if (answer !== null) return answer as CheckAnswer;
+				this.#refreshTicket(ticket.id);
+				return kept();
+			},
+			() => {
+				this.#refreshTicket(ticket.id);
+				return kept();
+			},
+			kept
+		);
+	}
+
+	/**
+	 * Plans and writes a change (H1: planned again when the device changed meanwhile): `first` sends
+	 * an action at once, `kept` answers after it is kept, `unchanged` when nothing is to do.
+	 */
+	async #change<R, A extends KeptAction>(
+		plan: (context: PlanContext) => ChangePlan<A>,
+		first: (action: A, keep: boolean) => Promise<R>,
+		kept: () => R,
+		unchanged: () => R
+	): Promise<R> {
 		const storage = this.#storage;
 		const user = this.#user;
 		if (storage === null || user === null) throw new DataError('session');
-		await this.#loading?.catch(() => undefined);
-		const open = this.#actions.filter((action) => action.target === ticket.id);
-		const known = this.#base.get(ticket.id);
-		const base = (open.length > 0 && known !== undefined ? known : ticket) as T;
-		this.#remember(base);
 		// A storage that fails keeps nothing: a change with a connection then goes as today.
 		const seq = await storage.nextSeq().catch(() => 0);
 		const op = newOpId(this.#fill);
 		const now = this.#now();
 		for (let round = 1; ; round += 1) {
-			const plan = planStatusChange(
-				this.#actions,
-				{
-					target: ticket.id,
-					key: ticket.key,
-					title: ticket.title,
-					scope: ticket.scope ?? '',
-					base: base.status,
-					status: request.status,
-					...(request.completion !== undefined && { completion: request.completion }),
-					...(request.children !== undefined && { children: request.children })
-				},
-				{ user, op, seq, now, offline: this.offline }
-			);
-			if (plan.kind === 'none') return ticket;
+			const planned = plan({ user, op, seq, now, offline: this.offline });
+			if (planned.kind === 'none') return unchanged();
 			// A full device keeps nothing more; with a connection the change goes as before OF-2 (G4).
-			if (plan.kind === 'send') {
-				return this.#sendFirst(plan.action, base, hasRoom(this.#actions, plan.action));
+			if (planned.kind === 'send') {
+				return first(planned.action, hasRoom(this.#actions, planned.action));
 			}
-			if (plan.kind !== 'cancel' && !hasRoom(this.#actions, plan.action)) {
+			if (planned.kind !== 'cancel' && !hasRoom(this.#actions, planned.action)) {
 				throw new OutboxFullError();
 			}
 			let written: boolean;
 			try {
-				written = await this.#write(plan);
+				written = await this.#write(planned);
 				// The device changed meanwhile (the worker marked the action, another tab): read it and
 				// plan again, so a change never goes into an action that left the device (H1).
 				if (!written && round < PLAN_ROUNDS) await this.#read(storage, user, false);
@@ -673,7 +925,7 @@ export class OutboxStore {
 			if (round >= PLAN_ROUNDS) throw new DataError('network');
 		}
 		this.#runner?.kick();
-		return this.#shown(base);
+		return kept();
 	}
 
 	/**
@@ -693,15 +945,12 @@ export class OutboxStore {
 
 	/**
 	 * The first attempt right after the change, kept first, so a closed tab loses nothing; on a full
-	 * device (`keep` false) as before OF-2, without keeping it (G4). Without an answer it stays for
-	 * later; any answer of the server counts as today (refused: an error). Only with the account of
-	 * the action (G3).
+	 * device (`keep` false) as before OF-2, without keeping it (G4). Resolves to the answer, or null
+	 * when there is none and the change stays for later; any answer of the server counts as today
+	 * (refused: an error). Only with the account of the action (G3). After an answer the worker looks
+	 * for a change that waited behind this one (OF-3).
 	 */
-	async #sendFirst<T extends TicketSummary>(
-		action: OutboxAction,
-		base: T,
-		keep: boolean
-	): Promise<T> {
+	async #sendFirst(action: KeptAction, keep: boolean): Promise<Answer | null> {
 		if (!this.#signedIn(action.user)) throw new DataError('session');
 		const kept =
 			keep &&
@@ -712,29 +961,43 @@ export class OutboxStore {
 		const result = await this.#attempt(action, true);
 		if (result.ok) {
 			if (kept) await this.#forget([action.op]).catch(() => undefined);
-			return this.apply(result.ticket as unknown as T);
+			this.#runner?.kick();
+			return result.value;
 		}
 		const network = verdictOf(result.failure).result === 'network';
 		if (kept && network) {
-			await this.#keep(withoutSending({ ...action, state: 'queued' }));
+			await this.#keep(withoutSending({ ...action, state: 'queued', unanswered: true }));
 			void this.#connectivity.check();
-			return this.#shown(base);
+			return null;
 		}
 		if (kept) await this.#forget([action.op]).catch(() => undefined);
 		if (network) void this.#connectivity.check();
 		throw result.failure;
 	}
 
-	async #attempt(action: OutboxAction, first: boolean): Promise<Attempt> {
+	/** One request of the action over the way of its kind. */
+	#transmit(action: KeptAction, fields: OutboxFields, signal: AbortSignal): Promise<Answer> {
+		if (isStatusAction(action)) return this.#deps.send(action, fields, signal);
+		// Without the way of its kind (an app without it) the action waits like after an error.
+		const missing = () => Promise.reject(new DataError('server'));
+		if (isDueAction(action)) {
+			const send = this.#deps.sendDue;
+			return send === undefined ? missing() : send(action, fields, signal);
+		}
+		const send = this.#deps.sendDayPlan;
+		return send === undefined ? missing() : send(action, fields, signal);
+	}
+
+	async #attempt(action: KeptAction, first: boolean): Promise<Attempt> {
 		const controller = new AbortController();
 		const limit = this.#timers.set(() => controller.abort(), SEND_TIMEOUT_MS);
-		const send = () => this.#deps.send(action, requestFields(action, first), controller.signal);
+		const send = () => this.#transmit(action, requestFields(action, first), controller.signal);
 		try {
 			// A kept change names what it was for in "Details" (ADR-0071 §3).
-			const ticket = first
+			const value = first
 				? await send()
 				: await withIntent(`Gemerkte Änderung übertragen: ${actionText(action)}`, send);
-			return { ok: true, ticket };
+			return { ok: true, value };
 		} catch (error) {
 			return { ok: false, failure: toDataError(error, controller.signal) };
 		} finally {
@@ -743,7 +1006,7 @@ export class OutboxStore {
 	}
 
 	/** Takes a stored or changed action of the signed-in account in and tells the other tabs. */
-	#held(action: OutboxAction): void {
+	#held(action: KeptAction): void {
 		if (action.user !== this.#user) return;
 		const rest = this.#actions.filter((entry) => entry.op !== action.op);
 		this.#actions = inOrder([...rest, action]);
@@ -760,7 +1023,7 @@ export class OutboxStore {
 	}
 
 	/** Stores an action of the signed-in account (new or changed) and tells the other tabs. */
-	async #keep(action: OutboxAction): Promise<void> {
+	async #keep(action: KeptAction): Promise<void> {
 		const storage = this.#storage;
 		if (storage === null) throw new DataError('network');
 		await storage.put(action);
@@ -771,7 +1034,7 @@ export class OutboxStore {
 	 * Replaces `before` by `next` (deletes it for null), but only while the device still holds it as
 	 * it is (OF-2b); false when another step or tab changed it meanwhile.
 	 */
-	async #swap(before: OutboxAction, next: OutboxAction | null): Promise<boolean> {
+	async #swap(before: KeptAction, next: KeptAction | null): Promise<boolean> {
 		const storage = this.#storage;
 		if (storage === null) throw new DataError('network');
 		const wrote = await storage.swap(before.op, (current) => sameAction(current, before), next);
@@ -801,7 +1064,7 @@ export class OutboxStore {
 			const clock = isFromTheFuture(action, now);
 			const expired = withoutSending({
 				...action,
-				state: 'expired',
+				state: 'expired' as const,
 				...(clock && { outcome: { code: CLOCK_CODE, message: OFFLINE_TEXTS.clockHint } })
 			});
 			await this.#swap(action, expired);
@@ -833,7 +1096,7 @@ export class OutboxStore {
 		if (!this.#signedIn(next.user)) return false;
 		// Marked as sent before the request, in one transaction with the check that nobody changed
 		// it meanwhile; a change of the same ticket then becomes an action of its own (H1).
-		const sending: OutboxAction = { ...next, state: 'sending', sendingSince: now, sent: true };
+		const sending: KeptAction = { ...next, state: 'sending', sendingSince: now, sent: true };
 		if (!(await this.#swap(next, sending))) {
 			this.#swapMisses += 1;
 			await this.#read(storage, user, false);
@@ -849,15 +1112,17 @@ export class OutboxStore {
 			await this.#forget([sending.op]);
 			this.#sentInRun += 1;
 			this.#failing = null;
-			this.#remember(result.ticket);
-			this.#sink?.upsert(result.ticket);
+			await this.#arrived(sending, result.value);
 			return true;
 		}
 		const verdict = verdictOf(result.failure);
-		const queued = withoutSending({ ...sending, state: 'queued' });
+		const queued = withoutSending({ ...sending, state: 'queued' as const });
+		// An answer of the server: this request reached it, nothing may have arrived unseen (OF-3).
+		const answered = { ...queued };
+		delete answered.unanswered;
 		switch (verdict.result) {
 			case 'network':
-				await this.#keep(queued);
+				await this.#keep({ ...queued, unanswered: true });
 				void this.#connectivity.check();
 				return false;
 			case 'session':
@@ -867,7 +1132,7 @@ export class OutboxStore {
 			case 'server': {
 				const attempts = next.attempts + 1;
 				await this.#keep({
-					...queued,
+					...answered,
 					attempts,
 					nextAttemptAt: now + backoffDelay(attempts, this.#random)
 				});
@@ -879,15 +1144,34 @@ export class OutboxStore {
 			case 'arrived':
 				await this.#forget([sending.op]);
 				this.#sentInRun += 1;
-				await this.#reread(sending.target);
+				await this.#reread(ticketOf(sending));
+				if (isDayPlanAction(sending)) this.#notifyChecks(null);
 				return true;
 			case 'conflict':
 			case 'refused':
+				// "Verwerfen" of it was asked for (OF-3): it changed nothing, so it goes without a word.
+				if (sending.discarded === true) {
+					await this.#dropDiscarded(sending, verdict.outcome);
+					await this.#reread(ticketOf(sending));
+					return true;
+				}
 				this.#problems.set(sending.op, problemOf(result.failure));
-				await this.#keep({ ...queued, state: verdict.result, outcome: verdict.outcome });
-				await this.#reread(sending.target);
+				await this.#keep({ ...answered, state: verdict.result, outcome: verdict.outcome });
+				await this.#reread(ticketOf(sending));
 				return true;
 		}
+	}
+
+	/** What arrived: the ticket in the list and the panel, a check mark in the day plan (OF-3). */
+	async #arrived(action: KeptAction, value: Answer): Promise<void> {
+		if (isDayPlanAction(action)) {
+			this.#notifyChecks(value as CheckAnswer);
+			await this.#reread(action.ticket);
+			return;
+		}
+		const ticket = value as Ticket;
+		this.#remember(ticket);
+		this.#sink?.upsert(ticket);
 	}
 
 	/** Shows the ticket as the server has it now; without an answer as it was before. */
@@ -897,8 +1181,7 @@ export class OutboxStore {
 			this.#remember(ticket);
 			this.#sink?.upsert(ticket);
 		} catch {
-			const base = this.#base.get(id);
-			if (base !== undefined) this.#sink?.upsert(base);
+			this.#refreshTicket(id);
 		}
 	}
 
@@ -916,7 +1199,7 @@ export class OutboxStore {
 
 	// ----- decisions of the user -----
 
-	#find(op: string): OutboxAction | undefined {
+	#find(op: string): KeptAction | undefined {
 		return this.#actions.find((action) => action.op === op);
 	}
 
@@ -934,33 +1217,67 @@ export class OutboxStore {
 		this.#runner?.kick();
 	}
 
-	/** The last known state of the server behind an action: of its conflict, else as last seen. */
-	#serverStatusOf(action: OutboxAction): Status | null {
-		const actual = action.outcome?.actual;
-		if (isStatus(actual)) return actual;
-		return this.#base.get(action.target)?.status ?? null;
+	/**
+	 * The last known state of the server behind an action: of its conflict, else as last seen (the
+	 * mark of the day of an entry as at its last change, OF-3).
+	 */
+	#serverStateOf(
+		action: KeptAction,
+		outcome: ActionOutcome | undefined = action.outcome
+	): ServerState {
+		const actual = outcome?.actual;
+		const ticket = this.#base.get(ticketOf(action));
+		if (isDueAction(action)) {
+			const due = actual === undefined ? undefined : dueOfServer(actual);
+			const known = due !== undefined ? due : ticket?.due;
+			return known === undefined ? {} : { due: known };
+		}
+		const status = isStatus(actual) ? actual : ticket?.status;
+		const state: ServerState = status === undefined ? {} : { status };
+		const doneToday = isDayPlanAction(action) ? this.#items.get(action.target) : undefined;
+		if (isDayPlanAction(action) && doneToday !== undefined) {
+			state.check = { item: action.target, doneToday };
+		}
+		return state;
 	}
 
-	/** The waiting actions right behind `op` are based on `status` from now on (G6c). */
-	async #rebase(op: string, status: Status | null): Promise<void> {
-		if (status === null) return;
-		for (const next of rebasedBehind(this.#actions, op, status)) await this.#keep(next);
+	/** The waiting actions right behind `op` are based on `state` from now on (G6c). */
+	async #rebase(op: string, state: ServerState, skip: readonly string[] = []): Promise<void> {
+		for (const next of rebasedBehind(this.#actions, op, state)) {
+			if (!skip.includes(next.op)) await this.#keep(next);
+		}
+	}
+
+	/** Sets or clears "Verwerfen" of the action a counter action takes back (OF-3). */
+	async #markDiscarded(op: string | undefined, discarded: boolean): Promise<void> {
+		const original = op === undefined ? undefined : this.#find(op);
+		if (original === undefined || (original.discarded === true) === discarded) return;
+		const next: KeptAction = { ...original };
+		if (discarded) next.discarded = true;
+		else delete next.discarded;
+		await this.#swap(original, next);
 	}
 
 	/**
 	 * "Verwerfen" of an action that is not under way: it goes, the ticket shows as before, and a flag
 	 * offers "Rückgängig" (concept §2.1). A change waiting behind it is based on the last known state
-	 * of the server from now on and may go (G6c); a failing storage shows its flag (G6b).
+	 * of the server from now on and may go (G6c); a failing storage shows its flag (G6b). One that may
+	 * already have arrived is taken back instead (OF-3, `#takeBack`).
 	 */
 	async discard(op: string): Promise<void> {
 		const action = this.#find(op);
-		if (action === undefined || action.state === 'sending') return;
+		if (action === undefined || action.state === 'sending' || action.discarded === true) return;
 		await this.#guard(OFFLINE_INTENTS.discard(actionText(action)), async () => {
+			if (mayHaveArrived(action)) {
+				await this.#takeBack(action, true);
+				return;
+			}
 			// First the ones behind it: they cannot go while it is there.
-			await this.#rebase(action.op, this.#serverStatusOf(action));
+			await this.#rebase(action.op, this.#serverStateOf(action));
 			await this.#forget([op]);
-			const base = this.#base.get(action.target);
-			if (base !== undefined) this.#sink?.upsert(base);
+			// A counter action that goes: the action it took back is no longer discarded.
+			await this.#markDiscarded(action.undoes, false);
+			this.#refreshTicket(ticketOf(action));
 			this.#sink?.flags.show({
 				tone: 'success',
 				title: OFFLINE_TEXTS.discarded(actionText(action)),
@@ -970,13 +1287,84 @@ export class OutboxStore {
 		this.#runner?.kick();
 	}
 
-	async #restore(action: OutboxAction): Promise<void> {
+	/**
+	 * "Verwerfen" of an action that may already have arrived (OF-3): it stays and is brought to the
+	 * end with its identifier, marked as discarded, so a refusal drops it without a word; behind it a
+	 * counter action takes it back with the value before, based on its wish, so it overwrites no other
+	 * change. Behind a later change of the same chain no counter action is needed: that one decides.
+	 * One older than 48 hours goes on without the time of the device. `flag`: the flag says that it
+	 * is taken back once there is a connection, with "Rückgängig".
+	 */
+	async #takeBack(action: KeptAction, flag: boolean): Promise<void> {
+		const storage = this.#storage;
+		const user = this.#user;
+		if (storage === null || user === null) return;
+		const behind = this.#actions.some((other) => other.dependsOn.at(-1) === action.op);
+		const marked: KeptAction = { ...action, discarded: true };
+		if (action.state === 'expired') {
+			Object.assign(marked, { state: 'queued', late: true, attempts: 0, nextAttemptAt: 0 });
+			delete marked.outcome;
+		}
+		if (!(await this.#swap(action, marked))) {
+			// The worker or another tab changed it meanwhile: the dialog shows how it stands now.
+			await this.#read(storage, user, false);
+			return;
+		}
+		let counter: KeptAction | null = null;
+		if (!behind && changesSomething(action)) {
+			const seq = await storage.nextSeq();
+			const context = { user, op: newOpId(this.#fill), seq, now: this.#now(), offline: true };
+			counter = counterOf(action, context);
+			await this.#keep(counter);
+		}
+		this.#refreshTicket(ticketOf(action));
+		if (!flag) return;
+		const text = actionText(action);
+		this.#sink?.flags.show({
+			tone: 'success',
+			title: counter === null ? OFFLINE_TEXTS.discarded(text) : OFFLINE_TEXTS.takenBack(text),
+			...(counter !== null && { description: OFFLINE_TEXTS.takenBackHint }),
+			action: { label: OFFLINE_TEXTS.undo, run: () => void this.#keepAfterAll(action.op) }
+		});
+	}
+
+	/**
+	 * "Rückgängig" after taking an action back (OF-3): its counter actions go (one that may have
+	 * arrived is taken back in turn), and the action is no longer discarded.
+	 */
+	async #keepAfterAll(op: string): Promise<void> {
+		const original = this.#find(op);
+		const text = original === undefined ? '' : actionText(original);
+		await this.#guard(OFFLINE_INTENTS.restore(text), async () => {
+			for (const counter of this.#actions.filter((other) => other.undoes === op)) {
+				if (mayHaveArrived(counter)) await this.#takeBack(counter, false);
+				else if (counter.state !== 'sending') await this.#swap(counter, null);
+			}
+			await this.#markDiscarded(op, false);
+			if (original !== undefined) this.#refreshTicket(ticketOf(original));
+		});
+		this.#runner?.kick();
+	}
+
+	/**
+	 * A discarded action the server refused (OF-3): it changed nothing, so it and its counter actions
+	 * go without a word; the changes behind them are based on the state of the server.
+	 */
+	async #dropDiscarded(action: KeptAction, outcome: ActionOutcome): Promise<void> {
+		const counters = this.#actions.filter((other) => other.undoes === action.op);
+		const gone = [action.op, ...counters.map((counter) => counter.op)];
+		const state = this.#serverStateOf(action, outcome);
+		for (const op of gone) await this.#rebase(op, state, gone);
+		await this.#forget(gone);
+	}
+
+	async #restore(action: KeptAction): Promise<void> {
 		if (action.user !== this.#user) return;
 		await this.#guard(OFFLINE_INTENTS.restore(actionText(action)), async () => {
 			await this.#keep(action);
-			await this.#rebase(action.op, action.payload.status);
-			const base = this.#base.get(action.target);
-			if (base !== undefined) this.#sink?.upsert(base);
+			await this.#rebase(action.op, wishOf(action));
+			await this.#markDiscarded(action.undoes, true);
+			this.#refreshTicket(ticketOf(action));
 		});
 		this.#runner?.kick();
 	}
@@ -984,11 +1372,21 @@ export class OutboxStore {
 	/** "Meine Änderung übernehmen": the same identifier again, now based on the value of the server. */
 	async takeMine(op: string): Promise<void> {
 		const action = this.#find(op);
-		const actual = action?.outcome?.actual;
-		if (action === undefined || action.state !== 'conflict' || !isStatus(actual)) return;
-		await this.#guard(OFFLINE_INTENTS.takeMine(actionText(action)), () =>
-			this.#requeue(action, { expected: { status: actual } })
-		);
+		if (action === undefined || action.state !== 'conflict') return;
+		const actual = action.outcome?.actual;
+		let next: KeptAction;
+		if (isDueAction(action)) {
+			const due = dueOfServer(actual);
+			if (due === undefined) return;
+			next = { ...action, expected: { due } };
+		} else if (!isStatus(actual)) {
+			return;
+		} else if (isDayPlanAction(action)) {
+			next = { ...action, expected: { ...action.expected, status: actual } };
+		} else {
+			next = { ...action, expected: { status: actual } };
+		}
+		await this.#guard(OFFLINE_INTENTS.takeMine(actionText(action)), () => this.#requeue(next));
 	}
 
 	/** "Trotzdem übertragen" after 48 hours: sent without the time of the device (decision 2). */
@@ -996,38 +1394,58 @@ export class OutboxStore {
 		const action = this.#find(op);
 		if (action === undefined || action.state !== 'expired') return;
 		await this.#guard(OFFLINE_INTENTS.sendAnyway(actionText(action)), () =>
-			this.#requeue(action, { late: true })
+			this.#requeue({ ...action, late: true })
 		);
 	}
 
 	/** The answer to the open sub-tasks of a completion: "Trotzdem erledigen" or "… mit erledigen". */
 	async answerChildren(op: string, choice: CompletionChoice): Promise<void> {
 		const action = this.#find(op);
-		if (action === undefined || action.state !== 'refused') return;
+		if (action === undefined || action.state !== 'refused' || isDueAction(action)) return;
 		const children =
-			choice === 'complete_children' ? [...(this.#sink?.childrenOf?.(action.target) ?? [])] : [];
+			choice === 'complete_children' ? [...(this.#sink?.childrenOf?.(ticketOf(action)) ?? [])] : [];
+		const next: OutboxAction | DayPlanAction = {
+			...action,
+			completion: choice,
+			...(choice === 'complete_children' ? { children } : {})
+		};
+		if (choice === 'force') delete next.children;
 		await this.#guard(OFFLINE_INTENTS.answerChildren(actionText(action)), () =>
-			this.#requeue(action, {
-				completion: choice,
-				...(choice === 'complete_children' ? { children } : {})
-			})
+			this.#requeue(next)
 		);
 	}
 
-	async #requeue(action: OutboxAction, change: Partial<OutboxAction>): Promise<void> {
-		const next: OutboxAction = {
-			...action,
-			...change,
-			state: 'queued',
-			attempts: 0,
-			nextAttemptAt: 0
-		};
-		delete next.outcome;
-		if (change.completion === 'force') delete next.children;
-		this.#problems.delete(action.op);
-		await this.#keep(next);
-		const base = this.#base.get(action.target);
-		if (base !== undefined) this.#sink?.upsert(base);
+	/**
+	 * "Trotzdem erledigen" of a check mark of a task on a day gone by (decision of the user 3, OF-3):
+	 * the ticket is completed over the normal way, the plan of that day stays as it is. The completion
+	 * takes the place of the check mark in the order; actions behind it wait for it instead.
+	 */
+	async completeAnyway(op: string): Promise<void> {
+		const action = this.#find(op);
+		if (action === undefined || !isDayPlanAction(action) || !canCompleteAnyway(action)) return;
+		await this.#guard(OFFLINE_INTENTS.completeAnyway(actionText(action)), async () => {
+			const instead = completionInstead(action, newOpId(this.#fill));
+			await this.#keep(instead);
+			if (!(await this.#swap(action, null))) {
+				await this.#forget([instead.op]);
+				return;
+			}
+			for (const next of this.#actions) {
+				if (!next.dependsOn.includes(op)) continue;
+				const dependsOn = next.dependsOn.map((entry) => (entry === op ? instead.op : entry));
+				await this.#swap(next, { ...next, dependsOn });
+			}
+			this.#refreshTicket(action.ticket);
+		});
+		this.#runner?.kick();
+	}
+
+	async #requeue(next: KeptAction): Promise<void> {
+		const queued: KeptAction = { ...next, state: 'queued', attempts: 0, nextAttemptAt: 0 };
+		delete queued.outcome;
+		this.#problems.delete(next.op);
+		await this.#keep(queued);
+		this.#refreshTicket(ticketOf(next));
 		this.#runner?.kick();
 	}
 

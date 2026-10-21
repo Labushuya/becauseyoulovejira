@@ -12,6 +12,9 @@ import {
 	CLOCK_CODE,
 	OFFLINE_TEXTS,
 	type ActionOutcome,
+	type DayPlanAction,
+	type DueAction,
+	type KeptAction,
 	type OutboxAction
 } from '$lib/domain/offline';
 import { ConnectivityStore } from '$lib/offline/connectivity.svelte';
@@ -33,6 +36,11 @@ const CONFLICT: ActionOutcome = {
 	message: 'Der Status wurde inzwischen geändert.',
 	actual: 'waiting',
 	updated: '2026-10-20 12:10:00.000Z'
+};
+/** A check mark of a day gone by, as the server refuses it (OF-3). */
+const DAY_OVER: ActionOutcome = {
+	code: 'validation_dayplan_readonly',
+	message: OFFLINE_TEXTS.dayOver
 };
 
 function stored(overrides: Partial<OutboxAction> = {}): OutboxAction {
@@ -68,7 +76,55 @@ function other(index: number, overrides: Partial<OutboxAction> = {}): OutboxActi
 	});
 }
 
-async function outboxWith(actions: OutboxAction[], reachable = false) {
+/** A kept check mark of the entry of HAUS-12 in the day plan (OF-3). */
+function check(overrides: Partial<DayPlanAction> = {}): DayPlanAction {
+	return {
+		v: 1,
+		op: 'zzzzzzzzzzzzzzzzzzz1',
+		seq: 1,
+		user: USER,
+		scope: `u:${USER}`,
+		kind: 'dayplan.check',
+		target: 'item00000000001',
+		ticket: 'tick00000000001',
+		ticketKind: 'task',
+		dependsOn: [],
+		payload: { action: 'complete', mode: 'check' },
+		expected: { doneToday: false, status: 'open' },
+		key: 'HAUS-12',
+		title: 'Müll rausbringen',
+		createdAt: NOW - 27 * 60_000,
+		state: 'queued',
+		attempts: 0,
+		nextAttemptAt: 0,
+		...overrides
+	};
+}
+
+/** A kept due date of HAUS-12 (OF-3). */
+function due(overrides: Partial<DueAction> = {}): DueAction {
+	return {
+		v: 1,
+		op: 'zzzzzzzzzzzzzzzzzzz1',
+		seq: 1,
+		user: USER,
+		scope: `u:${USER}`,
+		kind: 'ticket.update',
+		target: 'tick00000000001',
+		dependsOn: [],
+		payload: { due: '2026-10-22' },
+		expected: { due: null },
+		key: 'HAUS-12',
+		title: 'Müll rausbringen',
+		createdAt: NOW - 27 * 60_000,
+		state: 'queued',
+		attempts: 0,
+		nextAttemptAt: 0,
+		...overrides
+	};
+}
+
+async function outboxWith(actions: KeptAction[], reachable = false) {
 	const storage = new MemoryOutboxStorage();
 	for (const action of actions) await storage.put(action);
 	const server = { reachable };
@@ -102,11 +158,11 @@ afterEach(() => {
 });
 
 describe('OfflineNotice', () => {
-	it('warns without red that check marks and status are kept, with "Erneut versuchen"', async () => {
+	it('warns without red what is kept, with "Erneut versuchen"', async () => {
 		const outbox = await outboxWith([]);
 		const { container } = render(OfflineNotice, { props: { outbox, onshow: vi.fn() } });
 		expect(statusText()).toContain(
-			'Keine Verbindung zu becauseyoulovejira. Abhaken und Status werden gemerkt und später übertragen.'
+			'Keine Verbindung zu becauseyoulovejira. Abhaken, Status, Tagesplan und Fälligkeit werden gemerkt und später übertragen.'
 		);
 		const message = container.querySelector('.section-message');
 		expect(message?.getAttribute('data-tone')).toBe('warning');
@@ -195,6 +251,32 @@ describe('PendingMark', () => {
 		expect(mark('tick00000000003').textContent).toBe('');
 		expect(mark('tick00000000001', null).textContent).toBe('');
 	});
+
+	it('marks an entry of the day plan with a kept check mark, and the ticket it completes (OF-3)', async () => {
+		const today = check({
+			op: 'zzzzzzzzzzzzzzzzzzz2',
+			target: 'item00000000002',
+			ticket: 'tick00000000002',
+			payload: { action: 'today', mode: 'today' }
+		});
+		const outbox = await outboxWith([check(), today]);
+		const mark = (id: string) => render(PendingMark, { props: { id, outbox } }).container;
+		expect(mark('item00000000001').textContent).toBe(', Noch nicht übertragen');
+		expect(mark('tick00000000001').textContent).toBe(', Noch nicht übertragen');
+		expect(mark('item00000000002').textContent).toBe(', Noch nicht übertragen');
+		// A check of the day leaves its ticket as it is: no mark there.
+		expect(mark('tick00000000002').textContent).toBe('');
+	});
+});
+
+describe('OfflineNotice (OF-3)', () => {
+	it('names a check mark of a day gone by as refused, with its reason', async () => {
+		const outbox = await outboxWith([check({ state: 'refused', outcome: DAY_OVER })], true);
+		render(OfflineNotice, { props: { outbox, onshow: vi.fn() } });
+		expect(statusText()).toContain(
+			'1 Änderung konnte nicht übertragen werden. HAUS-12: Der Tag ist vorbei, der Plan dieses Tages bleibt unverändert.'
+		);
+	});
 });
 
 describe('OutboxDialog', () => {
@@ -245,6 +327,105 @@ describe('OutboxDialog', () => {
 		expect(buttons.getByRole('button', { name: 'Trotzdem erledigen' })).toBeTruthy();
 		expect(dialog().textContent).toContain('Älter als 48 Stunden, nicht von selbst übertragen.');
 		expect(buttons.getByRole('button', { name: 'Trotzdem übertragen' })).toBeTruthy();
+	});
+
+	it('asks whether to complete the task of a check mark of a day gone by, and lets one of an ongoing project lapse (OF-3)', async () => {
+		const over = DAY_OVER;
+		const actions = [
+			check({ state: 'refused', outcome: over }),
+			check({
+				op: 'zzzzzzzzzzzzzzzzzzz2',
+				seq: 2,
+				key: 'HAUS-13',
+				target: 'item00000000002',
+				ticket: 'tick00000000002',
+				ticketKind: 'ongoing',
+				payload: { action: 'today', mode: 'check' },
+				state: 'refused',
+				outcome: over
+			})
+		];
+		const outbox = await outboxWith(actions);
+		render(OutboxDialog, { props: { outbox, onclose: vi.fn(), ticketHref: href } });
+		const [task, ongoing] = within(dialog()).getAllByRole('listitem');
+		expect(task?.textContent).toContain('HAUS-12 im Tagesplan erledigt');
+		expect(task?.textContent).toContain('Der Tag ist vorbei. HAUS-12 trotzdem erledigen?');
+		expect(within(task as HTMLElement).getByRole('button', { name: 'Verwerfen' })).toBeTruthy();
+		expect(ongoing?.textContent).toContain('HAUS-13 im Tagesplan für heute abgehakt');
+		expect(ongoing?.textContent).toContain(
+			'Der Tag ist vorbei, der Plan dieses Tages bleibt unverändert. Der Haken verfällt.'
+		);
+		const lapsed = within(ongoing as HTMLElement);
+		expect(lapsed.queryByRole('button', { name: 'Trotzdem erledigen' })).toBeNull();
+		const choices = within(task as HTMLElement);
+		await fireEvent.click(choices.getByRole('button', { name: 'Trotzdem erledigen' }));
+		await vi.advanceTimersByTimeAsync(0);
+		const completion = outbox.actions.find((action) => action.kind === 'ticket.update');
+		expect(completion).toMatchObject({ target: 'tick00000000001', payload: { status: 'done' } });
+	});
+
+	it('refuses a changed check mark with its reason and opens the ticket, not the entry (OF-3)', async () => {
+		const changed: ActionOutcome = {
+			code: 'validation_dayplan_conflict',
+			message: 'Der Haken wurde inzwischen geändert.'
+		};
+		const outbox = await outboxWith([check({ state: 'refused', outcome: changed })]);
+		render(OutboxDialog, { props: { outbox, onclose: vi.fn(), ticketHref: href } });
+		expect(dialog().textContent).toContain('Der Haken wurde inzwischen geändert.');
+		const open = within(dialog()).getByRole('link', { name: 'Ticket öffnen' });
+		expect(open.getAttribute('href')).toBe('/tickets/tick00000000001');
+	});
+
+	it('names a kept due date and what happened to the due date meanwhile (OF-3)', async () => {
+		const moved: ActionOutcome = {
+			code: 'validation_ticket_conflict',
+			message: 'Die Fälligkeit wurde inzwischen geändert.',
+			actual: '2026-10-25 00:00:00.000Z',
+			updated: '2026-10-20 12:10:00.000Z'
+		};
+		const outbox = await outboxWith([
+			due(),
+			due({
+				op: 'zzzzzzzzzzzzzzzzzzz2',
+				seq: 2,
+				key: 'HAUS-13',
+				target: 'tick00000000002',
+				state: 'conflict',
+				outcome: moved
+			})
+		]);
+		const changedBy = vi.fn(async () => 'Anna Beispiel');
+		render(OutboxDialog, { props: { outbox, onclose: vi.fn(), ticketHref: href, changedBy } });
+		await vi.advanceTimersByTimeAsync(0);
+		const text = dialog().textContent;
+		expect(text).toContain('HAUS-12 fällig am 22.10.2026');
+		expect(text).toContain(
+			'Deine Änderung (offline um 14:03 laut Gerät): HAUS-13 fällig am 22.10.2026'
+		);
+		expect(text).toContain(
+			'Inzwischen: Anna Beispiel hat die Fälligkeit auf 25.10.2026 gesetzt (14:10).'
+		);
+	});
+
+	it('says that a discarded change is taken back once there is a connection, and names its counter action (OF-3)', async () => {
+		const original = stored({ sent: true, unanswered: true, discarded: true });
+		const counter = stored({
+			op: 'zzzzzzzzzzzzzzzzzzz2',
+			seq: 2,
+			dependsOn: [original.op],
+			undoes: original.op,
+			payload: { status: 'open' },
+			expected: { status: 'done' }
+		});
+		const outbox = await outboxWith([original, counter]);
+		render(OutboxDialog, { props: { outbox, onclose: vi.fn(), ticketHref: href } });
+		const [first, second] = within(dialog()).getAllByRole('listitem');
+		expect(first?.textContent).toContain(
+			'offline um 14:03 · wird zurückgenommen, sobald eine Verbindung besteht'
+		);
+		expect(within(first as HTMLElement).queryByRole('button', { name: 'Verwerfen' })).toBeNull();
+		expect(second?.textContent).toContain('Rücknahme: HAUS-12 auf „Offen“');
+		expect(within(second as HTMLElement).getByRole('button', { name: 'Verwerfen' })).toBeTruthy();
 	});
 
 	it('says why a change from the future waits and offers "Trotzdem übertragen" and "Verwerfen" (OF-2b)', async () => {

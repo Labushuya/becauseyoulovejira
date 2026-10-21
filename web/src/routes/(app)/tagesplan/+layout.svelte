@@ -5,6 +5,8 @@
 	import DayPlanView from '$lib/components/day-plan/DayPlanView.svelte';
 	import ViewWithPanel from '$lib/components/ViewWithPanel.svelte';
 	import { clientArea } from '$lib/data/area';
+	import { offlineDayPlanData } from '$lib/offline/offline-data';
+	import { findOutbox } from '$lib/offline/outbox.svelte';
 	import { pb } from '$lib/pocketbase';
 	import { findAreaStore } from '$lib/stores/area.svelte';
 	import { DayPlanStore, dayPlanData, dayPlanLive } from '$lib/stores/day-plan.svelte';
@@ -35,13 +37,25 @@
 	const flags = getFlagStore();
 	const area = findAreaStore();
 	const sorting = new DayPlanSortStore(window);
-	const store = new DayPlanStore(dayPlanData(pb), tickets, auth, {
-		flags,
-		scope: () => clientArea(pb),
-		// "Mir zugewiesen" (ADR-0068 §8): the tickets of the account that looks at the plan.
-		viewer: () => auth.userId,
-		sorting
-	});
+	// The outbox of the app layout (OF-3): while it works, a check mark and its taking back without a
+	// connection are kept on this device and shown over the entries; without it as before.
+	const outbox = findOutbox();
+	const blocking = (id: string) => tickets.openBlockingOf(id).map((child) => child.id);
+	const store: DayPlanStore = new DayPlanStore(
+		outbox === null
+			? dayPlanData(pb)
+			: offlineDayPlanData(dayPlanData(pb), outbox, (id) => store.entryOf(id), blocking),
+		tickets,
+		auth,
+		{
+			flags,
+			scope: () => clientArea(pb),
+			// "Mir zugewiesen" (ADR-0068 §8): the tickets of the account that looks at the plan.
+			viewer: () => auth.userId,
+			sorting,
+			overlay: outbox
+		}
+	);
 
 	const withPanel = $derived(page.route.id === DAY_PLAN_HOST.panelRoute);
 	const date = $derived(dayPlanDateFrom(page.url));

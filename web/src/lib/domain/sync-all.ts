@@ -6,6 +6,13 @@ import { runResultText, type Connection, type RunResult } from './connections';
 
 const ANCHOR_PREFIX = 'verbindung-';
 
+/**
+ * Why "Alle Kanäle jetzt abrufen" is locked without a connection (OF-3): the button stays visible
+ * and says it next to it, the entry of the menu on the phone in its name.
+ */
+export const SYNC_OFFLINE_HINT = 'Nur mit Verbindung';
+export const SYNC_OFFLINE_LABEL = 'Alle Kanäle jetzt abrufen (nur mit Verbindung)';
+
 /** ID of the element of a connection card, e.g. "verbindung-abc…" (address: connectionCardHref). */
 export function connectionAnchor(id: string): string {
 	return `${ANCHOR_PREFIX}${id}`;

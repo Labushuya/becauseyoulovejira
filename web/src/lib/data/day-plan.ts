@@ -28,7 +28,13 @@ import { clientArea } from './area';
 import { DataError, toDataError, withDataErrors } from './errors';
 import type { RequestOptions } from './options';
 import type { RecordChange, Unsubscribe } from './realtime';
-import { TICKET_LIST_FIELDS, toTicketSummary, type TicketRecord } from './tickets';
+import {
+	TICKET_LIST_FIELDS,
+	toOutboxBody,
+	toTicketSummary,
+	type OutboxOptions,
+	type TicketRecord
+} from './tickets';
 
 const ROUTE = '/api/byl/dayplan';
 const ITEMS = 'day_plan_items';
@@ -468,15 +474,20 @@ function checkedTicketOf(value: unknown): CheckedTicket {
 	};
 }
 
-/** The check mark of an entry; `completion` answers the question about open blocking sub-tasks. */
+/**
+ * The check mark of an entry; `completion` answers the question about open blocking sub-tasks.
+ * `outbox` adds the fields of the outbox (ADR-0074 §2 to §4, OF-3): identifier, time of the device or
+ * the mark "offline", and the state it was based on as { checked, status }.
+ */
 export async function checkDayPlanItem(
 	pb: PocketBase,
 	id: string,
 	mode: CheckMode,
 	completion: CompletionChoice | null = null,
-	options: RequestOptions = {}
+	options: RequestOptions & OutboxOptions = {}
 ): Promise<{ item: DayPlanItem; ticket: CheckedTicket; action: CheckAction }> {
-	const body = completion === null ? { mode } : { mode, completion };
+	const body: Record<string, unknown> = completion === null ? { mode } : { mode, completion };
+	if (options.outbox !== undefined) Object.assign(body, toOutboxBody(options.outbox));
 	const answer = await sendJson(
 		pb,
 		`${ROUTE}/items/${encodeURIComponent(id)}/check`,
@@ -493,17 +504,22 @@ export async function checkDayPlanItem(
 	};
 }
 
-/** Takes a check mark back: the mark of the day or the completion (with the status before). */
+/**
+ * Takes a check mark back: the mark of the day or the completion (with the status before); `outbox`
+ * as for the check mark.
+ */
 export async function uncheckDayPlanItem(
 	pb: PocketBase,
 	id: string,
 	input: { action?: CheckAction; status?: Status } = {},
-	options: RequestOptions = {}
+	options: RequestOptions & OutboxOptions = {}
 ): Promise<{ item: DayPlanItem; ticket: CheckedTicket }> {
+	const body: Record<string, unknown> = { ...input };
+	if (options.outbox !== undefined) Object.assign(body, toOutboxBody(options.outbox));
 	const answer = await sendJson(
 		pb,
 		`${ROUTE}/items/${encodeURIComponent(id)}/uncheck`,
-		input,
+		body,
 		options
 	);
 	if (!isRecord(answer)) throw new DataError('server');

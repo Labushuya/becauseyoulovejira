@@ -51,7 +51,7 @@ const CAL = connection('conn00000000001', 'Kalender');
 const MAIL = connection('conn00000000002', 'Web.de', { type: 'mail', mailProvider: 'webde' });
 const PAUSED = connection('conn00000000003', 'Bot', { type: 'telegram', enabled: false });
 
-function setup(items: Connection[] = [CAL, MAIL, PAUSED]) {
+function setup(items: Connection[] = [CAL, MAIL, PAUSED], offline?: () => boolean) {
 	const data = {
 		list: vi.fn<SyncAllData['list']>(async () => items),
 		run: vi.fn<SyncAllData['run']>(async () => OK)
@@ -60,7 +60,7 @@ function setup(items: Connection[] = [CAL, MAIL, PAUSED]) {
 	const flags = new FlagStore();
 	const navigate = { card: vi.fn(), channels: vi.fn() };
 	return {
-		store: new SyncAllStore(data, session, flags, navigate),
+		store: new SyncAllStore(data, session, flags, navigate, offline),
 		data,
 		session,
 		flags,
@@ -194,5 +194,27 @@ describe('SyncAllButton', () => {
 		await screen.findByRole('button', { name: 'Alle Kanäle jetzt abrufen' });
 		expect(screen.getByRole('status').textContent).toBe('');
 		expect(context.flags.flags[0]?.title).toBe('1 Kanal abgerufen: 1 neuer.');
+	});
+
+	it('stays visible without a connection, locked and saying why, and fetches nothing (OF-3)', async () => {
+		const context = setup([MAIL], () => true);
+		render(SyncAllButton, { props: { store: context.store } });
+		const button = screen.getByRole('button', { name: 'Alle Kanäle jetzt abrufen' });
+		expect(button.getAttribute('aria-disabled')).toBe('true');
+		const hint = screen.getByText('Nur mit Verbindung');
+		expect(button.getAttribute('aria-describedby')).toBe(hint.id);
+		await fireEvent.click(button);
+		await context.store.runAll();
+		expect(context.data.list).not.toHaveBeenCalled();
+		expect(context.flags.flags).toEqual([]);
+	});
+
+	it('stays as before with a connection: no hint', () => {
+		const context = setup([MAIL], () => false);
+		render(SyncAllButton, { props: { store: context.store } });
+		const button = screen.getByRole('button', { name: 'Alle Kanäle jetzt abrufen' });
+		expect(button.getAttribute('aria-disabled')).toBeNull();
+		expect(button.getAttribute('aria-describedby')).toBeNull();
+		expect(screen.queryByText('Nur mit Verbindung')).toBeNull();
 	});
 });

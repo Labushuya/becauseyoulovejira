@@ -8,7 +8,7 @@
 // - Store "meta": `seq` (running number of the device) and `lease` ({ tab, until }).
 // - Deleting goes by key, never with deleteDatabase (that blocks while another tab has it open).
 
-import type { OutboxAction } from '$lib/domain/offline';
+import type { KeptAction } from '$lib/domain/offline';
 
 export const OUTBOX_DATABASE = 'byl-offline';
 const VERSION = 1;
@@ -19,7 +19,7 @@ const META = 'meta';
 export interface OutboxStorage {
 	/** Every stored entry of every account, unread (the outbox checks each one). */
 	list(): Promise<unknown[]>;
-	put(action: OutboxAction): Promise<void>;
+	put(action: KeptAction): Promise<void>;
 	remove(ops: readonly string[]): Promise<void>;
 	/**
 	 * Compare-and-swap of one entry over the tabs (OF-2b): in one transaction, when `matches` holds
@@ -30,7 +30,7 @@ export interface OutboxStorage {
 	swap(
 		op: string,
 		matches: (current: unknown) => boolean,
-		next: OutboxAction | null
+		next: KeptAction | null
 	): Promise<boolean>;
 	/** The next number of the order on this device. */
 	nextSeq(): Promise<number>;
@@ -73,7 +73,7 @@ export class MemoryOutboxStorage implements OutboxStorage {
 		return [...this.entries.values()].map((entry) => structuredClone(entry));
 	}
 
-	async put(action: OutboxAction): Promise<void> {
+	async put(action: KeptAction): Promise<void> {
 		this.entries.set(action.op, structuredClone(action));
 	}
 
@@ -84,7 +84,7 @@ export class MemoryOutboxStorage implements OutboxStorage {
 	async swap(
 		op: string,
 		matches: (current: unknown) => boolean,
-		next: OutboxAction | null
+		next: KeptAction | null
 	): Promise<boolean> {
 		const current = this.entries.get(op);
 		if (!matches(current === undefined ? undefined : structuredClone(current))) return false;
@@ -173,7 +173,7 @@ export class IdbOutboxStorage implements OutboxStorage {
 		return done(db.transaction(ACTIONS, 'readonly').objectStore(ACTIONS).getAll());
 	}
 
-	async put(action: OutboxAction): Promise<void> {
+	async put(action: KeptAction): Promise<void> {
 		const db = await this.#open();
 		const transaction = db.transaction(ACTIONS, 'readwrite');
 		transaction.objectStore(ACTIONS).put(action);
@@ -192,7 +192,7 @@ export class IdbOutboxStorage implements OutboxStorage {
 	async swap(
 		op: string,
 		matches: (current: unknown) => boolean,
-		next: OutboxAction | null
+		next: KeptAction | null
 	): Promise<boolean> {
 		const db = await this.#open();
 		const transaction = db.transaction(ACTIONS, 'readwrite');

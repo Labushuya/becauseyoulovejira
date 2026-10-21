@@ -36,6 +36,7 @@
 	import SubtaskPath from '../SubtaskPath.svelte';
 	import SubtaskProgressChip from '../SubtaskProgressChip.svelte';
 	import EmptyState from '../guidance/EmptyState.svelte';
+	import PendingMark from '../offline/PendingMark.svelte';
 
 	// The entries of a day plan (ADR-0065 §4): a list in the order of the plan, which only the user
 	// changes. Each entry has its check mark (a task is completed, an ongoing project checked for the
@@ -59,6 +60,8 @@
 	// mark in a target of 44 px (its label), the title in the rest of the row, the initials below it,
 	// and "Nach oben"/"Nach unten" move from the row into "•••" (one level deeper, with the same steps
 	// and the same announcement); no handle, dragging is no way on a phone. Alt+arrow stays.
+	// A check mark the outbox keeps for later (OF-3) shows as kept (the overlay of the store) and
+	// carries the mark "Noch nicht übertragen" after the key.
 	let {
 		store,
 		household = false,
@@ -376,7 +379,8 @@
 								<SubtaskPath {parent} withTitle href={links.href(parent.id, page.url)} />
 							{/if}
 							<CharmIcon charm={ticket.charm} />
-							<span class="key">{ticket.key}</span>
+							<!-- A check mark kept by the outbox (OF-3) marks its entry. -->
+							<span class="key">{ticket.key}<PendingMark id={row.item.id} /></span>
 							<a
 								class="title-link"
 								href={links.href(ticket.id, page.url)}

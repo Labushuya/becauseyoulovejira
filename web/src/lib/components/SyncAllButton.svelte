@@ -1,20 +1,26 @@
 <script lang="ts">
+	import { SYNC_OFFLINE_HINT } from '$lib/domain/sync-all';
 	import type { SyncAllStore } from '$lib/stores/sync-all.svelte';
 
 	// "Alle Kanäle jetzt abrufen" of the inbox view (testing feedback package A, item 4). While it
 	// runs, the button is busy and a polite status names the connection that runs ("„Web.de“ wird
-	// abgerufen (2 von 3) …"); the result comes as one flag, which has its own live region.
+	// abgerufen (2 von 3) …"); the result comes as one flag, which has its own live region. Without a
+	// connection (OF-3) it stays visible, but locked, and says why next to it.
 	let { store }: { store: SyncAllStore } = $props();
+
+	const uid = $props.id();
+	const offline = $derived(store.offline && !store.running);
 </script>
 
 <span class="sync-all">
 	<button
 		class="button-secondary"
 		type="button"
-		aria-disabled={store.running ? 'true' : undefined}
+		aria-disabled={store.running || offline ? 'true' : undefined}
 		aria-busy={store.running ? 'true' : undefined}
+		aria-describedby={offline ? `${uid}-offline` : undefined}
 		onclick={() => {
-			if (!store.running) void store.runAll();
+			if (!store.running && !store.offline) void store.runAll();
 		}}
 	>
 		<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
@@ -23,6 +29,9 @@
 		</svg>
 		{store.running ? 'Wird abgerufen …' : 'Alle Kanäle jetzt abrufen'}
 	</button>
+	{#if offline}
+		<span class="hint" id={`${uid}-offline`}>{SYNC_OFFLINE_HINT}</span>
+	{/if}
 	<span class="status" role="status">{store.running ? store.status : ''}</span>
 </span>
 
@@ -48,7 +57,8 @@
 		stroke-linejoin: round;
 	}
 
-	.status {
+	.status,
+	.hint {
 		font-size: 0.8125rem;
 		color: var(--color-text-muted);
 	}

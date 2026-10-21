@@ -64,6 +64,26 @@ describe('what the SPA sends', () => {
 		expect(hook.conflictsOf({ status: 'open' }, { status: 'done' }, { status: 'done' })).toEqual([]);
 	});
 
+	it('sends the due date and the check mark of the day plan in a form the server compares (OF-3)', () => {
+		const op = 'aaaaaaaaaaaaaaaaaaaa';
+		const due = web.requestFields({ createdAt: 0, op, expected: { due: '2026-10-20' } }, false);
+		expect(due.expected).toEqual({ due: '2026-10-20 00:00:00.000Z' });
+		expect(hook.expectedViolation(due.expected, ['status', 'due', 'title'])).toBe('');
+		expect(web.requestFields({ createdAt: 0, op, expected: { due: null } }, false).expected).toEqual({ due: '' });
+		const moved = { due: '2026-10-25 00:00:00.000Z' };
+		expect(hook.conflictsOf(due.expected, moved, { due: '2026-10-22 00:00:00.000Z' })).toEqual([
+			{ field: 'due', expected: '2026-10-20 00:00:00.000Z', actual: '2026-10-25 00:00:00.000Z' }
+		]);
+		expect(web.dueOfServer(moved.due)).toBe('2026-10-25');
+		// The routes of the day plan take { checked, status } (client-ops.js, DAY_PLAN_EXPECTED).
+		const check = web.requestFields({ createdAt: 0, op, expected: { doneToday: false, status: 'done' } }, false);
+		expect(check.expected).toEqual({ checked: true, status: 'done' });
+		expect(hook.expectedViolation(check.expected, ['checked', 'status'])).toBe('');
+		expect(web.CONFLICT_TEXTS.checked).toBe(hook.MESSAGES.validation_dayplan_conflict);
+		const ops = web.toOfflineOps(hook.capabilityOf(true));
+		expect(web.supportsKind(ops, 'dayplan.check') && web.supportsKind(ops, 'dayplan.uncheck')).toBe(true);
+	});
+
 	it('reads the capability the server names', () => {
 		const ops = web.toOfflineOps(hook.capabilityOf(true));
 		expect(ops).toEqual({ version: 1, kinds: [...hook.KINDS] });

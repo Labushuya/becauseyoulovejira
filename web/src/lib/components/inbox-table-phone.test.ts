@@ -98,9 +98,9 @@ function useWindow(narrow: boolean, enabled: boolean): void {
 	getMobileLayoutStore().choose(enabled);
 }
 
-/** "Alle Kanäle jetzt abrufen" of the layout, faked. */
-function fakeSyncAll() {
-	return { running: false, status: '', runAll: vi.fn(async () => undefined) };
+/** "Alle Kanäle jetzt abrufen" of the layout, faked; `offline`: without a connection (OF-3). */
+function fakeSyncAll(offline = false) {
+	return { running: false, status: '', offline, runAll: vi.fn(async () => undefined) };
 }
 
 const tools = createRawSnippet(() => ({
@@ -114,6 +114,8 @@ async function setup(
 		projects?: Project[];
 		handled?: InboxItemSummary[];
 		withNames?: boolean;
+		/** The connection is missing (OF-3). */
+		offline?: boolean;
 	} = {}
 ) {
 	const items = options.items ?? [A, B, C];
@@ -153,7 +155,7 @@ async function setup(
 	const onlink = vi.fn();
 	const onlinkitem = vi.fn();
 	const onclipboard = vi.fn();
-	const syncAll = fakeSyncAll();
+	const syncAll = fakeSyncAll(options.offline);
 	const props = {
 		store,
 		flags,
@@ -385,6 +387,19 @@ describe('the inbox as cards in the phone frame (MO-6)', () => {
 		expect(syncAll.runAll).toHaveBeenCalledOnce();
 		// The status of the run has its own live region below the row.
 		expect(document.querySelector('.sync-status')?.getAttribute('role')).toBe('status');
+	});
+
+	it('keeps "Alle Kanäle jetzt abrufen" in the menu without a connection, locked and saying why (OF-3)', async () => {
+		useWindow(true, true);
+		const { syncAll } = await setup({ offline: true });
+		const menu = menuOf(screen.getByRole('button', { name: 'Weitere Aktionen der Liste' }));
+		const entry = within(menu).getByRole('menuitem', {
+			name: 'Alle Kanäle jetzt abrufen (nur mit Verbindung)',
+			hidden: true
+		});
+		expect(entry.getAttribute('aria-disabled')).toBe('true');
+		await fireEvent.click(entry);
+		expect(syncAll.runAll).not.toHaveBeenCalled();
 	});
 
 	it('opens the filter sheet with "Quelle", "Zustand", "Zielprojekt" and the grouping; a choice navigates and the sheet stays', async () => {

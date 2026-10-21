@@ -5,6 +5,7 @@
 // outbox creates nothing in the browser: the identifier of the tab and the BroadcastChannel come
 // with its first watch (OF-2b).
 
+import { checkDayPlanItem, uncheckDayPlanItem } from '$lib/data/day-plan';
 import { provideMissingConnection } from '$lib/data/errors';
 import { askOfflineMarks } from '$lib/data/history-marks';
 import { fetchCreateSupport } from '$lib/data/ticket-create';
@@ -72,6 +73,21 @@ export function getOutbox(): OutboxStore {
 					...(action.completion !== undefined && { completion: action.completion })
 				}
 			),
+		// The due date (OF-3): the Record API like the panel, without `expected_updated`.
+		sendDue: (action, fields, signal) =>
+			updateTicket(pb, action.target, { due: action.payload.due }, { signal, outbox: fields }),
+		// A check mark of the day plan and its taking back (OF-3): the routes of the plan.
+		sendDayPlan: async (action, fields, signal) => {
+			const options = { signal, outbox: fields };
+			if (action.kind === 'dayplan.check') {
+				const mode = action.payload.mode ?? 'check';
+				return checkDayPlanItem(pb, action.target, mode, action.completion ?? null, options);
+			}
+			const { status } = action.payload;
+			const input = { action: action.payload.action, ...(status !== undefined && { status }) };
+			const answer = await uncheckDayPlanItem(pb, action.target, input, options);
+			return { ...answer, action: action.payload.action };
+		},
 		get: (id) => getTicket(pb, id),
 		tab: () => tabIdOf(sessionStorageOf()),
 		channel: () => broadcastChannel(OUTBOX_CHANNEL),

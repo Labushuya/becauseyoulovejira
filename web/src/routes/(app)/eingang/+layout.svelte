@@ -30,6 +30,7 @@
 		type FileSelection
 	} from '$lib/stores/mail-import';
 	import { channelSetupHref, connectionCardHref, inboxItemHref } from '$lib/ticket-links';
+	import { findOutbox } from '$lib/offline/outbox.svelte';
 	import { pb } from '$lib/pocketbase';
 	import { BulkConverter, bulkConvertData } from '$lib/stores/bulk-convert.svelte';
 	import { draftsSummary, saveDrafts, type DraftsOutcome } from '$lib/stores/capture';
@@ -77,10 +78,19 @@
 
 	// "Alle Kanäle jetzt abrufen" (package A, item 4): new entries arrive through the realtime
 	// subscription of the inbox store; the flag leads to the card of a connection that failed.
-	const syncAll = new SyncAllStore(syncAllData(pb), auth, flags, {
-		card: (id) => void goto(connectionCardHref(id)),
-		channels: () => void goto(channelSetupHref(null))
-	});
+	// Without a connection (the state of the hint "Keine Verbindung" of the outbox, OF-3) it is
+	// locked and says why.
+	const outbox = findOutbox();
+	const syncAll = new SyncAllStore(
+		syncAllData(pb),
+		auth,
+		flags,
+		{
+			card: (id) => void goto(connectionCardHref(id)),
+			channels: () => void goto(channelSetupHref(null))
+		},
+		() => outbox?.offline === true
+	);
 
 	/** Chosen new entries (checkboxes of the table). */
 	let selected = $state<string[]>([]);

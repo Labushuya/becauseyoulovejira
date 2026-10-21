@@ -3,17 +3,23 @@
 	import type { ResolvedPathname } from '$app/types';
 	import {
 		CLOCK_CODE,
+		DAY_OVER_CODE,
 		OFFLINE_TEXTS,
 		OPEN_CHILDREN_CODE,
 		actionText,
+		canCompleteAnyway,
 		deviceTimeText,
+		dueOfServer,
 		isBroken,
+		isDueAction,
 		isWaiting,
 		needsDecision,
 		reasonOf,
 		serverTimeText,
-		type OutboxAction
+		ticketOf,
+		type KeptAction
 	} from '$lib/domain/offline';
+	import { formatCalendarDate } from '$lib/domain/format';
 	import { STATUS_LABELS } from '$lib/domain/labels';
 	import { isStatus } from '$lib/domain/status';
 	import type { OutboxStore } from '$lib/offline/outbox.svelte';
@@ -26,9 +32,13 @@
 	// own change and what happened meanwhile with "Meine Änderung übernehmen" (sends again, now based
 	// on the new value), "Verwerfen" and "Ticket öffnen"; open sub-tasks of a completion the known
 	// question; a refusal its reason with "Details"; one older than 48 hours or with a time of the
-	// device in the future (OF-2b) "Trotzdem übertragen". The buttons run steps of the outbox that
-	// never reject; a failing storage shows its own flag (OF-2b). It opens only through "Ansehen" or
-	// the symbol in the top bar, never on its own (ADR-0025).
+	// device in the future (OF-2b) "Trotzdem übertragen". Since OF-3 also the due date and the check
+	// marks of the day plan: a check mark of a day gone by asks "… trotzdem erledigen?" for a task and
+	// lapses otherwise, a changed check mark is refused; a change taken back after it may have arrived
+	// says that it is taken back once there is a connection, its counter action stands as "Rücknahme".
+	// The buttons run steps of the outbox that never reject; a failing storage shows its own flag
+	// (OF-2b). It opens only through "Ansehen" or the symbol in the top bar, never on its own
+	// (ADR-0025).
 	let {
 		outbox,
 		onclose,
@@ -39,8 +49,8 @@
 		onclose: () => void;
 		/** The address of the ticket in the view of the tab. */
 		ticketHref: (id: string) => ResolvedPathname;
-		/** Who changed the status meanwhile (from the history), null when unknown. */
-		changedBy?: (action: OutboxAction) => Promise<string | null>;
+		/** Who changed the field meanwhile (from the history), null when unknown. */
+		changedBy?: (action: KeptAction) => Promise<string | null>;
 	} = $props();
 
 	const uid = $props.id();
@@ -71,12 +81,13 @@
 		});
 	});
 
-	function timeOf(action: OutboxAction): string {
+	function timeOf(action: KeptAction): string {
 		return deviceTimeText(action.createdAt, now);
 	}
 
-	function stateText(action: OutboxAction): string {
+	function stateText(action: KeptAction): string {
 		if (!isWaiting(action)) return OFFLINE_TEXTS.markDecision;
+		if (action.discarded === true) return OFFLINE_TEXTS.takingBack;
 		if (action.state === 'sending') return OFFLINE_TEXTS.underway;
 		const blocker = actions.find(
 			(other) => action.dependsOn.includes(other.op) && needsDecision(other)
@@ -85,34 +96,51 @@
 		return OFFLINE_TEXTS.waiting;
 	}
 
-	function metaText(action: OutboxAction): string {
+	function metaText(action: KeptAction): string {
 		return `${OFFLINE_TEXTS.offlineAt(timeOf(action))} · ${stateText(action)}`;
 	}
 
-	function mineText(action: OutboxAction): string {
+	/** What the action does; a counter action of "Verwerfen" says that it takes back (OF-3). */
+	function whatText(action: KeptAction): string {
+		if (isBroken(action)) return OFFLINE_TEXTS.broken;
+		const text = actionText(action);
+		return action.undoes === undefined ? text : OFFLINE_TEXTS.counter(text);
+	}
+
+	function mineText(action: KeptAction): string {
 		return OFFLINE_TEXTS.conflictMine(timeOf(action), actionText(action));
 	}
 
-	function nowText(action: OutboxAction): string {
+	function nowText(action: KeptAction): string {
 		const actual = action.outcome?.actual;
-		const status = isStatus(actual) ? STATUS_LABELS[actual] : (actual ?? '–');
 		const time = serverTimeText(action.outcome?.updated, now);
-		return OFFLINE_TEXTS.conflictNow(names[action.op] ?? null, status, time);
+		const who = names[action.op] ?? null;
+		if (isDueAction(action)) {
+			const due = dueOfServer(actual);
+			return OFFLINE_TEXTS.conflictDueNow(who, due ? formatCalendarDate(due) : null, time);
+		}
+		const status = isStatus(actual) ? STATUS_LABELS[actual] : (actual ?? '–');
+		return OFFLINE_TEXTS.conflictNow(who, status, time);
 	}
 
-	function asksChildren(action: OutboxAction): boolean {
+	function asksChildren(action: KeptAction): boolean {
 		return action.state === 'refused' && action.outcome?.code === OPEN_CHILDREN_CODE;
 	}
 
+	/** A check mark of a day gone by (OF-3): a task asks, every other one lapses. */
+	function dayOver(action: KeptAction): boolean {
+		return action.state === 'refused' && action.outcome?.code === DAY_OVER_CODE;
+	}
+
 	/** Why a change was not sent on its own: older than 48 hours, or the clock (OF-2b). */
-	function expiredHint(action: OutboxAction): string {
+	function expiredHint(action: KeptAction): string {
 		return action.outcome?.code === CLOCK_CODE
 			? OFFLINE_TEXTS.clockHint
 			: OFFLINE_TEXTS.expiredHint;
 	}
 </script>
 
-{#snippet discard(action: OutboxAction)}
+{#snippet discard(action: KeptAction)}
 	<button
 		class="button-secondary button-small"
 		type="button"
@@ -122,8 +150,8 @@
 	</button>
 {/snippet}
 
-{#snippet open(action: OutboxAction)}
-	<a class="button-subtle button-small" href={ticketHref(action.target)} onclick={onclose}>
+{#snippet open(action: KeptAction)}
+	<a class="button-subtle button-small" href={ticketHref(ticketOf(action))} onclick={onclose}>
 		{OFFLINE_TEXTS.openTicket}
 	</a>
 {/snippet}
@@ -135,7 +163,7 @@
 			{#each actions as action (action.op)}
 				<li class="action" data-outbox-action={action.state}>
 					<p class="what">
-						<span class="text">{isBroken(action) ? OFFLINE_TEXTS.broken : actionText(action)}</span>
+						<span class="text">{whatText(action)}</span>
 						{#if action.title !== ''}<span class="title">{action.title}</span>{/if}
 					</p>
 					{#if !isBroken(action)}
@@ -175,6 +203,26 @@
 							</button>
 							{@render discard(action)}
 						</div>
+					{:else if dayOver(action)}
+						<!-- A day gone by (decision of the user 3): a task may still be completed. -->
+						{#if canCompleteAnyway(action)}
+							<p class="detail">{OFFLINE_TEXTS.dayOverDone(action.key || 'Ticket')}</p>
+						{:else}
+							<p class="detail">{OFFLINE_TEXTS.dayOverLapsed}</p>
+						{/if}
+						<ProblemDetails problem={outbox.problemOf(action.op)} />
+						<div class="buttons">
+							{#if canCompleteAnyway(action)}
+								<button
+									class="button-primary button-small"
+									type="button"
+									onclick={() => void outbox.completeAnyway(action.op)}
+								>
+									{OFFLINE_TEXTS.force}
+								</button>
+							{/if}
+							{@render discard(action)}
+						</div>
 					{:else if action.state === 'refused'}
 						{#if !isBroken(action)}
 							<p class="detail">{reasonOf(action)}</p>
@@ -198,7 +246,7 @@
 							</button>
 							{@render discard(action)}
 						</div>
-					{:else if action.state === 'queued'}
+					{:else if action.state === 'queued' && action.discarded !== true}
 						<div class="buttons">
 							{@render discard(action)}
 						</div>
