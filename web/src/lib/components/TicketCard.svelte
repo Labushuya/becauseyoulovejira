@@ -330,14 +330,9 @@
 			cursor: pointer;
 		}
 
-		/* The locked box while choosing (B-1): "not allowed" like every locked control. */
-		:global(:root[data-mobile-layout='on']) [data-card-locked],
-		:global(:root[data-mobile-layout='on']) [data-card-locked] input {
+		/* The target of the locked box while choosing (B-1); the box itself is drawn by base.css. */
+		:global(:root[data-mobile-layout='on']) [data-card-locked] {
 			cursor: not-allowed;
-		}
-
-		:global(:root[data-mobile-layout='on']) [data-card-locked] input {
-			opacity: 0.6;
 		}
 
 		:global(:root[data-mobile-layout='on']) .body {
