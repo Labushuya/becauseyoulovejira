@@ -2,6 +2,7 @@
 	import { tick } from 'svelte';
 	import type { CommentPinControl } from '$lib/domain/comments';
 	import { formatBerlinDateTime } from '$lib/domain/format';
+	import { offlineCommentText } from '$lib/domain/offline';
 	import { personLabel } from '$lib/domain/people';
 	import { COMMENT_MAX_LENGTH, type Comment } from '$lib/domain/ticket';
 	import type { CommentViewStore } from '$lib/stores/comment-view.svelte';
@@ -12,6 +13,7 @@
 	import ProblemDetails from './problems/ProblemDetails.svelte';
 	import RichTextEditor from './RichTextEditor.svelte';
 	import Lozenge from './guidance/Lozenge.svelte';
+	import PendingMark from './offline/PendingMark.svelte';
 	import ConfirmDialog from './overlay/ConfirmDialog.svelte';
 
 	// One comment (E2 plan, T-9 and T-13): author relative to the signed-in user, time in Berlin,
@@ -24,6 +26,10 @@
 	// pinned one carries "Angepinnt" and "Lösen"; a long text folds (CommentBody), while editing the
 	// editor shows the whole text. The article takes the focus by script after a new comment was
 	// sent to the end of the list.
+	// Since OF-4b a comment the outbox keeps for later stands with the mark "Noch nicht übertragen" (or
+	// "Entscheidung nötig") and the head "Offline geschrieben um 14:03 (laut Gerät)", without "Bearbeiten",
+	// "Löschen", "Anpinnen" and ticking tasks (they need the server); once it arrived, the server names
+	// "Offline geschrieben um 14:03 (laut Gerät) · übertragen 14:30" (concept §2.3).
 	let {
 		comment,
 		store,
@@ -55,8 +61,13 @@
 	const people = findPeople();
 	const author = $derived(personLabel(comment.author, store.userId, people));
 	const time = $derived(formatBerlinDateTime(comment.created));
-	const edited = $derived(comment.updated > comment.created);
-	const own = $derived(store.isOwn(comment));
+	/** Kept for later by the outbox (OF-4b): not on the server yet. */
+	const kept = $derived(store.isKept(comment));
+	const offlineText = $derived(
+		comment.offline === true ? offlineCommentText(comment, kept, Date.now()) : null
+	);
+	const edited = $derived(!kept && comment.updated > comment.created);
+	const own = $derived(!kept && store.isOwn(comment));
 	const editing = $derived(store.isEditing(comment.id));
 	const busy = $derived(store.isBusy(comment.id));
 	const error = $derived(store.commentError(comment.id));
@@ -64,7 +75,7 @@
 	const problem = $derived(store.commentProblem(comment.id));
 	/** Names the comment for screen readers on its buttons ("Bearbeiten: Kommentar von Du …"). */
 	const context = $derived(`Kommentar von ${author} vom ${time}`);
-	const pinOffered = $derived(pin !== null && pin.pinnedComment !== undefined);
+	const pinOffered = $derived(!kept && pin !== null && pin.pinnedComment !== undefined);
 	const pinBusy = $derived(pin?.pinning === comment.id);
 	const pinLocked = $derived((pin?.pinning ?? null) !== null);
 	const pinError = $derived(pin?.pinError(comment.id) ?? null);
@@ -112,7 +123,15 @@
 	<article aria-label={context} tabindex="-1" data-comment-id={comment.id}>
 		<header class="head">
 			<span class="author">{author}</span>
-			<span class="time">{time}</span>
+			{#if !kept}
+				<span class="time">{time}</span>
+			{/if}
+			{#if offlineText !== null}
+				<span class="offline">{offlineText}</span>
+			{/if}
+			{#if kept}
+				<PendingMark id={comment.id} />
+			{/if}
 			{#if edited}
 				<span class="edited" title={`Bearbeitet am ${formatBerlinDateTime(comment.updated)}`}
 					>bearbeitet</span
@@ -258,8 +277,13 @@
 	}
 
 	.time,
-	.edited {
+	.edited,
+	.offline {
 		color: var(--color-text-muted);
+	}
+
+	.offline {
+		font-size: var(--font-size-small);
 	}
 
 	.edited {

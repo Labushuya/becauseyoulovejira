@@ -1,9 +1,10 @@
 // Shells around the data access of the stores (OF-2 and OF-3, ADR-0074 addenda OF-2 and OF-3; concept
 // OF-0 §1.2): a change of the status (the check mark of "Aufgaben", the status in the cell, the panel
 // and the full view), of the due date (cell and panel) and a check mark of the day plan with its
-// taking back go through the outbox while it works for the ticket; every other call, and every call
-// while the outbox does not work (no `offline_ops`, no phone frame), goes to the data layer exactly
-// as before. The stores stay as they are; they get an answer of the server or a provisional one.
+// taking back go through the outbox while it works for the ticket; since OF-4b also a new comment.
+// Every other call, and every call while the outbox does not work (no `offline_ops`, no phone frame),
+// goes to the data layer exactly as before. The stores stay as they are; they get an answer of the
+// server or a provisional one.
 
 import type { CalendarDate } from '$lib/domain/berlin-date';
 import { isStatus, type Status } from '$lib/domain/status';
@@ -15,7 +16,9 @@ import {
 	type TicketSummary
 } from '$lib/domain/ticket';
 import type { UpdateOptions } from '$lib/data/tickets';
+import type { Comment } from '$lib/domain/ticket';
 import type { DayPlanData, PlanEntry } from '$lib/stores/day-plan.svelte';
+import type { TicketActivityData } from '$lib/stores/ticket-activity.svelte';
 import type { TicketDetailData } from '$lib/stores/ticket-detail.svelte';
 import type { TicketListData } from '$lib/stores/ticket-list.svelte';
 import type {
@@ -23,6 +26,8 @@ import type {
 	CheckAnswer,
 	CheckEntry,
 	CheckRequest,
+	CommentTicket,
+	Created,
 	StatusRequest
 } from './outbox.svelte';
 
@@ -38,6 +43,12 @@ export interface OutboxRoute {
 export interface OutboxCheckRoute {
 	routes(id: string, change?: ChangeKind): boolean;
 	changeCheck(entry: CheckEntry, request: CheckRequest): Promise<CheckAnswer>;
+}
+
+/** What the shell of the comments needs of the outbox (OF-4b). */
+export interface OutboxCommentRoute {
+	takesComment(ticketId: string): boolean;
+	createComment(ticket: CommentTicket, body: string): Promise<Created<Comment>>;
 }
 
 /** Only one field of the patch, without the guard of the description and without leaving a series. */
@@ -182,6 +193,29 @@ export function offlineDayPlanData(
 			const entry = routed(id);
 			if (entry === null) return base.uncheck(id, input);
 			return outbox.changeCheck(entry, { kind: 'dayplan.uncheck', ...input });
+		}
+	};
+}
+
+/**
+ * The comments of the panel and the full view (OF-4b): a new comment goes through the outbox while it
+ * takes comments of the ticket (`ticketOf` names it as the views show it, also a ticket "＋" created);
+ * the outbox answers with the comment of the server or with the one it keeps for later, which the store
+ * shows apart. Editing and deleting stay the way of today (Stufe 2).
+ */
+export function offlineActivityData(
+	base: TicketActivityData,
+	outbox: OutboxCommentRoute,
+	ticketOf: (id: string) => CommentTicket | null
+): TicketActivityData {
+	return {
+		...base,
+		createComment: async (ticketId, body) => {
+			const ticket = ticketOf(ticketId);
+			if (ticket === null || !outbox.takesComment(ticketId)) {
+				return base.createComment(ticketId, body);
+			}
+			return (await outbox.createComment(ticket, body)).value;
 		}
 	};
 }

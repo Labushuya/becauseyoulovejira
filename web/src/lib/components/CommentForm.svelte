@@ -13,7 +13,8 @@
 	// "Kommentieren" stays focusable while locked (like "Anlegen", package 8) and explains why; the
 	// text stays after a failure. After sending the field closes and the focus goes back to
 	// "Kommentar hinzufügen …", unless `onposted` shows the new comment and takes the focus there
-	// (at the end of the list, "Älteste zuerst").
+	// (at the end of the list, "Älteste zuerst"). A comment the outbox keeps for later (OF-4b) says so
+	// below in the polite status region.
 	let {
 		store,
 		onposted
@@ -97,6 +98,7 @@
 			Kommentar hinzufügen …
 		</button>
 	{/if}
+	<p class="note" role="status">{store.postNote ?? ''}</p>
 </div>
 
 <style>
@@ -128,9 +130,14 @@
 		align-items: center;
 	}
 
-	.hint {
+	.hint,
+	.note {
 		font-size: var(--font-size-small);
 		color: var(--color-text-muted);
+	}
+
+	.note:empty {
+		display: none;
 	}
 
 	/*

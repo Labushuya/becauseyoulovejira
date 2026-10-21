@@ -2,7 +2,6 @@
 	import { untrack, type Snippet } from 'svelte';
 	import { beforeNavigate, goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { OFFLINE_TEXTS } from '$lib/domain/offline';
 	import { openInstancesOf } from '$lib/domain/recurrence-rule';
 	import { parentOf, parentSeriesOf } from '$lib/domain/subtasks';
 	import type { Ticket } from '$lib/domain/ticket';
@@ -27,7 +26,6 @@
 	import DuplicateDialog from './DuplicateDialog.svelte';
 	import FollowUpDialog from './FollowUpDialog.svelte';
 	import ConfirmDialog from './overlay/ConfirmDialog.svelte';
-	import SectionMessage from './guidance/SectionMessage.svelte';
 	import RecurrenceSummary from './RecurrenceSummary.svelte';
 	import TicketActivity from './TicketActivity.svelte';
 	import TicketFollowUps from './TicketFollowUps.svelte';
@@ -227,7 +225,9 @@
 			projects={catalog.activeProjects}
 			sources={sourceStore.ticketId === ticket.id ? sourceStore.items : []}
 			ticketSources={origins?.ticketId === ticket.id ? origins.sources : []}
-			commentCount={comments.ticketId === ticket.id ? comments.comments.length : 0}
+			commentCount={comments.ticketId === ticket.id
+				? comments.comments.filter((comment) => !comments.isKept(comment)).length
+				: 0}
 			subtaskCount={tickets.progressOf(ticket.id).total}
 			parentKey={ticket.parentId ? (parent?.key ?? null) : null}
 			onopen={openTicket}
@@ -320,12 +320,8 @@
 			{/if}
 		{/snippet}
 		{#snippet activity()}
-			{#if detail.created}
-				<!-- A ticket "＋" created the server does not have yet takes no comment yet (OF-4a). -->
-				<SectionMessage tone="info" compact>{OFFLINE_TEXTS.commentsLater}</SectionMessage>
-			{:else}
-				<TicketActivity store={comments} {catalog} pin={detail} />
-			{/if}
+			<!-- Also on a ticket "＋" created: its comments wait for its creation (OF-4b). -->
+			<TicketActivity store={comments} {catalog} pin={detail} />
 		{/snippet}
 	</TicketPanel>
 {/if}

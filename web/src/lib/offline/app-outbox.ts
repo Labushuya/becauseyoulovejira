@@ -6,6 +6,7 @@
 // with its first watch (OF-2b).
 
 import { clientArea } from '$lib/data/area';
+import { createComment, getComment } from '$lib/data/comments';
 import { checkDayPlanItem, uncheckDayPlanItem } from '$lib/data/day-plan';
 import { DataError, provideMissingConnection } from '$lib/data/errors';
 import { askOfflineMarks } from '$lib/data/history-marks';
@@ -125,6 +126,8 @@ export function getOutbox(): OutboxStore {
 				channel: 'quick' as const,
 				kind: 'todo' as const,
 				title: payload.title,
+				// The whole text of a comment saved as an entry (OF-4b).
+				...(payload.body !== undefined && { body: payload.body }),
 				...(Object.keys(meta).length > 0 && { sourceMeta: { [PRESET_META_KEY]: meta } })
 			};
 			const options = { signal, id: action.target, outbox: fields, household: payload.household };
@@ -134,6 +137,14 @@ export function getOutbox(): OutboxStore {
 			return outcome.item;
 		},
 		getItem: (id, signal) => getItem(pb, id, { signal }),
+		// A comment (OF-4b): the Record API like the form, with the ID of the client.
+		sendComment: (action, fields, signal) =>
+			createComment(pb, action.ticket, action.payload.body, {
+				signal,
+				id: action.target,
+				outbox: fields
+			}),
+		getComment: (id, signal) => getComment(pb, id, { signal }),
 		area: () => clientArea(pb),
 		get: (id, signal) => getTicket(pb, id, { signal }),
 		tab: () => tabIdOf(sessionStorageOf()),

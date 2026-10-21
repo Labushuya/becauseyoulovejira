@@ -78,17 +78,21 @@ import {
 	dueOfServer,
 	hasRoom,
 	inOrder,
+	isCommentCreate,
 	isCreateAction,
 	isDayPlanAction,
 	isDueAction,
 	isFromTheFuture,
 	isInboxCreate,
+	isSetAside,
 	isStatusAction,
 	isTakeBack,
 	isTicketCreate,
 	isWaiting,
+	keptCommentOf,
 	lookUpAgainAt,
 	mayStillArrive,
+	needsDecision,
 	newOpId,
 	newRecordId,
 	nextToSend,
@@ -98,12 +102,15 @@ import {
 	overlayStatus,
 	parseAction,
 	planCheckChange,
+	planComment,
 	planCreate,
 	planTicketDue,
 	planTicketStatus,
 	reopenInstead,
 	requestFields,
 	sameAction,
+	savedItemTitle,
+	SET_ASIDE_CODE,
 	supportsKind,
 	ticketOf,
 	unknownChildren,
@@ -112,6 +119,8 @@ import {
 	type ActionOutcome,
 	type ChangePlan,
 	type CheckChange,
+	type CommentChange,
+	type CommentCreateAction,
 	type CreateAction,
 	type CreateChange,
 	type CreateField,
@@ -148,13 +157,14 @@ import {
 	withNotices,
 	withoutDecided,
 	withoutNotice,
+	type CreatedNotice,
 	type OfflineNotice
 } from '$lib/domain/offline-notices';
 import type { InboxItem, InboxItemSummary } from '$lib/domain/inbox';
 import type { ProblemEntry } from '$lib/domain/problems';
 import { isStatus, type Priority, type Status } from '$lib/domain/status';
 import type { CompletionChoice } from '$lib/domain/subtasks';
-import type { Ticket, TicketDraft, TicketSummary } from '$lib/domain/ticket';
+import type { Comment, Ticket, TicketDraft, TicketSummary } from '$lib/domain/ticket';
 import type { RequestOutcome } from '$lib/pocketbase';
 import type { FlagSink } from '$lib/stores/flags.svelte';
 import { WINDOW_TIMERS, type ConnectivityStore, type Timers } from './connectivity.svelte';
@@ -231,6 +241,17 @@ export interface OutboxDeps {
 	): Promise<InboxItem>;
 	/** Reads an entry of the inbox (a discarded creation that may have arrived, OF-4a). */
 	getItem?(id: string, signal?: AbortSignal): Promise<InboxItem>;
+	/**
+	 * Writes a comment under the ID of the client (OF-4b); without it no comment is kept and every one
+	 * goes the way of today.
+	 */
+	sendComment?(
+		action: CommentCreateAction,
+		fields: OutboxFields,
+		signal: AbortSignal
+	): Promise<Comment>;
+	/** Reads a comment (a discarded one that may have arrived, OF-4b). */
+	getComment?(id: string, signal?: AbortSignal): Promise<Comment>;
 	/** The area of the client for new records ('u:…' or 'h:…'), null without one (OF-4a). */
 	area?: () => string | null;
 	/**
@@ -268,15 +289,24 @@ export interface OutboxSink {
 	upsertItem?(item: InboxItemSummary): void;
 	/** A ticket created one by one counts as read (ADR-0015 §3), also once "＋" arrived later (OF-4a). */
 	markRead?(ticket: Ticket): void;
+	/** A comment as the server has it now (one kept for later arrived, OF-4b). */
+	upsertComment?(comment: Comment): void;
 }
 
-/** What "＋" puts into the inbox (OF-4a): the title and the values of the line. */
+/**
+ * What "＋" puts into the inbox (OF-4a): the title and the values of the line; "Als Eingangseintrag
+ * sichern" also the whole text of a comment (OF-4b).
+ */
 export interface QuickItemDraft {
 	title: string;
 	project: string | null;
 	tags: readonly string[];
 	priority: Priority | null;
+	body?: string;
 }
+
+/** The ticket a comment is written on, as the views show it (OF-4b). */
+export type CommentTicket = Pick<TicketSummary, 'id' | 'key' | 'title' | 'scope'>;
 
 /** What "＋" gives back (OF-4a): the record of the server, or the one kept for later (`kept`). */
 export interface Created<T> {
@@ -365,7 +395,7 @@ export type ChangeKind = 'status' | 'due' | 'check';
 /** The mark of a ticket or an entry: a change not sent yet, or one that waits for a decision. */
 export type OutboxMark = 'pending' | 'decision' | null;
 
-type Answer = Ticket | CheckAnswer | InboxItem;
+type Answer = Ticket | CheckAnswer | InboxItem | Comment;
 type Attempt = { ok: true; value: Answer } | { ok: false; failure: DataError };
 
 /** What became of an action after a request, as it is stored now (OF-3b). */
@@ -404,12 +434,14 @@ interface Planned<R> {
 
 /**
  * What "Verwerfen" did, for its flag and its "Rückgängig" (OF-3b); `along` are the changes of a ticket
- * "＋" created that went with its creation (OF-4a).
+ * "＋" created that went with its creation (OF-4a), `setAside` its comments as they were before they
+ * were set aside (OF-4b).
  */
 type Discarded = {
 	kind: 'marked' | 'deleted';
 	action: KeptAction;
 	along?: readonly KeptAction[];
+	setAside?: readonly KeptAction[];
 };
 
 /** What "Rückgängig" did (round 2): something, nothing to do, or why nothing could happen. */
@@ -438,17 +470,36 @@ function unique(ids: readonly string[]): string[] {
 /**
  * The changes that wait for a creation "＋" made (OF-4a), also through each other: none of them left
  * the device while it is there; they go with a discarded one. A change made after "Verwerfen" (of a
- * ticket the server shows under the same ID) waits for none of it and stays.
+ * ticket the server shows under the same ID) waits for none of it and stays. A comment never goes along
+ * (OF-4b): the comments of a ticket are set aside with their text (`commentsOf`), and a comment that
+ * waits for another one does so only for their order.
  */
 function alongCreation(actions: readonly KeptAction[], creation: CreateAction): KeptAction[] {
+	if (!isTicketCreate(creation) && !isInboxCreate(creation)) return [];
 	const waiting = [creation.op];
 	const along: KeptAction[] = [];
 	for (const entry of inOrder(actions)) {
-		if (entry.op === creation.op || !entry.dependsOn.some((op) => waiting.includes(op))) continue;
+		if (entry.op === creation.op || isCommentCreate(entry)) continue;
+		if (!entry.dependsOn.some((op) => waiting.includes(op))) continue;
 		waiting.push(entry.op);
 		along.push(entry);
 	}
 	return along;
+}
+
+/**
+ * The comments of a ticket "＋" created that wait for its creation and are not set aside yet (OF-4b):
+ * they never left the device.
+ */
+function commentsOf(actions: readonly KeptAction[], creation: CreateAction): CommentCreateAction[] {
+	if (!isTicketCreate(creation)) return [];
+	return inOrder(actions).filter(
+		(entry): entry is CommentCreateAction =>
+			isCommentCreate(entry) &&
+			entry.dependsOn.includes(creation.op) &&
+			entry.discarded !== true &&
+			!isSetAside(entry)
+	);
 }
 
 /** 403 and 404: the rules of the Record API and the entry of the day plan come before the identifier. */
@@ -458,6 +509,12 @@ function isMissing(failure: DataError): boolean {
 
 function randomFill(bytes: Uint8Array<ArrayBuffer>): Uint8Array {
 	return crypto.getRandomValues(bytes);
+}
+
+/** Where a notice about a record leads: the record, or for a comment its ticket (OF-4b). */
+function linkOf(notice: CreatedNotice): NonNullable<OutboxNotice['link']> {
+	if (notice.record === 'comment') return { record: 'ticket', id: notice.ticket ?? '' };
+	return { record: notice.record, id: notice.target };
 }
 
 export class OutboxStore {
@@ -504,7 +561,7 @@ export class OutboxStore {
 			.map((notice) => ({
 				id: notice.id,
 				text: noticeText(notice),
-				...(notice.kind === 'created' && { link: { record: notice.record, id: notice.target } })
+				...(notice.kind === 'created' && { link: linkOf(notice) })
 			}))
 	);
 	/**
@@ -527,6 +584,26 @@ export class OutboxStore {
 			const item = createdItemOf(action);
 			this.#createdViews.add(item);
 			shown.set(action.target, { item, scope: action.scope });
+		}
+		return shown;
+	});
+	/**
+	 * The first attempts of comments right after "Kommentieren" (OF-4b): with a connection the form waits
+	 * for the answer, so the comment does not show as kept meanwhile.
+	 */
+	readonly #directOps = new SvelteSet<string>();
+	/**
+	 * Comments kept for later per ticket (OF-4b, concept §2.3), oldest first: the activity shows them
+	 * next to those of the server until it has one under the same ID; a discarded one shows no more.
+	 */
+	readonly #keptComments = $derived.by(() => {
+		const shown = new SvelteMap<string, Comment[]>();
+		for (const action of inOrder(this.#actions)) {
+			if (!isCommentCreate(action) || action.discarded === true) continue;
+			if (this.#directOps.has(action.op)) continue;
+			const view = keptCommentOf(action);
+			this.#createdViews.add(view);
+			shown.set(action.ticket, [...(shown.get(action.ticket) ?? []), view]);
 		}
 		return shown;
 	});
@@ -756,8 +833,12 @@ export class OutboxStore {
 		if (!this.#supports(change)) return false;
 		if (this.armed) return true;
 		if (!this.#loaded) return false;
+		// A comment (OF-4b) is no change of the ticket: it asks for no order of its changes.
 		return this.#actions.some(
-			(action) => (action.target === id || ticketOf(action) === id) && isWaiting(action)
+			(action) =>
+				!isCommentCreate(action) &&
+				(action.target === id || ticketOf(action) === id) &&
+				isWaiting(action)
 		);
 	}
 
@@ -895,7 +976,8 @@ export class OutboxStore {
 			payload: {
 				title: draft.title,
 				household: scope.startsWith('h:') ? scope.slice(2) : '',
-				preset: { project: draft.project, tags: unique(draft.tags), priority: draft.priority }
+				preset: { project: draft.project, tags: unique(draft.tags), priority: draft.priority },
+				...(draft.body !== undefined && { body: draft.body })
 			}
 		};
 		let planned: CreateAction | null = null;
@@ -919,6 +1001,136 @@ export class OutboxStore {
 			kept,
 			kept
 		);
+	}
+
+	// ----- comments (OF-4b) -----
+
+	/**
+	 * Whether a comment on this ticket goes through the outbox (OF-4b): the server takes `comment.create`,
+	 * the app can send it, and it is armed; outside of the frame also behind the creation of its ticket
+	 * "＋" created or a comment of the ticket the device keeps, so the order holds (first the ticket, then
+	 * its comments in the order they were written). Otherwise a comment goes the way of today, without a
+	 * connection with the old message.
+	 */
+	takesComment(ticketId: string): boolean {
+		if (!this.#canSend || !this.#loaded || this.#deps.sendComment === undefined) return false;
+		if (!supportsKind(this.#support, 'comment.create')) return false;
+		if (this.armed) return true;
+		return this.#actions.some(
+			(action) =>
+				action.discarded !== true &&
+				((isTicketCreate(action) && action.target === ticketId) ||
+					(isCommentCreate(action) && action.ticket === ticketId && !isSetAside(action)))
+		);
+	}
+
+	/** Comments kept for later on this ticket as the activity shows them, oldest first (OF-4b). */
+	keptComments(ticketId: string): readonly Comment[] {
+		return this.#keptComments.get(ticketId) ?? [];
+	}
+
+	/**
+	 * A comment (OF-4b): kept under a new ID of the client; sent at once with a connection when it waits
+	 * for nothing, else kept behind the creation of its ticket and the comment before it. Resolves to the
+	 * comment of the server, or to the one kept for later (`kept`); rejects like the data layer when the
+	 * server refuses its first attempt (the form shows the message, the text stays).
+	 */
+	async createComment(ticket: CommentTicket, body: string): Promise<Created<Comment>> {
+		await this.#begin();
+		const change: CommentChange = {
+			target: newRecordId(this.#fill),
+			ticket: ticket.id,
+			key: ticket.key,
+			title: ticket.title,
+			scope: ticket.scope ?? '',
+			body
+		};
+		let planned: CommentCreateAction | null = null;
+		const kept = (): Created<Comment> => {
+			const shown = this.keptComments(change.ticket).find((entry) => entry.id === change.target);
+			const view = shown ?? (planned === null ? null : keptCommentOf(planned));
+			if (view === null) throw new OutboxStorageError();
+			this.#createdViews.add(view);
+			return { value: view, kept: true };
+		};
+		return this.#change(
+			(context) => {
+				const plan = planComment(this.#actions, change, context);
+				if (plan.kind === 'send' || plan.kind === 'queue') planned = plan.action;
+				return plan;
+			},
+			async (action, keep) => {
+				// The form waits for the first attempt; meanwhile the comment does not show as kept.
+				this.#directOps.add(action.op);
+				let answer: Answer | null;
+				try {
+					answer = await this.#sendFirst(action, keep);
+				} finally {
+					this.#directOps.delete(action.op);
+				}
+				return answer === null ? kept() : { value: answer as Comment, kept: false };
+			},
+			kept,
+			kept
+		);
+	}
+
+	/**
+	 * Whether "Als Eingangseintrag sichern" is offered (OF-4b, concept §2.1): a comment that waits for a
+	 * decision (refused, set aside with its discarded ticket, older than 48 hours) and was not discarded,
+	 * where the server and the app put an entry into the inbox through the outbox.
+	 */
+	canSaveAsItem(action: KeptAction): boolean {
+		return (
+			isCommentCreate(action) &&
+			needsDecision(action) &&
+			action.discarded !== true &&
+			this.#deps.sendItem !== undefined &&
+			supportsKind(this.#support, 'inbox.create')
+		);
+	}
+
+	/**
+	 * "Als Eingangseintrag sichern" (OF-4b, C2): an entry of the inbox with the whole text of the comment,
+	 * with a connection at once, else kept like "＋"; then the comment goes. Where the entry cannot be
+	 * made, the comment stays and an error flag says so: its text never goes before it is kept elsewhere.
+	 */
+	async saveAsItem(op: string): Promise<void> {
+		const action = this.#find(op);
+		if (action === undefined || !isCommentCreate(action) || !this.canSaveAsItem(action)) return;
+		let saved: Created<InboxItem>;
+		try {
+			saved = await withIntent(OFFLINE_INTENTS.saveAsItem(actionText(action)), () =>
+				this.createItem({
+					title: savedItemTitle(action),
+					project: null,
+					tags: [],
+					priority: null,
+					body: action.payload.body
+				})
+			);
+		} catch (error) {
+			this.#sink?.flags.show({
+				tone: 'error',
+				title: OFFLINE_TEXTS.saveAsItemFailed,
+				problem: problemOf(error)
+			});
+			return;
+		}
+		await this.#guard(OFFLINE_INTENTS.saveAsItem(actionText(action)), () =>
+			this.#locked(async () => {
+				await this.#transform(async (before) => {
+					const current = before.find((entry) => entry.op === op);
+					if (current === undefined || !needsDecision(current)) return null;
+					return { after: before.filter((entry) => entry.op !== op), last: op, result: true };
+				});
+			})
+		);
+		this.#sink?.flags.show({
+			tone: 'success',
+			title: OFFLINE_TEXTS.savedAsItem(saved.kept, this.offline)
+		});
+		this.#runner?.kick();
 	}
 
 	// ----- wiring -----
@@ -1070,11 +1282,16 @@ export class OutboxStore {
 		this.#refreshChanged(before, this.#actions);
 	}
 
-	/** Shows the tickets whose actions changed elsewhere anew (with the overlay of now). */
+	/**
+	 * Shows the tickets whose actions changed elsewhere anew (with the overlay of now). A comment
+	 * (OF-4b) changes nothing the views show of its ticket: it never shows the ticket anew.
+	 */
 	#refreshChanged(before: readonly KeptAction[], after: readonly KeptAction[]): void {
+		const own = (actions: readonly KeptAction[]) =>
+			actions.filter((action) => !isCommentCreate(action));
 		const key = (actions: readonly KeptAction[], ticket: string) =>
-			JSON.stringify(actions.filter((action) => ticketOf(action) === ticket));
-		const tickets = new SvelteSet([...before, ...after].map(ticketOf));
+			JSON.stringify(own(actions).filter((action) => ticketOf(action) === ticket));
+		const tickets = new SvelteSet([...own(before), ...own(after)].map(ticketOf));
 		for (const ticket of tickets) {
 			if (key(before, ticket) === key(after, ticket)) continue;
 			this.#refreshTicket(ticket);
@@ -1291,7 +1508,9 @@ export class OutboxStore {
 
 	/** The state of the server a change of the ticket is based on: as last seen while actions wait. */
 	#baseOf<T extends TicketSummary>(ticket: T): T {
-		const open = this.#actions.some((action) => ticketOf(action) === ticket.id);
+		const open = this.#actions.some(
+			(action) => !isCommentCreate(action) && ticketOf(action) === ticket.id
+		);
 		const known = this.#base.get(ticket.id);
 		return (open && known !== undefined ? known : ticket) as T;
 	}
@@ -1583,6 +1802,10 @@ export class OutboxStore {
 			const send = this.#deps.sendItem;
 			return send === undefined ? missing() : send(action, fields, signal);
 		}
+		if (isCommentCreate(action)) {
+			const send = this.#deps.sendComment;
+			return send === undefined ? missing() : send(action, fields, signal);
+		}
 		const send = this.#deps.sendDayPlan;
 		return send === undefined ? missing() : send(action, fields, signal);
 	}
@@ -1596,7 +1819,7 @@ export class OutboxStore {
 		const limit = this.#timers.set(() => controller.abort(), SEND_TIMEOUT_MS);
 		const read = (): Promise<Answer> => {
 			if (isTicketCreate(action)) return this.#deps.get(action.target, controller.signal);
-			const get = this.#deps.getItem;
+			const get = isCommentCreate(action) ? this.#deps.getComment : this.#deps.getItem;
 			return get === undefined
 				? Promise.reject(new OutboxNoWayError())
 				: get(action.target, controller.signal);
@@ -2072,7 +2295,12 @@ export class OutboxStore {
 			// A discarded creation that is there anyway (OF-4a, C4): a notice that stays names it with
 			// a link, written in the transaction that lets the action go; nothing is deleted.
 			if (isCreateAction(fresh) && fresh.discarded === true) {
-				const key = isTicketCreate(fresh) ? ((result.value as Ticket).key ?? '') : '';
+				// A ticket by the key the server gave it, a comment by the key of its ticket (OF-4b).
+				const key = isTicketCreate(fresh)
+					? ((result.value as Ticket).key ?? '')
+					: isCommentCreate(fresh)
+						? fresh.key
+						: '';
 				const notice = createdNotice(fresh, key, now);
 				const noted = new SvelteMap<string, Noting>([
 					[op, { device: (current: unknown) => withNotices(current, [notice]) }]
@@ -2089,7 +2317,7 @@ export class OutboxStore {
 			if (isCreateAction(fresh)) {
 				// Arrived, but the account no longer sees it (`validation_op_applied`, the trash for
 				// instance): a notice that stays names it with a link, never silently (round 2, A7).
-				const notice = createdNotice(fresh, '', now, true);
+				const notice = createdNotice(fresh, isCommentCreate(fresh) ? fresh.key : '', now, true);
 				const noted = new SvelteMap<string, Noting>([
 					[op, { device: (current: unknown) => withNotices(current, [notice]) }]
 				]);
@@ -2183,10 +2411,17 @@ export class OutboxStore {
 		this.#sink?.upsert(ticket);
 	}
 
-	/** The record of the server for a creation (OF-4a), in the list and the panel or in the inbox. */
+	/**
+	 * The record of the server for a creation (OF-4a), in the list and the panel or in the inbox; a
+	 * comment in the activity of its ticket (OF-4b).
+	 */
 	#showCreated(action: CreateAction, value: Answer): void {
 		if (isInboxCreate(action)) {
 			this.#sink?.upsertItem?.(value as InboxItem);
+			return;
+		}
+		if (isCommentCreate(action)) {
+			this.#sink?.upsertComment?.(value as Comment);
 			return;
 		}
 		const ticket = value as Ticket;
@@ -2429,11 +2664,26 @@ export class OutboxStore {
 		action: CreateAction
 	): Promise<Planned<Discarded> | null> {
 		const along = alongCreation(before, action);
-		if (action.discarded === true && along.length === 0) return null;
-		const rest = before.filter((entry) => !along.includes(entry));
+		// The comments of a ticket "＋" created never go silently (OF-4b, C2): they are set aside with
+		// their text, never sent, and wait for "Als Eingangseintrag sichern" or "Verwerfen".
+		const setAside = commentsOf(before, action);
+		const title = isTicketCreate(action) ? action.payload.title : '';
+		const aside = (entry: KeptAction): KeptAction => {
+			if (!setAside.includes(entry as CommentCreateAction)) return entry;
+			const message = OFFLINE_TEXTS.commentSetAside(title);
+			const parked: KeptAction = withoutSending({
+				...entry,
+				state: 'refused',
+				outcome: { code: SET_ASIDE_CODE, message }
+			});
+			return parked;
+		};
+		if (action.discarded === true && along.length === 0 && setAside.length === 0) return null;
+		const rest = before.filter((entry) => !along.includes(entry)).map(aside);
+		const result = { action, along, setAside };
 		if (action.discarded === true) {
 			// A round after a write that failed half way: only its changes are left to go.
-			return { after: rest, result: { kind: 'marked', action, along } };
+			return { after: rest, result: { kind: 'marked', ...result } };
 		}
 		// A request of it may still arrive although the server answered a later one (refused after a
 		// request without an answer, round 2, A5): it stays to be looked up, like one that may be there.
@@ -2444,7 +2694,7 @@ export class OutboxStore {
 					context
 				)
 			);
-			return { after, last: action.op, result: { kind: 'deleted', action, along } };
+			return { after, last: action.op, result: { kind: 'deleted', ...result } };
 		}
 		// Older than 48 hours, it waited for a decision: the lookup asks nothing (no time of the device).
 		// A refused one is looked up the same way (round 2, A5).
@@ -2454,7 +2704,7 @@ export class OutboxStore {
 			delete marked.outcome;
 		}
 		const after = await this.#pure((context) => settleChains(replaced(rest, marked), context));
-		return { after, result: { kind: 'marked', action, along } };
+		return { after, result: { kind: 'marked', ...result } };
 	}
 
 	/**
@@ -2484,11 +2734,17 @@ export class OutboxStore {
 		const { action } = done;
 		const text = this.#textOf(action);
 		if (isCreateAction(action)) {
-			const record = isTicketCreate(action) ? 'ticket' : 'inbox';
+			const record = createdRecordOf(action) ?? 'ticket';
+			// The comments of the ticket set aside say so (OF-4b): their text did not go.
+			const count = done.setAside?.length ?? 0;
+			const hints = [
+				...(done.kind === 'marked' ? [OFFLINE_TEXTS.createCheckHint(record)] : []),
+				...(count > 0 ? [OFFLINE_TEXTS.setAside(count)] : [])
+			];
 			this.#sink?.flags.show({
 				tone: 'success',
 				title: OFFLINE_TEXTS.discarded(text),
-				...(done.kind === 'marked' && { description: OFFLINE_TEXTS.createCheckHint(record) }),
+				...(hints.length > 0 && { description: hints.join(' ') }),
 				action: { label: OFFLINE_TEXTS.undo, run: () => void this.#undoCreation(done) }
 			});
 			return;
@@ -2578,11 +2834,13 @@ export class OutboxStore {
 	/**
 	 * "Rückgängig" after "Verwerfen" of a creation "＋" (OF-4a): it counts again with the changes of its
 	 * ticket, under its identifier and its ID (C1: the server answers a repetition like the first time,
-	 * also where the lookup found it meanwhile). One that never left the device comes back as it was.
+	 * also where the lookup found it meanwhile). One that never left the device comes back as it was. Its
+	 * comments set aside come back as they were (OF-4b), unless the user saved or discarded them since.
 	 */
 	#undoCreation(done: Discarded): Promise<void> {
 		const original = done.action;
 		const along = done.along ?? [];
+		const setAside = done.setAside ?? [];
 		return this.#undoing(original, async (before) => {
 			let after: KeptAction[] = [...before];
 			const present = before.find((entry) => entry.op === original.op);
@@ -2601,6 +2859,10 @@ export class OutboxStore {
 			}
 			for (const entry of along) {
 				if (!after.some((other) => other.op === entry.op)) after.push(entry);
+			}
+			for (const comment of setAside) {
+				const parked = after.find((other) => other.op === comment.op);
+				if (parked !== undefined && isSetAside(parked)) after = replaced(after, comment);
 			}
 			if (
 				after.every((entry, index) => entry === before[index]) &&

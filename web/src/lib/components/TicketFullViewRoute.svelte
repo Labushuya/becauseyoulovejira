@@ -255,7 +255,9 @@
 					projects={catalog.activeProjects}
 					sources={sources.ticketId === ticket.id ? sources.items : []}
 					ticketSources={origins?.ticketId === ticket.id ? origins.sources : []}
-					commentCount={comments.ticketId === ticket.id ? comments.comments.length : 0}
+					commentCount={comments.ticketId === ticket.id
+						? comments.comments.filter((comment) => !comments.isKept(comment)).length
+						: 0}
 					{subtaskCount}
 					parentKey={ticket.parentId ? (parent?.key ?? null) : null}
 					store={duplicates}
@@ -290,12 +292,9 @@
 					hrefOf={(subtaskId) => host.full(subtaskId, page.url)}
 				/>
 			{/if}
-			{#if created}
-				<!-- Comments need the ticket on the server (OF-4b sends them behind its creation). -->
-				<SectionMessage tone="info" compact>{OFFLINE_TEXTS.commentsLater}</SectionMessage>
-			{:else}
-				<TicketActivity store={comments} {catalog} pin={detail} />
-			{/if}
+			<!-- Also on a ticket "＋" created: its comments wait for its creation (OF-4b). -->
+			<TicketActivity store={comments} {catalog} pin={detail} />
+
 			<TicketSources
 				{ticket}
 				store={sources}

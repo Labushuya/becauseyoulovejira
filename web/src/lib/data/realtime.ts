@@ -12,9 +12,9 @@ import type { Project } from '../domain/project';
 import type { RecurrenceRule } from '../domain/recurrence-rule';
 import type { Tag } from '../domain/tag';
 import type { Comment, HistoryEntry, Ticket, TicketSummary } from '../domain/ticket';
-import { COMMENT_FIELDS, toComment, type CommentRecord } from './comments';
+import { toComment, type CommentRecord } from './comments';
 import { toHistoryEntry, type HistoryRecord } from './history';
-import { historyFields } from './history-marks';
+import { commentFields, historyFields } from './history-marks';
 import type { TicketPin } from '../domain/pins';
 import { INBOX_EXPAND, INBOX_LIST_FIELDS, toInboxItemSummary, type InboxRecord } from './inbox';
 import { PIN_FIELDS, toTicketPin } from './pins';
@@ -99,7 +99,7 @@ export function subscribeTicket(
 	});
 }
 
-/** Comments of one ticket only. */
+/** Comments of one ticket only; with the mark of the outbox once the server reports it (OF-4b). */
 export function subscribeComments(
 	pb: PocketBase,
 	ticketId: string,
@@ -107,7 +107,7 @@ export function subscribeComments(
 ): Promise<Unsubscribe> {
 	return pb.collection('comments').subscribe<CommentRecord>('*', changes(toComment, onChange), {
 		filter: pb.filter('ticket = {:ticket}', { ticket: ticketId }),
-		fields: COMMENT_FIELDS
+		fields: commentFields()
 	});
 }
 

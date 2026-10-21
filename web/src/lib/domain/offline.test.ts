@@ -564,9 +564,9 @@ describe('limits and words', () => {
 	});
 
 	it('says what is kept in this stage: check marks, status, the day plan and the due date (OF-3)', () => {
-		// Since OF-4a "＋" as well.
+		// Since OF-4a "＋" as well, since OF-4b comments (concept §2.1).
 		expect(OFFLINE_TEXTS.offline).toBe(
-			'Keine Verbindung zu becauseyoulovejira. Abhaken, Status, Tagesplan, Fälligkeit und ＋ werden gemerkt und später übertragen.'
+			'Keine Verbindung zu becauseyoulovejira. Abhaken, Status, Tagesplan, Fälligkeit, Kommentare und ＋ werden gemerkt und später übertragen.'
 		);
 		expect(OFFLINE_TEXTS.offlineWith(3)).toBe(
 			'Keine Verbindung. 3 Änderungen sind gemerkt und werden übertragen, sobald die Verbindung zurück ist.'
