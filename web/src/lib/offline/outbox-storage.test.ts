@@ -1,6 +1,7 @@
 // The storage of the outbox (OF-2, concept OF-0 §3.2, §3.9): the lease of the tabs, the running
-// number of the device and, since OF-2b, the compare-and-swap of one entry; the database of the
-// browser is checked without creating it. IndexedDB itself runs in the browser of the smoke test
+// number of the device and, since OF-2b, the compare-and-swap of one entry, since OF-3c the notices
+// per account and the deletion that writes its notice in the same step; the database of the browser
+// is checked without creating it. IndexedDB itself runs in the browser of the smoke test
 // (tests/mobile), jsdom has none.
 
 import { describe, expect, it } from 'vitest';
@@ -72,6 +73,39 @@ describe('compare-and-swap of an entry (OF-2b)', () => {
 		expect(await storage.swap(op, sending, null)).toBe(true);
 		expect(storage.entries.size).toBe(0);
 		expect(await storage.swap(op, missing, null)).toBe(true);
+	});
+
+	it('deletes an entry and writes the notices of its account in one step, or neither (OF-3c)', async () => {
+		const storage = new MemoryOutboxStorage();
+		const op = entry('queued').op;
+		await storage.put(entry('queued'));
+		const user = 'user00000000001';
+		const note = (current: unknown) => [...((current as unknown[] | undefined) ?? []), 'gelöscht'];
+		const sending = (current: unknown) => stateOf(current) === 'sending';
+		expect(await storage.swapNoting(op, sending, null, user, note)).toBe(false);
+		expect(storage.entries.size).toBe(1);
+		expect(await storage.notices(user)).toBeUndefined();
+		const queued = (current: unknown) => stateOf(current) === 'queued';
+		expect(await storage.swapNoting(op, queued, null, user, note)).toBe(true);
+		expect(storage.entries.size).toBe(0);
+		expect(await storage.notices(user)).toEqual(['gelöscht']);
+	});
+});
+
+describe('the notices of an account (OF-3c)', () => {
+	it('change in one step per account, stay as they are on null and go on an empty list', async () => {
+		const storage = new MemoryOutboxStorage();
+		const mine = 'user00000000001';
+		const other = 'user00000000002';
+		expect(await storage.notices(mine, () => ['a'])).toEqual(['a']);
+		expect(await storage.notices(other, () => ['b'])).toEqual(['b']);
+		expect(await storage.notices(mine, () => null)).toEqual(['a']);
+		expect(await storage.notices(mine, (current) => [...(current as string[]), 'c'])).toEqual([
+			'a',
+			'c'
+		]);
+		expect(await storage.notices(mine, () => [])).toBeUndefined();
+		expect(await storage.notices(other)).toEqual(['b']);
 	});
 });
 

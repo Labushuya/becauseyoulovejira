@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import { CLOCK_CODE, OFFLINE_TEXTS, reasonOf } from '$lib/domain/offline';
 	import type { OutboxStore } from '$lib/offline/outbox.svelte';
 	import SectionMessage from '../guidance/SectionMessage.svelte';
@@ -13,9 +14,14 @@
 	// appears and the progress of the transfer; the focus never moves because of it.
 	// Since OF-3b round 3 the notices of the outbox stand here as warnings until "Schließen": what the
 	// deletion after 7 days took, a sub-task a completion should have taken along that is not done.
+	// Since OF-3c they come from the device, in every tab; after "Schließen" the focus goes to the next
+	// "Schließen", else to the region (`tabindex="-1"`), never to the page (R3-3); where the region goes
+	// with the last notice, to the heading of the view or the main content (round 2, C-3), with a
+	// `tabindex` only until the focus leaves it (round 3, C2-1).
 	let { outbox, onshow }: { outbox: OutboxStore; onshow: () => void } = $props();
 
 	const uid = $props.id();
+	let region: HTMLDivElement | undefined = $state();
 	const notices = $derived(outbox.notices);
 	const offline = $derived(outbox.offline);
 	const conflicts = $derived(outbox.conflicts);
@@ -61,9 +67,55 @@
 	function retry() {
 		void outbox.retry();
 	}
+
+	/** The "Schließen" of every notice, in their order. */
+	function closeButtons(): HTMLButtonElement[] {
+		return [...(region?.querySelectorAll<HTMLButtonElement>('button[data-closes]') ?? [])];
+	}
+
+	/**
+	 * Moves the focus to `target` and says whether it took it. One without a `tabindex` of its own gets
+	 * `-1` only until the focus leaves it, so the main content is no stop of the focus anywhere else in
+	 * the app (round 3, C2-1); one that does not take the focus (a hidden heading, say) stays as it was
+	 * (C2-6).
+	 */
+	function rest(target: HTMLElement): boolean {
+		const own = target.hasAttribute('tabindex');
+		if (!own) target.tabIndex = -1;
+		target.focus({ preventScroll: true });
+		const taken = document.activeElement === target;
+		if (own) return taken;
+		if (taken) {
+			target.addEventListener('blur', () => target.removeAttribute('tabindex'), { once: true });
+		} else target.removeAttribute('tabindex');
+		return taken;
+	}
+
+	/**
+	 * "Schließen": the notice goes, the focus moves to the next "Schließen" or to the region. Where the
+	 * region goes with the last notice (the layout shows it outside the phone frame only for the notices),
+	 * to the heading of the view (`data-view-heading`) in the main content, else to the main content
+	 * (round 2, C-3; round 3, C2-1 and C2-6).
+	 */
+	async function close(id: string) {
+		const buttons = closeButtons();
+		const index = buttons.findIndex((button) => button.dataset.closes === id);
+		const next = (buttons[index + 1] ?? buttons[index - 1])?.dataset.closes;
+		const main = region?.closest<HTMLElement>('main') ?? null;
+		const closing = outbox.closeNotice(id);
+		await tick();
+		const target = closeButtons().find((button) => button.dataset.closes === next);
+		if (target !== undefined) target.focus();
+		else if (region?.isConnected === true) region.focus();
+		else if (main !== null) {
+			const heading = main.querySelector<HTMLElement>('[data-view-heading]');
+			if (heading === null || !rest(heading)) rest(main);
+		}
+		await closing;
+	}
 </script>
 
-<div class="offline-notice" class:shown role="status">
+<div class="offline-notice" class:shown role="status" tabindex="-1" bind:this={region}>
 	{#if offline}
 		<SectionMessage tone="warning">
 			{offlineText()}
@@ -116,8 +168,9 @@
 				<button
 					class="button-subtle"
 					type="button"
+					data-closes={notice.id}
 					aria-describedby={`${uid}-${notice.id}`}
-					onclick={() => outbox.closeNotice(notice.id)}
+					onclick={() => void close(notice.id)}
 				>
 					{OFFLINE_TEXTS.closeNotice}
 				</button>

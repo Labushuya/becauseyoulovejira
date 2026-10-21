@@ -1184,7 +1184,7 @@ test.describe('small phone with the switch on: changes without a connection (OF-
 		for (const title of titles) {
 			tickets.push(await api('POST', '/api/collections/tickets/records', { owner: record.id, title: `${title} ${mark}` }, token));
 		}
-		return { token, tickets };
+		return { token, tickets, user: record.id };
 	}
 
 	/** Signs in, waits until the outbox knows the server and has its storage, and opens "Aufgaben". */
@@ -1200,7 +1200,7 @@ test.describe('small phone with the switch on: changes without a connection (OF-
 	}
 
 	test('keeps a check mark without a connection, sends it once the connection is back, and the history says "offline … laut Gerät"', async ({ page, context }) => {
-		const { token, tickets } = await seedOpen(['Müll rausbringen']);
+		const { token, tickets, user } = await seedOpen(['Müll rausbringen']);
 		const [trash] = tickets;
 		await openTasks(page);
 		const card = page.locator(`li[data-ticket-id="${trash.id}"]`);
@@ -1228,6 +1228,47 @@ test.describe('small phone with the switch on: changes without a connection (OF-
 		expect(history.items).toHaveLength(1);
 		expect(history.items[0]).toMatchObject({ offline: true });
 		expect(history.items[0].device_at).not.toBe('');
+
+		// OF-3c: a change older than 7 days, as a closed tab left it in IndexedDB. The start after a reload
+		// deletes it with its notice in one transaction; the notice stays on the device until "Schließen",
+		// which deletes it there as well and leaves the focus in the hints.
+		const action = {
+			v: 1, op: 'smokeof3cdropped0001', seq: 999_999, user, scope: `u:${user}`, kind: 'ticket.update', target: trash.id, dependsOn: [],
+			payload: { status: 'in_progress' }, expected: { status: 'done' }, key: trash.key, title: trash.title,
+			createdAt: Date.now() - 7 * 24 * 60 * 60 * 1000 - 60_000, state: 'queued', attempts: 0, nextAttemptAt: 0
+		};
+		/** Runs one request of IndexedDB "byl-offline" in the page: `put` an action, or `get` the notices of the account. */
+		const device = (step) =>
+			page.evaluate(
+				({ step, action, user }) =>
+					new Promise((resolve, reject) => {
+						const open = indexedDB.open('byl-offline');
+						open.onerror = () => reject(open.error);
+						open.onsuccess = () => {
+							const db = open.result;
+							const store = step === 'put' ? 'actions' : 'meta';
+							const request = db.transaction(store, step === 'put' ? 'readwrite' : 'readonly').objectStore(store)[step](step === 'put' ? action : `notices:${user}`);
+							request.onerror = () => reject(request.error);
+							request.onsuccess = () => {
+								db.close();
+								resolve(request.result ?? null);
+							};
+						};
+					}),
+				{ step, action, user }
+			);
+		await device('put');
+		await page.reload();
+		const dropped = `1 gemerkte Änderung war älter als 7 Tage und wurde gelöscht, ohne sicher übertragen zu sein: ${trash.key}. Bitte im Ticket prüfen.`;
+		const hints = page.locator('.offline-notice');
+		await expect(hints.getByText(dropped)).toBeVisible();
+		expect(await device('get')).toMatchObject([{ v: 1, kind: 'dropped', entries: [{ op: action.op, key: trash.key }] }]);
+		const close = hints.getByRole('button', { name: 'Schließen' });
+		await expectTarget(close);
+		await close.click();
+		await expect(hints.getByText(dropped)).toHaveCount(0);
+		await expect(hints).toBeFocused();
+		await expect.poll(() => device('get')).toBeNull();
 	});
 
 	test('shows a conflict with another device in the dialog instead of overwriting, and "Meine Änderung übernehmen" sends it', async ({ page, context }) => {

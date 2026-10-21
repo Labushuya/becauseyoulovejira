@@ -23,7 +23,8 @@
 // - The display lays the waiting actions over the state of the server (`overlayStatus`,
 //   `overlayDue`, `overlayDoneToday`); the stores keep the state of the server.
 // - After 48 hours an action is no longer sent on its own (decision of the user 2), after 7 days
-//   it goes, never silently: a notice names its ticket (OF-3b round 3).
+//   it goes, never silently: a notice names its ticket (OF-3b round 3), kept on the device until the
+//   user closes it (OF-3c, domain/offline-notices.ts).
 
 import { isCalendarDate, type CalendarDate } from './berlin-date';
 import {
@@ -1804,24 +1805,72 @@ export function serverTimeText(timestamp: string | null | undefined, now: number
 }
 
 /**
- * What an action does, in words: "HAUS-12 erledigt", "HAUS-12 auf „In Arbeit“", "HAUS-12 fällig am
+ * What a change does, without its title (OF-3c): enough for its words, so a notice on the device keeps
+ * no more of it than the key of its ticket and the value.
+ */
+export type ChangeRef =
+	| { readonly field: 'status'; readonly key: string; readonly status: Status }
+	| { readonly field: 'due'; readonly key: string; readonly due: CalendarDate | null }
+	| {
+			readonly field: 'check';
+			readonly key: string;
+			readonly check: 'complete' | 'today' | 'uncheck';
+	  };
+
+/** What an action does, for its words (`changeText`). */
+export function changeOf(action: KeptAction): ChangeRef {
+	if (isDueAction(action)) return { field: 'due', key: action.key, due: action.payload.due };
+	if (isDayPlanAction(action)) {
+		const check = action.kind === 'dayplan.uncheck' ? 'uncheck' : action.payload.action;
+		return { field: 'check', key: action.key, check };
+	}
+	return { field: 'status', key: action.key, status: action.payload.status };
+}
+
+/** A change as stored in a notice, null for anything else (OF-3c: the device may hold anything). */
+export function parseChangeRef(raw: unknown): ChangeRef | null {
+	if (typeof raw !== 'object' || raw === null) return null;
+	const value = raw as Record<string, unknown>;
+	if (typeof value.key !== 'string') return null;
+	const key = value.key;
+	if (value.field === 'status' && isStatus(value.status)) {
+		return { field: 'status', key, status: value.status };
+	}
+	const due = dueOf(value.due);
+	if (value.field === 'due' && due !== undefined) return { field: 'due', key, due };
+	const check = value.check;
+	if (
+		value.field === 'check' &&
+		(check === 'complete' || check === 'today' || check === 'uncheck')
+	) {
+		return { field: 'check', key, check };
+	}
+	return null;
+}
+
+/**
+ * What a change does, in words: "HAUS-12 erledigt", "HAUS-12 auf „In Arbeit“", "HAUS-12 fällig am
  * 21.10.2026", "HAUS-12 im Tagesplan erledigt".
  */
-export function actionText(action: KeptAction): string {
-	const key = action.key === '' ? 'Ticket' : action.key;
-	if (isDueAction(action)) {
-		const due = action.payload.due;
+export function changeText(change: ChangeRef): string {
+	const key = change.key === '' ? 'Ticket' : change.key;
+	if (change.field === 'due') {
+		const due = change.due;
 		return due === null ? `${key} ohne Fälligkeit` : `${key} fällig am ${formatCalendarDate(due)}`;
 	}
-	if (isDayPlanAction(action)) {
-		if (action.kind === 'dayplan.uncheck') return `${key} im Tagesplan wieder offen`;
-		return action.payload.action === 'today'
+	if (change.field === 'check') {
+		if (change.check === 'uncheck') return `${key} im Tagesplan wieder offen`;
+		return change.check === 'today'
 			? `${key} im Tagesplan für heute abgehakt`
 			: `${key} im Tagesplan erledigt`;
 	}
-	const status = action.payload.status;
-	if (status === 'done') return `${key} erledigt`;
-	return `${key} auf „${STATUS_LABELS[status]}“`;
+	if (change.status === 'done') return `${key} erledigt`;
+	return `${key} auf „${STATUS_LABELS[change.status]}“`;
+}
+
+/** What an action does, in words (`changeText`). */
+export function actionText(action: KeptAction): string {
+	return changeText(changeOf(action));
 }
 
 /** "1 gemerkte Änderung wartet" or "3 gemerkte Änderungen warten". */
@@ -1961,18 +2010,28 @@ export const OFFLINE_TEXTS = Object.freeze({
 	undoOtherAccount: '„Rückgängig“ geht nicht mehr: Inzwischen ist ein anderes Konto angemeldet.',
 	/**
 	 * A sub-task a completion should have taken along that is not done once it arrived (round 3,
-	 * R2-1): the hook completes sub-tasks on the step to "done" only. Nothing is sent on its own.
+	 * R2-1): the hook completes sub-tasks on the step to "done" only. Nothing is sent on its own. Without
+	 * a key "Eine Unteraufgabe" and "einem Ticket" (OF-3c, R3-5).
 	 */
 	childNotDone: (child: string, parent: string) =>
-		`Unteraufgabe ${child} ist nicht erledigt, obwohl sie mit ${parent} erledigt werden sollte. Bitte im Ticket prüfen.`,
-	/** Changes deleted after 7 days that were not surely sent and answered, with their tickets (round 3, R2-2). */
+		`${child === '' ? 'Eine Unteraufgabe' : `Unteraufgabe ${child}`} ist nicht erledigt, obwohl sie mit ${parent === '' ? 'einem Ticket' : parent} erledigt werden sollte. Bitte im Ticket prüfen.`,
+	/**
+	 * Changes deleted after 7 days that were not surely sent and answered, with their tickets (round 3,
+	 * R2-2); `keys` names them, "ein Ticket" for one without a key.
+	 */
 	dropped: (count: number, keys: string) =>
 		count === 1
 			? `1 gemerkte Änderung war älter als 7 Tage und wurde gelöscht, ohne sicher übertragen zu sein: ${keys}.`
 			: `${count} gemerkte Änderungen waren älter als 7 Tage und wurden gelöscht, ohne sicher übertragen zu sein: ${keys}.`,
-	/** A take-back deleted after 7 days: the discarded change may still be in effect (round 3, R2-2). */
-	droppedDiscard: (what: string) =>
-		`Das Verwerfen von ${what} wurde nicht ausgeführt; der Server hat vielleicht noch den verworfenen Wert.`,
+	/**
+	 * A take-back deleted after 7 days: the discarded change may still be in effect (round 3, R2-2);
+	 * `text` is the change in words (`changeText`).
+	 */
+	droppedDiscard: (text: string) =>
+		`Das Verwerfen von „${text}“ wurde nicht ausgeführt; der Server hat vielleicht noch den verworfenen Wert.`,
+	/** The same where the discarded change itself was gone already (OF-3c, R3-5: no "von einer"). */
+	droppedDiscardOf: (key: string) =>
+		`Das Verwerfen einer Änderung an ${key === '' ? 'einem Ticket' : key} wurde nicht ausgeführt; der Server hat vielleicht noch den verworfenen Wert.`,
 	checkTickets: (count: number) =>
 		count === 1 ? 'Bitte im Ticket prüfen.' : 'Bitte in den Tickets prüfen.',
 	/** The button of a notice that stays until it is closed (round 3). */
@@ -2014,7 +2073,10 @@ export const OFFLINE_INTENTS = Object.freeze({
 	sendAnyway: (text: string) => `Trotzdem übertragen: ${text}`,
 	answerChildren: (text: string) => `Offene Unteraufgaben beantworten: ${text}`,
 	completeAnyway: (text: string) => `Trotzdem erledigen: ${text}`,
-	reopenAnyway: (text: string) => `Trotzdem wieder öffnen: ${text}`
+	reopenAnyway: (text: string) => `Trotzdem wieder öffnen: ${text}`,
+	/** The notices on the device (OF-3c). */
+	keepNotice: 'Hinweis zu gemerkten Änderungen auf diesem Gerät speichern',
+	closeNotice: 'Hinweis zu gemerkten Änderungen schließen'
 });
 
 /** The words of a refusal for the notice: the reason of the server, or why it waits. */

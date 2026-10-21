@@ -917,6 +917,8 @@
 		ontour={() => void startGuidedTour()}
 	/>
 {/if}
+<!-- No tabindex of its own: where the hints of the outbox go with their last notice and the view has no
+     heading, OfflineNotice gives it one only until the focus leaves it (OF-3c round 3, C2-1). -->
 <main class="content">
 	<!-- The outbox (OF-2): without a connection its warning takes the place of the live hint; kept
 	     changes, conflicts and refusals with "Ansehen". Only while it works, keeps something or has a
