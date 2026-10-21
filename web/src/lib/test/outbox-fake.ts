@@ -323,6 +323,8 @@ export interface HarnessOptions {
 	channel?: OutboxChannel | null | (() => OutboxChannel | null);
 	/** The server of another tab of the same device. */
 	shared?: ReturnType<typeof fakeServer>;
+	/** An app without the way of the due date (OF-3c, R3-2): kept due dates find none. */
+	withoutDue?: boolean;
 }
 
 export function harness(options: HarnessOptions = {}) {
@@ -336,7 +338,7 @@ export function harness(options: HarnessOptions = {}) {
 		storage,
 		connectivity,
 		send,
-		sendDue,
+		...(options.withoutDue !== true && { sendDue }),
 		sendDayPlan,
 		get,
 		tab: options.tab ?? 'tab-a',
@@ -408,6 +410,17 @@ export class HeldStorage extends MemoryOutboxStorage {
 		return super.swap(op, matches, next);
 	}
 
+	async swapNoting(
+		op: string,
+		matches: (current: unknown) => boolean,
+		next: KeptAction | null,
+		user: string,
+		note: (current: unknown) => unknown[] | null
+	): Promise<boolean> {
+		await this.#turn();
+		return super.swapNoting(op, matches, next, user, note);
+	}
+
 	open(): void {
 		this.holding = false;
 		for (const resolve of this.#held.splice(0)) resolve();
@@ -434,6 +447,22 @@ export class FailingStorage extends MemoryOutboxStorage {
 	): Promise<boolean> {
 		this.#check();
 		return super.swap(op, matches, next);
+	}
+
+	async swapNoting(
+		op: string,
+		matches: (current: unknown) => boolean,
+		next: KeptAction | null,
+		user: string,
+		note: (current: unknown) => unknown[] | null
+	): Promise<boolean> {
+		this.#check();
+		return super.swapNoting(op, matches, next, user, note);
+	}
+
+	async notices(user: string, change?: (current: unknown) => unknown[] | null): Promise<unknown> {
+		if (change !== undefined) this.#check();
+		return super.notices(user, change);
 	}
 
 	async remove(ops: readonly string[]): Promise<void> {

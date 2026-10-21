@@ -13,9 +13,9 @@
 //   one; a change that dropped a waiting one writes nothing of its own, a change taken into another
 //   carries only what that one still changes), or someone else set it after the last own change that
 //   writes the will, or, under the limit M1 before the chain and without a change the user keeps, it
-//   has the value the views showed before the chain; a value a conflict, a refusal, a waiting decision
-//   (also through the changes waiting behind it) or a notice about a sub-task that is not done
-//   touches is left out, only that value;
+//   has the value the views showed before the chain; a value a conflict, a refusal or a waiting
+//   decision (also through the changes waiting behind it) touches is left out, only that value, and
+//   so is a sub-task a notice names as not done while the user wants it done in the end (OF-3c);
 // - I2: no change of the outbox overwrites a value someone else set without a conflict, unless the
 //   view showed that value and the user changed it; the limit M1 counts where the value of someone
 //   else is the wish of a discarded own change that may have arrived, or where the server took an own
@@ -23,7 +23,8 @@
 //   nothing over, round 3); only the first request of a change of the class "direkt" has no value
 //   before (OF-2 §2), and the mark of the day of a done ticket is no value of its own (OF-3b §9);
 // - I3: no change whose request the server took leaves the outbox without a word after any refusal
-//   while its value contradicts the will;
+//   while its value contradicts the will; no notice names a sub-task as not done that is done or that
+//   the user no longer wants done in the end (OF-3c, R3-4);
 // - I4: after "Rückgängig" every value it brought back has the will of before "Verwerfen" (or a
 //   visible conflict), and every "Verwerfen" of a change of the user offers "Rückgängig";
 // - no hang: with the connection back, only changes that visibly wait for a decision stay (conflict,
@@ -36,7 +37,7 @@
 // fixed seeds. Since round 3 the fake server completes sub-tasks like the hook (only blocking ones, on
 // the step to "done"); the class "Unteraufgaben" keeps completions as well, may have A done before the
 // chain or completed by someone else in it, and a sub-task the server did not complete counts for I1
-// only where no notice names it.
+// only where no notice names it (since OF-3c only while the user wants it done in the end).
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DayPlanItem } from '$lib/data/day-plan';
@@ -951,12 +952,19 @@ async function run(scenario: Scenario): Promise<Outcome> {
 	if (blindHint) suspended.add('c3');
 	// A sub-task the server did not complete although a kept completion should have taken it along
 	// (the hook completes blocking ones on the step to "done" only): the notice names it and stays,
-	// the user decides in the ticket (round 3, R2-1).
+	// the user decides in the ticket (round 3, R2-1). It leaves I1 out for that sub-task only where the
+	// user wants it done in the end and it is not; a notice about a sub-task that is done or that the
+	// user no longer wants done is a false one (OF-3c, R3-4: I3). The words are the oracle's own.
 	const notices = h.outbox.notices.map((notice) => notice.text);
 	for (const id of [C1, C2, C3]) {
 		const named = `Unteraufgabe HAUS-${id.slice(-2)} ist nicht erledigt`;
 		const feature = featureOfTicket(id);
-		if (feature !== null && notices.some((text) => text.includes(named))) suspended.add(feature);
+		if (feature === null || !notices.some((text) => text.includes(named))) continue;
+		if (willNow(feature) === 'done' && server[feature] !== 'done') suspended.add(feature);
+		else {
+			const values = `Server ${String(server[feature])}, gewollt ${String(willNow(feature))}`;
+			outcome.i3.push(`${feature}: falscher Hinweis „nicht erledigt“, ${values}`);
+		}
 	}
 	/** The wishes the user keeps for a value, in their order. */
 	const willOf = willNow;

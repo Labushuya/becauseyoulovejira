@@ -19,7 +19,7 @@ import {
 	type OutboxAction
 } from '$lib/domain/offline';
 import { ConnectivityStore } from '$lib/offline/connectivity.svelte';
-import { OutboxStore } from '$lib/offline/outbox.svelte';
+import { OutboxNoWayError, OutboxStore } from '$lib/offline/outbox.svelte';
 import { MemoryOutboxStorage } from '$lib/offline/outbox-storage';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import OfflineNotice from './OfflineNotice.svelte';
@@ -125,13 +125,17 @@ function due(overrides: Partial<DueAction> = {}): DueAction {
 	};
 }
 
-async function outboxWith(actions: KeptAction[], reachable = false) {
+async function outboxWith(actions: KeptAction[], reachable = false, notices: unknown[] = []) {
 	const storage = new MemoryOutboxStorage();
 	for (const action of actions) await storage.put(action);
+	// Notices of the account on the device (OF-3c), as another tab or an earlier start left them.
+	if (notices.length > 0) await storage.notices(USER, () => notices);
 	const server = { reachable };
 	const connectivity = new ConnectivityStore(async () => server.reachable);
+	// Nothing leaves the device in these tests: the error of an app without the way of the kind, so an
+	// attempt of the worker before the check of the connection counts as not arrived (OF-3c, R3-2).
 	const refuse = async () => {
-		throw new Error('not in these tests');
+		throw new OutboxNoWayError();
 	};
 	const outbox = new OutboxStore({ storage, connectivity, send: refuse, get: refuse, tab: 'a' });
 	outbox.attach(USER);
@@ -238,6 +242,40 @@ describe('OfflineNotice (OF-3b round 3)', () => {
 		await fireEvent.click(close);
 		expect(statusText()).not.toContain(text);
 		expect(outbox.notices).toEqual([]);
+	});
+});
+
+describe('OfflineNotice (OF-3c)', () => {
+	/** Two notices about sub-tasks that are not done, as the device keeps them. */
+	const children = ['HAUS-13', 'HAUS-14'].map((key, index) => ({
+		v: 1,
+		id: `child-${index}`,
+		kind: 'childNotDone',
+		at: NOW - 60_000,
+		key,
+		parent: 'HAUS-12',
+		child: `tick0000000001${index + 3}`,
+		after: 1
+	}));
+
+	it('moves the focus to the next "Schließen" once a notice is closed, then to the hints (R3-3)', async () => {
+		const outbox = await outboxWith([], true, children);
+		render(OfflineNotice, { props: { outbox, onshow: vi.fn() } });
+		const status = screen.getByRole('status');
+		const [first, second] = within(status).getAllByRole('button', { name: 'Schließen' });
+		expect(statusText()).toContain(
+			'Unteraufgabe HAUS-13 ist nicht erledigt, obwohl sie mit HAUS-12 erledigt werden sollte. Bitte im Ticket prüfen.'
+		);
+		first?.focus();
+		await fireEvent.click(first as HTMLElement);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(statusText()).not.toContain('HAUS-13');
+		expect(document.activeElement).toBe(second);
+		await fireEvent.click(second as HTMLElement);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(within(status).queryByRole('button', { name: 'Schließen' })).toBeNull();
+		expect(status.getAttribute('tabindex')).toBe('-1');
+		expect(document.activeElement).toBe(status);
 	});
 });
 
