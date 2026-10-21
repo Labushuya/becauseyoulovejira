@@ -25,6 +25,11 @@
 // - After 48 hours an action is no longer sent on its own (decision of the user 2), after 7 days
 //   it goes, never silently: a notice names its ticket (OF-3b round 3), kept on the device until the
 //   user closes it (OF-3c, domain/offline-notices.ts).
+// - Since OF-4a "＋" creates a ticket or an entry of the inbox (`ticket.create`, `inbox.create`) under
+//   an ID of the client (`newRecordId`, ADR-0074 §5): the key comes from the server only, until then
+//   the views show "Neu" (`createdTicketOf`, `createdItemOf`). A change of such a ticket goes into the
+//   payload of its creation while that never left the device, else it waits for it (`dependsOn`).
+//   A creation takes no part in the chains of the values: it names no value before and writes none.
 
 import { isCalendarDate, type CalendarDate } from './berlin-date';
 import {
@@ -37,10 +42,11 @@ import {
 	type TicketKind
 } from './day-plan';
 import { formatBerlinDateTime, formatCalendarDate, toPocketBaseTimestamp } from './format';
+import { INBOX_TITLE_MAX_LENGTH, PRESET_META_KEY, presetMeta, type InboxItem } from './inbox';
 import { STATUS_LABELS } from './labels';
-import { isStatus, type Status } from './status';
+import { isPriority, isStatus, type Priority, type Status } from './status';
 import type { CompletionChoice } from './subtasks';
-import { fromDueInput, toDueInput } from './ticket';
+import { TITLE_MAX_LENGTH, fromDueInput, toDueInput, type Ticket } from './ticket';
 
 /** The six actions of the first stage (ADR-0074 §2), as the server names them. */
 export const OFFLINE_KINDS = Object.freeze([
@@ -100,6 +106,14 @@ export const OFFLINE_MESSAGES: Readonly<Record<string, string>> = Object.freeze(
 	validation_dayplan_conflict: 'Der Haken wurde inzwischen geändert.'
 });
 
+/**
+ * Words of the client for codes PocketBase itself answers to a creation (OF-4a): an ID that is taken
+ * (ADR-0074 §5). Not part of the catalog of the hook.
+ */
+export const CREATE_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
+	validation_not_unique: 'Die ID des neuen Eintrags ist auf dem Server schon vergeben.'
+});
+
 /** The message of a conflict as a whole (the hook). */
 export const CONFLICT_MESSAGE = 'Das Ticket wurde inzwischen geändert.';
 
@@ -144,21 +158,39 @@ export function supportsKind(ops: OfflineOps | null | undefined, kind: OfflineKi
 	return ops.version >= OFFLINE_VERSION && ops.kinds.includes(kind);
 }
 
+/** A record ID as PocketBase draws it: 15 characters a–z0–9 (ADR-0074 §5). */
+export const RECORD_ID_LENGTH = 15;
+export const RECORD_ID_PATTERN = /^[a-z0-9]{15}$/;
+
 /**
- * A new identifier: 20 characters a–z0–9 from `fill` (crypto.getRandomValues; there is no
- * randomUUID without a secure context). Bytes of 252 and above are drawn again, so every character
- * is equally likely.
+ * `length` characters a–z0–9 from `fill` (crypto.getRandomValues; there is no randomUUID without a
+ * secure context). Bytes of 252 (7 × 36) and above are drawn again (rejection sampling), so every
+ * character is equally likely.
  */
-export function newOpId(fill: (bytes: Uint8Array<ArrayBuffer>) => Uint8Array): string {
+function drawn(fill: (bytes: Uint8Array<ArrayBuffer>) => Uint8Array, length: number): string {
 	let id = '';
-	while (id.length < OP_LENGTH) {
-		for (const byte of fill(new Uint8Array(OP_LENGTH * 2))) {
+	while (id.length < length) {
+		for (const byte of fill(new Uint8Array(length * 2))) {
 			if (byte >= 252) continue;
 			id += OP_ALPHABET[byte % OP_ALPHABET.length];
-			if (id.length === OP_LENGTH) break;
+			if (id.length === length) break;
 		}
 	}
 	return id;
+}
+
+/** A new identifier of an action: 20 characters a–z0–9 (`drawn`). */
+export function newOpId(fill: (bytes: Uint8Array<ArrayBuffer>) => Uint8Array): string {
+	return drawn(fill, OP_LENGTH);
+}
+
+/**
+ * The ID of a record the client creates (OF-4a, ADR-0074 §5): 15 characters a–z0–9 like PocketBase
+ * (about 77 bits), so links /tickets/<id> work before the server has it and every check of a record ID
+ * takes it. The server refuses an ID that is taken (`validation_not_unique` at `id`).
+ */
+export function newRecordId(fill: (bytes: Uint8Array<ArrayBuffer>) => Uint8Array): string {
+	return drawn(fill, RECORD_ID_LENGTH);
 }
 
 /** The entry of a list for the `attempt`-th time (1 for the first), the last one from then on. */
@@ -199,6 +231,19 @@ export interface ActionOutcome {
 	updated?: string | null;
 	/** Open blocking sub-tasks of a completion (ADR-0033 §2). */
 	count?: number;
+	/**
+	 * The field of a refused creation the user may leave out (OF-4a, concept §3.7: "Ohne Projekt
+	 * anlegen"): `project` or `tags`.
+	 */
+	field?: CreateField;
+}
+
+/** The fields of a refused creation of a ticket it may be sent again without (OF-4a). */
+export const CREATE_FIELDS = Object.freeze(['project', 'tags'] as const);
+export type CreateField = (typeof CREATE_FIELDS)[number];
+
+function isCreateField(value: unknown): value is CreateField {
+	return (CREATE_FIELDS as readonly unknown[]).includes(value);
 }
 
 /** The code of an entry of the device that this SPA cannot read (another format, damaged). */
@@ -323,8 +368,63 @@ export interface DayPlanAction extends ActionBase {
 	childrenBefore?: (Status | null)[];
 }
 
+/** What "＋" creates as a ticket (OF-4a): the fields of the quick entry and the changes taken in. */
+export interface TicketCreatePayload {
+	title: string;
+	status: Status;
+	priority: Priority;
+	due: CalendarDate | null;
+	project: string | null;
+	tags: string[];
+	/** The household of the area at the time of the entry, '' for "Privat". */
+	household: string;
+}
+
+/**
+ * A ticket "＋" created (OF-4a): `target` is its ID of the client, sent as `id`; `key` stays '' (the
+ * server draws it), `title` is the title for the list and the dialog. It names no value before.
+ */
+export interface TicketCreateAction extends ActionBase {
+	kind: 'ticket.create';
+	payload: TicketCreatePayload;
+	expected: Record<string, never>;
+}
+
+/** What "＋" puts into the inbox (OF-4a): channel "quick", kind "todo", with the chosen values. */
+export interface InboxCreatePayload {
+	title: string;
+	household: string;
+	/** Project, tags and priority of the line, the preset of the entry (`source_meta.preset`). */
+	preset: { project: string | null; tags: string[]; priority: Priority | null };
+}
+
+/** An entry of the inbox "＋" created (OF-4a): `target` is its ID of the client. */
+export interface InboxCreateAction extends ActionBase {
+	kind: 'inbox.create';
+	payload: InboxCreatePayload;
+	expected: Record<string, never>;
+}
+
+/** A record "＋" created (OF-4a). */
+export type CreateAction = TicketCreateAction | InboxCreateAction;
+
 /** Every action the device keeps. */
-export type KeptAction = OutboxAction | DueAction | DayPlanAction;
+export type KeptAction = OutboxAction | DueAction | DayPlanAction | CreateAction;
+
+/** A ticket "＋" created (OF-4a). */
+export function isTicketCreate(action: KeptAction): action is TicketCreateAction {
+	return action.kind === 'ticket.create';
+}
+
+/** An entry of the inbox "＋" created (OF-4a). */
+export function isInboxCreate(action: KeptAction): action is InboxCreateAction {
+	return action.kind === 'inbox.create';
+}
+
+/** A record "＋" created (OF-4a). */
+export function isCreateAction(action: KeptAction): action is CreateAction {
+	return isTicketCreate(action) || isInboxCreate(action);
+}
 
 /** A change of the status of a ticket. */
 export function isStatusAction(action: KeptAction): action is OutboxAction {
@@ -341,7 +441,10 @@ export function isDayPlanAction(action: KeptAction): action is DayPlanAction {
 	return action.kind === 'dayplan.check' || action.kind === 'dayplan.uncheck';
 }
 
-/** The ticket an action belongs to: its target, or the ticket of the entry of the day plan. */
+/**
+ * The ticket an action belongs to: its target, or the ticket of the entry of the day plan; for an
+ * entry of the inbox "＋" created (OF-4a) the ID of that entry, which no ticket has.
+ */
 export function ticketOf(action: KeptAction): string {
 	return isDayPlanAction(action) ? action.ticket : action.target;
 }
@@ -373,7 +476,8 @@ function outcomeOf(value: unknown): ActionOutcome | undefined {
 		message: value.message,
 		...(actual !== undefined && { actual }),
 		...(updated !== undefined && { updated }),
-		...(finite(value.count) && { count: value.count })
+		...(finite(value.count) && { count: value.count }),
+		...(isCreateField(value.field) && { field: value.field })
 	};
 }
 
@@ -539,6 +643,85 @@ function dayPlanActionOf(
 	};
 }
 
+/** A record ID or null; undefined for anything else. */
+function recordIdOrNullOf(value: unknown): string | null | undefined {
+	if (value === null) return null;
+	return typeof value === 'string' && RECORD_ID_PATTERN.test(value) ? value : undefined;
+}
+
+/** Record IDs without doubles; null for anything else. */
+function recordIdsOf(value: unknown): string[] | null {
+	const valid = (entry: unknown) => typeof entry === 'string' && RECORD_ID_PATTERN.test(entry);
+	if (!Array.isArray(value) || !value.every(valid)) return null;
+	return [...new Set(value as string[])];
+}
+
+/** A title of a creation: not empty, at most `max` characters; null for anything else. */
+function titleOf(value: unknown, max: number): string | null {
+	return typeof value === 'string' && value.trim() !== '' && value.length <= max ? value : null;
+}
+
+/**
+ * A ticket or an entry of the inbox "＋" created (OF-4a): its ID of the client as `target`, the title,
+ * the household ('' or a record ID) and the values of the line. It takes nothing back and depends on
+ * nothing; anything else is not one of this build.
+ */
+function createActionOf(
+	raw: Record<string, unknown>,
+	base: ActionBase,
+	payload: Record<string, unknown>
+): CreateAction | null {
+	if (!RECORD_ID_PATTERN.test(base.target) || base.undoes !== undefined) return null;
+	if (base.dependsOn.length > 0 || base.fallback !== undefined) return null;
+	const household = payload.household === '' ? '' : recordIdOrNullOf(payload.household);
+	if (typeof household !== 'string') return null;
+	if (raw.kind === 'inbox.create') {
+		const title = titleOf(payload.title, INBOX_TITLE_MAX_LENGTH);
+		const preset = isRecord(payload.preset) ? payload.preset : null;
+		const project = recordIdOrNullOf(preset?.project);
+		const tags = recordIdsOf(preset?.tags);
+		const chosen = preset?.priority;
+		const priority = chosen === null ? null : isPriority(chosen) ? chosen : undefined;
+		if (title === null || project === undefined || tags === null || priority === undefined) {
+			return null;
+		}
+		return {
+			...base,
+			kind: 'inbox.create',
+			payload: { title, household, preset: { project, tags, priority } },
+			expected: {}
+		};
+	}
+	const title = titleOf(payload.title, TITLE_MAX_LENGTH);
+	const due = dueOf(payload.due);
+	const project = recordIdOrNullOf(payload.project);
+	const tags = recordIdsOf(payload.tags);
+	const valid =
+		title !== null &&
+		isStatus(payload.status) &&
+		isPriority(payload.priority) &&
+		due !== undefined &&
+		project !== undefined &&
+		tags !== null;
+	if (!valid || title === null || due === undefined || project === undefined || tags === null) {
+		return null;
+	}
+	return {
+		...base,
+		kind: 'ticket.create',
+		payload: {
+			title,
+			status: payload.status as Status,
+			priority: payload.priority as Priority,
+			due,
+			project,
+			tags,
+			household
+		},
+		expected: {}
+	};
+}
+
 /**
  * An entry of the device as an action. One of another format or damaged comes back as a refused
  * action with the code BROKEN_CODE, so it is shown with "Verwerfen" and never sent; one without an
@@ -555,6 +738,8 @@ export function parseAction(raw: unknown): KeptAction | null {
 		if (raw.kind === 'ticket.update') action = ticketActionOf(raw, base, payload, expected);
 		else if (raw.kind === 'dayplan.check' || raw.kind === 'dayplan.uncheck') {
 			action = dayPlanActionOf(raw, base, payload, expected);
+		} else if (raw.kind === 'ticket.create' || raw.kind === 'inbox.create') {
+			action = createActionOf(raw, base, payload);
 		}
 	}
 	return action ?? brokenAction(raw.op, raw.user, raw);
@@ -637,16 +822,22 @@ export function checkWish(
 /** The status an action gives the ticket `id`, null when it leaves the status alone. */
 function statusOf(action: KeptAction, id: string): Status | null {
 	if (isStatusAction(action)) return action.target === id ? action.payload.status : null;
+	if (isTicketCreate(action)) return action.target === id ? action.payload.status : null;
 	if (!isDayPlanAction(action) || action.ticket !== id) return null;
 	const status = checkWish(action).status;
 	return status === action.expected.status ? null : status;
 }
 
-/** Whether an action belongs to the chain of the status of the ticket `id`. */
+/**
+ * Whether an action belongs to the chain of the status of the ticket `id`; since OF-4a also its
+ * creation, so a change waits for it (or goes into it, `planTicketStatus`), but not a discarded one,
+ * which is only looked up.
+ */
 function inStatusChain(action: KeptAction, id: string): boolean {
 	return (
 		(isStatusAction(action) && action.target === id) ||
-		(isDayPlanAction(action) && action.ticket === id)
+		(isDayPlanAction(action) && action.ticket === id) ||
+		(isTicketCreate(action) && action.target === id && action.discarded !== true)
 	);
 }
 
@@ -658,7 +849,8 @@ interface StatusTicket {
 
 /** Whether a waiting completion with "Unteraufgaben mit erledigen" takes the ticket along. */
 function takesAlong(action: KeptAction, id: string): boolean {
-	if (isDueAction(action) || action.completion !== 'complete_children') return false;
+	if (!isStatusAction(action) && !isDayPlanAction(action)) return false;
+	if (action.completion !== 'complete_children') return false;
 	const completes = isStatusAction(action)
 		? action.payload.status === 'done'
 		: checkWish(action).status === 'done';
@@ -725,6 +917,7 @@ export function chainedStatus(base: Status, actions: readonly KeptAction[]): Sta
 	for (const action of actions) {
 		if (isStatusAction(action)) status = action.payload.status;
 		else if (isDayPlanAction(action)) status = checkWish(action).status;
+		else if (isTicketCreate(action)) status = action.payload.status;
 	}
 	return status;
 }
@@ -757,7 +950,8 @@ export function opsOf(actions: readonly KeptAction[]): ReadonlySet<string> {
 
 /** The sub-tasks a completion takes along, each with its status before or null where unknown. */
 function alongOf(action: KeptAction): [string, Status | null][] {
-	if (isDueAction(action) || action.completion !== 'complete_children') return [];
+	if (!isStatusAction(action) && !isDayPlanAction(action)) return [];
+	if (action.completion !== 'complete_children') return [];
 	const wish = isStatusAction(action) ? action.payload.status : checkWish(action).status;
 	if (wish !== 'done') return [];
 	const children = action.children ?? [];
@@ -811,7 +1005,8 @@ export function withChildBefore<A extends KeptAction>(
 	value: FeatureValue
 ): A {
 	const child = childOf(action, feature);
-	if (child === null || isDueAction(action) || !isStatus(value)) return action;
+	const completion = isStatusAction(action) || isDayPlanAction(action);
+	if (child === null || !completion || !isStatus(value)) return action;
 	const children = action.children ?? [];
 	const index = children.indexOf(child);
 	const before = action.childrenBefore ?? children.map(() => null);
@@ -819,8 +1014,12 @@ export function withChildBefore<A extends KeptAction>(
 	return { ...action, childrenBefore: before.map((entry, at) => (at === index ? value : entry)) };
 }
 
-/** The values a request of the action names as the ones before (its `expected`). */
+/**
+ * The values a request of the action names as the ones before (its `expected`); none for a creation
+ * (OF-4a): it takes part in no chain of a value.
+ */
 export function expectedOf(action: KeptAction): Map<Feature, FeatureValue> {
+	if (isCreateAction(action)) return new Map();
 	if (isStatusAction(action)) {
 		return new Map<Feature, FeatureValue>([[statusFeature(action.target), action.expected.status]]);
 	}
@@ -848,6 +1047,8 @@ export function priorOf(action: KeptAction): Map<Feature, FeatureValue> {
  */
 export function writesOf(action: KeptAction): Map<Feature, FeatureValue> {
 	const writes = new Map<Feature, FeatureValue>();
+	// A creation (OF-4a) changes no value of a record that was there before.
+	if (isCreateAction(action)) return writes;
 	if (isStatusAction(action)) writes.set(statusFeature(action.target), action.payload.status);
 	else if (isDueAction(action)) writes.set(dueFeature(action.target), action.payload.due);
 	else {
@@ -1164,6 +1365,41 @@ function mergeable(last: KeptAction): boolean {
 	return last.state === 'queued' && last.sent !== true && last.undoes === undefined;
 }
 
+/**
+ * The creation of the ticket `id` the device keeps (OF-4a), null without one. A discarded one counts
+ * as none: it is only looked up, and a ticket the server shows under its ID changes like any other.
+ */
+export function creationOf(actions: readonly KeptAction[], id: string): TicketCreateAction | null {
+	return (
+		actions.find((action): action is TicketCreateAction => {
+			return isTicketCreate(action) && action.target === id && action.discarded !== true;
+		}) ?? null
+	);
+}
+
+/**
+ * A change of a ticket "＋" created (OF-4a, concept §3.3): it goes into the payload of the creation
+ * while that never left the device; null when the change is a new action that waits for the creation
+ * (or there is none).
+ */
+function intoCreation(
+	open: readonly KeptAction[],
+	id: string,
+	patch: { status: Status } | { due: CalendarDate | null }
+): ChangePlan<TicketCreateAction> | null {
+	const creation = creationOf(open, id);
+	if (creation === null) return null;
+	const later = open.some(
+		(action) => action !== creation && action.dependsOn.includes(creation.op)
+	);
+	if (!mergeable(creation) || later) return null;
+	const payload = { ...creation.payload, ...patch };
+	if (payload.status === creation.payload.status && payload.due === creation.payload.due) {
+		return { kind: 'none' };
+	}
+	return { kind: 'merge', action: { ...creation, payload } };
+}
+
 /** The fields of a new action of the change; `send` marks it as sent before it leaves. */
 function common(
 	context: PlanContext,
@@ -1212,7 +1448,9 @@ function sendOrQueue<A extends KeptAction>(
  *   check mark of the day plan (OF-3), a new one waits for it, based on its wish; taking it back is
  *   such a counter action;
  * - without an open action a change goes at once (`send`, marked as sent before it leaves) or,
- *   offline, is kept (`queue`); offline a change to the value the ticket has does nothing.
+ *   offline, is kept (`queue`); offline a change to the value the ticket has does nothing;
+ * - behind the creation of a ticket "＋" created (OF-4a) that left the device a change waits for it,
+ *   based on the status it creates; one that never left it takes the change in (`planTicketStatus`).
  */
 export function planStatusChange(
 	open: readonly KeptAction[],
@@ -1269,6 +1507,32 @@ export function planStatusChange(
 	return sendOrQueue(action, mine.length === 0, context);
 }
 
+/**
+ * The plan for a change of the status of a ticket the store shows (OF-4a): into the creation of a
+ * ticket "＋" created while that never left the device (concept §3.3), else `planStatusChange`.
+ */
+export function planTicketStatus(
+	open: readonly KeptAction[],
+	change: StatusChange,
+	context: PlanContext
+): ChangePlan<OutboxAction | TicketCreateAction> {
+	return (
+		intoCreation(open, change.target, { status: change.status }) ??
+		planStatusChange(open, change, context)
+	);
+}
+
+/** The plan for a change of the due date of a ticket the store shows (OF-4a), like the status. */
+export function planTicketDue(
+	open: readonly KeptAction[],
+	change: DueChange,
+	context: PlanContext
+): ChangePlan<DueAction | TicketCreateAction> {
+	const waiting = open.some((action) => isDueAction(action) && action.target === change.target);
+	const created = waiting ? null : intoCreation(open, change.target, { due: change.due });
+	return created ?? planDueChange(open, change, context);
+}
+
 /** The due date the server will have once every open change of the due date arrived (OF-3). */
 function chainedDue(base: CalendarDate | null, actions: readonly DueAction[]): CalendarDate | null {
 	const last = actions.at(-1);
@@ -1278,7 +1542,8 @@ function chainedDue(base: CalendarDate | null, actions: readonly DueAction[]): C
 /**
  * The plan for a change of the due date of `change.target` (OF-3), by the rules of the status: taken
  * into a waiting one that never left the device, dropped when it is the value before again, else a
- * new action behind the open ones of the due date.
+ * new action behind the open ones of the due date. Behind the creation of a ticket "＋" created
+ * (OF-4a) that left the device the change waits for it (`planTicketDue` takes it in before).
  */
 export function planDueChange(
 	open: readonly KeptAction[],
@@ -1290,6 +1555,7 @@ export function planDueChange(
 			(action): action is DueAction => isDueAction(action) && action.target === change.target
 		)
 	);
+	const creation = creationOf(open, change.target);
 	const last = mine.at(-1);
 	if (last !== undefined && mergeable(last)) {
 		const feature = dueFeature(change.target);
@@ -1301,16 +1567,38 @@ export function planDueChange(
 			action: { ...last, payload: { due: change.due }, key: change.key, title: change.title }
 		};
 	}
-	const expected = chainedDue(change.base, mine);
+	const expected = chainedDue(creation === null ? change.base : creation.payload.due, mine);
 	if (mine.length === 0 && context.offline && expected === change.due) return { kind: 'none' };
-	const dependsOn = mine.map((entry) => entry.op);
+	const dependsOn = [...(creation === null ? [] : [creation.op]), ...mine.map((entry) => entry.op)];
 	const action: DueAction = {
 		...common(context, change, dependsOn),
 		kind: 'ticket.update',
 		payload: { due: change.due },
 		expected: { due: expected }
 	};
-	return sendOrQueue(action, mine.length === 0, context);
+	return sendOrQueue(action, dependsOn.length === 0, context);
+}
+
+/** "＋" as a ticket or into the inbox (OF-4a): the ID of the client, the area and the values. */
+export type CreateChange =
+	| { kind: 'ticket.create'; target: string; scope: string; payload: TicketCreatePayload }
+	| { kind: 'inbox.create'; target: string; scope: string; payload: InboxCreatePayload };
+
+/**
+ * The plan for "＋" (OF-4a): a new action under the ID of the client, sent at once with a connection
+ * (the first attempt names only the identifier and the ID) and kept without one. It depends on nothing.
+ */
+export function planCreate(change: CreateChange, context: PlanContext): ChangePlan<CreateAction> {
+	const head = common(
+		context,
+		{ target: change.target, key: '', title: change.payload.title, scope: change.scope },
+		[]
+	);
+	const action: CreateAction =
+		change.kind === 'ticket.create'
+			? { ...head, kind: 'ticket.create', payload: change.payload, expected: {} }
+			: { ...head, kind: 'inbox.create', payload: change.payload, expected: {} };
+	return sendOrQueue(action, true, context);
 }
 
 function sameState(a: CheckState, b: CheckState): boolean {
@@ -1477,10 +1765,18 @@ export function agedActions(
 	const drop: string[] = [];
 	for (const action of actions) {
 		if (now - action.createdAt >= KEEP_MS) drop.push(action.op);
-		else if (isTakeBack(action)) continue;
+		else if (isTakeBack(action) || isLookUp(action)) continue;
 		else if (isOld(action, now) || isFromTheFuture(action, now)) expire.push(action.op);
 	}
 	return { expire, drop };
+}
+
+/**
+ * A discarded creation that may have arrived (OF-4a): it is only looked up by its ID, never sent
+ * again, so its time does not matter; it never expires.
+ */
+export function isLookUp(action: KeptAction): boolean {
+	return isCreateAction(action) && action.discarded === true;
 }
 
 /**
@@ -1495,6 +1791,7 @@ export interface ServerState {
 
 /** The state of an action based on `state`, or the action itself when nothing changes. */
 function rebasedOn(action: KeptAction, state: ServerState): KeptAction {
+	if (isCreateAction(action)) return action;
 	if (isStatusAction(action)) {
 		const status = state.status;
 		return status === undefined || status === action.expected.status
@@ -1566,6 +1863,7 @@ export function mayHaveArrived(action: KeptAction): boolean {
 
 /** Whether an action changes anything when it arrives: its wish is not the value before. */
 export function changesSomething(action: KeptAction): boolean {
+	if (isCreateAction(action)) return true;
 	if (isStatusAction(action)) return action.payload.status !== action.expected.status;
 	if (isDueAction(action)) return action.payload.due !== action.expected.due;
 	return !sameState(checkWish(action), action.expected);
@@ -1670,10 +1968,15 @@ function expectedFieldsOf(expected: KeptAction['expected']): Readonly<Record<str
  * only `offline` instead of the time.
  */
 export function requestFields(
-	action: Pick<KeptAction, 'op' | 'expected' | 'createdAt' | 'late'>,
+	action: Pick<KeptAction, 'op' | 'kind' | 'expected' | 'createdAt' | 'late'>,
 	first: boolean
 ): OutboxFields {
 	if (first) return { opId: action.op };
+	// A creation (OF-4a) is based on nothing: only the identifier and the time of the device.
+	if (action.kind === 'ticket.create' || action.kind === 'inbox.create') {
+		if (action.late === true) return { opId: action.op, offline: true };
+		return { opId: action.op, clientAt: new Date(action.createdAt).toISOString() };
+	}
 	const expected = expectedFieldsOf(action.expected);
 	if (action.late === true) return { opId: action.op, expected, offline: true };
 	return { opId: action.op, expected, clientAt: new Date(action.createdAt).toISOString() };
@@ -1745,7 +2048,7 @@ export function verdictOf(failure: FailureFacts): SendVerdict {
 	if (first === undefined) {
 		return { result: 'refused', outcome: { code: failure.kind, message: failure.message } };
 	}
-	const [, error] = first;
+	const [field, error] = first;
 	if (error.code === DAY_OVER_CODE) {
 		return {
 			result: 'refused',
@@ -1755,8 +2058,10 @@ export function verdictOf(failure: FailureFacts): SendVerdict {
 	const count = error.params?.count;
 	const outcome: ActionOutcome = {
 		code: error.code,
-		message: OFFLINE_MESSAGES[error.code] ?? error.message,
-		...(error.code === OPEN_CHILDREN_CODE && { count: finite(count) ? count : 1 })
+		message: OFFLINE_MESSAGES[error.code] ?? CREATE_MESSAGES[error.code] ?? error.message,
+		...(error.code === OPEN_CHILDREN_CODE && { count: finite(count) ? count : 1 }),
+		// The project or the tags of a creation (OF-4a): it may go again without them.
+		...(isCreateField(field) && { field })
 	};
 	return { result: 'refused', outcome };
 }
@@ -1815,10 +2120,21 @@ export type ChangeRef =
 			readonly field: 'check';
 			readonly key: string;
 			readonly check: 'complete' | 'today' | 'uncheck';
+	  }
+	| {
+			/** A record "＋" created (OF-4a); never kept in a notice of a take-back. */
+			readonly field: 'create';
+			readonly key: string;
+			readonly record: 'ticket' | 'inbox';
+			readonly title: string;
 	  };
 
 /** What an action does, for its words (`changeText`). */
 export function changeOf(action: KeptAction): ChangeRef {
+	if (isCreateAction(action)) {
+		const record = isTicketCreate(action) ? 'ticket' : 'inbox';
+		return { field: 'create', key: action.key, record, title: action.payload.title };
+	}
 	if (isDueAction(action)) return { field: 'due', key: action.key, due: action.payload.due };
 	if (isDayPlanAction(action)) {
 		const check = action.kind === 'dayplan.uncheck' ? 'uncheck' : action.payload.action;
@@ -1853,6 +2169,7 @@ export function parseChangeRef(raw: unknown): ChangeRef | null {
  * 21.10.2026", "HAUS-12 im Tagesplan erledigt".
  */
 export function changeText(change: ChangeRef): string {
+	if (change.field === 'create') return createdName(change.record, change.title);
 	const key = change.key === '' ? 'Ticket' : change.key;
 	if (change.field === 'due') {
 		const due = change.due;
@@ -1873,6 +2190,116 @@ export function actionText(action: KeptAction): string {
 	return changeText(changeOf(action));
 }
 
+/** "Neues Ticket „Titel“" or "Neuer Eingangseintrag „Titel“" (OF-4a). */
+export function createdName(record: 'ticket' | 'inbox', title: string): string {
+	const what = record === 'ticket' ? OFFLINE_TEXTS.newTicket : OFFLINE_TEXTS.newItem;
+	return `${what} „${title}“`;
+}
+
+/**
+ * What the place of the key shows (concept §2.3): the key, or "Neu" for a ticket "＋" created that the
+ * server does not have yet (OF-4a).
+ */
+export function keyLabel(key: string): string {
+	return key === '' ? OFFLINE_TEXTS.newKey : key;
+}
+
+/**
+ * The name of a ticket in words for labels, announcements and flags: its key, or "Neues Ticket
+ * „Titel“" while the server has not given it one (OF-4a).
+ */
+export function ticketName(ticket: { key: string; title: string }): string {
+	return ticket.key === '' ? createdName('ticket', ticket.title) : ticket.key;
+}
+
+/** The name of an action in the hints of the outbox: a creation by its title, else its key (OF-4a). */
+export function actionName(action: KeptAction): string {
+	if (isCreateAction(action)) {
+		return createdName(isTicketCreate(action) ? 'ticket' : 'inbox', action.payload.title);
+	}
+	return action.key;
+}
+
+/**
+ * A ticket "＋" created as the views show it until the server has it (OF-4a, concept §3.5): its ID,
+ * no key ("Neu"), the values of the line and the changes taken in; the device time of the entry as
+ * `created` and `updated`. The project and the tags by their IDs only (the catalog names them).
+ */
+export function createdTicketOf(action: TicketCreateAction): Ticket {
+	const { payload } = action;
+	const at = toPocketBaseTimestamp(action.createdAt);
+	return {
+		id: action.target,
+		key: '',
+		title: payload.title,
+		status: payload.status,
+		priority: payload.priority,
+		due: payload.due,
+		projectId: payload.project,
+		tagIds: [...payload.tags],
+		project: null,
+		tags: [],
+		recurring: false,
+		recurrenceId: null,
+		parentId: null,
+		blocksParent: true,
+		parentRef: null,
+		source: 'quick',
+		...(action.scope !== '' && { scope: action.scope }),
+		owner: action.user,
+		completedAt: payload.status === 'done' ? at : null,
+		created: at,
+		updated: at,
+		description: '',
+		sourceItem: null
+	};
+}
+
+/** An entry of the inbox "＋" created as the views show it until the server has it (OF-4a). */
+export function createdItemOf(action: InboxCreateAction): InboxItem {
+	const { preset } = action.payload;
+	const meta = presetMeta({
+		project: preset.project,
+		tagIds: preset.tags,
+		priority: preset.priority,
+		due: null
+	});
+	const at = toPocketBaseTimestamp(action.createdAt);
+	return {
+		id: action.target,
+		channel: 'quick',
+		kind: 'todo',
+		title: action.payload.title,
+		sourceUrl: '',
+		sourceRef: '',
+		sourceDate: null,
+		sourceMeta: Object.keys(meta).length === 0 ? {} : { [PRESET_META_KEY]: meta },
+		original: '',
+		state: 'new',
+		ticketId: null,
+		ticket: null,
+		handledAt: null,
+		...(action.scope !== '' && { scope: action.scope }),
+		owner: action.user,
+		targetProjectId: null,
+		created: at,
+		updated: at,
+		body: ''
+	};
+}
+
+/**
+ * Whether a refused creation of a ticket may go again without its project or its tags (OF-4a,
+ * concept §3.7: "Ohne Projekt anlegen"): the server refused it at that field, and it has one.
+ */
+export function withoutFieldOf(action: KeptAction): CreateField | null {
+	if (!isTicketCreate(action) || action.state !== 'refused') return null;
+	const field = action.outcome?.field;
+	if (field === 'project') return action.payload.project === null ? null : field;
+	if (field === 'tags') return action.payload.tags.length === 0 ? null : field;
+	return null;
+}
+
 /** "1 gemerkte Änderung wartet" or "3 gemerkte Änderungen warten". */
 function keptWaiting(count: number): string {
 	return count === 1 ? '1 gemerkte Änderung wartet' : `${count} gemerkte Änderungen warten`;
@@ -1886,7 +2313,43 @@ function willThey(count: number): string {
 /** The words of the outbox (concept OF-0 §2.1, §2.3, §2.4; since OF-3 also day plan and due date). */
 export const OFFLINE_TEXTS = Object.freeze({
 	offline:
-		'Keine Verbindung zu becauseyoulovejira. Abhaken, Status, Tagesplan und Fälligkeit werden gemerkt und später übertragen.',
+		'Keine Verbindung zu becauseyoulovejira. Abhaken, Status, Tagesplan, Fälligkeit und ＋ werden gemerkt und später übertragen.',
+	/** "＋" without a connection (OF-4a): the words of the record and of the place of its key. */
+	newTicket: 'Neues Ticket',
+	newItem: 'Neuer Eingangseintrag',
+	newKey: 'Neu',
+	/** The result of "＋" kept for later (OF-4a). */
+	keptTicket: (title: string) =>
+		`Ticket „${title}“ gemerkt. Es wird angelegt, sobald die Verbindung zurück ist.`,
+	keptItem: (title: string) =>
+		`„${title}“ gemerkt. Der Eintrag kommt in den Eingang, sobald die Verbindung zurück ist.`,
+	/** New `#tags` need the server (concept §2.2, Stufe 2): nothing is kept, the line stays. */
+	newTags: (names: string) =>
+		`Neue Tags gehen nur mit Verbindung: ${names}. Entferne sie oder wähle vorhandene Tags, dann wird der Eintrag gemerkt.`,
+	/** A refused creation of a ticket may go again without its project or its tags (concept §3.7). */
+	withoutProject: 'Ohne Projekt anlegen',
+	withoutTags: 'Ohne Tags anlegen',
+	/** The full text of a refused creation stays to be read and marked until the user decides (C2). */
+	createdText: 'Getippter Text:',
+	/** "Verwerfen" of a creation that may have arrived (OF-4a): it is not sent again, only looked up. */
+	createCheckHint:
+		'Vielleicht ist der Eintrag schon angekommen. Er wird nicht noch einmal gesendet; sobald eine Verbindung besteht, sieht die App nach und meldet sich, falls es ihn schon gibt.',
+	createChecking: 'verworfen, wird nachgesehen, sobald eine Verbindung besteht',
+	/** A discarded creation that arrived anyway (OF-4a): a notice that stays, with a link. */
+	createdAnyway: (record: 'ticket' | 'inbox', title: string, key: string) =>
+		record === 'ticket'
+			? `Das verworfene Ticket „${title}“ wurde schon angelegt${key === '' ? '' : ` (${key})`}. Bitte im Ticket prüfen und bei Bedarf löschen.`
+			: `Der verworfene Eintrag „${title}“ liegt schon im Eingang. Bitte dort prüfen und bei Bedarf verwerfen.`,
+	openItem: 'Eintrag ansehen',
+	/** A discarded creation the deletion after 7 days took before it was looked up (OF-4a, C3). */
+	droppedCreated: (name: string) =>
+		`Ob ${name} trotz „Verwerfen“ schon angelegt wurde, ließ sich nicht mehr nachsehen.`,
+	/** A ticket or an entry "＋" created that the server does not have yet, in its panel (OF-4a). */
+	createdHint:
+		'Noch nicht übertragen. Status und Fälligkeit lassen sich schon ändern, alles andere erst, wenn das Ticket übertragen ist.',
+	commentsLater: 'Kommentare gehen, sobald das Ticket übertragen ist.',
+	itemCreatedHint:
+		'Noch nicht übertragen. Umwandeln, Verknüpfen und Verwerfen gehen, sobald der Eintrag übertragen ist.',
 	offlineWith: (count: number) =>
 		count === 1
 			? 'Keine Verbindung. 1 Änderung ist gemerkt und wird übertragen, sobald die Verbindung zurück ist.'
@@ -2074,6 +2537,13 @@ export const OFFLINE_INTENTS = Object.freeze({
 	answerChildren: (text: string) => `Offene Unteraufgaben beantworten: ${text}`,
 	completeAnyway: (text: string) => `Trotzdem erledigen: ${text}`,
 	reopenAnyway: (text: string) => `Trotzdem wieder öffnen: ${text}`,
+	/** "Ohne Projekt anlegen" and "Ohne Tags anlegen" of a refused creation (OF-4a). */
+	withoutField: (field: CreateField, text: string) =>
+		`${field === 'project' ? 'Ohne Projekt anlegen' : 'Ohne Tags anlegen'}: ${text}`,
+	/** "＋" kept for later (OF-4a). */
+	create: (text: string) => `Merken: ${text}`,
+	/** Looking up a discarded creation that may have arrived (OF-4a). */
+	lookUp: (text: string) => `Verworfenen neuen Eintrag nachsehen: ${text}`,
 	/** The notices on the device (OF-3c). */
 	keepNotice: 'Hinweis zu gemerkten Änderungen auf diesem Gerät speichern',
 	closeNotice: 'Hinweis zu gemerkten Änderungen schließen'

@@ -4,6 +4,7 @@
 	import { MOVE_TEXTS } from '$lib/domain/area-move';
 	import type { CalendarDate } from '$lib/domain/berlin-date';
 	import { ticketColorOf } from '$lib/domain/colors';
+	import { OFFLINE_TEXTS, keyLabel } from '$lib/domain/offline';
 	import type { ParentRef, Ticket } from '$lib/domain/ticket';
 	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 	import type { CatalogStore } from '$lib/stores/catalog.svelte';
@@ -18,6 +19,7 @@
 	import EditableTitle from './EditableTitle.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import ProblemDetails from './problems/ProblemDetails.svelte';
+	import SectionMessage from './guidance/SectionMessage.svelte';
 	import TicketActions from './TicketActions.svelte';
 	import TicketDelete from './TicketDelete.svelte';
 	import TicketDescription from './TicketDescription.svelte';
@@ -142,7 +144,7 @@
 		ticket === null
 			? []
 			: ticketPathSteps(
-					ticket.key,
+					keyLabel(ticket.key),
 					catalog.projectOf(ticket),
 					parent === null ? null : { key: parent.key, title: parent.title, href: parentHref }
 				)
@@ -181,7 +183,7 @@
 			{#if store.state === 'ready' && ticket && path.length > 0}
 				<Breadcrumbs label="Pfad des Tickets" items={path} />
 			{:else}
-				<span class="key">{ticket?.key ?? ''}</span>
+				<span class="key">{ticket ? keyLabel(ticket.key) : ''}</span>
 			{/if}
 			{#if store.state === 'ready' && ticket}
 				<PendingMark id={ticket.id} />
@@ -189,7 +191,8 @@
 		</div>
 	{/snippet}
 	{#snippet actions()}
-		{#if store.state === 'ready' && ticket}
+		<!-- A ticket "＋" created that the server does not have yet has neither pin nor menu (OF-4a). -->
+		{#if store.state === 'ready' && ticket && !store.created}
 			<TicketPinToggle {ticket} {pins} variant="head" />
 			<TicketActions
 				{ticket}
@@ -256,6 +259,9 @@
 		</div>
 	{:else if store.state === 'ready' && ticket}
 		<EditableTitle {store} {headingId} bind:heading />
+		{#if store.created}
+			<SectionMessage tone="info" compact>{OFFLINE_TEXTS.createdHint}</SectionMessage>
+		{/if}
 		<TicketFields
 			{store}
 			{catalog}

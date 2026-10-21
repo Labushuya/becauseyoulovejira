@@ -1,6 +1,13 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import { CLOCK_CODE, OFFLINE_TEXTS, reasonOf } from '$lib/domain/offline';
+	import type { ResolvedPathname } from '$app/types';
+	import {
+		CLOCK_CODE,
+		OFFLINE_TEXTS,
+		actionName,
+		reasonOf,
+		type KeptAction
+	} from '$lib/domain/offline';
 	import type { OutboxStore } from '$lib/offline/outbox.svelte';
 	import SectionMessage from '../guidance/SectionMessage.svelte';
 
@@ -18,7 +25,18 @@
 	// "Schließen", else to the region (`tabindex="-1"`), never to the page (R3-3); where the region goes
 	// with the last notice, to the heading of the view or the main content (round 2, C-3), with a
 	// `tabindex` only until the focus leaves it (round 3, C2-1).
-	let { outbox, onshow }: { outbox: OutboxStore; onshow: () => void } = $props();
+	// Since OF-4a a notice about a discarded creation that arrived anyway leads to its record, and a
+	// creation is named by its title (it has no key yet).
+	let {
+		outbox,
+		onshow,
+		linkOf
+	}: {
+		outbox: OutboxStore;
+		onshow: () => void;
+		/** The address of a record a notice names (OF-4a); without it the notice has no link. */
+		linkOf?: (record: 'ticket' | 'inbox', id: string) => ResolvedPathname;
+	} = $props();
 
 	const uid = $props.id();
 	let region: HTMLDivElement | undefined = $state();
@@ -35,8 +53,10 @@
 	const decisions = $derived(conflicts.length + refusals.length + expired.length);
 	const shown = $derived(offline || decisions > 0 || failing !== null || notices.length > 0);
 
-	function keyOf(key: string): string {
-		return key === '' ? 'Ein Ticket' : key;
+	/** The key of the ticket, a creation by its title (OF-4a), else "Ein Ticket". */
+	function nameOf(action: KeptAction | undefined): string {
+		const name = action === undefined ? '' : actionName(action);
+		return name === '' ? 'Ein Ticket' : name;
 	}
 
 	function offlineText(): string {
@@ -44,13 +64,13 @@
 	}
 
 	function conflictText(): string {
-		return OFFLINE_TEXTS.conflicts(conflicts.length, keyOf(conflicts[0]?.key ?? ''));
+		return OFFLINE_TEXTS.conflicts(conflicts.length, nameOf(conflicts[0]));
 	}
 
 	function refusalText(): string {
 		const first = refusals[0];
 		if (first === undefined) return '';
-		return OFFLINE_TEXTS.refusals(refusals.length, keyOf(first.key), reasonOf(first));
+		return OFFLINE_TEXTS.refusals(refusals.length, nameOf(first), reasonOf(first));
 	}
 
 	function refusalProblem() {
@@ -165,6 +185,15 @@
 		<SectionMessage tone="warning">
 			<span id={`${uid}-${notice.id}`}>{notice.text}</span>
 			{#snippet actions()}
+				{#if notice.link !== undefined && linkOf !== undefined}
+					<a
+						class="button-subtle"
+						href={linkOf(notice.link.record, notice.link.id)}
+						aria-describedby={`${uid}-${notice.id}`}
+					>
+						{notice.link.record === 'ticket' ? OFFLINE_TEXTS.openTicket : OFFLINE_TEXTS.openItem}
+					</a>
+				{/if}
 				<button
 					class="button-subtle"
 					type="button"

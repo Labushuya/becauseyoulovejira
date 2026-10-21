@@ -6,6 +6,7 @@
 		DAY_OVER_CODE,
 		OFFLINE_TEXTS,
 		OPEN_CHILDREN_CODE,
+		actionName,
 		actionText,
 		canCompleteAnyway,
 		canReopenAnyway,
@@ -13,7 +14,9 @@
 		dueOfServer,
 		intentOf,
 		isBroken,
+		isCreateAction,
 		isDueAction,
+		isInboxCreate,
 		isTakeBack,
 		isWaiting,
 		needsDecision,
@@ -21,6 +24,7 @@
 		serverTimeText,
 		ticketOf,
 		unknownChildren,
+		withoutFieldOf,
 		writesOf,
 		type Feature,
 		type KeptAction
@@ -49,16 +53,23 @@
 	// discarded completion names sub-tasks whose status before is unknown. The buttons run steps of the
 	// outbox that never reject; a failing storage shows its own flag (OF-2b). It opens only through
 	// "Ansehen" or the symbol in the top bar, never on its own (ADR-0025).
+	// Since OF-4a a creation of "＋" stands as "Neues Ticket" or "Neuer Eingangseintrag" with its whole
+	// title, readable and selectable until the user decides (C2); refused at its project or its tags it
+	// offers "Ohne Projekt anlegen" or "Ohne Tags anlegen" (concept §3.7); discarded after it may have
+	// arrived it says that it is looked up, never sent again (C4).
 	let {
 		outbox,
 		onclose,
 		ticketHref,
+		itemHref,
 		changedBy
 	}: {
 		outbox: OutboxStore;
 		onclose: () => void;
 		/** The address of the ticket in the view of the tab. */
 		ticketHref: (id: string) => ResolvedPathname;
+		/** The address of an entry of the inbox (OF-4a); without it a creation of one has no link. */
+		itemHref?: (id: string) => ResolvedPathname;
 		/** Who changed the field meanwhile (from the history), null when unknown. */
 		changedBy?: (action: KeptAction) => Promise<string | null>;
 	} = $props();
@@ -125,12 +136,14 @@
 
 	function stateText(action: KeptAction): string {
 		if (!isWaiting(action)) return OFFLINE_TEXTS.markDecision;
+		// A discarded creation is only looked up by its ID (OF-4a, C4).
+		if (action.discarded === true && isCreateAction(action)) return OFFLINE_TEXTS.createChecking;
 		if (action.discarded === true) return discardedText(action);
 		if (action.state === 'sending') return OFFLINE_TEXTS.underway;
 		const blocker = actions.find(
 			(other) => action.dependsOn.includes(other.op) && needsDecision(other)
 		);
-		if (blocker !== undefined) return OFFLINE_TEXTS.waitingFor(blocker.key || 'Ticket');
+		if (blocker !== undefined) return OFFLINE_TEXTS.waitingFor(actionName(blocker) || 'Ticket');
 		return OFFLINE_TEXTS.waiting;
 	}
 
@@ -138,11 +151,23 @@
 		return `${OFFLINE_TEXTS.offlineAt(timeOf(action))} · ${stateText(action)}`;
 	}
 
-	/** What the action does; a counter action of "Verwerfen" says that it takes back (OF-3). */
+	/**
+	 * What the action does; a counter action of "Verwerfen" says that it takes back (OF-3); a creation
+	 * of "＋" what it creates, its title follows in full (OF-4a).
+	 */
 	function whatText(action: KeptAction): string {
 		if (isBroken(action)) return OFFLINE_TEXTS.broken;
+		if (isCreateAction(action)) {
+			return isInboxCreate(action) ? OFFLINE_TEXTS.newItem : OFFLINE_TEXTS.newTicket;
+		}
 		const text = actionText(action);
 		return action.undoes === undefined ? text : OFFLINE_TEXTS.counter(text);
+	}
+
+	/** Where "Ticket öffnen" leads: the ticket, or an entry of the inbox "＋" created (OF-4a). */
+	function hrefOf(action: KeptAction): ResolvedPathname | null {
+		if (isInboxCreate(action)) return itemHref === undefined ? null : itemHref(action.target);
+		return ticketHref(ticketOf(action));
 	}
 
 	function mineText(action: KeptAction): string {
@@ -189,9 +214,12 @@
 {/snippet}
 
 {#snippet open(action: KeptAction)}
-	<a class="button-subtle button-small" href={ticketHref(ticketOf(action))} onclick={onclose}>
-		{OFFLINE_TEXTS.openTicket}
-	</a>
+	{@const href = hrefOf(action)}
+	{#if href !== null}
+		<a class="button-subtle button-small" {href} onclick={onclose}>
+			{isInboxCreate(action) ? OFFLINE_TEXTS.openItem : OFFLINE_TEXTS.openTicket}
+		</a>
+	{/if}
 {/snippet}
 
 <Modal open size="m" title={OFFLINE_TEXTS.dialogTitle} describedBy={`${uid}-intro`} {onclose}>
@@ -282,6 +310,17 @@
 						{/if}
 						<ProblemDetails problem={outbox.problemOf(action.op)} />
 						<div class="buttons">
+							{#if withoutFieldOf(action) !== null}
+								{@const field = withoutFieldOf(action) ?? 'project'}
+								<!-- Concept §3.7: where it goes, a choice instead of only "Verwerfen" (OF-4a). -->
+								<button
+									class="button-primary button-small"
+									type="button"
+									onclick={() => void outbox.createWithout(action.op, field)}
+								>
+									{field === 'project' ? OFFLINE_TEXTS.withoutProject : OFFLINE_TEXTS.withoutTags}
+								</button>
+							{/if}
 							{@render discard(action)}
 							{#if !isBroken(action) && action.target !== ''}
 								{@render open(action)}

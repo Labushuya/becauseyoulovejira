@@ -19,10 +19,12 @@ import {
 	type InboxTicketRef,
 	type ListedView
 } from '../domain/inbox';
+import type { OutboxFields } from '../domain/offline';
 import { watchOf } from '../domain/watch';
 import { areaFilter, clientHousehold } from './area';
 import { DATA_ERROR_MESSAGES, DataError, isDataError, toDataError, withDataErrors } from './errors';
 import { currentUserId, type RequestOptions } from './options';
+import { toOutboxBody } from './tickets';
 
 const INBOX = 'inbox_items';
 
@@ -317,19 +319,27 @@ function draftBody(owner: string, draft: InboxDraft): Record<string, unknown> {
 /**
  * Creates an entry of the signed-in user in the area of the client (E7-3). A duplicate is no failure
  * but an outcome with the state of the existing entry (ADR-0014 section 3); every other failure
- * throws a DataError.
+ * throws a DataError. "＋" through the outbox (OF-4a, ADR-0074 §5) sends the ID of the client, the
+ * fields of the outbox and the household of the area it was typed in.
  */
 export async function createItem(
 	pb: PocketBase,
 	draft: InboxDraft,
-	{ signal }: RequestOptions = {}
+	{
+		signal,
+		id,
+		outbox,
+		household: area
+	}: RequestOptions & { id?: string; outbox?: OutboxFields; household?: string } = {}
 ): Promise<CreateItemOutcome> {
 	try {
 		return await withDataErrors(signal, async (): Promise<CreateItemOutcome> => {
 			const owner = currentUserId(pb.authStore.record);
 			if (owner === null) throw new DataError('session');
 			const body = draftBody(owner, draft);
-			const household = clientHousehold(pb);
+			if (id !== undefined) body.id = id;
+			if (outbox !== undefined) Object.assign(body, toOutboxBody(outbox));
+			const household = area ?? clientHousehold(pb);
 			if (household !== '') body.household = household;
 			const record = await pb
 				.collection(INBOX)

@@ -36,6 +36,7 @@
 	import type { CalendarDate } from '$lib/domain/berlin-date';
 	import { projectColorOf, ticketColorOf } from '$lib/domain/colors';
 	import { berlinDateOf, formatBerlinDateTime, formatCalendarDate } from '$lib/domain/format';
+	import { keyLabel, ticketName } from '$lib/domain/offline';
 	import { projectChoiceLabel, projectPath } from '$lib/domain/project-tree';
 	import { SOURCE_FAMILY_LABELS, sourceFamily } from '$lib/domain/source';
 	import type { SubtaskProgress } from '$lib/domain/subtasks';
@@ -223,6 +224,8 @@
 
 	const done = $derived(ticket.status === 'done');
 	const shownColor = $derived(ticketColorOf(ticket, project));
+	/** The key, or "Neues Ticket „Titel“" for one "＋" created without a key yet (OF-4a). */
+	const spoken = $derived(ticketName(ticket));
 	/** Name of the recurring symbol: "Wiederkehrend: jeden Montag", or only "wiederkehrend". */
 	const recurringLabel = $derived(
 		recurrenceText === '' ? 'wiederkehrend' : `Wiederkehrend: ${recurrenceText}`
@@ -312,7 +315,7 @@
 			<label class="select-hit">
 				<input
 					type="checkbox"
-					aria-label={`${ticket.key} auswählen`}
+					aria-label={`${spoken} auswählen`}
 					checked={selected}
 					onkeydown={(event) => (rangeHeld = event.shiftKey)}
 					onchange={(event) => {
@@ -328,15 +331,15 @@
 		{#if !(onselect && shows('select'))}{@render colorStripe()}{/if}{#if isNew}<span
 				class="new-dot"
 				title="Neu"><span class="visually-hidden">neu,</span></span
-			>{/if}{ticket.key}<PendingMark id={ticket.id} />
+			>{/if}{keyLabel(ticket.key)}<PendingMark id={ticket.id} />
 	</td>
 	{#if shows('priority')}
 		<td class="priority" class:editable={edit} data-col="priority">
 			{#if edit}
 				<EditableCell
 					kind="menu"
-					label={`Priorität von ${ticket.key}`}
-					buttonLabel={`Priorität von ${ticket.key}: ${PRIORITY_LABELS[ticket.priority]}, ändern`}
+					label={`Priorität von ${spoken}`}
+					buttonLabel={`Priorität von ${spoken}: ${PRIORITY_LABELS[ticket.priority]}, ändern`}
 					busy={edit.busy}
 				>
 					{#snippet value()}<PriorityIcon priority={ticket.priority} />{/snippet}
@@ -359,7 +362,7 @@
 		<td class="status" class:editable={edit} data-col="status">
 			{#if edit}
 				<StatusMenu
-					ticketKey={ticket.key}
+					ticketKey={spoken}
 					status={ticket.status}
 					busy={edit.busy}
 					onchoose={(value) => void edit?.save({ status: value })}
@@ -376,8 +379,8 @@
 			{#if edit}
 				<EditableCell
 					kind="menu"
-					label={`Zuständig für ${ticket.key}`}
-					buttonLabel={`Zuständig für ${ticket.key}: ${ticket.assignee ? assigneeName(ticket.assignee, assignees.context) : NOBODY_LABEL}, ändern`}
+					label={`Zuständig für ${spoken}`}
+					buttonLabel={`Zuständig für ${spoken}: ${ticket.assignee ? assigneeName(ticket.assignee, assignees.context) : NOBODY_LABEL}, ändern`}
 					busy={edit.busy}
 				>
 					{#snippet value()}<AssigneeBadge
@@ -475,8 +478,8 @@
 			{#if edit}
 				<EditableCell
 					kind="menu"
-					label={`Projekt von ${ticket.key}`}
-					buttonLabel={`Projekt von ${ticket.key}: ${project ? projectChoiceLabel(project) : 'kein Projekt'}, ändern`}
+					label={`Projekt von ${spoken}`}
+					buttonLabel={`Projekt von ${spoken}: ${project ? projectChoiceLabel(project) : 'kein Projekt'}, ändern`}
 					busy={edit.busy}
 				>
 					{#snippet value()}{@render projectValue()}{/snippet}
@@ -506,14 +509,14 @@
 			{#if edit}
 				<EditableCell
 					kind="panel"
-					label={`Tags von ${ticket.key}`}
-					buttonLabel={`Tags von ${ticket.key}: ${tags.length === 0 ? 'keine' : tags.map((tag) => tag.name).join(', ')}, ändern`}
+					label={`Tags von ${spoken}`}
+					buttonLabel={`Tags von ${spoken}: ${tags.length === 0 ? 'keine' : tags.map((tag) => tag.name).join(', ')}, ändern`}
 					busy={edit.busy}
 				>
 					{#snippet value()}{@render tagsValue()}{/snippet}
 					{#snippet editor()}
 						<div class="tags-editor">
-							<label for={`${ticket.id}-tags`}>Tags von {ticket.key}</label>
+							<label for={`${ticket.id}-tags`}>Tags von {spoken}</label>
 							<TagPicker
 								id={`${ticket.id}-tags`}
 								selected={tags}
@@ -539,14 +542,14 @@
 			{#if edit}
 				<EditableCell
 					kind="panel"
-					label={`Fälligkeit von ${ticket.key}`}
-					buttonLabel={`Fälligkeit von ${ticket.key}: ${ticket.due === null ? 'keine' : formatCalendarDate(ticket.due)}, ändern`}
+					label={`Fälligkeit von ${spoken}`}
+					buttonLabel={`Fälligkeit von ${spoken}: ${ticket.due === null ? 'keine' : formatCalendarDate(ticket.due)}, ändern`}
 					busy={edit.busy}
 				>
 					{#snippet value()}<DueLabel due={ticket.due} {today} {done} />{/snippet}
 					{#snippet editor({ close })}
 						<DueEditor
-							key={ticket.key}
+							key={spoken}
 							value={ticket.due}
 							onsave={(due) => edit.save({ due })}
 							{close}
@@ -567,7 +570,7 @@
 	{/if}
 	<td class="actions" data-col="actions" aria-busy={menuBusy ? 'true' : undefined}>
 		<span class="action-group">
-			<DoneToggle key={ticket.key} {checked} {pending} onchange={ontoggle} />
+			<DoneToggle key={spoken} {checked} {pending} onchange={ontoggle} />
 			<!-- Mouse only: the title link does the same for keyboard and screen readers. -->
 			<a class="open" {href} tabindex="-1" aria-hidden="true" title="Öffnen" data-row-link>
 				<svg viewBox="0 0 16 16" width="14" height="14" focusable="false">

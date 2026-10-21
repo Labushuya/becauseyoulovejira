@@ -4,6 +4,7 @@
 	import type { ResolvedPathname } from '$app/types';
 	import type { CalendarDate } from '$lib/domain/berlin-date';
 	import { projectColorOf, ticketColorOf } from '$lib/domain/colors';
+	import { keyLabel, ticketName } from '$lib/domain/offline';
 	import { projectChoiceLabel, projectPath } from '$lib/domain/project-tree';
 	import type { Status } from '$lib/domain/status';
 	import type { SubtaskProgress } from '$lib/domain/subtasks';
@@ -106,6 +107,8 @@
 	const LONG_TITLE = 60;
 
 	const done = $derived(ticket.status === 'done');
+	/** The key, or "Neues Ticket „Titel“" for one "＋" created without a key yet (OF-4a). */
+	const name = $derived(ticketName(ticket));
 	const shownColor = $derived(ticketColorOf(ticket, project));
 	const projectColor = $derived(projectColorOf(project));
 	const recurringLabel = $derived(
@@ -143,7 +146,7 @@
 		<label class="check-target" data-card-select>
 			<input
 				type="checkbox"
-				aria-label={`${ticket.key} auswählen`}
+				aria-label={`${name} auswählen`}
 				checked={selected}
 				onchange={(event) => onselect?.(event.currentTarget.checked)}
 			/>
@@ -151,7 +154,7 @@
 	{:else}
 		<!-- One tap anywhere in the target completes; the name stays the one of the box. -->
 		<label class="check-target" data-card-check>
-			<DoneToggle key={ticket.key} {checked} {pending} onchange={ontoggle} />
+			<DoneToggle key={name} {checked} {pending} onchange={ontoggle} />
 		</label>
 	{/if}
 	<div class="body">
@@ -176,14 +179,9 @@
 			<span class="key"
 				>{#if isNew}<span class="new-dot" title="Neu"
 						><span class="visually-hidden">neu,</span></span
-					>{/if}{ticket.key}<PendingMark id={ticket.id} /></span
+					>{/if}{keyLabel(ticket.key)}<PendingMark id={ticket.id} /></span
 			>
-			<StatusMenu
-				ticketKey={ticket.key}
-				status={ticket.status}
-				busy={statusBusy}
-				onchoose={onstatus}
-			/>
+			<StatusMenu ticketKey={name} status={ticket.status} busy={statusBusy} onchoose={onstatus} />
 			<PriorityIcon priority={ticket.priority} />
 			{#if ticket.due !== null}
 				<DueLabel due={ticket.due} {today} {done} />

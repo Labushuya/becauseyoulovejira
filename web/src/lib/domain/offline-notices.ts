@@ -16,20 +16,45 @@
 //   along settles the notice only once the sub-task is read done (C-5).
 // - What the device holds is taken as it is: an entry this build cannot read is neither shown nor
 //   changed (a newer build may have written it).
+// - Since OF-4a a creation "＋" the deletion after 7 days took keeps its title in the notice (C2: no
+//   text gets lost), and a discarded creation that arrived anyway names its record with a link
+//   (`created`, C4). These two are the only notices with a title.
 
 import {
 	OFFLINE_TEXTS,
 	changeOf,
 	changeText,
+	createdName,
 	inOrder,
 	intentOf,
+	isCreateAction,
 	isTakeBack,
+	isTicketCreate,
 	parseChangeRef,
 	statusFeature,
 	ticketOf,
 	type ChangeRef,
+	type CreateAction,
 	type KeptAction
 } from './offline';
+import { TITLE_MAX_LENGTH } from './ticket';
+
+/** A creation "＋" (OF-4a): what it was, its title, and whether the user had discarded it. */
+export interface CreatedRef {
+	readonly record: 'ticket' | 'inbox';
+	readonly title: string;
+	/** Discarded, but it may have arrived and was never looked up (C3: named, never silent). */
+	readonly discarded?: true;
+}
+
+/** The creation of an action as a notice keeps it. */
+function createdRefOf(action: CreateAction): CreatedRef {
+	return {
+		record: isTicketCreate(action) ? 'ticket' : 'inbox',
+		title: action.payload.title,
+		...(action.discarded === true && { discarded: true as const })
+	};
+}
 
 /** One action the deletion after 7 days took. */
 export interface DroppedEntry {
@@ -39,6 +64,8 @@ export interface DroppedEntry {
 	readonly key: string;
 	/** A take-back: the change whose "Verwerfen" it carried out, null where that one was gone already. */
 	readonly undoes?: ChangeRef | null;
+	/** A creation "＋" (OF-4a): its title stays readable until the notice is closed. */
+	readonly created?: CreatedRef;
 }
 
 /** What the deletion after 7 days took in one run (round 3, R2-2). */
@@ -67,7 +94,24 @@ export interface ChildNotice {
 	readonly after: number;
 }
 
-export type OfflineNotice = DroppedNotice | ChildNotice;
+/**
+ * A creation "＋" the user discarded that arrived anyway (OF-4a, C4): it is neither sent again nor
+ * deleted on the server; the notice names it with a link until the user closes it.
+ */
+export interface CreatedNotice {
+	readonly v: 1;
+	readonly id: string;
+	readonly kind: 'created';
+	readonly at: number;
+	readonly record: 'ticket' | 'inbox';
+	/** Its ID (the one of the client). */
+	readonly target: string;
+	/** The key the server gave a ticket, '' for an entry or where unknown. */
+	readonly key: string;
+	readonly title: string;
+}
+
+export type OfflineNotice = DroppedNotice | ChildNotice | CreatedNotice;
 
 /** Identifiers and keys on the device are short; anything longer is not one of this build. */
 const MAX_TEXT = 200;
@@ -76,14 +120,36 @@ function isText(value: unknown, empty = true): value is string {
 	return typeof value === 'string' && value.length <= MAX_TEXT && (empty || value !== '');
 }
 
+/** A title of a creation (OF-4a): not empty, at most as long as the server takes one. */
+function isTitle(value: unknown): value is string {
+	return typeof value === 'string' && value !== '' && value.length <= TITLE_MAX_LENGTH;
+}
+
+function isRecordKind(value: unknown): value is 'ticket' | 'inbox' {
+	return value === 'ticket' || value === 'inbox';
+}
+
+/** The creation of a dropped entry, null where it is none of this build, undefined without one. */
+function createdOf(value: unknown): CreatedRef | null | undefined {
+	if (value === undefined) return undefined;
+	if (typeof value !== 'object' || value === null) return null;
+	const { record, title, discarded } = value as Record<string, unknown>;
+	if (!isRecordKind(record) || !isTitle(title)) return null;
+	if (discarded !== undefined && discarded !== true) return null;
+	return { record, title, ...(discarded === true && { discarded: true as const }) };
+}
+
 function parseEntry(raw: unknown): DroppedEntry | null {
 	if (typeof raw !== 'object' || raw === null) return null;
 	const value = raw as Record<string, unknown>;
 	if (!isText(value.op, false) || !isText(value.key)) return null;
-	if (!('undoes' in value) || value.undoes === undefined) return { op: value.op, key: value.key };
+	const created = createdOf(value.created);
+	if (created === null) return null;
+	const head = { op: value.op, key: value.key, ...(created !== undefined && { created }) };
+	if (!('undoes' in value) || value.undoes === undefined) return head;
 	const undoes = value.undoes === null ? null : parseChangeRef(value.undoes);
 	if (undoes === null && value.undoes !== null) return null;
-	return { op: value.op, key: value.key, undoes };
+	return { ...head, undoes };
 }
 
 /** A notice as the device keeps it, null for anything this build cannot read. */
@@ -98,6 +164,13 @@ export function parseNotice(raw: unknown): OfflineNotice | null {
 		if (!isText(key) || !isText(parent) || !isText(child, false)) return null;
 		if (typeof after !== 'number' || !Number.isFinite(after)) return null;
 		return { ...head, kind: 'childNotDone', key, parent, child, after };
+	}
+	if (value.kind === 'created') {
+		const { record, target, key, title } = value;
+		if (!isRecordKind(record) || !isText(target, false) || !isText(key) || !isTitle(title)) {
+			return null;
+		}
+		return { ...head, kind: 'created', record, target, key, title };
 	}
 	if (value.kind !== 'dropped' || !Array.isArray(value.entries) || value.entries.length === 0) {
 		return null;
@@ -204,6 +277,9 @@ export function droppedEntries(
 	return gone
 		.filter((action) => !carried(action))
 		.map((action) => {
+			if (isCreateAction(action)) {
+				return { op: action.op, key: action.key, created: createdRefOf(action) };
+			}
 			if (!isTakeBack(action)) return { op: action.op, key: action.key };
 			const original = before.find((other) => other.op === action.undoes);
 			return {
@@ -273,13 +349,40 @@ export function withoutDecided(
 	return kept.length === list.length ? null : kept;
 }
 
+/** The name of a dropped action: its key, "ein Ticket", or the creation with its title (OF-4a). */
+function entryName(entry: DroppedEntry): string {
+	if (entry.created !== undefined) return createdName(entry.created.record, entry.created.title);
+	return entry.key === '' ? 'ein Ticket' : entry.key;
+}
+
+/**
+ * The notice about a creation the user discarded that arrived anyway (OF-4a, C4): one per action, with
+ * the key of a ticket where the answer names it.
+ */
+export function createdNotice(action: CreateAction, key: string, at: number): CreatedNotice {
+	return {
+		v: 1,
+		id: `created-${action.op}`,
+		kind: 'created',
+		at,
+		record: isTicketCreate(action) ? 'ticket' : 'inbox',
+		target: action.target,
+		key,
+		title: action.payload.title
+	};
+}
+
 /** The words of a notice, made when it shows. */
 export function noticeText(notice: OfflineNotice): string {
 	if (notice.kind === 'childNotDone') return OFFLINE_TEXTS.childNotDone(notice.key, notice.parent);
-	const keys = [
-		...new Set(notice.entries.map((entry) => (entry.key === '' ? 'ein Ticket' : entry.key)))
-	];
+	if (notice.kind === 'created') {
+		return OFFLINE_TEXTS.createdAnyway(notice.record, notice.title, notice.key);
+	}
+	const keys = [...new Set(notice.entries.map(entryName))];
 	const backs = notice.entries.flatMap((entry) => {
+		if (entry.created?.discarded === true) {
+			return [OFFLINE_TEXTS.droppedCreated(createdName(entry.created.record, entry.created.title))];
+		}
 		if (entry.undoes === undefined) return [];
 		if (entry.undoes === null) return [OFFLINE_TEXTS.droppedDiscardOf(entry.key)];
 		return [OFFLINE_TEXTS.droppedDiscard(changeText(entry.undoes))];

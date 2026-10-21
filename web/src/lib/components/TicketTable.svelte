@@ -5,6 +5,7 @@
 	import { page } from '$app/state';
 	import { projectColorOf, type ShownColor } from '$lib/domain/colors';
 	import { NEST_SUBTASKS, TICKET_TABLE, withKeyDefaults } from '$lib/domain/columns';
+	import { keyLabel } from '$lib/domain/offline';
 	import { arrangeRows } from '$lib/domain/subtasks';
 	import {
 		GROUPING_LABELS,
@@ -262,6 +263,12 @@
 	/** The tickets the table shows: the pinned and the open ones (done ones in "Erledigte", ADR-0066). */
 	const shownTickets = $derived([...store.pinned, ...store.visible]);
 
+	/** The pin of a row (ADR-0064); none for a ticket "＋" created the server does not have yet (OF-4a). */
+	function pinnable(ticket: TicketSummary): boolean {
+		if (pins?.available !== true || store.isCreated(ticket.id)) return false;
+		return ticket.status !== 'done' || pins.isPinned(ticket.id);
+	}
+
 	// Columns (ADR-0030): the preferences of this device and the measured frame decide which
 	// columns are shown and how wide they are. Key and "Übergeordnet" take the longest key of the
 	// shown tickets as their default, Key with room for the dot "neu" (KN-1, Nachtrag 7).
@@ -271,7 +278,7 @@
 		withKeyDefaults(
 			TICKET_TABLE.columns.filter((column) => column.id !== 'assignee' || assigneesShown),
 			[
-				{ id: 'key', keys: shownTickets.map((ticket) => ticket.key), dot: true },
+				{ id: 'key', keys: shownTickets.map((ticket) => keyLabel(ticket.key)), dot: true },
 				{
 					id: 'parent',
 					keys: shownTickets.flatMap(
@@ -643,11 +650,9 @@
 				createTag: (name) => catalog.ensureTag(name)
 			}}
 			assignees={assigneesShown ? assignees : null}
-			menu={rowActions ? rowMenu : undefined}
+			menu={rowActions && !store.isCreated(ticket.id) ? rowMenu : undefined}
 			menuBusy={rowActions?.isPreparing(ticket.id) ?? false}
-			pin={pins?.available && (ticket.status !== 'done' || pins.isPinned(ticket.id))
-				? pinToggle
-				: undefined}
+			pin={pinnable(ticket) ? pinToggle : undefined}
 			ontoggle={(done) => toggleDone(ticket, done)}
 		/>
 	{/each}
@@ -774,11 +779,9 @@
 			statusBusy={store.isPending(ticket.id)}
 			onstatus={(status) => void saveCell(ticket, { status })}
 			assignees={assigneesShown ? assignees : null}
-			menu={rowActions ? rowMenu : undefined}
+			menu={rowActions && !store.isCreated(ticket.id) ? rowMenu : undefined}
 			menuBusy={rowActions?.isPreparing(ticket.id) ?? false}
-			pin={pins?.available && (ticket.status !== 'done' || pins.isPinned(ticket.id))
-				? pinToggle
-				: undefined}
+			pin={pinnable(ticket) ? pinToggle : undefined}
 			ontoggle={(done) => toggleDone(ticket, done)}
 		/>
 	{/each}

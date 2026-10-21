@@ -5,12 +5,16 @@
 // outbox creates nothing in the browser: the identifier of the tab and the BroadcastChannel come
 // with its first watch (OF-2b).
 
+import { clientArea } from '$lib/data/area';
 import { checkDayPlanItem, uncheckDayPlanItem } from '$lib/data/day-plan';
-import { provideMissingConnection } from '$lib/data/errors';
+import { DataError, provideMissingConnection } from '$lib/data/errors';
 import { askOfflineMarks } from '$lib/data/history-marks';
+import { createItem, getItem } from '$lib/data/inbox';
 import { fetchCreateSupport } from '$lib/data/ticket-create';
-import { getTicket, updateTicket } from '$lib/data/tickets';
+import { createTicket, getTicket, updateTicket } from '$lib/data/tickets';
+import { PRESET_META_KEY, presetMeta } from '$lib/domain/inbox';
 import { newOpId, parseAction, supportsKind, type OfflineOps } from '$lib/domain/offline';
+import { QUICK_ORIGIN } from '$lib/domain/ticket';
 import { observeRequests, pb } from '$lib/pocketbase';
 import { getConnectivity } from './connectivity.svelte';
 import { OUTBOX_CHANNEL, OutboxStore, broadcastChannel } from './outbox.svelte';
@@ -88,6 +92,49 @@ export function getOutbox(): OutboxStore {
 			const answer = await uncheckDayPlanItem(pb, action.target, input, options);
 			return { ...answer, action: action.payload.action };
 		},
+		// "＋" (OF-4a): the Record API like the quick entry, with the ID of the client and the area of
+		// the line, source "quick".
+		sendCreate: (action, fields, signal) => {
+			const { payload } = action;
+			const draft = {
+				title: payload.title,
+				description: '',
+				status: payload.status,
+				priority: payload.priority,
+				due: payload.due,
+				project: payload.project,
+				tags: [...payload.tags]
+			};
+			return createTicket(pb, draft, {
+				signal,
+				origin: QUICK_ORIGIN,
+				household: payload.household,
+				id: action.target,
+				outbox: fields
+			});
+		},
+		sendItem: async (action, fields, signal) => {
+			const { payload } = action;
+			const meta = presetMeta({
+				project: payload.preset.project,
+				tagIds: payload.preset.tags,
+				priority: payload.preset.priority,
+				due: null
+			});
+			const draft = {
+				channel: 'quick' as const,
+				kind: 'todo' as const,
+				title: payload.title,
+				...(Object.keys(meta).length > 0 && { sourceMeta: { [PRESET_META_KEY]: meta } })
+			};
+			const options = { signal, id: action.target, outbox: fields, household: payload.household };
+			const outcome = await createItem(pb, draft, options);
+			// The fingerprint of an entry of "＋" is random (ADR-0014): no duplicate is to be expected.
+			if (outcome.kind !== 'created') throw new DataError('validation', { status: 400 });
+			return outcome.item;
+		},
+		getItem: (id, signal) => getItem(pb, id, { signal }),
+		area: () => clientArea(pb),
 		get: (id, signal) => getTicket(pb, id, { signal }),
 		tab: () => tabIdOf(sessionStorageOf()),
 		channel: () => broadcastChannel(OUTBOX_CHANNEL),

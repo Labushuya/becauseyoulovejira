@@ -1,6 +1,9 @@
 // Saving a capture (E4 plan, packages 5 and 6; OF-E4-3): resolve the tags of the template through
 // the catalog, then create the ticket (source "manual" or "quick") or the inbox entry. Without
 // runes and SDK: the route passes the store methods, the tests pass fakes.
+// "＋" without a connection (OF-4a, ADR-0074 addendum OF-4a): where the outbox takes it, the line is
+// kept under an ID of the client and the quick entry says so; new `#tags` need the server, so the
+// line stays with a hint instead (nothing is lost, concept §2.2).
 
 import type PocketBase from 'pocketbase';
 import { problemDetails, toDataError } from '$lib/data/errors';
@@ -9,9 +12,13 @@ import type { ProblemEntry } from '$lib/domain/problems';
 import {
 	PRESET_META_KEY,
 	presetMeta,
+	presetOf,
 	type InboxDraft,
-	type InboxDuplicate
+	type InboxDuplicate,
+	type InboxItem
 } from '$lib/domain/inbox';
+import { OFFLINE_TEXTS } from '$lib/domain/offline';
+import type { Priority } from '$lib/domain/status';
 import type { QuickEntry } from '$lib/domain/quick-syntax';
 import {
 	captureInboxDraft,
@@ -43,6 +50,28 @@ export interface CaptureDeps {
 	createItem(draft: InboxDraft): Promise<InboxCreateResult>;
 	/** A ticket created one by one is read (ADR-0015 section 3). */
 	markRead(ticket: Ticket): unknown;
+	/** The outbox of "＋" (OF-4a); without it everything goes the way of today. */
+	keep?: QuickKeep;
+}
+
+/** What the quick entry needs of the outbox (OF-4a). */
+export interface QuickKeep {
+	/** Whether "＋" of this target goes through the outbox now. */
+	takes(target: CaptureTarget): boolean;
+	/** The connection is known to be missing: new `#tags` would need the server. */
+	offline(): boolean;
+}
+
+/** What "＋" through the outbox needs of it (OF-4a; OutboxStore). */
+export interface QuickOutbox {
+	takes(record: 'ticket' | 'inbox'): boolean;
+	createTicket(draft: TicketDraft): Promise<{ value: Ticket; kept: boolean }>;
+	createItem(draft: {
+		title: string;
+		project: string | null;
+		tags: readonly string[];
+		priority: Priority | null;
+	}): Promise<{ value: InboxItem; kept: boolean }>;
 }
 
 export type CaptureSaveResult =
@@ -193,6 +222,12 @@ export async function saveQuickEntry(
 	deps: CaptureDeps
 ): Promise<CaptureSaveResult> {
 	if (entry.title === '') return { ok: false, message: TITLE_REQUIRED_MESSAGE, fields: {} };
+	// Without a connection a new tag cannot be made (concept §2.2, Stufe 2): the line stays as it is.
+	const fresh = entry.tags.filter((tag) => tag.existing === null);
+	if (fresh.length > 0 && deps.keep?.offline() === true && deps.keep.takes(target)) {
+		const names = [...new Set(fresh.map((tag) => `#${tag.name}`))].join(', ');
+		return { ok: false, message: OFFLINE_TEXTS.newTags(names), fields: {} };
+	}
 	const tags = await quickTags(entry, deps);
 	if (!tags.ok) return { ok: false, message: tags.message, fields: {} };
 	const project = entry.project?.id ?? null;
@@ -210,7 +245,10 @@ export async function saveQuickEntry(
 				ok: true,
 				target,
 				id: result.item.id,
-				message: `„${result.item.title}“ liegt im Eingang.`
+				message:
+					result.kept === true
+						? OFFLINE_TEXTS.keptItem(result.item.title)
+						: `„${result.item.title}“ liegt im Eingang.`
 			};
 		}
 		if (result.kind === 'duplicate') return duplicateResult(result);
@@ -240,6 +278,15 @@ export async function saveQuickEntry(
 			...detailsOf(result)
 		};
 	}
+	// Kept for later (OF-4a): the key comes from the server, it counts as read once it arrived.
+	if (result.kept === true) {
+		return {
+			ok: true,
+			target,
+			id: result.ticket.id,
+			message: OFFLINE_TEXTS.keptTicket(result.ticket.title)
+		};
+	}
 	void deps.markRead(result.ticket);
 	return {
 		ok: true,
@@ -249,15 +296,37 @@ export async function saveQuickEntry(
 	};
 }
 
+/** A failed creation as the quick entry shows it; a session failure ends the session. */
+function createFailure(error: unknown, session: SessionGuard): CreateResult {
+	const failure = toDataError(error);
+	if (failure.kind === 'session') session.logout();
+	if (failure.kind === 'session' || failure.kind === 'aborted') {
+		return { ok: false, message: null, fields: {} };
+	}
+	const fields: Partial<Record<keyof TicketDraft, string>> = {};
+	for (const [field, detail] of Object.entries(failure.fields)) {
+		fields[field as keyof TicketDraft] = detail.message;
+	}
+	return {
+		ok: false,
+		message: Object.keys(fields).length > 0 ? null : failure.message,
+		fields,
+		...problemDetails(failure)
+	};
+}
+
 /**
  * Creates a ticket outside of the panel (quick entry): the answer joins the list at once, the
  * panel store stays untouched, so an open ticket panel keeps its state. Failures come back like
- * those of TicketDetailStore.create; a session failure ends the session.
+ * those of TicketDetailStore.create; a session failure ends the session. Where the outbox takes "＋"
+ * (OF-4a) the ticket goes through it under an ID of the client; one kept for later (`kept`) is shown
+ * by the outbox, not taken into the list as one of the server.
  */
 export function panelFreeTicketCreate(
 	create: (draft: TicketDraft) => Promise<Ticket>,
 	session: SessionGuard,
-	list: { upsert(ticket: TicketSummary): void }
+	list: { upsert(ticket: TicketSummary): void },
+	outbox: Pick<QuickOutbox, 'takes' | 'createTicket'> | null = null
 ): (draft: TicketDraft) => Promise<CreateResult> {
 	return async (draft) => {
 		const title = draft.title.trim();
@@ -265,22 +334,55 @@ export function panelFreeTicketCreate(
 			return { ok: false, message: null, fields: { title: TITLE_REQUIRED_MESSAGE } };
 		if (!session.ensureValid()) return { ok: false, message: null, fields: {} };
 		try {
+			if (outbox?.takes('ticket') === true) {
+				const created = await outbox.createTicket({ ...draft, title });
+				if (!created.kept) list.upsert(created.value);
+				return { ok: true, ticket: created.value, ...(created.kept && { kept: true as const }) };
+			}
 			const ticket = await create({ ...draft, title });
 			list.upsert(ticket);
 			return { ok: true, ticket };
 		} catch (error) {
+			return createFailure(error, session);
+		}
+	};
+}
+
+/**
+ * "＋" into the inbox through the outbox where it takes it (OF-4a), else `direct` (InboxStore.create)
+ * as today. An entry of the server joins the inbox at once; one kept for later is shown by the outbox.
+ */
+export function quickItemCreate(
+	direct: (draft: InboxDraft) => Promise<InboxCreateResult>,
+	outbox: Pick<QuickOutbox, 'takes' | 'createItem'>,
+	session: SessionGuard,
+	inbox: { upsert(item: InboxItem): void }
+): (draft: InboxDraft) => Promise<InboxCreateResult> {
+	return async (draft) => {
+		if (!outbox.takes('inbox')) return direct(draft);
+		if (!session.ensureValid()) return { kind: 'error', message: null, fields: {} };
+		const preset = presetOf({ channel: draft.channel, sourceMeta: draft.sourceMeta ?? {} });
+		try {
+			const created = await outbox.createItem({
+				title: draft.title,
+				project: preset.project,
+				tags: preset.tagIds,
+				priority: preset.priority
+			});
+			if (!created.kept) inbox.upsert(created.value);
+			return { kind: 'created', item: created.value, ...(created.kept && { kept: true as const }) };
+		} catch (error) {
 			const failure = toDataError(error);
 			if (failure.kind === 'session') session.logout();
 			if (failure.kind === 'session' || failure.kind === 'aborted') {
-				return { ok: false, message: null, fields: {} };
+				return { kind: 'error', message: null, fields: {} };
 			}
-			const fields: Partial<Record<keyof TicketDraft, string>> = {};
-			for (const [field, detail] of Object.entries(failure.fields)) {
-				fields[field as keyof TicketDraft] = detail.message;
-			}
+			const fields: Record<string, string> = {};
+			for (const [field, detail] of Object.entries(failure.fields)) fields[field] = detail.message;
+			const known = Object.keys(fields).length > 0;
 			return {
-				ok: false,
-				message: Object.keys(fields).length > 0 ? null : failure.message,
+				kind: 'error',
+				message: known ? null : failure.message,
 				fields,
 				...problemDetails(failure)
 			};

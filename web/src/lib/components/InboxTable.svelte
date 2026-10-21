@@ -50,6 +50,7 @@
 	import FilterSheet from './FilterSheet.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
 	import MoveSourceDialog from './MoveSourceDialog.svelte';
+	import PendingMark from './offline/PendingMark.svelte';
 	import SectionBar from './SectionBar.svelte';
 	import { ColumnFit } from './table/column-fit.svelte';
 	import ResizableHeader from './table/ResizableHeader.svelte';
@@ -584,12 +585,14 @@
 	>
 		{#if shown.has('select')}
 			<td class="select" data-col="select">
-				<input
-					type="checkbox"
-					aria-label={`Eintrag „${item.title}“ auswählen`}
-					checked={selected.includes(item.id)}
-					onchange={(event) => toggle(item.id, event.currentTarget.checked)}
-				/>
+				{#if !store.isCreated(item.id)}
+					<input
+						type="checkbox"
+						aria-label={`Eintrag „${item.title}“ auswählen`}
+						checked={selected.includes(item.id)}
+						onchange={(event) => toggle(item.id, event.currentTarget.checked)}
+					/>
+				{/if}
 			</td>
 		{/if}
 		{#if shown.has('kind')}
@@ -604,7 +607,7 @@
 					data-row-link
 					title={item.title.length >= LONG_TITLE ? item.title : undefined}
 					aria-current={item.id === activeId ? 'page' : undefined}>{item.title}</a
-				>
+				><PendingMark id={item.id} />
 			</div>
 			{#if item.state === 'new'}
 				{@render duplicateHint(item)}
@@ -649,7 +652,9 @@
 				: undefined}
 		>
 			<span class="action-group">
-				{#if item.state === 'new'}
+				{#if store.isCreated(item.id)}
+					<!-- "＋" without a connection (OF-4a): nothing that needs the server until it has it. -->
+				{:else if item.state === 'new'}
 					<a class="action primary" href={convertHref(item.id)}
 						>Umwandeln<span class="visually-hidden">: „{item.title}“</span></a
 					>
@@ -686,13 +691,15 @@
 						>Ticket ansehen<span class="visually-hidden">: „{item.title}“</span></a
 					>
 				{/if}
-				<ActionsMenu
-					label={`Weitere Aktionen für „${item.title}“`}
-					buttonLabel={`Weitere Aktionen für „${item.title}“`}
-					buttonTitle="Weitere Aktionen"
-					buttonClass="button-icon row-menu"
-					items={menuOf(item, linkedTicket?.key ?? null)}
-				/>
+				{#if !store.isCreated(item.id)}
+					<ActionsMenu
+						label={`Weitere Aktionen für „${item.title}“`}
+						buttonLabel={`Weitere Aktionen für „${item.title}“`}
+						buttonTitle="Weitere Aktionen"
+						buttonClass="button-icon row-menu"
+						items={menuOf(item, linkedTicket?.key ?? null)}
+					/>
+				{/if}
 			</span>
 		</td>
 	</tr>
@@ -706,7 +713,7 @@
 	{@const linkedTicket =
 		item.state === 'converted' && item.ticket?.id === item.ticketId ? item.ticket : null}
 	{@const targetLabel = targetsReady ? targetText(targetOfItem(item, projects)) : ''}
-	{@const choosing = selecting && item.state === 'new'}
+	{@const choosing = selecting && item.state === 'new' && !store.isCreated(item.id)}
 	<!-- The title link is the keyboard target of the card; the tap on the card is a shortcut for it. -->
 	<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
 	<li
@@ -738,7 +745,7 @@
 					data-row-link
 					title={item.title.length >= LONG_TITLE ? item.title : undefined}
 					aria-current={item.id === activeId ? 'page' : undefined}>{item.title}</a
-				>
+				><PendingMark id={item.id} />
 			</p>
 			{#if item.state === 'new'}
 				{@render duplicateHint(item)}
@@ -775,7 +782,9 @@
 					? 'true'
 					: undefined}
 			>
-				{#if item.state === 'new'}
+				{#if store.isCreated(item.id)}
+					<!-- "＋" without a connection (OF-4a): nothing that needs the server until it has it. -->
+				{:else if item.state === 'new'}
 					<a class="button-secondary card-convert" href={convertHref(item.id)}
 						>Umwandeln<span class="visually-hidden">: „{item.title}“</span></a
 					>
@@ -818,13 +827,15 @@
 			</div>
 		</div>
 		<div class="card-end">
-			<ActionsMenu
-				label={`Weitere Aktionen für „${item.title}“`}
-				buttonLabel={`Weitere Aktionen für „${item.title}“`}
-				buttonTitle="Weitere Aktionen"
-				buttonClass="button-icon row-menu"
-				items={menuOf(item, linkedTicket?.key ?? null)}
-			/>
+			{#if !store.isCreated(item.id)}
+				<ActionsMenu
+					label={`Weitere Aktionen für „${item.title}“`}
+					buttonLabel={`Weitere Aktionen für „${item.title}“`}
+					buttonTitle="Weitere Aktionen"
+					buttonClass="button-icon row-menu"
+					items={menuOf(item, linkedTicket?.key ?? null)}
+				/>
+			{/if}
 		</div>
 	</li>
 {/snippet}

@@ -27,6 +27,7 @@
 	import { setTourStarter } from '$lib/tour/tour-context';
 	import {
 		panelFreeTicketCreate,
+		quickItemCreate,
 		quickTicketData,
 		saveQuickEntry,
 		type CaptureDeps
@@ -174,6 +175,7 @@
 	import { personLabel } from '$lib/domain/people';
 	import type { TicketChangeSink } from '$lib/domain/subtask-transfer-change';
 	import type { Ticket, TicketSummary } from '$lib/domain/ticket';
+	import type { InboxItemSummary } from '$lib/domain/inbox';
 	import { forgetOfflineSupport, getOutbox, offlineSupport } from '$lib/offline/app-outbox';
 	import { offlineTicketDetailData, offlineTicketListData } from '$lib/offline/offline-data';
 	import { setOutboxContext } from '$lib/offline/outbox.svelte';
@@ -491,7 +493,11 @@
 		upsert: showFromOutbox,
 		flags,
 		sessionEnded: () => auth.logout(),
-		childrenOf: blockingIds
+		childrenOf: blockingIds,
+		// "＋" kept for later (OF-4a): the entry of the server joins the inbox, and a ticket created one
+		// by one counts as read once it arrived (ADR-0015 §3).
+		upsertItem: (item: InboxItemSummary) => inbox.upsert(item),
+		markRead: (ticket: Ticket) => void tickets.markRead(ticket)
 	};
 	$effect(() => untrack(() => outbox.connect(outboxSink)));
 	// "Ticket duplizieren" (ADR-0045): one request, the result as a flag with the way back. Whether the
@@ -517,7 +523,11 @@
 	const bulk = setBulkEditStore(new BulkEditStore(bulkEditData(pb), auth, tickets, flags, rules));
 	// The inbox (E4 plan, T-4): new entries in full, for the view and the count at the switch. The
 	// filter "Zielprojekt" takes the sub projects of the catalog in (ADR-0049).
-	const inbox = setInboxStore(new InboxStore(inboxData(pb), auth, flags, () => catalog.projects));
+	// Entries "＋" put into the inbox without a connection show from the outbox until the server has
+	// them (OF-4a).
+	const inbox = setInboxStore(
+		new InboxStore(inboxData(pb), auth, flags, () => catalog.projects, outbox)
+	);
 	const activity = setTicketActivityStore(
 		new TicketActivityStore(ticketActivityData(pb), auth, () => auth.userId)
 	);
@@ -808,17 +818,26 @@
 	// only then does Ctrl+K lose the search of the browser. Tickets get the source "quick" and join
 	// the list without touching an open panel.
 	let quickOpen = $state(false);
+	// Without a connection "＋" keeps the line in the outbox where it works (OF-4a, ADR-0074 addendum
+	// OF-4a): as a ticket or into the inbox, under an ID of the client; new #tags need the server.
 	const quickDeps: CaptureDeps = {
 		ensureTag: (name) => catalog.ensureTag(name),
-		createTicket: panelFreeTicketCreate(quickTicketData(pb), auth, tickets),
-		createItem: (draft) => inbox.create(draft),
-		markRead: (ticket) => tickets.markRead(ticket)
+		createTicket: panelFreeTicketCreate(quickTicketData(pb), auth, tickets, outbox),
+		createItem: quickItemCreate((draft) => inbox.create(draft), outbox, auth, inbox),
+		markRead: (ticket) => tickets.markRead(ticket),
+		keep: {
+			takes: (target) => outbox.takes(target === 'ticket' ? 'ticket' : 'inbox'),
+			offline: () => outbox.offline
+		}
 	};
 	// Empty states offer "Schnellerfassung (c)" through the context (plan EH-11).
 	setQuickCaptureOpener(() => (quickOpen = true));
 	/** "Ticket ansehen" after the quick entry: in the view the user is in (ADR-0054 §8). */
 	const capturedTicketHref = (id: string) =>
 		ticketHrefIn(id, page.route.id, page.url, openMode.effective);
+	/** A record a notice of the outbox names (OF-4a): the ticket in the view, or the entry. */
+	const recordHref = (record: 'ticket' | 'inbox', id: string) =>
+		record === 'ticket' ? capturedTicketHref(id) : inboxItemHref(id);
 
 	// "Erste Schritte" (plan EH-12): the steps are marked where the app sees them. Opening the quick
 	// entry counts as trying it; an open ticket and a project are read from the stores here, a
@@ -924,7 +943,7 @@
 	     changes, conflicts and refusals with "Ansehen". Only while it works, keeps something or has a
 	     notice that stays until it is closed (OF-3b round 3). -->
 	{#if outbox.watching || outbox.count > 0 || outbox.notices.length > 0}
-		<OfflineNotice {outbox} onshow={() => (outboxOpen = true)} />
+		<OfflineNotice {outbox} onshow={() => (outboxOpen = true)} linkOf={recordHref} />
 	{/if}
 	<!-- A failed realtime subscription is tried again; meanwhile a hint says so (ADR-0011 E6). -->
 	{#if !outbox.offline}
@@ -976,6 +995,7 @@
 		{outbox}
 		onclose={() => (outboxOpen = false)}
 		ticketHref={(id) => ticketHrefIn(id, page.route.id, page.url, openMode.effective)}
+		itemHref={(id) => inboxItemHref(id)}
 		{changedBy}
 	/>
 {/if}

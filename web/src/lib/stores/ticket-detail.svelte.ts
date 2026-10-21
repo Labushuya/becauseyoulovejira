@@ -9,7 +9,7 @@
 // of the ticket as well: pinning another one replaces it and offers "Rückgängig" in a flag.
 
 import type PocketBase from 'pocketbase';
-import { createContext } from 'svelte';
+import { createContext, untrack } from 'svelte';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { problemDetails, problemOf, toDataError, type DataError } from '$lib/data/errors';
 import type { RequestOptions } from '$lib/data/options';
@@ -73,6 +73,14 @@ import {
 } from './trash-move';
 
 export type { DeleteResult, DeleteSources, TrashUndo };
+
+/**
+ * What the panel needs of the outbox (OF-2, OF-4a): the kept changes laid over the shown ticket, and a
+ * ticket "＋" created that the server does not have yet, shown from there instead of loaded.
+ */
+export type DetailOverlay = Pick<TicketOverlay, 'apply' | 'isCreatedView'> & {
+	createdTicket?(id: string): Ticket | null;
+};
 
 /**
  * Fields editable in the panel (E2 plan, section 2; E3 plan, T-13), the color since ADR-0052, the
@@ -159,7 +167,8 @@ export type TaskResult =
  * series, null without one.
  */
 export type CreateResult =
-	| { ok: true; ticket: Ticket; rule?: RecurrenceRule | null }
+	/** `kept`: "＋" without a connection, kept by the outbox for later (OF-4a); no key yet. */
+	| { ok: true; ticket: Ticket; rule?: RecurrenceRule | null; kept?: true }
 	| {
 			ok: false;
 			message: string | null;
@@ -291,7 +300,7 @@ export class TicketDetailStore implements CommentPinControl {
 	/** "Angepinnter Kommentar ersetzt." with "Rückgängig" (ADR-0044 section 2). */
 	readonly #flags: FlagSink;
 	/** The kept changes of the outbox laid over the shown ticket (OF-2). */
-	readonly #overlay: Pick<TicketOverlay, 'apply'>;
+	readonly #overlay: DetailOverlay;
 
 	readonly #drafts = new SvelteMap<EditableField, string>();
 	readonly #saving = new SvelteSet<FieldKey>();
@@ -346,10 +355,19 @@ export class TicketDetailStore implements CommentPinControl {
 	/** The question runs. */
 	#supportLoading = $state(false);
 
-	/** The loaded ticket, or the list's version of it if that one is newer (check mark). */
+	/** A ticket "＋" created that the server does not have yet, as the outbox shows it (OF-4a). */
+	#created = $derived.by((): Ticket | null => {
+		const id = this.#id;
+		return id === null ? null : (this.#overlay.createdTicket?.(id) ?? null);
+	});
+
+	/**
+	 * The loaded ticket, or the list's version of it if that one is newer (check mark); a ticket "＋"
+	 * created that the server does not have yet comes from the outbox until it does (OF-4a).
+	 */
 	#ticket = $derived.by((): Ticket | null => {
 		const own = this.#own;
-		if (own === null) return null;
+		if (own === null) return this.#created;
 		const summary = this.#list.find(own.id);
 		if (summary === null || summary.updated <= own.updated) return own;
 		return { ...own, ...summary, description: own.description };
@@ -363,7 +381,7 @@ export class TicketDetailStore implements CommentPinControl {
 		series: SeriesChangeSink = NO_SERIES,
 		flags: FlagSink = SILENT_FLAGS,
 		changes: TicketChangeSink = seriesChanges(series),
-		overlay: Pick<TicketOverlay, 'apply'> = NO_OVERLAY
+		overlay: DetailOverlay = NO_OVERLAY
 	) {
 		this.#data = data;
 		this.#session = session;
@@ -382,8 +400,18 @@ export class TicketDetailStore implements CommentPinControl {
 		return this.#ticket;
 	}
 
+	/**
+	 * The state; a ticket "＋" created whose creation went without the server having it (discarded,
+	 * deleted after 7 days) is not found (OF-4a).
+	 */
 	get state(): DetailState {
+		if (this.#state === 'ready' && this.#own === null && this.#created === null) return 'not_found';
 		return this.#state;
+	}
+
+	/** The shown ticket is one "＋" created that the server does not have yet (OF-4a). */
+	get created(): boolean {
+		return this.#own === null && this.#created !== null;
 	}
 
 	get error(): string | null {
@@ -806,6 +834,8 @@ export class TicketDetailStore implements CommentPinControl {
 	 */
 	upsert(incoming: Ticket): void {
 		if (incoming.id !== this.#id || this.#state === 'deleted') return;
+		// A ticket "＋" created shows from the outbox until the server has it (OF-4a).
+		if (this.#overlay.isCreatedView?.(incoming) === true) return;
 		const ticket = this.#overlay.apply(incoming);
 		if (this.#own !== null && this.#own.updated > ticket.updated) return;
 		this.#own = ticket;
@@ -1312,6 +1342,8 @@ export class TicketDetailStore implements CommentPinControl {
 	async #refresh(): Promise<void> {
 		const id = this.#id;
 		if (id === null || this.#state === 'deleted' || this.#state === 'not_found') return;
+		// A ticket "＋" created that the server does not have yet comes with the answer (OF-4a).
+		if (this.created) return;
 		if (this.#state !== 'ready') {
 			await this.reload();
 			return;
@@ -1336,6 +1368,15 @@ export class TicketDetailStore implements CommentPinControl {
 	async #load(id: string): Promise<void> {
 		this.#controller?.abort();
 		this.#controller = null;
+		// A ticket "＋" created that the server does not have yet: shown from the outbox, no request
+		// that would end in "nicht gefunden" (OF-4a).
+		// Read without tracking: `open` runs in effects of the routes.
+		if (untrack(() => this.#overlay.createdTicket?.(id) ?? null) !== null) {
+			this.#own = null;
+			this.#error = null;
+			this.#state = 'ready';
+			return;
+		}
 		if (!this.#session.ensureValid()) return;
 		const controller = new AbortController();
 		this.#controller = controller;

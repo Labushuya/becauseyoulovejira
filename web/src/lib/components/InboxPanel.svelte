@@ -53,6 +53,8 @@
 	import Markdown from './Markdown.svelte';
 	import MoveSourceDialog from './MoveSourceDialog.svelte';
 	import Drawer from './overlay/Drawer.svelte';
+	import PendingMark from './offline/PendingMark.svelte';
+	import { OFFLINE_TEXTS } from '$lib/domain/offline';
 	import { ticketLinks } from '$lib/stores/open-mode.svelte';
 
 	// Panel of one inbox entry (E4 plan, package 3; ADR-0019 section 5): title, the details of the
@@ -364,8 +366,16 @@
 		return entries;
 	}
 
+	/**
+	 * An entry "＋" put into the inbox that the server does not have yet (OF-4a): shown from the outbox
+	 * with its mark and a hint, without the actions that need the server.
+	 */
+	const created = $derived(store.isCreated(id));
+
 	/** The footer of the page holds only the main actions; a linked entry has none (MO-6). */
-	const footerShown = $derived(!phone || (item !== null && item.state !== 'converted'));
+	const footerShown = $derived(
+		!created && (!phone || (item !== null && item.state !== 'converted'))
+	);
 </script>
 
 {#snippet entryActions(entry: InboxItem)}
@@ -499,11 +509,13 @@
 	{onback}
 	footer={footerShown ? panelFooter : undefined}
 >
-	{#snippet context()}Eintrag im Eingang{/snippet}
+	{#snippet context()}Eintrag im Eingang<PendingMark {id} />{/snippet}
 	{#snippet actions()}
 		<!-- In the phone frame "•••" holds what the panel of the PC shows besides (MO-6). Moving
 		     between the areas (E7-4, ADR-0061): an entry with a ticket moves with it. -->
-		{#if phone}
+		{#if created}
+			<!-- Nothing that needs the server while it does not have the entry (OF-4a). -->
+		{:else if phone}
 			{#if item !== null && moreOf(item).length > 0}
 				<ActionsMenu
 					label={`Weitere Aktionen für „${item.title}“`}
@@ -537,6 +549,9 @@
 		<p class="loading" role="status">Eintrag wird geladen …</p>
 	{:else}
 		<h2 id={headingId} tabindex="-1" bind:this={heading}>{item.title}</h2>
+		{#if created}
+			<SectionMessage tone="info" compact>{OFFLINE_TEXTS.itemCreatedHint}</SectionMessage>
+		{/if}
 
 		<div aria-live="polite">
 			{#if message}
