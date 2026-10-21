@@ -62,7 +62,6 @@ import {
 	isStatusAction,
 	isTakeBack,
 	isWaiting,
-	needsDecision,
 	newOpId,
 	nextToSend,
 	nextWakeOf,
@@ -286,6 +285,12 @@ function replacedBy(actions: readonly KeptAction[], op: string, next: KeptAction
 	return actions.map((action) => (action.op === op ? next : action));
 }
 
+/** The sub-tasks a completion with "Unteraufgaben mit erledigen" took along. */
+function alongOf(action: KeptAction): readonly string[] {
+	if (isDueAction(action) || action.completion !== 'complete_children') return [];
+	return action.children ?? [];
+}
+
 /** 403 and 404: the rules of the Record API and the entry of the day plan come before the identifier. */
 function isMissing(failure: DataError): boolean {
 	return failure.kind === 'not_found' || failure.kind === 'forbidden';
@@ -332,8 +337,6 @@ export class OutboxStore {
 	#storageFlag: string | null = null;
 	/** The state of the server per ticket as last seen, for the display after a discarded action. */
 	readonly #base = new SvelteMap<string, TicketSummary>();
-	/** The mark of the day per entry of the day plan as the server had it at the last change (OF-3). */
-	readonly #items = new SvelteMap<string, boolean>();
 	/** Who waits for the answers of kept check marks: the day plan of the view (OF-3). */
 	readonly #checkWatchers = new SvelteSet<(answer: CheckAnswer | null) => void>();
 	/** Tickets the outbox made itself (overlays), never taken as the state of the server. */
@@ -521,7 +524,6 @@ export class OutboxStore {
 		this.#loading = null;
 		this.#loadingFor = null;
 		this.#base.clear();
-		this.#items.clear();
 		this.#problems.clear();
 		this.#failing = null;
 		this.#update();
@@ -924,7 +926,6 @@ export class OutboxStore {
 		await this.#begin();
 		const ticket = this.#baseOf(entry.ticket);
 		this.#remember(ticket);
-		this.#items.set(entry.item.id, entry.item.doneToday);
 		const change: CheckChange = {
 			kind: request.kind,
 			target: entry.item.id,
@@ -1387,6 +1388,9 @@ export class OutboxStore {
 					await this.#reread(ticketOf(resolution.action));
 					if (isDayPlanAction(resolution.action)) this.#notifyChecks(null);
 				}
+				// "Unteraufgaben mit erledigen" changed the sub-tasks as well: their status as the server
+				// has it now is the one later changes are based on (round 2).
+				for (const child of alongOf(resolution.action)) await this.#reread(child);
 				return true;
 			case 'kept':
 				void this.#connectivity.check();
@@ -1556,8 +1560,10 @@ export class OutboxStore {
 	}
 
 	/**
-	 * The last known state of the server behind an action: of its conflict, else as last seen (the
-	 * mark of the day of an entry as at its last change, OF-3).
+	 * The last known state of the server behind an action that waits for a decision: of its conflict,
+	 * else as last seen. The mark of the day of an entry is the one the action was based on: it changed
+	 * nothing (a conflict is one of the status, a changed mark is refused), and the device knows no later
+	 * mark of the server (round 2; OF-3 took the mark as at the last change, which may be older).
 	 */
 	#serverStateOf(
 		action: KeptAction,
@@ -1572,9 +1578,8 @@ export class OutboxStore {
 		}
 		const status = isStatus(actual) ? actual : ticket?.status;
 		const state: ServerState = status === undefined ? {} : { status };
-		const doneToday = isDayPlanAction(action) ? this.#items.get(action.target) : undefined;
-		if (isDayPlanAction(action) && doneToday !== undefined) {
-			state.check = { item: action.target, doneToday };
+		if (isDayPlanAction(action)) {
+			state.check = { item: action.target, doneToday: action.expected.doneToday };
 		}
 		return state;
 	}
@@ -1617,11 +1622,13 @@ export class OutboxStore {
 		// A take-back carries out "Verwerfen": no "Verwerfen" of its own while it waits (round 2, S2).
 		if (isTakeBack(action) && isWaiting(action)) return null;
 		const state = this.#serverStateOf(action);
-		// After a conflict the user takes what the server has; after a refusal or 48 hours what they
-		// want without it still counts (round 2, H-1).
+		// After a conflict the user takes what the server has. After a refusal the ones behind it are
+		// based on the state read after it, and what the user wants without it still counts. One older
+		// than 48 hours was not sent and nothing was read about it: it goes as one that changed nothing
+		// (round 2, H-1; the last state read may be older than the chain).
 		let decided: Leave = { how: 'nothing' };
 		if (action.state === 'conflict') decided = { how: 'decided', state };
-		else if (needsDecision(action)) decided = { how: 'refused', state };
+		else if (action.state === 'refused') decided = { how: 'refused', state };
 		const deleted = async (): Promise<Planned<Discarded>> => ({
 			after: await this.#pure((context) =>
 				settleChains(leaveChain(before, op, decided, context), context)

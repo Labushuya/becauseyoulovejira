@@ -20,6 +20,7 @@ import type { CalendarDate } from './berlin-date';
 import {
 	chainBaseOf,
 	changesSomething,
+	childFeaturesOf,
 	expectedOf,
 	fallbackOf,
 	inOrder,
@@ -38,6 +39,7 @@ import {
 	stateBefore,
 	ticketOf,
 	valuesOfState,
+	withChildBefore,
 	withExpected,
 	withFallback,
 	writesOf,
@@ -133,15 +135,19 @@ interface Want {
 	anchor: KeptAction;
 }
 
-/** The values before of the free actions from the ones before them; a fallback counts only first. */
+/**
+ * The values before of the free actions from the ones before them, also the status before of the
+ * sub-tasks a completion takes along (round 2); a fallback counts only first.
+ */
 function recompute(actions: readonly KeptAction[]): KeptAction[] {
 	const values = new Map<Feature, FeatureValue>();
 	return actions.map((original) => {
 		let action = original;
 		if (isFree(action)) {
-			for (const [feature] of expectedOf(action)) {
+			for (const feature of [...expectedOf(action).keys(), ...childFeaturesOf(action)]) {
 				if (!values.has(feature)) continue;
-				action = withExpected(action, feature, values.get(feature) as FeatureValue);
+				const value = values.get(feature) as FeatureValue;
+				action = withChildBefore(withExpected(action, feature, value), feature, value);
 				action = withFallback(action, feature, undefined);
 			}
 		}
@@ -388,7 +394,8 @@ export function leaveChain(
 			if (isTakeBack(next) || next.state === 'sending') continue;
 			const updated = withFallback(next, feature, will === server ? undefined : will);
 			result = result.map((action) => (action.op === next.op ? updated : action));
-		} else if (will !== server && !isChildOf(self, feature)) {
+		} else if (will !== server) {
+			// Also a sub-task it took along, where what the user wants of it passed on (round 2).
 			const chain = result.filter((action) => later.has(action.op)).map((action) => action.op);
 			const want = { wish: will, expected: server, anchor: self };
 			created.push(takeBackOf(feature, want, chain, context));

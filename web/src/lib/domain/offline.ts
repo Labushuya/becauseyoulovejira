@@ -269,6 +269,8 @@ export interface Fallback {
 	due?: CalendarDate | null;
 	/** The mark of the day of the entry of a check mark. */
 	doneToday?: boolean;
+	/** Per ID the status of a sub-task a completion takes along (round 2). */
+	children?: Record<string, Status>;
 }
 
 /** A change of the status of a ticket, as kept on the device (format version 1). */
@@ -385,15 +387,19 @@ function fallbackFrom(value: unknown): Fallback | null | undefined {
 	if (value === undefined) return undefined;
 	if (!isRecord(value)) return null;
 	const due = value.due === undefined ? undefined : dueOf(value.due);
+	const children = value.children;
 	const valid =
 		(value.status === undefined || isStatus(value.status)) &&
 		(value.due === undefined || due !== undefined) &&
-		(value.doneToday === undefined || typeof value.doneToday === 'boolean');
+		(value.doneToday === undefined || typeof value.doneToday === 'boolean') &&
+		(children === undefined || (isRecord(children) && Object.values(children).every(isStatus)));
 	if (!valid) return null;
+	const along = isRecord(children) ? (children as Record<string, Status>) : {};
 	const fallback: Fallback = {
 		...(isStatus(value.status) && { status: value.status }),
 		...(due !== undefined && { due }),
-		...(typeof value.doneToday === 'boolean' && { doneToday: value.doneToday })
+		...(typeof value.doneToday === 'boolean' && { doneToday: value.doneToday }),
+		...(Object.keys(along).length > 0 && { children: { ...along } })
 	};
 	return Object.keys(fallback).length === 0 ? undefined : fallback;
 }
@@ -777,6 +783,36 @@ export function unknownChildren(action: KeptAction): string[] {
 		.map(([id]) => id);
 }
 
+/** The status of every sub-task a completion takes along, known before or not (round 2). */
+export function childFeaturesOf(action: KeptAction): Feature[] {
+	return alongOf(action).map(([id]) => statusFeature(id));
+}
+
+/** The sub-task of `feature` when the action takes it along, else null. */
+function childOf(action: KeptAction, feature: Feature): string | null {
+	const id = feature.startsWith('status:') ? feature.slice('status:'.length) : null;
+	if (id === null || id === ticketOf(action)) return null;
+	return alongOf(action).some(([child]) => child === id) ? id : null;
+}
+
+/**
+ * The action with `value` as the status before of the sub-task of `feature` it takes along (round 2):
+ * like `expected`, it follows from the actions before it while it never left the device.
+ */
+export function withChildBefore<A extends KeptAction>(
+	action: A,
+	feature: Feature,
+	value: FeatureValue
+): A {
+	const child = childOf(action, feature);
+	if (child === null || isDueAction(action) || !isStatus(value)) return action;
+	const children = action.children ?? [];
+	const index = children.indexOf(child);
+	const before = action.childrenBefore ?? children.map(() => null);
+	if (before.length !== children.length || before[index] === value) return action;
+	return { ...action, childrenBefore: before.map((entry, at) => (at === index ? value : entry)) };
+}
+
 /** The values a request of the action names as the ones before (its `expected`). */
 export function expectedOf(action: KeptAction): Map<Feature, FeatureValue> {
 	if (isStatusAction(action)) {
@@ -873,7 +909,10 @@ export function withExpected<A extends KeptAction>(
 }
 
 /** The key of `feature` in the fallback of the action, null where it has none for it. */
-function fallbackKey(action: KeptAction, feature: Feature): keyof Fallback | null {
+function fallbackKey(
+	action: KeptAction,
+	feature: Feature
+): Exclude<keyof Fallback, 'children'> | null {
 	if (isStatusAction(action)) return feature === statusFeature(action.target) ? 'status' : null;
 	if (isDueAction(action)) return feature === dueFeature(action.target) ? 'due' : null;
 	if (!isDayPlanAction(action)) return null;
@@ -881,8 +920,13 @@ function fallbackKey(action: KeptAction, feature: Feature): keyof Fallback | nul
 	return feature === markFeature(action.target) ? 'doneToday' : null;
 }
 
-/** What the user wants for `feature` once the action and the later ones are discarded, if not `expected`. */
+/**
+ * What the user wants for `feature` once the action and the later ones are discarded, if not
+ * `expected`; for a sub-task it takes along, if not its status before (round 2).
+ */
 export function fallbackOf(action: KeptAction, feature: Feature): FeatureValue | undefined {
+	const child = childOf(action, feature);
+	if (child !== null) return action.fallback?.children?.[child];
 	const key = fallbackKey(action, feature);
 	return key === null ? undefined : action.fallback?.[key];
 }
@@ -893,14 +937,33 @@ export function withFallback<A extends KeptAction>(
 	feature: Feature,
 	value: FeatureValue | undefined
 ): A {
-	const key = fallbackKey(action, feature);
-	if (key === null || fallbackOf(action, feature) === value) return action;
-	const fallback: Record<string, FeatureValue> = { ...action.fallback };
-	if (value === undefined) delete fallback[key];
-	else fallback[key] = value;
+	const child = childOf(action, feature);
+	const key = child === null ? fallbackKey(action, feature) : null;
+	if ((child === null && key === null) || fallbackOf(action, feature) === value) return action;
+	const fallback: Fallback = { ...action.fallback };
+	if (child !== null) {
+		if (value !== undefined && !isStatus(value)) return action;
+		const children: Record<string, Status> = { ...fallback.children };
+		if (value === undefined) delete children[child];
+		else children[child] = value;
+		if (Object.keys(children).length === 0) delete fallback.children;
+		else fallback.children = children;
+	} else if (value === undefined && key !== null) {
+		delete fallback[key];
+	} else if (key === 'status' && isStatus(value)) {
+		fallback.status = value;
+	} else if (key === 'doneToday' && typeof value === 'boolean') {
+		fallback.doneToday = value;
+	} else if (key === 'due' && (typeof value === 'string' || value === null)) {
+		const due = dueOf(value);
+		if (due === undefined) return action;
+		fallback.due = due;
+	} else {
+		return action;
+	}
 	const next = { ...action };
 	if (Object.keys(fallback).length === 0) delete next.fallback;
-	else next.fallback = fallback as Fallback;
+	else next.fallback = fallback;
 	return next;
 }
 
@@ -1152,9 +1215,14 @@ export function planStatusChange(
 	const last = mine.at(-1);
 	if (last !== undefined && isStatusAction(last) && mergeable(last)) {
 		// Back to what the user wanted before it (OF-3b: after a discarded change that is not its
-		// value before) drops it; any other wish goes into it.
+		// value before) drops it; any other wish goes into it. A completion that takes sub-tasks along
+		// is a wish of its own even then (round 2): dropping would leave the sub-tasks open.
 		const feature = statusFeature(change.target);
-		if (change.status === willWithout(mine, last, feature, opsOf(open))) {
+		const along =
+			change.status === 'done' &&
+			change.completion === 'complete_children' &&
+			(change.children?.length ?? 0) > 0;
+		if (!along && change.status === willWithout(mine, last, feature, opsOf(open))) {
 			return { kind: 'cancel', op: last.op };
 		}
 		const completion = change.completion ?? last.completion;
