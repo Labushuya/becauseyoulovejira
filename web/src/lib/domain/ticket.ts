@@ -226,6 +226,10 @@ export interface Comment {
 	body: string;
 	created: string;
 	updated: string;
+	/** Written without a connection and sent by the outbox (OF-4b, ADR-0074 §4); left out otherwise. */
+	offline?: true;
+	/** Its time of the device as the server kept it, null without an accepted time. */
+	deviceAt?: string | null;
 }
 
 export interface HistoryEntry {

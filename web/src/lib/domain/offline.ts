@@ -30,6 +30,11 @@
 //   the views show "Neu" (`createdTicketOf`, `createdItemOf`). A change of such a ticket goes into the
 //   payload of its creation while that never left the device, else it waits for it (`dependsOn`).
 //   A creation takes no part in the chains of the values: it names no value before and writes none.
+// - Since OF-4b a comment is a creation of its own (`comment.create`) under an ID of the client: it
+//   waits for the creation of its ticket "＋" created and for the comment written before it on the
+//   same ticket, never taken into another one (concept §3.3); the views show it at once
+//   (`keptCommentOf`). Its text is kept until it arrived, was discarded or saved as an entry of the
+//   inbox (format 2 of an `inbox.create` with `body`).
 
 import { isCalendarDate, type CalendarDate } from './berlin-date';
 import {
@@ -42,11 +47,24 @@ import {
 	type TicketKind
 } from './day-plan';
 import { formatBerlinDateTime, formatCalendarDate, toPocketBaseTimestamp } from './format';
-import { INBOX_TITLE_MAX_LENGTH, PRESET_META_KEY, presetMeta, type InboxItem } from './inbox';
+import {
+	INBOX_BODY_MAX_LENGTH,
+	INBOX_TITLE_MAX_LENGTH,
+	PRESET_META_KEY,
+	presetMeta,
+	type InboxItem
+} from './inbox';
 import { STATUS_LABELS } from './labels';
 import { isPriority, isStatus, type Priority, type Status } from './status';
 import type { CompletionChoice } from './subtasks';
-import { TITLE_MAX_LENGTH, fromDueInput, toDueInput, type Ticket } from './ticket';
+import {
+	COMMENT_MAX_LENGTH,
+	TITLE_MAX_LENGTH,
+	fromDueInput,
+	toDueInput,
+	type Comment,
+	type Ticket
+} from './ticket';
 
 /** The six actions of the first stage (ADR-0074 §2), as the server names them. */
 export const OFFLINE_KINDS = Object.freeze([
@@ -111,18 +129,33 @@ export const OFFLINE_MESSAGES: Readonly<Record<string, string>> = Object.freeze(
 	validation_dayplan_conflict: 'Der Haken wurde inzwischen geändert.'
 });
 
+/** The kind of record a creation makes: "＋" (OF-4a) or a comment (OF-4b). */
+export type CreatedKind = 'ticket' | 'inbox' | 'comment';
+
 /**
  * Words of the client for codes PocketBase itself answers to a creation (OF-4a), per kind of the
  * record since round 2 (A10): an ID that is taken (ADR-0074 §5). Not part of the catalog of the hook.
  */
-export const CREATE_MESSAGES: Readonly<
-	Record<string, Readonly<Record<'ticket' | 'inbox', string>>>
-> = Object.freeze({
-	validation_not_unique: Object.freeze({
-		ticket: 'Die ID des neuen Tickets ist auf dem Server schon vergeben.',
-		inbox: 'Die ID des neuen Eingangseintrags ist auf dem Server schon vergeben.'
-	})
-});
+export const CREATE_MESSAGES: Readonly<Record<string, Readonly<Record<CreatedKind, string>>>> =
+	Object.freeze({
+		validation_not_unique: Object.freeze({
+			ticket: 'Die ID des neuen Tickets ist auf dem Server schon vergeben.',
+			inbox: 'Die ID des neuen Eingangseintrags ist auf dem Server schon vergeben.',
+			comment: 'Die ID des Kommentars ist auf dem Server schon vergeben.'
+		})
+	});
+
+/**
+ * A comment the server refuses without a field (OF-4b): the create rule of `comments` failed, its
+ * ticket is not to be seen (not there yet, in the trash, no longer in the area). PocketBase answers
+ * 400 without a code.
+ */
+export const COMMENT_REFUSED_CODE = 'comment_refused';
+/**
+ * A comment of a ticket "＋" created whose creation the user discarded (OF-4b): it is never sent and
+ * waits with its text for "Als Eingangseintrag sichern" or "Verwerfen".
+ */
+export const SET_ASIDE_CODE = 'ticket_discarded';
 
 /** The message of a conflict as a whole (the hook). */
 export const CONFLICT_MESSAGE = 'Das Ticket wurde inzwischen geändert.';
@@ -267,9 +300,16 @@ export const DAY_OVER_CODE = 'validation_dayplan_readonly';
 /** The check mark changed meanwhile (ADR-0074 §3): refused for good (OF-3). */
 export const CHECK_CONFLICT_CODE = 'validation_dayplan_conflict';
 
-/** What every action kept on the device has (format version 1). */
+/**
+ * The format of an action: 1, or 2 for an entry of the inbox that carries a text (`body`, OF-4b). A
+ * build before OF-4b reads only format 1: it would send such an entry without its text, so it shows it
+ * as not readable and never sends it.
+ */
+export type ActionFormat = 1 | 2;
+
+/** What every action kept on the device has (format version 1, see `ActionFormat`). */
 export interface ActionBase {
-	v: 1;
+	v: ActionFormat;
 	/** The identifier, 20 characters a–z0–9. */
 	op: string;
 	/** The order on this device. */
@@ -416,6 +456,8 @@ export interface InboxCreatePayload {
 	household: string;
 	/** Project, tags and priority of the line, the preset of the entry (`source_meta.preset`). */
 	preset: { project: string | null; tags: string[]; priority: Priority | null };
+	/** The whole text of a comment saved as an entry (OF-4b, "Als Eingangseintrag sichern"). */
+	body?: string;
 }
 
 /** An entry of the inbox "＋" created (OF-4a): `target` is its ID of the client. */
@@ -425,8 +467,34 @@ export interface InboxCreateAction extends ActionBase {
 	expected: Record<string, never>;
 }
 
-/** A record "＋" created (OF-4a). */
-export type CreateAction = TicketCreateAction | InboxCreateAction;
+/** A comment written on a ticket (OF-4b): its text in Markdown, as the editor gives it. */
+export interface CommentCreatePayload {
+	body: string;
+}
+
+/**
+ * A comment kept for later (OF-4b, concept §3.3): `target` is its ID of the client, sent as `id`;
+ * `ticket` the ticket it belongs to, an ID of the server or of a ticket "＋" created; `key` and `title`
+ * name that ticket for the dialog. It waits for the creation of its ticket and for the comment written
+ * before it on the same ticket (`dependsOn`); it is never taken into another one.
+ */
+export interface CommentCreateAction extends ActionBase {
+	kind: 'comment.create';
+	ticket: string;
+	payload: CommentCreatePayload;
+	expected: Record<string, never>;
+	/**
+	 * "Als Eingangseintrag sichern" after it may have arrived (OF-4b round 2, K-3): its text is in the
+	 * inbox; it is discarded and only looked up, and found, a notice says that its text is there twice.
+	 */
+	saved?: true;
+}
+
+/**
+ * A record created under an ID of the client: "＋" (OF-4a) or a comment (OF-4b). It names no value
+ * before and writes none; discarded after it may have left the device, it is only looked up.
+ */
+export type CreateAction = TicketCreateAction | InboxCreateAction | CommentCreateAction;
 
 /** Every action the device keeps. */
 export type KeptAction = OutboxAction | DueAction | DayPlanAction | CreateAction;
@@ -441,9 +509,24 @@ export function isInboxCreate(action: KeptAction): action is InboxCreateAction {
 	return action.kind === 'inbox.create';
 }
 
-/** A record "＋" created (OF-4a). */
+/** A comment kept for later (OF-4b). */
+export function isCommentCreate(action: KeptAction): action is CommentCreateAction {
+	return action.kind === 'comment.create';
+}
+
+/** A record created under an ID of the client: "＋" (OF-4a) or a comment (OF-4b). */
 export function isCreateAction(action: KeptAction): action is CreateAction {
-	return isTicketCreate(action) || isInboxCreate(action);
+	return isTicketCreate(action) || isInboxCreate(action) || isCommentCreate(action);
+}
+
+/**
+ * A comment of a ticket "＋" created whose creation the user discarded (OF-4b): it waits with its text
+ * for a decision and is never sent.
+ */
+export function isSetAside(action: KeptAction): boolean {
+	return (
+		isCommentCreate(action) && action.state === 'refused' && action.outcome?.code === SET_ASIDE_CODE
+	);
 }
 
 /** A change of the status of a ticket. */
@@ -462,11 +545,12 @@ export function isDayPlanAction(action: KeptAction): action is DayPlanAction {
 }
 
 /**
- * The ticket an action belongs to: its target, or the ticket of the entry of the day plan; for an
- * entry of the inbox "＋" created (OF-4a) the ID of that entry, which no ticket has.
+ * The ticket an action belongs to: its target, or the ticket of the entry of the day plan or of the
+ * comment (OF-4b); for an entry of the inbox "＋" created (OF-4a) the ID of that entry, which no ticket
+ * has.
  */
 export function ticketOf(action: KeptAction): string {
-	return isDayPlanAction(action) ? action.ticket : action.target;
+	return isDayPlanAction(action) || isCommentCreate(action) ? action.ticket : action.target;
 }
 
 function isStringList(value: unknown): value is string[] {
@@ -534,7 +618,7 @@ function baseOf(raw: Record<string, unknown>, op: string, user: string): ActionB
 	const state = ACTION_STATES.find((entry) => entry === raw.state);
 	const fallback = fallbackFrom(raw.fallback);
 	const valid =
-		raw.v === 1 &&
+		(raw.v === 1 || raw.v === 2) &&
 		typeof raw.target === 'string' &&
 		raw.target !== '' &&
 		finite(raw.seq) &&
@@ -546,7 +630,7 @@ function baseOf(raw: Record<string, unknown>, op: string, user: string): ActionB
 	if (!valid || state === undefined || fallback === null) return null;
 	const outcome = outcomeOf(raw.outcome);
 	return {
-		v: 1,
+		v: raw.v as ActionFormat,
 		op,
 		seq: raw.seq as number,
 		user,
@@ -707,10 +791,19 @@ function createActionOf(
 		if (title === null || project === undefined || tags === null || priority === undefined) {
 			return null;
 		}
+		// The text of a comment saved as an entry (OF-4b): at most what the server keeps.
+		const body = payload.body;
+		const textual = typeof body === 'string' && body.length <= INBOX_BODY_MAX_LENGTH;
+		if (body !== undefined && !textual) return null;
 		return {
 			...base,
 			kind: 'inbox.create',
-			payload: { title, household, preset: { project, tags, priority } },
+			payload: {
+				title,
+				household,
+				preset: { project, tags, priority },
+				...(typeof body === 'string' && { body })
+			},
 			expected: {}
 		};
 	}
@@ -745,6 +838,46 @@ function createActionOf(
 }
 
 /**
+ * A comment kept for later (OF-4b): its ID of the client as `target`, the ID of its ticket, a text that
+ * is not empty and not longer than a comment may be; saved as an entry after it may have arrived only
+ * once discarded (round 2, K-3). It takes nothing back; anything else is not one of this build.
+ */
+function commentActionOf(
+	raw: Record<string, unknown>,
+	base: ActionBase,
+	payload: Record<string, unknown>
+): CommentCreateAction | null {
+	if (!RECORD_ID_PATTERN.test(base.target) || base.undoes !== undefined) return null;
+	if (base.fallback !== undefined) return null;
+	const ticket = raw.ticket;
+	const body = payload.body;
+	const valid =
+		typeof ticket === 'string' &&
+		RECORD_ID_PATTERN.test(ticket) &&
+		typeof body === 'string' &&
+		body.trim() !== '' &&
+		body.length <= COMMENT_MAX_LENGTH &&
+		(raw.saved === undefined || (raw.saved === true && base.discarded === true));
+	if (!valid) return null;
+	return {
+		...base,
+		kind: 'comment.create',
+		ticket,
+		payload: { body },
+		expected: {},
+		...(raw.saved === true && { saved: true as const })
+	};
+}
+
+/**
+ * Whether the format of an action fits its content (OF-4b): format 2 is exactly an entry of the inbox
+ * with a text, which a build before OF-4b would send without it.
+ */
+function formatFits(action: KeptAction): boolean {
+	return (action.v === 2) === (isInboxCreate(action) && action.payload.body !== undefined);
+}
+
+/**
  * An entry of the device as an action. One of another format or damaged comes back as a refused
  * action with the code BROKEN_CODE, so it is shown with "Verwerfen" and never sent; one without an
  * identifier or an account of its own comes back as null (it belongs to nobody and goes).
@@ -762,8 +895,11 @@ export function parseAction(raw: unknown): KeptAction | null {
 			action = dayPlanActionOf(raw, base, payload, expected);
 		} else if (raw.kind === 'ticket.create' || raw.kind === 'inbox.create') {
 			action = createActionOf(raw, base, payload);
+		} else if (raw.kind === 'comment.create') {
+			action = commentActionOf(raw, base, payload);
 		}
 	}
+	if (action !== null && !formatFits(action)) action = null;
 	return action ?? brokenAction(raw.op, raw.user, raw);
 }
 
@@ -1411,8 +1547,10 @@ function intoCreation(
 ): ChangePlan<TicketCreateAction> | null {
 	const creation = creationOf(open, id);
 	if (creation === null) return null;
+	// A comment that waits for it (OF-4b) changes no value: the change still goes into the creation.
 	const later = open.some(
-		(action) => action !== creation && action.dependsOn.includes(creation.op)
+		(action) =>
+			action !== creation && !isCommentCreate(action) && action.dependsOn.includes(creation.op)
 	);
 	if (!mergeable(creation) || later) return null;
 	const payload = { ...creation.payload, ...patch };
@@ -1616,15 +1754,73 @@ export function planCreate(change: CreateChange, context: PlanContext): ChangePl
 		{ target: change.target, key: '', title: change.payload.title, scope: change.scope },
 		[]
 	);
+	// An entry with the text of a comment is format 2 (OF-4b): an older build never sends it without it.
+	const format: ActionFormat =
+		change.kind === 'inbox.create' && change.payload.body !== undefined ? 2 : 1;
 	const action: CreateAction =
 		change.kind === 'ticket.create'
 			? { ...head, kind: 'ticket.create', payload: change.payload, expected: {} }
-			: { ...head, kind: 'inbox.create', payload: change.payload, expected: {} };
-	const plan = sendOrQueue(action, true, context);
-	// The first attempt is its first request (round 2, A5).
+			: { ...head, v: format, kind: 'inbox.create', payload: change.payload, expected: {} };
+	return firstRequest(sendOrQueue(action, true, context), context);
+}
+
+/** A creation sent at once notes its first request (OF-4a round 2, A5). */
+function firstRequest<A extends CreateAction>(
+	plan: ChangePlan<A>,
+	context: PlanContext
+): ChangePlan<A> {
 	return plan.kind === 'send'
 		? { kind: 'send', action: { ...plan.action, lastSentAt: context.now } }
 		: plan;
+}
+
+/** A comment written on a ticket (OF-4b): the ID of the client, the ticket and the text. */
+export interface CommentChange {
+	/** The ID of the client of the comment. */
+	target: string;
+	/** The ticket: an ID of the server or of a ticket "＋" created. */
+	ticket: string;
+	/** Key and title of the ticket for the dialog; no key for a ticket "＋" created. */
+	key: string;
+	title: string;
+	scope: string;
+	body: string;
+}
+
+/**
+ * The plan for a comment (OF-4b, concept §3.3): a new action under the ID of the client. It waits for
+ * the creation of its ticket "＋" created (first the ticket, then its comments) and for every comment
+ * written before it on the same ticket that the device keeps and the user did not discard (the order
+ * in which they were written; every one, not only the last: an earlier one that goes without being
+ * sent must not let it overtake the ones before). Comments are never taken into each other. Without
+ * anything to wait for it goes at once with a connection (only the identifier and the ID) and is kept
+ * without one.
+ */
+export function planComment(
+	open: readonly KeptAction[],
+	change: CommentChange,
+	context: PlanContext
+): ChangePlan<CommentCreateAction> {
+	const creation = creationOf(open, change.ticket);
+	const before = inOrder(open).filter(
+		(action): action is CommentCreateAction =>
+			isCommentCreate(action) &&
+			action.ticket === change.ticket &&
+			action.discarded !== true &&
+			!isSetAside(action)
+	);
+	const dependsOn = [
+		...(creation === null ? [] : [creation.op]),
+		...before.map((action) => action.op)
+	];
+	const action: CommentCreateAction = {
+		...common(context, change, dependsOn),
+		kind: 'comment.create',
+		ticket: change.ticket,
+		payload: { body: change.body },
+		expected: {}
+	};
+	return firstRequest(sendOrQueue(action, dependsOn.length === 0, context), context);
 }
 
 function sameState(a: CheckState, b: CheckState): boolean {
@@ -1805,7 +2001,9 @@ export function agedActions(
 
 /**
  * The changes that wait for a creation of `drop`, also through each other, with the creation they wait
- * for (OF-4a round 2, A8); among them also those of `drop`.
+ * for (OF-4a round 2, A8); among them also those of `drop`. Since OF-4b also the comments of a ticket
+ * "＋" created; a comment of `drop` takes no other comment along (they wait for each other only for
+ * their order).
  */
 export function alongDropped(
 	actions: readonly KeptAction[],
@@ -1814,7 +2012,7 @@ export function alongDropped(
 	const creationOf = new Map<string, CreateAction>();
 	const along = new Map<string, CreateAction>();
 	for (const action of inOrder(actions)) {
-		if (isCreateAction(action)) {
+		if (isTicketCreate(action) || isInboxCreate(action)) {
 			if (drop.includes(action.op)) creationOf.set(action.op, action);
 			continue;
 		}
@@ -1853,9 +2051,13 @@ export function lookUpAgainAt(action: KeptAction, now: number): number {
 	return Math.min(action.lastSentAt ?? now, now) + LOOKUP_FINAL_MS;
 }
 
-/** The kind of the record of a creation "＋", null for any other action (OF-4a round 2, A10). */
-export function createdRecordOf(action: KeptAction): 'ticket' | 'inbox' | null {
+/**
+ * The kind of the record of a creation "＋" (OF-4a round 2, A10) or of a comment (OF-4b), null for any
+ * other action.
+ */
+export function createdRecordOf(action: KeptAction): CreatedKind | null {
 	if (isTicketCreate(action)) return 'ticket';
+	if (isCommentCreate(action)) return 'comment';
 	return isInboxCreate(action) ? 'inbox' : null;
 }
 
@@ -2052,8 +2254,13 @@ export function requestFields(
 	first: boolean
 ): OutboxFields {
 	if (first) return { opId: action.op };
-	// A creation (OF-4a) is based on nothing: only the identifier and the time of the device.
-	if (action.kind === 'ticket.create' || action.kind === 'inbox.create') {
+	// A creation (OF-4a) and a comment (OF-4b) are based on nothing: only the identifier and the time
+	// of the device.
+	if (
+		action.kind === 'ticket.create' ||
+		action.kind === 'inbox.create' ||
+		action.kind === 'comment.create'
+	) {
 		if (action.late === true) return { opId: action.op, offline: true };
 		return { opId: action.op, clientAt: new Date(action.createdAt).toISOString() };
 	}
@@ -2100,9 +2307,10 @@ function isConflict([, error]: [string, FieldFacts]): boolean {
  * question; a day of the plan gone by is refused for good with its own words (OF-3); 401 waits for
  * the sign-in; a missing answer (network, time limit, `aborted` by the limit) waits for the
  * connection; 5xx tries again later; every other answer is refused for good. `record`: the kind of the
- * record of a creation, for the words of the codes PocketBase answers itself (OF-4a round 2, A10).
+ * record of a creation, for the words of the codes PocketBase answers itself (OF-4a round 2, A10); a
+ * comment refused without a field failed the create rule (OF-4b): its ticket is not to be seen.
  */
-export function verdictOf(failure: FailureFacts, record?: 'ticket' | 'inbox' | null): SendVerdict {
+export function verdictOf(failure: FailureFacts, record?: CreatedKind | null): SendVerdict {
 	if (failure.kind === 'network' || failure.kind === 'aborted') return { result: 'network' };
 	if (failure.kind === 'session') return { result: 'session' };
 	const serverError = failure.status === 0 || failure.status >= 500;
@@ -2126,6 +2334,10 @@ export function verdictOf(failure: FailureFacts, record?: 'ticket' | 'inbox' | n
 		return { result: 'conflict', outcome };
 	}
 	const first = fields[0];
+	if (first === undefined && record === 'comment' && failure.status === 400) {
+		const outcome = { code: COMMENT_REFUSED_CODE, message: OFFLINE_TEXTS.commentRefused };
+		return { result: 'refused', outcome };
+	}
 	if (first === undefined) {
 		return { result: 'refused', outcome: { code: failure.kind, message: failure.message } };
 	}
@@ -2205,18 +2417,43 @@ export type ChangeRef =
 			readonly check: 'complete' | 'today' | 'uncheck';
 	  }
 	| {
-			/** A record "＋" created (OF-4a); never kept in a notice of a take-back. */
+			/**
+			 * A record "＋" created (OF-4a) or a comment (OF-4b, `title` the beginning of its text); never
+			 * kept in a notice of a take-back.
+			 */
 			readonly field: 'create';
 			readonly key: string;
-			readonly record: 'ticket' | 'inbox';
+			readonly record: CreatedKind;
 			readonly title: string;
 	  };
+
+/** The length of the beginning of the text of a comment that names it (OF-4b). */
+export const COMMENT_EXCERPT_LENGTH = 40;
+
+/**
+ * The beginning of the text of a comment that names it in lists, flags and hints (OF-4b): its words on
+ * one line, cut with "…" after COMMENT_EXCERPT_LENGTH characters.
+ */
+export function commentExcerpt(body: string): string {
+	return cutText(body, COMMENT_EXCERPT_LENGTH);
+}
+
+/** A text on one line, at most `max` characters, cut with "…". */
+function cutText(text: string, max: number): string {
+	const line = text.replace(/\s+/g, ' ').trim();
+	return line.length <= max ? line : `${line.slice(0, max - 1).trimEnd()}…`;
+}
+
+/** The title of a creation in words; of a comment the beginning of its text (OF-4b). */
+export function createdTitleOf(action: CreateAction): string {
+	return isCommentCreate(action) ? commentExcerpt(action.payload.body) : action.payload.title;
+}
 
 /** What an action does, for its words (`changeText`). */
 export function changeOf(action: KeptAction): ChangeRef {
 	if (isCreateAction(action)) {
-		const record = isTicketCreate(action) ? 'ticket' : 'inbox';
-		return { field: 'create', key: action.key, record, title: action.payload.title };
+		const record = createdRecordOf(action) ?? 'ticket';
+		return { field: 'create', key: action.key, record, title: createdTitleOf(action) };
 	}
 	if (isDueAction(action)) return { field: 'due', key: action.key, due: action.payload.due };
 	if (isDayPlanAction(action)) {
@@ -2273,23 +2510,37 @@ export function actionText(action: KeptAction): string {
 	return changeText(changeOf(action));
 }
 
-/** "Neues Ticket „Titel“" or "Neuer Eingangseintrag „Titel“" (OF-4a). */
-export function createdName(record: 'ticket' | 'inbox', title: string): string {
-	const what = record === 'ticket' ? OFFLINE_TEXTS.newTicket : OFFLINE_TEXTS.newItem;
+/**
+ * "Neues Ticket „Titel“", "Neuer Eingangseintrag „Titel“" (OF-4a) or "Kommentar „Anfang …“" (OF-4b,
+ * `title` the beginning of its text).
+ */
+export function createdName(record: CreatedKind, title: string): string {
+	const what =
+		record === 'ticket'
+			? OFFLINE_TEXTS.newTicket
+			: record === 'inbox'
+				? OFFLINE_TEXTS.newItem
+				: OFFLINE_TEXTS.comment;
 	return `${what} „${title}“`;
 }
 
 /**
- * A creation in the middle of a sentence (OF-4a round 2, A10): "das neue Ticket „Titel“" or "der neue
- * Eingangseintrag „Titel“"; `accusative` after "auf" ("den neuen Eingangseintrag").
+ * A creation in the middle of a sentence (OF-4a round 2, A10): "das neue Ticket „Titel“", "der neue
+ * Eingangseintrag „Titel“" or "der Kommentar „Anfang …“" (OF-4b); `accusative` after "auf" ("den neuen
+ * Eingangseintrag", "den Kommentar").
  */
-export function createdInSentence(
-	record: 'ticket' | 'inbox',
-	title: string,
-	accusative = false
-): string {
+export function createdInSentence(record: CreatedKind, title: string, accusative = false): string {
 	if (record === 'ticket') return `das neue Ticket „${title}“`;
+	if (record === 'comment') return `${accusative ? 'den' : 'der'} Kommentar „${title}“`;
 	return `${accusative ? 'den neuen' : 'der neue'} Eingangseintrag „${title}“`;
+}
+
+/**
+ * The ticket of a comment in a sentence after "zu" (OF-4b): its key, or "dem neuen Ticket „Titel“"
+ * while the server has not given it one.
+ */
+export function commentTicketName(ticket: { key: string; title: string }): string {
+	return ticket.key === '' ? `dem neuen Ticket „${ticket.title}“` : ticket.key;
 }
 
 /**
@@ -2308,12 +2559,73 @@ export function ticketName(ticket: { key: string; title: string }): string {
 	return ticket.key === '' ? createdName('ticket', ticket.title) : ticket.key;
 }
 
-/** The name of an action in the hints of the outbox: a creation by its title, else its key (OF-4a). */
+/**
+ * The name of an action in the hints of the outbox: a creation by its title (OF-4a), a comment by the
+ * beginning of its text (OF-4b), else its key.
+ */
 export function actionName(action: KeptAction): string {
 	if (isCreateAction(action)) {
-		return createdName(isTicketCreate(action) ? 'ticket' : 'inbox', action.payload.title);
+		return createdName(createdRecordOf(action) ?? 'ticket', createdTitleOf(action));
 	}
 	return action.key;
+}
+
+/**
+ * A comment kept for later as the activity shows it until the server has it (OF-4b, concept §2.3): its
+ * ID, its ticket, the account as its author and the time of the device as `created`, `updated` and the
+ * time "laut Gerät" (`deviceAt`). The views never take it for one of the server.
+ */
+export function keptCommentOf(action: CommentCreateAction): Comment {
+	const at = toPocketBaseTimestamp(action.createdAt);
+	return {
+		id: action.target,
+		ticket: action.ticket,
+		author: action.user,
+		body: action.payload.body,
+		created: at,
+		updated: at,
+		offline: true,
+		deviceAt: at
+	};
+}
+
+/** "um 14:03", or "am 20.10.2026 um 14:03" when `device` lies on another day than `reference`. */
+function whenText(device: string, reference: string): string {
+	const at = formatBerlinDateTime(device);
+	const same = at.slice(0, 10) === formatBerlinDateTime(reference).slice(0, 10);
+	return same ? `um ${at.slice(11)}` : `am ${at.slice(0, 10)} um ${at.slice(11)}`;
+}
+
+/**
+ * The head of a comment from the outbox (OF-4b, concept §2.3): one kept for later "Offline geschrieben
+ * um 14:03 (laut Gerät)"; one that arrived "… · übertragen 14:30" with the time of the server, which
+ * counts (ADR-0074 §4), and without an accepted time of the device "Offline geschrieben · übertragen
+ * 14:30". A time of the device on another day than the transfer (or than now) names its date. Since
+ * round 2 (K-7) the head stands instead of the time of the comment, so a transfer before today names
+ * its date as well ("übertragen 19.10.2026 20:30").
+ */
+export function offlineCommentText(
+	comment: Pick<Comment, 'created' | 'deviceAt'>,
+	kept: boolean,
+	now: number
+): string {
+	if (kept) {
+		const device = comment.deviceAt || comment.created;
+		return OFFLINE_TEXTS.writtenOffline(whenText(device, toPocketBaseTimestamp(now)), null);
+	}
+	const when = comment.deviceAt ? whenText(comment.deviceAt, comment.created) : null;
+	const synced = serverTimeText(comment.created, now) ?? formatBerlinDateTime(comment.created);
+	return OFFLINE_TEXTS.writtenOffline(when, synced);
+}
+
+/**
+ * The title of an entry of the inbox that keeps the text of a comment ("Als Eingangseintrag sichern",
+ * OF-4b): "Kommentar zu HAUS-12: …" with the beginning of the text on one line, at most as long as a
+ * title of the inbox may be; the whole text goes into the entry.
+ */
+export function savedItemTitle(action: CommentCreateAction): string {
+	const head = `${OFFLINE_TEXTS.comment} zu ${commentTicketName(action)}: `;
+	return cutText(`${head}${action.payload.body}`, INBOX_TITLE_MAX_LENGTH);
 }
 
 /**
@@ -2406,19 +2718,95 @@ function willThey(count: number): string {
 	return count === 1 ? 'wird sie' : 'werden sie';
 }
 
+/** "1 Kommentar" or "3 Kommentare". */
+function comments(count: number): string {
+	return count === 1 ? '1 Kommentar' : `${count} Kommentare`;
+}
+
 /** The words of the outbox (concept OF-0 §2.1, §2.3, §2.4; since OF-3 also day plan and due date). */
 export const OFFLINE_TEXTS = Object.freeze({
 	offline:
-		'Keine Verbindung zu becauseyoulovejira. Abhaken, Status, Tagesplan, Fälligkeit und ＋ werden gemerkt und später übertragen.',
+		'Keine Verbindung zu becauseyoulovejira. Abhaken, Status, Tagesplan, Fälligkeit, Kommentare und ＋ werden gemerkt und später übertragen.',
 	/** "＋" without a connection (OF-4a): the words of the record and of the place of its key. */
 	newTicket: 'Neues Ticket',
 	newItem: 'Neuer Eingangseintrag',
 	newKey: 'Neu',
-	/** The result of "＋" kept for later (OF-4a). */
-	keptTicket: (title: string) =>
-		`Ticket „${title}“ gemerkt. Es wird angelegt, sobald die Verbindung zurück ist.`,
-	keptItem: (title: string) =>
-		`„${title}“ gemerkt. Der Eintrag kommt in den Eingang, sobald die Verbindung zurück ist.`,
+	/** A comment without a connection (OF-4b). */
+	comment: 'Kommentar',
+	/** The result of a comment kept for later (OF-4b); with a connection (a 5xx) in neutral words. */
+	keptComment: (offline: boolean) =>
+		offline
+			? 'Kommentar gemerkt. Er wird übertragen, sobald die Verbindung zurück ist.'
+			: 'Kommentar gemerkt. Er wird später erneut übertragen.',
+	/**
+	 * The head of a comment from the outbox (concept §2.3): "Offline geschrieben um 14:03 (laut Gerät) ·
+	 * übertragen 14:30"; `when` is "um 14:03" or "am 20.10.2026 um 14:03", null without an accepted time
+	 * of the device; `synced` the time of the server, null while it is kept.
+	 */
+	writtenOffline: (when: string | null, synced: string | null) => {
+		const written =
+			when === null ? 'Offline geschrieben' : `Offline geschrieben ${when} (laut Gerät)`;
+		return synced === null ? written : `${written} · übertragen ${synced}`;
+	},
+	/** The reason of a comment the server refuses without a field (OF-4b, `COMMENT_REFUSED_CODE`). */
+	commentRefused:
+		'Das Ticket nimmt den Kommentar nicht an: Es ist nicht mehr sichtbar, liegt im Papierkorb oder fehlt auf dem Server.',
+	/** A comment of a ticket "＋" created whose creation the user discarded (OF-4b, `SET_ASIDE_CODE`). */
+	commentSetAside: (title: string) =>
+		`Das neue Ticket „${title}“ wurde verworfen; der Kommentar wird deshalb nicht übertragen.`,
+	/** The comments of a creation in its row of the dialog (OF-4b): what "Verwerfen" does to them. */
+	withComments: (count: number) =>
+		count === 1
+			? 'Dazu 1 Kommentar. „Verwerfen“ überträgt ihn nicht, sein Text bleibt hier mit „Als Eingangseintrag sichern“.'
+			: `Dazu ${count} Kommentare. „Verwerfen“ überträgt sie nicht, ihr Text bleibt hier mit „Als Eingangseintrag sichern“.`,
+	/** The flag after "Verwerfen" of a creation with comments (OF-4b): their text did not go. */
+	setAside: (count: number) =>
+		`${comments(count)} dazu ${count === 1 ? 'wird' : 'werden'} nicht übertragen; der Text steht unter „Gemerkte Änderungen“ mit „Als Eingangseintrag sichern“.`,
+	/** What a comment is about in the dialog (OF-4b): "Kommentar zu HAUS-12", "… zu Neu „Titel“". */
+	commentOn: (key: string, title: string) => `Kommentar zu ${key === '' ? `Neu „${title}“` : key}`,
+	/** Keeps the text of a comment as an entry of the inbox (concept §2.1, C2). */
+	saveAsItem: 'Als Eingangseintrag sichern',
+	savedAsItem: (kept: boolean, offline: boolean) =>
+		!kept
+			? 'Kommentar als Eingangseintrag gesichert.'
+			: offline
+				? 'Kommentar als Eingangseintrag gemerkt. Er kommt in den Eingang, sobald die Verbindung zurück ist.'
+				: 'Kommentar als Eingangseintrag gemerkt. Er wird später erneut übertragen.',
+	saveAsItemFailed: 'Der Kommentar ließ sich nicht als Eingangseintrag sichern; er bleibt gemerkt.',
+	/**
+	 * A comment saved as an entry after it may have arrived waits for its lookup (OF-4b round 2, K-3);
+	 * with a connection in neutral words.
+	 */
+	savedChecking: (offline: boolean) =>
+		offline
+			? 'als Eingangseintrag gesichert, wird nachgesehen, sobald eine Verbindung besteht'
+			: 'als Eingangseintrag gesichert, wird nachgesehen',
+	/** Such a comment that arrived anyway (K-3): a notice that stays, with a link to its ticket. */
+	savedAnyway: (title: string, key: string) =>
+		`Der als Eingangseintrag gesicherte Kommentar „${title}“ ist schon angekommen${key === '' ? '' : ` (${key})`}; sein Text liegt jetzt zusätzlich im Eingang. Bitte im Ticket prüfen und bei Bedarf löschen.`,
+	/** Such a comment the deletion after 7 days took before it was looked up (K-3, C3). */
+	droppedSaved: (title: string) =>
+		`Ob der als Eingangseintrag gesicherte Kommentar „${title}“ schon angekommen ist, ließ sich nicht mehr nachsehen.`,
+	/** The whole text of a comment the deletion after 7 days took (OF-4b, C2). */
+	droppedComment: (ticket: string, text: string) => `Text des Kommentars zu ${ticket}: „${text}“`,
+	/**
+	 * The whole text of an entry that keeps a comment the deletion after 7 days took (OF-4b round 2,
+	 * K-1, C2), named by its title.
+	 */
+	droppedItemText: (title: string, text: string) =>
+		`Text des Eingangseintrags „${title}“: „${text}“`,
+	/**
+	 * The result of "＋" kept for later (OF-4a); kept while the connection is there (a 5xx, an answer
+	 * that got lost) in neutral words (OF-4b, B-3).
+	 */
+	keptTicket: (title: string, offline = true) =>
+		offline
+			? `Ticket „${title}“ gemerkt. Es wird angelegt, sobald die Verbindung zurück ist.`
+			: `Ticket „${title}“ gemerkt. Es wird später erneut übertragen.`,
+	keptItem: (title: string, offline = true) =>
+		offline
+			? `„${title}“ gemerkt. Der Eintrag kommt in den Eingang, sobald die Verbindung zurück ist.`
+			: `„${title}“ gemerkt. Der Eintrag wird später erneut übertragen.`,
 	/** New `#tags` need the server (concept §2.2, Stufe 2): nothing is kept, the line stays. */
 	newTags: (names: string) =>
 		`Neue Tags gehen nur mit Verbindung: ${names}. Entferne sie oder wähle vorhandene Tags, dann wird der Eintrag gemerkt.`,
@@ -2429,41 +2817,55 @@ export const OFFLINE_TEXTS = Object.freeze({
 	 * "Verwerfen" of a creation that may have arrived (OF-4a): it is not sent again, only looked up; in
 	 * the words of its kind since round 2 (A10).
 	 */
-	createCheckHint: (record: 'ticket' | 'inbox') =>
+	createCheckHint: (record: CreatedKind) =>
 		record === 'ticket'
 			? 'Vielleicht ist das neue Ticket schon angekommen. Es wird nicht noch einmal gesendet; sobald eine Verbindung besteht, sieht die App nach und meldet sich, falls es das Ticket schon gibt.'
-			: 'Vielleicht ist der neue Eingangseintrag schon angekommen. Er wird nicht noch einmal gesendet; sobald eine Verbindung besteht, sieht die App nach und meldet sich, falls es ihn schon gibt.',
-	createChecking: 'verworfen, wird nachgesehen, sobald eine Verbindung besteht',
+			: record === 'inbox'
+				? 'Vielleicht ist der neue Eingangseintrag schon angekommen. Er wird nicht noch einmal gesendet; sobald eine Verbindung besteht, sieht die App nach und meldet sich, falls es ihn schon gibt.'
+				: 'Vielleicht ist der Kommentar schon angekommen. Er wird nicht noch einmal gesendet; sobald eine Verbindung besteht, sieht die App nach und meldet sich, falls es ihn schon gibt.',
+	/** A discarded creation waits for its lookup; with a connection in neutral words (OF-4b, B-3). */
+	createChecking: (offline: boolean) =>
+		offline
+			? 'verworfen, wird nachgesehen, sobald eine Verbindung besteht'
+			: 'verworfen, wird nachgesehen',
 	/**
 	 * A creation the server answers as arrived but the account no longer sees, the trash for instance
 	 * (`validation_op_applied`, OF-4a round 2, A7): a notice that stays, with a link.
 	 */
-	createdHidden: (record: 'ticket' | 'inbox', title: string) =>
+	createdHidden: (record: CreatedKind, title: string) =>
 		record === 'ticket'
 			? `Das neue Ticket „${title}“ wurde angelegt, ist aber nicht mehr sichtbar (Papierkorb?). Bitte im Papierkorb prüfen.`
-			: `Der neue Eingangseintrag „${title}“ wurde angelegt, ist aber nicht mehr sichtbar. Bitte im Eingang prüfen.`,
+			: record === 'inbox'
+				? `Der neue Eingangseintrag „${title}“ wurde angelegt, ist aber nicht mehr sichtbar. Bitte im Eingang prüfen.`
+				: `Der Kommentar „${title}“ wurde übertragen, sein Ticket ist aber nicht mehr sichtbar (Papierkorb?). Bitte im Papierkorb prüfen.`,
 	/** What needs the server at a ticket "＋" created that it does not have yet (round 2, A6). */
 	createdLocked: 'Geht erst, wenn das Ticket übertragen ist.',
 	/** A discarded creation that arrived anyway (OF-4a): a notice that stays, with a link. */
-	createdAnyway: (record: 'ticket' | 'inbox', title: string, key: string) =>
+	createdAnyway: (record: CreatedKind, title: string, key: string) =>
 		record === 'ticket'
 			? `Das verworfene Ticket „${title}“ wurde schon angelegt${key === '' ? '' : ` (${key})`}. Bitte im Ticket prüfen und bei Bedarf löschen.`
-			: `Der verworfene Eintrag „${title}“ liegt schon im Eingang. Bitte dort prüfen und bei Bedarf verwerfen.`,
+			: record === 'inbox'
+				? `Der verworfene Eintrag „${title}“ liegt schon im Eingang. Bitte dort prüfen und bei Bedarf verwerfen.`
+				: `Der verworfene Kommentar „${title}“ ist schon angekommen${key === '' ? '' : ` (${key})`}. Bitte im Ticket prüfen und bei Bedarf löschen.`,
 	openItem: 'Eintrag ansehen',
 	/** A discarded creation the deletion after 7 days took before it was looked up (OF-4a, C3). */
-	droppedCreated: (record: 'ticket' | 'inbox', title: string) =>
+	droppedCreated: (record: CreatedKind, title: string) =>
 		record === 'ticket'
 			? `Ob ${createdInSentence(record, title)} trotz „Verwerfen“ schon angelegt wurde, ließ sich nicht mehr nachsehen.`
-			: `Ob ${createdInSentence(record, title)} trotz „Verwerfen“ schon im Eingang liegt, ließ sich nicht mehr nachsehen.`,
+			: record === 'inbox'
+				? `Ob ${createdInSentence(record, title)} trotz „Verwerfen“ schon im Eingang liegt, ließ sich nicht mehr nachsehen.`
+				: `Ob ${createdInSentence(record, title)} trotz „Verwerfen“ schon angekommen ist, ließ sich nicht mehr nachsehen.`,
 	/** The changes of a new ticket the deletion after 7 days took with its creation (round 2, A8). */
 	droppedAlong: (count: number, title: string) =>
 		count === 1
 			? `Mit dem neuen Ticket „${title}“ wurde auch 1 Änderung daran gelöscht.`
 			: `Mit dem neuen Ticket „${title}“ wurden auch ${count} Änderungen daran gelöscht.`,
-	/** A ticket or an entry "＋" created that the server does not have yet, in its panel (OF-4a). */
+	/**
+	 * A ticket "＋" created that the server does not have yet, in its panel (OF-4a); since OF-4b it takes
+	 * comments as well.
+	 */
 	createdHint:
-		'Noch nicht übertragen. Status und Fälligkeit lassen sich schon ändern, alles andere erst, wenn das Ticket übertragen ist.',
-	commentsLater: 'Kommentare gehen, sobald das Ticket übertragen ist.',
+		'Noch nicht übertragen. Status, Fälligkeit und Kommentare gehen schon, alles andere erst, wenn das Ticket übertragen ist.',
 	itemCreatedHint:
 		'Noch nicht übertragen. Umwandeln, Verknüpfen und Verwerfen gehen, sobald der Eintrag übertragen ist.',
 	offlineWith: (count: number) =>
@@ -2523,7 +2925,7 @@ export const OFFLINE_TEXTS = Object.freeze({
 	underway: 'wird übertragen …',
 	waitingFor: (key: string) => `wartet auf ${key}`,
 	/** A change that waits for a creation (OF-4a round 2, A10): "wartet auf das neue Ticket „…“". */
-	waitingForCreated: (record: 'ticket' | 'inbox', title: string) =>
+	waitingForCreated: (record: CreatedKind, title: string) =>
 		`wartet auf ${createdInSentence(record, title, true)}`,
 	offlineAt: (time: string) => `offline um ${time}`,
 	conflictMine: (time: string, text: string) =>
@@ -2661,6 +3063,8 @@ export const OFFLINE_INTENTS = Object.freeze({
 		`${field === 'project' ? 'Ohne Projekt anlegen' : 'Ohne Tags anlegen'}: ${text}`,
 	/** Looking up a discarded creation that may have arrived (OF-4a). */
 	lookUp: (text: string) => `Nachsehen, ob schon angelegt: ${text}`,
+	/** "Als Eingangseintrag sichern" of a comment (OF-4b). */
+	saveAsItem: (text: string) => `Als Eingangseintrag sichern: ${text}`,
 	/** The notices on the device (OF-3c). */
 	keepNotice: 'Hinweis zu gemerkten Änderungen auf diesem Gerät speichern',
 	closeNotice: 'Hinweis zu gemerkten Änderungen schließen'

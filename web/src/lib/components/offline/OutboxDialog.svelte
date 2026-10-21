@@ -10,15 +10,20 @@
 		actionText,
 		canCompleteAnyway,
 		canReopenAnyway,
+		commentExcerpt,
 		createdRecordOf,
+		createdTitleOf,
 		deviceTimeText,
 		dueOfServer,
 		intentOf,
 		isBroken,
+		isCommentCreate,
 		isCreateAction,
 		isDueAction,
 		isInboxCreate,
+		isSetAside,
 		isTakeBack,
+		isTicketCreate,
 		isWaiting,
 		needsDecision,
 		reasonOf,
@@ -58,6 +63,14 @@
 	// title, readable and selectable until the user decides (C2); refused at its project or its tags it
 	// offers "Ohne Projekt anlegen" or "Ohne Tags anlegen" (concept §3.7); discarded after it may have
 	// arrived it says that it is looked up, never sent again (C4).
+	// Since OF-4b a comment stands as "Kommentar zu HAUS-12" (or "… zu Neu „Titel“") with the beginning
+	// of its text; waiting for a decision (refused, set aside with its discarded ticket, older than 48
+	// hours) it shows its whole text, readable and selectable (the clipboard is blocked over HTTP), with
+	// "Als Eingangseintrag sichern" and "Verwerfen" (concept §2.1, C2). A creation of a ticket names the
+	// comments that wait for it and what "Verwerfen" does to them.
+	// Since round 2 of OF-4b an entry that keeps the text of a comment shows that whole text the same way
+	// in every state (K-1); "Als Eingangseintrag sichern" waits with `aria-busy` and `aria-disabled` while
+	// it runs (K-2); a comment saved after it may have arrived says that it is looked up (K-3).
 	let {
 		outbox,
 		onclose,
@@ -138,19 +151,35 @@
 	function stateText(action: KeptAction): string {
 		if (!isWaiting(action)) return OFFLINE_TEXTS.markDecision;
 		// A discarded creation is only looked up by its ID (OF-4a, C4).
-		if (action.discarded === true && isCreateAction(action)) return OFFLINE_TEXTS.createChecking;
+		if (action.discarded === true && isCreateAction(action)) {
+			// A comment saved as an entry after it may have arrived says so (round 2, K-3).
+			if (isCommentCreate(action) && action.saved === true) {
+				return OFFLINE_TEXTS.savedChecking(outbox.offline);
+			}
+			// With a connection in neutral words (OF-4b, B-3): it waits for its next lookup.
+			return OFFLINE_TEXTS.createChecking(outbox.offline);
+		}
 		if (action.discarded === true) return discardedText(action);
 		if (action.state === 'sending') return OFFLINE_TEXTS.underway;
 		const blocker = actions.find(
 			(other) => action.dependsOn.includes(other.op) && needsDecision(other)
 		);
 		if (blocker === undefined) return OFFLINE_TEXTS.waiting;
-		// "wartet auf das neue Ticket „…“" in the middle of the sentence (OF-4a round 2, A10).
+		// "wartet auf das neue Ticket „…“" in the middle of the sentence (OF-4a round 2, A10), "wartet
+		// auf den Kommentar „…“" (OF-4b).
 		const record = createdRecordOf(blocker);
 		if (isCreateAction(blocker) && record !== null) {
-			return OFFLINE_TEXTS.waitingForCreated(record, blocker.payload.title);
+			return OFFLINE_TEXTS.waitingForCreated(record, createdTitleOf(blocker));
 		}
 		return OFFLINE_TEXTS.waitingFor(actionName(blocker) || 'Ticket');
+	}
+
+	/** The comments that wait for the creation of a ticket "＋" created (OF-4b). */
+	function commentsOf(action: KeptAction): number {
+		if (!isTicketCreate(action)) return 0;
+		return actions.filter(
+			(other) => isCommentCreate(other) && other.dependsOn.includes(action.op) && !isSetAside(other)
+		).length;
 	}
 
 	function metaText(action: KeptAction): string {
@@ -163,6 +192,7 @@
 	 */
 	function whatText(action: KeptAction): string {
 		if (isBroken(action)) return OFFLINE_TEXTS.broken;
+		if (isCommentCreate(action)) return OFFLINE_TEXTS.commentOn(action.key, action.title);
 		if (isCreateAction(action)) {
 			return isInboxCreate(action) ? OFFLINE_TEXTS.newItem : OFFLINE_TEXTS.newTicket;
 		}
@@ -228,6 +258,47 @@
 	{/if}
 {/snippet}
 
+<!-- A comment that waits for a decision (OF-4b, C2): its whole text and how to keep it. -->
+{#snippet decideComment(action: KeptAction)}
+	{#if isCommentCreate(action)}
+		<blockquote class="comment-text">{action.payload.body}</blockquote>
+		<p class="detail">
+			{action.state === 'expired' ? expiredHint(action) : reasonOf(action)}
+		</p>
+		<ProblemDetails problem={outbox.problemOf(action.op)} />
+		<div class="buttons">
+			{#if outbox.canSaveAsItem(action) || outbox.savingAsItem(action.op)}
+				{@const saving = outbox.savingAsItem(action.op)}
+				<!-- While it runs the button stays and waits (round 2, K-2): a second tap saves nothing. -->
+				<button
+					class="button-primary button-small"
+					type="button"
+					aria-disabled={saving ? 'true' : undefined}
+					aria-busy={saving ? 'true' : undefined}
+					onclick={() => {
+						if (!saving) void outbox.saveAsItem(action.op);
+					}}
+				>
+					{OFFLINE_TEXTS.saveAsItem}
+				</button>
+			{/if}
+			{#if action.state === 'expired'}
+				<button
+					class="button-secondary button-small"
+					type="button"
+					onclick={() => void outbox.sendAnyway(action.op)}
+				>
+					{OFFLINE_TEXTS.sendAnyway}
+				</button>
+			{/if}
+			{@render discard(action)}
+			{#if !isSetAside(action)}
+				{@render open(action)}
+			{/if}
+		</div>
+	{/if}
+{/snippet}
+
 <Modal open size="m" title={OFFLINE_TEXTS.dialogTitle} describedBy={`${uid}-intro`} {onclose}>
 	<p class="intro" id={`${uid}-intro`}>{intro}</p>
 	{#if actions.length > 0}
@@ -236,12 +307,25 @@
 				<li class="action" data-outbox-action={action.state}>
 					<p class="what">
 						<span class="text">{whatText(action)}</span>
-						{#if action.title !== ''}<span class="title">{action.title}</span>{/if}
+						{#if isCommentCreate(action)}
+							<!-- The beginning of the text names the comment (OF-4b). -->
+							<span class="title">„{commentExcerpt(action.payload.body)}“</span>
+						{:else if action.title !== ''}<span class="title">{action.title}</span>{/if}
 					</p>
 					{#if !isBroken(action)}
 						<p class="meta">{metaText(action)}</p>
 					{/if}
-					{#if action.state === 'conflict'}
+					{#if commentsOf(action) > 0}
+						<p class="detail">{OFFLINE_TEXTS.withComments(commentsOf(action))}</p>
+					{/if}
+					{#if isInboxCreate(action) && action.payload.body !== undefined}
+						<!-- The whole text of a comment an entry keeps (round 2, K-1, C2): readable and
+						     selectable until it arrived, waiting, refused or older than 48 hours. -->
+						<blockquote class="comment-text">{action.payload.body}</blockquote>
+					{/if}
+					{#if isCommentCreate(action) && needsDecision(action) && action.discarded !== true}
+						{@render decideComment(action)}
+					{:else if action.state === 'conflict'}
 						<p class="detail">{mineText(action)}</p>
 						<p class="detail">{nowText(action)}</p>
 						<ProblemDetails problem={outbox.problemOf(action.op)} />
@@ -414,6 +498,20 @@
 		flex-wrap: wrap;
 		gap: 0.5rem;
 		margin-top: 0.25rem;
+	}
+
+	/*
+	 * The whole text of a comment that waits for a decision (OF-4b), and since round 2 of an entry that
+	 * keeps one (K-1): plain, selectable text.
+	 */
+	.comment-text {
+		margin: 0.25rem 0;
+		padding: 0.375rem 0.625rem;
+		font-size: var(--font-size-body);
+		white-space: pre-wrap;
+		overflow-wrap: anywhere;
+		user-select: text;
+		border-left: 3px solid var(--color-line);
 	}
 
 	a {

@@ -1242,6 +1242,20 @@ test.describe('small phone with the switch on: changes without a connection (OF-
 		const kept = page.locator('li.card', { hasText: created });
 		await expect(kept.locator('.key')).toHaveText(/^Neu/);
 		await expect(kept.locator('.pending-mark')).toHaveCount(1);
+		// OF-4b: a comment on the new ticket without a connection is kept behind its creation and shows at
+		// once with its mark and "Offline geschrieben um … (laut Gerät)".
+		const remark = `Rückruf bis Freitag ${randomBytes(3).toString('hex')}`;
+		await kept.locator('.title-link').click();
+		const sheet = page.getByRole('complementary', { name: created });
+		await expect(sheet).toBeVisible();
+		await sheet.getByRole('button', { name: 'Kommentar hinzufügen …' }).click();
+		await expect(sheet.getByRole('textbox', { name: 'Neuer Kommentar' })).toBeFocused();
+		await page.keyboard.type(remark);
+		await sheet.getByRole('button', { name: 'Kommentieren' }).click();
+		const note = sheet.locator('article', { hasText: remark });
+		await expect(note).toContainText('Offline geschrieben um');
+		await expect(note.locator('.pending-mark')).toHaveCount(1);
+		await sheet.getByRole('button', { name: 'Zur Liste' }).click();
 		await context.setOffline(false);
 		await expect(kept.locator('.key')).toHaveText(/TASK-\d+$/);
 		await expect(kept.locator('.pending-mark')).toHaveCount(0);
@@ -1249,6 +1263,15 @@ test.describe('small phone with the switch on: changes without a connection (OF-
 		expect(found.items).toHaveLength(1);
 		expect(found.items[0].key).toMatch(/^TASK-\d+$/);
 		expect(await kept.getAttribute('data-ticket-id')).toBe(found.items[0].id);
+		// Both arrived in the right order: the comment on the ticket, written after it, with the mark.
+		const notesOf = async () =>
+			(await api('GET', `/api/collections/comments/records?filter=${encodeURIComponent(`ticket='${found.items[0].id}'`)}`, undefined, token)).items;
+		await expect.poll(async () => (await notesOf()).length).toBe(1);
+		const [arrived] = await notesOf();
+		expect(arrived.body.trim()).toBe(remark);
+		expect(arrived).toMatchObject({ offline: true });
+		expect(arrived.device_at).not.toBe('');
+		expect(arrived.created >= found.items[0].created).toBe(true);
 
 		// OF-3c: a change older than 7 days, as a closed tab left it in IndexedDB. The start after a reload
 		// deletes it with its notice in one transaction; the notice stays on the device until "Schließen",

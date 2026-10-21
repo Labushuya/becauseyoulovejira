@@ -7,6 +7,7 @@
 		actionName,
 		createdInSentence,
 		createdRecordOf,
+		createdTitleOf,
 		isCreateAction,
 		reasonOf,
 		type KeptAction
@@ -63,7 +64,7 @@
 	function nameOf(action: KeptAction | undefined, inSentence = false): string {
 		const record = action === undefined ? null : createdRecordOf(action);
 		if (inSentence && action !== undefined && isCreateAction(action) && record !== null) {
-			return createdInSentence(record, action.payload.title);
+			return createdInSentence(record, createdTitleOf(action));
 		}
 		const name = action === undefined ? '' : actionName(action);
 		return name === '' ? 'Ein Ticket' : name;

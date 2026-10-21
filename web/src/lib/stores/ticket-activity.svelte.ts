@@ -6,6 +6,10 @@
 // history come from the catalog (E3 plan, T-16), not from lists of this store. Every message of a
 // failed request keeps the request beside it for "Details" (FP-1, ADR-0071), per place: the new
 // comment, a comment, the list of comments and the history.
+// Since OF-4b a comment the outbox keeps for later (without a connection, on a ticket "＋" created)
+// shows from the outbox next to those of the server (`overlay`) until the server has it under the
+// same ID: it never enters the comments of the server, so neither its `updated` nor a reconciliation
+// decides about it. A ticket "＋" created has no comments on the server yet: nothing is loaded.
 
 import type PocketBase from 'pocketbase';
 import { createContext } from 'svelte';
@@ -14,6 +18,7 @@ import { createComment, deleteComment, listComments, updateComment } from '$lib/
 import { problemOf, toDataError } from '$lib/data/errors';
 import { listHistory } from '$lib/data/history';
 import type { RequestOptions } from '$lib/data/options';
+import { OFFLINE_TEXTS } from '$lib/domain/offline';
 import type { ProblemEntry } from '$lib/domain/problems';
 import type { Comment, HistoryEntry } from '$lib/domain/ticket';
 import { toggleTask } from '$lib/markdown';
@@ -46,10 +51,23 @@ function byCreated(a: Comment, b: Comment): number {
 	return a.created < b.created ? -1 : 1;
 }
 
+/** What the store needs of the outbox (OF-4b); null without it (tests, a server without it). */
+export interface CommentOverlay {
+	/** Comments kept for later on this ticket, oldest first. */
+	keptComments(ticketId: string): readonly Comment[];
+	/** Whether a record is one the outbox shows, never one of the server. */
+	isCreatedView(record: object): boolean;
+	/** The ticket is one "＋" created that the server does not have yet, null otherwise. */
+	createdTicket(id: string): object | null;
+	/** The connection is known to be missing (for the words after a kept comment). */
+	readonly offline: boolean;
+}
+
 export class TicketActivityStore {
 	readonly #data: TicketActivityData;
 	readonly #session: SessionGuard;
 	readonly #currentUser: () => string | null;
+	readonly #overlay: CommentOverlay | null;
 
 	readonly #comments = new SvelteMap<string, Comment>();
 	/** Drafts of comments being edited, keyed by comment ID. */
@@ -72,18 +90,48 @@ export class TicketActivityStore {
 	#postError = $state<string | null>(null);
 	/** The comment the last "Kommentieren" created, so the list can show it (ADR-0044 §1). */
 	#lastPosted = $state<string | null>(null);
+	/** What happened to the last comment the outbox kept for later (OF-4b), null otherwise. */
+	#postNote = $state<string | null>(null);
 
 	/** Newest first (T-11), as the server sorts it (`-created,-@rowid`). */
 	#history = $state.raw<readonly HistoryEntry[]>([]);
 	#historyState = $state<LoadState>('idle');
 	#historyError = $state<string | null>(null);
 
-	#sorted = $derived([...this.#comments.values()].sort(byCreated));
+	/**
+	 * The comments of the server oldest first, then those the outbox keeps for later in the order they
+	 * were written (OF-4b): they reach the server last, so they keep their place once it has them.
+	 */
+	#sorted = $derived.by(() => {
+		const own = [...this.#comments.values()].sort(byCreated);
+		const ticketId = this.#ticketId;
+		if (ticketId === null || this.#overlay === null) return own;
+		const kept = this.#overlay
+			.keptComments(ticketId)
+			.filter((entry) => !this.#comments.has(entry.id));
+		return kept.length === 0 ? own : [...own, ...kept];
+	});
 
-	constructor(data: TicketActivityData, session: SessionGuard, currentUser: () => string | null) {
+	constructor(
+		data: TicketActivityData,
+		session: SessionGuard,
+		currentUser: () => string | null,
+		overlay: CommentOverlay | null = null
+	) {
 		this.#data = data;
 		this.#session = session;
 		this.#currentUser = currentUser;
+		this.#overlay = overlay;
+	}
+
+	/** A comment the outbox keeps for later (OF-4b): not on the server yet, nothing to edit or pin. */
+	isKept(comment: Comment): boolean {
+		return this.#overlay?.isCreatedView(comment) === true;
+	}
+
+	/** What happened to the last comment kept for later (OF-4b), null otherwise. */
+	get postNote(): string | null {
+		return this.#postNote;
 	}
 
 	get ticketId(): string | null {
@@ -143,6 +191,7 @@ export class TicketActivityStore {
 	setNewComment(value: string): void {
 		this.#newComment = value;
 		this.#postError = null;
+		if (value !== '') this.#postNote = null;
 	}
 
 	get posting(): boolean {
@@ -224,12 +273,21 @@ export class TicketActivityStore {
 		};
 	}
 
-	/** Shows the comments of a ticket; another ticket drops drafts and aborts loading. */
+	/**
+	 * Shows the comments of a ticket; another ticket drops drafts and aborts loading. A ticket "＋"
+	 * created that the server does not have yet (OF-4b) has neither comments nor a history there:
+	 * nothing is loaded, the comments kept for it show from the outbox.
+	 */
 	open(ticketId: string): void {
 		if (ticketId === this.#ticketId && this.#state !== 'error') return;
 		this.reset();
 		this.#ticketId = ticketId;
 		this.#follow(ticketId);
+		if (this.#overlay?.createdTicket(ticketId) != null) {
+			this.#state = 'ready';
+			this.#historyState = 'ready';
+			return;
+		}
 		void this.#load(ticketId);
 		void this.#loadHistory(ticketId);
 	}
@@ -260,10 +318,12 @@ export class TicketActivityStore {
 
 	/**
 	 * Inserts or replaces a comment of the open ticket (own answer or realtime event). An older
-	 * `updated` is ignored; a draft of the comment stays.
+	 * `updated` is ignored; a draft of the comment stays. A comment the outbox keeps for later never
+	 * enters (OF-4b): the one of the server under its ID replaces it without a comparison of `updated`.
 	 */
 	upsertComment(comment: Comment): void {
 		if (comment.ticket !== this.#ticketId) return;
+		if (this.#overlay?.isCreatedView(comment) === true) return;
 		const existing = this.#comments.get(comment.id);
 		if (existing !== undefined && existing.updated > comment.updated) return;
 		this.#comments.set(comment.id, comment);
@@ -276,7 +336,11 @@ export class TicketActivityStore {
 		this.#commentErrors.delete(id);
 	}
 
-	/** Sends the new comment; on success the field is emptied, on failure the text stays. */
+	/**
+	 * Sends the new comment; on success the field is emptied, on failure the text stays. One the outbox
+	 * keeps for later (OF-4b) empties the field as well and says so (`postNote`); it shows from the
+	 * outbox until the server has it.
+	 */
 	async post(): Promise<boolean> {
 		const ticketId = this.#ticketId;
 		const body = this.#newComment;
@@ -289,10 +353,15 @@ export class TicketActivityStore {
 		if (!this.#session.ensureValid()) return false;
 		this.#posting = true;
 		this.#postError = null;
+		this.#postNote = null;
 		try {
 			const comment = await this.#data.createComment(ticketId, body);
-			this.upsertComment(comment);
-			if (ticketId === this.#ticketId) this.#lastPosted = comment.id;
+			const kept = this.isKept(comment);
+			if (!kept) this.upsertComment(comment);
+			if (ticketId === this.#ticketId) {
+				this.#lastPosted = comment.id;
+				if (kept) this.#postNote = OFFLINE_TEXTS.keptComment(this.#overlay?.offline ?? true);
+			}
 			if (ticketId === this.#ticketId && this.#newComment === body) this.#newComment = '';
 			return true;
 		} catch (error) {
@@ -439,6 +508,7 @@ export class TicketActivityStore {
 		this.#posting = false;
 		this.#postError = null;
 		this.#lastPosted = null;
+		this.#postNote = null;
 	}
 
 	#follow(ticketId: string): void {

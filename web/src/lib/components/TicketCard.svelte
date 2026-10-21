@@ -4,13 +4,14 @@
 	import type { ResolvedPathname } from '$app/types';
 	import type { CalendarDate } from '$lib/domain/berlin-date';
 	import { projectColorOf, ticketColorOf } from '$lib/domain/colors';
-	import { keyLabel, ticketName } from '$lib/domain/offline';
+	import { OFFLINE_TEXTS, keyLabel, ticketName } from '$lib/domain/offline';
 	import { projectChoiceLabel, projectPath } from '$lib/domain/project-tree';
 	import type { Status } from '$lib/domain/status';
 	import type { SubtaskProgress } from '$lib/domain/subtasks';
 	import type { ParentRef, ProjectRef, TagRef, TicketSummary } from '$lib/domain/ticket';
 	import { isCardTap } from '$lib/card-tap';
 	import type { AssigneeSource } from '$lib/stores/assignees.svelte';
+	import { findFlagStore } from '$lib/stores/flags.svelte';
 	import AssigneeBadge from './AssigneeBadge.svelte';
 	import CharmIcon from './CharmIcon.svelte';
 	import ColorMark from './ColorMark.svelte';
@@ -37,7 +38,9 @@
 	// are in the ticket, one level deeper. A tap on the card outside of its controls opens the ticket
 	// like the click on a row; while choosing (`selecting`, "Auswählen") the check mark gives way to
 	// the box of the selection, and the tap chooses. The color of the ticket (ADR-0052) is a stripe at
-	// its start; done tickets step back.
+	// its start; done tickets step back. A card that cannot be chosen (a ticket "＋" created, OF-4b B-1)
+	// shows its box locked while choosing, never the check mark: a tap completes nothing and names the
+	// reason in a flag.
 	let {
 		ticket,
 		nested = false,
@@ -55,6 +58,7 @@
 		selecting = false,
 		selected = false,
 		onselect,
+		locked = null,
 		statusBusy = false,
 		onstatus,
 		assignees = null,
@@ -91,6 +95,8 @@
 		 * cannot be chosen (a ticket "＋" created, OF-4a round 2, A2): no box, the check mark stays.
 		 */
 		onselect?: (on: boolean) => void;
+		/** Why the card cannot be chosen (OF-4b, B-1); its box stands locked while choosing. */
+		locked?: string | null;
 		/** A save of this ticket runs (the menu of the status waits). */
 		statusBusy?: boolean;
 		/** A status chosen in the menu of the pill. */
@@ -120,15 +126,27 @@
 	const tagNames = $derived(tags.map((tag) => tag.name).join(', '));
 	/** Choosing this card: "Auswählen" is on and the card may be chosen. */
 	const choosing = $derived(selecting && onselect !== undefined);
+	const uid = $props.id();
+	const flags = findFlagStore();
+	/** Why this card stays out of the selection, while choosing (B-1). */
+	const lockedReason = $derived(locked ?? OFFLINE_TEXTS.createdLocked);
+
+	/** A tap on the locked box chooses and completes nothing; the flag says why (B-1, B-2). */
+	function explainLocked(event: MouseEvent) {
+		event.preventDefault();
+		flags?.show({ tone: 'info', title: lockedReason });
+	}
 
 	/**
 	 * Controls of the card handle their own taps; the card only takes taps outside of them. While
-	 * choosing, a card that cannot be chosen takes no tap (OF-4a round 2, A2).
+	 * choosing, a card that cannot be chosen is not chosen by a tap (OF-4a round 2, A2); since round 2 of
+	 * OF-4b (K-4) the tap names the reason in a flag, like its locked box, never silently.
 	 */
 	function onclick(event: MouseEvent) {
 		if (!isCardTap(event)) return;
-		if (selecting) onselect?.(!selected);
-		else void goto(href);
+		if (!selecting) void goto(href);
+		else if (onselect !== undefined) onselect(!selected);
+		else flags?.show({ tone: 'info', title: lockedReason });
 	}
 </script>
 
@@ -158,6 +176,21 @@
 				checked={selected}
 				onchange={(event) => onselect?.(event.currentTarget.checked)}
 			/>
+		</label>
+	{:else if selecting}
+		<!-- Locked while choosing (B-1): never the check mark; a tap anywhere in the target completes
+		     and chooses nothing and names the reason. -->
+		<label class="check-target" data-card-locked>
+			<input
+				type="checkbox"
+				aria-label={`${name} auswählen`}
+				aria-disabled="true"
+				aria-describedby={`${uid}-locked`}
+				title={lockedReason}
+				checked={false}
+				onclick={explainLocked}
+			/>
+			<span class="visually-hidden" id={`${uid}-locked`}>{lockedReason}</span>
 		</label>
 	{:else}
 		<!-- One tap anywhere in the target completes; the name stays the one of the box. -->
@@ -297,6 +330,11 @@
 			min-width: var(--control-height-touch);
 			min-height: var(--control-height-touch);
 			cursor: pointer;
+		}
+
+		/* The target of the locked box while choosing (B-1); the box itself is drawn by base.css. */
+		:global(:root[data-mobile-layout='on']) [data-card-locked] {
+			cursor: not-allowed;
 		}
 
 		:global(:root[data-mobile-layout='on']) .body {

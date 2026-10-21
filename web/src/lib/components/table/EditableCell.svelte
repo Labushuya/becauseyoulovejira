@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	import { findFlagStore } from '$lib/stores/flags.svelte';
 	import Popover from '../overlay/Popover.svelte';
 
 	// A cell of the ticket table that edits its value in a small popover (plan BI-3, ADR-0036 §6;
@@ -8,7 +9,8 @@
 	// Escape closes it and the focus goes back to the cell (the Popover does both). The row ignores
 	// clicks on the button and inside the popover, so they never open the ticket. With `locked` (a
 	// ticket "＋" created, OF-4a round 2, A6) the cell stays a button with its value, but locked:
-	// `aria-disabled`, the reason as its description and title, no editor ("gesperrt statt weg").
+	// `aria-disabled`, the reason as its description and title, no editor ("gesperrt statt weg"). Since
+	// OF-4b (B-2) a click or Enter on it names the reason in a flag, so touch and keyboard see it too.
 	let {
 		kind,
 		label,
@@ -37,6 +39,8 @@
 	const uid = $props.id();
 	/** A locked cell names field, ticket and value, without "ändern". */
 	const lockedLabel = $derived(buttonLabel.replace(/, ändern$/, ''));
+	/** The flags of the app layout; none in tests of a single part. */
+	const flags = findFlagStore();
 
 	/**
 	 * The editor renders once the cell is pointed at or focused, before the popover opens (so it is
@@ -54,6 +58,9 @@
 		aria-label={lockedLabel}
 		aria-describedby={`${uid}-locked`}
 		title={locked}
+		onclick={() => {
+			if (locked !== null) flags?.show({ tone: 'info', title: locked });
+		}}
 	>
 		<span class="value">{@render value()}</span>
 	</button>

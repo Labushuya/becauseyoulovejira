@@ -25,6 +25,7 @@ import {
 	fallbackOf,
 	inOrder,
 	intentOf,
+	isCommentCreate,
 	isDayPlanAction,
 	isDerived,
 	isDueAction,
@@ -79,8 +80,12 @@ export function mayBeThere(action: KeptAction): boolean {
 	return action.state === 'sending' || mayHaveArrived(action);
 }
 
-/** The own chain of an action: its value, or for a derived take-back the chain of what it takes back. */
+/**
+ * The own chain of an action: its value, or for a derived take-back the chain of what it takes back. A
+ * comment (OF-4b) is a chain of its own: it reads and writes no value of its ticket.
+ */
 function chainKeyOf(action: KeptAction, byOp: ReadonlyMap<string, KeptAction>, depth = 0): string {
+	if (isCommentCreate(action)) return `comment:${action.op}`;
 	if (action.undoes !== undefined && isFree(action) && depth < 4) {
 		const undone = byOp.get(action.undoes);
 		if (undone !== undefined && undone !== action) return chainKeyOf(undone, byOp, depth + 1);

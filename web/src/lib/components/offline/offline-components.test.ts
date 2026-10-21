@@ -169,8 +169,9 @@ describe('OfflineNotice', () => {
 	it('warns without red what is kept, with "Erneut versuchen"', async () => {
 		const outbox = await outboxWith([]);
 		const { container } = render(OfflineNotice, { props: { outbox, onshow: vi.fn() } });
+		// Since OF-4b it names comments (concept §2.1).
 		expect(statusText()).toContain(
-			'Keine Verbindung zu becauseyoulovejira. Abhaken, Status, Tagesplan, Fälligkeit und ＋ werden gemerkt und später übertragen.'
+			'Keine Verbindung zu becauseyoulovejira. Abhaken, Status, Tagesplan, Fälligkeit, Kommentare und ＋ werden gemerkt und später übertragen.'
 		);
 		const message = container.querySelector('.section-message');
 		expect(message?.getAttribute('data-tone')).toBe('warning');

@@ -174,10 +174,14 @@
 	import { OFFLINE_TEXTS, isDueAction, ticketOf, type KeptAction } from '$lib/domain/offline';
 	import { personLabel } from '$lib/domain/people';
 	import type { TicketChangeSink } from '$lib/domain/subtask-transfer-change';
-	import type { Ticket, TicketSummary } from '$lib/domain/ticket';
+	import type { Comment, Ticket, TicketSummary } from '$lib/domain/ticket';
 	import type { InboxItemSummary } from '$lib/domain/inbox';
 	import { forgetOfflineSupport, getOutbox, offlineSupport } from '$lib/offline/app-outbox';
-	import { offlineTicketDetailData, offlineTicketListData } from '$lib/offline/offline-data';
+	import {
+		offlineActivityData,
+		offlineTicketDetailData,
+		offlineTicketListData
+	} from '$lib/offline/offline-data';
 	import { setOutboxContext } from '$lib/offline/outbox.svelte';
 	import { preloadOfflineViews } from '$lib/offline/preload';
 	import { setSignOut } from '$lib/sign-out';
@@ -497,7 +501,9 @@
 		// "＋" kept for later (OF-4a): the entry of the server joins the inbox, and a ticket created one
 		// by one counts as read once it arrived (ADR-0015 §3).
 		upsertItem: (item: InboxItemSummary) => inbox.upsert(item),
-		markRead: (ticket: Ticket) => void tickets.markRead(ticket)
+		markRead: (ticket: Ticket) => void tickets.markRead(ticket),
+		// A comment kept for later arrived (OF-4b): the one of the server takes its place in the panel.
+		upsertComment: (comment: Comment) => activity.upsertComment(comment)
 	};
 	$effect(() => untrack(() => outbox.connect(outboxSink)));
 	// "Ticket duplizieren" (ADR-0045): one request, the result as a flag with the way back. Whether the
@@ -528,8 +534,17 @@
 	const inbox = setInboxStore(
 		new InboxStore(inboxData(pb), auth, flags, () => catalog.projects, outbox)
 	);
+	// A new comment goes through the outbox while it works for the ticket (OF-4b), also on a ticket "＋"
+	// created; the comments it keeps show from it.
 	const activity = setTicketActivityStore(
-		new TicketActivityStore(ticketActivityData(pb), auth, () => auth.userId)
+		new TicketActivityStore(
+			offlineActivityData(ticketActivityData(pb), outbox, (id) =>
+				detail.ticket?.id === id ? detail.ticket : (tickets.find(id) ?? outbox.createdTicket(id))
+			),
+			auth,
+			() => auth.userId,
+			outbox
+		)
 	);
 	// Sources of the open ticket and the linking of inbox entries (ADR-0031): changed entries go
 	// to the inbox at once, before their realtime event.

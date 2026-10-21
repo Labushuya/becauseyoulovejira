@@ -790,6 +790,7 @@
 			{selecting}
 			selected={selection.ids.includes(ticket.id)}
 			onselect={store.isCreated(ticket.id) ? undefined : (on) => chooseCard(ticket.id, on)}
+			locked={store.isCreated(ticket.id) ? OFFLINE_TEXTS.createdLocked : null}
 			statusBusy={store.isPending(ticket.id)}
 			onstatus={(status) => void saveCell(ticket, { status })}
 			assignees={assigneesShown ? assignees : null}

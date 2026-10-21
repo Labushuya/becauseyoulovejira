@@ -247,7 +247,7 @@ export async function saveQuickEntry(
 				id: result.item.id,
 				message:
 					result.kept === true
-						? OFFLINE_TEXTS.keptItem(result.item.title)
+						? OFFLINE_TEXTS.keptItem(result.item.title, deps.keep?.offline() ?? true)
 						: `„${result.item.title}“ liegt im Eingang.`
 			};
 		}
@@ -278,13 +278,14 @@ export async function saveQuickEntry(
 			...detailsOf(result)
 		};
 	}
-	// Kept for later (OF-4a): the key comes from the server, it counts as read once it arrived.
+	// Kept for later (OF-4a): the key comes from the server, it counts as read once it arrived. Kept
+	// while the connection is there (a 5xx), the words are neutral (OF-4b, B-3).
 	if (result.kept === true) {
 		return {
 			ok: true,
 			target,
 			id: result.ticket.id,
-			message: OFFLINE_TEXTS.keptTicket(result.ticket.title)
+			message: OFFLINE_TEXTS.keptTicket(result.ticket.title, deps.keep?.offline() ?? true)
 		};
 	}
 	void deps.markRead(result.ticket);

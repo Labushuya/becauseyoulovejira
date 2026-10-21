@@ -19,6 +19,15 @@
 // before the key, and only a real creation draws a number of the counter (`counter`). With `strict` a
 // change or a read of a record the server does not have answers 404. Since OF-4a round 2 (A11) reading
 // a ticket needs `reachable` like every other request.
+//
+// Since OF-4b it writes comments as comments.pb.js, lib/client-ops.js and the rules of `comments` do: a
+// known identifier first (the comment of the first time; another kind or ID `validation_op_reused`; a
+// comment whose ticket is no longer to be seen `validation_op_applied`), then the create rule (its ticket
+// is there and to be seen, not in the trash: else 400 without a field, as PocketBase answers a failed
+// rule), then the ID (`validation_not_unique`); `offline` and `device_at` from `client_at` and `offline`
+// only. `writes` keeps the order in which tickets and comments were written. Deviations: the author is
+// always the account of the test, the time of the device is not checked against its bounds, `created`
+// is the same time for every comment.
 
 import { expect, vi } from 'vitest';
 import type { DayPlanItem } from '$lib/data/day-plan';
@@ -34,7 +43,7 @@ import type {
 } from '$lib/domain/offline';
 import type { Status } from '$lib/domain/status';
 import type { CompletionChoice } from '$lib/domain/subtasks';
-import type { Ticket } from '$lib/domain/ticket';
+import type { Comment, Ticket } from '$lib/domain/ticket';
 import type { FlagInput } from '$lib/stores/flags.svelte';
 import { ConnectivityStore } from '$lib/offline/connectivity.svelte';
 import {
@@ -189,6 +198,17 @@ export interface CreatedRecord {
 	household: string;
 	/** `source_meta.offline` / the history: the request came from the outbox with a time or not. */
 	offline: boolean;
+	/** The text of an entry (OF-4b: a comment saved as an entry). */
+	body?: string;
+}
+
+/** A comment the fake server wrote (OF-4b). */
+export interface CommentRecord {
+	ticket: string;
+	body: string;
+	/** `offline` and `device_at` as the request hook sets them. */
+	offline: boolean;
+	deviceAt: string;
 }
 
 /**
@@ -235,7 +255,11 @@ export function fakeServer() {
 		/** Records the account no longer sees (the trash): a repetition names only their ID. */
 		hidden: new Set<string>(),
 		/** Changes and reads of a ticket the server does not have answer 404 (OF-4a). */
-		strict: false
+		strict: false,
+		/** Comments by their ID (OF-4b). */
+		comments: new Map<string, CommentRecord>(),
+		/** The order of every ticket and comment written: `ticket:<ID>` and `comment:<ID>` (OF-4b). */
+		writes: [] as string[]
 	};
 	const current = (id: string) => {
 		const record = server.records.get(id);
@@ -424,6 +448,7 @@ export function fakeServer() {
 		server.due.set(action.target, payload.due);
 		server.claims.set(fields.opId, { kind: 'ticket.create', record: action.target });
 		server.applied.add(fields.opId);
+		server.writes.push(`ticket:${action.target}`);
 		lost();
 		return current(action.target);
 	});
@@ -464,7 +489,8 @@ export function fakeServer() {
 			project: action.payload.preset.project,
 			tags: [...action.payload.preset.tags],
 			household: action.payload.household,
-			offline: fields.clientAt !== undefined || fields.offline === true
+			offline: fields.clientAt !== undefined || fields.offline === true,
+			...(action.payload.body !== undefined && { body: action.payload.body })
 		});
 		server.claims.set(fields.opId, { kind: 'inbox.create', record: action.target });
 		server.applied.add(fields.opId);
@@ -482,7 +508,79 @@ export function fakeServer() {
 		}
 		return itemOf(id);
 	};
-	return { server, send, sendDue, sendDayPlan, sendCreate, sendItem, read, readItem };
+	/**
+	 * Whether the account sees a ticket (OF-4b, the rules of `comments`): it is there (with `strict` one
+	 * the server created or changed, else any) and not hidden (the trash, another area).
+	 */
+	const ticketSeen = (id: string) => {
+		if (server.hidden.has(id) || server.records.get(id)?.collection === 'inbox_items') return false;
+		return !server.strict || server.records.has(id) || server.status.has(id);
+	};
+	/** A comment as the Record API answers it, with the mark of the outbox where it has one. */
+	const commentOf = (id: string): Comment => {
+		const record = server.comments.get(id);
+		return {
+			id,
+			ticket: record?.ticket ?? '',
+			author: USER,
+			body: record?.body ?? '',
+			created: SAVED_AT,
+			updated: SAVED_AT,
+			...(record?.offline === true && { offline: true as const, deviceAt: record.deviceAt || null })
+		};
+	};
+	/**
+	 * A comment (OF-4b), like comments.pb.js with lib/client-ops.js: the identifier first (`withOp`), then
+	 * the create rule of `comments` (400 without a field), then the ID, then the comment and the
+	 * identifier in one step.
+	 */
+	const sendComment = vi.fn<NonNullable<OutboxDeps['sendComment']>>(async (action, fields) => {
+		server.sent.push(fields.opId);
+		if (!server.reachable) throw new DataError('network');
+		const claim = server.claims.get(fields.opId);
+		if (claim !== undefined) {
+			if (claim.kind !== 'comment.create' || claim.record !== action.target) {
+				throw refusal('op_id', 'validation_op_reused');
+			}
+			const known = server.comments.get(claim.record);
+			if (known === undefined || !ticketSeen(known.ticket)) {
+				throw refusal('op_id', 'validation_op_applied', { record: claim.record, kind: claim.kind });
+			}
+			return commentOf(claim.record);
+		}
+		// The create rule: the ticket is to be seen and not in the trash (PocketBase: 400, no field).
+		if (!ticketSeen(action.ticket)) throw new DataError('server', { status: 400 });
+		if (server.comments.has(action.target)) throw refusal('id', 'validation_not_unique');
+		server.comments.set(action.target, {
+			ticket: action.ticket,
+			body: action.payload.body,
+			offline: fields.clientAt !== undefined || fields.offline === true,
+			deviceAt: fields.clientAt ?? ''
+		});
+		server.claims.set(fields.opId, { kind: 'comment.create', record: action.target });
+		server.applied.add(fields.opId);
+		server.writes.push(`comment:${action.target}`);
+		lost();
+		return commentOf(action.target);
+	});
+	/** Reading a comment: one the server does not have, or whose ticket is hidden, is not found. */
+	const readComment = (id: string): Comment => {
+		const known = server.comments.get(id);
+		if (known === undefined || !ticketSeen(known.ticket)) throw notFound();
+		return commentOf(id);
+	};
+	return {
+		server,
+		send,
+		sendDue,
+		sendDayPlan,
+		sendCreate,
+		sendItem,
+		sendComment,
+		read,
+		readItem,
+		readComment
+	};
 }
 
 export interface HarnessOptions {
@@ -498,12 +596,14 @@ export interface HarnessOptions {
 	withoutDue?: boolean;
 	/** The area of the client for new records (OF-4a). */
 	area?: () => string | null;
+	/** An app without the way of comments (OF-4b): every comment goes the way of today. */
+	withoutComments?: boolean;
 }
 
 export function harness(options: HarnessOptions = {}) {
 	const storage = options.storage ?? new MemoryOutboxStorage();
 	const fake = options.shared ?? fakeServer();
-	const { server, send, sendDue, sendDayPlan, sendCreate, sendItem } = fake;
+	const { server, send, sendDue, sendDayPlan, sendCreate, sendItem, sendComment } = fake;
 	const connectivity = new ConnectivityStore(async () => server.health);
 	// Since OF-4a round 2 (A11) reading a ticket needs `reachable` like every other request: the lookup
 	// of a discarded creation without a connection gets no answer.
@@ -515,6 +615,10 @@ export function harness(options: HarnessOptions = {}) {
 		if (!server.reachable) throw new DataError('network');
 		return fake.readItem(id);
 	});
+	const getComment = vi.fn<NonNullable<OutboxDeps['getComment']>>(async (id) => {
+		if (!server.reachable) throw new DataError('network');
+		return fake.readComment(id);
+	});
 	const outbox = new OutboxStore({
 		storage,
 		connectivity,
@@ -523,7 +627,9 @@ export function harness(options: HarnessOptions = {}) {
 		sendDayPlan,
 		sendCreate,
 		sendItem,
+		...(options.withoutComments !== true && { sendComment }),
 		getItem,
+		getComment,
 		...(options.area !== undefined && { area: options.area }),
 		get,
 		tab: options.tab ?? 'tab-a',
@@ -539,7 +645,8 @@ export function harness(options: HarnessOptions = {}) {
 		sessionEnded: vi.fn(),
 		childrenOf: vi.fn(() => []),
 		upsertItem: vi.fn(),
-		markRead: vi.fn()
+		markRead: vi.fn(),
+		upsertComment: vi.fn()
 	};
 	outbox.attach(USER);
 	outbox.setSupport(options.support === undefined ? OPS : options.support);
@@ -555,8 +662,10 @@ export function harness(options: HarnessOptions = {}) {
 		sendDayPlan,
 		sendCreate,
 		sendItem,
+		sendComment,
 		get,
 		getItem,
+		getComment,
 		sink,
 		flags,
 		stop
