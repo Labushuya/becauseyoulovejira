@@ -287,6 +287,32 @@ describe('OutboxDialog with comments (OF-4b)', () => {
 		expect(create).toHaveBeenCalledTimes(1);
 	});
 
+	it('locks "Trotzdem übertragen" and "Verwerfen" of the comment while it is saved, and says why (MO-7a, L-1)', async () => {
+		const outbox = await outboxWith([comment({ state: 'expired' })]);
+		vi.spyOn(outbox, 'createItem').mockReturnValue(
+			new Promise<Created<InboxItem>>(() => undefined)
+		);
+		const discard = vi.spyOn(outbox, 'discard');
+		const sendAnyway = vi.spyOn(outbox, 'sendAnyway');
+		render(OutboxDialog, { props: { outbox, onclose: vi.fn(), ticketHref, itemHref } });
+		const row = screen.getByText('Kommentar zu HAUS-12').closest('li') as HTMLElement;
+		for (const name of [OFFLINE_TEXTS.sendAnyway, OFFLINE_TEXTS.discard]) {
+			expect(within(row).getByRole('button', { name }).getAttribute('aria-disabled')).toBeNull();
+		}
+		await fireEvent.click(within(row).getByRole('button', { name: 'Als Eingangseintrag sichern' }));
+		await tick();
+		for (const name of [OFFLINE_TEXTS.sendAnyway, OFFLINE_TEXTS.discard]) {
+			const button = within(row).getByRole('button', { name });
+			expect(button.getAttribute('aria-disabled'), name).toBe('true');
+			expect(button.getAttribute('title'), name).toBe(OFFLINE_TEXTS.savingAsItemLocked);
+			const reason = document.getElementById(button.getAttribute('aria-describedby') ?? '');
+			expect(reason?.textContent, name).toBe(OFFLINE_TEXTS.savingAsItemLocked);
+			await fireEvent.click(button);
+		}
+		expect(discard).not.toHaveBeenCalled();
+		expect(sendAnyway).not.toHaveBeenCalled();
+	});
+
 	it('says that a comment saved as an entry after it may have arrived is looked up (K-3)', async () => {
 		const saved = comment({ sent: true, unanswered: true, discarded: true, saved: true });
 		const outbox = await outboxWith([saved]);
