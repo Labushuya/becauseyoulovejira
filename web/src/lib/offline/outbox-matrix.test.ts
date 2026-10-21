@@ -40,7 +40,8 @@
 // only where no notice names it (since OF-3c only while the user wants it done in the end). Since round
 // 2 of OF-3c the class also has runs around a notice that stands: a later change of the sub-task
 // without an answer, discarded, whose take-back arrives, and a later completion with its sub-tasks at
-// its first attempt on a stale state (`noticeScenarios`).
+// its first attempt on a stale state (`noticeScenarios`); since round 3 someone else sets A "Erledigt"
+// or "Wartet" there, drawn, so the first attempt also takes the notice along.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DayPlanItem } from '$lib/data/day-plan';
@@ -335,8 +336,9 @@ function kidServer(extra: () => number, steps: Step[]): Pick<Scenario, keyof typ
  * else completed A before, so a completion with its sub-tasks that arrives in a short return of the
  * connection names C1 in a notice. Then either the user sets C1 anew, the request gets no answer or
  * does not reach the server, "Verwerfen" comes and its take-back arrives; or the user sets A in
- * progress, someone else completes A again unseen, and a later completion with the same sub-tasks
- * arrives at its first attempt on that stale state. Only the same ones: a first direct attempt names
+ * progress, someone else completes A again unseen (or, since round 3, sets it "Wartet"), and a later
+ * completion with the same sub-tasks arrives at its first attempt on that stale state (or makes the
+ * step to "done" and takes C1 along). Only the same ones: a first direct attempt names
  * no sub-task it did not complete (limit of OF-3b round 3, "as today"). From a source of their own, so
  * every other run stays.
  */
@@ -375,7 +377,10 @@ function noticeScenarios(count: number, seed: number): Scenario[] {
 			lateDiscard: null,
 			blocking: [C1],
 			doneBefore: true,
-			foreignStatus: 'done'
+			// Someone else completes A again (a stale state) or sets it "Wartet": then the later completion
+			// makes the step to "done", takes C1 along and the notice goes once C1 is read done (round 3,
+			// C2-2: the positive way of the first attempt).
+			foreignStatus: pick(random, ['done', FOREIGN.status] as const)
 		};
 	});
 }

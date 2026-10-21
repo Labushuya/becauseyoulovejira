@@ -4,6 +4,8 @@
 // the device lies in the future with "Ansehen"; the dialog "Gemerkte Änderungen" with the choices of
 // each state; the mark "Noch nicht übertragen" for screen readers.
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -308,6 +310,112 @@ describe('OfflineNotice (OF-3c)', () => {
 			expect(document.activeElement).not.toBe(document.body);
 		}
 	);
+
+	/** Outside the phone frame without kept changes the layout shows the hints only for the notices. */
+	async function outsideFrame(): Promise<OutboxStore> {
+		const outbox = await outboxWith([], true, children);
+		outbox.setFrame(false);
+		await tick();
+		expect(outbox.watching).toBe(false);
+		return outbox;
+	}
+
+	/** Closes both notices, the first one from the keyboard; the region goes with the last one. */
+	async function closeBoth(): Promise<void> {
+		const status = screen.getByRole('status');
+		const [first, second] = within(status).getAllByRole('button', { name: 'Schließen' });
+		first?.focus();
+		await fireEvent.click(first as HTMLElement);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(document.activeElement).toBe(second);
+		expect(screen.getByRole('main').hasAttribute('tabindex')).toBe(false);
+		await fireEvent.click(second as HTMLElement);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(screen.queryByRole('status')).toBeNull();
+	}
+
+	/** The tag of `main` and the condition of `OfflineNotice` in a Svelte file of `web/src` (C2-5). */
+	function placement(...parts: string[]): { main?: string; condition?: string } {
+		const source = readFileSync(join(import.meta.dirname, '..', '..', '..', ...parts), 'utf8');
+		return {
+			main: /<main\b[^>]*>/.exec(source)?.[0],
+			condition: /\{#if ([^}]+)\}\s*<OfflineNotice\b/.exec(source)?.[1]
+		};
+	}
+
+	it('places the hints in a main content without a tabindex of its own, as the layout does (round 3, C2-1, C2-5)', async () => {
+		const layout = placement('routes', '(app)', '+layout.svelte');
+		expect(layout.main).toBe('<main class="content">');
+		expect(layout.condition).toContain('outbox.notices.length > 0');
+		expect(placement('lib', 'test', 'OfflineNoticeHarness.svelte')).toEqual(layout);
+		const outbox = await outboxWith([], true, children);
+		render(OfflineNoticeHarness, { props: { outbox, heading: true } });
+		expect(screen.getByRole('status')).toBeTruthy();
+		expect(screen.getByRole('main').hasAttribute('tabindex')).toBe(false);
+	});
+
+	it.each([
+		{ heading: true, target: 'heading', own: '-1' },
+		{ heading: 'plain', target: 'heading', own: null },
+		{ heading: false, target: 'main', own: null }
+	] as const)(
+		'gives the $target a tabindex only until the focus leaves it once the region goes, one of its own stays (heading: $heading) (round 3, C2-1)',
+		async ({ heading, target, own }) => {
+			const outbox = await outsideFrame();
+			render(OfflineNoticeHarness, { props: { outbox, heading } });
+			await closeBoth();
+			const main = screen.getByRole('main');
+			const expected =
+				target === 'heading' ? screen.getByRole('heading', { name: 'Aufgaben' }) : main;
+			expect(document.activeElement).toBe(expected);
+			expect(expected.getAttribute('tabindex')).toBe('-1');
+			expect(main.hasAttribute('tabindex')).toBe(target === 'main');
+			expected.blur();
+			expect(document.activeElement).toBe(document.body);
+			expect(expected.getAttribute('tabindex')).toBe(own);
+			expect(main.hasAttribute('tabindex')).toBe(false);
+		}
+	);
+
+	it.each([
+		{ heading: true, target: 'heading' },
+		{ heading: false, target: 'main' }
+	])(
+		'moves the focus to the $target of the main content, not to a heading elsewhere in the page (round 3, C2-1)',
+		async ({ heading, target }) => {
+			const elsewhere = document.createElement('h2');
+			elsewhere.tabIndex = -1;
+			elsewhere.dataset.viewHeading = '';
+			elsewhere.textContent = 'Woanders';
+			document.body.prepend(elsewhere);
+			try {
+				const outbox = await outsideFrame();
+				render(OfflineNoticeHarness, { props: { outbox, heading } });
+				await closeBoth();
+				const expected =
+					target === 'heading'
+						? screen.getByRole('heading', { name: 'Aufgaben' })
+						: screen.getByRole('main');
+				expect(document.activeElement).toBe(expected);
+			} finally {
+				elsewhere.remove();
+			}
+		}
+	);
+
+	it('moves the focus to the main content where the heading of the view takes none, a hidden one say (round 3, C2-6)', async () => {
+		const outbox = await outsideFrame();
+		render(OfflineNoticeHarness, { props: { outbox, heading: 'plain' } });
+		const heading = screen.getByRole('heading', { name: 'Aufgaben' });
+		// A browser does not focus a heading it does not show; jsdom shows nothing, so it refuses here.
+		vi.spyOn(heading, 'focus').mockImplementation(() => undefined);
+		await closeBoth();
+		const main = screen.getByRole('main');
+		expect(document.activeElement).toBe(main);
+		expect(heading.hasAttribute('tabindex')).toBe(false);
+		main.blur();
+		expect(main.hasAttribute('tabindex')).toBe(false);
+	});
 });
 
 describe('OutboxButton', () => {

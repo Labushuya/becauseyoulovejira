@@ -14,9 +14,19 @@
 // - C-5: a later completion that takes the sub-task along decides only once it is read done, also at
 //   the first attempt;
 // - C-6: a notice the storage failed to keep goes as well once the change that decides arrived.
+// Round 3 (after the review of 6fc51a5), cover code that was right already, so green against 6fc51a5:
+// - C2-2: a later completion that completes the sub-task takes the notice along at its first attempt;
+// - C2-3: where reading the sub-task again fails or times out, the notice stands again.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { KEEP_MS, LEASE_MS, type DueAction, type KeptAction } from '$lib/domain/offline';
+import { DataError } from '$lib/data/errors';
+import {
+	KEEP_MS,
+	LEASE_MS,
+	SEND_TIMEOUT_MS,
+	type DueAction,
+	type KeptAction
+} from '$lib/domain/offline';
 import type { Status } from '$lib/domain/status';
 import type { Ticket } from '$lib/domain/ticket';
 import {
@@ -627,5 +637,73 @@ describe('the notice about a sub-task after the review (round 2)', () => {
 		expect(h.server.status.get(C)).toBe('in_progress');
 		expect(h.outbox.count).toBe(0);
 		expect(noticesOf(h)).toEqual([]);
+	});
+
+	describe('after the review of round 2 (round 3)', () => {
+		/** The completion of A with C as the view shows A after someone else set it in progress again. */
+		function completeAgain(h: Harness): Promise<Ticket> {
+			h.server.status.set(A, 'in_progress');
+			return h.outbox.changeStatus(ticket(A, 'in_progress'), {
+				status: 'done',
+				completion: 'complete_children',
+				children: [C]
+			});
+		}
+
+		it('takes the notice along at the first attempt once the later completion completed the sub-task, read again (C2-2)', async () => {
+			const h = await ready();
+			await noticeStands(h);
+			h.get.mockClear();
+			const answer = await completeAgain(h);
+			expect(answer.status).toBe('done');
+			await settle();
+			expect(h.server.status.get(C)).toBe('done');
+			expect(h.get).toHaveBeenCalledWith(C, expect.anything());
+			expect(h.outbox.count).toBe(0);
+			expect(noticesOf(h)).toEqual([]);
+			h.stop();
+			const again = await ready(h.storage);
+			expect(noticesOf(again)).toEqual([]);
+		});
+
+		it.each([
+			{ way: 'kept', failure: 'fails' },
+			{ way: 'kept', failure: 'times out' },
+			{ way: 'first attempt', failure: 'fails' },
+			{ way: 'first attempt', failure: 'times out' }
+		] as const)(
+			'shows the notice again once reading the sub-task again $failure after a later completion took it along ($way) (C2-3)',
+			async ({ way, failure }) => {
+				const h = await ready();
+				await noticeStands(h);
+				const base = h.get.getMockImplementation();
+				h.get.mockImplementation(async (id, signal) => {
+					if (base === undefined) throw new Error('no fake server');
+					if (id !== C) return base(id, signal);
+					if (failure === 'fails') throw new DataError('network');
+					return new Promise<Ticket>(() => undefined);
+				});
+				if (way === 'kept') await goOffline(h);
+				await completeAgain(h);
+				if (way === 'kept') {
+					expect(noticesOf(h)).toEqual([]);
+					await goOnline(h);
+				}
+				await settle();
+				expect(h.server.status.get(C)).toBe('done');
+				expect(h.get).toHaveBeenCalledWith(C, expect.anything());
+				expect(h.outbox.count).toBe(0);
+				if (failure === 'times out') {
+					// While the reading waits, the completion decides: the notice stays hidden.
+					expect(noticesOf(h)).toEqual([]);
+					await vi.advanceTimersByTimeAsync(SEND_TIMEOUT_MS);
+				}
+				// Not read done: the notice stands again and stays on the device until it is closed.
+				expect(noticesOf(h)).toEqual([NOT_DONE]);
+				h.stop();
+				const again = await ready(h.storage);
+				expect(noticesOf(again)).toEqual([NOT_DONE]);
+			}
+		);
 	});
 });
