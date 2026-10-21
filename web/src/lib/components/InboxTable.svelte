@@ -22,6 +22,7 @@
 	import { projectChoiceLabel, treeOrder } from '$lib/domain/project-tree';
 	import { SOURCE_FAMILY_CHIPS, SOURCE_FAMILY_LABELS, type SourceFamily } from '$lib/domain/source';
 	import { canLeaveTicket, canSavePage, isMainSource } from '$lib/domain/sources';
+	import { SYNC_OFFLINE_LABEL } from '$lib/domain/sync-all';
 	import {
 		NO_TARGET,
 		TARGET_LABEL,
@@ -524,9 +525,12 @@
 		if (clipboard) entries.push({ label: 'Aus Zwischenablage', onselect: () => clipboard() });
 		const sync = syncAll;
 		if (sync !== null) {
+			// Without a connection (OF-3) the entry stays, locked, and names why.
+			const offline = sync.offline && !sync.running;
 			entries.push({
-				label: 'Alle Kanäle jetzt abrufen',
+				label: offline ? SYNC_OFFLINE_LABEL : 'Alle Kanäle jetzt abrufen',
 				busy: sync.running,
+				locked: offline,
 				onselect: () => void sync.runAll()
 			});
 		}

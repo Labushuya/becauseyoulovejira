@@ -21,24 +21,40 @@ import {
 	actionText,
 	agedActions,
 	backoffDelay,
+	canCompleteAnyway,
 	chainedStatus,
+	changesSomething,
 	checkDelay,
+	checkWish,
+	completionInstead,
+	counterOf,
 	deviceTimeText,
+	dueOfServer,
 	hasRoom,
 	isFromTheFuture,
+	mayHaveArrived,
 	newOpId,
 	nextToSend,
 	nextWakeOf,
+	overlayDoneToday,
+	overlayDue,
 	overlayStatus,
 	parseAction,
+	planCheckChange,
+	planDueChange,
 	planStatusChange,
 	rebasedBehind,
 	requestFields,
 	sameAction,
 	serverTimeText,
 	supportsKind,
+	ticketOf,
 	toOfflineOps,
 	verdictOf,
+	type CheckChange,
+	type DayPlanAction,
+	type DueAction,
+	type DueChange,
 	type FailureFacts,
 	type OutboxAction,
 	type PlanContext,
@@ -520,13 +536,372 @@ describe('limits and words', () => {
 		expect(serverTimeText('', NOW)).toBeNull();
 	});
 
-	it('says that only check marks and status are kept in this stage', () => {
+	it('says what is kept in this stage: check marks, status, the day plan and the due date (OF-3)', () => {
 		expect(OFFLINE_TEXTS.offline).toBe(
-			'Keine Verbindung zu becauseyoulovejira. Abhaken und Status werden gemerkt und später übertragen.'
+			'Keine Verbindung zu becauseyoulovejira. Abhaken, Status, Tagesplan und Fälligkeit werden gemerkt und später übertragen.'
 		);
 		expect(OFFLINE_TEXTS.offlineWith(3)).toBe(
 			'Keine Verbindung. 3 Änderungen sind gemerkt und werden übertragen, sobald die Verbindung zurück ist.'
 		);
 		expect(OFFLINE_TEXTS.logoutTitle(3)).toBe('Abmelden und 3 gemerkte Änderungen verwerfen?');
+	});
+});
+
+// --- OF-3: the due date and the check marks of the day plan --------------------------------------
+
+const TICKET = 'tick00000000001';
+const ITEM = 'item00000000001';
+
+function dueAction(overrides: Partial<DueAction> = {}): DueAction {
+	return {
+		v: 1,
+		op: FIRST,
+		seq: 1,
+		user: USER,
+		scope: `u:${USER}`,
+		kind: 'ticket.update',
+		target: TICKET,
+		dependsOn: [],
+		payload: { due: '2026-10-22' },
+		expected: { due: null },
+		key: 'HAUS-12',
+		title: 'Müll rausbringen',
+		createdAt: NOW - 60_000,
+		state: 'queued',
+		attempts: 0,
+		nextAttemptAt: 0,
+		...overrides
+	};
+}
+
+function planCheck(overrides: Partial<DayPlanAction> = {}): DayPlanAction {
+	return {
+		v: 1,
+		op: FIRST,
+		seq: 1,
+		user: USER,
+		scope: `u:${USER}`,
+		kind: 'dayplan.check',
+		target: ITEM,
+		ticket: TICKET,
+		ticketKind: 'task',
+		dependsOn: [],
+		payload: { action: 'complete', mode: 'check' },
+		expected: { doneToday: false, status: 'open' },
+		key: 'HAUS-12',
+		title: 'Müll rausbringen',
+		createdAt: NOW - 60_000,
+		state: 'queued',
+		attempts: 0,
+		nextAttemptAt: 0,
+		...overrides
+	};
+}
+
+function dueChange(overrides: Partial<DueChange> = {}): DueChange {
+	return {
+		target: TICKET,
+		key: 'HAUS-12',
+		title: 'Müll rausbringen',
+		scope: `u:${USER}`,
+		base: null,
+		due: '2026-10-22',
+		...overrides
+	};
+}
+
+function checkChange(overrides: Partial<CheckChange> = {}): CheckChange {
+	return {
+		kind: 'dayplan.check',
+		target: ITEM,
+		ticket: TICKET,
+		ticketKind: 'task',
+		key: 'HAUS-12',
+		title: 'Müll rausbringen',
+		scope: `u:${USER}`,
+		base: { doneToday: false, status: 'open' },
+		mode: 'check',
+		...overrides
+	};
+}
+
+describe('a change of the due date (OF-3)', () => {
+	it('reads a kept due date back as it was, and one of another form as refused', () => {
+		const kept = dueAction({ sent: true, unanswered: true, discarded: true });
+		expect(parseAction(JSON.parse(JSON.stringify(kept)))).toEqual(kept);
+		const german = parseAction({ ...kept, payload: { due: '22.10.2026' } });
+		expect(german?.outcome?.code).toBe(BROKEN_CODE);
+		expect(parseAction({ ...kept, payload: {} })?.outcome?.code).toBe(BROKEN_CODE);
+	});
+
+	it('goes at once with a connection, is kept without one and does nothing offline for the same date', () => {
+		const plan = planDueChange([], dueChange(), CONTEXT);
+		expect(plan).toMatchObject({
+			kind: 'send',
+			action: {
+				state: 'sending',
+				sent: true,
+				payload: { due: '2026-10-22' },
+				expected: { due: null }
+			}
+		});
+		expect(planDueChange([], dueChange(), OFFLINE).kind).toBe('queue');
+		expect(planDueChange([], dueChange({ due: null }), OFFLINE).kind).toBe('none');
+	});
+
+	it('takes a later date into a waiting one, drops it on the date before, and waits behind a sent one', () => {
+		const waiting = dueAction();
+		const merged = planDueChange([waiting], dueChange({ due: '2026-10-24' }), OFFLINE);
+		expect(merged).toMatchObject({
+			kind: 'merge',
+			action: { op: FIRST, payload: { due: '2026-10-24' }, expected: { due: null } }
+		});
+		const cancel = planDueChange([waiting], dueChange({ due: null }), OFFLINE);
+		expect(cancel).toEqual({ kind: 'cancel', op: FIRST });
+		const behind = planDueChange([dueAction({ sent: true })], dueChange({ due: null }), OFFLINE);
+		expect(behind).toMatchObject({
+			kind: 'queue',
+			action: { dependsOn: [FIRST], expected: { due: '2026-10-22' }, payload: { due: null } }
+		});
+		// A status of the same ticket is another chain.
+		expect(planStatusChange([waiting], change(), CONTEXT).kind).toBe('send');
+	});
+
+	it('lays the waiting date over the ticket, none of one that waits for a decision', () => {
+		const ticket = { id: TICKET, due: null };
+		expect(overlayDue(ticket, [dueAction()]).due).toBe('2026-10-22');
+		expect(overlayDue(ticket, [dueAction({ state: 'conflict' })])).toBe(ticket);
+		expect(overlayDue(ticket, [action()])).toBe(ticket);
+	});
+
+	it('sends the date before in the form of the history, and names the change in words', () => {
+		expect(requestFields(dueAction(), true)).toEqual({ opId: FIRST });
+		expect(requestFields(dueAction({ expected: { due: '2026-10-20' } }), false)).toEqual({
+			opId: FIRST,
+			expected: { due: '2026-10-20 00:00:00.000Z' },
+			clientAt: '2026-10-20T12:29:00.000Z'
+		});
+		expect(requestFields(dueAction(), false).expected).toEqual({ due: '' });
+		expect(actionText(dueAction())).toBe('HAUS-12 fällig am 22.10.2026');
+		const cleared = dueAction({ payload: { due: null } });
+		expect(actionText(cleared)).toBe('HAUS-12 ohne Fälligkeit');
+		expect(dueOfServer('2026-10-25 00:00:00.000Z')).toBe('2026-10-25');
+		expect(dueOfServer('')).toBeNull();
+		expect(dueOfServer('morgen')).toBeUndefined();
+	});
+});
+
+describe('a check mark of the day plan (OF-3)', () => {
+	it('reads a kept check mark back as it was, and one without its ticket as refused', () => {
+		const kept = planCheck({
+			completion: 'complete_children',
+			children: ['tick9'],
+			undoes: SECOND
+		});
+		expect(parseAction(JSON.parse(JSON.stringify(kept)))).toEqual(kept);
+		const back = planCheck({
+			kind: 'dayplan.uncheck',
+			payload: { action: 'complete', status: 'waiting' }
+		});
+		expect(parseAction(JSON.parse(JSON.stringify(back)))).toEqual(back);
+		expect(parseAction({ ...kept, ticket: '' })?.outcome?.code).toBe(BROKEN_CODE);
+		const modeless = parseAction({ ...kept, payload: { action: 'complete' } });
+		expect(modeless?.outcome?.code).toBe(BROKEN_CODE);
+		expect(ticketOf(kept)).toBe(TICKET);
+		expect(ticketOf(action())).toBe('tick00000000001');
+	});
+
+	it('sets what the server sets: the mark of the day, the completion, and back', () => {
+		const base = { doneToday: false, status: 'open' as const };
+		const today = planCheck({ payload: { action: 'today', mode: 'today' } });
+		expect(checkWish(planCheck())).toEqual({ doneToday: false, status: 'done' });
+		expect(checkWish(today)).toEqual({ doneToday: true, status: 'open' });
+		const done = { doneToday: true, status: 'done' as const };
+		const back = { kind: 'dayplan.uncheck' as const, expected: done };
+		const clear = checkWish({ ...back, payload: { action: 'today' } });
+		expect(clear).toEqual({ doneToday: false, status: 'done' });
+		const reopen = checkWish({ ...back, payload: { action: 'complete', status: 'waiting' } });
+		expect(reopen).toEqual({ doneToday: true, status: 'waiting' });
+		// Taking back a completion of a ticket that is not done leaves its status alone.
+		const open = { kind: 'dayplan.uncheck' as const, expected: base };
+		expect(checkWish({ ...open, payload: { action: 'complete' } })).toEqual(base);
+	});
+
+	it('goes at once with a connection, with the state before; offline it is kept', () => {
+		const plan = planCheckChange([], checkChange(), CONTEXT);
+		expect(plan).toMatchObject({
+			kind: 'send',
+			action: {
+				kind: 'dayplan.check',
+				target: ITEM,
+				ticket: TICKET,
+				payload: { action: 'complete', mode: 'check' },
+				expected: { doneToday: false, status: 'open' },
+				sent: true
+			}
+		});
+		const ongoing = planCheckChange([], checkChange({ ticketKind: 'ongoing' }), OFFLINE);
+		expect(ongoing).toMatchObject({ kind: 'queue', action: { payload: { action: 'today' } } });
+	});
+
+	it('cancels a kept check mark that is taken back before it left the device', () => {
+		const back = checkChange({ kind: 'dayplan.uncheck', action: 'complete', status: 'open' });
+		expect(planCheckChange([planCheck()], back, OFFLINE)).toEqual({ kind: 'cancel', op: FIRST });
+		// Once it may have left, taking back is a counter action based on its wish.
+		const counter = planCheckChange([planCheck({ sent: true })], back, OFFLINE);
+		expect(counter).toMatchObject({
+			kind: 'queue',
+			action: { dependsOn: [FIRST], expected: { doneToday: false, status: 'done' } }
+		});
+	});
+
+	it('takes the mark of the day back first without an action, and waits behind a status of its ticket', () => {
+		const marked = { doneToday: true, status: 'open' as const };
+		const back = checkChange({ kind: 'dayplan.uncheck', base: marked });
+		const clear = planCheckChange([], back, OFFLINE);
+		expect(clear).toMatchObject({ action: { payload: { action: 'today' } } });
+		const status = action({ payload: { status: 'waiting' }, expected: { status: 'open' } });
+		const behind = planCheckChange([status], checkChange(), OFFLINE);
+		expect(behind).toMatchObject({
+			kind: 'queue',
+			action: { dependsOn: [FIRST], expected: { doneToday: false, status: 'waiting' } }
+		});
+		// A status after a waiting check mark waits behind it, based on "done".
+		const after = planStatusChange([planCheck()], change({ status: 'in_progress' }), OFFLINE);
+		expect(after).toMatchObject({
+			kind: 'queue',
+			action: { dependsOn: [FIRST], expected: { status: 'done' } }
+		});
+		expect(chainedStatus('open', [planCheck()])).toBe('done');
+	});
+
+	it('lays the check mark over the entry and its ticket and sends the state before as { checked, status }', () => {
+		const ticket = { id: TICKET, status: 'open' as const, completedAt: null };
+		const today = planCheck({ payload: { action: 'today', mode: 'today' } });
+		const entry = { id: ITEM, doneToday: false };
+		expect(overlayStatus(ticket, [planCheck()]).status).toBe('done');
+		expect(overlayStatus(ticket, [today])).toBe(ticket);
+		expect(overlayDoneToday(entry, [today])).toBe(true);
+		expect(overlayDoneToday(entry, [planCheck({ state: 'refused' })])).toBe(false);
+		const marked = planCheck({ expected: { doneToday: true, status: 'open' } });
+		expect(requestFields(marked, false)).toEqual({
+			opId: FIRST,
+			expected: { checked: true, status: 'open' },
+			clientAt: '2026-10-20T12:29:00.000Z'
+		});
+		expect(actionText(planCheck())).toBe('HAUS-12 im Tagesplan erledigt');
+		expect(actionText(today)).toBe('HAUS-12 im Tagesplan für heute abgehakt');
+		const back = planCheck({ kind: 'dayplan.uncheck', payload: { action: 'today' } });
+		expect(actionText(back)).toBe('HAUS-12 im Tagesplan wieder offen');
+	});
+});
+
+describe('the verdict for the day plan (OF-3)', () => {
+	it('refuses a changed check mark for good, also next to a changed status', () => {
+		const fields = {
+			checked: { code: 'validation_dayplan_conflict', message: 'Fremd.' },
+			status: {
+				code: 'validation_ticket_conflict',
+				message: 'Fremd.',
+				params: { actual: 'waiting' }
+			}
+		};
+		expect(verdictOf(failure({ fields }))).toEqual({
+			result: 'refused',
+			outcome: {
+				code: 'validation_dayplan_conflict',
+				message: OFFLINE_MESSAGES.validation_dayplan_conflict
+			}
+		});
+	});
+
+	it('refuses a check mark of a day gone by for good, in its own words', () => {
+		expect(verdictOf(at('date', 'validation_dayplan_readonly'))).toEqual({
+			result: 'refused',
+			outcome: { code: 'validation_dayplan_readonly', message: OFFLINE_TEXTS.dayOver }
+		});
+		const over = 'Der Tag ist vorbei, der Plan dieses Tages bleibt unverändert.';
+		expect(OFFLINE_TEXTS.dayOver).toBe(over);
+		const question = 'Der Tag ist vorbei. HAUS-12 trotzdem erledigen?';
+		expect(OFFLINE_TEXTS.dayOverDone('HAUS-12')).toBe(question);
+	});
+
+	it('lets only the completion of a task become the completion of its ticket', () => {
+		const outcome = { code: 'validation_dayplan_readonly', message: '' };
+		const over = { state: 'refused' as const, outcome };
+		const today = { action: 'today', mode: 'today' } as const;
+		expect(canCompleteAnyway(planCheck(over))).toBe(true);
+		expect(canCompleteAnyway(planCheck({ ...over, ticketKind: 'ongoing' }))).toBe(false);
+		expect(canCompleteAnyway(planCheck({ ...over, payload: today }))).toBe(false);
+		const back = planCheck({ ...over, kind: 'dayplan.uncheck', payload: { action: 'complete' } });
+		expect(canCompleteAnyway(back)).toBe(false);
+		expect(canCompleteAnyway(planCheck({ state: 'refused' }))).toBe(false);
+		const forced = planCheck({ ...over, completion: 'force', late: true });
+		const instead = completionInstead(forced, SECOND);
+		expect(instead).toMatchObject({
+			op: SECOND,
+			seq: 1,
+			kind: 'ticket.update',
+			target: TICKET,
+			payload: { status: 'done' },
+			expected: { status: 'open' },
+			completion: 'force',
+			createdAt: NOW - 60_000,
+			state: 'queued',
+			late: true
+		});
+		expect(instead).not.toHaveProperty('sent');
+	});
+});
+
+describe('"Verwerfen" of a change that may have arrived (OF-3)', () => {
+	it('counts only a waiting change whose last request got no answer', () => {
+		const lost = { sent: true as const, unanswered: true as const };
+		expect(mayHaveArrived(action(lost))).toBe(true);
+		expect(mayHaveArrived(action({ ...lost, state: 'expired' }))).toBe(true);
+		expect(mayHaveArrived(action({ sent: true }))).toBe(false);
+		expect(mayHaveArrived(action({ ...lost, state: 'conflict' }))).toBe(false);
+		expect(mayHaveArrived(action())).toBe(false);
+	});
+
+	it('takes back with the value before as the wish and the wish as the value before', () => {
+		const context = { ...OFFLINE, op: THIRD };
+		expect(counterOf(action(), context)).toMatchObject({
+			op: THIRD,
+			undoes: FIRST,
+			dependsOn: [FIRST],
+			payload: { status: 'open' },
+			expected: { status: 'done' }
+		});
+		expect(counterOf(dueAction(), context)).toMatchObject({
+			payload: { due: null },
+			expected: { due: '2026-10-22' }
+		});
+		expect(counterOf(planCheck(), context)).toMatchObject({
+			kind: 'dayplan.uncheck',
+			payload: { action: 'complete', status: 'open' },
+			expected: { doneToday: false, status: 'done' }
+		});
+		const today = planCheck({ payload: { action: 'today', mode: 'today' } });
+		expect(counterOf(today, context)).toMatchObject({
+			kind: 'dayplan.uncheck',
+			payload: { action: 'today' },
+			expected: { doneToday: true, status: 'open' }
+		});
+		const back = planCheck({
+			kind: 'dayplan.uncheck',
+			payload: { action: 'complete', status: 'waiting' },
+			expected: { doneToday: false, status: 'done' }
+		});
+		expect(counterOf(back, context)).toMatchObject({
+			kind: 'dayplan.check',
+			payload: { action: 'complete', mode: 'complete' },
+			expected: { doneToday: false, status: 'waiting' }
+		});
+		expect(changesSomething(action())).toBe(true);
+		expect(changesSomething(action({ payload: { status: 'open' } }))).toBe(false);
+		const counter = counterOf(dueAction(), context) as DueAction;
+		const rebased = rebasedBehind([counter], FIRST, { due: '2026-10-30' });
+		expect(rebased.map((entry) => entry.expected)).toEqual([{ due: '2026-10-30' }]);
 	});
 });

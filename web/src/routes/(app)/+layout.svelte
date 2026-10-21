@@ -170,7 +170,7 @@
 	import { hasUnsavedInput, registerUnsavedInput } from '$lib/unsaved-input';
 	import { WayBack, setWayBack } from '$lib/way-back';
 	import { listHistory } from '$lib/data/history';
-	import { OFFLINE_TEXTS, type OutboxAction } from '$lib/domain/offline';
+	import { OFFLINE_TEXTS, isDueAction, ticketOf, type KeptAction } from '$lib/domain/offline';
 	import { personLabel } from '$lib/domain/people';
 	import type { TicketChangeSink } from '$lib/domain/subtask-transfer-change';
 	import type { Ticket, TicketSummary } from '$lib/domain/ticket';
@@ -222,9 +222,10 @@
 		return () => window.removeEventListener('beforeunload', onbeforeunload);
 	});
 
-	// The outbox (OF-2, ADR-0074 addendum OF-2): while the server reports `offline_ops` and the phone
-	// frame applies, a check mark or a status that does not reach the server is kept on this device
-	// and sent later over the normal way. Without either, every change goes as before. It belongs to
+	// The outbox (OF-2, ADR-0074 addenda OF-2 and OF-3): while the server reports `offline_ops` and the
+	// phone frame applies, a check mark, a status, a due date or a check mark of the day plan that does
+	// not reach the server is kept on this device and sent later over the normal way (the day plan
+	// binds its shell in its own layout). Without either, every change goes as before. It belongs to
 	// the signed-in account; the layout tells it the account, the frame and the answer of the server,
 	// and shows its hints, its symbol, its dialog and its questions.
 	const outbox = getOutbox();
@@ -315,10 +316,14 @@
 		logoutQuestion = null;
 		await leave(question.target);
 	}
-	/** Who changed the status of a conflicted ticket meanwhile, from its history; null for oneself. */
-	async function changedBy(action: OutboxAction): Promise<string | null> {
-		const entries = await listHistory(pb, action.target);
-		const entry = entries.find((candidate) => candidate.field === 'status');
+	/**
+	 * Who changed the field of a conflicted ticket meanwhile (the status, since OF-3 also the due
+	 * date), from its history; null for oneself.
+	 */
+	async function changedBy(action: KeptAction): Promise<string | null> {
+		const field = isDueAction(action) ? 'due' : 'status';
+		const entries = await listHistory(pb, ticketOf(action));
+		const entry = entries.find((candidate) => candidate.field === field);
 		if (entry === undefined || entry.user === auth.userId) return null;
 		return personLabel(entry.user, auth.userId, people);
 	}
@@ -410,7 +415,8 @@
 	setAssignees(assigneeDirectory);
 	// The column sort "Projekt" resolves projects through the catalog (E3 plan, package 9); the
 	// "new" mark follows the own read rows and base line (E4 plan, package 4).
-	// The check mark and the status of a cell go through the outbox while it works (OF-2).
+	// The check mark, the status and the due date of a cell go through the outbox while it works
+	// (OF-2, OF-3).
 	const blockingIds = (id: string) => tickets.openBlockingOf(id).map((child) => child.id);
 	const tickets = setTicketListStore(
 		new TicketListStore(
@@ -454,7 +460,8 @@
 	$effect(() => untrack(() => trash.start()));
 	$effect(() => untrack(() => trash.connect(trashLive(pb))));
 	// Replacing a pinned comment offers "Rückgängig" as a flag (ADR-0044).
-	// The status of the panel and the full view goes through the outbox while it works (OF-2).
+	// The status and the due date of the panel and the full view go through the outbox while it works
+	// (OF-2, OF-3).
 	const detail = setTicketDetailStore(
 		new TicketDetailStore(
 			offlineTicketDetailData(

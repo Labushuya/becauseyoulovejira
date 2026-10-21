@@ -17,6 +17,10 @@
 //   the order route, with "Rückgängig".
 // - Every change goes through a route; the answer is applied at once, realtime brings the same again
 //   (idempotent by `updated`). Results and "Rückgängig" go out as flags, failures as error flags.
+// - With the outbox (OF-3, ADR-0074 addendum OF-3) a check mark or its taking back without a
+//   connection is kept on the device (the data access is its shell, offline/offline-data.ts): the
+//   answer then says `kept`, the store changes nothing of the state of the server, and the overlay
+//   lays the kept check marks over the entries; once sent, the outbox hands the answer back here.
 
 import type PocketBase from 'pocketbase';
 import { createContext } from 'svelte';
@@ -83,6 +87,7 @@ import {
 	type DayPlanSort,
 	type ShownEntry
 } from '$lib/domain/day-plan-sort';
+import { OFFLINE_TEXTS } from '$lib/domain/offline';
 import type { Status } from '$lib/domain/status';
 import {
 	arrangeBy,
@@ -123,15 +128,16 @@ export interface DayPlanData {
 		index?: number;
 	}): Promise<AddAnswer>;
 	adopt(scope: string, tickets: readonly string[]): Promise<AdoptAnswer>;
+	/** `kept`: the outbox kept the check mark for later (OF-3); item and ticket are those before. */
 	check(
 		id: string,
 		mode: CheckMode,
 		completion: CompletionChoice | null
-	): Promise<{ item: DayPlanItem; ticket: CheckedTicket; action: CheckAction }>;
+	): Promise<{ item: DayPlanItem; ticket: CheckedTicket; action: CheckAction; kept?: boolean }>;
 	uncheck(
 		id: string,
 		input: { action?: CheckAction; status?: Status }
-	): Promise<{ item: DayPlanItem; ticket: CheckedTicket }>;
+	): Promise<{ item: DayPlanItem; ticket: CheckedTicket; kept?: boolean }>;
 	tomorrow(id: string): Promise<{ item: DayPlanItem; plan: DayPlanMeta }>;
 	remove(id: string): Promise<{ plan: DayPlanMeta }>;
 	move(id: string, index: number): Promise<ItemPosition[]>;
@@ -199,6 +205,35 @@ export interface DayPlanTickets {
 	projectOf?(ticket: TicketSummary): ProjectRef | null;
 	/** The names of the accounts for the sort "Zuständigkeit" (TP-5); without it their IDs. */
 	readonly assigneeContext?: AssigneeContext;
+}
+
+/** The answer of a check mark the outbox sent later (OF-3). */
+export interface KeptCheckAnswer {
+	item: DayPlanItem;
+	ticket: CheckedTicket;
+}
+
+/**
+ * The check marks of the outbox laid over the entries (OF-3, ADR-0074 addendum OF-3): every entry
+ * shows the kept mark of the day and the kept status of its ticket; the answers of kept check marks
+ * come back once sent. Without it every entry shows as the server has it.
+ */
+export interface DayPlanOverlay {
+	/** The mark of the day of an entry and its ticket with the kept changes laid over them. */
+	checkRow(
+		item: DayPlanItem,
+		ticket: TicketSummary | null
+	): { doneToday: boolean; ticket: TicketSummary | null };
+	/** A kept change of the entry waits to be sent. */
+	isPending(itemId: string): boolean;
+	/** The answers of kept check marks once sent, null to read the plan again; returns the cleanup. */
+	watchChecks(listener: (answer: KeptCheckAnswer | null) => void): () => void;
+}
+
+/** An entry with its ticket as the server has them, for the outbox (OF-3). */
+export interface PlanEntry {
+	item: DayPlanItem;
+	ticket: TicketSummary;
 }
 
 /** An entry of the plan as the sort shows it (TP-5): indented below its parent or not. */
@@ -298,7 +333,8 @@ export class DayPlanStore {
 		)
 	);
 
-	#rows = $derived(
+	/** The entries with their tickets as the server has them. */
+	#baseRows = $derived(
 		this.#ordered.map((item): PlanRow => {
 			const ticket = newer(
 				this.#snapshots.get(item.ticketId) ?? item.ticket,
@@ -312,6 +348,26 @@ export class DayPlanStore {
 			};
 		})
 	);
+
+	/** The entries as shown: with the kept check marks of the outbox laid over them (OF-3). */
+	#rows = $derived.by((): PlanRow[] => {
+		const overlay = this.#overlay;
+		if (overlay === null) return this.#baseRows;
+		return this.#baseRows.map((row) => {
+			const shown = overlay.checkRow(row.item, row.ticket);
+			if (shown.doneToday === row.item.doneToday && shown.ticket === row.ticket) return row;
+			const item =
+				shown.doneToday === row.item.doneToday
+					? row.item
+					: { ...row.item, doneToday: shown.doneToday };
+			return {
+				item,
+				ticket: shown.ticket,
+				kind: row.kind,
+				done: isDone(shown.doneToday, shown.ticket?.status ?? '')
+			};
+		});
+	});
 
 	/** Per entry: indented below the entry above it (TP-3), derived from the order of the plan. */
 	#nested = $derived(nestedInOrder(this.#rows.map((row) => row.ticket)));
@@ -366,6 +422,8 @@ export class DayPlanStore {
 	});
 
 	readonly #viewer: PlanViewer;
+	/** The kept check marks of the outbox (OF-3); null without it. */
+	readonly #overlay: DayPlanOverlay | null;
 
 	constructor(
 		data: DayPlanData,
@@ -375,13 +433,16 @@ export class DayPlanStore {
 			flags = SILENT_FLAGS,
 			scope = () => null,
 			viewer = () => null,
-			sorting = new DayPlanSortStore()
+			sorting = new DayPlanSortStore(),
+			overlay = null
 		}: {
 			flags?: FlagSink;
 			scope?: AreaScope;
 			viewer?: PlanViewer;
 			/** The sort of this device (TP-5); without it a choice lasts for the store. */
 			sorting?: DayPlanSorting;
+			/** The outbox of the layout (OF-3); without it every entry shows as the server has it. */
+			overlay?: DayPlanOverlay | null;
 		} = {}
 	) {
 		this.#data = data;
@@ -391,6 +452,7 @@ export class DayPlanStore {
 		this.#scope = scope;
 		this.#viewer = viewer;
 		this.#sorting = sorting;
+		this.#overlay = overlay;
 	}
 
 	// --- State -----------------------------------------------------------------------------------
@@ -578,6 +640,15 @@ export class DayPlanStore {
 		return this.#pending.has(id);
 	}
 
+	/**
+	 * An entry with its ticket as the server has them, without the overlay; null for an unknown entry
+	 * or one whose ticket is not visible. The shell of the outbox plans with it (OF-3).
+	 */
+	entryOf(itemId: string): PlanEntry | null {
+		const row = this.#baseRows.find((entry) => entry.item.id === itemId);
+		return row === undefined || row.ticket === null ? null : { item: row.item, ticket: row.ticket };
+	}
+
 	/** The question before completing a ticket with open blocking sub-tasks (ADR-0033 section 2). */
 	get completion(): CompletionQuestion | null {
 		return this.#completion;
@@ -707,6 +778,12 @@ export class DayPlanStore {
 			),
 			hold((guard) => tickets.reconnected(guard(reload)), { recovered: reload })
 		];
+		// A kept check mark sent later (OF-3): its answer as if it came now, or the plan read again.
+		const answers = this.#overlay?.watchChecks((answer) => {
+			if (answer === null) reload();
+			else this.#takeAnswer(answer);
+		});
+		if (answers !== undefined) stops.push(answers);
 		this.#followedPlan = null;
 		this.#follow();
 		return () => {
@@ -959,14 +1036,15 @@ export class DayPlanStore {
 		this.#pending.add(id);
 		try {
 			const answer = await this.#data.check(id, mode, completion);
-			this.#upsertItem({ ...answer.item, ticket: null });
-			this.#applyTicket(answer.ticket);
+			// A kept check mark (OF-3) changes nothing of the state of the server; the overlay shows it.
+			if (answer.kept !== true) this.#takeAnswer(answer);
 			const previous = answer.ticket.previousStatus;
 			const action = answer.action;
 			const title = action === 'today' ? `${key} für heute abgehakt.` : `${key} erledigt.`;
 			this.#flags.show({
 				tone: 'success',
 				title,
+				...this.#pendingHint(id, action === 'complete' && row.ticket?.recurring === true),
 				action: {
 					label: 'Rückgängig',
 					run: () => void this.#undo(id, action, previous)
@@ -1013,6 +1091,21 @@ export class DayPlanStore {
 		this.#completionError = null;
 	}
 
+	/** The answer of a check mark: the entry and the status of its ticket. */
+	#takeAnswer(answer: KeptCheckAnswer): void {
+		this.#upsertItem({ ...answer.item, ticket: null });
+		this.#applyTicket(answer.ticket);
+	}
+
+	/**
+	 * "Wird übertragen, sobald die Verbindung zurück ist." while the outbox keeps a change of the entry
+	 * (OF-3); for a ticket of a series that its next ticket comes after the transfer.
+	 */
+	#pendingHint(itemId: string, series: boolean): { description?: string } {
+		if (this.#overlay?.isPending(itemId) !== true) return {};
+		return { description: OFFLINE_TEXTS.pendingDone(series) };
+	}
+
 	/** A known state of a ticket after a check: the list and the plan show it at once. */
 	#applyTicket(checked: CheckedTicket): void {
 		const known = newer(this.#snapshots.get(checked.id) ?? null, this.#tickets.find(checked.id));
@@ -1027,8 +1120,7 @@ export class DayPlanStore {
 		this.#pending.add(id);
 		try {
 			const answer = await this.#data.uncheck(id, input);
-			this.#upsertItem({ ...answer.item, ticket: null });
-			this.#applyTicket(answer.ticket);
+			if (answer.kept !== true) this.#takeAnswer(answer);
 			this.#announce(`${key} wieder offen.`);
 			return true;
 		} catch (error) {
@@ -1048,7 +1140,12 @@ export class DayPlanStore {
 			row,
 			action === 'today' ? { action } : { action, ...(status && { status }) }
 		);
-		if (done) this.#flags.show({ tone: 'success', title: `${this.#keyOf(row)} ist wieder offen.` });
+		if (!done) return;
+		this.#flags.show({
+			tone: 'success',
+			title: `${this.#keyOf(row)} ist wieder offen.`,
+			...this.#pendingHint(itemId, false)
+		});
 	}
 
 	/** "Auf morgen schieben". */

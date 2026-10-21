@@ -2,7 +2,9 @@
 // switched-on connection one after the other through the same route as "Jetzt abrufen" on a card
 // (a mailbox through the mail helper), says in a live status which one runs, and ends with one
 // flag: "N neue" or "keine neuen"; after a failure the flag leads to the card of the connection.
-// New entries reach the inbox through its realtime subscription, nothing is reloaded here.
+// New entries reach the inbox through its realtime subscription, nothing is reloaded here. Without a
+// connection (the state the hint "Keine Verbindung" of the outbox uses, OF-3) it runs nothing and
+// says so; the button stays visible.
 
 import type PocketBase from 'pocketbase';
 import { listConnections, runConnection } from '$lib/data/connections';
@@ -60,6 +62,7 @@ export class SyncAllStore {
 	readonly #session: SessionGuard;
 	readonly #flags: FlagSink;
 	readonly #navigate: SyncAllNavigation;
+	readonly #offline: () => boolean;
 
 	#running = $state(false);
 	#status = $state('');
@@ -68,12 +71,15 @@ export class SyncAllStore {
 		data: SyncAllData,
 		session: SessionGuard,
 		flags: FlagSink,
-		navigate: SyncAllNavigation
+		navigate: SyncAllNavigation,
+		/** The connection is known to be missing (the outbox, OF-3); without it always there. */
+		offline: () => boolean = () => false
 	) {
 		this.#data = data;
 		this.#session = session;
 		this.#flags = flags;
 		this.#navigate = navigate;
+		this.#offline = offline;
 	}
 
 	/** True while the connections run. */
@@ -81,14 +87,22 @@ export class SyncAllStore {
 		return this.#running;
 	}
 
+	/** Without a connection nothing can be fetched: the button is locked and says why (OF-3). */
+	get offline(): boolean {
+		return this.#offline();
+	}
+
 	/** Text of the live status: which connection runs, then the result. */
 	get status(): string {
 		return this.#status;
 	}
 
-	/** Runs every switched-on connection once; a second call while it runs does nothing. */
+	/**
+	 * Runs every switched-on connection once; a second call while it runs does nothing, and so does
+	 * one without a connection.
+	 */
 	async runAll(): Promise<void> {
-		if (this.#running || !this.#session.ensureValid()) return;
+		if (this.#running || this.offline || !this.#session.ensureValid()) return;
 		this.#running = true;
 		this.#status = 'Kanäle werden geladen …';
 		try {

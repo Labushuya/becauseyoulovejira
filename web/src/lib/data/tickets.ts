@@ -729,8 +729,8 @@ export interface OutboxOptions {
 /** Options of an update besides the request options. */
 export type UpdateOptions = DescriptionGuard & CompletionOptions & OutboxOptions;
 
-/** The body fields of the outbox. */
-function outboxBody(fields: OutboxFields): Record<string, unknown> {
+/** The body fields of the outbox; the routes of the day plan take the same (data/day-plan.ts). */
+export function toOutboxBody(fields: OutboxFields): Record<string, unknown> {
 	return {
 		op_id: fields.opId,
 		...(fields.clientAt !== undefined && { client_at: fields.clientAt }),
@@ -750,7 +750,7 @@ export function updateTicket(
 		const body: Record<string, unknown> = patchBody(patch);
 		if (expectedUpdated !== undefined) body.expected_updated = expectedUpdated;
 		if (completion !== undefined) body[completion] = true;
-		if (outbox !== undefined) Object.assign(body, outboxBody(outbox));
+		if (outbox !== undefined) Object.assign(body, toOutboxBody(outbox));
 		const record = await pb.collection(TICKETS).update<TicketRecord>(id, body, {
 			fields: TICKET_DETAIL_FIELDS,
 			expand: TICKET_EXPAND,

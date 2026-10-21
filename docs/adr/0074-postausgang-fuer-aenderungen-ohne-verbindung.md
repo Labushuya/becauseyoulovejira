@@ -1,6 +1,6 @@
 # ADR-0074: Postausgang für Änderungen ohne Verbindung
 
-- **Status:** Angenommen. Der Server-Teil ist umgesetzt (Paket OF-1, Migration `1790205000_client_ops.js`); Fälle im Test-Manifest BYL-E6-1930 bis BYL-E6-1949, manuelle Prüfungen BYL-E6-1948 und BYL-E6-1949. Der Client-Kern mit Abhaken und Status ist umgesetzt (Paket OF-2, Nachtrag unten); Fälle BYL-E6-2041 bis BYL-E6-2059, manuelle Prüfungen BYL-E6-2055 bis BYL-E6-2059. Korrekturen nach einer Durchsicht sind umgesetzt (Paket OF-2b, Nachtrag unten); Fälle BYL-E6-2072 bis BYL-E6-2084, manuelle Prüfungen BYL-E6-2082 bis BYL-E6-2084. Tagesplan und Fälligkeit folgen in OF-3, ＋ und Kommentare in OF-4, die Stufe 2 in OF-5.
+- **Status:** Angenommen. Der Server-Teil ist umgesetzt (Paket OF-1, Migration `1790205000_client_ops.js`); Fälle im Test-Manifest BYL-E6-1930 bis BYL-E6-1949, manuelle Prüfungen BYL-E6-1948 und BYL-E6-1949. Der Client-Kern mit Abhaken und Status ist umgesetzt (Paket OF-2, Nachtrag unten); Fälle BYL-E6-2041 bis BYL-E6-2059, manuelle Prüfungen BYL-E6-2055 bis BYL-E6-2059. Korrekturen nach einer Durchsicht sind umgesetzt (Paket OF-2b, Nachtrag unten); Fälle BYL-E6-2072 bis BYL-E6-2084, manuelle Prüfungen BYL-E6-2082 bis BYL-E6-2084. Tagesplan und Fälligkeit sind umgesetzt (Paket OF-3, Nachtrag unten); Fälle BYL-E6-2090 bis BYL-E6-2103, manuelle Prüfungen BYL-E6-2100 bis BYL-E6-2103. ＋ und Kommentare folgen in OF-4, die Stufe 2 in OF-5.
 - **Datum:** 2026-10-20
 - **Entscheidung durch:**
   - Nutzer: Wunsch „Reißt das VPN ab, sollen Änderungen trotzdem möglich sein und später automatisch eingespielt werden.“ Am 2026-10-20 hat er alle Produktfragen des Konzepts nach Empfehlung entschieden: CLAUDE.md §10 eng gelockert; nach 48 Stunden „Trotzdem übertragen“ oder „Verwerfen“, nach 7 Tagen gelöscht; Tagesplan ohne Ausnahme für vergangene Tage; Abmelden und Kontowechsel im Client; Stufe 2 später.
@@ -275,4 +275,63 @@ Nur Oberfläche, Tests und Doku, keine Hooks und keine Migration: nach dem Build
 
 - Ein Tab mit dem Build von OF-2 neben einem neuen kennt `sent` nicht und lässt es beim Schreiben weg; nach dem nächsten Laden der neuen Version (F5 oder ein Link nach dem Hinweis „Neue Version“) ist das vorbei.
 - Ohne `BroadcastChannel` erfährt ein anderer Tab erst, wenn die Aktion vor seiner als verwaist gilt (15 s), dass sie angekommen ist; erst dann sendet er die eigene.
-- „Verwerfen“ im Dialog löscht auch eine Aktion mit `sent` nur auf dem Gerät; kam ihre Anfrage an, steht der Server auf ihrem Wunsch. Der nächste Abgleich der Liste zeigt den Stand des Servers.
+- „Verwerfen“ im Dialog löscht auch eine Aktion mit `sent` nur auf dem Gerät; kam ihre Anfrage an, steht der Server auf ihrem Wunsch. Der nächste Abgleich der Liste zeigt den Stand des Servers. (Seit OF-3 behoben, siehe dort §6.)
+
+## Nachtrag (2026-10-21, OF-3): Tagesplan und Fälligkeit
+
+Nur Oberfläche, Tests und Doku, keine Hooks und keine Migration: nach dem Build F5, kein Neustart. Wirksam wie OF-2 erst nach dem Neustart aus OF-1. Entscheidung durch den Advisor (Auftrag OF-3: Umfang laut Konzept OF-0 §8, die Regeln aus OF-2b für die neuen Arten, die Reste 1 und 2 aus OF-2b mit einem Entwurf für „Verwerfen“, die Sperre von „Alle Kanäle jetzt abrufen“), den Nutzer (Entscheidung 3: Tagesplan ohne Ausnahme für vergangene Tage) und den Executor (Umsetzung, Varianten, Tests). Zu jedem Punkt gibt es eine Gegenprobe: Mit der Änderung kurz zurückgenommen war der zugehörige Test rot. Online-Verhalten und PC bleiben wie nach OF-2b.
+
+### 1. Server unverändert
+
+- **Befund:** `items/{id}/check` und `uncheck` nehmen schon `op_id`, `offline`, `client_at` und `expected` (`{ checked, status }`); die Kennung wird vor der Prüfung des Tages gesucht; Konflikte heißen `validation_dayplan_conflict` am Feld `checked` und `validation_ticket_conflict` am Feld `status`, ein vergangener Tag `validation_dayplan_readonly` am Feld `date`. Die Fälligkeit geht über die Record-API mit `expected.due` in der Form des Verlaufs (`2026-10-22 00:00:00.000Z`, ohne Datum leer). `offline_ops` Version 1 nennt alle sechs Arten.
+- **Folge:** keine neue Fähigkeit, keine Migration, nichts an `app/pb_hooks`. Ein Neustart ist für OF-3 nicht nötig.
+
+### 2. Haken des Tagesplans
+
+- **Arten** `dayplan.check` und `dayplan.uncheck`: Ziel ist der Eintrag; die Aktion trägt dazu das Ticket und seine Art (Aufgabe oder Vorhaben), den Modus bzw. die Aktion und den Status zum Wiederöffnen, `expected` als `{ doneToday, status }` (gesendet als `{ checked, status }`) und wie beim Status die Antwort auf offene Unteraufgaben.
+- **Wirkung wie am Server** (`checkWish`): Der Haken einer Aufgabe erledigt das Ticket, der eines Vorhabens setzt nur die Marke des Tages; ein Zurücknehmen ohne Angabe nimmt zuerst die Marke des Tages, sonst öffnet es das Ticket mit dem Status von vorher.
+- **Reihenfolge:** Haken gehören zur Kette des Status ihres Tickets (ein Status hinter einem gemerkten Haken wartet auf ihn und umgekehrt); die Fälligkeit ist eine eigene Kette. Ein Haken, der das Gerät nie verlassen hat, und sein Zurücknehmen heben sich auf, so löscht „Rückgängig“ ohne Verbindung nur; sonst gilt OF-2b §2.
+- **Anzeige:** Der `DayPlanStore` hält den Stand des Servers und legt die gemerkten Haken darüber (`overlay` mit `checkRow`, `watchChecks` für die Antworten). Die Hülle `offlineDayPlanData` leitet Haken und Zurücknehmen durch den Postausgang, solange er sie nimmt. Das Flag sagt wie in „Aufgaben“ „… erledigt.“ mit „Wird übertragen, sobald die Verbindung zurück ist.“ und „Rückgängig“. `PendingMark` steht in `DayPlanList` nach dem Key des Eintrags und am Ticket, das der Haken erledigt (nicht bei „Nur für heute“). Wie Konzept §3.5 liegt die Wirkung auf den Status auch über Liste und Ticket.
+- Meldet der Server die beiden Arten nicht, geht der Tagesplan den Weg von heute, Status und Fälligkeit gehen trotzdem durch den Postausgang.
+
+### 3. Fälligkeit
+
+- `ticket.update` mit `payload { due }` und `expected { due }`. Die Zelle (`changeField` nur mit `due`) und das Panel (`save('due')`) gehen durch den Postausgang (`isDuePatch` in `offline/offline-data.ts`), mit Überlagerung, Marke und Dialog („HAUS-12 fällig am 22.10.2026“ bzw. „HAUS-12 ohne Fälligkeit“).
+- Ein Konflikt nennt den Stand des Servers: „Inzwischen: Anna Beispiel hat die Fälligkeit auf 25.10.2026 gesetzt (14:10).“; „Meine Änderung übernehmen“ sendet auf dem neuen Stand.
+- **Nicht im Postausgang:** das Verschieben im Kalender. Es prüft mit `expected_updated` das ganze Ticket und war nicht Teil des Auftrags (Panel und Zelle); ohne Verbindung scheitert es wie bisher.
+
+### 4. Regeln aus OF-2b für die neuen Arten
+
+`sent` vor jedem Versuch; danach wird eine weitere Änderung eine eigene, abhängige Aktion und ein Zurücknehmen eine Gegenaktion; Schreiben nur über `OutboxStorage.swap`; gesendet wird nur mit dem Konto der Aktion; jede Ablehnung erscheint in Hinweis und Dialog, keine fällt still weg.
+
+### 5. Vergangener Tag und geänderter Haken (Entscheidung 3)
+
+- `validation_dayplan_readonly` ist eine endgültige Ablehnung mit „Der Tag ist vorbei, der Plan dieses Tages bleibt unverändert.“. Beim Abhaken einer Aufgabe fragt der Dialog „Der Tag ist vorbei. HAUS-12 trotzdem erledigen?“ mit „Trotzdem erledigen“ und „Verwerfen“. „Trotzdem erledigen“ ersetzt den Haken an seiner Stelle durch eine Erledigung des Tickets über den normalen Weg (`completionInstead`: neue Kennung, `expected` gleich dem Status vorher, die Zeit des Geräts des Hakens); der Plan des Tages bleibt, und Änderungen dahinter warten auf die Erledigung. Jeder andere Haken eines vergangenen Tags (Vorhaben, „Nur für heute“, Zurücknehmen) verfällt: „… Der Haken verfällt.“, nur „Verwerfen“.
+- `validation_dayplan_conflict` (der Haken wurde inzwischen geändert) ist ebenfalls eine endgültige Ablehnung mit dem Text des Hooks, auch wenn daneben `validation_ticket_conflict` am Status steht. „Ticket öffnen“ führt zum Ticket.
+
+### 6. Erster Versuch und „Verwerfen“ (Reste aus OF-2b)
+
+- **Erster Versuch:** Gelingt der direkte erste Versuch, stößt der Postausgang den Abarbeiter an. Eine Änderung, die währenddessen dahinter gemerkt wurde, geht sofort, nicht erst beim nächsten Anlass.
+- **„Verwerfen“ einer Änderung, die vielleicht angekommen ist:** Das neue Merkmal `unanswered` sagt, dass die letzte Anfrage ohne Antwort blieb (Status 0 oder Zeitgrenze); jede Antwort löscht es. Eine solche Änderung (wartend oder älter als 48 Stunden) löscht „Verwerfen“ nicht. Sie bleibt mit `discarded` und wird mit ihrer Kennung zu Ende gebracht, eine abgelaufene ohne die Zeit des Geräts. Dahinter steht eine Gegenaktion (`undoes`, `dependsOn` auf sie, `expected` gleich ihrem Wunsch, Wunsch gleich dem Wert vorher), außer eine spätere Änderung derselben Kette steht schon dahinter. Das Flag sagt „„HAUS-12 erledigt“ wird zurückgenommen, sobald eine Verbindung besteht.“ mit „Die Änderung ist vielleicht schon angekommen; deshalb wird sie zurückgenommen statt nur gelöscht.“ und „Rückgängig“ (das entfernt die Gegenaktion). Der Dialog zeigt die verworfene ohne „Verwerfen“ mit „wird zurückgenommen, sobald eine Verbindung besteht“ und die Gegenaktion als „Rücknahme: …“.
+- Lehnt der Server die verworfene ab oder meldet einen Konflikt, hat sie nichts geändert: Sie und ihre Gegenaktion gehen ohne Wort. Hat jemand inzwischen geändert, wartet die Gegenaktion als Konflikt und überschreibt nichts. Nach einer Antwort des Servers (etwa 5xx) löscht „Verwerfen“ wie bisher. Die Statusdatei ließ „neu lesen oder Gegenaktion“ offen; es gilt der Entwurf des Advisors (Gegenaktion), weil Neulesen ohne Verbindung nicht geht.
+
+### 7. „Alle Kanäle jetzt abrufen“ ohne Verbindung
+
+- `SyncAllStore` kennt die Verbindung über denselben Zustand wie `OfflineNotice` (`outbox.offline`). Ohne Verbindung bleibt der Knopf sichtbar, ist `aria-disabled` und hat daneben den Hinweis „Nur mit Verbindung“ (`aria-describedby`); im Menü der Liste am Handy heißt der Eintrag „Alle Kanäle jetzt abrufen (nur mit Verbindung)“ und ist gesperrt. `runAll` ruft dann nichts ab.
+- Am PC arbeitet der Postausgang nicht, der Zustand ist nie „offline“: alles wie bisher. Gesperrte Einträge eines Menüs haben in der App keine eigene Farbe; der Name nennt den Grund.
+
+### 8. Texte
+
+Der Hinweis ohne Verbindung sagt jetzt „Keine Verbindung zu becauseyoulovejira. Abhaken, Status, Tagesplan und Fälligkeit werden gemerkt und später übertragen.“ (OF-2 §5 nannte nur Abhaken und Status). Der Dialog nennt „HAUS-12 im Tagesplan erledigt“, „… im Tagesplan für heute abgehakt“ und „… im Tagesplan wieder offen“. Der Verlauf zeigt „offline um … (laut Gerät), abgeglichen um …“ auch für Fälligkeit und Haken einer Aufgabe; das markiert der Server (OF-1).
+
+### 9. Tests
+
+- Vitest, neu: `offline/outbox-of3.test.ts` (Postausgang mit allen Arten, Regeln aus OF-2b, vergangener Tag, erster Versuch, „Verwerfen“), `offline/offline-stores-of3.test.ts` (Tagesplan, Zelle, Panel und Kalender auf den Hüllen), `components/day-plan/day-plan-offline.test.ts` (Haken und Marke in der Ansicht). Das Gerüst aus `outbox-corrections.test.ts` liegt jetzt in `lib/test/outbox-fake.ts` und kann auch Fälligkeit und Tagesplan; die 18 Tests dort sind unverändert. Ergänzt: `domain/offline.test.ts`, `components/offline/offline-components.test.ts`, `stores/sync-all.test.ts`, `components/inbox-table-phone.test.ts` und die Parität in `tests/unit/web-offline.test.mjs`.
+- Geänderte Erwartungen: zwei, der Text des Hinweises ohne Verbindung (samt Titel des Tests) in `domain/offline.test.ts` und `offline-components.test.ts`, weil er die neuen Arten nennt.
+- Smoke unverändert, keine neuen Fälle.
+
+### 10. Grenzen
+
+- Ein Tab mit dem Build von OF-2b neben einem neuen kennt die neuen Arten nicht: Er zeigt sie als „Dieser gemerkte Eintrag lässt sich nicht lesen …“ und sendet sie nicht; „Verwerfen“ dort löscht sie. Schreibt er eine Aktion des Status neu (etwa beim Senden), fallen `unanswered`, `discarded` und `undoes` weg: Eine verworfene Änderung erschiene bei einer Ablehnung wieder, eine Rücknahme wie eine gewöhnliche Änderung. Nach F5 ist das vorbei.
+- Ein Haken, der vor Mitternacht gemerkt und erst danach übertragen wird, ist abgelehnt (Entscheidung 3); nur eine Aufgabe lässt sich danach erledigen.
+- Das Verschieben im Kalender bleibt ohne Postausgang (§3).
