@@ -23,7 +23,7 @@
 // - The display lays the waiting actions over the state of the server (`overlayStatus`,
 //   `overlayDue`, `overlayDoneToday`); the stores keep the state of the server.
 // - After 48 hours an action is no longer sent on its own (decision of the user 2), after 7 days
-//   it goes.
+//   it goes, never silently: a notice names its ticket (OF-3b round 3).
 
 import { isCalendarDate, type CalendarDate } from './berlin-date';
 import {
@@ -788,6 +788,11 @@ export function childFeaturesOf(action: KeptAction): Feature[] {
 	return alongOf(action).map(([id]) => statusFeature(id));
 }
 
+/** The sub-tasks a completion with "Unteraufgaben mit erledigen" takes along (round 3). */
+export function childrenAlong(action: KeptAction): string[] {
+	return alongOf(action).map(([id]) => id);
+}
+
 /** The sub-task of `feature` when the action takes it along, else null. */
 function childOf(action: KeptAction, feature: Feature): string | null {
 	const id = feature.startsWith('status:') ? feature.slice('status:'.length) : null;
@@ -1199,7 +1204,9 @@ function sendOrQueue<A extends KeptAction>(
 /**
  * The plan for a change of the status of `change.target` (concept OF-0 §3.3):
  * - an action of the ticket that waits and never left the device takes the change in (the
- *   completion follows the last wish) or goes, when the wish is the value before again;
+ *   completion follows the last wish) or goes, when the wish is the value before again; a completion
+ *   with sub-tasks only where that action still makes the step to "done" (round 3: the hook completes
+ *   sub-tasks on that step only), else it waits behind it;
  * - behind any other open action of the ticket, also one sent without an answer (`sent`, OF-2b) or a
  *   check mark of the day plan (OF-3), a new one waits for it, based on its wish; taking it back is
  *   such a counter action;
@@ -1213,15 +1220,20 @@ export function planStatusChange(
 ): ChangePlan<OutboxAction> {
 	const mine = inOrder(open.filter((action) => inStatusChain(action, change.target)));
 	const last = mine.at(-1);
-	if (last !== undefined && isStatusAction(last) && mergeable(last)) {
+	const along =
+		change.status === 'done' &&
+		change.completion === 'complete_children' &&
+		(change.children?.length ?? 0) > 0;
+	// The hook completes sub-tasks only on the step to "done" (round 3, R2-1): taken into a waiting
+	// change whose value before is "done", a completion with sub-tasks would complete none of them, so
+	// it waits behind that change as an action of its own.
+	const stepless =
+		along && last !== undefined && isStatusAction(last) && last.expected.status === 'done';
+	if (last !== undefined && isStatusAction(last) && mergeable(last) && !stepless) {
 		// Back to what the user wanted before it (OF-3b: after a discarded change that is not its
 		// value before) drops it; any other wish goes into it. A completion that takes sub-tasks along
 		// is a wish of its own even then (round 2): dropping would leave the sub-tasks open.
 		const feature = statusFeature(change.target);
-		const along =
-			change.status === 'done' &&
-			change.completion === 'complete_children' &&
-			(change.children?.length ?? 0) > 0;
 		if (!along && change.status === willWithout(mine, last, feature, opsOf(open))) {
 			return { kind: 'cancel', op: last.op };
 		}
@@ -1382,20 +1394,25 @@ function ahead(at: number | undefined, now: number): boolean {
 	return at !== undefined && at - now > DEVICE_FUTURE_MS;
 }
 
-/** Whether an action "sending" lost its sender: longer under way than a request may take. */
+/**
+ * Whether an action "sending" lost its sender: longer under way than a request may take, or marked
+ * at a time that lies in the future (the clock went back; round 3, R2-6: else a take-back, which
+ * never expires, would hang, and a change would wait for a decision about a clock that its own time
+ * does not show). It goes again with its identifier, `sent` stays.
+ */
 function isStale(action: ActionBase, now: number): boolean {
 	if (action.state !== 'sending') return false;
-	return now - (action.sendingSince ?? 0) >= STALE_SENDING_MS;
+	const since = action.sendingSince ?? 0;
+	return since > now || now - since >= STALE_SENDING_MS;
 }
 
 /**
- * Whether the time of the device of a waiting action lies in the future (OF-2b): it was kept, or
- * marked as under way, more than 5 minutes after now. The clock went back or was wrong; such an
- * action is neither sent nor deleted on its own, it waits for a decision like an old one. After
- * "Trotzdem übertragen" (`late`) its time no longer counts.
+ * Whether the time of the device of a waiting action lies in the future (OF-2b): it was kept more
+ * than 5 minutes after now. The clock went back or was wrong; such an action is neither sent nor
+ * deleted on its own, it waits for a decision like an old one. After "Trotzdem übertragen" (`late`)
+ * its time no longer counts. A mark "sending" from the future counts as a lost sender (`isStale`).
  */
 export function isFromTheFuture(action: KeptAction, now: number): boolean {
-	if (action.state === 'sending' && ahead(action.sendingSince, now)) return true;
 	const free = action.state === 'queued' || isStale(action, now);
 	return free && action.late !== true && ahead(action.createdAt, now);
 }
@@ -1927,9 +1944,12 @@ export const OFFLINE_TEXTS = Object.freeze({
 	refusedMaybeArrived:
 		'Die Änderung ist vielleicht schon angekommen und ließ sich nicht zurücknehmen. Bitte im Ticket prüfen.',
 	counter: (text: string) => `Rücknahme: ${text}`,
-	/** A take-back that waits or is sent has no "Verwerfen" of its own (OF-3b round 2, S2). */
+	/**
+	 * A take-back that waits or is sent has no "Verwerfen" of its own (OF-3b round 2, S2): setting the
+	 * value anew always works, "Rückgängig" only while its flag stands (round 3, R2-5).
+	 */
 	takeBackHint:
-		'Nimmt eine verworfene Änderung zurück. Wer es sich anders überlegt, nutzt „Rückgängig“ im Hinweis nach dem Verwerfen oder setzt den Wert neu.',
+		'Nimmt eine verworfene Änderung zurück. Wer es sich anders überlegt, setzt den Wert neu; direkt nach dem Verwerfen geht auch „Rückgängig“ im Hinweis.',
 	/** Sub-tasks a discarded completion took along whose status before is unknown (round 2). */
 	childrenUnknown: (count: number) =>
 		count === 1
@@ -1939,6 +1959,27 @@ export const OFFLINE_TEXTS = Object.freeze({
 	undoLater: '„Rückgängig“ ändert nichts: Eine spätere Änderung setzt den Wert ohnehin.',
 	/** "Rückgängig" after another account signed in (round 2). */
 	undoOtherAccount: '„Rückgängig“ geht nicht mehr: Inzwischen ist ein anderes Konto angemeldet.',
+	/**
+	 * A sub-task a completion should have taken along that is not done once it arrived (round 3,
+	 * R2-1): the hook completes sub-tasks on the step to "done" only. Nothing is sent on its own.
+	 */
+	childNotDone: (child: string, parent: string) =>
+		`Unteraufgabe ${child} ist nicht erledigt, obwohl sie mit ${parent} erledigt werden sollte. Bitte im Ticket prüfen.`,
+	/** Changes deleted after 7 days that were not surely sent and answered, with their tickets (round 3, R2-2). */
+	dropped: (count: number, keys: string) =>
+		count === 1
+			? `1 gemerkte Änderung war älter als 7 Tage und wurde gelöscht, ohne sicher übertragen zu sein: ${keys}.`
+			: `${count} gemerkte Änderungen waren älter als 7 Tage und wurden gelöscht, ohne sicher übertragen zu sein: ${keys}.`,
+	/** A take-back deleted after 7 days: the discarded change may still be in effect (round 3, R2-2). */
+	droppedDiscard: (what: string) =>
+		`Das Verwerfen von ${what} wurde nicht ausgeführt; der Server hat vielleicht noch den verworfenen Wert.`,
+	checkTickets: (count: number) =>
+		count === 1 ? 'Bitte im Ticket prüfen.' : 'Bitte in den Tickets prüfen.',
+	/** The button of a notice that stays until it is closed (round 3). */
+	closeNotice: 'Schließen',
+	/** "Details" of a storage that changed under every write of a step (round 3, R2-9). */
+	storageRaced:
+		'Die gemerkten Änderungen auf diesem Gerät haben sich dreimal in Folge beim Schreiben geändert.',
 	undo: 'Rückgängig',
 	reloadTitle: 'Ohne Verbindung neu laden?',
 	reloadText: (count: number) =>

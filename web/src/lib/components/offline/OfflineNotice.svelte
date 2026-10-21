@@ -11,8 +11,12 @@
 	// "Ansehen" opens the dialog "Gemerkte Änderungen"; nothing opens on its own (ADR-0025). The
 	// status region is always there while the outbox works, so screen readers hear a hint when it
 	// appears and the progress of the transfer; the focus never moves because of it.
+	// Since OF-3b round 3 the notices of the outbox stand here as warnings until "Schließen": what the
+	// deletion after 7 days took, a sub-task a completion should have taken along that is not done.
 	let { outbox, onshow }: { outbox: OutboxStore; onshow: () => void } = $props();
 
+	const uid = $props.id();
+	const notices = $derived(outbox.notices);
 	const offline = $derived(outbox.offline);
 	const conflicts = $derived(outbox.conflicts);
 	const refusals = $derived(outbox.refusals);
@@ -23,7 +27,7 @@
 	const progress = $derived(outbox.progress);
 	const busy = $derived(outbox.checking ? 'true' : undefined);
 	const decisions = $derived(conflicts.length + refusals.length + expired.length);
-	const shown = $derived(offline || decisions > 0 || failing !== null);
+	const shown = $derived(offline || decisions > 0 || failing !== null || notices.length > 0);
 
 	function keyOf(key: string): string {
 		return key === '' ? 'Ein Ticket' : key;
@@ -105,6 +109,21 @@
 			{/snippet}
 		</SectionMessage>
 	{/if}
+	{#each notices as notice (notice.id)}
+		<SectionMessage tone="warning">
+			<span id={`${uid}-${notice.id}`}>{notice.text}</span>
+			{#snippet actions()}
+				<button
+					class="button-subtle"
+					type="button"
+					aria-describedby={`${uid}-${notice.id}`}
+					onclick={() => outbox.closeNotice(notice.id)}
+				>
+					{OFFLINE_TEXTS.closeNotice}
+				</button>
+			{/snippet}
+		</SectionMessage>
+	{/each}
 	{#if failing !== null && !offline}
 		<SectionMessage tone="error" problem={failing.problem}>
 			{OFFLINE_TEXTS.failed}

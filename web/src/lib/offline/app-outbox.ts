@@ -88,7 +88,7 @@ export function getOutbox(): OutboxStore {
 			const answer = await uncheckDayPlanItem(pb, action.target, input, options);
 			return { ...answer, action: action.payload.action };
 		},
-		get: (id) => getTicket(pb, id),
+		get: (id, signal) => getTicket(pb, id, { signal }),
 		tab: () => tabIdOf(sessionStorageOf()),
 		channel: () => broadcastChannel(OUTBOX_CHANNEL),
 		// Sent only with the account the client is signed in with now (another tab may have changed it).

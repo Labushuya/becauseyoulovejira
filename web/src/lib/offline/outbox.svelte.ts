@@ -25,6 +25,10 @@
 //   just read; after a request the worker decides on the action as it is stored now, not on its copy.
 //   Since round 2 a take-back never expires and has no "Verwerfen" of its own; "Rückgängig" always
 //   leads back to what the user wanted before "Verwerfen".
+// - Nothing goes without a word (round 3): what the deletion after 7 days takes, and a sub-task a
+//   completion should have taken along that the server did not complete, show as notices that stay
+//   until the user closes them (`notices`); every 5xx counts as "may have arrived"; reading a ticket
+//   again has the time limit of a request.
 // - The actions belong to the signed-in account: another account never sends them, and they are
 //   deleted when another account signs in (decision of the user 4). "Abmelden" deletes them after
 //   the question (`clearUser`), also when this tab never read the device; an ended session keeps
@@ -52,6 +56,7 @@ import {
 	backoffDelay,
 	canCompleteAnyway,
 	canReopenAnyway,
+	childrenAlong,
 	completionInstead,
 	dueOfServer,
 	hasRoom,
@@ -165,8 +170,11 @@ export interface OutboxDeps {
 		fields: OutboxFields,
 		signal: AbortSignal
 	): Promise<CheckAnswer>;
-	/** Reads a ticket again (after a conflict, a refusal, an action that arrived before). */
-	get(id: string): Promise<Ticket>;
+	/**
+	 * Reads a ticket again (after a conflict, a refusal, an action that arrived before); `signal` ends
+	 * it after the time limit of a request (round 3).
+	 */
+	get(id: string, signal?: AbortSignal): Promise<Ticket>;
 	/** The identifier of this tab, or where to get it on the first watch (sessionStorage). */
 	tab: string | (() => string);
 	/** The account the client is signed in with now (`pb.authStore`); without it the attached one. */
@@ -204,13 +212,30 @@ export class OutboxFullError extends DataError {
 	}
 }
 
-/** The storage of the device failed while a change was kept (round 2): nothing was kept. */
+/**
+ * The storage of the device failed while a change was kept (round 2): nothing was kept. Without an
+ * exception of the storage, the device changed under every write of a step; its cause says so, so
+ * "Details" names the storage, not the server or the connection (round 3, R2-9).
+ */
 export class OutboxStorageError extends DataError {
-	constructor(cause?: unknown) {
+	constructor(cause: unknown = storageRaced()) {
 		super('server', { cause });
 		this.name = 'OutboxStorageError';
 		this.message = OFFLINE_TEXTS.storageFailed;
 	}
+}
+
+/** The cause of an OutboxStorageError where the storage changed under every write (round 3). */
+function storageRaced(): Error {
+	const error = new Error(OFFLINE_TEXTS.storageRaced);
+	error.name = 'OutboxStorageError';
+	return error;
+}
+
+/** A notice that stays until the user closes it (round 3): what went or did not happen. */
+export interface OutboxNotice {
+	readonly id: string;
+	readonly text: string;
 }
 
 /** A change of the status a store asks for. */
@@ -285,15 +310,30 @@ function replacedBy(actions: readonly KeptAction[], op: string, next: KeptAction
 	return actions.map((action) => (action.op === op ? next : action));
 }
 
-/** The sub-tasks a completion with "Unteraufgaben mit erledigen" took along. */
-function alongOf(action: KeptAction): readonly string[] {
-	if (isDueAction(action) || action.completion !== 'complete_children') return [];
-	return action.children ?? [];
-}
-
 /** 403 and 404: the rules of the Record API and the entry of the day plan come before the identifier. */
 function isMissing(failure: DataError): boolean {
 	return failure.kind === 'not_found' || failure.kind === 'forbidden';
+}
+
+/**
+ * The notice about the actions of `drop` the deletion after 7 days takes (round 3, R2-2), null for
+ * none. An action in the outbox never surely arrived with an answer (one that did is gone), so each
+ * counts: its ticket is named, and a take-back says which "Verwerfen" was not carried out.
+ */
+function droppedNotice(before: readonly KeptAction[], drop: readonly string[]): string | null {
+	const gone = inOrder(before.filter((action) => drop.includes(action.op)));
+	if (gone.length === 0) return null;
+	const keys = [...new Set(gone.map((action) => (action.key === '' ? 'ein Ticket' : action.key)))];
+	const backs = gone.filter(isTakeBack).map((back) => {
+		const original = before.find((action) => action.op === back.undoes);
+		const what =
+			original === undefined
+				? `einer Änderung an ${back.key === '' ? 'einem Ticket' : back.key}`
+				: `„${actionText(original)}“`;
+		return OFFLINE_TEXTS.droppedDiscard(what);
+	});
+	const head = OFFLINE_TEXTS.dropped(gone.length, keys.join(', '));
+	return [head, ...backs, OFFLINE_TEXTS.checkTickets(keys.length)].join(' ');
 }
 
 function randomFill(bytes: Uint8Array<ArrayBuffer>): Uint8Array {
@@ -320,6 +360,9 @@ export class OutboxStore {
 	#failing = $state.raw<{ problem: ProblemEntry | null } | null>(null);
 	/** The entries behind conflicts and refusals ("Details"), only in this tab. */
 	readonly #problems = new SvelteMap<string, ProblemEntry | null>();
+	/** Notices that stay until the user closes them, only in this tab (round 3). */
+	#notices = $state.raw<readonly OutboxNotice[]>([]);
+	#noticeCount = 0;
 
 	#sink: OutboxSink | null = null;
 	#loading: Promise<void> | null = null;
@@ -453,6 +496,26 @@ export class OutboxStore {
 		return this.#problems.get(op) ?? null;
 	}
 
+	/**
+	 * Notices that stay until the user closes them (round 3): changes the deletion after 7 days took,
+	 * sub-tasks a completion should have taken along that are not done. Only in this tab.
+	 */
+	get notices(): readonly OutboxNotice[] {
+		return this.#notices;
+	}
+
+	/** "Schließen" of a notice. */
+	closeNotice(id: string): void {
+		this.#notices = this.#notices.filter((notice) => notice.id !== id);
+	}
+
+	/** Shows a notice that stays; the same words twice show once. */
+	#notify(text: string): void {
+		if (this.#notices.some((notice) => notice.text === text)) return;
+		this.#noticeCount += 1;
+		this.#notices = [...this.#notices, { id: `outbox-notice-${this.#noticeCount}`, text }];
+	}
+
 	/** Reloading the page now would leave the app unopenable until the server is back. */
 	get reloadRisky(): boolean {
 		return this.offline && this.#actions.length > 0;
@@ -525,6 +588,8 @@ export class OutboxStore {
 		this.#loadingFor = null;
 		this.#base.clear();
 		this.#problems.clear();
+		// The notices name tickets of the account before.
+		this.#notices = [];
 		this.#failing = null;
 		this.#update();
 	}
@@ -1176,8 +1241,9 @@ export class OutboxStore {
 	 * Deletes every action of the account without a comparison ("Abmelden und verwerfen", decision 4)
 	 * and tells the other tabs. One of three writes of the device without a compare-and-swap (OF-3b,
 	 * round 2): this one and `clearUser` in a tab that never read the device delete everything of the
-	 * account on purpose, whatever its state; `#read` deletes entries of other accounts and unreadable
-	 * ones, which no step of this account plans with. Every other write is `#create` or `#swap`.
+	 * account on purpose, whatever its state (since round 3 as read from the device, R2-7); `#read`
+	 * deletes entries of other accounts and unreadable ones, which no step of this account plans with.
+	 * Every other write is `#create` or `#swap`.
 	 */
 	async #forget(ops: readonly string[]): Promise<void> {
 		if (ops.length === 0) return;
@@ -1228,7 +1294,8 @@ export class OutboxStore {
 	/**
 	 * Plans a change of the device on the actions as read and writes it (OF-3b); reads the device again
 	 * and plans anew when another step or tab changed it meanwhile. Null when `plan` finds nothing to
-	 * do; throws after PLAN_ROUNDS rounds. The caller holds `#locked`.
+	 * do; after PLAN_ROUNDS rounds the storage counts as failing (round 3, R2-9: not the connection).
+	 * The caller holds `#locked`.
 	 */
 	async #transform<R>(
 		plan: (actions: readonly KeptAction[]) => Promise<Planned<R> | null>
@@ -1246,7 +1313,7 @@ export class OutboxStore {
 			}
 			await this.#read(storage, user, false);
 		}
-		throw new DataError('network');
+		throw new OutboxStorageError();
 	}
 
 	/**
@@ -1282,11 +1349,13 @@ export class OutboxStore {
 
 	/**
 	 * Waiting actions older than 48 hours, or whose time lies in the future, wait for a decision; an
-	 * action from the future names the clock (G4). Those older than 7 days go. A discarded one asks
-	 * nothing (OF-3b): no request of it can be under way any more, so it goes where its take-backs
-	 * hold whatever the server has (`coveredAtExpiry`), else it is sent to the end without the time of
-	 * the device; one orphaned while "sending" may have arrived. A take-back never expires (round 2,
-	 * S1); one an older build let expire waits to be sent again. The caller holds `#locked`.
+	 * action from the future names the clock (G4). Those older than 7 days go, never without a word: a
+	 * notice that stays names their tickets and every "Verwerfen" a deleted take-back leaves undone
+	 * (round 3, R2-2). A discarded one asks nothing (OF-3b): no request of it can be under way any
+	 * more, so it goes where its take-backs hold whatever the server has (`coveredAtExpiry`), else it is
+	 * sent to the end without the time of the device; one orphaned while "sending" may have arrived,
+	 * also when it waits for a decision (round 3). A take-back never expires (round 2, S1); one an
+	 * older build let expire waits to be sent again. The caller holds `#locked`.
 	 */
 	async #age(now: number): Promise<void> {
 		const expiredBacks = (actions: readonly KeptAction[]) =>
@@ -1295,7 +1364,7 @@ export class OutboxStore {
 		const idle = (actions: readonly KeptAction[], found: typeof aged) =>
 			found.expire.length === 0 && found.drop.length === 0 && expiredBacks(actions).length === 0;
 		if (idle(this.#actions, aged)) return;
-		await this.#transform(async (before) => {
+		const notice = await this.#transform(async (before) => {
 			const found = agedActions(before, now);
 			if (idle(before, found)) return null;
 			const { expire, drop } = found;
@@ -1323,14 +1392,17 @@ export class OutboxStore {
 					const expired = withoutSending({
 						...action,
 						state: 'expired' as const,
+						// Orphaned while "sending": it may have arrived, so "Verwerfen" takes it back.
+						...(action.state === 'sending' && { unanswered: true as const }),
 						...(clock && { outcome: { code: CLOCK_CODE, message: OFFLINE_TEXTS.clockHint } })
 					});
 					actions = replaced(actions, expired);
 				}
 				return settleChains(actions, context);
 			});
-			return { after, result: true };
+			return { after, result: droppedNotice(before, drop) };
 		});
+		if (notice !== null) this.#notify(notice);
 	}
 
 	// ----- the worker -----
@@ -1388,9 +1460,7 @@ export class OutboxStore {
 					await this.#reread(ticketOf(resolution.action));
 					if (isDayPlanAction(resolution.action)) this.#notifyChecks(null);
 				}
-				// "Unteraufgaben mit erledigen" changed the sub-tasks as well: their status as the server
-				// has it now is the one later changes are based on (round 2).
-				for (const child of alongOf(resolution.action)) await this.#reread(child);
+				await this.#checkChildren(resolution.action);
 				return true;
 			case 'kept':
 				void this.#connectivity.check();
@@ -1480,10 +1550,16 @@ export class OutboxStore {
 		}
 		if (verdict.result === 'server') {
 			// A 5xx does not say that the server looked the identifier up (a proxy may answer it): an
-			// earlier request without an answer may still have arrived (round 2, M-3).
+			// earlier request without an answer may still have arrived (round 2, M-3), and so may this
+			// one, which a proxy may have answered after the server took it (round 3, R2-11: every 5xx;
+			// only an answer with 2xx or 4xx is final). An error without a status never had an answer
+			// of the server (an app without the way of the kind): it stays as it was.
 			const attempts = fresh.attempts + 1;
 			const nextAttemptAt = now + backoffDelay(attempts, this.#random);
-			const after = await settle(replaced(before, { ...queued, attempts, nextAttemptAt }));
+			const maybe = failure.status >= 500 ? { unanswered: true as const } : {};
+			const after = await settle(
+				replaced(before, { ...queued, attempts, nextAttemptAt, ...maybe })
+			);
 			return { after, result: { kind: 'later', attempts } };
 		}
 		// An answer after the lookup of the identifier: nothing arrived unseen (OF-3); a discarded one
@@ -1512,14 +1588,49 @@ export class OutboxStore {
 		this.#sink?.upsert(ticket);
 	}
 
-	/** Shows the ticket as the server has it now; without an answer as it was before. */
-	async #reread(id: string): Promise<void> {
+	/**
+	 * Shows the ticket as the server has it now and resolves to it; without an answer within the time
+	 * limit of a request (round 3, R2-10) or after an error as it was before, and to null: the worker
+	 * never hangs on it.
+	 */
+	async #reread(id: string): Promise<Ticket | null> {
+		const controller = new AbortController();
+		let limit: unknown = null;
+		const late = new Promise<never>((_, reject) => {
+			limit = this.#timers.set(() => {
+				controller.abort();
+				reject(new DataError('aborted'));
+			}, SEND_TIMEOUT_MS);
+		});
 		try {
-			const ticket = await this.#deps.get(id);
+			const ticket = await Promise.race([this.#deps.get(id, controller.signal), late]);
 			this.#remember(ticket);
 			this.#sink?.upsert(ticket);
+			return ticket;
 		} catch {
 			this.#refreshTicket(id);
+			return null;
+		} finally {
+			this.#timers.clear(limit);
+		}
+	}
+
+	/**
+	 * "Unteraufgaben mit erledigen" changed the sub-tasks as well: their status as the server has it
+	 * now is the one later changes are based on (round 2), read side by side (round 3, R2-10). The hook
+	 * completes them only on the step to "done": one that is not done although the completion the user
+	 * keeps should have taken it along shows as a notice that stays; nothing is sent on its own (round
+	 * 3, R2-1). A discarded completion is not what the user wants and names none.
+	 */
+	async #checkChildren(action: KeptAction): Promise<void> {
+		const children = childrenAlong(action);
+		if (children.length === 0) return;
+		const read = await Promise.all(children.map((child) => this.#reread(child)));
+		if (action.discarded === true || action.user !== this.#user) return;
+		const parent = action.key === '' ? 'Ticket' : action.key;
+		for (const ticket of read) {
+			if (ticket === null || ticket.status === 'done') continue;
+			this.#notify(OFFLINE_TEXTS.childNotDone(ticket.key === '' ? 'Ticket' : ticket.key, parent));
 		}
 	}
 
@@ -1939,16 +2050,18 @@ export class OutboxStore {
 	/**
 	 * "Abmelden und verwerfen": every action of the signed-in account goes (decision 4), also when
 	 * this tab never read the device (G3). It runs after the steps of this tab that write the device
-	 * (round 2), so none of them writes an action back after it.
+	 * (round 2), so none of them writes an action back after it, and takes the actions as the device
+	 * has them, not as this tab last read them: another tab may have kept one meanwhile (round 3, R2-7).
 	 */
 	async clearUser(): Promise<void> {
 		await this.#locked(async () => {
-			if (this.#loaded) {
-				await this.#forget(this.#actions.map((action) => action.op));
+			const ops = await this.#opsOfAccount();
+			if (!this.#loaded) {
+				if (ops.length > 0) await this.#storage?.remove(ops);
 				return;
 			}
-			const ops = await this.#opsOfAccount();
-			if (ops.length > 0) await this.#storage?.remove(ops);
+			const known = this.#actions.map((action) => action.op).filter((op) => !ops.includes(op));
+			await this.#forget([...ops, ...known]);
 		});
 	}
 }
