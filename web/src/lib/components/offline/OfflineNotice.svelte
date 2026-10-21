@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import { CLOCK_CODE, OFFLINE_TEXTS, reasonOf } from '$lib/domain/offline';
 	import type { OutboxStore } from '$lib/offline/outbox.svelte';
 	import SectionMessage from '../guidance/SectionMessage.svelte';
@@ -13,9 +14,12 @@
 	// appears and the progress of the transfer; the focus never moves because of it.
 	// Since OF-3b round 3 the notices of the outbox stand here as warnings until "Schließen": what the
 	// deletion after 7 days took, a sub-task a completion should have taken along that is not done.
+	// Since OF-3c they come from the device, in every tab; after "Schließen" the focus goes to the next
+	// "Schließen", else to the region (`tabindex="-1"`), never to the page (R3-3).
 	let { outbox, onshow }: { outbox: OutboxStore; onshow: () => void } = $props();
 
 	const uid = $props.id();
+	let region: HTMLDivElement | undefined = $state();
 	const notices = $derived(outbox.notices);
 	const offline = $derived(outbox.offline);
 	const conflicts = $derived(outbox.conflicts);
@@ -61,9 +65,26 @@
 	function retry() {
 		void outbox.retry();
 	}
+
+	/** The "Schließen" of every notice, in their order. */
+	function closeButtons(): HTMLButtonElement[] {
+		return [...(region?.querySelectorAll<HTMLButtonElement>('button[data-closes]') ?? [])];
+	}
+
+	/** "Schließen": the notice goes, the focus moves to the next "Schließen" or to the region. */
+	async function close(id: string) {
+		const buttons = closeButtons();
+		const index = buttons.findIndex((button) => button.dataset.closes === id);
+		const next = (buttons[index + 1] ?? buttons[index - 1])?.dataset.closes;
+		const closing = outbox.closeNotice(id);
+		await tick();
+		const target = closeButtons().find((button) => button.dataset.closes === next);
+		(target ?? region)?.focus();
+		await closing;
+	}
 </script>
 
-<div class="offline-notice" class:shown role="status">
+<div class="offline-notice" class:shown role="status" tabindex="-1" bind:this={region}>
 	{#if offline}
 		<SectionMessage tone="warning">
 			{offlineText()}
@@ -116,8 +137,9 @@
 				<button
 					class="button-subtle"
 					type="button"
+					data-closes={notice.id}
 					aria-describedby={`${uid}-${notice.id}`}
-					onclick={() => outbox.closeNotice(notice.id)}
+					onclick={() => void close(notice.id)}
 				>
 					{OFFLINE_TEXTS.closeNotice}
 				</button>

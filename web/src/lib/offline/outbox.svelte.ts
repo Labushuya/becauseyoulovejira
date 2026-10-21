@@ -28,7 +28,10 @@
 // - Nothing goes without a word (round 3): what the deletion after 7 days takes, and a sub-task a
 //   completion should have taken along that the server did not complete, show as notices that stay
 //   until the user closes them (`notices`); every 5xx counts as "may have arrived"; reading a ticket
-//   again has the time limit of a request.
+//   again has the time limit of a request. Since OF-3c the notices stay on the device per account
+//   (store "meta", domain/offline-notices.ts): every tab of the account shows them, also after a
+//   reload, until "Schließen" in one of them; a deleted action and its notice go in one transaction.
+//   Only an app without the way of a kind keeps an error without a status as "not arrived".
 // - The actions belong to the signed-in account: another account never sends them, and they are
 //   deleted when another account signs in (decision of the user 4). "Abmelden" deletes them after
 //   the question (`clearUser`), also when this tab never read the device; an ended session keeps
@@ -106,6 +109,18 @@ import {
 	type Fresh,
 	type Leave
 } from '$lib/domain/offline-chain';
+import {
+	childNotice,
+	decidesInstead,
+	droppedEntries,
+	noticeText,
+	parseNotices,
+	withDropped,
+	withNotices,
+	withoutDecided,
+	withoutNotice,
+	type OfflineNotice
+} from '$lib/domain/offline-notices';
 import type { ProblemEntry } from '$lib/domain/problems';
 import { isStatus, type Status } from '$lib/domain/status';
 import type { CompletionChoice } from '$lib/domain/subtasks';
@@ -232,7 +247,21 @@ function storageRaced(): Error {
 	return error;
 }
 
-/** A notice that stays until the user closes it (round 3): what went or did not happen. */
+/**
+ * The app has no way to send this kind of action (an app without it, OF-3c, R3-2): nothing left the
+ * device, so unlike every other error of the server it never makes an action "may have arrived".
+ */
+export class OutboxNoWayError extends DataError {
+	constructor() {
+		super('server');
+		this.name = 'OutboxNoWayError';
+	}
+}
+
+/**
+ * A notice that stays until the user closes it (round 3; since OF-3c on the device, in every tab):
+ * what went or did not happen, in words made when it shows.
+ */
 export interface OutboxNotice {
 	readonly id: string;
 	readonly text: string;
@@ -282,11 +311,15 @@ type Resolution =
 	| { kind: 'refused'; failure: DataError }
 	| { kind: 'gone' };
 
-/** A plan of a change of the device: the actions as they should be, the one that goes last. */
+/**
+ * A plan of a change of the device: the actions as they should be, the one that goes last, and per
+ * action that goes the change of the notices written in the same transaction (OF-3c).
+ */
 interface Planned<R> {
 	after: readonly KeptAction[];
 	last?: string;
 	result: R;
+	noted?: ReadonlyMap<string, (current: unknown) => unknown[] | null>;
 }
 
 /** What "Verwerfen" did, for its flag and its "Rückgängig" (OF-3b). */
@@ -315,27 +348,6 @@ function isMissing(failure: DataError): boolean {
 	return failure.kind === 'not_found' || failure.kind === 'forbidden';
 }
 
-/**
- * The notice about the actions of `drop` the deletion after 7 days takes (round 3, R2-2), null for
- * none. An action in the outbox never surely arrived with an answer (one that did is gone), so each
- * counts: its ticket is named, and a take-back says which "Verwerfen" was not carried out.
- */
-function droppedNotice(before: readonly KeptAction[], drop: readonly string[]): string | null {
-	const gone = inOrder(before.filter((action) => drop.includes(action.op)));
-	if (gone.length === 0) return null;
-	const keys = [...new Set(gone.map((action) => (action.key === '' ? 'ein Ticket' : action.key)))];
-	const backs = gone.filter(isTakeBack).map((back) => {
-		const original = before.find((action) => action.op === back.undoes);
-		const what =
-			original === undefined
-				? `einer Änderung an ${back.key === '' ? 'einem Ticket' : back.key}`
-				: `„${actionText(original)}“`;
-		return OFFLINE_TEXTS.droppedDiscard(what);
-	});
-	const head = OFFLINE_TEXTS.dropped(gone.length, keys.join(', '));
-	return [head, ...backs, OFFLINE_TEXTS.checkTickets(keys.length)].join(' ');
-}
-
 function randomFill(bytes: Uint8Array<ArrayBuffer>): Uint8Array {
 	return crypto.getRandomValues(bytes);
 }
@@ -360,9 +372,21 @@ export class OutboxStore {
 	#failing = $state.raw<{ problem: ProblemEntry | null } | null>(null);
 	/** The entries behind conflicts and refusals ("Details"), only in this tab. */
 	readonly #problems = new SvelteMap<string, ProblemEntry | null>();
-	/** Notices that stay until the user closes them, only in this tab (round 3). */
-	#notices = $state.raw<readonly OutboxNotice[]>([]);
-	#noticeCount = 0;
+	/** The notices of the account on the device as last read (round 3; OF-3c), oldest first. */
+	#notices = $state.raw<readonly OfflineNotice[]>([]);
+	/** Notices the storage failed to keep: shown in this tab at least (OF-3c, never silently). */
+	#unsaved = $state.raw<readonly OfflineNotice[]>([]);
+	/** Notices closed here whose deletion on the device is under way: a read meanwhile keeps them out. */
+	readonly #closing = new SvelteSet<string>();
+	/**
+	 * The notices in words, made when they show (OF-3c); not one about a sub-task while a later change
+	 * of the user decides about it (R3-4: that change shows instead).
+	 */
+	readonly #shownNotices = $derived(
+		[...this.#notices, ...this.#unsaved]
+			.filter((notice) => !this.#actions.some((action) => decidesInstead(notice, action)))
+			.map((notice) => ({ id: notice.id, text: noticeText(notice) }))
+	);
 
 	#sink: OutboxSink | null = null;
 	#loading: Promise<void> | null = null;
@@ -498,22 +522,78 @@ export class OutboxStore {
 
 	/**
 	 * Notices that stay until the user closes them (round 3): changes the deletion after 7 days took,
-	 * sub-tasks a completion should have taken along that are not done. Only in this tab.
+	 * sub-tasks a completion should have taken along that are not done. Since OF-3c they are kept on
+	 * the device per account and show in every tab of the signed-in account, also after a reload.
 	 */
 	get notices(): readonly OutboxNotice[] {
-		return this.#notices;
+		return this.#shownNotices;
 	}
 
-	/** "Schließen" of a notice. */
-	closeNotice(id: string): void {
-		this.#notices = this.#notices.filter((notice) => notice.id !== id);
+	/**
+	 * "Schließen" of a notice: it goes at once here, on the device as a compare-and-swap against what
+	 * was shown (I5; a notice that changed meanwhile shows anew), and the other tabs read again.
+	 */
+	async closeNotice(id: string): Promise<void> {
+		const unsaved = this.#unsaved.find((notice) => notice.id === id);
+		if (unsaved !== undefined) {
+			this.#unsaved = this.#unsaved.filter((notice) => notice !== unsaved);
+			return;
+		}
+		const shown = this.#notices.find((notice) => notice.id === id);
+		const storage = this.#storage;
+		const user = this.#user;
+		if (shown === undefined || storage === null || user === null) return;
+		this.#closing.add(id);
+		this.#notices = this.#notices.filter((notice) => notice !== shown);
+		try {
+			await this.#guard(OFFLINE_INTENTS.closeNotice, async () => {
+				const stored = await this.#locked(() =>
+					storage.notices(user, (current) => withoutNotice(current, shown))
+				);
+				this.#closing.delete(id);
+				this.#post();
+				if (this.#user === user) this.#showNotices(stored);
+			});
+		} finally {
+			if (this.#closing.delete(id) && this.#user === user) {
+				// The device failed (its flag says so): the notice stays as the device holds it.
+				await this.#guard(OFFLINE_INTENTS.read, () => this.#readNotices(storage, user));
+			}
+		}
 	}
 
-	/** Shows a notice that stays; the same words twice show once. */
-	#notify(text: string): void {
-		if (this.#notices.some((notice) => notice.text === text)) return;
-		this.#noticeCount += 1;
-		this.#notices = [...this.#notices, { id: `outbox-notice-${this.#noticeCount}`, text }];
+	/** Shows the notices of the account as the device holds them, without those being closed. */
+	#showNotices(stored: unknown): void {
+		this.#notices = parseNotices(stored).filter((notice) => !this.#closing.has(notice.id));
+	}
+
+	async #readNotices(storage: OutboxStorage, user: string): Promise<void> {
+		const stored = await storage.notices(user);
+		if (this.#user === user) this.#showNotices(stored);
+	}
+
+	/**
+	 * Keeps notices on the device (OF-3c) and tells the other tabs; the same notice twice shows once.
+	 * Where the storage fails, they show in this tab at least, and the flag of the storage says why.
+	 */
+	async #keepNotices(notices: readonly OfflineNotice[]): Promise<void> {
+		if (notices.length === 0) return;
+		const storage = this.#storage;
+		const user = this.#user;
+		if (storage === null || user === null) return;
+		try {
+			const stored = await withIntent(OFFLINE_INTENTS.keepNotice, () =>
+				this.#locked(() => storage.notices(user, (current) => withNotices(current, notices)))
+			);
+			this.#post();
+			if (this.#user === user) this.#showNotices(stored);
+		} catch (error) {
+			if (this.#user !== user) return;
+			const shown = [...this.#notices, ...this.#unsaved];
+			const missing = notices.filter((notice) => !shown.some((other) => other.id === notice.id));
+			this.#unsaved = [...this.#unsaved, ...missing];
+			this.#report(error);
+		}
 	}
 
 	/** Reloading the page now would leave the app unopenable until the server is back. */
@@ -588,8 +668,11 @@ export class OutboxStore {
 		this.#loadingFor = null;
 		this.#base.clear();
 		this.#problems.clear();
-		// The notices name tickets of the account before.
+		// The notices name tickets of the account before; the device keeps them for its next sign-in,
+		// the reading of the device brings those of this account (OF-3c).
 		this.#notices = [];
+		this.#unsaved = [];
+		this.#closing.clear();
 		this.#failing = null;
 		this.#update();
 	}
@@ -669,8 +752,9 @@ export class OutboxStore {
 	}
 
 	/**
-	 * Reads the actions of the device. `start`: entries of other accounts and older than 7 days go,
-	 * those older than 48 hours wait for a decision.
+	 * Reads the actions and the notices of the account on the device (since OF-3c in every tab).
+	 * `start`: entries of other accounts and older than 7 days go, those older than 48 hours wait for
+	 * a decision; the notices of other accounts stay for their next sign-in.
 	 */
 	async #read(storage: OutboxStorage, user: string, start: boolean): Promise<void> {
 		const raw = await storage.list();
@@ -686,9 +770,12 @@ export class OutboxStore {
 		}
 		// Entries of other accounts and unreadable ones belong to nobody here: deleted unconditionally.
 		if (gone.length > 0) await storage.remove(gone);
+		// Read last and shown right away: a notice written meanwhile by this tab is never shown older.
+		const notices = await storage.notices(user);
 		if (this.#user !== user) return;
 		const before = this.#actions;
 		this.#actions = inOrder(mine);
+		this.#showNotices(notices);
 		if (start) {
 			await this.#locked(async () => {
 				await this.#age(this.#now());
@@ -1167,8 +1254,9 @@ export class OutboxStore {
 	/** One request of the action over the way of its kind. */
 	#transmit(action: KeptAction, fields: OutboxFields, signal: AbortSignal): Promise<Answer> {
 		if (isStatusAction(action)) return this.#deps.send(action, fields, signal);
-		// Without the way of its kind (an app without it) the action waits like after an error.
-		const missing = () => Promise.reject(new DataError('server'));
+		// Without the way of its kind (an app without it) the action waits like after an error; nothing
+		// left the device (OF-3c, R3-2).
+		const missing = () => Promise.reject(new OutboxNoWayError());
 		if (isDueAction(action)) {
 			const send = this.#deps.sendDue;
 			return send === undefined ? missing() : send(action, fields, signal);
@@ -1238,12 +1326,29 @@ export class OutboxStore {
 	}
 
 	/**
+	 * Deletes `before` like `#swap` and changes the notices of its account in the same transaction
+	 * (OF-3c): the other tabs hear of both at once.
+	 */
+	async #dropNoting(
+		before: KeptAction,
+		note: (current: unknown) => unknown[] | null
+	): Promise<boolean> {
+		const storage = this.#storage;
+		if (storage === null) throw new DataError('network');
+		const matches = (current: unknown) => sameAction(current, before);
+		const wrote = await storage.swapNoting(before.op, matches, null, before.user, note);
+		if (wrote) this.#gone([before.op]);
+		return wrote;
+	}
+
+	/**
 	 * Deletes every action of the account without a comparison ("Abmelden und verwerfen", decision 4)
 	 * and tells the other tabs. One of three writes of the device without a compare-and-swap (OF-3b,
 	 * round 2): this one and `clearUser` in a tab that never read the device delete everything of the
 	 * account on purpose, whatever its state (since round 3 as read from the device, R2-7); `#read`
 	 * deletes entries of other accounts and unreadable ones, which no step of this account plans with.
-	 * Every other write is `#create` or `#swap`.
+	 * Every other write is `#create` or `#swap` (`#dropNoting` with the notice); the notices change in
+	 * one transaction against what is stored (OF-3c), `clearUser` deletes those of the account.
 	 */
 	async #forget(ops: readonly string[]): Promise<void> {
 		if (ops.length === 0) return;
@@ -1263,13 +1368,15 @@ export class OutboxStore {
 
 	/**
 	 * Writes `after` over `before`, a reading of the device (OF-3b): new actions first, then the
-	 * changed ones, then the ones that go, `last` at the very end, each as a compare-and-swap. False
+	 * changed ones, then the ones that go, `last` at the very end, each as a compare-and-swap. An action
+	 * that goes with a change of the notices (`noted`, OF-3c) writes it in the same transaction. False
 	 * when the device changed meanwhile; what was written until then is in line with `after`.
 	 */
 	async #commit(
 		before: readonly KeptAction[],
 		after: readonly KeptAction[],
-		last?: string
+		last?: string,
+		noted?: ReadonlyMap<string, (current: unknown) => unknown[] | null>
 	): Promise<boolean> {
 		const known = (op: string) => before.find((action) => action.op === op);
 		for (const action of after) {
@@ -1286,7 +1393,10 @@ export class OutboxStore {
 			...gone.filter((action) => action.op === last)
 		];
 		for (const action of ordered) {
-			if (!(await this.#swap(action, null))) return false;
+			const note = noted?.get(action.op);
+			const wrote =
+				note === undefined ? await this.#swap(action, null) : await this.#dropNoting(action, note);
+			if (!wrote) return false;
 		}
 		return true;
 	}
@@ -1307,7 +1417,7 @@ export class OutboxStore {
 			const before = this.#actions;
 			const planned = await plan(before);
 			if (planned === null) return null;
-			if (await this.#commit(before, planned.after, planned.last)) {
+			if (await this.#commit(before, planned.after, planned.last, planned.noted)) {
 				this.#refreshChanged(before, this.#actions);
 				return planned.result;
 			}
@@ -1355,7 +1465,10 @@ export class OutboxStore {
 	 * more, so it goes where its take-backs hold whatever the server has (`coveredAtExpiry`), else it is
 	 * sent to the end without the time of the device; one orphaned while "sending" may have arrived,
 	 * also when it waits for a decision (round 3). A take-back never expires (round 2, S1); one an
-	 * older build let expire waits to be sent again. The caller holds `#locked`.
+	 * older build let expire waits to be sent again. Since OF-3c each deleted action is written into the
+	 * notice of its run on the device in the transaction that deletes it, so no tab and no reload loses
+	 * it; a discarded one whose take-back stays and is sent counts no more (R3-6). The caller holds
+	 * `#locked`.
 	 */
 	async #age(now: number): Promise<void> {
 		const expiredBacks = (actions: readonly KeptAction[]) =>
@@ -1364,7 +1477,9 @@ export class OutboxStore {
 		const idle = (actions: readonly KeptAction[], found: typeof aged) =>
 			found.expire.length === 0 && found.drop.length === 0 && expiredBacks(actions).length === 0;
 		if (idle(this.#actions, aged)) return;
-		const notice = await this.#transform(async (before) => {
+		// One notice per run, also over the rounds of a compare-and-swap that missed.
+		const run: { head: { id: string; at: number } | null } = { head: null };
+		await this.#transform(async (before) => {
 			const found = agedActions(before, now);
 			if (idle(before, found)) return null;
 			const { expire, drop } = found;
@@ -1400,9 +1515,24 @@ export class OutboxStore {
 				}
 				return settleChains(actions, context);
 			});
-			return { after, result: droppedNotice(before, drop) };
+			const entries = droppedEntries(before, drop, after);
+			const first = entries[0];
+			if (first === undefined) return { after, result: true };
+			const notice = (run.head ??= { id: `dropped-${first.op}`, at: now });
+			const noted = new SvelteMap(
+				entries.map((entry) => [
+					entry.op,
+					(current: unknown) => withDropped(current, notice, entry)
+				])
+			);
+			return { after, result: true, noted };
 		});
-		if (notice !== null) this.#notify(notice);
+		// The other tabs heard of each deletion; this one shows the notice as the device holds it.
+		const storage = this.#storage;
+		const user = this.#user;
+		if (run.head !== null && storage !== null && user !== null) {
+			await this.#readNotices(storage, user);
+		}
 	}
 
 	// ----- the worker -----
@@ -1508,6 +1638,10 @@ export class OutboxStore {
 		const resolution = await this.#transform((before) =>
 			this.#resolution(before, sent.op, result, first, now)
 		);
+		// An arrival may have taken a notice along: this tab shows them as the device holds them now.
+		if (resolution?.kind === 'arrived' && this.#notices.length > 0) {
+			await this.#readNotices(storage, user);
+		}
 		return resolution ?? { kind: 'gone' };
 	}
 
@@ -1525,15 +1659,19 @@ export class OutboxStore {
 			this.#pure((context) => settleChains(actions, context));
 		const leave = (how: Leave) =>
 			this.#pure((context) => settleChains(leaveChain(before, op, how, context), context));
+		// Arrived: the notices about a sub-task it decided instead go with it, in one transaction (R3-4).
+		const retire = new SvelteMap([[op, (current: unknown) => withoutDecided(current, fresh)]]);
 		if (result.ok) {
 			const after = await leave({ how: 'arrived' });
-			return { after, last: op, result: { kind: 'arrived', action: fresh, value: result.value } };
+			const arrived = { kind: 'arrived', action: fresh, value: result.value } as const;
+			return { after, last: op, result: arrived, noted: retire };
 		}
 		const failure = result.failure;
 		const verdict = verdictOf(failure);
 		if (verdict.result === 'arrived') {
 			const after = await leave({ how: 'arrived' });
-			return { after, last: op, result: { kind: 'arrived', action: fresh, value: null } };
+			const arrived = { kind: 'arrived', action: fresh, value: null } as const;
+			return { after, last: op, result: arrived, noted: retire };
 		}
 		const queued: KeptAction = withoutSending({ ...fresh, state: 'queued' });
 		if (verdict.result === 'network') {
@@ -1552,11 +1690,12 @@ export class OutboxStore {
 			// A 5xx does not say that the server looked the identifier up (a proxy may answer it): an
 			// earlier request without an answer may still have arrived (round 2, M-3), and so may this
 			// one, which a proxy may have answered after the server took it (round 3, R2-11: every 5xx;
-			// only an answer with 2xx or 4xx is final). An error without a status never had an answer
-			// of the server (an app without the way of the kind): it stays as it was.
+			// only an answer with 2xx or 4xx is final). So may one that failed without a status, an
+			// exception in the client after the answer of the server, say (OF-3c, R3-2). Only an app
+			// without the way of the kind sent nothing (`OutboxNoWayError`): it stays as it was.
 			const attempts = fresh.attempts + 1;
 			const nextAttemptAt = now + backoffDelay(attempts, this.#random);
-			const maybe = failure.status >= 500 ? { unanswered: true as const } : {};
+			const maybe = failure instanceof OutboxNoWayError ? {} : { unanswered: true as const };
 			const after = await settle(
 				replaced(before, { ...queued, attempts, nextAttemptAt, ...maybe })
 			);
@@ -1620,18 +1759,20 @@ export class OutboxStore {
 	 * now is the one later changes are based on (round 2), read side by side (round 3, R2-10). The hook
 	 * completes them only on the step to "done": one that is not done although the completion the user
 	 * keeps should have taken it along shows as a notice that stays; nothing is sent on its own (round
-	 * 3, R2-1). A discarded completion is not what the user wants and names none.
+	 * 3, R2-1). A discarded completion is not what the user wants and names none. Since OF-3c the notice
+	 * is kept on the device; while a later change of the user sets the status of the sub-task, that
+	 * change decides and the notice does not show (R3-4, `decidesInstead`).
 	 */
 	async #checkChildren(action: KeptAction): Promise<void> {
 		const children = childrenAlong(action);
 		if (children.length === 0) return;
 		const read = await Promise.all(children.map((child) => this.#reread(child)));
 		if (action.discarded === true || action.user !== this.#user) return;
-		const parent = action.key === '' ? 'Ticket' : action.key;
-		for (const ticket of read) {
-			if (ticket === null || ticket.status === 'done') continue;
-			this.#notify(OFFLINE_TEXTS.childNotDone(ticket.key === '' ? 'Ticket' : ticket.key, parent));
-		}
+		const at = this.#now();
+		const notices = read.flatMap((ticket) =>
+			ticket === null || ticket.status === 'done' ? [] : [childNotice(action, ticket, at)]
+		);
+		await this.#keepNotices(notices);
 	}
 
 	#settled(): void {
@@ -2052,17 +2193,35 @@ export class OutboxStore {
 	 * this tab never read the device (G3). It runs after the steps of this tab that write the device
 	 * (round 2), so none of them writes an action back after it, and takes the actions as the device
 	 * has them, not as this tab last read them: another tab may have kept one meanwhile (round 3, R2-7).
+	 * The notices of the account go with them (OF-3c).
 	 */
 	async clearUser(): Promise<void> {
 		await this.#locked(async () => {
 			const ops = await this.#opsOfAccount();
 			if (!this.#loaded) {
 				if (ops.length > 0) await this.#storage?.remove(ops);
-				return;
+			} else {
+				const known = this.#actions.map((action) => action.op).filter((op) => !ops.includes(op));
+				await this.#forget([...ops, ...known]);
 			}
-			const known = this.#actions.map((action) => action.op).filter((op) => !ops.includes(op));
-			await this.#forget([...ops, ...known]);
+			await this.#forgetNotices();
 		});
+	}
+
+	/**
+	 * The notices of the account go with "Abmelden und verwerfen" (OF-3c), on the device as well (the
+	 * whole entry of the account, on purpose, like `#forget`), without creating the storage; those of
+	 * other accounts stay.
+	 */
+	async #forgetNotices(): Promise<void> {
+		const storage = this.#storage;
+		const user = this.#user;
+		this.#notices = [];
+		this.#unsaved = [];
+		if (storage === null || user === null) return;
+		if (this.#deps.exists !== undefined && !(await this.#deps.exists())) return;
+		await storage.notices(user, (current) => (current === undefined ? null : []));
+		this.#post();
 	}
 }
 

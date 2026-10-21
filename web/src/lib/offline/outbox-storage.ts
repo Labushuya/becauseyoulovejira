@@ -5,7 +5,9 @@
 // actions themselves, never a copy of a ticket, a list or a plan.
 //
 // - Store "actions", key `op`; indexes byUserSeq [user, seq] and byTarget [user, target].
-// - Store "meta": `seq` (running number of the device) and `lease` ({ tab, until }).
+// - Store "meta": `seq` (running number of the device), `lease` ({ tab, until }) and, since OF-3c,
+//   `notices:<account>` (the notices of the outbox of one account, domain/offline-notices.ts). A new key
+//   in an existing store: the version of the database stays 1, an older build never reads it.
 // - Deleting goes by key, never with deleteDatabase (that blocks while another tab has it open).
 
 import type { KeptAction } from '$lib/domain/offline';
@@ -32,6 +34,24 @@ export interface OutboxStorage {
 		matches: (current: unknown) => boolean,
 		next: KeptAction | null
 	): Promise<boolean>;
+	/**
+	 * Compare-and-swap of one entry like `swap`; when it writes, the notices of `user` change with it in
+	 * the same transaction (`note` on them as stored, null leaves them; OF-3c), so the deletion after
+	 * 7 days never deletes an action without its notice, nor writes a notice without the deletion.
+	 */
+	swapNoting(
+		op: string,
+		matches: (current: unknown) => boolean,
+		next: KeptAction | null,
+		user: string,
+		note: (current: unknown) => unknown[] | null
+	): Promise<boolean>;
+	/**
+	 * The notices of `user` as stored, unread (OF-3c); undefined without any. With `change`, in one
+	 * transaction: it gets them as stored and returns what to keep instead (an empty list deletes them),
+	 * null to leave them; the result is what the device holds afterwards.
+	 */
+	notices(user: string, change?: (current: unknown) => unknown[] | null): Promise<unknown>;
 	/** The next number of the order on this device. */
 	nextSeq(): Promise<number>;
 	/**
@@ -63,9 +83,16 @@ export function mayLease(current: unknown, tab: string, now: number): boolean {
 	return !isLease(current) || current.tab === tab || current.until <= now;
 }
 
+/** The key of the notices of an account in the store "meta" (OF-3c). */
+export function noticesKey(user: string): string {
+	return `notices:${user}`;
+}
+
 /** The storage of the tests: one instance stands for one device, several outboxes may share it. */
 export class MemoryOutboxStorage implements OutboxStorage {
 	readonly entries = new Map<string, unknown>();
+	/** The notices per account (OF-3c), as the store "meta" keeps them. */
+	readonly notes = new Map<string, unknown>();
 	#seq = 0;
 	#lease: Lease | null = null;
 
@@ -91,6 +118,35 @@ export class MemoryOutboxStorage implements OutboxStorage {
 		if (next === null) this.entries.delete(op);
 		else this.entries.set(op, structuredClone(next));
 		return true;
+	}
+
+	async swapNoting(
+		op: string,
+		matches: (current: unknown) => boolean,
+		next: KeptAction | null,
+		user: string,
+		note: (current: unknown) => unknown[] | null
+	): Promise<boolean> {
+		const current = this.entries.get(op);
+		if (!matches(current === undefined ? undefined : structuredClone(current))) return false;
+		const notes = note(structuredClone(this.notes.get(user)));
+		if (next === null) this.entries.delete(op);
+		else this.entries.set(op, structuredClone(next));
+		if (notes !== null) this.#keep(user, notes);
+		return true;
+	}
+
+	async notices(user: string, change?: (current: unknown) => unknown[] | null): Promise<unknown> {
+		if (change !== undefined) {
+			const next = change(structuredClone(this.notes.get(user)));
+			if (next !== null) this.#keep(user, next);
+		}
+		return structuredClone(this.notes.get(user));
+	}
+
+	#keep(user: string, notes: unknown[]): void {
+		if (notes.length === 0) this.notes.delete(user);
+		else this.notes.set(user, structuredClone(notes));
 	}
 
 	async nextSeq(): Promise<number> {
@@ -127,6 +183,12 @@ function finished(transaction: IDBTransaction): Promise<void> {
 		transaction.onerror = () => reject(transaction.error);
 		transaction.onabort = () => reject(transaction.error);
 	});
+}
+
+/** Writes the notices of an account in the store "meta", deletes the key for none (OF-3c). */
+function keep(meta: IDBObjectStore, key: string, notes: unknown[]): void {
+	if (notes.length === 0) meta.delete(key);
+	else meta.put(notes, key);
 }
 
 /** IndexedDB of the browser. The database opens on first use, so a device without the outbox has none. */
@@ -203,6 +265,47 @@ export class IdbOutboxStorage implements OutboxStorage {
 		else if (take && next !== null) store.put(next);
 		await finished(transaction);
 		return take;
+	}
+
+	async swapNoting(
+		op: string,
+		matches: (current: unknown) => boolean,
+		next: KeptAction | null,
+		user: string,
+		note: (current: unknown) => unknown[] | null
+	): Promise<boolean> {
+		const db = await this.#open();
+		// Both stores in one transaction: the action and its notice change together or not at all.
+		const transaction = db.transaction([ACTIONS, META], 'readwrite');
+		const store = transaction.objectStore(ACTIONS);
+		const meta = transaction.objectStore(META);
+		const key = noticesKey(user);
+		const [current, notes] = await Promise.all([done(store.get(op)), done(meta.get(key))]);
+		const take = matches(current);
+		if (take) {
+			// The notice first: should it throw, nothing is written and the transaction ends empty.
+			const noted = note(notes);
+			if (next === null) store.delete(op);
+			else store.put(next);
+			if (noted !== null) keep(meta, key, noted);
+		}
+		await finished(transaction);
+		return take;
+	}
+
+	async notices(user: string, change?: (current: unknown) => unknown[] | null): Promise<unknown> {
+		const db = await this.#open();
+		const transaction = db.transaction(META, change === undefined ? 'readonly' : 'readwrite');
+		const meta = transaction.objectStore(META);
+		const key = noticesKey(user);
+		let notes: unknown = await done(meta.get(key));
+		const next = change?.(notes) ?? null;
+		if (next !== null) {
+			keep(meta, key, next);
+			notes = next.length === 0 ? undefined : next;
+		}
+		await finished(transaction);
+		return notes;
 	}
 
 	async nextSeq(): Promise<number> {
