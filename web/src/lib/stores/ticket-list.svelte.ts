@@ -67,7 +67,7 @@ import {
 	type TicketSummary
 } from '$lib/domain/ticket';
 import { countNew, isNew, unreadSinceOf, type UnreadTicket } from '$lib/domain/unread';
-import { OFFLINE_TEXTS } from '$lib/domain/offline';
+import { OFFLINE_TEXTS, ticketName } from '$lib/domain/offline';
 import { pinnedTickets } from '$lib/domain/pins';
 import { SILENT_FLAGS, type FlagSink } from './flags.svelte';
 import type { PinnedSource } from './pins.svelte';
@@ -117,6 +117,13 @@ export interface TicketOverlay {
 	holds(id: string): boolean;
 	/** A change of the ticket waits to be sent (the flag says so). */
 	isPending(id: string): boolean;
+	/**
+	 * Tickets "＋" created that the server does not have yet (OF-4a, concept §3.5): the list shows them
+	 * next to its own until the server delivers one under the same ID; a reconciliation keeps them.
+	 */
+	createdTickets?(): readonly TicketSummary[];
+	/** Whether this is a ticket "＋" created as the outbox shows it: it never joins those of the server. */
+	isCreatedView?(ticket: object): boolean;
 }
 
 export const NO_OVERLAY: TicketOverlay = Object.freeze({
@@ -374,7 +381,18 @@ export class TicketListStore {
 	#searchBusy = $state(false);
 	#searchError = $state<string | null>(null);
 
-	#openList = $derived([...this.#open.values()].sort(ticketOrder(this.#today)));
+	/**
+	 * Tickets "＋" created that the server does not have yet (OF-4a) and that are not done, as long as
+	 * the list has none of the server under their ID: then that one stands in their place, no jump.
+	 */
+	#created = $derived.by(() =>
+		(this.#overlay.createdTickets?.() ?? []).filter(
+			(ticket) => ticket.status !== 'done' && !this.#open.has(ticket.id)
+		)
+	);
+	/** The tickets that are not done: those of the server and the ones "＋" created (OF-4a). */
+	#openTickets = $derived([...this.#open.values(), ...this.#created]);
+	#openList = $derived([...this.#openTickets].sort(ticketOrder(this.#today)));
 	/** Visible open rows: filtered, narrowed by the search and in the column sort. */
 	#visibleList = $derived.by(() => {
 		const query = this.#query;
@@ -432,7 +450,7 @@ export class TicketListStore {
 		const subProjectsOf = this.#subProjectsOf;
 		const self = this.#selfId;
 		return countCards(
-			[...this.#open.values()].filter(
+			this.#openTickets.filter(
 				(ticket) =>
 					matchesFilter(ticket, query, today, subProjectsOf, self) &&
 					(ids === null || ids.has(ticket.id))
@@ -510,6 +528,9 @@ export class TicketListStore {
 	 */
 	isNew(ticket: UnreadTicket): boolean {
 		if (!this.#readsReady) return false;
+		// A ticket "＋" created is one's own and not on the server yet: never "neu" (OF-4a); once it
+		// arrived it counts as read (ADR-0015 §3).
+		if (this.isCreated(ticket.id)) return false;
 		return isNew(ticket, this.#readTickets, this.#unreadSince, this.#selfId);
 	}
 
@@ -626,9 +647,9 @@ export class TicketListStore {
 		return this.#listedList.length;
 	}
 
-	/** Number of tickets that are not done (header counter, T-18). */
+	/** Number of tickets that are not done (header counter, T-18), "＋" created ones too (OF-4a). */
 	get openCount(): number {
-		return this.#open.size;
+		return this.#open.size + this.#created.length;
 	}
 
 	/**
@@ -687,9 +708,28 @@ export class TicketListStore {
 		return this.#announcement;
 	}
 
-	/** Open ticket of the list (or a loaded sub-task, open or done), null if it is not loaded. */
+	/**
+	 * Open ticket of the list (or a loaded sub-task, open or done), null if it is not loaded; a ticket
+	 * "＋" created that the server does not have yet as the outbox shows it, also done (OF-4a).
+	 */
 	find(id: string): TicketSummary | null {
+		const own = this.#open.get(id) ?? this.#subtasks.get(id);
+		if (own !== undefined) return own;
+		return this.#overlay.createdTickets?.().find((ticket) => ticket.id === id) ?? null;
+	}
+
+	/** A ticket of the server the list holds (open, or a sub-task), never one "＋" created (OF-4a). */
+	#served(id: string): TicketSummary | null {
 		return this.#open.get(id) ?? this.#subtasks.get(id) ?? null;
+	}
+
+	/**
+	 * A ticket "＋" created that the server does not have yet (OF-4a): no menu, no pin, nothing that
+	 * needs the server until it has it.
+	 */
+	isCreated(id: string): boolean {
+		if (this.#open.has(id) || this.#subtasks.has(id)) return false;
+		return (this.#overlay.createdTickets?.() ?? []).some((ticket) => ticket.id === id);
 	}
 
 	/** Sub-tasks of a ticket, open ones first, then by creation (ADR-0033 section 4). */
@@ -893,14 +933,18 @@ export class TicketListStore {
 	/**
 	 * Inserts or replaces a ticket (own answer or realtime event). An older `updated` than the
 	 * one in the store is ignored, so a late event does not overwrite a newer answer. A done ticket
-	 * leaves the list; the view "Erledigte" shows it (ADR-0066).
+	 * leaves the list; the view "Erledigte" shows it (ADR-0066). Only a ticket of the server counts
+	 * for that, never one "＋" created as the outbox shows it: its `updated` is the time of the device
+	 * (OF-4a round 2, A4).
 	 */
 	upsert(incoming: TicketSummary): void {
 		if (this.#deleted.has(incoming.id)) return;
+		// A ticket the outbox made itself ("＋" kept for later, OF-4a) is shown from there, never here.
+		if (this.#overlay.isCreatedView?.(incoming) === true) return;
 		// A kept change of the outbox stays laid over it (OF-2).
 		const ticket = this.#overlay.apply(incoming);
 		this.#touched?.add(ticket.id);
-		const existing = this.find(ticket.id);
+		const existing = this.#served(ticket.id);
 		if (existing !== null && existing.updated > ticket.updated) return;
 		// Sub-tasks, open or done; a ticket released from its parent leaves them (ADR-0033).
 		if (ticket.parentId) this.#subtasks.set(ticket.id, ticket);
@@ -955,17 +999,18 @@ export class TicketListStore {
 			this.upsert(ticket);
 			return;
 		}
-		const existing = this.find(ticket.id);
+		const existing = this.#served(ticket.id);
 		if (existing !== null && existing.updated > ticket.updated) return;
 		this.upsert(ticket);
 		this.#dropUndo(ticket.id);
 		const id = ticket.id;
+		const name = ticketName(ticket);
 		const flagId = this.#flags.show({
 			tone: 'success',
 			title:
 				children.length === 0
-					? `${ticket.key} erledigt.`
-					: `${ticket.key} und ${subtaskCountText(children.length)} erledigt.`,
+					? `${name} erledigt.`
+					: `${name} und ${subtaskCountText(children.length)} erledigt.`,
 			// Kept by the outbox (OF-2): it says so, and that the next ticket of a series comes later.
 			...(this.#overlay.isPending(id) && {
 				description: OFFLINE_TEXTS.pendingDone(ticket.recurring)
@@ -975,7 +1020,7 @@ export class TicketListStore {
 				if (this.#undoable.get(id)?.flagId === flagId) this.#undoable.delete(id);
 			}
 		});
-		this.#undoable.set(id, { key: ticket.key, previousStatus, children, flagId });
+		this.#undoable.set(id, { key: name, previousStatus, children, flagId });
 	}
 
 	/**
@@ -1007,7 +1052,7 @@ export class TicketListStore {
 				this.upsert(saved);
 				this.#flags.show({
 					tone: 'success',
-					title: `${saved.key} wieder offen.`,
+					title: `${ticketName(saved)} wieder offen.`,
 					...(this.#overlay.isPending(id) && { description: OFFLINE_TEXTS.pendingFlag })
 				});
 			}
@@ -1018,7 +1063,7 @@ export class TicketListStore {
 			else
 				this.#fail(
 					error,
-					`${ticket.key} konnte nicht geändert werden.`,
+					`${ticketName(ticket)} konnte nicht geändert werden.`,
 					done ? undefined : { id, status: REOPEN_STATUS }
 				);
 		} finally {
@@ -1053,19 +1098,20 @@ export class TicketListStore {
 		} catch (error) {
 			const failure = toDataError(error);
 			const field = Object.values(failure.fields)[0];
+			const name = ticketName(ticket);
 			if (patch.status !== undefined && reopenRefusalOf(error) !== null) {
-				this.#fail(error, `${ticket.key} konnte nicht geändert werden.`, {
+				this.#fail(error, `${name} konnte nicht geändert werden.`, {
 					id,
 					status: patch.status
 				});
 			} else if (field !== undefined && failure.kind === 'validation') {
 				this.#flags.show({
 					tone: 'error',
-					title: `${ticket.key} konnte nicht geändert werden. ${field.message}`,
+					title: `${name} konnte nicht geändert werden. ${field.message}`,
 					problem: problemOf(failure)
 				});
 			} else {
-				this.#fail(error, `${ticket.key} konnte nicht geändert werden.`);
+				this.#fail(error, `${name} konnte nicht geändert werden.`);
 			}
 			return false;
 		} finally {
@@ -1210,8 +1256,8 @@ export class TicketListStore {
 			tone: 'success',
 			title:
 				restored === 0
-					? `${saved.key} ist wieder offen.`
-					: `${saved.key} und ${subtaskCountText(restored)} sind wieder offen.`
+					? `${ticketName(saved)} ist wieder offen.`
+					: `${ticketName(saved)} und ${subtaskCountText(restored)} sind wieder offen.`
 		});
 		if (failed.length > 0) {
 			this.#flags.show({

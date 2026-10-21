@@ -41,6 +41,17 @@
 //   first watch, so without the capability nothing is created in the browser.
 // - A failing storage of the device shows as an error flag with "Details", never as an uncaught
 //   rejection.
+// - Since OF-4a "＋" creates a ticket or an entry of the inbox under an ID of the client, the same way:
+//   kept before the first attempt, sent with `id` and `op_id`. Until the server has it, the stores show
+//   it from here (`createdTickets`, `createdItems`, "Neu" instead of the key); its answer replaces it
+//   under the same ID before the action goes. A change of such a ticket goes into the creation while it
+//   never left the device, else it waits for it. "Verwerfen" of a creation that never left the device
+//   deletes it with its changes; one that may have arrived is never sent again and never deleted on
+//   the server: it is only looked up by its ID, and where it is there a notice that stays names it with
+//   a link (C1 to C4 of ADR-0074 addendum OF-4a). Since round 2 a 5xx at the first attempt keeps a
+//   creation like a missing answer (A1); a lookup that does not find it, also after a refusal that
+//   followed a request without an answer, is final only 5 minutes after its last request (A5); a
+//   repetition the server answers with `validation_op_applied` names it in a notice (A7).
 
 import { createContext } from 'svelte';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
@@ -61,16 +72,25 @@ import {
 	canReopenAnyway,
 	childrenAlong,
 	completionInstead,
+	createdItemOf,
+	createdRecordOf,
+	createdTicketOf,
 	dueOfServer,
 	hasRoom,
 	inOrder,
+	isCreateAction,
 	isDayPlanAction,
 	isDueAction,
 	isFromTheFuture,
+	isInboxCreate,
 	isStatusAction,
 	isTakeBack,
+	isTicketCreate,
 	isWaiting,
+	lookUpAgainAt,
+	mayStillArrive,
 	newOpId,
+	newRecordId,
 	nextToSend,
 	nextWakeOf,
 	overlayDoneToday,
@@ -78,8 +98,9 @@ import {
 	overlayStatus,
 	parseAction,
 	planCheckChange,
-	planDueChange,
-	planStatusChange,
+	planCreate,
+	planTicketDue,
+	planTicketStatus,
 	reopenInstead,
 	requestFields,
 	sameAction,
@@ -87,17 +108,23 @@ import {
 	ticketOf,
 	unknownChildren,
 	verdictOf,
+	withoutFieldOf,
 	type ActionOutcome,
 	type ChangePlan,
 	type CheckChange,
+	type CreateAction,
+	type CreateChange,
+	type CreateField,
 	type DayPlanAction,
 	type DueAction,
+	type InboxCreateAction,
 	type KeptAction,
 	type OfflineOps,
 	type OutboxAction,
 	type OutboxFields,
 	type PlanContext,
-	type ServerState
+	type ServerState,
+	type TicketCreateAction
 } from '$lib/domain/offline';
 import {
 	coveredAtExpiry,
@@ -111,6 +138,7 @@ import {
 } from '$lib/domain/offline-chain';
 import {
 	childNotice,
+	createdNotice,
 	decidesInstead,
 	droppedEntries,
 	noticeText,
@@ -122,10 +150,11 @@ import {
 	withoutNotice,
 	type OfflineNotice
 } from '$lib/domain/offline-notices';
+import type { InboxItem, InboxItemSummary } from '$lib/domain/inbox';
 import type { ProblemEntry } from '$lib/domain/problems';
-import { isStatus, type Status } from '$lib/domain/status';
+import { isStatus, type Priority, type Status } from '$lib/domain/status';
 import type { CompletionChoice } from '$lib/domain/subtasks';
-import type { Ticket, TicketSummary } from '$lib/domain/ticket';
+import type { Ticket, TicketDraft, TicketSummary } from '$lib/domain/ticket';
 import type { RequestOutcome } from '$lib/pocketbase';
 import type { FlagSink } from '$lib/stores/flags.svelte';
 import { WINDOW_TIMERS, type ConnectivityStore, type Timers } from './connectivity.svelte';
@@ -187,6 +216,24 @@ export interface OutboxDeps {
 		signal: AbortSignal
 	): Promise<CheckAnswer>;
 	/**
+	 * Creates a ticket of "＋" under the ID of the client (OF-4a); without it "＋" keeps no ticket.
+	 */
+	sendCreate?(
+		action: TicketCreateAction,
+		fields: OutboxFields,
+		signal: AbortSignal
+	): Promise<Ticket>;
+	/** Puts an entry of "＋" into the inbox under the ID of the client (OF-4a). */
+	sendItem?(
+		action: InboxCreateAction,
+		fields: OutboxFields,
+		signal: AbortSignal
+	): Promise<InboxItem>;
+	/** Reads an entry of the inbox (a discarded creation that may have arrived, OF-4a). */
+	getItem?(id: string, signal?: AbortSignal): Promise<InboxItem>;
+	/** The area of the client for new records ('u:…' or 'h:…'), null without one (OF-4a). */
+	area?: () => string | null;
+	/**
 	 * Reads a ticket again (after a conflict, a refusal, an action that arrived before); `signal` ends
 	 * it after the time limit of a request (round 3).
 	 */
@@ -217,6 +264,24 @@ export interface OutboxSink {
 	sessionEnded(): void;
 	/** The open blocking sub-tasks a completion takes along ("Unteraufgaben mit erledigen"). */
 	childrenOf?(id: string): readonly string[];
+	/** An entry of the inbox as the server has it now (a creation of "＋" arrived, OF-4a). */
+	upsertItem?(item: InboxItemSummary): void;
+	/** A ticket created one by one counts as read (ADR-0015 §3), also once "＋" arrived later (OF-4a). */
+	markRead?(ticket: Ticket): void;
+}
+
+/** What "＋" puts into the inbox (OF-4a): the title and the values of the line. */
+export interface QuickItemDraft {
+	title: string;
+	project: string | null;
+	tags: readonly string[];
+	priority: Priority | null;
+}
+
+/** What "＋" gives back (OF-4a): the record of the server, or the one kept for later (`kept`). */
+export interface Created<T> {
+	value: T;
+	kept: boolean;
 }
 
 /** The device holds as many actions as it may (concept §3.2). */
@@ -266,6 +331,8 @@ export class OutboxNoWayError extends DataError {
 export interface OutboxNotice {
 	readonly id: string;
 	readonly text: string;
+	/** The record a notice names (OF-4a: a discarded creation that arrived anyway). */
+	readonly link?: { readonly record: 'ticket' | 'inbox'; readonly id: string };
 }
 
 /** A change of the status a store asks for. */
@@ -298,7 +365,7 @@ export type ChangeKind = 'status' | 'due' | 'check';
 /** The mark of a ticket or an entry: a change not sent yet, or one that waits for a decision. */
 export type OutboxMark = 'pending' | 'decision' | null;
 
-type Answer = Ticket | CheckAnswer;
+type Answer = Ticket | CheckAnswer | InboxItem;
 type Attempt = { ok: true; value: Answer } | { ok: false; failure: DataError };
 
 /** What became of an action after a request, as it is stored now (OF-3b). */
@@ -310,6 +377,8 @@ type Resolution =
 	| { kind: 'decision'; action: KeptAction }
 	| { kind: 'dropped'; action: KeptAction }
 	| { kind: 'refused'; failure: DataError }
+	/** A discarded creation not found while a request of it may still arrive (OF-4a round 2, A5). */
+	| { kind: 'lookLater' }
 	| { kind: 'gone' };
 
 /**
@@ -333,8 +402,15 @@ interface Planned<R> {
 	noted?: ReadonlyMap<string, Noting>;
 }
 
-/** What "Verwerfen" did, for its flag and its "Rückgängig" (OF-3b). */
-type Discarded = { kind: 'marked'; action: KeptAction } | { kind: 'deleted'; action: KeptAction };
+/**
+ * What "Verwerfen" did, for its flag and its "Rückgängig" (OF-3b); `along` are the changes of a ticket
+ * "＋" created that went with its creation (OF-4a).
+ */
+type Discarded = {
+	kind: 'marked' | 'deleted';
+	action: KeptAction;
+	along?: readonly KeptAction[];
+};
 
 /** What "Rückgängig" did (round 2): something, nothing to do, or why nothing could happen. */
 type Undone = 'done' | 'later' | 'full';
@@ -352,6 +428,27 @@ function replaced(actions: readonly KeptAction[], next: KeptAction): KeptAction[
 /** The actions with `op` replaced by `next`, which may carry another identifier. */
 function replacedBy(actions: readonly KeptAction[], op: string, next: KeptAction): KeptAction[] {
 	return actions.map((action) => (action.op === op ? next : action));
+}
+
+/** The IDs without doubles, in their order. */
+function unique(ids: readonly string[]): string[] {
+	return ids.filter((id, index) => ids.indexOf(id) === index);
+}
+
+/**
+ * The changes that wait for a creation "＋" made (OF-4a), also through each other: none of them left
+ * the device while it is there; they go with a discarded one. A change made after "Verwerfen" (of a
+ * ticket the server shows under the same ID) waits for none of it and stays.
+ */
+function alongCreation(actions: readonly KeptAction[], creation: CreateAction): KeptAction[] {
+	const waiting = [creation.op];
+	const along: KeptAction[] = [];
+	for (const entry of inOrder(actions)) {
+		if (entry.op === creation.op || !entry.dependsOn.some((op) => waiting.includes(op))) continue;
+		waiting.push(entry.op);
+		along.push(entry);
+	}
+	return along;
 }
 
 /** 403 and 404: the rules of the Record API and the entry of the day plan come before the identifier. */
@@ -404,8 +501,35 @@ export class OutboxStore {
 				(notice) =>
 					![...this.#actions, ...this.#reading].some((action) => decidesInstead(notice, action))
 			)
-			.map((notice) => ({ id: notice.id, text: noticeText(notice) }))
+			.map((notice) => ({
+				id: notice.id,
+				text: noticeText(notice),
+				...(notice.kind === 'created' && { link: { record: notice.record, id: notice.target } })
+			}))
 	);
+	/**
+	 * Tickets and entries "＋" created that the server does not have yet (OF-4a, concept §3.5), with the
+	 * changes of a ticket laid over it; a discarded one shows no more. Made from the device, never taken
+	 * as the state of the server (`#provisional`).
+	 */
+	readonly #createdTickets = $derived.by(() => {
+		const shown = new SvelteMap<string, Ticket>();
+		for (const action of this.#actions) {
+			if (!isTicketCreate(action) || action.discarded === true) continue;
+			shown.set(action.target, this.#createdView(action));
+		}
+		return shown;
+	});
+	readonly #createdItems = $derived.by(() => {
+		const shown = new SvelteMap<string, { item: InboxItem; scope: string }>();
+		for (const action of this.#actions) {
+			if (!isInboxCreate(action) || action.discarded === true) continue;
+			const item = createdItemOf(action);
+			this.#createdViews.add(item);
+			shown.set(action.target, { item, scope: action.scope });
+		}
+		return shown;
+	});
 
 	#sink: OutboxSink | null = null;
 	#loading: Promise<void> | null = null;
@@ -427,6 +551,8 @@ export class OutboxStore {
 	readonly #checkWatchers = new SvelteSet<(answer: CheckAnswer | null) => void>();
 	/** Tickets the outbox made itself (overlays), never taken as the state of the server. */
 	readonly #provisional = new WeakSet<object>();
+	/** Tickets and entries "＋" created as the outbox shows them (OF-4a): never one of the server. */
+	readonly #createdViews = new WeakSet<object>();
 	/** The steps that write the device run one after another in this tab (OF-3b). */
 	#queue: Promise<unknown> = Promise.resolve();
 
@@ -637,13 +763,15 @@ export class OutboxStore {
 
 	/**
 	 * The mark of a ticket for rows, cards, the panel and the sub-tasks, and of an entry of the day
-	 * plan (OF-3); a waiting check mark that completes a ticket marks the ticket as well.
+	 * plan (OF-3); a waiting check mark that completes a ticket marks the ticket as well. A discarded
+	 * creation that is only looked up marks nothing (OF-4a): it is no change of the user any more.
 	 */
 	markOf(id: string): OutboxMark {
 		let mark: OutboxMark = null;
 		for (const action of this.#actions) {
+			if (isCreateAction(action) && action.discarded === true) continue;
 			const child =
-				!isDueAction(action) &&
+				(isStatusAction(action) || isDayPlanAction(action)) &&
 				action.completion === 'complete_children' &&
 				action.children?.includes(id) === true;
 			const completes =
@@ -658,6 +786,139 @@ export class OutboxStore {
 	/** A change of this ticket or entry waits to be sent. */
 	isPending(id: string): boolean {
 		return this.markOf(id) === 'pending';
+	}
+
+	// ----- "＋" (OF-4a) -----
+
+	/** Whether a record of the area of the client: the area of the tab, or every one without it. */
+	#inArea(scope: string): boolean {
+		const area = this.#deps.area?.() ?? null;
+		return area === null || scope === '' || scope === area;
+	}
+
+	/**
+	 * Tickets "＋" created that the server does not have yet, in the area of the tab (concept §3.5):
+	 * the stores show them next to the ones of the server until it delivers one under the same ID.
+	 */
+	createdTickets(): Ticket[] {
+		return [...this.#createdTickets.values()].filter((ticket) => this.#inArea(ticket.scope ?? ''));
+	}
+
+	/** The ticket "＋" created under `id` as the views show it, null without one (OF-4a). */
+	createdTicket(id: string): Ticket | null {
+		return this.#createdTickets.get(id) ?? null;
+	}
+
+	/** Entries "＋" put into the inbox that the server does not have yet, in the area of the tab. */
+	createdItems(): InboxItem[] {
+		return [...this.#createdItems.values()]
+			.filter((entry) => this.#inArea(entry.scope))
+			.map((entry) => entry.item);
+	}
+
+	/** The entry "＋" put into the inbox under `id`, null without one (OF-4a). */
+	createdItem(id: string): InboxItem | null {
+		return this.#createdItems.get(id)?.item ?? null;
+	}
+
+	/** Whether this is a ticket or an entry "＋" created as the outbox shows it (OF-4a). */
+	isCreatedView(record: object): boolean {
+		return this.#createdViews.has(record);
+	}
+
+	/**
+	 * Whether "＋" goes through the outbox (OF-4a): it is armed, the server takes the creation of this
+	 * kind and the app can send it. Otherwise "＋" goes the way of today.
+	 */
+	takes(record: 'ticket' | 'inbox'): boolean {
+		if (!this.armed) return false;
+		if (record === 'ticket') {
+			return this.#deps.sendCreate !== undefined && supportsKind(this.#support, 'ticket.create');
+		}
+		return this.#deps.sendItem !== undefined && supportsKind(this.#support, 'inbox.create');
+	}
+
+	/**
+	 * "＋" as a ticket (OF-4a): kept under a new ID of the client, sent at once with a connection.
+	 * Resolves to the ticket of the server, or to the one kept for later (`kept`); rejects like the data
+	 * layer when the server refuses (the quick entry shows its message, the line stays).
+	 */
+	async createTicket(draft: TicketDraft): Promise<Created<Ticket>> {
+		await this.#begin();
+		const user = this.#user as string;
+		const scope = this.#deps.area?.() ?? `u:${user}`;
+		const change: CreateChange = {
+			kind: 'ticket.create',
+			target: newRecordId(this.#fill),
+			scope,
+			payload: {
+				title: draft.title,
+				status: draft.status,
+				priority: draft.priority,
+				due: draft.due,
+				project: draft.project,
+				tags: unique(draft.tags),
+				household: scope.startsWith('h:') ? scope.slice(2) : ''
+			}
+		};
+		let planned: CreateAction | null = null;
+		const kept = (): Created<Ticket> => {
+			const own = planned !== null && isTicketCreate(planned) ? this.#createdView(planned) : null;
+			const view = this.createdTicket(change.target) ?? own;
+			if (view === null) throw new OutboxStorageError();
+			return { value: view, kept: true };
+		};
+		return this.#change(
+			(context) => {
+				const plan = planCreate(change, context);
+				if (plan.kind === 'send' || plan.kind === 'queue') planned = plan.action;
+				return plan;
+			},
+			async (action, keep) => {
+				const answer = await this.#sendFirst(action, keep);
+				return answer === null ? kept() : { value: answer as Ticket, kept: false };
+			},
+			kept,
+			kept
+		);
+	}
+
+	/** "＋" into the inbox (OF-4a), like `createTicket`. */
+	async createItem(draft: QuickItemDraft): Promise<Created<InboxItem>> {
+		await this.#begin();
+		const user = this.#user as string;
+		const scope = this.#deps.area?.() ?? `u:${user}`;
+		const change: CreateChange = {
+			kind: 'inbox.create',
+			target: newRecordId(this.#fill),
+			scope,
+			payload: {
+				title: draft.title,
+				household: scope.startsWith('h:') ? scope.slice(2) : '',
+				preset: { project: draft.project, tags: unique(draft.tags), priority: draft.priority }
+			}
+		};
+		let planned: CreateAction | null = null;
+		const kept = (): Created<InboxItem> => {
+			const own = planned !== null && isInboxCreate(planned) ? createdItemOf(planned) : null;
+			const view = this.createdItem(change.target) ?? own;
+			if (view === null) throw new OutboxStorageError();
+			this.#createdViews.add(view);
+			return { value: view, kept: true };
+		};
+		return this.#change(
+			(context) => {
+				const plan = planCreate(change, context);
+				if (plan.kind === 'send' || plan.kind === 'queue') planned = plan.action;
+				return plan;
+			},
+			async (action, keep) => {
+				const answer = await this.#sendFirst(action, keep);
+				return answer === null ? kept() : { value: answer as InboxItem, kept: false };
+			},
+			kept,
+			kept
+		);
 	}
 
 	// ----- wiring -----
@@ -951,6 +1212,17 @@ export class OutboxStore {
 		if (known === undefined || known.updated <= ticket.updated) this.#base.set(ticket.id, ticket);
 	}
 
+	/** A ticket "＋" created with the changes that wait behind its creation (OF-4a). */
+	#createdView(action: TicketCreateAction): Ticket {
+		const ticket = createdTicketOf(action);
+		const view = overlayDue(overlayStatus(ticket, this.#actions), this.#actions);
+		this.#provisional.add(ticket);
+		this.#provisional.add(view);
+		this.#createdViews.add(ticket);
+		this.#createdViews.add(view);
+		return view;
+	}
+
 	/** The ticket with the waiting actions laid over it; a changed one is marked as made here. */
 	#shown<T extends TicketSummary>(base: T): T {
 		const shown = overlayDue(overlayStatus(base, this.#actions), this.#actions);
@@ -1035,7 +1307,7 @@ export class OutboxStore {
 		this.#remember(base);
 		return this.#change(
 			(context) =>
-				planStatusChange(
+				planTicketStatus(
 					this.#actions,
 					{
 						target: ticket.id,
@@ -1056,9 +1328,18 @@ export class OutboxStore {
 				const answer = await this.#sendFirst(action, keep);
 				return answer === null ? this.#shown(base) : this.apply(answer as unknown as T);
 			},
-			() => this.#shown(base),
+			() => this.#keptView(base),
 			() => ticket
 		);
+	}
+
+	/**
+	 * The ticket after a change kept for later: the waiting actions over the state of the server, or
+	 * for a ticket "＋" created (OF-4a) the creation with the change.
+	 */
+	#keptView<T extends TicketSummary>(base: T): T {
+		const created = this.createdTicket(base.id);
+		return created === null ? this.#shown(base) : (created as unknown as T);
 	}
 
 	/** A change of the due date of `ticket` (OF-3), like the status. */
@@ -1068,7 +1349,7 @@ export class OutboxStore {
 		this.#remember(base);
 		return this.#change(
 			(context) =>
-				planDueChange(
+				planTicketDue(
 					this.#actions,
 					{
 						target: ticket.id,
@@ -1084,7 +1365,7 @@ export class OutboxStore {
 				const answer = await this.#sendFirst(action, keep);
 				return answer === null ? this.#shown(base) : this.apply(answer as unknown as T);
 			},
-			() => this.#shown(base),
+			() => this.#keptView(base),
 			() => ticket
 		);
 	}
@@ -1273,6 +1554,13 @@ export class OutboxStore {
 			this.#runner?.kick();
 			return null;
 		}
+		const later = resolution?.kind === 'later' || resolution?.kind === 'lookLater';
+		if (later && isCreateAction(action)) {
+			// A creation after a 5xx (OF-4a round 2, A1): kept like one without an answer, sent again
+			// later under its identifier and its ID; "＋" says that it is kept.
+			this.#runner?.kick();
+			return null;
+		}
 		if (verdictOf(result.failure).result === 'network') void this.#connectivity.check();
 		throw result.failure;
 	}
@@ -1287,8 +1575,40 @@ export class OutboxStore {
 			const send = this.#deps.sendDue;
 			return send === undefined ? missing() : send(action, fields, signal);
 		}
+		if (isTicketCreate(action)) {
+			const send = this.#deps.sendCreate;
+			return send === undefined ? missing() : send(action, fields, signal);
+		}
+		if (isInboxCreate(action)) {
+			const send = this.#deps.sendItem;
+			return send === undefined ? missing() : send(action, fields, signal);
+		}
 		const send = this.#deps.sendDayPlan;
 		return send === undefined ? missing() : send(action, fields, signal);
+	}
+
+	/**
+	 * Looks up a discarded creation that may have arrived, by its ID (OF-4a, C4): it is never sent
+	 * again. Found, it arrived; 404 says it did not (or no longer is to be seen).
+	 */
+	async #lookUp(action: CreateAction): Promise<Attempt> {
+		const controller = new AbortController();
+		const limit = this.#timers.set(() => controller.abort(), SEND_TIMEOUT_MS);
+		const read = (): Promise<Answer> => {
+			if (isTicketCreate(action)) return this.#deps.get(action.target, controller.signal);
+			const get = this.#deps.getItem;
+			return get === undefined
+				? Promise.reject(new OutboxNoWayError())
+				: get(action.target, controller.signal);
+		};
+		try {
+			const value = await withIntent(OFFLINE_INTENTS.lookUp(actionText(action)), read);
+			return { ok: true, value };
+		} catch (error) {
+			return { ok: false, failure: toDataError(error, controller.signal) };
+		} finally {
+			this.#timers.clear(limit);
+		}
 	}
 
 	async #attempt(action: KeptAction, first: boolean): Promise<Attempt> {
@@ -1598,8 +1918,16 @@ export class OutboxStore {
 			}
 			if (!this.#signedIn(next.user)) return { go: false };
 			// Marked as sent before the request, in one transaction with the check that nobody changed
-			// it meanwhile; a change of the same ticket then becomes an action of its own (H1).
-			const sending: KeptAction = { ...next, state: 'sending', sendingSince: now, sent: true };
+			// it meanwhile; a change of the same ticket then becomes an action of its own (H1). A creation
+			// notes when its request left (OF-4a round 2, A5); a lookup is no request of it.
+			const request = isCreateAction(next) && next.discarded !== true;
+			const sending: KeptAction = {
+				...next,
+				state: 'sending',
+				sendingSince: now,
+				sent: true,
+				...(request && { lastSentAt: now })
+			};
 			if (!(await this.#swap(next, sending))) {
 				this.#swapMisses += 1;
 				await this.#read(storage, user, false);
@@ -1614,17 +1942,23 @@ export class OutboxStore {
 			index: this.#sentInRun + 1,
 			count: this.#sentInRun + this.#actions.filter(isWaiting).length
 		};
-		const result = await this.#attempt(sending, false);
+		// A discarded creation that may have arrived is only looked up, never sent again (OF-4a, C4).
+		const result =
+			isCreateAction(sending) && sending.discarded === true
+				? await this.#lookUp(sending)
+				: await this.#attempt(sending, false);
 		// Decided on the action as stored now (OF-3b, H2): "Verwerfen" or "Rückgängig" may have come.
 		const resolution = await this.#locked(() => this.#resolve(sending, result, false, now));
 		const failure = result.ok ? null : result.failure;
+		const created = isCreateAction(sending);
 		switch (resolution.kind) {
 			case 'arrived':
-				this.#sentInRun += 1;
+				// Looking a discarded creation up transfers nothing; its notice says what it found.
+				if (!created || sending.discarded !== true) this.#sentInRun += 1;
 				this.#failing = null;
 				try {
 					if (resolution.value !== null) await this.#arrived(resolution.action, resolution.value);
-					else {
+					else if (!created) {
 						await this.#reread(ticketOf(resolution.action));
 						if (isDayPlanAction(resolution.action)) this.#notifyChecks(null);
 					}
@@ -1645,12 +1979,13 @@ export class OutboxStore {
 				return true;
 			case 'decision':
 				if (failure !== null) this.#problems.set(resolution.action.op, problemOf(failure));
-				await this.#reread(ticketOf(resolution.action));
+				if (!created) await this.#reread(ticketOf(resolution.action));
 				return true;
 			case 'dropped':
-				await this.#reread(ticketOf(resolution.action));
+				if (!created) await this.#reread(ticketOf(resolution.action));
 				return true;
 			case 'refused':
+			case 'lookLater':
 			case 'gone':
 				return true;
 		}
@@ -1674,6 +2009,8 @@ export class OutboxStore {
 		const storage = this.#storage;
 		const user = this.#user;
 		if (storage === null || user === null) return { kind: 'gone' };
+		// The record a creation made shows before the creation goes (OF-4a): the same ID, no gap.
+		if (result.ok && isCreateAction(sent)) this.#showCreated(sent, result.value);
 		await this.#read(storage, user, false);
 		// A completion that takes sub-tasks along keeps the notices it decides hidden until its
 		// sub-tasks are read (`#checkChildren`, round 2, C-5); only an arrival reads them.
@@ -1683,9 +2020,11 @@ export class OutboxStore {
 			fresh !== undefined && arrives && childrenAlong(fresh).length > 0 ? fresh : null;
 		if (reading !== null) this.#reading = [...this.#reading, reading];
 		let resolution: Resolution | null = null;
+		// A discarded creation was looked up, not sent (OF-4a, C4).
+		const lookedUp = !first && isCreateAction(sent) && sent.discarded === true;
 		try {
 			resolution = await this.#transform((before) =>
-				this.#resolution(before, sent.op, result, first, now)
+				this.#resolution(before, sent.op, result, { first, lookedUp }, now)
 			);
 		} finally {
 			if (reading !== null && resolution?.kind !== 'arrived') this.#unread(reading.op);
@@ -1695,20 +2034,27 @@ export class OutboxStore {
 		return resolution ?? { kind: 'gone' };
 	}
 
-	/** The plan of `#resolve` on the actions as read. */
+	/**
+	 * The plan of `#resolve` on the actions as read. `lookedUp`: the request was the lookup of a
+	 * discarded creation, not one of the creation itself (OF-4a, C4).
+	 */
 	async #resolution(
 		before: readonly KeptAction[],
 		op: string,
 		result: Attempt,
-		first: boolean,
+		{ first, lookedUp }: { first: boolean; lookedUp: boolean },
 		now: number
 	): Promise<Planned<Resolution>> {
 		const fresh = before.find((action) => action.op === op);
 		if (fresh === undefined) return { after: before, result: { kind: 'gone' } };
 		const settle = (actions: readonly KeptAction[]) =>
 			this.#pure((context) => settleChains(actions, context));
+		// A discarded creation takes changes of its ticket a failed write left behind along (OF-4a).
+		const along =
+			isCreateAction(fresh) && fresh.discarded === true ? alongCreation(before, fresh) : [];
+		const kept = before.filter((action) => !along.includes(action));
 		const leave = (how: Leave) =>
-			this.#pure((context) => settleChains(leaveChain(before, op, how, context), context));
+			this.#pure((context) => settleChains(leaveChain(kept, op, how, context), context));
 		// Arrived: the notices about a sub-task it settled go with it, in one transaction (R3-4), and so do
 		// those the storage failed to keep (round 2, C-6). One it takes along waits for the reading.
 		const retire = new SvelteMap<string, Noting>([
@@ -1723,13 +2069,32 @@ export class OutboxStore {
 		if (result.ok) {
 			const after = await leave({ how: 'arrived' });
 			const arrived = { kind: 'arrived', action: fresh, value: result.value } as const;
+			// A discarded creation that is there anyway (OF-4a, C4): a notice that stays names it with
+			// a link, written in the transaction that lets the action go; nothing is deleted.
+			if (isCreateAction(fresh) && fresh.discarded === true) {
+				const key = isTicketCreate(fresh) ? ((result.value as Ticket).key ?? '') : '';
+				const notice = createdNotice(fresh, key, now);
+				const noted = new SvelteMap<string, Noting>([
+					[op, { device: (current: unknown) => withNotices(current, [notice]) }]
+				]);
+				return { after, last: op, result: arrived, noted };
+			}
 			return { after, last: op, result: arrived, noted: retire };
 		}
 		const failure = result.failure;
-		const verdict = verdictOf(failure);
+		const verdict = verdictOf(failure, createdRecordOf(fresh));
 		if (verdict.result === 'arrived') {
 			const after = await leave({ how: 'arrived' });
 			const arrived = { kind: 'arrived', action: fresh, value: null } as const;
+			if (isCreateAction(fresh)) {
+				// Arrived, but the account no longer sees it (`validation_op_applied`, the trash for
+				// instance): a notice that stays names it with a link, never silently (round 2, A7).
+				const notice = createdNotice(fresh, '', now, true);
+				const noted = new SvelteMap<string, Noting>([
+					[op, { device: (current: unknown) => withNotices(current, [notice]) }]
+				]);
+				return { after, last: op, result: arrived, noted };
+			}
 			return { after, last: op, result: arrived, noted: retire };
 		}
 		const queued: KeptAction = withoutSending({ ...fresh, state: 'queued' });
@@ -1737,7 +2102,10 @@ export class OutboxStore {
 			const after = await settle(replaced(before, { ...queued, unanswered: true }));
 			return { after, result: { kind: 'kept' } };
 		}
-		if (first && fresh.discarded !== true) {
+		// A creation after a 5xx at its first attempt stays like one without an answer (round 2, A1): the
+		// server may have taken it, a new "＋" under another ID would make a second one (C1).
+		const keptAfter5xx = isCreateAction(fresh) && verdict.result === 'server';
+		if (first && fresh.discarded !== true && !keptAfter5xx) {
 			// As today: the store shows the refusal, nothing stays.
 			const after = await leave({ how: 'nothing' });
 			return { after, last: op, result: { kind: 'refused', failure } };
@@ -1761,10 +2129,23 @@ export class OutboxStore {
 			return { after, result: { kind: 'later', attempts } };
 		}
 		// An answer after the lookup of the identifier: nothing arrived unseen (OF-3); a discarded one
-		// stays kept.
+		// stays kept. A creation keeps that a request of it got no answer before: that request may still
+		// arrive (round 2, A5).
 		const answered: KeptAction = { ...queued };
+		const hanging = fresh.unanswered === true || fresh.unansweredBefore === true;
+		if (isCreateAction(fresh) && hanging && !lookedUp) answered.unansweredBefore = true;
 		if (fresh.discarded !== true) delete answered.unanswered;
-		if (fresh.discarded === true && !isMissing(failure)) {
+		// A discarded creation the server refused, or that the lookup does not find, is not there: it
+		// goes without a word (OF-4a, C4); nothing of it is to be taken back. While a request of it may
+		// still arrive, it is looked up again once that is 5 minutes ago (round 2, A5).
+		const absent = isCreateAction(fresh);
+		if (fresh.discarded === true && (absent || !isMissing(failure))) {
+			if (absent && mayStillArrive(answered, now)) {
+				const again: KeptAction = { ...answered, nextAttemptAt: lookUpAgainAt(answered, now) };
+				delete again.outcome;
+				const after = await settle(replaced(before, again));
+				return { after, result: { kind: 'lookLater' } };
+			}
 			// "Verwerfen" was asked for: it changed nothing, so it goes without a word (OF-3).
 			const after = await leave({ how: 'nothing' });
 			return { after, last: op, result: { kind: 'dropped', action: fresh } };
@@ -1779,6 +2160,26 @@ export class OutboxStore {
 		if (isDayPlanAction(action)) {
 			this.#notifyChecks(value as CheckAnswer);
 			await this.#reread(action.ticket);
+			return;
+		}
+		if (isCreateAction(action)) {
+			this.#showCreated(action, value);
+			// A ticket "＋" created counts as read, like one created with a connection (ADR-0015 §3);
+			// not one the user discarded.
+			if (isTicketCreate(action) && action.discarded !== true) {
+				this.#sink?.markRead?.(value as Ticket);
+			}
+			return;
+		}
+		const ticket = value as Ticket;
+		this.#remember(ticket);
+		this.#sink?.upsert(ticket);
+	}
+
+	/** The record of the server for a creation (OF-4a), in the list and the panel or in the inbox. */
+	#showCreated(action: CreateAction, value: Answer): void {
+		if (isInboxCreate(action)) {
+			this.#sink?.upsertItem?.(value as InboxItem);
 			return;
 		}
 		const ticket = value as Ticket;
@@ -1978,6 +2379,7 @@ export class OutboxStore {
 	): Promise<Planned<Discarded> | null> {
 		const action = before.find((entry) => entry.op === op);
 		if (action === undefined) return null;
+		if (isCreateAction(action)) return this.#discardCreation(before, action);
 		// A take-back carries out "Verwerfen": no "Verwerfen" of its own while it waits (round 2, S2).
 		if (isTakeBack(action) && isWaiting(action)) return null;
 		const state = this.#serverStateOf(action);
@@ -2009,6 +2411,46 @@ export class OutboxStore {
 	}
 
 	/**
+	 * "Verwerfen" of a creation "＋" (OF-4a). The changes of its ticket go with it: they wait for it, so
+	 * none of them left the device. One that never left the device, or whose last request got an answer
+	 * (the server refused it), goes: it never reaches the server (C4). One that may be on its way or may
+	 * have arrived stays discarded: it is never sent again and never deleted on the server, only looked
+	 * up by its ID (`#lookUp`); found, a notice that stays names it (C1, C3, C4).
+	 */
+	async #discardCreation(
+		before: readonly KeptAction[],
+		action: CreateAction
+	): Promise<Planned<Discarded> | null> {
+		const along = alongCreation(before, action);
+		if (action.discarded === true && along.length === 0) return null;
+		const rest = before.filter((entry) => !along.includes(entry));
+		if (action.discarded === true) {
+			// A round after a write that failed half way: only its changes are left to go.
+			return { after: rest, result: { kind: 'marked', action, along } };
+		}
+		// A request of it may still arrive although the server answered a later one (refused after a
+		// request without an answer, round 2, A5): it stays to be looked up, like one that may be there.
+		if (!mayBeThere(action) && !mayStillArrive(action, this.#now())) {
+			const after = await this.#pure((context) =>
+				settleChains(
+					rest.filter((entry) => entry.op !== action.op),
+					context
+				)
+			);
+			return { after, last: action.op, result: { kind: 'deleted', action, along } };
+		}
+		// Older than 48 hours, it waited for a decision: the lookup asks nothing (no time of the device).
+		// A refused one is looked up the same way (round 2, A5).
+		const marked: KeptAction = { ...action, discarded: true };
+		if (marked.state === 'expired' || marked.state === 'refused') {
+			Object.assign(marked, { state: 'queued', nextAttemptAt: 0 });
+			delete marked.outcome;
+		}
+		const after = await this.#pure((context) => settleChains(replaced(rest, marked), context));
+		return { after, result: { kind: 'marked', action, along } };
+	}
+
+	/**
 	 * The actions with `action` discarded (OF-3b): the take-backs follow; one older than 48 hours goes
 	 * where they hold whatever the server has, else it is sent to the end without the time of the device.
 	 */
@@ -2034,6 +2476,16 @@ export class OutboxStore {
 	#discardFlag(done: Discarded): void {
 		const { action } = done;
 		const text = this.#textOf(action);
+		if (isCreateAction(action)) {
+			const record = isTicketCreate(action) ? 'ticket' : 'inbox';
+			this.#sink?.flags.show({
+				tone: 'success',
+				title: OFFLINE_TEXTS.discarded(text),
+				...(done.kind === 'marked' && { description: OFFLINE_TEXTS.createCheckHint(record) }),
+				action: { label: OFFLINE_TEXTS.undo, run: () => void this.#undoCreation(done) }
+			});
+			return;
+		}
 		const takenBack =
 			done.kind === 'marked' &&
 			!isTakeBack(action) &&
@@ -2116,6 +2568,45 @@ export class OutboxStore {
 		});
 	}
 
+	/**
+	 * "Rückgängig" after "Verwerfen" of a creation "＋" (OF-4a): it counts again with the changes of its
+	 * ticket, under its identifier and its ID (C1: the server answers a repetition like the first time,
+	 * also where the lookup found it meanwhile). One that never left the device comes back as it was.
+	 */
+	#undoCreation(done: Discarded): Promise<void> {
+		const original = done.action;
+		const along = done.along ?? [];
+		return this.#undoing(original, async (before) => {
+			let after: KeptAction[] = [...before];
+			const present = before.find((entry) => entry.op === original.op);
+			if (present?.discarded === true) {
+				const kept: KeptAction = { ...present };
+				delete kept.discarded;
+				after = replaced(after, kept);
+			} else if (present === undefined && done.kind === 'deleted') {
+				after.push(original);
+			} else if (present === undefined) {
+				const again: KeptAction = { ...original, state: 'queued', attempts: 0, nextAttemptAt: 0 };
+				delete again.discarded;
+				delete again.outcome;
+				delete again.sendingSince;
+				after.push(again);
+			}
+			for (const entry of along) {
+				if (!after.some((other) => other.op === entry.op)) after.push(entry);
+			}
+			if (
+				after.every((entry, index) => entry === before[index]) &&
+				after.length === before.length
+			) {
+				return null;
+			}
+			const settled = await this.#pure((context) => settleChains(after, context));
+			if (!this.#roomFor(before, settled)) return { after: before, result: 'full' };
+			return { after: settled, result: 'done' };
+		});
+	}
+
 	/** "Rückgängig" after "Verwerfen" deleted an action: it comes back at its place in the order. */
 	#restore(action: KeptAction): Promise<void> {
 		return this.#undoing(action, async (before) => {
@@ -2132,7 +2623,7 @@ export class OutboxStore {
 		if (action === undefined || action.state !== 'conflict') return;
 		await this.#guard(OFFLINE_INTENTS.takeMine(actionText(action)), () =>
 			this.#requeue(op, (current) => {
-				if (current.state !== 'conflict') return null;
+				if (current.state !== 'conflict' || isCreateAction(current)) return null;
 				const actual = current.outcome?.actual;
 				if (isDueAction(current)) {
 					const due = dueOfServer(actual);
@@ -2143,6 +2634,26 @@ export class OutboxStore {
 					return { ...current, expected: { ...current.expected, status: actual } };
 				}
 				return { ...current, expected: { status: actual } };
+			})
+		);
+	}
+
+	/**
+	 * "Ohne Projekt anlegen" and "Ohne Tags anlegen" of a refused creation of a ticket (OF-4a, concept
+	 * §3.7): sent again without that field, under its identifier and its ID. The refusal came after the
+	 * lookup of the identifier, so nothing of it arrived; the ID still guards against a second ticket.
+	 */
+	async createWithout(op: string, field: CreateField): Promise<void> {
+		const action = this.#find(op);
+		if (action === undefined || withoutFieldOf(action) !== field) return;
+		await this.#guard(OFFLINE_INTENTS.withoutField(field, actionText(action)), () =>
+			this.#requeue(op, (current) => {
+				if (!isTicketCreate(current) || withoutFieldOf(current) !== field) return null;
+				const payload =
+					field === 'project'
+						? { ...current.payload, project: null }
+						: { ...current.payload, tags: [] };
+				return { ...current, payload };
 			})
 		);
 	}
@@ -2161,13 +2672,15 @@ export class OutboxStore {
 	/** The answer to the open sub-tasks of a completion: "Trotzdem erledigen" or "… mit erledigen". */
 	async answerChildren(op: string, choice: CompletionChoice): Promise<void> {
 		const action = this.#find(op);
-		if (action === undefined || action.state !== 'refused' || isDueAction(action)) return;
+		const completes = (entry: KeptAction) => isStatusAction(entry) || isDayPlanAction(entry);
+		if (action === undefined || action.state !== 'refused' || !completes(action)) return;
 		const children =
 			choice === 'complete_children' ? [...(this.#sink?.childrenOf?.(ticketOf(action)) ?? [])] : [];
 		const childrenBefore = this.#statusesOf(children);
 		await this.#guard(OFFLINE_INTENTS.answerChildren(actionText(action)), () =>
 			this.#requeue(op, (current) => {
-				if (current.state !== 'refused' || isDueAction(current)) return null;
+				if (current.state !== 'refused') return null;
+				if (!isStatusAction(current) && !isDayPlanAction(current)) return null;
 				const next: OutboxAction | DayPlanAction = {
 					...current,
 					completion: choice,

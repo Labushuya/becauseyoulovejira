@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { ticketColorOf } from '$lib/domain/colors';
+	import { OFFLINE_TEXTS, keyLabel } from '$lib/domain/offline';
 	import { openInstancesOf } from '$lib/domain/recurrence-rule';
 	import { parentOf, parentSeriesOf } from '$lib/domain/subtasks';
 	import { getCatalogStore } from '$lib/stores/catalog.svelte';
@@ -29,6 +30,8 @@
 	import EditableTitle from './EditableTitle.svelte';
 	import FollowUpDialog from './FollowUpDialog.svelte';
 	import FullView from './overlay/FullView.svelte';
+	import SectionMessage from './guidance/SectionMessage.svelte';
+	import PendingMark from './offline/PendingMark.svelte';
 	import RecurrenceSummary from './RecurrenceSummary.svelte';
 	import TicketActions from './TicketActions.svelte';
 	import TicketActivity from './TicketActivity.svelte';
@@ -97,13 +100,15 @@
 		ticket === null
 			? []
 			: ticketPathSteps(
-					ticket.key,
+					keyLabel(ticket.key),
 					catalog.projectOf(ticket),
 					parent === null
 						? null
 						: { key: parent.key, title: parent.title, href: host.full(parent.id, page.url) }
 				)
 	);
+	/** A ticket "＋" created that the server does not have yet (OF-4a): no menu, comments later. */
+	const created = $derived(detail.created);
 	const sourceCount = $derived(
 		ticket !== null && sources.ticketId === ticket.id ? sources.items.length : 0
 	);
@@ -172,43 +177,48 @@
 </script>
 
 <svelte:head>
-	<title>{ticket ? `${ticket.key} · Vollansicht · ` : ''}becauseyoulovejira</title>
+	<title>{ticket ? `${keyLabel(ticket.key)} · Vollansicht · ` : ''}becauseyoulovejira</title>
 </svelte:head>
 
 {#if ticket}
-	<FullView title={`${ticket.key} · ${ticket.title}`} onclose={close}>
+	<FullView title={`${keyLabel(ticket.key)} · ${ticket.title}`} onclose={close}>
 		{#snippet lead()}
 			{#if shown}
 				<ColorMark {shown} />
 			{/if}
+			{#if created}
+				<PendingMark id={ticket.id} />
+			{/if}
 		{/snippet}
 		{#snippet actions()}
-			<TicketPinToggle {ticket} {pins} variant="head" />
-			<TicketActions
-				{ticket}
-				{flags}
-				inline
-				onduplicate={duplicates === null
-					? null
-					: () => {
-							duplicatingFor = id;
-							askingFor = null;
-							followingFor = null;
-						}}
-				onfollowup={followUps === null
-					? null
-					: () => {
-							followingFor = id;
-							askingFor = null;
-							duplicatingFor = null;
-						}}
-				ondelete={() => {
-					askingFor = id;
-					duplicatingFor = null;
-					followingFor = null;
-				}}
-				bind:trigger={menuButton}
-			/>
+			{#if !created}
+				<TicketPinToggle {ticket} {pins} variant="head" />
+				<TicketActions
+					{ticket}
+					{flags}
+					inline
+					onduplicate={duplicates === null
+						? null
+						: () => {
+								duplicatingFor = id;
+								askingFor = null;
+								followingFor = null;
+							}}
+					onfollowup={followUps === null
+						? null
+						: () => {
+								followingFor = id;
+								askingFor = null;
+								duplicatingFor = null;
+							}}
+					ondelete={() => {
+						askingFor = id;
+						duplicatingFor = null;
+						followingFor = null;
+					}}
+					bind:trigger={menuButton}
+				/>
+			{/if}
 			<!-- The mirror of "Vollansicht" in the panel: same place before the ×, same look. -->
 			<a
 				class="button-icon panel-view-link"
@@ -268,6 +278,9 @@
 				<Breadcrumbs label="Pfad des Tickets" items={path} />
 			{/if}
 			<EditableTitle store={detail} {headingId} />
+			{#if created}
+				<SectionMessage tone="info" compact>{OFFLINE_TEXTS.createdHint}</SectionMessage>
+			{/if}
 			<TicketDescription store={detail} {ticket} />
 			{#if !ticket.parentId}
 				<TicketSubtasks
@@ -277,7 +290,12 @@
 					hrefOf={(subtaskId) => host.full(subtaskId, page.url)}
 				/>
 			{/if}
-			<TicketActivity store={comments} {catalog} pin={detail} />
+			{#if created}
+				<!-- Comments need the ticket on the server (OF-4b sends them behind its creation). -->
+				<SectionMessage tone="info" compact>{OFFLINE_TEXTS.commentsLater}</SectionMessage>
+			{:else}
+				<TicketActivity store={comments} {catalog} pin={detail} />
+			{/if}
 			<TicketSources
 				{ticket}
 				store={sources}

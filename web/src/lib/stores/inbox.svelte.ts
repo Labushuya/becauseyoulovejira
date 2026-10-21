@@ -8,7 +8,7 @@
 // at once, and "Rückgängig" stands in its flag.
 
 import type PocketBase from 'pocketbase';
-import { createContext } from 'svelte';
+import { createContext, untrack } from 'svelte';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { problemDetails, toDataError } from '$lib/data/errors';
 import type { ProblemEntry } from '$lib/domain/problems';
@@ -101,7 +101,8 @@ export type PageCopyResult =
 
 /** Outcome of creating an entry: created, already there, or failed (message and field texts). */
 export type InboxCreateResult =
-	| { kind: 'created'; item: InboxItem }
+	/** `kept`: "＋" without a connection, kept by the outbox for later (OF-4a). */
+	| { kind: 'created'; item: InboxItem; kept?: true }
 	| InboxDuplicate
 	| {
 			kind: 'error';
@@ -132,10 +133,21 @@ function sameQuery(a: InboxQuery, b: InboxQuery): boolean {
 /** Projects of the catalog for the filter "Zielprojekt" (sub projects, ADR-0034 §6). */
 export type InboxProjects = () => readonly TreeProject[];
 
+/**
+ * Entries "＋" put into the inbox that the server does not have yet (OF-4a, concept §3.5): the store
+ * shows them next to its own until the server delivers one under the same ID.
+ */
+export interface InboxOverlay {
+	createdItems(): readonly InboxItem[];
+	createdItem(id: string): InboxItem | null;
+	isCreatedView(record: object): boolean;
+}
+
 export class InboxStore {
 	readonly #data: InboxData;
 	readonly #session: SessionGuard;
 	readonly #projects: InboxProjects;
+	readonly #overlay: InboxOverlay | null;
 
 	readonly #new = new SvelteMap<string, InboxItemSummary>();
 	readonly #handled = new SvelteMap<string, InboxItemSummary>();
@@ -164,7 +176,11 @@ export class InboxStore {
 	#handledHasMore = $state(false);
 	#loadingMoreHandled = $state(false);
 
-	#newList = $derived([...this.#new.values()].sort(compareNewest));
+	/** Entries "＋" put into the inbox that the server does not have yet (OF-4a). */
+	#created = $derived.by(() =>
+		(this.#overlay?.createdItems() ?? []).filter((item) => !this.#new.has(item.id))
+	);
+	#newList = $derived([...this.#new.values(), ...this.#created].sort(compareNewest));
 	#handledList = $derived(
 		[...this.#handled.values()].sort(this.#query.state === 'all' ? compareNewest : compareHandled)
 	);
@@ -193,12 +209,19 @@ export class InboxStore {
 		data: InboxData,
 		session: SessionGuard,
 		flags: FlagSink = SILENT_FLAGS,
-		projects: InboxProjects = () => []
+		projects: InboxProjects = () => [],
+		overlay: InboxOverlay | null = null
 	) {
 		this.#data = data;
 		this.#session = session;
 		this.#flags = flags;
 		this.#projects = projects;
+		this.#overlay = overlay;
+	}
+
+	/** The entry is one "＋" put into the inbox that the server does not have yet (OF-4a). */
+	isCreated(id: string): boolean {
+		return !this.#new.has(id) && (this.#overlay?.createdItem(id) ?? null) !== null;
 	}
 
 	/**
@@ -216,7 +239,7 @@ export class InboxStore {
 
 	/** Number of new entries (switch "Eingang", ADR-0015 section 5); null until loaded. */
 	get newCount(): number | null {
-		return this.#state === 'ready' ? this.#new.size : null;
+		return this.#state === 'ready' ? this.#new.size + this.#created.length : null;
 	}
 
 	/** Rows of the view for the query of the URL: the new ones or the handled ones. */
@@ -271,7 +294,8 @@ export class InboxStore {
 	}
 
 	find(id: string): InboxItemSummary | null {
-		return this.#new.get(id) ?? this.#handled.get(id) ?? null;
+		const own = this.#new.get(id) ?? this.#handled.get(id);
+		return own ?? this.#overlay?.createdItem(id) ?? null;
 	}
 
 	isPending(id: string): boolean {
@@ -337,13 +361,16 @@ export class InboxStore {
 
 	/**
 	 * Inserts or replaces an entry (own answer or realtime event). An older `updated` than the
-	 * stored one is ignored. A new entry joins the new ones; a handled one leaves them and joins
-	 * the loaded handled entries only where the loaded pages cover it.
+	 * stored one is ignored, only of an entry of the server: one "＋" put in has the time of the device
+	 * (OF-4a round 2, A4). A new entry joins the new ones; a handled one leaves them and joins the
+	 * loaded handled entries only where the loaded pages cover it.
 	 */
 	upsert(item: InboxItemSummary): void {
 		if (this.#deleted.has(item.id)) return;
+		// An entry "＋" put into the inbox shows from the outbox until the server has it (OF-4a).
+		if (this.#overlay?.isCreatedView(item) === true) return;
 		this.#touched?.add(item.id);
-		const existing = this.find(item.id);
+		const existing = this.#new.get(item.id) ?? this.#handled.get(item.id) ?? null;
 		if (existing !== null && existing.updated > item.updated) return;
 		if (item.state === 'new') {
 			// Back in the inbox by another way: "Rückgängig" has nothing left to do.
@@ -376,8 +403,17 @@ export class InboxStore {
 		this.upsert({ ...item, state: 'converted', ticketId, handledAt: at });
 	}
 
-	/** One entry with its text (panel, prefill of the ticket); it joins the store as well. */
+	/**
+	 * One entry with its text (panel, prefill of the ticket); it joins the store as well. One "＋" put
+	 * into the inbox that the server does not have yet comes from the outbox, without a request (OF-4a).
+	 */
 	async fetch(id: string, options: RequestOptions = {}): Promise<InboxItem> {
+		// Read without tracking: the panel calls this in an effect, which must not run again whenever
+		// the new entries or the outbox change.
+		const created = untrack(() =>
+			this.isCreated(id) ? (this.#overlay?.createdItem(id) ?? null) : null
+		);
+		if (created !== null) return created;
 		const item = await this.#data.get(id, options);
 		this.upsert(item);
 		return item;

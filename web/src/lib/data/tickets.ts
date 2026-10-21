@@ -653,7 +653,8 @@ function originBody(origin: TicketOrigin): Record<string, string> {
  * `household` ('' for "Privat") when it belongs to a record of a known area (a sub-task, an entry of
  * the inbox). Key, scope and number come from the hook. `origin` is the form by default (source
  * "manual"); with an inbox entry the hook converts the entry in the same transaction (ADR-0014
- * section 2).
+ * section 2). "＋" through the outbox (OF-4a, ADR-0074 §5) sends the ID of the client (`id`) and the
+ * fields of the outbox; neither changes anything else.
  */
 export function createTicket(
 	pb: PocketBase,
@@ -661,8 +662,14 @@ export function createTicket(
 	{
 		signal,
 		origin = MANUAL_ORIGIN,
-		household
-	}: RequestOptions & { origin?: TicketOrigin; household?: string } = {}
+		household,
+		id,
+		outbox
+	}: RequestOptions & {
+		origin?: TicketOrigin;
+		household?: string;
+		id?: string;
+	} & OutboxOptions = {}
 ) {
 	return withDataErrors(signal, async (): Promise<Ticket> => {
 		const owner = currentUserId(pb.authStore.record);
@@ -670,6 +677,8 @@ export function createTicket(
 		const area = household ?? clientHousehold(pb);
 		const record = await pb.collection(TICKETS).create<TicketRecord>(
 			{
+				...(id !== undefined && { id }),
+				...(outbox !== undefined && toOutboxBody(outbox)),
 				...originBody(origin),
 				owner,
 				// Only in a household; a private ticket sends no field, as before E7-3.

@@ -76,6 +76,21 @@ describe('ticketPickerSource', () => {
 		expect(given.list.loadOpen).toHaveBeenCalledOnce();
 	});
 
+	it('offers no ticket "＋" created that the server does not have yet (OF-4a round 2, A3)', () => {
+		const given = parts();
+		const created = pickerTicket({ id: 'aaaaaaaaaaaaaaa', key: '', title: 'Zahnarzt anrufen' });
+		const list = {
+			...given.list,
+			open: [...given.list.open, created],
+			isCreated: (id: string) => id === created.id
+		};
+		const source = ticketPickerSource({ ...given, list });
+		expect(source.open.map((ticket) => ticket.key)).toEqual(['HAUS-1']);
+		// Without one the list of the store itself.
+		const plain = ticketPickerSource({ ...given, list: { ...given.list, isCreated: () => false } });
+		expect(plain.open).toBe(given.list.open);
+	});
+
 	it('loads the open tickets again after a failure', () => {
 		const given = parts();
 		const source = ticketPickerSource({ ...given, list: { ...given.list, openState: 'error' } });

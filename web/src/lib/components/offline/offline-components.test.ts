@@ -170,7 +170,7 @@ describe('OfflineNotice', () => {
 		const outbox = await outboxWith([]);
 		const { container } = render(OfflineNotice, { props: { outbox, onshow: vi.fn() } });
 		expect(statusText()).toContain(
-			'Keine Verbindung zu becauseyoulovejira. Abhaken, Status, Tagesplan und Fälligkeit werden gemerkt und später übertragen.'
+			'Keine Verbindung zu becauseyoulovejira. Abhaken, Status, Tagesplan, Fälligkeit und ＋ werden gemerkt und später übertragen.'
 		);
 		const message = container.querySelector('.section-message');
 		expect(message?.getAttribute('data-tone')).toBe('warning');

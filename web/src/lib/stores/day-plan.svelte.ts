@@ -192,6 +192,11 @@ export function dayPlanLive(pb: PocketBase): DayPlanLive {
 export interface DayPlanTickets {
 	/** Every open ticket of the area, live. */
 	readonly open: readonly TicketSummary[];
+	/**
+	 * A ticket "＋" created that the server does not have yet (OF-4a): the plan neither offers nor
+	 * suggests it, a check mark for it would need the server.
+	 */
+	isCreated?(id: string): boolean;
 	/** Today in Berlin, the clock of the list. */
 	readonly today: CalendarDate;
 	find(id: string): TicketSummary | null;
@@ -406,12 +411,17 @@ export class DayPlanStore {
 	/** Ticket IDs in the plan. */
 	#planned = $derived(this.#ordered.map((item) => item.ticketId));
 
+	/** The open tickets the plan may take: not one "＋" created the server does not have yet (OF-4a). */
+	#plannable = $derived.by(() =>
+		this.#tickets.open.filter((ticket) => this.#tickets.isCreated?.(ticket.id) !== true)
+	);
+
 	/** Live suggestions of today, by the rules of the server, from the open tickets of the list. */
 	#suggestions = $derived.by((): Suggestion[] => {
 		const answer = this.#answer;
 		const plan = this.#plan;
 		if (answer === null || plan === null || answer.date !== answer.today) return [];
-		return suggestionsOf(this.#tickets.open.map(factsOf), {
+		return suggestionsOf(this.#plannable.map(factsOf), {
 			today: answer.today,
 			settings: answer.settings,
 			planned: this.#planned,
@@ -581,10 +591,13 @@ export class DayPlanStore {
 		return this.arrange(this.suggestions, (row) => row.ticket);
 	}
 
-	/** The open tickets of the area that are not in the plan, in the default order of the list. */
+	/**
+	 * The open tickets of the area that are not in the plan, in the default order of the list; none
+	 * "＋" created that the server does not have yet (OF-4a).
+	 */
 	get pool(): readonly TicketSummary[] {
 		const planned = this.#planned;
-		return this.#tickets.open.filter((ticket) => !planned.includes(ticket.id));
+		return this.#plannable.filter((ticket) => !planned.includes(ticket.id));
 	}
 
 	/**

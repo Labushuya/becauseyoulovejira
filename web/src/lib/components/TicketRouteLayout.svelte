@@ -2,6 +2,7 @@
 	import { untrack, type Snippet } from 'svelte';
 	import { beforeNavigate, goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import { OFFLINE_TEXTS } from '$lib/domain/offline';
 	import { openInstancesOf } from '$lib/domain/recurrence-rule';
 	import { parentOf, parentSeriesOf } from '$lib/domain/subtasks';
 	import type { Ticket } from '$lib/domain/ticket';
@@ -26,6 +27,7 @@
 	import DuplicateDialog from './DuplicateDialog.svelte';
 	import FollowUpDialog from './FollowUpDialog.svelte';
 	import ConfirmDialog from './overlay/ConfirmDialog.svelte';
+	import SectionMessage from './guidance/SectionMessage.svelte';
 	import RecurrenceSummary from './RecurrenceSummary.svelte';
 	import TicketActivity from './TicketActivity.svelte';
 	import TicketFollowUps from './TicketFollowUps.svelte';
@@ -318,7 +320,12 @@
 			{/if}
 		{/snippet}
 		{#snippet activity()}
-			<TicketActivity store={comments} {catalog} pin={detail} />
+			{#if detail.created}
+				<!-- A ticket "＋" created the server does not have yet takes no comment yet (OF-4a). -->
+				<SectionMessage tone="info" compact>{OFFLINE_TEXTS.commentsLater}</SectionMessage>
+			{:else}
+				<TicketActivity store={comments} {catalog} pin={detail} />
+			{/if}
 		{/snippet}
 	</TicketPanel>
 {/if}

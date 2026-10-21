@@ -1229,6 +1229,27 @@ test.describe('small phone with the switch on: changes without a connection (OF-
 		expect(history.items[0]).toMatchObject({ offline: true });
 		expect(history.items[0].device_at).not.toBe('');
 
+		// OF-4a: "＋" without a connection keeps the ticket under an ID of the client and shows it as "Neu";
+		// once the connection is back the server has exactly one ticket with a key, in the same card.
+		const created = `Zahnarzt anrufen ${randomBytes(3).toString('hex')}`;
+		await context.setOffline(true);
+		await page.getByRole('navigation', { name: 'Hauptnavigation' }).getByRole('button', { name: 'Erfassen' }).tap();
+		const quick = page.getByRole('dialog', { name: 'Schnellerfassung' });
+		await quick.getByLabel('Titel mit Kurzsyntax').fill(created);
+		await quick.getByRole('button', { name: 'Ticket anlegen', exact: true }).tap();
+		await expect(quick.getByText(`Ticket „${created}“ gemerkt. Es wird angelegt, sobald die Verbindung zurück ist.`)).toBeVisible();
+		await quick.getByRole('button', { name: 'Schließen' }).first().tap();
+		const kept = page.locator('li.card', { hasText: created });
+		await expect(kept.locator('.key')).toHaveText(/^Neu/);
+		await expect(kept.locator('.pending-mark')).toHaveCount(1);
+		await context.setOffline(false);
+		await expect(kept.locator('.key')).toHaveText(/TASK-\d+$/);
+		await expect(kept.locator('.pending-mark')).toHaveCount(0);
+		const found = await api('GET', `/api/collections/tickets/records?filter=${encodeURIComponent(`title='${created}'`)}`, undefined, token);
+		expect(found.items).toHaveLength(1);
+		expect(found.items[0].key).toMatch(/^TASK-\d+$/);
+		expect(await kept.getAttribute('data-ticket-id')).toBe(found.items[0].id);
+
 		// OF-3c: a change older than 7 days, as a closed tab left it in IndexedDB. The start after a reload
 		// deletes it with its notice in one transaction; the notice stays on the device until "Schließen",
 		// which deletes it there as well and leaves the focus in the hints.
