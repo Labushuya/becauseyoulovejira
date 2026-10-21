@@ -23,6 +23,8 @@
 //   every value ends on what the user wants, a refusal of a discarded one passes its value before on,
 //   and a 403 or 404 of one shows. Every write of the device is a compare-and-swap against the state
 //   just read; after a request the worker decides on the action as it is stored now, not on its copy.
+//   Since round 2 a take-back never expires and has no "Verwerfen" of its own; "Rückgängig" always
+//   leads back to what the user wanted before "Verwerfen".
 // - The actions belong to the signed-in account: another account never sends them, and they are
 //   deleted when another account signs in (decision of the user 4). "Abmelden" deletes them after
 //   the question (`clearUser`), also when this tab never read the device; an ended session keeps
@@ -55,20 +57,15 @@ import {
 	hasRoom,
 	inOrder,
 	isDayPlanAction,
-	isDerived,
 	isDueAction,
-	isFree,
-	intentOf,
 	isFromTheFuture,
 	isStatusAction,
 	isTakeBack,
 	isWaiting,
-	isWill,
 	needsDecision,
 	newOpId,
 	nextToSend,
 	nextWakeOf,
-	opsOf,
 	overlayDoneToday,
 	overlayDue,
 	overlayStatus,
@@ -81,8 +78,8 @@ import {
 	sameAction,
 	supportsKind,
 	ticketOf,
+	unknownChildren,
 	verdictOf,
-	writesOf,
 	type ActionOutcome,
 	type ChangePlan,
 	type CheckChange,
@@ -97,12 +94,10 @@ import {
 } from '$lib/domain/offline';
 import {
 	coveredAtExpiry,
-	inverseOf,
 	leaveChain,
 	mayBeThere,
-	restoreAs,
 	settleChains,
-	takenBackBy,
+	wishAgain,
 	type ChainContext,
 	type Fresh,
 	type Leave
@@ -110,7 +105,7 @@ import {
 import type { ProblemEntry } from '$lib/domain/problems';
 import { isStatus, type Status } from '$lib/domain/status';
 import type { CompletionChoice } from '$lib/domain/subtasks';
-import { REOPEN_STATUS, type Ticket, type TicketSummary } from '$lib/domain/ticket';
+import type { Ticket, TicketSummary } from '$lib/domain/ticket';
 import type { RequestOutcome } from '$lib/pocketbase';
 import type { FlagSink } from '$lib/stores/flags.svelte';
 import { WINDOW_TIMERS, type ConnectivityStore, type Timers } from './connectivity.svelte';
@@ -123,6 +118,8 @@ export const OUTBOX_CHANNEL = 'byl-outbox';
 const PLAN_ROUNDS = 3;
 /** How often in a row the worker may find an action changed before it gives the run up. */
 const SWAP_MISSES = 3;
+/** Numbers of the order of the probe in `#pure`: after any the device hands out (it counts from 1). */
+const PROBE_SEQ = Number.MAX_SAFE_INTEGER - 1_000_000;
 
 /** The messages between the tabs: only "read the device again", never a value. */
 export interface OutboxChannel {
@@ -208,6 +205,15 @@ export class OutboxFullError extends DataError {
 	}
 }
 
+/** The storage of the device failed while a change was kept (round 2): nothing was kept. */
+export class OutboxStorageError extends DataError {
+	constructor(cause?: unknown) {
+		super('server', { cause });
+		this.name = 'OutboxStorageError';
+		this.message = OFFLINE_TEXTS.storageFailed;
+	}
+}
+
 /** A change of the status a store asks for. */
 export interface StatusRequest {
 	status: Status;
@@ -260,11 +266,10 @@ interface Planned<R> {
 }
 
 /** What "Verwerfen" did, for its flag and its "Rückgängig" (OF-3b). */
-type Discarded =
-	| { kind: 'marked'; action: KeptAction }
-	| { kind: 'deleted'; action: KeptAction }
-	| { kind: 'kept'; action: KeptAction; originals: readonly string[] }
-	| { kind: 'inverted'; action: KeptAction; inverse: string };
+type Discarded = { kind: 'marked'; action: KeptAction } | { kind: 'deleted'; action: KeptAction };
+
+/** What "Rückgängig" did (round 2): something, nothing to do, or why nothing could happen. */
+type Undone = 'done' | 'later' | 'full';
 
 function withoutSending<A extends KeptAction>(action: A): A {
 	const copy = { ...action };
@@ -572,8 +577,10 @@ export class OutboxStore {
 		const storage = this.#storage;
 		if (user === null || storage === null || this.#loadingFor === user) return;
 		this.#loadingFor = user;
-		const run = (async () => {
-			if (!this.#frame && this.#deps.exists !== undefined && !(await this.#deps.exists())) {
+		const exists = this.#deps.exists;
+		const run = withIntent(OFFLINE_INTENTS.read, async () => {
+			// A browser that cannot say whether it has the storage counts as one without it.
+			if (!this.#frame && exists !== undefined && !(await exists().catch(() => false))) {
 				this.#loadingFor = null;
 				return;
 			}
@@ -582,13 +589,15 @@ export class OutboxStore {
 			this.#loaded = true;
 			this.#update();
 			this.#runner?.kick();
-		})();
+		});
 		this.#loading = run;
 		try {
 			await run;
-		} catch {
-			// Without its storage the outbox stays off; every change goes the way of today.
+		} catch (error) {
+			// Without its storage the outbox stays off; every change goes the way of today, and the
+			// flag of the storage says so (round 2), never silently.
 			this.#loadingFor = null;
+			this.#report(error);
 		}
 	}
 
@@ -824,10 +833,11 @@ export class OutboxStore {
 
 	/**
 	 * The status of sub-tasks as last seen, for "Verwerfen" of a completion that takes them along
-	 * (OF-3b): only IDs and these statuses are kept, like "Rückgängig" online keeps them.
+	 * (OF-3b): only IDs and these statuses are kept, like "Rückgängig" online keeps them; null for one
+	 * never seen, so no take-back guesses its value (round 2).
 	 */
-	#statusesOf(ids: readonly string[]): Status[] {
-		return ids.map((id) => this.#base.get(id)?.status ?? REOPEN_STATUS);
+	#statusesOf(ids: readonly string[]): (Status | null)[] {
+		return ids.map((id) => this.#base.get(id)?.status ?? null);
 	}
 
 	/** The key of a ticket as last seen, for the take-back of a sub-task (OF-3b). */
@@ -1013,15 +1023,16 @@ export class OutboxStore {
 						return { kind: 'kept' };
 					}
 					// The device changed meanwhile (the worker marked the action, another tab): read it and
-					// plan again, so a change never goes into an action that left the device (H1).
-					if (round >= PLAN_ROUNDS) throw new DataError('network');
+					// plan again, so a change never goes into an action that left the device (H1). After
+					// PLAN_ROUNDS rounds the storage counts as failing (round 2), not the connection.
+					if (round >= PLAN_ROUNDS) throw new OutboxStorageError();
 					await this.#read(storage, user, false);
 				}
 			});
 		} catch (error) {
-			// The device keeps nothing: nothing was noted, as without the outbox.
-			if (error instanceof OutboxFullError || error instanceof DataError) throw error;
-			throw new DataError('network', { cause: error });
+			// The device keeps nothing: nothing was noted, and the store names the storage (round 2).
+			if (error instanceof DataError) throw error;
+			throw new OutboxStorageError(error);
 		}
 		if (outcome.kind === 'none') return unchanged();
 		if (outcome.kind === 'send') return first(outcome.action, outcome.room);
@@ -1162,7 +1173,10 @@ export class OutboxStore {
 
 	/**
 	 * Deletes every action of the account without a comparison ("Abmelden und verwerfen", decision 4)
-	 * and tells the other tabs; the only write of the device that is no compare-and-swap (OF-3b).
+	 * and tells the other tabs. One of three writes of the device without a compare-and-swap (OF-3b,
+	 * round 2): this one and `clearUser` in a tab that never read the device delete everything of the
+	 * account on purpose, whatever its state; `#read` deletes entries of other accounts and unreadable
+	 * ones, which no step of this account plans with. Every other write is `#create` or `#swap`.
 	 */
 	async #forget(ops: readonly string[]): Promise<void> {
 		if (ops.length === 0) return;
@@ -1236,12 +1250,15 @@ export class OutboxStore {
 
 	/**
 	 * Runs a pure plan of the chains with new identifiers (OF-3b): once to count how many it needs,
-	 * then with as many numbers of the order from the device.
+	 * then with as many numbers of the order from the device. The probe numbers its new actions after
+	 * every existing one, in the order it asks for them, like the device does (round 2), so it sorts
+	 * them as the real run does and asks for as many.
 	 */
 	async #pure<T>(compute: (context: ChainContext) => T): Promise<T> {
 		let needed = 0;
+		const now = this.#now();
 		const probe = compute({
-			fresh: () => ({ op: `probe${needed++}`, seq: 0, now: 0 }),
+			fresh: () => ({ op: `probe${needed}`, seq: PROBE_SEQ + needed++, now }),
 			label: this.#label
 		});
 		if (needed === 0) return probe;
@@ -1267,16 +1284,27 @@ export class OutboxStore {
 	 * action from the future names the clock (G4). Those older than 7 days go. A discarded one asks
 	 * nothing (OF-3b): no request of it can be under way any more, so it goes where its take-backs
 	 * hold whatever the server has (`coveredAtExpiry`), else it is sent to the end without the time of
-	 * the device; one orphaned while "sending" may have arrived. The caller holds `#locked`.
+	 * the device; one orphaned while "sending" may have arrived. A take-back never expires (round 2,
+	 * S1); one an older build let expire waits to be sent again. The caller holds `#locked`.
 	 */
 	async #age(now: number): Promise<void> {
+		const expiredBacks = (actions: readonly KeptAction[]) =>
+			actions.filter((action) => isTakeBack(action) && action.state === 'expired');
 		const aged = agedActions(this.#actions, now);
-		if (aged.expire.length === 0 && aged.drop.length === 0) return;
+		const idle = (actions: readonly KeptAction[], found: typeof aged) =>
+			found.expire.length === 0 && found.drop.length === 0 && expiredBacks(actions).length === 0;
+		if (idle(this.#actions, aged)) return;
 		await this.#transform(async (before) => {
-			const { expire, drop } = agedActions(before, now);
-			if (expire.length === 0 && drop.length === 0) return null;
+			const found = agedActions(before, now);
+			if (idle(before, found)) return null;
+			const { expire, drop } = found;
 			const after = await this.#pure((context) => {
 				let actions = before.filter((action) => !drop.includes(action.op));
+				for (const back of expiredBacks(actions)) {
+					const queued: KeptAction = { ...back, state: 'queued', attempts: 0, nextAttemptAt: 0 };
+					delete queued.outcome;
+					actions = replaced(actions, queued);
+				}
 				for (const op of expire) {
 					const action = actions.find((entry) => entry.op === op);
 					if (action === undefined) continue;
@@ -1446,15 +1474,18 @@ export class OutboxStore {
 		if (verdict.result === 'session') {
 			return { after: await settle(replaced(before, queued)), result: { kind: 'session' } };
 		}
-		// An answer of the server: nothing may have arrived unseen (OF-3); a discarded one stays kept.
-		const answered: KeptAction = { ...queued };
-		if (fresh.discarded !== true) delete answered.unanswered;
 		if (verdict.result === 'server') {
+			// A 5xx does not say that the server looked the identifier up (a proxy may answer it): an
+			// earlier request without an answer may still have arrived (round 2, M-3).
 			const attempts = fresh.attempts + 1;
 			const nextAttemptAt = now + backoffDelay(attempts, this.#random);
-			const after = await settle(replaced(before, { ...answered, attempts, nextAttemptAt }));
+			const after = await settle(replaced(before, { ...queued, attempts, nextAttemptAt }));
 			return { after, result: { kind: 'later', attempts } };
 		}
+		// An answer after the lookup of the identifier: nothing arrived unseen (OF-3); a discarded one
+		// stays kept.
+		const answered: KeptAction = { ...queued };
+		if (fresh.discarded !== true) delete answered.unanswered;
 		if (fresh.discarded === true && !isMissing(failure)) {
 			// "Verwerfen" was asked for: it changed nothing, so it goes without a word (OF-3).
 			const after = await leave({ how: 'nothing' });
@@ -1559,10 +1590,10 @@ export class OutboxStore {
 	 * request got an answer, goes; the ones behind it are based on its value before, after a conflict or
 	 * a refusal on the last known state of the server (G6c). One whose request may be on its way or may
 	 * have arrived, also while it is sent, stays marked as discarded and is brought to the end with its
-	 * identifier; the take-backs behind it follow (`settleChains`). A take-back: the changes it takes
-	 * back count again, or, once they went, it turns into its counterpart. A discarded one that the
-	 * server refused with 403 or 404 goes. Every way shows a flag with "Rückgängig"; a failing storage
-	 * shows its flag (G6b).
+	 * identifier; the take-backs behind it follow (`settleChains`). A take-back that waits or is sent
+	 * has no "Verwerfen" of its own (round 2, S2): nothing happens, the dialog offers none. A discarded
+	 * one that the server refused with 403 or 404 goes. Every way shows a flag with "Rückgängig"; a
+	 * failing storage shows its flag (G6b).
 	 */
 	async discard(op: string): Promise<void> {
 		const action = this.#find(op);
@@ -1583,9 +1614,14 @@ export class OutboxStore {
 	): Promise<Planned<Discarded> | null> {
 		const action = before.find((entry) => entry.op === op);
 		if (action === undefined) return null;
-		const present = opsOf(before);
+		// A take-back carries out "Verwerfen": no "Verwerfen" of its own while it waits (round 2, S2).
+		if (isTakeBack(action) && isWaiting(action)) return null;
 		const state = this.#serverStateOf(action);
-		const decided: Leave = needsDecision(action) ? { how: 'decided', state } : { how: 'nothing' };
+		// After a conflict the user takes what the server has; after a refusal or 48 hours what they
+		// want without it still counts (round 2, H-1).
+		let decided: Leave = { how: 'nothing' };
+		if (action.state === 'conflict') decided = { how: 'decided', state };
+		else if (needsDecision(action)) decided = { how: 'refused', state };
 		const deleted = async (): Promise<Planned<Discarded>> => ({
 			after: await this.#pure((context) =>
 				settleChains(leaveChain(before, op, decided, context), context)
@@ -1602,30 +1638,6 @@ export class OutboxStore {
 			if (action.state === 'refused') return deleted();
 			// Older than 48 hours (an older build let it expire): it goes on as `#age` does it.
 			return action.state === 'expired' ? marked() : null;
-		}
-		if (isTakeBack(action) && isDerived(action, present)) {
-			const originals = takenBackBy(before, action);
-			if (originals.length > 0) {
-				const after = before.map((entry) => {
-					if (!originals.includes(entry)) return entry;
-					const kept = { ...entry };
-					delete kept.discarded;
-					return kept;
-				});
-				return {
-					after: await this.#pure((context) => settleChains(after, context)),
-					result: { kind: 'kept', action, originals: originals.map((entry) => entry.op) }
-				};
-			}
-		}
-		if (isTakeBack(action) && isFree(action)) {
-			let inverse = '';
-			const after = await this.#pure((context) => {
-				const turned = inverseOf(action, context.fresh());
-				inverse = turned.op;
-				return settleChains(replacedBy(before, action.op, turned), context);
-			});
-			return { after, last: op, result: { kind: 'inverted', action, inverse } };
 		}
 		return mayBeThere(action) ? marked() : deleted();
 	}
@@ -1649,7 +1661,10 @@ export class OutboxStore {
 		return settleChains(after, context);
 	}
 
-	/** The flag after "Verwerfen" with "Rückgängig" (OF-3b). */
+	/**
+	 * The flag after "Verwerfen" with "Rückgängig" (OF-3b). It names sub-tasks a discarded completion
+	 * may have done whose status before is unknown, so nobody takes them back (round 2).
+	 */
 	#discardFlag(done: Discarded): void {
 		const { action } = done;
 		const text = this.#textOf(action);
@@ -1657,37 +1672,61 @@ export class OutboxStore {
 			done.kind === 'marked' &&
 			!isTakeBack(action) &&
 			this.#actions.some((entry) => entry.undoes === action.op);
-		const undo = () => {
-			if (done.kind === 'marked') return this.#undoDiscard(action);
-			if (done.kind === 'deleted') return this.#restore(action);
-			if (done.kind === 'kept') return this.#discardAgain(done.originals);
-			return this.#turnBack(action, done.inverse);
-		};
+		const unknown = done.kind === 'marked' ? unknownChildren(action).length : 0;
+		const hints = [
+			...(takenBack ? [OFFLINE_TEXTS.takenBackHint] : []),
+			...(unknown > 0 ? [OFFLINE_TEXTS.childrenUnknown(unknown)] : [])
+		];
+		const undo = () => (done.kind === 'marked' ? this.#undoDiscard(action) : this.#restore(action));
 		this.#sink?.flags.show({
 			tone: 'success',
 			title: takenBack ? OFFLINE_TEXTS.takenBack(text) : OFFLINE_TEXTS.discarded(text),
-			...(takenBack && { description: OFFLINE_TEXTS.takenBackHint }),
+			...(hints.length > 0 && { description: hints.join(' ') }),
 			action: { label: OFFLINE_TEXTS.undo, run: () => void undo() }
 		});
 	}
 
-	/** Runs a change of "Rückgängig" on the device and lets the worker look (OF-3b). */
+	/**
+	 * Runs a change of "Rückgängig" on the device and lets the worker look (OF-3b). Where it cannot do
+	 * anything, a flag says why, never without a word (round 2).
+	 */
 	async #undoing(
 		action: KeptAction,
-		plan: (before: readonly KeptAction[]) => Promise<Planned<boolean> | null>
+		plan: (before: readonly KeptAction[]) => Promise<Planned<Undone> | null>
 	): Promise<void> {
-		if (action.user !== this.#user) return;
+		if (action.user !== this.#user) {
+			this.#sink?.flags.show({ tone: 'info', title: OFFLINE_TEXTS.undoOtherAccount });
+			return;
+		}
+		let undone: Undone | null = null;
 		await this.#guard(OFFLINE_INTENTS.restore(actionText(action)), async () => {
-			await this.#locked(() => this.#transform(plan));
+			undone = await this.#locked(() => this.#transform(plan));
 		});
+		if (undone === 'later') {
+			this.#sink?.flags.show({ tone: 'info', title: OFFLINE_TEXTS.undoLater });
+		} else if (undone === 'full') {
+			this.#sink?.flags.show({ tone: 'error', title: OFFLINE_TEXTS.full });
+		}
 		this.#runner?.kick();
 	}
 
+	/** Whether the device has room for every action `after` adds to `before` (concept §3.2). */
+	#roomFor(before: readonly KeptAction[], after: readonly KeptAction[]): boolean {
+		const added = after.filter((action) => !before.some((entry) => entry.op === action.op));
+		let kept = [...before];
+		for (const action of added) {
+			if (!hasRoom(kept, action)) return false;
+			kept = [...kept, action];
+		}
+		return true;
+	}
+
 	/**
-	 * "Rückgängig" after "Verwerfen" of a change that may have arrived (OF-3b): it counts again. Once it
-	 * went, its take-backs are turned around (one that may be under way or have arrived is discarded in
-	 * turn, so another one follows it), or, without one, its wish comes anew behind the chain unless a
-	 * later change sets the value anyway. Nothing is skipped (M6).
+	 * "Rückgängig" after "Verwerfen" of a change that may have arrived (OF-3b, round 2 H-2c): what the
+	 * user wanted before "Verwerfen" comes back. While the change is there, it counts again. Once it
+	 * went, its wish comes anew as a normal change at the end of its chain (`wishAgain`), also when its
+	 * take-back was sent, arrived, met a conflict or was refused; a later change that sets the value
+	 * anyway keeps it. Nothing is skipped (M6).
 	 */
 	#undoDiscard(original: KeptAction): Promise<void> {
 		return this.#undoing(original, async (before) => {
@@ -1698,64 +1737,16 @@ export class OutboxStore {
 				delete kept.discarded;
 				return {
 					after: await this.#pure((context) => settleChains(replaced(before, kept), context)),
-					result: true
+					result: 'done'
 				};
 			}
 			const after = await this.#pure((context) => {
-				let actions = [...before];
-				let again = false;
-				const ops = opsOf(actions);
-				for (const [feature] of intentOf(original)) {
-					const own = (entry: KeptAction) => entry.undoes === original.op;
-					const later = actions.some(
-						(entry) => !own(entry) && intentOf(entry).has(feature) && isWill(entry, ops)
-					);
-					if (later) continue;
-					const backs = actions.filter((entry) => own(entry) && writesOf(entry).has(feature));
-					for (const back of backs) {
-						if (isFree(back)) {
-							actions = replacedBy(actions, back.op, inverseOf(back, context.fresh()));
-						} else if (mayBeThere(back)) {
-							actions = replaced(actions, { ...back, discarded: true });
-						}
-					}
-					if (backs.length === 0) again = true;
-				}
-				if (again) actions = [...actions, restoreAs(actions, original, context.fresh())];
-				return settleChains(actions, context);
+				const again = wishAgain(before, original, context);
+				return again === null ? null : settleChains(again, context);
 			});
-			return { after, result: true };
-		});
-	}
-
-	/** "Rückgängig" after "Verwerfen" of a take-back: the changes it takes back are discarded again. */
-	#discardAgain(ops: readonly string[]): Promise<void> {
-		const first = this.#find(ops[0] ?? '');
-		if (first === undefined) return Promise.resolve();
-		return this.#undoing(first, async (before) => {
-			const again = (entry: KeptAction) => ops.includes(entry.op) && mayBeThere(entry);
-			const after = before.map((entry) =>
-				again(entry) ? { ...entry, discarded: true as const } : entry
-			);
-			return {
-				after: await this.#pure((context) => settleChains(after, context)),
-				result: true
-			};
-		});
-	}
-
-	/** "Rückgängig" after a take-back turned into its counterpart: the take-back comes back. */
-	#turnBack(takeBack: KeptAction, inverse: string): Promise<void> {
-		return this.#undoing(takeBack, async (before) => {
-			const turned = before.find((entry) => entry.op === inverse);
-			if (turned === undefined || !isFree(turned)) return null;
-			return {
-				after: await this.#pure((context) =>
-					settleChains(replacedBy(before, inverse, takeBack), context)
-				),
-				last: inverse,
-				result: true
-			};
+			if (after === null) return { after: before, result: 'later' };
+			if (!this.#roomFor(before, after)) return { after: before, result: 'full' };
+			return { after, result: 'done' };
 		});
 	}
 
@@ -1763,10 +1754,9 @@ export class OutboxStore {
 	#restore(action: KeptAction): Promise<void> {
 		return this.#undoing(action, async (before) => {
 			if (before.some((entry) => entry.op === action.op)) return null;
-			return {
-				after: await this.#pure((context) => settleChains([...before, action], context)),
-				result: true
-			};
+			const after = await this.#pure((context) => settleChains([...before, action], context));
+			if (!this.#roomFor(before, after)) return { after: before, result: 'full' };
+			return { after, result: 'done' };
 		});
 	}
 
@@ -1941,15 +1931,18 @@ export class OutboxStore {
 
 	/**
 	 * "Abmelden und verwerfen": every action of the signed-in account goes (decision 4), also when
-	 * this tab never read the device (G3).
+	 * this tab never read the device (G3). It runs after the steps of this tab that write the device
+	 * (round 2), so none of them writes an action back after it.
 	 */
 	async clearUser(): Promise<void> {
-		if (this.#loaded) {
-			await this.#forget(this.#actions.map((action) => action.op));
-			return;
-		}
-		const ops = await this.#opsOfAccount();
-		if (ops.length > 0) await this.#storage?.remove(ops);
+		await this.#locked(async () => {
+			if (this.#loaded) {
+				await this.#forget(this.#actions.map((action) => action.op));
+				return;
+			}
+			const ops = await this.#opsOfAccount();
+			if (ops.length > 0) await this.#storage?.remove(ops);
+		});
 	}
 }
 

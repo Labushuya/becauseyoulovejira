@@ -282,8 +282,11 @@ export interface OutboxAction extends ActionBase {
 	completion?: CompletionChoice;
 	/** The sub-tasks a completion with "complete_children" takes along, for the display. */
 	children?: string[];
-	/** Their status before, in the order of `children`, so "Verwerfen" opens them again (OF-3b). */
-	childrenBefore?: Status[];
+	/**
+	 * Their status before, in the order of `children`, so "Verwerfen" opens them again (OF-3b); null
+	 * where it was never seen: no take-back with a guessed value, "Verwerfen" names it (round 2).
+	 */
+	childrenBefore?: (Status | null)[];
 }
 
 /** A change of the due date of a ticket (OF-3): a calendar date or none. */
@@ -314,7 +317,7 @@ export interface DayPlanAction extends ActionBase {
 	expected: CheckState;
 	completion?: CompletionChoice;
 	children?: string[];
-	childrenBefore?: Status[];
+	childrenBefore?: (Status | null)[];
 }
 
 /** Every action the device keeps. */
@@ -450,13 +453,15 @@ function completionPartOf(
 	if (before !== undefined) {
 		const children = Array.isArray(raw.children) ? raw.children : [];
 		const valid =
-			Array.isArray(before) && before.length === children.length && before.every(isStatus);
+			Array.isArray(before) &&
+			before.length === children.length &&
+			before.every((entry) => entry === null || isStatus(entry));
 		if (!valid) return null;
 	}
 	return {
 		...(completion !== undefined && { completion }),
 		...(raw.children !== undefined && { children: [...(raw.children as string[])] }),
-		...(before !== undefined && { childrenBefore: [...(before as Status[])] })
+		...(before !== undefined && { childrenBefore: [...(before as (Status | null)[])] })
 	};
 }
 
@@ -743,14 +748,33 @@ export function opsOf(actions: readonly KeptAction[]): ReadonlySet<string> {
 	return new Set(actions.map((action) => action.op));
 }
 
-/** The sub-tasks a completion takes along with their status before, where both are known (OF-3b). */
-function takenAlong(action: KeptAction): [string, Status][] {
+/** The sub-tasks a completion takes along, each with its status before or null where unknown. */
+function alongOf(action: KeptAction): [string, Status | null][] {
 	if (isDueAction(action) || action.completion !== 'complete_children') return [];
 	const wish = isStatusAction(action) ? action.payload.status : checkWish(action).status;
+	if (wish !== 'done') return [];
 	const children = action.children ?? [];
 	const before = action.childrenBefore;
-	if (wish !== 'done' || before === undefined || before.length !== children.length) return [];
-	return children.map((id, index): [string, Status] => [id, before[index] ?? 'open']);
+	const known = before !== undefined && before.length === children.length;
+	return children.map((id, index): [string, Status | null] => [
+		id,
+		known ? (before[index] ?? null) : null
+	]);
+}
+
+/** The sub-tasks a completion takes along with their status before, where both are known (OF-3b). */
+function takenAlong(action: KeptAction): [string, Status][] {
+	return alongOf(action).filter((entry): entry is [string, Status] => entry[1] !== null);
+}
+
+/**
+ * The sub-tasks a completion takes along whose status before is unknown (OF-3b round 2): never seen,
+ * or kept by an older build. "Verwerfen" takes none of them back with a guessed value and says so.
+ */
+export function unknownChildren(action: KeptAction): string[] {
+	return alongOf(action)
+		.filter(([, before]) => before === null)
+		.map(([id]) => id);
 }
 
 /** The values a request of the action names as the ones before (its `expected`). */
@@ -990,8 +1014,8 @@ export interface StatusChange {
 	status: Status;
 	completion?: CompletionChoice;
 	children?: readonly string[];
-	/** The status of each sub-task in `children` before (OF-3b). */
-	childrenBefore?: readonly Status[];
+	/** The status of each sub-task in `children` before (OF-3b), null where never seen. */
+	childrenBefore?: readonly (Status | null)[];
 }
 
 /** A change of the due date the user made (OF-3). */
@@ -1025,7 +1049,7 @@ export interface CheckChange {
 	status?: Status;
 	completion?: CompletionChoice;
 	children?: readonly string[];
-	childrenBefore?: readonly Status[];
+	childrenBefore?: readonly (Status | null)[];
 }
 
 /** What the outbox does with a change: send it now, keep it, take it into one, or drop one. */
@@ -1054,7 +1078,7 @@ function completionFields(
 	completes: boolean,
 	completion: CompletionChoice | undefined,
 	children: readonly string[] | undefined,
-	before?: readonly Status[]
+	before?: readonly (Status | null)[]
 ): Pick<OutboxAction, 'completion' | 'children' | 'childrenBefore'> {
 	if (!completes || completion === undefined) return {};
 	if (completion === 'force') return { completion };
@@ -1355,7 +1379,9 @@ function isOld(action: ActionBase, now: number): boolean {
  * What the time does to the actions: waiting ones older than 48 hours are no longer sent on their
  * own (`expire`; not after "Trotzdem übertragen"), also one "sending" whose sender died (OF-2b), and
  * so are those whose time lies in the future (`isFromTheFuture`); any older than 7 days goes
- * (`drop`).
+ * (`drop`). A take-back never expires (OF-3b round 2, S1): it carries out the declared "Verwerfen",
+ * and its value before shows a change of someone else as a conflict; the server keeps its time of
+ * the device only within its window.
  */
 export function agedActions(
 	actions: readonly KeptAction[],
@@ -1365,6 +1391,7 @@ export function agedActions(
 	const drop: string[] = [];
 	for (const action of actions) {
 		if (now - action.createdAt >= KEEP_MS) drop.push(action.op);
+		else if (isTakeBack(action)) continue;
 		else if (isOld(action, now) || isFromTheFuture(action, now)) expire.push(action.op);
 	}
 	return { expire, drop };
@@ -1456,51 +1483,6 @@ export function changesSomething(action: KeptAction): boolean {
 	if (isStatusAction(action)) return action.payload.status !== action.expected.status;
 	if (isDueAction(action)) return action.payload.due !== action.expected.due;
 	return !sameState(checkWish(action), action.expected);
-}
-
-/**
- * The counter action of "Verwerfen" (OF-3): behind the action, with a new identifier, the value before
- * as the wish and the wish of the action as the value before, so it overwrites no other change. A
- * check mark is taken back the same way (the mark of the day, or the completion with the status
- * before), taking a check mark back by checking again.
- */
-export function counterOf(action: KeptAction, context: PlanContext): KeptAction {
-	const head = {
-		...common(context, action, [action.op]),
-		undoes: action.op
-	};
-	if (isStatusAction(action)) {
-		return {
-			...head,
-			kind: 'ticket.update',
-			payload: { status: action.expected.status },
-			expected: { status: action.payload.status }
-		};
-	}
-	if (isDueAction(action)) {
-		return {
-			...head,
-			kind: 'ticket.update',
-			payload: { due: action.expected.due },
-			expected: { due: action.payload.due }
-		};
-	}
-	const wish = checkWish(action);
-	const today = action.payload.action === 'today';
-	let back: DayPlanAction['payload'];
-	if (action.kind === 'dayplan.uncheck') {
-		back = { action: action.payload.action, mode: today ? 'today' : 'complete' };
-	} else {
-		back = today ? { action: 'today' } : { action: 'complete', status: action.expected.status };
-	}
-	return {
-		...head,
-		kind: action.kind === 'dayplan.check' ? 'dayplan.uncheck' : 'dayplan.check',
-		ticket: action.ticket,
-		ticketKind: action.ticketKind,
-		payload: back,
-		expected: wish
-	};
 }
 
 /**
@@ -1877,6 +1859,18 @@ export const OFFLINE_TEXTS = Object.freeze({
 	refusedMaybeArrived:
 		'Die Änderung ist vielleicht schon angekommen und ließ sich nicht zurücknehmen. Bitte im Ticket prüfen.',
 	counter: (text: string) => `Rücknahme: ${text}`,
+	/** A take-back that waits or is sent has no "Verwerfen" of its own (OF-3b round 2, S2). */
+	takeBackHint:
+		'Nimmt eine verworfene Änderung zurück. Wer es sich anders überlegt, nutzt „Rückgängig“ im Hinweis nach dem Verwerfen oder setzt den Wert neu.',
+	/** Sub-tasks a discarded completion took along whose status before is unknown (round 2). */
+	childrenUnknown: (count: number) =>
+		count === 1
+			? '1 Unteraufgabe wurde vielleicht mit erledigt; ihr Status vorher ist unbekannt, deshalb wird sie nicht zurückgenommen. Bitte im Ticket prüfen.'
+			: `${count} Unteraufgaben wurden vielleicht mit erledigt; ihr Status vorher ist unbekannt, deshalb werden sie nicht zurückgenommen. Bitte im Ticket prüfen.`,
+	/** "Rückgängig" after "Verwerfen" where a later change sets every value anyway (round 2). */
+	undoLater: '„Rückgängig“ ändert nichts: Eine spätere Änderung setzt den Wert ohnehin.',
+	/** "Rückgängig" after another account signed in (round 2). */
+	undoOtherAccount: '„Rückgängig“ geht nicht mehr: Inzwischen ist ein anderes Konto angemeldet.',
 	undo: 'Rückgängig',
 	reloadTitle: 'Ohne Verbindung neu laden?',
 	reloadText: (count: number) =>
