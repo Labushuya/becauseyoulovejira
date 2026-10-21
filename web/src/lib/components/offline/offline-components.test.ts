@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
 	AUTO_SEND_MS,
 	CLOCK_CODE,
+	KEEP_MS,
 	OFFLINE_TEXTS,
 	type ActionOutcome,
 	type DayPlanAction,
@@ -221,6 +222,25 @@ describe('OfflineNotice', () => {
 	});
 });
 
+describe('OfflineNotice (OF-3b round 3)', () => {
+	it('names the changes deleted after 7 days and stays until it is closed (R2-2)', async () => {
+		const outbox = await outboxWith([stored({ createdAt: NOW - KEEP_MS })], true);
+		const { container } = render(OfflineNotice, { props: { outbox, onshow: vi.fn() } });
+		const text =
+			'1 gemerkte Änderung war älter als 7 Tage und wurde gelöscht, ohne sicher übertragen zu sein: HAUS-12. Bitte im Ticket prüfen.';
+		expect(statusText()).toContain(text);
+		const message = container.querySelector('.section-message');
+		expect(message?.getAttribute('data-tone')).toBe('warning');
+		await vi.advanceTimersByTimeAsync(120_000);
+		expect(statusText()).toContain(text);
+		const close = within(screen.getByRole('status')).getByRole('button', { name: 'Schließen' });
+		expect(close.getAttribute('aria-describedby')).not.toBeNull();
+		await fireEvent.click(close);
+		expect(statusText()).not.toContain(text);
+		expect(outbox.notices).toEqual([]);
+	});
+});
+
 describe('OutboxButton', () => {
 	it('shows "Offline · 2" without a connection and opens the dialog', async () => {
 		const outbox = await outboxWith([stored(), other(2)]);
@@ -425,7 +445,12 @@ describe('OutboxDialog', () => {
 		);
 		expect(within(first as HTMLElement).queryByRole('button', { name: 'Verwerfen' })).toBeNull();
 		expect(second?.textContent).toContain('Rücknahme: HAUS-12 auf „Offen“');
-		expect(within(second as HTMLElement).getByRole('button', { name: 'Verwerfen' })).toBeTruthy();
+		// Since OF-3b round 2 (S2) a take-back has no "Verwerfen" of its own and says why; since round
+		// 3 (R2-5) the way that always works first, "Rückgängig" only right after "Verwerfen".
+		expect(within(second as HTMLElement).queryByRole('button', { name: 'Verwerfen' })).toBeNull();
+		expect(second?.textContent).toContain(
+			'Nimmt eine verworfene Änderung zurück. Wer es sich anders überlegt, setzt den Wert neu; direkt nach dem Verwerfen geht auch „Rückgängig“ im Hinweis.'
+		);
 	});
 
 	it('says why a change from the future waits and offers "Trotzdem übertragen" and "Verwerfen" (OF-2b)', async () => {
@@ -441,5 +466,125 @@ describe('OutboxDialog', () => {
 		await fireEvent.click(buttons.getByRole('button', { name: 'Verwerfen' }));
 		await vi.advanceTimersByTimeAsync(0);
 		expect(outbox.count).toBe(0);
+	});
+});
+
+describe('OutboxDialog (OF-3b)', () => {
+	const href = (id: string) => `/tickets/${id}` as never;
+
+	function dialog() {
+		return screen.getByRole('dialog', { name: 'Gemerkte Änderungen' });
+	}
+
+	it('asks whether to open the ticket again when taking back a completion was refused for a day gone by (M4)', async () => {
+		const back = check({
+			kind: 'dayplan.uncheck',
+			payload: { action: 'complete', status: 'open' },
+			expected: { doneToday: false, status: 'done' },
+			state: 'refused',
+			outcome: DAY_OVER
+		});
+		const outbox = await outboxWith([back]);
+		render(OutboxDialog, { props: { outbox, onclose: vi.fn(), ticketHref: href } });
+		expect(dialog().textContent).toContain('HAUS-12 im Tagesplan wieder offen');
+		expect(dialog().textContent).toContain('Der Tag ist vorbei. HAUS-12 trotzdem wieder öffnen?');
+		const buttons = within(dialog());
+		expect(buttons.getByRole('button', { name: 'Verwerfen' })).toBeTruthy();
+		await fireEvent.click(buttons.getByRole('button', { name: 'Trotzdem wieder öffnen' }));
+		await vi.advanceTimersByTimeAsync(0);
+		expect(outbox.actions).toMatchObject([
+			{ kind: 'ticket.update', target: 'tick00000000001', payload: { status: 'open' } }
+		]);
+	});
+
+	it('says that a discarded change refused with 404 may have arrived, and lets it go on "Verwerfen" (M2)', async () => {
+		const gone: ActionOutcome = { code: 'not_found', message: 'Nicht gefunden.' };
+		const refused = stored({
+			sent: true,
+			unanswered: true,
+			discarded: true,
+			state: 'refused',
+			outcome: gone
+		});
+		const outbox = await outboxWith([refused]);
+		render(OutboxDialog, { props: { outbox, onclose: vi.fn(), ticketHref: href } });
+		const [first] = within(dialog()).getAllByRole('listitem');
+		expect(first?.textContent).toContain('Nicht gefunden.');
+		expect(first?.textContent).toContain(
+			'Die Änderung ist vielleicht schon angekommen und ließ sich nicht zurücknehmen. Bitte im Ticket prüfen.'
+		);
+		await fireEvent.click(within(first as HTMLElement).getByRole('button', { name: 'Verwerfen' }));
+		await vi.advanceTimersByTimeAsync(0);
+		expect(outbox.count).toBe(0);
+	});
+
+	it('names a discarded change whose value a later change sets without saying it is taken back', async () => {
+		const original = stored({ sent: true, unanswered: true, discarded: true });
+		const later = stored({
+			op: 'zzzzzzzzzzzzzzzzzzz2',
+			seq: 2,
+			dependsOn: [original.op],
+			payload: { status: 'in_progress' },
+			expected: { status: 'done' }
+		});
+		const outbox = await outboxWith([original, later]);
+		render(OutboxDialog, { props: { outbox, onclose: vi.fn(), ticketHref: href } });
+		const [first, second] = within(dialog()).getAllByRole('listitem');
+		expect(first?.textContent).toContain(
+			'offline um 14:03 · verworfen, es gilt die spätere Änderung'
+		);
+		expect(first?.textContent).not.toContain('wird zurückgenommen');
+		expect(second?.textContent).toContain('HAUS-12 auf „In Arbeit“');
+	});
+});
+
+describe('OutboxDialog (OF-3b round 2)', () => {
+	const href = (id: string) => `/tickets/${id}` as never;
+	const lost = { sent: true as const, unanswered: true as const, discarded: true as const };
+
+	function dialog() {
+		return screen.getByRole('dialog', { name: 'Gemerkte Änderungen' });
+	}
+
+	it('says of two discarded changes that both are taken back, not that the later one counts', async () => {
+		const first = stored(lost);
+		const later = stored({
+			...lost,
+			op: 'zzzzzzzzzzzzzzzzzzz2',
+			seq: 2,
+			dependsOn: [first.op],
+			payload: { status: 'in_progress' },
+			expected: { status: 'done' }
+		});
+		const back = stored({
+			op: 'zzzzzzzzzzzzzzzzzzz3',
+			seq: 3,
+			dependsOn: [first.op, later.op],
+			undoes: later.op,
+			payload: { status: 'open' },
+			expected: { status: 'in_progress' }
+		});
+		const outbox = await outboxWith([first, later, back]);
+		render(OutboxDialog, { props: { outbox, onclose: vi.fn(), ticketHref: href } });
+		const rows = within(dialog()).getAllByRole('listitem');
+		expect(rows.map((row) => row.textContent?.includes(OFFLINE_TEXTS.takingBack))).toEqual([
+			true,
+			true,
+			false
+		]);
+		expect(dialog().textContent).not.toContain(OFFLINE_TEXTS.discardedLater);
+		expect(within(rows[2] as HTMLElement).queryByRole('button', { name: 'Verwerfen' })).toBeNull();
+	});
+
+	it('names the sub-tasks of a discarded completion whose status before is unknown', async () => {
+		const completion = stored({
+			...lost,
+			completion: 'complete_children',
+			children: ['tick00000000003', 'tick00000000004'],
+			childrenBefore: [null, 'open']
+		});
+		const outbox = await outboxWith([completion]);
+		render(OutboxDialog, { props: { outbox, onclose: vi.fn(), ticketHref: href } });
+		expect(dialog().textContent).toContain(OFFLINE_TEXTS.childrenUnknown(1));
 	});
 });

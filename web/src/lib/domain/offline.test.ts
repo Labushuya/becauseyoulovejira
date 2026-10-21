@@ -27,7 +27,6 @@ import {
 	checkDelay,
 	checkWish,
 	completionInstead,
-	counterOf,
 	deviceTimeText,
 	dueOfServer,
 	hasRoom,
@@ -56,10 +55,12 @@ import {
 	type DueAction,
 	type DueChange,
 	type FailureFacts,
+	type KeptAction,
 	type OutboxAction,
 	type PlanContext,
 	type StatusChange
 } from './offline';
+import { settleChains } from './offline-chain';
 
 // 2026-10-20 14:30 in Berlin (CEST).
 const NOW = Date.UTC(2026, 9, 20, 12, 30, 0);
@@ -398,13 +399,39 @@ describe('the time (decision of the user 2)', () => {
 		const close = action({ op: THIRD, createdAt: NOW + DEVICE_FUTURE_MS });
 		const decided = action({ op: FOURTH, createdAt: ahead, late: true });
 		expect(isFromTheFuture(kept, NOW)).toBe(true);
-		expect(isFromTheFuture(marked, NOW)).toBe(true);
+		// Since round 3 of OF-3b (R2-6) a mark "sending" from the future lost its sender: it goes again
+		// with its identifier; only the time of the change itself counts.
+		expect(isFromTheFuture(marked, NOW)).toBe(false);
 		expect(isFromTheFuture(close, NOW)).toBe(false);
 		expect(isFromTheFuture(decided, NOW)).toBe(false);
 		expect(agedActions([kept, marked, close, decided], NOW)).toEqual({
-			expire: [FIRST, SECOND],
+			expire: [FIRST],
 			drop: []
 		});
+	});
+
+	it('takes a mark "sending" from the future as one whose sender died, also of a take-back (round 3, R2-6)', () => {
+		const ahead = NOW + 24 * 60 * 60_000;
+		const marked = action({ op: FIRST, state: 'sending', sendingSince: ahead, sent: true });
+		const back = action({
+			op: SECOND,
+			seq: 2,
+			state: 'sending',
+			sendingSince: NOW + 1,
+			sent: true,
+			undoes: FOURTH
+		});
+		expect(isFromTheFuture(marked, NOW)).toBe(false);
+		expect(agedActions([marked, back], NOW)).toEqual({ expire: [], drop: [] });
+		expect(nextToSend([marked, back], NOW)?.op).toBe(FIRST);
+		expect(nextToSend([back], NOW)?.op).toBe(SECOND);
+	});
+
+	it('never lets a take-back expire, also not with a time from the future (OF-3b round 2, S1)', () => {
+		const old = action({ op: FIRST, createdAt: NOW - AUTO_SEND_MS, undoes: FOURTH });
+		const ahead = action({ op: SECOND, createdAt: NOW + DEVICE_FUTURE_MS + 1, undoes: FOURTH });
+		const gone = action({ op: THIRD, createdAt: NOW - KEEP_MS, undoes: FOURTH });
+		expect(agedActions([old, ahead, gone], NOW)).toEqual({ expire: [], drop: [THIRD] });
 	});
 
 	it('lets an orphaned action "sending" age, but not one under way (OF-2b, G4)', () => {
@@ -865,25 +892,30 @@ describe('"Verwerfen" of a change that may have arrived (OF-3)', () => {
 	});
 
 	it('takes back with the value before as the wish and the wish as the value before', () => {
-		const context = { ...OFFLINE, op: THIRD };
-		expect(counterOf(action(), context)).toMatchObject({
+		// Since OF-3b the take-back follows from the chain (`settleChains`); round 2 dropped
+		// `counterOf`, whose last caller was the turned take-back. The forms stay the ones of OF-3.
+		const context = { fresh: () => ({ op: THIRD, seq: 9, now: NOW }) };
+		const lost = { sent: true as const, unanswered: true as const, discarded: true as const };
+		const counterOf = (discarded: KeptAction) =>
+			settleChains([{ ...discarded, ...lost }], context).at(-1);
+		expect(counterOf(action())).toMatchObject({
 			op: THIRD,
 			undoes: FIRST,
 			dependsOn: [FIRST],
 			payload: { status: 'open' },
 			expected: { status: 'done' }
 		});
-		expect(counterOf(dueAction(), context)).toMatchObject({
+		expect(counterOf(dueAction())).toMatchObject({
 			payload: { due: null },
 			expected: { due: '2026-10-22' }
 		});
-		expect(counterOf(planCheck(), context)).toMatchObject({
+		expect(counterOf(planCheck())).toMatchObject({
 			kind: 'dayplan.uncheck',
 			payload: { action: 'complete', status: 'open' },
 			expected: { doneToday: false, status: 'done' }
 		});
 		const today = planCheck({ payload: { action: 'today', mode: 'today' } });
-		expect(counterOf(today, context)).toMatchObject({
+		expect(counterOf(today)).toMatchObject({
 			kind: 'dayplan.uncheck',
 			payload: { action: 'today' },
 			expected: { doneToday: true, status: 'open' }
@@ -893,14 +925,14 @@ describe('"Verwerfen" of a change that may have arrived (OF-3)', () => {
 			payload: { action: 'complete', status: 'waiting' },
 			expected: { doneToday: false, status: 'done' }
 		});
-		expect(counterOf(back, context)).toMatchObject({
+		expect(counterOf(back)).toMatchObject({
 			kind: 'dayplan.check',
 			payload: { action: 'complete', mode: 'complete' },
 			expected: { doneToday: false, status: 'waiting' }
 		});
 		expect(changesSomething(action())).toBe(true);
 		expect(changesSomething(action({ payload: { status: 'open' } }))).toBe(false);
-		const counter = counterOf(dueAction(), context) as DueAction;
+		const counter = counterOf(dueAction()) as DueAction;
 		const rebased = rebasedBehind([counter], FIRST, { due: '2026-10-30' });
 		expect(rebased.map((entry) => entry.expected)).toEqual([{ due: '2026-10-30' }]);
 	});

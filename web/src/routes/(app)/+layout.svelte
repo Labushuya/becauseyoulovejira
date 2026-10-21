@@ -919,8 +919,9 @@
 {/if}
 <main class="content">
 	<!-- The outbox (OF-2): without a connection its warning takes the place of the live hint; kept
-	     changes, conflicts and refusals with "Ansehen". Only while it works or keeps something. -->
-	{#if outbox.watching || outbox.count > 0}
+	     changes, conflicts and refusals with "Ansehen". Only while it works, keeps something or has a
+	     notice that stays until it is closed (OF-3b round 3). -->
+	{#if outbox.watching || outbox.count > 0 || outbox.notices.length > 0}
 		<OfflineNotice {outbox} onshow={() => (outboxOpen = true)} />
 	{/if}
 	<!-- A failed realtime subscription is tried again; meanwhile a hint says so (ADR-0011 E6). -->

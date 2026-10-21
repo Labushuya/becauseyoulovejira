@@ -1,9 +1,15 @@
-// Test scaffold of the outbox (OF-2b, extended in OF-3), shared by offline/outbox-corrections.test.ts
-// and offline/outbox-of3.test.ts: a fake server that takes a change, can lose an answer and answers a
+// Test scaffold of the outbox (OF-2b, extended in OF-3 and OF-3b), shared by
+// offline/outbox-corrections.test.ts, offline/outbox-of3.test.ts, offline/outbox-of3b.test.ts and
+// offline/outbox-matrix.test.ts: a fake server that takes a change, can lose an answer and answers a
 // known identifier like `answerReplay` (the record as it is now, without comparing the content), a
 // conflict when the stored value is neither the expected nor the desired one (`conflictsOf`); since
-// OF-3 also the due date and the check marks of the day plan (`dayOver`: the day of the plan is over).
-// A storage whose writes finish on command, one that fails on command, and the harness of an outbox.
+// OF-3 also the due date and the check marks of the day plan (`dayOver`: the day of the plan is over),
+// since OF-3b the sub-tasks "Unteraufgaben mit erledigen" takes along, since round 3 exactly as the
+// hook does it (`blocking`, ticket-service.js `prepareCompletion`). A storage whose writes finish on
+// command, one that fails on command, and the harness of an outbox.
+//
+// Where it differs from the server on purpose: it knows no rules of the Record API (403 and 404 come
+// from the tests), no `updated` of its own and no series; the time of the device is not checked.
 
 import { expect, vi } from 'vitest';
 import type { DayPlanItem } from '$lib/data/day-plan';
@@ -11,6 +17,7 @@ import { DataError } from '$lib/data/errors';
 import type { CalendarDate } from '$lib/domain/berlin-date';
 import type { ActionOutcome, KeptAction, OfflineOps, OutboxAction } from '$lib/domain/offline';
 import type { Status } from '$lib/domain/status';
+import type { CompletionChoice } from '$lib/domain/subtasks';
 import type { Ticket } from '$lib/domain/ticket';
 import type { FlagInput } from '$lib/stores/flags.svelte';
 import { ConnectivityStore } from '$lib/offline/connectivity.svelte';
@@ -164,12 +171,17 @@ function stamp(due: CalendarDate | null): string {
  * the change was written, as a tunnel that breaks on the way back. Since OF-3 the due date and the
  * check marks of the entries of the day plan (`items`) as the routes do it, `dayOver` refuses a new
  * check mark on a day gone by (validation_dayplan_readonly) after the identifier was looked up.
+ * Since round 3 a completion treats the sub-tasks like the hook: only the step to "done" looks at the
+ * open ones of `blocking`, refuses with validation_parent_open_children without an answer and completes
+ * them with "complete_children" (the list of the client does not count).
  */
 export function fakeServer() {
 	const server = {
 		status: new Map<string, Status>(),
 		due: new Map<string, CalendarDate | null>(),
 		items: new Map<string, { ticket: string; doneToday: boolean }>(),
+		/** The sub-tasks of a ticket with "blocks_parent", as the hook finds them (round 3). */
+		blocking: new Map<string, string[]>(),
 		dayOver: false,
 		applied: new Set<string>(),
 		/** Every identifier a request carried, in order. */
@@ -189,6 +201,25 @@ export function fakeServer() {
 			throw new DataError('network');
 		}
 	};
+	/**
+	 * The sub-tasks a save completes along (ticket-service.js `prepareCompletion`, after the conflict
+	 * check): only on the step to "done", only the open blocking ones; with some open, "force" leaves
+	 * them, "complete_children" takes them, without an answer the save is refused.
+	 */
+	const along = (
+		id: string,
+		was: Status,
+		next: Status,
+		choice: CompletionChoice | undefined
+	): string[] => {
+		if (was === 'done' || next !== 'done') return [];
+		const open = (server.blocking.get(id) ?? []).filter(
+			(child) => (server.status.get(child) ?? 'open') !== 'done'
+		);
+		if (open.length === 0 || choice === 'force') return [];
+		if (choice === 'complete_children') return open;
+		throw refusal('status', 'validation_parent_open_children', { count: open.length });
+	};
 	const send = vi.fn<OutboxDeps['send']>(async (action, fields) => {
 		server.sent.push(fields.opId);
 		if (!server.reachable) throw new DataError('network');
@@ -202,7 +233,10 @@ export function fakeServer() {
 				updated: SAVED_AT
 			});
 		}
+		const children = along(action.target, now, action.payload.status, action.completion);
 		server.status.set(action.target, action.payload.status);
+		// "Unteraufgaben mit erledigen" completes the sub-tasks in the same save (OF-3b, M3).
+		for (const child of children) server.status.set(child, 'done');
 		server.applied.add(fields.opId);
 		lost();
 		return current(action.target);
@@ -264,6 +298,10 @@ export function fakeServer() {
 		if (Object.keys(errors).length > 0) {
 			throw new DataError('validation', { status: 400, fields: errors });
 		}
+		// The route saves the ticket only when it is not done yet; its hooks decide on the sub-tasks.
+		const children =
+			check && complete ? along(item.ticket, previous, 'done', action.completion) : [];
+		for (const child of children) server.status.set(child, 'done');
 		if (check && complete) server.status.set(item.ticket, 'done');
 		else if (check) item.doneToday = true;
 		else if (!complete) item.doneToday = false;

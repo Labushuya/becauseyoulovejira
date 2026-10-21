@@ -8,15 +8,21 @@
 		OPEN_CHILDREN_CODE,
 		actionText,
 		canCompleteAnyway,
+		canReopenAnyway,
 		deviceTimeText,
 		dueOfServer,
+		intentOf,
 		isBroken,
 		isDueAction,
+		isTakeBack,
 		isWaiting,
 		needsDecision,
 		reasonOf,
 		serverTimeText,
 		ticketOf,
+		unknownChildren,
+		writesOf,
+		type Feature,
 		type KeptAction
 	} from '$lib/domain/offline';
 	import { formatCalendarDate } from '$lib/domain/format';
@@ -36,9 +42,13 @@
 	// marks of the day plan: a check mark of a day gone by asks "… trotzdem erledigen?" for a task and
 	// lapses otherwise, a changed check mark is refused; a change taken back after it may have arrived
 	// says that it is taken back once there is a connection, its counter action stands as "Rücknahme".
-	// The buttons run steps of the outbox that never reject; a failing storage shows its own flag
-	// (OF-2b). It opens only through "Ansehen" or the symbol in the top bar, never on its own
-	// (ADR-0025).
+	// Since OF-3b a discarded change says so only while a take-back stands behind it, else that a
+	// later change sets the value; one the server refused with 403 or 404 says that it may have
+	// arrived; taking back a completion on a day gone by asks "… trotzdem wieder öffnen?". Since round 2
+	// a take-back that waits or is sent has no "Verwerfen" and says how to decide otherwise, and a
+	// discarded completion names sub-tasks whose status before is unknown. The buttons run steps of the
+	// outbox that never reject; a failing storage shows its own flag (OF-2b). It opens only through
+	// "Ansehen" or the symbol in the top bar, never on its own (ADR-0025).
 	let {
 		outbox,
 		onclose,
@@ -85,9 +95,37 @@
 		return deviceTimeText(action.createdAt, now);
 	}
 
+	/** Whether `action` changes one of `features`. */
+	function changesAny(action: KeptAction, features: Iterable<Feature>): boolean {
+		const changes = writesOf(action);
+		return [...features].some((feature) => changes.has(feature));
+	}
+
+	/**
+	 * A discarded change says "verworfen, es gilt die spätere Änderung" only where a later change the
+	 * user keeps sets its value and no take-back after it covers it (OF-3b, round 2: of two discarded
+	 * ones both are taken back).
+	 */
+	function discardedText(action: KeptAction): string {
+		const covered = actions.some(
+			(other) =>
+				isTakeBack(other) &&
+				(other.undoes === action.op ||
+					(other.seq > action.seq && changesAny(action, writesOf(other).keys())))
+		);
+		const later = actions.some(
+			(other) =>
+				other.seq > action.seq &&
+				other.discarded !== true &&
+				!isTakeBack(other) &&
+				changesAny(action, intentOf(other).keys())
+		);
+		return !covered && later ? OFFLINE_TEXTS.discardedLater : OFFLINE_TEXTS.takingBack;
+	}
+
 	function stateText(action: KeptAction): string {
 		if (!isWaiting(action)) return OFFLINE_TEXTS.markDecision;
-		if (action.discarded === true) return OFFLINE_TEXTS.takingBack;
+		if (action.discarded === true) return discardedText(action);
 		if (action.state === 'sending') return OFFLINE_TEXTS.underway;
 		const blocker = actions.find(
 			(other) => action.dependsOn.includes(other.op) && needsDecision(other)
@@ -204,9 +242,12 @@
 							{@render discard(action)}
 						</div>
 					{:else if dayOver(action)}
-						<!-- A day gone by (decision of the user 3): a task may still be completed. -->
+						<!-- A day gone by (decision of the user 3): a task may still be completed, and taking a
+						     completion back may still open the ticket again (OF-3b). -->
 						{#if canCompleteAnyway(action)}
 							<p class="detail">{OFFLINE_TEXTS.dayOverDone(action.key || 'Ticket')}</p>
+						{:else if canReopenAnyway(action)}
+							<p class="detail">{OFFLINE_TEXTS.dayOverReopen(action.key || 'Ticket')}</p>
 						{:else}
 							<p class="detail">{OFFLINE_TEXTS.dayOverLapsed}</p>
 						{/if}
@@ -220,12 +261,24 @@
 								>
 									{OFFLINE_TEXTS.force}
 								</button>
+							{:else if canReopenAnyway(action)}
+								<button
+									class="button-primary button-small"
+									type="button"
+									onclick={() => void outbox.reopenAnyway(action.op)}
+								>
+									{OFFLINE_TEXTS.reopenAnyway}
+								</button>
 							{/if}
 							{@render discard(action)}
 						</div>
 					{:else if action.state === 'refused'}
 						{#if !isBroken(action)}
 							<p class="detail">{reasonOf(action)}</p>
+						{/if}
+						{#if action.discarded === true}
+							<!-- Refused with 403 or 404 after "Verwerfen" (OF-3b): it may stay in effect. -->
+							<p class="detail">{OFFLINE_TEXTS.refusedMaybeArrived}</p>
 						{/if}
 						<ProblemDetails problem={outbox.problemOf(action.op)} />
 						<div class="buttons">
@@ -246,7 +299,15 @@
 							</button>
 							{@render discard(action)}
 						</div>
-					{:else if action.state === 'queued' && action.discarded !== true}
+					{:else if isTakeBack(action)}
+						<!-- A take-back carries out "Verwerfen" and has none of its own (round 2, S2). -->
+						<p class="detail">{OFFLINE_TEXTS.takeBackHint}</p>
+					{:else if action.discarded === true}
+						{@const unknown = unknownChildren(action).length}
+						{#if unknown > 0}
+							<p class="detail">{OFFLINE_TEXTS.childrenUnknown(unknown)}</p>
+						{/if}
+					{:else if action.state === 'queued'}
 						<div class="buttons">
 							{@render discard(action)}
 						</div>

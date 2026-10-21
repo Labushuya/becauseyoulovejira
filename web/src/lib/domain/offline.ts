@@ -17,12 +17,13 @@
 //   identifier like the first time without comparing the content, so a new wish would be lost. A change
 //   behind it, or behind one that waits for a decision, is a new action that waits for it
 //   (`dependsOn`), also taking a change back (a counter action, concept §3.3).
-// - "Verwerfen" of an action that may have arrived (OF-3) keeps it to the end (`discarded`) and lets a
-//   counter action (`undoes`) take it back behind it; a refusal of the first drops both.
+// - "Verwerfen" of an action that may have arrived (OF-3) keeps it to the end (`discarded`); since
+//   OF-3b the take-backs (`undoes`) follow per value from what the user still wants (`targetOf`,
+//   domain/offline-chain.ts), and `fallback` keeps that wish once a discarded action arrived.
 // - The display lays the waiting actions over the state of the server (`overlayStatus`,
 //   `overlayDue`, `overlayDoneToday`); the stores keep the state of the server.
 // - After 48 hours an action is no longer sent on its own (decision of the user 2), after 7 days
-//   it goes.
+//   it goes, never silently: a notice names its ticket (OF-3b round 3).
 
 import { isCalendarDate, type CalendarDate } from './berlin-date';
 import {
@@ -249,11 +250,27 @@ export interface ActionBase {
 	outcome?: ActionOutcome;
 	/**
 	 * "Verwerfen" after the action may have left the device (OF-3): it is still sent to the end with
-	 * its identifier, and a refusal drops it without a word; a counter action takes it back.
+	 * its identifier, and a refusal drops it without a word (since OF-3b not after 403 or 404); a
+	 * take-back behind it brings every value it changes back to what the user wants (OF-3b).
 	 */
 	discarded?: true;
-	/** A counter action of "Verwerfen" (OF-3): the identifier of the action it takes back. */
+	/** A take-back (OF-3, "Rücknahme"): the identifier of the action whose change it takes back. */
 	undoes?: string;
+	/**
+	 * What the user wants for a value of this action once it and the later ones are discarded, where
+	 * that is not `expected` (OF-3b): a discarded action before it arrived, so the server has its wish.
+	 */
+	fallback?: Fallback;
+}
+
+/** The values a discarded action before an action leaves the user wanting (OF-3b). */
+export interface Fallback {
+	status?: Status;
+	due?: CalendarDate | null;
+	/** The mark of the day of the entry of a check mark. */
+	doneToday?: boolean;
+	/** Per ID the status of a sub-task a completion takes along (round 2). */
+	children?: Record<string, Status>;
 }
 
 /** A change of the status of a ticket, as kept on the device (format version 1). */
@@ -267,6 +284,11 @@ export interface OutboxAction extends ActionBase {
 	completion?: CompletionChoice;
 	/** The sub-tasks a completion with "complete_children" takes along, for the display. */
 	children?: string[];
+	/**
+	 * Their status before, in the order of `children`, so "Verwerfen" opens them again (OF-3b); null
+	 * where it was never seen: no take-back with a guessed value, "Verwerfen" names it (round 2).
+	 */
+	childrenBefore?: (Status | null)[];
 }
 
 /** A change of the due date of a ticket (OF-3): a calendar date or none. */
@@ -297,6 +319,7 @@ export interface DayPlanAction extends ActionBase {
 	expected: CheckState;
 	completion?: CompletionChoice;
 	children?: string[];
+	childrenBefore?: (Status | null)[];
 }
 
 /** Every action the device keeps. */
@@ -359,9 +382,32 @@ function dueOf(value: unknown): CalendarDate | null | undefined {
 	return typeof value === 'string' && isCalendarDate(value) ? value : undefined;
 }
 
+/** What a discarded action before leaves the user wanting (OF-3b); null when it is broken. */
+function fallbackFrom(value: unknown): Fallback | null | undefined {
+	if (value === undefined) return undefined;
+	if (!isRecord(value)) return null;
+	const due = value.due === undefined ? undefined : dueOf(value.due);
+	const children = value.children;
+	const valid =
+		(value.status === undefined || isStatus(value.status)) &&
+		(value.due === undefined || due !== undefined) &&
+		(value.doneToday === undefined || typeof value.doneToday === 'boolean') &&
+		(children === undefined || (isRecord(children) && Object.values(children).every(isStatus)));
+	if (!valid) return null;
+	const along = isRecord(children) ? (children as Record<string, Status>) : {};
+	const fallback: Fallback = {
+		...(isStatus(value.status) && { status: value.status }),
+		...(due !== undefined && { due }),
+		...(typeof value.doneToday === 'boolean' && { doneToday: value.doneToday }),
+		...(Object.keys(along).length > 0 && { children: { ...along } })
+	};
+	return Object.keys(fallback).length === 0 ? undefined : fallback;
+}
+
 /** The fields every format of an action shares, null when one of them is broken. */
 function baseOf(raw: Record<string, unknown>, op: string, user: string): ActionBase | null {
 	const state = ACTION_STATES.find((entry) => entry === raw.state);
+	const fallback = fallbackFrom(raw.fallback);
 	const valid =
 		raw.v === 1 &&
 		typeof raw.target === 'string' &&
@@ -370,8 +416,9 @@ function baseOf(raw: Record<string, unknown>, op: string, user: string): ActionB
 		finite(raw.createdAt) &&
 		state !== undefined &&
 		isStringList(raw.dependsOn) &&
+		fallback !== null &&
 		(raw.undoes === undefined || (typeof raw.undoes === 'string' && OP_PATTERN.test(raw.undoes)));
-	if (!valid || state === undefined) return null;
+	if (!valid || state === undefined || fallback === null) return null;
 	const outcome = outcomeOf(raw.outcome);
 	return {
 		v: 1,
@@ -393,20 +440,34 @@ function baseOf(raw: Record<string, unknown>, op: string, user: string): ActionB
 		...(raw.late === true && { late: true }),
 		...(outcome !== undefined && { outcome }),
 		...(raw.discarded === true && { discarded: true as const }),
-		...(typeof raw.undoes === 'string' && { undoes: raw.undoes })
+		...(typeof raw.undoes === 'string' && { undoes: raw.undoes }),
+		...(fallback !== undefined && { fallback })
 	};
 }
 
-/** The answer to open sub-tasks and the sub-tasks taken along, null when one of them is broken. */
+/**
+ * The answer to open sub-tasks, the sub-tasks taken along and their status before (OF-3b), null when
+ * one of them is broken.
+ */
 function completionPartOf(
 	raw: Record<string, unknown>
-): Pick<OutboxAction, 'completion' | 'children'> | null {
+): Pick<OutboxAction, 'completion' | 'children' | 'childrenBefore'> | null {
 	const completion = completionOf(raw.completion);
 	if (raw.completion !== undefined && completion === undefined) return null;
 	if (raw.children !== undefined && !isStringList(raw.children)) return null;
+	const before = raw.childrenBefore;
+	if (before !== undefined) {
+		const children = Array.isArray(raw.children) ? raw.children : [];
+		const valid =
+			Array.isArray(before) &&
+			before.length === children.length &&
+			before.every((entry) => entry === null || isStatus(entry));
+		if (!valid) return null;
+	}
 	return {
 		...(completion !== undefined && { completion }),
-		...(raw.children !== undefined && { children: [...(raw.children as string[])] })
+		...(raw.children !== undefined && { children: [...(raw.children as string[])] }),
+		...(before !== undefined && { childrenBefore: [...(before as (Status | null)[])] })
 	};
 }
 
@@ -667,6 +728,349 @@ export function chainedStatus(base: Status, actions: readonly KeptAction[]): Sta
 	return status;
 }
 
+// ----- values and what the user wants of them (OF-3b) -----
+
+/**
+ * A value the outbox reads or changes (OF-3b): the status or the due date of a ticket, the mark of the
+ * day of an entry of the day plan. The sub-tasks a completion takes along are their own tickets.
+ */
+export type Feature = `status:${string}` | `due:${string}` | `mark:${string}`;
+export type FeatureValue = Status | CalendarDate | boolean | null;
+
+export function statusFeature(ticket: string): Feature {
+	return `status:${ticket}`;
+}
+
+export function dueFeature(ticket: string): Feature {
+	return `due:${ticket}`;
+}
+
+export function markFeature(entry: string): Feature {
+	return `mark:${entry}`;
+}
+
+/** The identifiers of the actions, for `isDerived` and `isWill`. */
+export function opsOf(actions: readonly KeptAction[]): ReadonlySet<string> {
+	return new Set(actions.map((action) => action.op));
+}
+
+/** The sub-tasks a completion takes along, each with its status before or null where unknown. */
+function alongOf(action: KeptAction): [string, Status | null][] {
+	if (isDueAction(action) || action.completion !== 'complete_children') return [];
+	const wish = isStatusAction(action) ? action.payload.status : checkWish(action).status;
+	if (wish !== 'done') return [];
+	const children = action.children ?? [];
+	const before = action.childrenBefore;
+	const known = before !== undefined && before.length === children.length;
+	return children.map((id, index): [string, Status | null] => [
+		id,
+		known ? (before[index] ?? null) : null
+	]);
+}
+
+/** The sub-tasks a completion takes along with their status before, where both are known (OF-3b). */
+function takenAlong(action: KeptAction): [string, Status][] {
+	return alongOf(action).filter((entry): entry is [string, Status] => entry[1] !== null);
+}
+
+/**
+ * The sub-tasks a completion takes along whose status before is unknown (OF-3b round 2): never seen,
+ * or kept by an older build. "Verwerfen" takes none of them back with a guessed value and says so.
+ */
+export function unknownChildren(action: KeptAction): string[] {
+	return alongOf(action)
+		.filter(([, before]) => before === null)
+		.map(([id]) => id);
+}
+
+/** The status of every sub-task a completion takes along, known before or not (round 2). */
+export function childFeaturesOf(action: KeptAction): Feature[] {
+	return alongOf(action).map(([id]) => statusFeature(id));
+}
+
+/** The sub-tasks a completion with "Unteraufgaben mit erledigen" takes along (round 3). */
+export function childrenAlong(action: KeptAction): string[] {
+	return alongOf(action).map(([id]) => id);
+}
+
+/** The sub-task of `feature` when the action takes it along, else null. */
+function childOf(action: KeptAction, feature: Feature): string | null {
+	const id = feature.startsWith('status:') ? feature.slice('status:'.length) : null;
+	if (id === null || id === ticketOf(action)) return null;
+	return alongOf(action).some(([child]) => child === id) ? id : null;
+}
+
+/**
+ * The action with `value` as the status before of the sub-task of `feature` it takes along (round 2):
+ * like `expected`, it follows from the actions before it while it never left the device.
+ */
+export function withChildBefore<A extends KeptAction>(
+	action: A,
+	feature: Feature,
+	value: FeatureValue
+): A {
+	const child = childOf(action, feature);
+	if (child === null || isDueAction(action) || !isStatus(value)) return action;
+	const children = action.children ?? [];
+	const index = children.indexOf(child);
+	const before = action.childrenBefore ?? children.map(() => null);
+	if (before.length !== children.length || before[index] === value) return action;
+	return { ...action, childrenBefore: before.map((entry, at) => (at === index ? value : entry)) };
+}
+
+/** The values a request of the action names as the ones before (its `expected`). */
+export function expectedOf(action: KeptAction): Map<Feature, FeatureValue> {
+	if (isStatusAction(action)) {
+		return new Map<Feature, FeatureValue>([[statusFeature(action.target), action.expected.status]]);
+	}
+	if (isDueAction(action)) {
+		return new Map<Feature, FeatureValue>([[dueFeature(action.target), action.expected.due]]);
+	}
+	return new Map<Feature, FeatureValue>([
+		[statusFeature(action.ticket), action.expected.status],
+		[markFeature(action.target), action.expected.doneToday]
+	]);
+}
+
+/** The values before the action: its `expected`, and the status before of the sub-tasks it takes along. */
+export function priorOf(action: KeptAction): Map<Feature, FeatureValue> {
+	const prior = expectedOf(action);
+	for (const [id, status] of takenAlong(action)) {
+		if (!prior.has(statusFeature(id))) prior.set(statusFeature(id), status);
+	}
+	return prior;
+}
+
+/**
+ * The values the action sets once it arrives: the status or the due date it sends, what a check mark
+ * changes (`checkWish`), and "done" for the sub-tasks a completion takes along.
+ */
+export function writesOf(action: KeptAction): Map<Feature, FeatureValue> {
+	const writes = new Map<Feature, FeatureValue>();
+	if (isStatusAction(action)) writes.set(statusFeature(action.target), action.payload.status);
+	else if (isDueAction(action)) writes.set(dueFeature(action.target), action.payload.due);
+	else {
+		const wish = checkWish(action);
+		if (wish.doneToday !== action.expected.doneToday) {
+			writes.set(markFeature(action.target), wish.doneToday);
+		}
+		if (wish.status !== action.expected.status) {
+			writes.set(statusFeature(action.ticket), wish.status);
+		}
+	}
+	for (const [id] of takenAlong(action)) {
+		if (!writes.has(statusFeature(id))) writes.set(statusFeature(id), 'done');
+	}
+	return writes;
+}
+
+/**
+ * What the user wants of the values with the action (OF-3b): what it sends; for a check mark what it
+ * is for, also where the server has that already (a check of the day the mark, a completion "done",
+ * taking a completion back the status it opens the ticket with).
+ */
+export function intentOf(action: KeptAction): Map<Feature, FeatureValue> {
+	if (!isDayPlanAction(action)) return writesOf(action);
+	const intent = new Map<Feature, FeatureValue>();
+	const { payload } = action;
+	if (payload.action === 'today') {
+		intent.set(markFeature(action.target), action.kind === 'dayplan.check');
+	} else if (action.kind === 'dayplan.check') {
+		intent.set(statusFeature(action.ticket), 'done');
+	} else if (action.expected.status === 'done') {
+		intent.set(statusFeature(action.ticket), payload.status ?? 'open');
+	}
+	for (const [id] of takenAlong(action)) {
+		if (!intent.has(statusFeature(id))) intent.set(statusFeature(id), 'done');
+	}
+	return intent;
+}
+
+/** The action with `value` as the value before of `feature`; itself where it does not name it. */
+export function withExpected<A extends KeptAction>(
+	action: A,
+	feature: Feature,
+	value: FeatureValue
+): A {
+	if (isStatusAction(action)) {
+		if (feature !== statusFeature(action.target) || !isStatus(value)) return action;
+		return value === action.expected.status ? action : { ...action, expected: { status: value } };
+	}
+	if (isDueAction(action)) {
+		const due = typeof value === 'string' || value === null ? dueOf(value) : undefined;
+		if (feature !== dueFeature(action.target) || due === undefined) return action;
+		return due === action.expected.due ? action : { ...action, expected: { due } };
+	}
+	if (!isDayPlanAction(action)) return action;
+	if (feature === statusFeature(action.ticket) && isStatus(value)) {
+		if (value === action.expected.status) return action;
+		return { ...action, expected: { ...action.expected, status: value } };
+	}
+	if (feature === markFeature(action.target) && typeof value === 'boolean') {
+		if (value === action.expected.doneToday) return action;
+		return { ...action, expected: { ...action.expected, doneToday: value } };
+	}
+	return action;
+}
+
+/** The key of `feature` in the fallback of the action, null where it has none for it. */
+function fallbackKey(
+	action: KeptAction,
+	feature: Feature
+): Exclude<keyof Fallback, 'children'> | null {
+	if (isStatusAction(action)) return feature === statusFeature(action.target) ? 'status' : null;
+	if (isDueAction(action)) return feature === dueFeature(action.target) ? 'due' : null;
+	if (!isDayPlanAction(action)) return null;
+	if (feature === statusFeature(action.ticket)) return 'status';
+	return feature === markFeature(action.target) ? 'doneToday' : null;
+}
+
+/**
+ * What the user wants for `feature` once the action and the later ones are discarded, if not
+ * `expected`; for a sub-task it takes along, if not its status before (round 2).
+ */
+export function fallbackOf(action: KeptAction, feature: Feature): FeatureValue | undefined {
+	const child = childOf(action, feature);
+	if (child !== null) return action.fallback?.children?.[child];
+	const key = fallbackKey(action, feature);
+	return key === null ? undefined : action.fallback?.[key];
+}
+
+/** The action with `value` as its fallback for `feature` (undefined drops it). */
+export function withFallback<A extends KeptAction>(
+	action: A,
+	feature: Feature,
+	value: FeatureValue | undefined
+): A {
+	const child = childOf(action, feature);
+	const key = child === null ? fallbackKey(action, feature) : null;
+	if ((child === null && key === null) || fallbackOf(action, feature) === value) return action;
+	const fallback: Fallback = { ...action.fallback };
+	if (child !== null) {
+		if (value !== undefined && !isStatus(value)) return action;
+		const children: Record<string, Status> = { ...fallback.children };
+		if (value === undefined) delete children[child];
+		else children[child] = value;
+		if (Object.keys(children).length === 0) delete fallback.children;
+		else fallback.children = children;
+	} else if (value === undefined && key !== null) {
+		delete fallback[key];
+	} else if (key === 'status' && isStatus(value)) {
+		fallback.status = value;
+	} else if (key === 'doneToday' && typeof value === 'boolean') {
+		fallback.doneToday = value;
+	} else if (key === 'due' && (typeof value === 'string' || value === null)) {
+		const due = dueOf(value);
+		if (due === undefined) return action;
+		fallback.due = due;
+	} else {
+		return action;
+	}
+	const next = { ...action };
+	if (Object.keys(fallback).length === 0) delete next.fallback;
+	else next.fallback = fallback;
+	return next;
+}
+
+/** A take-back ("Rücknahme"): the action of another one taken back. */
+export function isTakeBack(action: KeptAction): boolean {
+	return action.undoes !== undefined;
+}
+
+/** Never left the device and waits: what it is based on may still change (OF-3b). */
+export function isFree(action: KeptAction): boolean {
+	return (action.state === 'queued' || action.state === 'expired') && action.sent !== true;
+}
+
+/**
+ * A take-back the outbox keeps in line with the discarded action before it (OF-3b): free, and the
+ * action it takes back is still there. Once that one went, the take-back carries what the user wants.
+ */
+export function isDerived(action: KeptAction, present: ReadonlySet<string>): boolean {
+	return action.undoes !== undefined && isFree(action) && present.has(action.undoes);
+}
+
+/** Whether the user still wants the change of the action: not discarded, and not derived. */
+export function isWill(action: KeptAction, present: ReadonlySet<string>): boolean {
+	return action.discarded !== true && !isDerived(action, present);
+}
+
+/** The value before `feature` of the first of `members` that names it, with what the user wants of it. */
+export function chainBaseOf(
+	members: readonly KeptAction[],
+	feature: Feature
+): { server: FeatureValue; will: FeatureValue; first: KeptAction } | undefined {
+	const first = members.find((action) => priorOf(action).has(feature));
+	if (first === undefined) return undefined;
+	const server = priorOf(first).get(feature) as FeatureValue;
+	const fallback = fallbackOf(first, feature);
+	return { server, will: fallback === undefined ? server : fallback, first };
+}
+
+/**
+ * Where the user wants a value once every action of a chain arrived (I1 of OF-3b): the wish of the last
+ * action of `members` they keep for it, else the value before the first one; undefined when none
+ * names it. Derived take-backs do not count, they follow from it.
+ */
+export function targetOf(
+	members: readonly KeptAction[],
+	feature: Feature,
+	present: ReadonlySet<string>
+): FeatureValue | undefined {
+	const list = inOrder(members).filter((action) => !isDerived(action, present));
+	const base = chainBaseOf(list, feature);
+	if (base === undefined) return undefined;
+	for (const action of [...list].reverse()) {
+		const intent = intentOf(action);
+		if (intent.has(feature) && isWill(action, present)) return intent.get(feature) as FeatureValue;
+	}
+	return base.will;
+}
+
+/** What the user wants for a value without `last` (OF-3b): a change back to it drops `last`. */
+function willWithout(
+	mine: readonly KeptAction[],
+	last: KeptAction,
+	feature: Feature,
+	present: ReadonlySet<string>
+): FeatureValue | undefined {
+	const others = mine.filter((action) => action.op !== last.op);
+	const target = targetOf(others, feature, present);
+	if (target !== undefined) return target;
+	const fallback = fallbackOf(last, feature);
+	return fallback === undefined ? expectedOf(last).get(feature) : fallback;
+}
+
+/** The value the action expects of `feature` as a state of the server (for `rebasedBehind`). */
+export function stateBefore(action: KeptAction): ServerState {
+	if (isStatusAction(action)) return { status: action.expected.status };
+	if (isDueAction(action)) return { due: action.expected.due };
+	if (!isDayPlanAction(action)) return {};
+	return {
+		status: action.expected.status,
+		check: { item: action.target, doneToday: action.expected.doneToday }
+	};
+}
+
+/** The values of `state` for what the action reads. */
+export function valuesOfState(action: KeptAction, state: ServerState): Map<Feature, FeatureValue> {
+	const values = new Map<Feature, FeatureValue>();
+	for (const [feature] of expectedOf(action)) {
+		if (feature.startsWith('status:') && state.status !== undefined) {
+			values.set(feature, state.status);
+		} else if (feature.startsWith('due:') && state.due !== undefined) {
+			values.set(feature, state.due);
+		} else if (
+			isDayPlanAction(action) &&
+			feature === markFeature(action.target) &&
+			state.check?.item === action.target
+		) {
+			values.set(feature, state.check.doneToday);
+		}
+	}
+	return values;
+}
+
 /** A change of the status the user made. */
 export interface StatusChange {
 	target: string;
@@ -678,6 +1082,8 @@ export interface StatusChange {
 	status: Status;
 	completion?: CompletionChoice;
 	children?: readonly string[];
+	/** The status of each sub-task in `children` before (OF-3b), null where never seen. */
+	childrenBefore?: readonly (Status | null)[];
 }
 
 /** A change of the due date the user made (OF-3). */
@@ -711,6 +1117,7 @@ export interface CheckChange {
 	status?: Status;
 	completion?: CompletionChoice;
 	children?: readonly string[];
+	childrenBefore?: readonly (Status | null)[];
 }
 
 /** What the outbox does with a change: send it now, keep it, take it into one, or drop one. */
@@ -731,15 +1138,21 @@ export interface PlanContext {
 	offline: boolean;
 }
 
-/** The answer to the open sub-tasks of a completion, and the sub-tasks it takes along. */
+/**
+ * The answer to the open sub-tasks of a completion, the sub-tasks it takes along and, where known for
+ * each of them, their status before (OF-3b).
+ */
 function completionFields(
 	completes: boolean,
 	completion: CompletionChoice | undefined,
-	children: readonly string[] | undefined
-): Pick<OutboxAction, 'completion' | 'children'> {
+	children: readonly string[] | undefined,
+	before?: readonly (Status | null)[]
+): Pick<OutboxAction, 'completion' | 'children' | 'childrenBefore'> {
 	if (!completes || completion === undefined) return {};
 	if (completion === 'force') return { completion };
-	return { completion, children: [...(children ?? [])] };
+	const along = [...(children ?? [])];
+	const known = before !== undefined && before.length === along.length && along.length > 0;
+	return { completion, children: along, ...(known && { childrenBefore: [...before] }) };
 }
 
 /**
@@ -791,7 +1204,9 @@ function sendOrQueue<A extends KeptAction>(
 /**
  * The plan for a change of the status of `change.target` (concept OF-0 §3.3):
  * - an action of the ticket that waits and never left the device takes the change in (the
- *   completion follows the last wish) or goes, when the wish is the value before again;
+ *   completion follows the last wish) or goes, when the wish is the value before again; a completion
+ *   with sub-tasks only where that action still makes the step to "done" (round 3: the hook completes
+ *   sub-tasks on that step only), else it waits behind it;
  * - behind any other open action of the ticket, also one sent without an answer (`sent`, OF-2b) or a
  *   check mark of the day plan (OF-3), a new one waits for it, based on its wish; taking it back is
  *   such a counter action;
@@ -805,14 +1220,31 @@ export function planStatusChange(
 ): ChangePlan<OutboxAction> {
 	const mine = inOrder(open.filter((action) => inStatusChain(action, change.target)));
 	const last = mine.at(-1);
-	if (last !== undefined && isStatusAction(last) && mergeable(last)) {
-		if (change.status === last.expected.status) return { kind: 'cancel', op: last.op };
+	const along =
+		change.status === 'done' &&
+		change.completion === 'complete_children' &&
+		(change.children?.length ?? 0) > 0;
+	// The hook completes sub-tasks only on the step to "done" (round 3, R2-1): taken into a waiting
+	// change whose value before is "done", a completion with sub-tasks would complete none of them, so
+	// it waits behind that change as an action of its own.
+	const stepless =
+		along && last !== undefined && isStatusAction(last) && last.expected.status === 'done';
+	if (last !== undefined && isStatusAction(last) && mergeable(last) && !stepless) {
+		// Back to what the user wanted before it (OF-3b: after a discarded change that is not its
+		// value before) drops it; any other wish goes into it. A completion that takes sub-tasks along
+		// is a wish of its own even then (round 2): dropping would leave the sub-tasks open.
+		const feature = statusFeature(change.target);
+		if (!along && change.status === willWithout(mine, last, feature, opsOf(open))) {
+			return { kind: 'cancel', op: last.op };
+		}
 		const completion = change.completion ?? last.completion;
 		const children = change.children ?? last.children;
+		const before = change.children === undefined ? last.childrenBefore : change.childrenBefore;
 		const merged: OutboxAction = { ...last, payload: { status: change.status } };
 		delete merged.completion;
 		delete merged.children;
-		const fields = completionFields(change.status === 'done', completion, children);
+		delete merged.childrenBefore;
+		const fields = completionFields(change.status === 'done', completion, children, before);
 		return {
 			kind: 'merge',
 			action: { ...merged, ...fields, key: change.key, title: change.title }
@@ -826,7 +1258,12 @@ export function planStatusChange(
 		kind: 'ticket.update',
 		payload: { status: change.status },
 		expected: { status: expected },
-		...completionFields(change.status === 'done', change.completion, change.children)
+		...completionFields(
+			change.status === 'done',
+			change.completion,
+			change.children,
+			change.childrenBefore
+		)
 	};
 	return sendOrQueue(action, mine.length === 0, context);
 }
@@ -854,7 +1291,10 @@ export function planDueChange(
 	);
 	const last = mine.at(-1);
 	if (last !== undefined && mergeable(last)) {
-		if (change.due === last.expected.due) return { kind: 'cancel', op: last.op };
+		const feature = dueFeature(change.target);
+		if (change.due === willWithout(mine, last, feature, opsOf(open))) {
+			return { kind: 'cancel', op: last.op };
+		}
 		return {
 			kind: 'merge',
 			action: { ...last, payload: { due: change.due }, key: change.key, title: change.title }
@@ -916,7 +1356,7 @@ export function planCheckChange(
 		last.target === change.target &&
 		last.kind !== change.kind &&
 		mergeable(last) &&
-		sameState(wish, last.expected)
+		sameState(wish, willStateWithout(mine, last, opsOf(open)))
 	) {
 		return { kind: 'cancel', op: last.op };
 	}
@@ -930,9 +1370,23 @@ export function planCheckChange(
 		ticketKind: change.ticketKind,
 		payload,
 		expected: before,
-		...completionFields(completes, change.completion, change.children)
+		...completionFields(completes, change.completion, change.children, change.childrenBefore)
 	};
 	return sendOrQueue(action, mine.length === 0, context);
+}
+
+/** The mark of the day and the status the user wanted before the check mark `last` (OF-3b). */
+function willStateWithout(
+	mine: readonly KeptAction[],
+	last: DayPlanAction,
+	present: ReadonlySet<string>
+): CheckState {
+	const doneToday = willWithout(mine, last, markFeature(last.target), present);
+	const status = willWithout(mine, last, statusFeature(last.ticket), present);
+	return {
+		doneToday: typeof doneToday === 'boolean' ? doneToday : last.expected.doneToday,
+		status: isStatus(status) ? status : last.expected.status
+	};
 }
 
 /** The time of an action lies more than 5 minutes ahead of the clock (OF-2b). */
@@ -940,20 +1394,25 @@ function ahead(at: number | undefined, now: number): boolean {
 	return at !== undefined && at - now > DEVICE_FUTURE_MS;
 }
 
-/** Whether an action "sending" lost its sender: longer under way than a request may take. */
+/**
+ * Whether an action "sending" lost its sender: longer under way than a request may take, or marked
+ * at a time that lies in the future (the clock went back; round 3, R2-6: else a take-back, which
+ * never expires, would hang, and a change would wait for a decision about a clock that its own time
+ * does not show). It goes again with its identifier, `sent` stays.
+ */
 function isStale(action: ActionBase, now: number): boolean {
 	if (action.state !== 'sending') return false;
-	return now - (action.sendingSince ?? 0) >= STALE_SENDING_MS;
+	const since = action.sendingSince ?? 0;
+	return since > now || now - since >= STALE_SENDING_MS;
 }
 
 /**
- * Whether the time of the device of a waiting action lies in the future (OF-2b): it was kept, or
- * marked as under way, more than 5 minutes after now. The clock went back or was wrong; such an
- * action is neither sent nor deleted on its own, it waits for a decision like an old one. After
- * "Trotzdem übertragen" (`late`) its time no longer counts.
+ * Whether the time of the device of a waiting action lies in the future (OF-2b): it was kept more
+ * than 5 minutes after now. The clock went back or was wrong; such an action is neither sent nor
+ * deleted on its own, it waits for a decision like an old one. After "Trotzdem übertragen" (`late`)
+ * its time no longer counts. A mark "sending" from the future counts as a lost sender (`isStale`).
  */
 export function isFromTheFuture(action: KeptAction, now: number): boolean {
-	if (action.state === 'sending' && ahead(action.sendingSince, now)) return true;
 	const free = action.state === 'queued' || isStale(action, now);
 	return free && action.late !== true && ahead(action.createdAt, now);
 }
@@ -1005,7 +1464,9 @@ function isOld(action: ActionBase, now: number): boolean {
  * What the time does to the actions: waiting ones older than 48 hours are no longer sent on their
  * own (`expire`; not after "Trotzdem übertragen"), also one "sending" whose sender died (OF-2b), and
  * so are those whose time lies in the future (`isFromTheFuture`); any older than 7 days goes
- * (`drop`).
+ * (`drop`). A take-back never expires (OF-3b round 2, S1): it carries out the declared "Verwerfen",
+ * and its value before shows a change of someone else as a conflict; the server keeps its time of
+ * the device only within its window.
  */
 export function agedActions(
 	actions: readonly KeptAction[],
@@ -1015,6 +1476,7 @@ export function agedActions(
 	const drop: string[] = [];
 	for (const action of actions) {
 		if (now - action.createdAt >= KEEP_MS) drop.push(action.op);
+		else if (isTakeBack(action)) continue;
 		else if (isOld(action, now) || isFromTheFuture(action, now)) expire.push(action.op);
 	}
 	return { expire, drop };
@@ -1056,8 +1518,10 @@ function rebasedOn(action: KeptAction, state: ServerState): KeptAction {
 
 /**
  * The actions right behind `op` (their value before was its wish), now based on `state`, the last
- * known state of the server, once `op` is discarded (OF-2b); back on its wish when it returns. A
- * status alone stands for the state of the status. Actions under way keep what they were sent with.
+ * known state of the server, once `op` is discarded (OF-2b). A status alone stands for the state of
+ * the status. Actions under way keep what they were sent with. Since OF-3b "right behind" is per
+ * value: the first later action that names the value `op` names (a later check mark of the same entry
+ * as well); without `op` among `actions` the ones whose dependencies end on it.
  */
 export function rebasedBehind(
 	actions: readonly KeptAction[],
@@ -1065,21 +1529,28 @@ export function rebasedBehind(
 	state: Status | ServerState
 ): KeptAction[] {
 	const known: ServerState = typeof state === 'string' ? { status: state } : state;
-	const rebased: KeptAction[] = [];
-	for (const action of actions) {
-		if (action.state === 'sending' || action.dependsOn.at(-1) !== op) continue;
-		const next = rebasedOn(action, known);
-		if (next !== action) rebased.push(next);
+	const ordered = inOrder(actions);
+	const index = ordered.findIndex((action) => action.op === op);
+	const self = ordered[index];
+	if (self === undefined) {
+		const rebased: KeptAction[] = [];
+		for (const action of ordered) {
+			if (action.state === 'sending' || action.dependsOn.at(-1) !== op) continue;
+			const next = rebasedOn(action, known);
+			if (next !== action) rebased.push(next);
+		}
+		return rebased;
 	}
-	return rebased;
-}
-
-/** The state of the server an action wants, for the actions behind it when it returns (OF-3). */
-export function wishOf(action: KeptAction): ServerState {
-	if (isStatusAction(action)) return { status: action.payload.status };
-	if (isDueAction(action)) return { due: action.payload.due };
-	const wish = checkWish(action);
-	return { status: wish.status, check: { item: action.target, doneToday: wish.doneToday } };
+	const changed = new Map<string, KeptAction>();
+	const later = ordered.slice(index + 1);
+	for (const [feature, value] of valuesOfState(self, known)) {
+		const next = later.find((action) => expectedOf(action).has(feature));
+		if (next === undefined || next.state === 'sending') continue;
+		const current = changed.get(next.op) ?? next;
+		const rebased = withExpected(current, feature, value);
+		if (rebased !== current) changed.set(next.op, rebased);
+	}
+	return inOrder(changed.values());
 }
 
 /**
@@ -1100,51 +1571,6 @@ export function changesSomething(action: KeptAction): boolean {
 }
 
 /**
- * The counter action of "Verwerfen" (OF-3): behind the action, with a new identifier, the value before
- * as the wish and the wish of the action as the value before, so it overwrites no other change. A
- * check mark is taken back the same way (the mark of the day, or the completion with the status
- * before), taking a check mark back by checking again.
- */
-export function counterOf(action: KeptAction, context: PlanContext): KeptAction {
-	const head = {
-		...common(context, action, [action.op]),
-		undoes: action.op
-	};
-	if (isStatusAction(action)) {
-		return {
-			...head,
-			kind: 'ticket.update',
-			payload: { status: action.expected.status },
-			expected: { status: action.payload.status }
-		};
-	}
-	if (isDueAction(action)) {
-		return {
-			...head,
-			kind: 'ticket.update',
-			payload: { due: action.expected.due },
-			expected: { due: action.payload.due }
-		};
-	}
-	const wish = checkWish(action);
-	const today = action.payload.action === 'today';
-	let back: DayPlanAction['payload'];
-	if (action.kind === 'dayplan.uncheck') {
-		back = { action: action.payload.action, mode: today ? 'today' : 'complete' };
-	} else {
-		back = today ? { action: 'today' } : { action: 'complete', status: action.expected.status };
-	}
-	return {
-		...head,
-		kind: action.kind === 'dayplan.check' ? 'dayplan.uncheck' : 'dayplan.check',
-		ticket: action.ticket,
-		ticketKind: action.ticketKind,
-		payload: back,
-		expected: wish
-	};
-}
-
-/**
  * Whether "Trotzdem erledigen" may turn a refused check mark of a day gone by into the completion of
  * its ticket over the normal way (decision of the user 3, ADR-0074 §8): only the check mark of a task
  * that completes it; an ongoing project, a check of the day and taking back lapse.
@@ -1162,9 +1588,40 @@ export function canCompleteAnyway(action: KeptAction): boolean {
 
 /**
  * The completion of the ticket instead of the refused check mark (OF-3): a new identifier, the same
- * place in the order, the time of the device of the check mark and its answer to open sub-tasks.
+ * place in the order, the time of the device of the check mark and its answer to open sub-tasks. A
+ * take-back stays one (OF-3b).
  */
 export function completionInstead(action: DayPlanAction, op: string): OutboxAction {
+	return {
+		...insteadOf(action, op),
+		payload: { status: 'done' },
+		...completionFields(true, action.completion, action.children, action.childrenBefore)
+	};
+}
+
+/**
+ * Whether "Trotzdem wieder öffnen" may turn a refused taking back of a completion on a day gone by into
+ * opening the ticket again over the normal way (OF-3b, the counterpart of "Trotzdem erledigen"): only
+ * one that would open the ticket again.
+ */
+export function canReopenAnyway(action: KeptAction): boolean {
+	return (
+		isDayPlanAction(action) &&
+		action.kind === 'dayplan.uncheck' &&
+		action.payload.action === 'complete' &&
+		checkWish(action).status !== action.expected.status &&
+		action.state === 'refused' &&
+		action.outcome?.code === DAY_OVER_CODE
+	);
+}
+
+/** Opening the ticket again instead of the refused taking back of a completion (OF-3b). */
+export function reopenInstead(action: DayPlanAction, op: string): OutboxAction {
+	return { ...insteadOf(action, op), payload: { status: checkWish(action).status } };
+}
+
+/** The status change of the ticket in the place of a refused check mark (OF-3, OF-3b). */
+function insteadOf(action: DayPlanAction, op: string): Omit<OutboxAction, 'payload'> {
 	return {
 		v: 1,
 		op,
@@ -1174,16 +1631,15 @@ export function completionInstead(action: DayPlanAction, op: string): OutboxActi
 		kind: 'ticket.update',
 		target: action.ticket,
 		dependsOn: [...action.dependsOn],
-		payload: { status: 'done' },
 		expected: { status: action.expected.status },
-		...completionFields(true, action.completion, action.children),
 		key: action.key,
 		title: action.title,
 		createdAt: action.createdAt,
 		state: 'queued',
 		attempts: 0,
 		nextAttemptAt: 0,
-		...(action.late === true && { late: true })
+		...(action.late === true && { late: true }),
+		...(action.undoes !== undefined && { undoes: action.undoes })
 	};
 }
 
@@ -1473,13 +1929,57 @@ export const OFFLINE_TEXTS = Object.freeze({
 	/** Every other check mark of a day gone by lapses. */
 	dayOverLapsed:
 		'Der Tag ist vorbei, der Plan dieses Tages bleibt unverändert. Der Haken verfällt.',
+	/** Taking back a completion on a day gone by (OF-3b): the ticket may still be opened again. */
+	dayOverReopen: (key: string) => `Der Tag ist vorbei. ${key} trotzdem wieder öffnen?`,
+	reopenAnyway: 'Trotzdem wieder öffnen',
 	discarded: (text: string) => `${text} verworfen.`,
 	/** "Verwerfen" of a change that may have arrived (OF-3). */
 	takenBack: (text: string) => `„${text}“ wird zurückgenommen, sobald eine Verbindung besteht.`,
 	takenBackHint:
 		'Die Änderung ist vielleicht schon angekommen; deshalb wird sie zurückgenommen statt nur gelöscht.',
 	takingBack: 'wird zurückgenommen, sobald eine Verbindung besteht',
+	/** A discarded change whose value a later change of the same ticket sets anyway (OF-3b). */
+	discardedLater: 'verworfen, es gilt die spätere Änderung',
+	/** The server refused a discarded change with 403 or 404 (OF-3b): it may stay in effect. */
+	refusedMaybeArrived:
+		'Die Änderung ist vielleicht schon angekommen und ließ sich nicht zurücknehmen. Bitte im Ticket prüfen.',
 	counter: (text: string) => `Rücknahme: ${text}`,
+	/**
+	 * A take-back that waits or is sent has no "Verwerfen" of its own (OF-3b round 2, S2): setting the
+	 * value anew always works, "Rückgängig" only while its flag stands (round 3, R2-5).
+	 */
+	takeBackHint:
+		'Nimmt eine verworfene Änderung zurück. Wer es sich anders überlegt, setzt den Wert neu; direkt nach dem Verwerfen geht auch „Rückgängig“ im Hinweis.',
+	/** Sub-tasks a discarded completion took along whose status before is unknown (round 2). */
+	childrenUnknown: (count: number) =>
+		count === 1
+			? '1 Unteraufgabe wurde vielleicht mit erledigt; ihr Status vorher ist unbekannt, deshalb wird sie nicht zurückgenommen. Bitte im Ticket prüfen.'
+			: `${count} Unteraufgaben wurden vielleicht mit erledigt; ihr Status vorher ist unbekannt, deshalb werden sie nicht zurückgenommen. Bitte im Ticket prüfen.`,
+	/** "Rückgängig" after "Verwerfen" where a later change sets every value anyway (round 2). */
+	undoLater: '„Rückgängig“ ändert nichts: Eine spätere Änderung setzt den Wert ohnehin.',
+	/** "Rückgängig" after another account signed in (round 2). */
+	undoOtherAccount: '„Rückgängig“ geht nicht mehr: Inzwischen ist ein anderes Konto angemeldet.',
+	/**
+	 * A sub-task a completion should have taken along that is not done once it arrived (round 3,
+	 * R2-1): the hook completes sub-tasks on the step to "done" only. Nothing is sent on its own.
+	 */
+	childNotDone: (child: string, parent: string) =>
+		`Unteraufgabe ${child} ist nicht erledigt, obwohl sie mit ${parent} erledigt werden sollte. Bitte im Ticket prüfen.`,
+	/** Changes deleted after 7 days that were not surely sent and answered, with their tickets (round 3, R2-2). */
+	dropped: (count: number, keys: string) =>
+		count === 1
+			? `1 gemerkte Änderung war älter als 7 Tage und wurde gelöscht, ohne sicher übertragen zu sein: ${keys}.`
+			: `${count} gemerkte Änderungen waren älter als 7 Tage und wurden gelöscht, ohne sicher übertragen zu sein: ${keys}.`,
+	/** A take-back deleted after 7 days: the discarded change may still be in effect (round 3, R2-2). */
+	droppedDiscard: (what: string) =>
+		`Das Verwerfen von ${what} wurde nicht ausgeführt; der Server hat vielleicht noch den verworfenen Wert.`,
+	checkTickets: (count: number) =>
+		count === 1 ? 'Bitte im Ticket prüfen.' : 'Bitte in den Tickets prüfen.',
+	/** The button of a notice that stays until it is closed (round 3). */
+	closeNotice: 'Schließen',
+	/** "Details" of a storage that changed under every write of a step (round 3, R2-9). */
+	storageRaced:
+		'Die gemerkten Änderungen auf diesem Gerät haben sich dreimal in Folge beim Schreiben geändert.',
 	undo: 'Rückgängig',
 	reloadTitle: 'Ohne Verbindung neu laden?',
 	reloadText: (count: number) =>
@@ -1513,7 +2013,8 @@ export const OFFLINE_INTENTS = Object.freeze({
 	takeMine: (text: string) => `Meine Änderung übernehmen: ${text}`,
 	sendAnyway: (text: string) => `Trotzdem übertragen: ${text}`,
 	answerChildren: (text: string) => `Offene Unteraufgaben beantworten: ${text}`,
-	completeAnyway: (text: string) => `Trotzdem erledigen: ${text}`
+	completeAnyway: (text: string) => `Trotzdem erledigen: ${text}`,
+	reopenAnyway: (text: string) => `Trotzdem wieder öffnen: ${text}`
 });
 
 /** The words of a refusal for the notice: the reason of the server, or why it waits. */

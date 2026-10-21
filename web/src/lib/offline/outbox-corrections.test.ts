@@ -254,13 +254,7 @@ describe('limits and the clock (G4)', () => {
 		const storage = new MemoryOutboxStorage();
 		await storage.put(stored({ createdAt: NOW + DEVICE_FUTURE_MS + 1 }));
 		await storage.put(
-			stored({
-				op: NEXT_OP,
-				seq: 2,
-				target: B,
-				state: 'sending',
-				sendingSince: NOW + DEVICE_FUTURE_MS + 1
-			})
+			stored({ op: NEXT_OP, seq: 2, target: B, createdAt: NOW + DEVICE_FUTURE_MS + 1 })
 		);
 		const h = harness({ storage });
 		await settle();
@@ -271,6 +265,8 @@ describe('limits and the clock (G4)', () => {
 		await h.outbox.discard(NEXT_OP);
 		expect(h.outbox.count).toBe(0);
 		expect(storage.entries.size).toBe(0);
+		// A mark "sending" from the future no longer counts as such a change: since round 3 of OF-3b
+		// (R2-6) it lost its sender and goes again (outbox-of3b.test.ts).
 	});
 
 	it('lets an orphaned change "sending" age as well', async () => {
