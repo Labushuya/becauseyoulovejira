@@ -16,7 +16,8 @@
 	// deletion after 7 days took, a sub-task a completion should have taken along that is not done.
 	// Since OF-3c they come from the device, in every tab; after "Schließen" the focus goes to the next
 	// "Schließen", else to the region (`tabindex="-1"`), never to the page (R3-3); where the region goes
-	// with the last notice, to the heading of the view or the main content (round 2, C-3).
+	// with the last notice, to the heading of the view or the main content (round 2, C-3), with a
+	// `tabindex` only until the focus leaves it (round 3, C2-1).
 	let { outbox, onshow }: { outbox: OutboxStore; onshow: () => void } = $props();
 
 	const uid = $props.id();
@@ -73,9 +74,28 @@
 	}
 
 	/**
+	 * Moves the focus to `target` and says whether it took it. One without a `tabindex` of its own gets
+	 * `-1` only until the focus leaves it, so the main content is no stop of the focus anywhere else in
+	 * the app (round 3, C2-1); one that does not take the focus (a hidden heading, say) stays as it was
+	 * (C2-6).
+	 */
+	function rest(target: HTMLElement): boolean {
+		const own = target.hasAttribute('tabindex');
+		if (!own) target.tabIndex = -1;
+		target.focus({ preventScroll: true });
+		const taken = document.activeElement === target;
+		if (own) return taken;
+		if (taken) {
+			target.addEventListener('blur', () => target.removeAttribute('tabindex'), { once: true });
+		} else target.removeAttribute('tabindex');
+		return taken;
+	}
+
+	/**
 	 * "Schließen": the notice goes, the focus moves to the next "Schließen" or to the region. Where the
 	 * region goes with the last notice (the layout shows it outside the phone frame only for the notices),
-	 * to the heading of the view (`data-view-heading`), else to the main content (round 2, C-3).
+	 * to the heading of the view (`data-view-heading`) in the main content, else to the main content
+	 * (round 2, C-3; round 3, C2-1 and C2-6).
 	 */
 	async function close(id: string) {
 		const buttons = closeButtons();
@@ -87,7 +107,10 @@
 		const target = closeButtons().find((button) => button.dataset.closes === next);
 		if (target !== undefined) target.focus();
 		else if (region?.isConnected === true) region.focus();
-		else (document.querySelector<HTMLElement>('[data-view-heading]') ?? main)?.focus();
+		else if (main !== null) {
+			const heading = main.querySelector<HTMLElement>('[data-view-heading]');
+			if (heading === null || !rest(heading)) rest(main);
+		}
 		await closing;
 	}
 </script>
