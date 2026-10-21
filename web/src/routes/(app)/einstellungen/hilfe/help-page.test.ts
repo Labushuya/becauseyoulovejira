@@ -59,6 +59,8 @@ describe('help page (EH-9)', () => {
 			'Tagesplan',
 			'Laufendes Vorhaben oder Wiederholung?',
 			'Erledigte',
+			// Since MO-7a: what works without a connection (ADR-0074).
+			'Ohne Verbindung',
 			'Kanäle und Zugangsdaten',
 			'Eigener Eingang (API)',
 			'WhatsApp Web',
@@ -790,6 +792,93 @@ describe('help page (EH-9)', () => {
 		expect(content).toMatch(/„Mehr laden“/);
 		expect(content).toMatch(/„Wieder öffnen“/);
 		expect(content).toMatch(/„Rückgängig“ in der Meldung erledigt es\s+erneut/);
+	});
+
+	// MO-7a (concept OF-0 §8 and §5, ADR-0074): what the outbox keeps since OF-2 to OF-4b, what it does
+	// not, the dialog "Gemerkte Änderungen", the notices that stay and the limits, in the words of the
+	// app (OFFLINE_TEXTS).
+	it('explains changes without a connection: what is kept, what is not, the dialog, the notices and the limits (MO-7a)', () => {
+		const { container } = render(Page);
+		const section = container.querySelector<HTMLElement>('section#ohne-verbindung')!;
+		expect(section).not.toBeNull();
+		expect(section.getAttribute('aria-labelledby')).toBe('ohne-verbindung-title');
+		expect(helpHref('ohne-verbindung')).toBe('/einstellungen/hilfe#ohne-verbindung');
+		expect(
+			within(section)
+				.getAllByRole('heading', { level: 4 })
+				.map((heading) => heading.textContent?.trim())
+		).toEqual([
+			'Was gemerkt wird',
+			'Was nur mit Verbindung geht',
+			'Gemerkte Änderungen',
+			'Hinweise, die bleiben',
+			'Grenzen'
+		]);
+		expect(within(section).getByRole('link', { name: 'Darstellung' }).getAttribute('href')).toBe(
+			'/einstellungen/darstellung'
+		);
+		const content = text(section);
+		// Only in the phone view, after about 12 seconds without an answer.
+		expect(content).toMatch(/„Handy-Ansicht \(Vorschau\)“/);
+		expect(content).toMatch(/nach etwa 12 Sekunden/);
+		// Kept: check mark and status, due date, the day plan, "＋", comments.
+		for (const kept of [
+			/Abhaken und den Status/,
+			/Fälligkeit/,
+			/Haken im Tagesplan/,
+			/„＋“/,
+			/Kommentare/,
+			/„Noch nicht übertragen“/,
+			/„Entscheidung nötig“/,
+			/„Neu“/,
+			/„Offline geschrieben um … \(laut Gerät\)“/,
+			/„offline um 14:03 \(laut Gerät\), abgeglichen um 14:30“/
+		]) {
+			expect(content).toMatch(kept);
+		}
+		// Not kept: moving in the calendar, new tags, "Neues Ticket", "Erfassen", everything else.
+		for (const notKept of [
+			/im Kalender verschieben/,
+			/Neue Tags/,
+			/„Neues Ticket“ und „Erfassen“/,
+			/„Alle Kanäle jetzt abrufen“/,
+			/„Nur mit Verbindung“/,
+			/„Keine Verbindung\. Das geht nur mit Verbindung, nichts wurde gemerkt\.“/
+		]) {
+			expect(content).toMatch(notKept);
+		}
+		// The dialog and its buttons, the notices that stay.
+		for (const word of [
+			'„Erneut versuchen“',
+			'„Ansehen“',
+			'„Offline · 3“',
+			'„Gemerkte Änderungen“',
+			'„Verwerfen“',
+			'„Rückgängig“',
+			'„Trotzdem übertragen“',
+			'„Als Eingangseintrag sichern“',
+			'„Meine Änderung übernehmen“',
+			'„Ohne Projekt anlegen“',
+			'„Ohne Tags anlegen“',
+			'„Schließen“'
+		]) {
+			expect(content).toContain(word);
+		}
+		// The limits.
+		for (const limit of [
+			/48 Stunden/,
+			/7 Tage/,
+			/Nur dieses Gerät/,
+			/Nur in der Handy-Ansicht/,
+			/mit einem Update für alle eingeschaltet/,
+			/Nur bei offener App/,
+			/„Ohne Verbindung neu laden\?“/,
+			/in jedem offenen Tab F5/,
+			/„Abmelden und 3 gemerkte Änderungen verwerfen\?“/,
+			/den Speicher bei Speichermangel räumen/
+		]) {
+			expect(content).toMatch(limit);
+		}
 	});
 
 	it('explains moving a due date: mouse, menu or "m", undo, series and touch (ADR-0053 §12)', () => {

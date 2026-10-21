@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import { COMMENT_MAX_LENGTH } from '$lib/domain/ticket';
+	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 	import type { TicketActivityStore } from '$lib/stores/ticket-activity.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import ProblemDetails from './problems/ProblemDetails.svelte';
@@ -14,7 +15,8 @@
 	// text stays after a failure. After sending the field closes and the focus goes back to
 	// "Kommentar hinzufügen …", unless `onposted` shows the new comment and takes the focus there
 	// (at the end of the list, "Älteste zuerst"). A comment the outbox keeps for later (OF-4b) says so
-	// below in the polite status region.
+	// below in the polite status region. In the phone frame the keyboard starts sentences with a
+	// capital letter (MO-7a, as "＋" since MO-5).
 	let {
 		store,
 		onposted
@@ -27,6 +29,7 @@
 	const uid = $props.id();
 	const hintId = `${uid}-hint`;
 	const errorId = `${uid}-error`;
+	const mobileLayout = getMobileLayoutStore();
 
 	let editor = $state<ReturnType<typeof RichTextEditor>>();
 	let opener = $state<HTMLButtonElement>();
@@ -70,6 +73,7 @@
 			bind:value={() => store.newComment, (value) => store.setNewComment(value)}
 			invalid={store.postError !== null}
 			describedby={store.postError ? errorId : undefined}
+			autocapitalize={mobileLayout.active ? 'sentences' : undefined}
 			onsubmit={() => void send()}
 		/>
 		{#if store.postError}

@@ -2,6 +2,7 @@
 	import { tick } from 'svelte';
 	import { OFFLINE_TEXTS } from '$lib/domain/offline';
 	import { TITLE_MAX_LENGTH } from '$lib/domain/ticket';
+	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 	import type { TicketDetailStore } from '$lib/stores/ticket-detail.svelte';
 	import CharmIcon from './CharmIcon.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
@@ -13,7 +14,8 @@
 	// The charm of the ticket (ADR-0062) stands before the heading, not in it, so the name of the
 	// panel stays the title; the badge "Vorhaben" of an ongoing project (ADR-0065) after it. At a
 	// ticket "＋" created that the server does not have yet (OF-4a round 2, A6) "Titel bearbeiten"
-	// stays, locked with the reason ("gesperrt statt weg").
+	// stays, locked with the reason ("gesperrt statt weg"). In the phone frame the keyboard starts the
+	// title with a capital letter (MO-7a, as "＋" since MO-5).
 	let {
 		store,
 		headingId,
@@ -23,6 +25,7 @@
 	const uid = $props.id();
 	const errorId = `${uid}-error`;
 	const lockedId = `${uid}-locked`;
+	const mobileLayout = getMobileLayoutStore();
 	let editButton = $state<HTMLButtonElement>();
 
 	const editing = $derived(store.isEditing('title'));
@@ -61,6 +64,7 @@
 			class="input"
 			type="text"
 			enterkeyhint="done"
+			autocapitalize={mobileLayout.active ? 'sentences' : undefined}
 			aria-label="Titel"
 			maxlength={TITLE_MAX_LENGTH}
 			value={store.value('title')}

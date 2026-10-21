@@ -2589,31 +2589,39 @@ export function keptCommentOf(action: CommentCreateAction): Comment {
 	};
 }
 
-/** "um 14:03", or "am 20.10.2026 um 14:03" when `device` lies on another day than `reference`. */
-function whenText(device: string, reference: string): string {
+/**
+ * "um 14:03", or "am 20.10.2026 um 14:03" when `device` lies on another day than one of `references`
+ * (Berlin days).
+ */
+function whenText(device: string, ...references: string[]): string {
 	const at = formatBerlinDateTime(device);
-	const same = at.slice(0, 10) === formatBerlinDateTime(reference).slice(0, 10);
-	return same ? `um ${at.slice(11)}` : `am ${at.slice(0, 10)} um ${at.slice(11)}`;
+	const day = at.slice(0, 10);
+	const same = references.every(
+		(reference) => formatBerlinDateTime(reference).slice(0, 10) === day
+	);
+	return same ? `um ${at.slice(11)}` : `am ${day} um ${at.slice(11)}`;
 }
 
 /**
  * The head of a comment from the outbox (OF-4b, concept §2.3): one kept for later "Offline geschrieben
  * um 14:03 (laut Gerät)"; one that arrived "… · übertragen 14:30" with the time of the server, which
  * counts (ADR-0074 §4), and without an accepted time of the device "Offline geschrieben · übertragen
- * 14:30". A time of the device on another day than the transfer (or than now) names its date. Since
- * round 2 (K-7) the head stands instead of the time of the comment, so a transfer before today names
- * its date as well ("übertragen 19.10.2026 20:30").
+ * 14:30". A time of the device that is not today names its date; since MO-7a (L-3) also once it
+ * arrived, not only on another day than the transfer, so "um 20:03" never stands for an earlier day.
+ * Since round 2 (K-7) the head stands instead of the time of the comment, so a transfer before today
+ * names its date as well ("übertragen 19.10.2026 20:30").
  */
 export function offlineCommentText(
 	comment: Pick<Comment, 'created' | 'deviceAt'>,
 	kept: boolean,
 	now: number
 ): string {
+	const today = toPocketBaseTimestamp(now);
 	if (kept) {
 		const device = comment.deviceAt || comment.created;
-		return OFFLINE_TEXTS.writtenOffline(whenText(device, toPocketBaseTimestamp(now)), null);
+		return OFFLINE_TEXTS.writtenOffline(whenText(device, today), null);
 	}
-	const when = comment.deviceAt ? whenText(comment.deviceAt, comment.created) : null;
+	const when = comment.deviceAt ? whenText(comment.deviceAt, comment.created, today) : null;
 	const synced = serverTimeText(comment.created, now) ?? formatBerlinDateTime(comment.created);
 	return OFFLINE_TEXTS.writtenOffline(when, synced);
 }
@@ -2773,6 +2781,11 @@ export const OFFLINE_TEXTS = Object.freeze({
 				? 'Kommentar als Eingangseintrag gemerkt. Er kommt in den Eingang, sobald die Verbindung zurück ist.'
 				: 'Kommentar als Eingangseintrag gemerkt. Er wird später erneut übertragen.',
 	saveAsItemFailed: 'Der Kommentar ließ sich nicht als Eingangseintrag sichern; er bleibt gemerkt.',
+	/**
+	 * Why "Trotzdem übertragen" and "Verwerfen" of a comment wait while it is saved as an entry
+	 * (MO-7a, L-1): description and title of both buttons.
+	 */
+	savingAsItemLocked: 'Der Kommentar wird gerade als Eingangseintrag gesichert.',
 	/**
 	 * A comment saved as an entry after it may have arrived waits for its lookup (OF-4b round 2, K-3);
 	 * with a connection in neutral words.

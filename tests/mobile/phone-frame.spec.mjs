@@ -29,6 +29,11 @@
 // history, "Verwerfen" with "Rückgängig" above the bottom bar, "Umwandeln" as a page and back,
 // "Erfassen" with the keys of the keyboard, "Aus Zwischenablage" with the field to paste into, and
 // "Eintrag ansehen" of "＋" back to the day plan; on a PC the table of today.
+// Since MO-7a (ADR-0073 addendum MO-7a, concept MO-0 §5: at most 15 cases) 13 cases instead of 19:
+// cases with the same window and the same start share one sign-in (the start and "Mehr"; the view and
+// the overlays of today with the switch off; four and two cases of the PC), every check of before
+// stays. A locked entry of a menu is muted, and the region of the hints has a tabindex only for one
+// step.
 //
 // The phone stands for another device in the home network (header X-Byl-Test-Remote-Address of the
 // test hooks, only in instances of the harness), so the pages of the administrator are "nur am PC".
@@ -293,7 +298,8 @@ function scrollsSidewaysInside(locator) {
 test.describe('phone with the switch on', () => {
 	test.use({ ...PHONE, extraHTTPHeaders: ANOTHER_DEVICE });
 
-	test('starts at the day plan, with the bottom bar at the bottom and no horizontal scrolling', async ({ page }) => {
+	// MO-7a: the start and "Mehr" in one case (before two, each with its own sign-in).
+	test('starts at the day plan with the bottom bar at the bottom, opens "Mehr" as a sheet with every other view and the pages "nur am PC", and keeps "Aufgaben" a tap away', async ({ page }) => {
 		await switchOn(page);
 		const url = await signIn(page);
 		await expect(page).toHaveURL(`${url}/tagesplan`);
@@ -319,14 +325,9 @@ test.describe('phone with the switch on', () => {
 		await expect(page.locator('#new-ticket-link')).toHaveCount(0);
 		expect(await viewportContent(page)).toBe(VIEWPORT_PHONE);
 		expect(await scrollsSideways(page)).toBe(false);
-	});
 
-	test('opens "Mehr" as a sheet with every other view and the pages "nur am PC", and keeps "Aufgaben" a tap away', async ({ page }) => {
-		await switchOn(page);
-		const url = await signIn(page);
+		// "Mehr" from the start at the day plan.
 		await expect(page).toHaveURL(`${url}/tagesplan`);
-		const bar = page.getByRole('navigation', { name: 'Hauptnavigation' });
-
 		await bar.getByRole('button', { name: 'Mehr' }).click();
 		const sheet = page.getByRole('dialog', { name: 'Mehr' });
 		await expect(sheet).toBeVisible();
@@ -490,34 +491,6 @@ test.describe('small phone with the switch on: overlays (MO-1b)', () => {
 	});
 });
 
-test.describe('small phone with the switch off: overlays as today (MO-1b)', () => {
-	test.use({ ...SMALL_PHONE, extraHTTPHeaders: ANOTHER_DEVICE });
-
-	test('keeps a dialog in the middle and a picker at its button, without "Schließen"', async ({ page }) => {
-		await signIn(page);
-		await expect(viewHeading(page, 'Aufgaben')).toBeVisible();
-
-		await page.getByRole('banner').getByRole('button', { name: /Schnellerfassung/ }).click();
-		const quick = page.getByRole('dialog', { name: 'Schnellerfassung' });
-		const frame = quick.locator('.frame');
-		await expect(frame).toBeVisible();
-		await settled(frame);
-		const box = await frame.boundingBox();
-		expect(box.width).toBeLessThan(SMALL_PHONE.viewport.width);
-		expect(box.y + box.height).toBeLessThan(SMALL_PHONE.viewport.height - 1);
-		await quick.getByRole('button', { name: 'Schließen', exact: true }).click();
-		await expect(quick).toHaveCount(0);
-
-		await page.getByRole('button', { name: 'Gruppieren', exact: true }).click();
-		const picker = page.getByRole('dialog', { name: 'Gruppieren' });
-		await expect(picker).toBeVisible();
-		await settled(picker);
-		expect((await picker.boundingBox()).width).toBeLessThan(SMALL_PHONE.viewport.width);
-		await expect(picker.getByRole('button', { name: 'Schließen' })).toHaveCount(0);
-		expect(await scrollsSideways(page)).toBe(false);
-	});
-});
-
 test.describe('small phone with the switch on: the day plan (MO-2)', () => {
 	test.use({ ...SMALL_PHONE, extraHTTPHeaders: ANOTHER_DEVICE });
 	const viewport = SMALL_PHONE.viewport;
@@ -573,7 +546,20 @@ test.describe('small phone with the switch on: the day plan (MO-2)', () => {
 		await more.click();
 		const menu = page.getByRole('menu', { name: /^Aktionen für / });
 		await expectSheet(menu, viewport);
-		await expect(menu.getByRole('menuitem', { name: 'Nach oben' })).toHaveAttribute('aria-disabled', 'true');
+		const up = menu.getByRole('menuitem', { name: 'Nach oben' });
+		await expect(up).toHaveAttribute('aria-disabled', 'true');
+		// MO-7a: the locked entry is muted, in the color of muted text, unlike the entry beside it.
+		const muted = await page.evaluate(() => {
+			const probe = document.createElement('span');
+			probe.style.color = 'var(--color-text-muted)';
+			document.body.append(probe);
+			const color = getComputedStyle(probe).color;
+			probe.remove();
+			return color;
+		});
+		const colorOf = (locator) => locator.evaluate((element) => getComputedStyle(element).color);
+		expect(await colorOf(up)).toBe(muted);
+		expect(await colorOf(menu.getByRole('menuitem', { name: 'Nach unten' }))).not.toBe(muted);
 		await menu.getByRole('menuitem', { name: 'Nach unten' }).click();
 		await expect(menu).toBeHidden();
 		await expect(plan.locator('[data-item-id]').first()).toContainText(flowers);
@@ -819,6 +805,10 @@ test.describe('small phone with the switch on: the ticket as a page (MO-4)', () 
 		expect(sendBox.y + sendBox.height).toBeLessThanOrEqual(barTop);
 		await send.click();
 		await expect(panel.getByText('Am Handy angesehen')).toBeVisible();
+		// The form gives the focus back to "Kommentar hinzufügen …" once the request ended (with the
+		// outbox a moment after the comment shows); only then the next field (MO-7a: before, the test
+		// could type into the tags first and lose the focus, also at 6c8d30f).
+		await expect(panel.getByRole('button', { name: 'Kommentar hinzufügen …' })).toBeFocused();
 
 		// The suggestions of the tags stay at their field, with options of 44 px.
 		const tags = panel.getByLabel('Tags', { exact: true });
@@ -1307,11 +1297,14 @@ test.describe('small phone with the switch on: changes without a connection (OF-
 		const hints = page.locator('.offline-notice');
 		await expect(hints.getByText(dropped)).toBeVisible();
 		expect(await device('get')).toMatchObject([{ v: 1, kind: 'dropped', entries: [{ op: action.op, key: trash.key }] }]);
+		// MO-7a: the region of the hints has no tabindex of its own, only for the step after "Schließen".
+		await expect(hints).not.toHaveAttribute('tabindex');
 		const close = hints.getByRole('button', { name: 'Schließen' });
 		await expectTarget(close);
 		await close.click();
 		await expect(hints.getByText(dropped)).toHaveCount(0);
 		await expect(hints).toBeFocused();
+		await expect(hints).toHaveAttribute('tabindex', '-1');
 		await expect.poll(() => device('get')).toBeNull();
 	});
 
@@ -1348,7 +1341,9 @@ test.describe('small phone with the switch on: changes without a connection (OF-
 test.describe('phone with the switch off', () => {
 	test.use({ ...PHONE, extraHTTPHeaders: ANOTHER_DEVICE });
 
-	test('shows the view of today, and the switch is reachable there', async ({ page }) => {
+	// MO-7a: the view of today and the overlays of today (MO-1b, before a case of its own on a small
+	// phone) in one case; the overlays on the small phone, the switch again on the phone.
+	test('shows the view of today with the switch reachable, a dialog in the middle and a picker at its button, without "Schließen"', async ({ page }) => {
 		const url = await signIn(page);
 		await expect(page).toHaveURL(`${url}/`);
 		await expect(viewHeading(page, 'Aufgaben')).toBeVisible();
@@ -1357,6 +1352,32 @@ test.describe('phone with the switch off', () => {
 		await expect(page.getByRole('navigation', { name: 'Ansicht' })).toBeVisible();
 		await expect(page.getByRole('banner').getByRole('button', { name: 'Abmelden' })).toBeVisible();
 		expect(await viewportContent(page)).toBe(VIEWPORT_BASE);
+
+		// The overlays as today (MO-1b) on a small phone: a dialog in the middle, a picker at its button.
+		await page.setViewportSize(SMALL_PHONE.viewport);
+		await expect(viewHeading(page, 'Aufgaben')).toBeVisible();
+		await page.getByRole('banner').getByRole('button', { name: /Schnellerfassung/ }).click();
+		const quick = page.getByRole('dialog', { name: 'Schnellerfassung' });
+		const frame = quick.locator('.frame');
+		await expect(frame).toBeVisible();
+		await settled(frame);
+		const box = await frame.boundingBox();
+		expect(box.width).toBeLessThan(SMALL_PHONE.viewport.width);
+		expect(box.y + box.height).toBeLessThan(SMALL_PHONE.viewport.height - 1);
+		await quick.getByRole('button', { name: 'Schließen', exact: true }).click();
+		await expect(quick).toHaveCount(0);
+
+		const group = page.getByRole('button', { name: 'Gruppieren', exact: true });
+		await group.click();
+		const picker = page.getByRole('dialog', { name: 'Gruppieren' });
+		await expect(picker).toBeVisible();
+		await settled(picker);
+		expect((await picker.boundingBox()).width).toBeLessThan(SMALL_PHONE.viewport.width);
+		await expect(picker.getByRole('button', { name: 'Schließen' })).toHaveCount(0);
+		expect(await scrollsSideways(page)).toBe(false);
+		await page.keyboard.press('Escape');
+		await expect(picker).toBeHidden();
+		await page.setViewportSize(PHONE.viewport);
 
 		// The gear of the header, then "Darstellung": the switch turns the frame on at once.
 		await page.getByRole('banner').getByRole('link', { name: 'Einstellungen' }).click();
@@ -1372,7 +1393,10 @@ test.describe('phone with the switch off', () => {
 test.describe('PC with the switch on', () => {
 	test.use(DESKTOP);
 
-	test('shows no element of the phone frame and starts at "Aufgaben"', async ({ page }) => {
+	// MO-7a: the start, "Aufgaben", the quick entry and the side panel of the PC in one case (before
+	// four, each with its own sign-in); the day plan and the inbox in the next.
+	test('shows no element of the phone frame and keeps "Aufgaben", its table, the quick entry and the side panel of the PC (MO-1a, MO-3, MO-4, MO-5)', async ({ page }) => {
+		const [open, cellar] = await seed([{ title: 'Garage aufräumen' }, { title: 'Keller entrümpeln' }]);
 		await switchOn(page);
 		const url = await signIn(page);
 		await expect(page).toHaveURL(`${url}/`);
@@ -1387,10 +1411,66 @@ test.describe('PC with the switch on', () => {
 		await expect(page.locator('html')).toHaveAttribute('data-mobile-layout', 'on');
 		expect(await viewportContent(page)).toBe(VIEWPORT_BASE);
 		expect(await scrollsSideways(page)).toBe(false);
+
+		// The table of "Aufgaben" on the PC: the filter bar, "Gruppieren", "Spalten", no cards (MO-3).
+		await expect(viewHeading(page, 'Aufgaben')).toBeVisible();
+		await expect(page.getByRole('table')).toBeVisible();
+		await expect(page.getByRole('row').filter({ hasText: open })).toBeVisible();
+		await expect(page.locator('li[data-ticket-id]')).toHaveCount(0);
+		await expect(page.getByRole('group', { name: 'Filter-Karten' })).toBeVisible();
+		await expect(page.getByRole('region', { name: 'Filter' })).toBeVisible();
+		await expect(page.getByRole('searchbox', { name: 'Suche' })).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Gruppieren', exact: true })).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Spalten' })).toBeVisible();
+		await expect(page.getByRole('checkbox', { name: 'Alle angezeigten Tickets auswählen' })).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Filter', exact: true })).toHaveCount(0);
+		expect(await scrollsSideways(page)).toBe(false);
+
+		// The quick entry of the PC: in the middle with "Abbrechen", the keys in the hint, no folded help (MO-5).
+		await expect(viewHeading(page, 'Aufgaben')).toBeVisible();
+		await page.getByRole('banner').getByRole('button', { name: /Schnellerfassung/ }).click();
+		const quick = page.getByRole('dialog', { name: 'Schnellerfassung' });
+		const frame = quick.locator('.frame');
+		await expect(frame).toBeVisible();
+		await settled(frame);
+		const box = await frame.boundingBox();
+		expect(box.width).toBeLessThan(DESKTOP.viewport.width / 2);
+		expect(box.y + box.height).toBeLessThan(DESKTOP.viewport.height - 1);
+		await expect(quick.locator('.foot').getByRole('button')).toHaveText(['Abbrechen', 'In den Eingang', 'Ticket anlegen']);
+		await expect(quick.getByText(/^Enter legt ein Ticket an, Alt\+Enter legt es in den Eingang\./)).toBeVisible();
+		await expect(quick.locator('details')).toHaveCount(0);
+		const line = quick.getByLabel('Titel mit Kurzsyntax');
+		await expect(line).toBeFocused();
+		expect(await line.evaluate((element) => element.hasAttribute('autocapitalize'))).toBe(false);
+		await quick.getByRole('button', { name: 'Abbrechen' }).click();
+		await expect(quick).toHaveCount(0);
+
+		// The side panel of the PC: ×, "Vollansicht", the status in the fields, no bar (MO-4).
+		await expect(page.getByRole('table')).toBeVisible();
+		const row = page.getByRole('row').filter({ hasText: cellar });
+		await row.getByRole('button', { name: /^Weitere Aktionen für / }).click();
+		const menu = page.getByRole('menu', { name: /^Weitere Aktionen für / });
+		await expect(menu.getByRole('menuitem', { name: 'In Vollansicht öffnen' })).toBeVisible();
+		await page.keyboard.press('Escape');
+		await row.getByRole('link', { name: cellar }).click();
+		const panel = page.getByRole('complementary', { name: cellar });
+		await expect(panel).toBeVisible();
+		await expect(panel.getByRole('button', { name: 'Panel schließen' })).toBeVisible();
+		await expect(panel.getByRole('link', { name: 'Vollansicht öffnen' })).toBeVisible();
+		await expect(panel.getByRole('button', { name: 'Zur Liste' })).toHaveCount(0);
+		await expect(panel.locator('[data-ticket-bar]')).toHaveCount(0);
+		await expect(panel.locator('footer')).toHaveCount(0);
+		const label = await panel.getByText('Priorität', { exact: true }).boundingBox();
+		const priority = await panel.getByLabel('Priorität').boundingBox();
+		expect(priority.x).toBeGreaterThan(label.x + label.width);
+		await expect(panel.getByLabel('Status')).toBeVisible();
+		expect(await scrollsSideways(page)).toBe(false);
 	});
 
-	test('keeps the day plan of the PC: arrows and handle in the row, the suggestions before the plan, the pool beside it (MO-2)', async ({ page }) => {
+	// MO-7a: the day plan (MO-2) and the inbox (MO-6) of the PC in one case (before two).
+	test('keeps the day plan and the inbox of the PC: arrows and handle, suggestions before the plan, the pool beside it; table, chips, bulk actions and the panel with × (MO-2, MO-6)', async ({ page }) => {
 		const [planned] = await seed([{ title: 'Rechnung bezahlen', planned: true }]);
+		const { mail } = await seedInbox();
 		await switchOn(page);
 		await signIn(page);
 		await expect(viewHeading(page, 'Aufgaben')).toBeVisible();
@@ -1410,78 +1490,8 @@ test.describe('PC with the switch on', () => {
 		await expect(page.getByRole('button', { name: 'Hinzufügen …' })).toHaveCount(0);
 		expect((await pool.boundingBox()).x).toBeGreaterThan((await plan.boundingBox()).x + 200);
 		expect(await scrollsSideways(page)).toBe(false);
-	});
 
-	test('keeps the table of "Aufgaben" on the PC: the filter bar, "Gruppieren", "Spalten", no cards (MO-3)', async ({ page }) => {
-		const [open] = await seed([{ title: 'Garage aufräumen' }]);
-		await switchOn(page);
-		await signIn(page);
-		await expect(viewHeading(page, 'Aufgaben')).toBeVisible();
-		await expect(page.getByRole('table')).toBeVisible();
-		await expect(page.getByRole('row').filter({ hasText: open })).toBeVisible();
-		await expect(page.locator('li[data-ticket-id]')).toHaveCount(0);
-		await expect(page.getByRole('group', { name: 'Filter-Karten' })).toBeVisible();
-		await expect(page.getByRole('region', { name: 'Filter' })).toBeVisible();
-		await expect(page.getByRole('searchbox', { name: 'Suche' })).toBeVisible();
-		await expect(page.getByRole('button', { name: 'Gruppieren', exact: true })).toBeVisible();
-		await expect(page.getByRole('button', { name: 'Spalten' })).toBeVisible();
-		await expect(page.getByRole('checkbox', { name: 'Alle angezeigten Tickets auswählen' })).toBeVisible();
-		await expect(page.getByRole('button', { name: 'Filter', exact: true })).toHaveCount(0);
-		expect(await scrollsSideways(page)).toBe(false);
-	});
-
-	test('keeps the quick entry of the PC: in the middle with "Abbrechen", the keys in the hint, no folded help (MO-5)', async ({ page }) => {
-		await switchOn(page);
-		await signIn(page);
-		await expect(viewHeading(page, 'Aufgaben')).toBeVisible();
-		await page.getByRole('banner').getByRole('button', { name: /Schnellerfassung/ }).click();
-		const quick = page.getByRole('dialog', { name: 'Schnellerfassung' });
-		const frame = quick.locator('.frame');
-		await expect(frame).toBeVisible();
-		await settled(frame);
-		const box = await frame.boundingBox();
-		expect(box.width).toBeLessThan(DESKTOP.viewport.width / 2);
-		expect(box.y + box.height).toBeLessThan(DESKTOP.viewport.height - 1);
-		await expect(quick.locator('.foot').getByRole('button')).toHaveText(['Abbrechen', 'In den Eingang', 'Ticket anlegen']);
-		await expect(quick.getByText(/^Enter legt ein Ticket an, Alt\+Enter legt es in den Eingang\./)).toBeVisible();
-		await expect(quick.locator('details')).toHaveCount(0);
-		const line = quick.getByLabel('Titel mit Kurzsyntax');
-		await expect(line).toBeFocused();
-		expect(await line.evaluate((element) => element.hasAttribute('autocapitalize'))).toBe(false);
-		await quick.getByRole('button', { name: 'Abbrechen' }).click();
-		await expect(quick).toHaveCount(0);
-	});
-
-	test('keeps the side panel of the PC: ×, "Vollansicht", the status in the fields, no bar (MO-4)', async ({ page }) => {
-		const [open] = await seed([{ title: 'Keller entrümpeln' }]);
-		await switchOn(page);
-		await signIn(page);
-		await expect(page.getByRole('table')).toBeVisible();
-		const row = page.getByRole('row').filter({ hasText: open });
-		await row.getByRole('button', { name: /^Weitere Aktionen für / }).click();
-		const menu = page.getByRole('menu', { name: /^Weitere Aktionen für / });
-		await expect(menu.getByRole('menuitem', { name: 'In Vollansicht öffnen' })).toBeVisible();
-		await page.keyboard.press('Escape');
-		await row.getByRole('link', { name: open }).click();
-		const panel = page.getByRole('complementary', { name: open });
-		await expect(panel).toBeVisible();
-		await expect(panel.getByRole('button', { name: 'Panel schließen' })).toBeVisible();
-		await expect(panel.getByRole('link', { name: 'Vollansicht öffnen' })).toBeVisible();
-		await expect(panel.getByRole('button', { name: 'Zur Liste' })).toHaveCount(0);
-		await expect(panel.locator('[data-ticket-bar]')).toHaveCount(0);
-		await expect(panel.locator('footer')).toHaveCount(0);
-		const label = await panel.getByText('Priorität', { exact: true }).boundingBox();
-		const priority = await panel.getByLabel('Priorität').boundingBox();
-		expect(priority.x).toBeGreaterThan(label.x + label.width);
-		await expect(panel.getByLabel('Status')).toBeVisible();
-		expect(await scrollsSideways(page)).toBe(false);
-	});
-
-	test('keeps the inbox of the PC: the table, the chips, the bulk actions and the panel with × (MO-6)', async ({ page }) => {
-		const { mail } = await seedInbox();
-		await switchOn(page);
-		await signIn(page);
-		await expect(viewHeading(page, 'Aufgaben')).toBeVisible();
+		// The inbox of the PC: the table, the chips, the bulk actions and the panel with × (MO-6).
 		await page.getByRole('navigation', { name: 'Ansicht' }).getByRole('link', { name: /^Eingang/ }).click();
 		await expect(viewHeading(page, 'Eingang')).toBeVisible();
 		await expect(page.getByRole('table')).toBeVisible();
