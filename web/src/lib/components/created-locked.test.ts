@@ -274,6 +274,23 @@ describe('the locked controls of a ticket "＋" created name their reason (OF-4b
 		expect(flags.flags.map((flag) => flag.title)).toEqual([REASON]);
 	});
 
+	it('names the reason in a flag on a tap on the body of the card while choosing (OF-4b round 2, K-4)', async () => {
+		phone();
+		const { data, flags } = await showTable([ticket(1)]);
+		await chooseMode();
+		await fireEvent.click(rowOf(CREATED_ID).querySelector('.meta') as HTMLElement);
+		expect(flags.flags.map((flag) => ({ tone: flag.tone, title: flag.title }))).toEqual([
+			{ tone: 'info', title: REASON }
+		]);
+		expect(countText()).toBe('');
+		expect(data.setDone).not.toHaveBeenCalled();
+		expect(mocks.goto).not.toHaveBeenCalled();
+		// A card of the server is still chosen by a tap on its body, without a flag.
+		await fireEvent.click(rowOf('t00000000000001').querySelector('.meta') as HTMLElement);
+		expect(countText()).toContain('1 Ticket ausgewählt');
+		expect(flags.flags).toHaveLength(1);
+	});
+
 	it('names the reason of a locked cell in a flag on a click (B-2)', async () => {
 		const { flags } = await showTable([ticket(1)]);
 		const cell = screen.getByRole('button', { name: `Priorität von ${CREATED_NAME}: Mittel` });

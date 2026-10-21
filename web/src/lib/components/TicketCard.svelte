@@ -139,12 +139,14 @@
 
 	/**
 	 * Controls of the card handle their own taps; the card only takes taps outside of them. While
-	 * choosing, a card that cannot be chosen takes no tap (OF-4a round 2, A2).
+	 * choosing, a card that cannot be chosen is not chosen by a tap (OF-4a round 2, A2); since round 2 of
+	 * OF-4b (K-4) the tap names the reason in a flag, like its locked box, never silently.
 	 */
 	function onclick(event: MouseEvent) {
 		if (!isCardTap(event)) return;
-		if (selecting) onselect?.(!selected);
-		else void goto(href);
+		if (!selecting) void goto(href);
+		else if (onselect !== undefined) onselect(!selected);
+		else flags?.show({ tone: 'info', title: lockedReason });
 	}
 </script>
 
