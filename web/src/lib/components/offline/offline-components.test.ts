@@ -21,6 +21,7 @@ import {
 import { ConnectivityStore } from '$lib/offline/connectivity.svelte';
 import { OutboxNoWayError, OutboxStore } from '$lib/offline/outbox.svelte';
 import { MemoryOutboxStorage } from '$lib/offline/outbox-storage';
+import OfflineNoticeHarness from '$lib/test/OfflineNoticeHarness.svelte';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import OfflineNotice from './OfflineNotice.svelte';
 import OutboxButton from './OutboxButton.svelte';
@@ -277,6 +278,36 @@ describe('OfflineNotice (OF-3c)', () => {
 		expect(status.getAttribute('tabindex')).toBe('-1');
 		expect(document.activeElement).toBe(status);
 	});
+
+	it.each([
+		{ heading: true, target: 'heading' },
+		{ heading: false, target: 'main' }
+	])(
+		'moves the focus to the $target once the region goes with the last notice outside the phone frame (round 2, C-3)',
+		async ({ heading, target }) => {
+			const outbox = await outboxWith([], true, children);
+			// Outside the phone frame without kept changes the layout shows the hints only for the notices.
+			outbox.setFrame(false);
+			await tick();
+			expect(outbox.watching).toBe(false);
+			render(OfflineNoticeHarness, { props: { outbox, heading } });
+			const status = screen.getByRole('status');
+			const [first, second] = within(status).getAllByRole('button', { name: 'Schließen' });
+			first?.focus();
+			await fireEvent.click(first as HTMLElement);
+			await vi.advanceTimersByTimeAsync(0);
+			expect(document.activeElement).toBe(second);
+			await fireEvent.click(second as HTMLElement);
+			await vi.advanceTimersByTimeAsync(0);
+			expect(screen.queryByRole('status')).toBeNull();
+			const expected =
+				target === 'heading'
+					? screen.getByRole('heading', { name: 'Aufgaben' })
+					: screen.getByRole('main');
+			expect(document.activeElement).toBe(expected);
+			expect(document.activeElement).not.toBe(document.body);
+		}
+	);
 });
 
 describe('OutboxButton', () => {

@@ -427,12 +427,18 @@ export class HeldStorage extends MemoryOutboxStorage {
 	}
 }
 
-/** A storage of the device that fails on every write once `failing` is set. */
+/**
+ * A storage of the device that fails on every write once `failing` is set; `noticesFailing` lets only
+ * the writes of the notices on their own fail (OF-3c round 2), the actions are kept.
+ */
 export class FailingStorage extends MemoryOutboxStorage {
 	failing = false;
+	noticesFailing = false;
 
-	#check(): void {
-		if (this.failing) throw new DOMException('Der Speicher antwortet nicht.', 'UnknownError');
+	#check(notices = false): void {
+		if (this.failing || (notices && this.noticesFailing)) {
+			throw new DOMException('Der Speicher antwortet nicht.', 'UnknownError');
+		}
 	}
 
 	async put(action: KeptAction): Promise<void> {
@@ -461,7 +467,7 @@ export class FailingStorage extends MemoryOutboxStorage {
 	}
 
 	async notices(user: string, change?: (current: unknown) => unknown[] | null): Promise<unknown> {
-		if (change !== undefined) this.#check();
+		if (change !== undefined) this.#check(true);
 		return super.notices(user, change);
 	}
 

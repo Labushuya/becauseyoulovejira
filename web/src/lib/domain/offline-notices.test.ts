@@ -162,6 +162,15 @@ describe('the form on the device', () => {
 		expect(withNotices(first, [other, other])).toEqual([foreign, child, other]);
 	});
 
+	it('adds one notice per sub-task by its ID, also without a key (round 2, C-4)', () => {
+		const one = completed({ id: 'tick00000000003', key: '' });
+		const two = completed({ id: 'tick00000000004', key: '' });
+		expect(withNotices(undefined, [one, two])).toEqual([one, two]);
+		// The same sub-task after another completion of the same ticket stays one notice.
+		const again = completed({ id: 'tick00000000003', key: '' }, { op: SECOND });
+		expect(withNotices([one], [again])).toBeNull();
+	});
+
 	it('writes each deleted action into the notice of its run, once', () => {
 		const head = { id: 'dropped-1', at: NOW };
 		const one = withDropped(undefined, head, { op: FIRST, key: 'HAUS-12' });
@@ -255,5 +264,34 @@ describe('a later change of the sub-task decides instead of its notice (R3-4)', 
 		expect(withoutDecided([foreign, notice, other], change())).toEqual([foreign, other]);
 		expect(withoutDecided([foreign, other], change())).toBeNull();
 		expect(withoutDecided(undefined, change())).toBeNull();
+	});
+
+	it('is no take-back of the user, unless it sets the sub-task done (round 2, C-1)', () => {
+		const back = (wish: OutboxAction['payload']) =>
+			change({
+				undoes: 'aaaaaaaaaaaaaaaaaaa9',
+				payload: wish,
+				expected: { status: 'in_progress' }
+			});
+		expect(decidesInstead(notice, back({ status: 'open' }))).toBe(false);
+		expect(withoutDecided([notice], back({ status: 'open' }))).toBeNull();
+		expect(decidesInstead(notice, back({ status: 'done' }))).toBe(true);
+		expect(withoutDecided([notice], back({ status: 'done' }))).toEqual([]);
+	});
+
+	it('takes the notice along with a later completion only where the sub-task is read done (round 2, C-5)', () => {
+		const along = status({
+			op: SECOND,
+			seq: 7,
+			completion: 'complete_children',
+			children: [CHILD],
+			childrenBefore: ['open']
+		});
+		expect(withoutDecided([notice], along)).toBeNull();
+		expect(withoutDecided([notice], along, [])).toBeNull();
+		expect(withoutDecided([notice], along, ['tick00000000004'])).toBeNull();
+		expect(withoutDecided([notice], along, [CHILD])).toEqual([]);
+		// A change of the sub-task itself: its answer says what the sub-task is.
+		expect(withoutDecided([notice], change(), [])).toEqual([]);
 	});
 });

@@ -37,7 +37,10 @@
 // fixed seeds. Since round 3 the fake server completes sub-tasks like the hook (only blocking ones, on
 // the step to "done"); the class "Unteraufgaben" keeps completions as well, may have A done before the
 // chain or completed by someone else in it, and a sub-task the server did not complete counts for I1
-// only where no notice names it (since OF-3c only while the user wants it done in the end).
+// only where no notice names it (since OF-3c only while the user wants it done in the end). Since round
+// 2 of OF-3c the class also has runs around a notice that stands: a later change of the sub-task
+// without an answer, discarded, whose take-back arrives, and a later completion with its sub-tasks at
+// its first attempt on a stale state (`noticeScenarios`).
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DayPlanItem } from '$lib/data/day-plan';
@@ -71,7 +74,9 @@ const FOREIGN = { status: 'waiting' as Status, due: '2026-11-30' as CalendarDate
 const BLIND_HINT = 'Status vorher ist unbekannt';
 
 type Kind = 'prog' | 'done' | 'mark' | 'due' | 'plan' | 'kids1' | 'kids2' | 'kidsBlind' | 'kid';
-type Send = 'offline' | 'lost' | 'unreached' | 'direct' | 'directLost' | 'server5xx' | 'lost5xx';
+/** `window`: sent in a short return of the connection and answered (OF-3c round 2). */
+type Send =
+	'offline' | 'lost' | 'unreached' | 'direct' | 'directLost' | 'server5xx' | 'lost5xx' | 'window';
 type Discard = 'none' | 'before' | 'during' | 'after';
 type Undo = 'none' | 'now' | 'sent' | 'answered' | 'conflict' | 'server';
 type Answer = 'success' | 'conflict' | 'missing' | 'refused' | 'server';
@@ -325,7 +330,57 @@ function kidServer(extra: () => number, steps: Step[]): Pick<Scenario, keyof typ
 	return { blocking, doneBefore, foreignStatus };
 }
 
-/** `count` drawn runs of every class of round 2. */
+/**
+ * Runs of the class "Unteraufgaben" around a notice that stands (OF-3c round 2, C-1 and C-5): someone
+ * else completed A before, so a completion with its sub-tasks that arrives in a short return of the
+ * connection names C1 in a notice. Then either the user sets C1 anew, the request gets no answer or
+ * does not reach the server, "Verwerfen" comes and its take-back arrives; or the user sets A in
+ * progress, someone else completes A again unseen, and a later completion with the same sub-tasks
+ * arrives at its first attempt on that stale state. Only the same ones: a first direct attempt names
+ * no sub-task it did not complete (limit of OF-3b round 3, "as today"). From a source of their own, so
+ * every other run stays.
+ */
+function noticeScenarios(count: number, seed: number): Scenario[] {
+	const random = seeded(seed + 3);
+	const kids = ['kids1', 'kids2', 'kidsBlind'] as const;
+	return times(count, (): Scenario => {
+		const kind = pick(random, kids);
+		const first = step({ kind, send: 'window' });
+		const steps =
+			random() < 0.5
+				? [
+						first,
+						step({
+							kind: 'kid',
+							send: pick(random, ['lost', 'unreached'] as const),
+							discard: pick(random, ['after', 'during'] as const),
+							undo: pick(random, ['none', 'none', 'now'] as const)
+						})
+					]
+				: [
+						first,
+						step({
+							kind: 'prog',
+							send: pick(random, ['window', 'direct'] as const),
+							foreign: 'status'
+						}),
+						step({ kind, send: 'direct' })
+					];
+		return {
+			cls: 'Unteraufgaben',
+			steps,
+			answer: pick(random, ALL_ANSWERS),
+			foreign: 'status',
+			clock: null,
+			lateDiscard: null,
+			blocking: [C1],
+			doneBefore: true,
+			foreignStatus: 'done'
+		};
+	});
+}
+
+/** `count` drawn runs of every class of round 2, and the runs around a notice that stands. */
 function classScenarios(count: number, seed: number): Scenario[] {
 	const random = seeded(seed + 1);
 	const extra = seeded(seed + 2);
@@ -347,7 +402,7 @@ function classScenarios(count: number, seed: number): Scenario[] {
 			all.push({ cls, steps, answer, foreign, clock, lateDiscard, ...server });
 		}
 	}
-	return all;
+	return [...all, ...noticeScenarios(Math.ceil(count * NOTICE_SHARE), seed)];
 }
 
 interface Intent {
@@ -1089,6 +1144,8 @@ async function check(runs: readonly Scenario[], coverage: string): Promise<strin
 const DRAWN = 1000;
 /** Runs drawn per class of round 2 (fixed seed); together the matrix stays under 15 s. */
 const CLASS_RUNS = 250;
+/** The runs around a notice that stands, as a share of CLASS_RUNS (OF-3c round 2): 100 of 250. */
+const NOTICE_SHARE = 0.4;
 const SEED = Number(process.env.BYL_MATRIX_SEED ?? 20261021);
 
 beforeEach(() => {
