@@ -15,7 +15,9 @@
 // never expires (S1) and has no "Verwerfen" of its own (S2); H-1 a later change that expired keeps the
 // fallback; H-2c "Rückgängig" after "Verwerfen" at every point; M-2 a sub-task with a change of its
 // own; M-3 a 5xx keeps "may have arrived"; the low findings (unknown sub-tasks, start, storage after
-// three rounds, "Abmelden und verwerfen", the probe of `#pure`).
+// three rounds, "Abmelden und verwerfen", the probe of `#pure`); and what the scenario matrix of
+// round 2 found (the mark of the day behind an expired change, the sub-tasks read again, a completion
+// with sub-tasks that would have dropped a waiting change).
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DataError } from '$lib/data/errors';
@@ -443,6 +445,64 @@ describe('a 5xx after a request without an answer (round 2, M-3)', () => {
 		await vi.advanceTimersByTimeAsync(3_000);
 		expect(h.server.status.get(A)).toBe('open');
 		expect(h.outbox.count).toBe(0);
+	});
+});
+
+describe('found by the scenario matrix of round 2', () => {
+	it('keeps the take-back of the mark of the day when a later change older than 48 hours is discarded', async () => {
+		const h = await ready();
+		const mark = await unreached(h, () =>
+			h.outbox.changeCheck(planned(), { kind: 'dayplan.check', mode: 'today' })
+		);
+		await h.outbox.changeCheck(
+			{ item: entry(ITEM, A, true), ticket: ticket(A) },
+			{ kind: 'dayplan.check', mode: 'check' }
+		);
+		const later = h.outbox.actions.at(-1) as KeptAction;
+		await h.outbox.discard(mark.op);
+		vi.setSystemTime(NOW + AUTO_SEND_MS + 60_000);
+		await goOnline(h);
+		expect(h.server.items.get(ITEM)?.doneToday).toBe(true);
+		expect(h.outbox.expired.map((action) => action.op)).toEqual([later.op]);
+		await h.outbox.discard(later.op);
+		await settle();
+		expect(h.server.items.get(ITEM)?.doneToday).toBe(false);
+		expect(h.outbox.count).toBe(0);
+	});
+
+	it('reads the sub-tasks again once a completion that took them along arrived', async () => {
+		const h = await ready();
+		h.outbox.apply(ticket(C));
+		await unreached(h, () =>
+			h.outbox.changeStatus(ticket(A), {
+				status: 'done',
+				completion: 'complete_children',
+				children: [C]
+			})
+		);
+		await goOnline(h);
+		expect(h.get).toHaveBeenCalledWith(C);
+		expect(h.outbox.current(C)?.status).toBe('done');
+	});
+
+	it('takes a completion with its sub-tasks into a waiting change instead of dropping that one', async () => {
+		const h = await ready();
+		h.outbox.apply(ticket(C));
+		await goOffline(h);
+		await h.outbox.changeStatus(ticket(A), { status: 'done' });
+		await goOnline(h);
+		await goOffline(h);
+		// "In Arbeit", then "erledigt" with the sub-task: the status is the one before, the sub-task not.
+		await h.outbox.changeStatus(h.outbox.apply(ticket(A, 'done')), { status: 'in_progress' });
+		await h.outbox.changeStatus(h.outbox.apply(ticket(A, 'done')), {
+			status: 'done',
+			completion: 'complete_children',
+			children: [C]
+		});
+		expect(h.outbox.actions).toMatchObject([{ completion: 'complete_children', children: [C] }]);
+		await goOnline(h);
+		expect(h.server.status.get(A)).toBe('done');
+		expect(h.server.status.get(C)).toBe('done');
 	});
 });
 

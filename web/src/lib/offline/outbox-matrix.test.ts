@@ -1,13 +1,14 @@
 // The scenario matrix of "Verwerfen" (OF-3b, ADR-0074 addendum OF-3b and its round 2): small runs on
 // one ticket, its due date, the mark of the day of one entry and up to three sub-tasks (two the views
-// showed, one never seen). Each change is made without a connection or, in the class "direkt", with
-// one; it is sent in a short return of the connection with its answer lost, without reaching the
-// server, or with a 5xx, or kept; "Verwerfen" comes before, while or after it is sent, "Rückgängig"
-// right after "Verwerfen" or once the take-back was sent, answered, met a conflict or a 503; the value
-// may be set anew after "Verwerfen", someone else may change a value in the middle of a chain, the
-// clock may pass 48 hours with the decisions "Trotzdem übertragen" and "Verwerfen" for every change of
-// the user that waits for one. Then the connection comes back with a success, a change of someone
-// else, one answer 404, one refusal or one 503, and everything goes that can. Afterwards hold:
+// showed, one never seen and in progress on the server). Each change is made without a connection or,
+// in the class "direkt", with one; it is sent in a short return of the connection with its answer
+// lost, without reaching the server, or with a 5xx, or kept; "Verwerfen" comes before, while or after
+// it is sent, or for an earlier change after the later ones; "Rückgängig" right after "Verwerfen" or
+// once the take-back was sent, answered, met a conflict or a 503; the value may be set anew after
+// "Verwerfen", someone else may change a value in the middle of a chain, the clock may pass 48 hours
+// with the decisions "Trotzdem übertragen" and "Verwerfen" for every change of the user that waits
+// for one. Then the connection comes back with a success, a change of someone else, one answer 404,
+// one refusal or one 503, and everything goes that can. Afterwards hold:
 // - I1: every value has the wish of the last change the user kept for it (the value before without
 //   one; a change that dropped a waiting one writes nothing of its own, a change taken into another
 //   carries only what that one still changes), or someone else set it after the last own change that
@@ -17,7 +18,7 @@
 //   view showed that value and the user changed it; the limit M1 counts where the value of someone
 //   else is the wish of a discarded own change that may have arrived, or where the server took an own
 //   request with that very wish without a change; a first attempt with a connection has no value
-//   before (OF-2 §2);
+//   before (OF-2 §2), and the mark of the day of a done ticket is no value of its own (OF-3b §9);
 // - I3: no change whose request the server took leaves the outbox without a word after any refusal
 //   while its value contradicts the will;
 // - I4: after "Rückgängig" every value it brought back has the will of before "Verwerfen" (or a
@@ -100,6 +101,8 @@ interface Scenario {
 	foreign: OwnFeature;
 	/** The clock passes 48 hours; the decisions for the changes of the user that wait for one. */
 	clock: Decision[] | null;
+	/** "Verwerfen" of the change of this step after all steps, while it is still kept. */
+	lateDiscard: number | null;
 }
 
 const FEATURES: readonly Feature[] = ['status', 'due', 'mark', 'c1', 'c2', 'c3'];
@@ -164,7 +167,8 @@ function baseScenarios(count: number, seed: number): Scenario[] {
 		for (const way of WAYS) {
 			for (const answer of BASE_ANSWERS) {
 				const steps = [{ kind, ...way }];
-				all.push({ cls: 'basis', steps, answer, foreign: ownFeatureOf(kind), clock: null });
+				const foreign = ownFeatureOf(kind);
+				all.push({ cls: 'basis', steps, answer, foreign, clock: null, lateDiscard: null });
 			}
 		}
 	}
@@ -177,7 +181,7 @@ function baseScenarios(count: number, seed: number): Scenario[] {
 			}));
 			const answer = pick(random, BASE_ANSWERS);
 			const foreign = ownFeatureOf(pick(random, steps).kind);
-			all.push({ cls: 'basis', steps, answer, foreign, clock: null });
+			all.push({ cls: 'basis', steps, answer, foreign, clock: null, lateDiscard: null });
 		}
 	}
 	return all;
@@ -252,8 +256,16 @@ const CLASSES: Readonly<Record<Exclude<Cls, 'basis'>, (random: () => number) => 
 				['none', 'now']
 			)
 		})),
-	Unteraufgaben: (random) =>
-		times(1 + Math.floor(random() * 3), () => {
+	Unteraufgaben: (random) => {
+		// A completion, then a change of its sub-task of its own (M-2), discarded later.
+		if (random() < 0.35) {
+			const send = pick(random, ['lost', 'unreached'] as const);
+			return [
+				step({ kind: pick(random, ['kids1', 'kids2', 'kidsBlind'] as const), send }),
+				step({ kind: 'kid', send: pick(random, ['offline', 'lost'] as const) })
+			];
+		}
+		return times(1 + Math.floor(random() * 3), () => {
 			const kind = pick(random, KID_KINDS);
 			// A completion with its sub-tasks is sent each time: a later change of the status would
 			// otherwise be taken into it and drop the sub-tasks (OF-2, the last wish counts).
@@ -262,7 +274,8 @@ const CLASSES: Readonly<Record<Exclude<Cls, 'basis'>, (random: () => number) => 
 				: ['offline', 'lost', 'unreached'];
 			const way = wayOf(random, sends, ['none', 'before', 'during', 'after'], ['none', 'now']);
 			return { kind, ...way };
-		}),
+		});
+	},
 	'fremd in der Kette': (random) => {
 		const steps = times(2 + Math.floor(random() * 2), () => baseStep(random));
 		const at = Math.floor(random() * (steps.length - 1));
@@ -283,7 +296,12 @@ function classScenarios(count: number, seed: number): Scenario[] {
 			const foreign = ownFeatureOf(pick(random, steps).kind);
 			const clock =
 				cls === '48 Stunden' ? times(3, () => pick(random, ['send', 'discard'] as const)) : null;
-			all.push({ cls, steps, answer, foreign, clock });
+			// "Verwerfen" of an earlier change after a later one: the first one, a completion first.
+			const completion = steps.findIndex((entry) => entry.kind.startsWith('kids'));
+			const early = completion >= 0 ? completion : 0;
+			const late = (cls === '48 Stunden' || cls === 'Unteraufgaben') && early < steps.length - 1;
+			const lateDiscard = late && random() < 0.6 ? early : null;
+			all.push({ cls, steps, answer, foreign, clock, lateDiscard });
 		}
 	}
 	return all;
@@ -368,6 +386,8 @@ async function run(scenario: Scenario): Promise<Outcome> {
 	vi.setSystemTime(NOW);
 	const h = harness({ support: ALL_OPS });
 	h.server.items.set(ITEM, { ticket: A, doneToday: false });
+	// C3 is in progress on the server; the views never showed it, so a guess of its status is wrong.
+	h.server.status.set(C3, 'in_progress');
 	await settle();
 	const initial = serverValues(h);
 	const outcome: Outcome = { i1: [], i2: [], i3: [], i4: [], hang: [] };
@@ -391,6 +411,14 @@ async function run(scenario: Scenario): Promise<Outcome> {
 	const knownTicket = (id: string) => known.get(id) ?? ticket(id);
 
 	const intents: Intent[] = [];
+	/** The wishes the user keeps for a value, in their order; a change that dropped one holds none. */
+	const keptOf = (feature: Feature): Intent[] =>
+		intents.filter(
+			(intent) =>
+				intent.feature === feature && !intent.discarded && !intent.superseded && !intent.cancel
+		);
+	/** What the user wants of a value now: the last wish they keep, else the value before. */
+	const willNow = (feature: Feature): Value => keptOf(feature).at(-1)?.value ?? initial[feature];
 	const firstMode = new Map<string, Send>();
 	const secondFails = new Set<string>();
 	let during: { op: string; undo: Undo } | null = null;
@@ -406,19 +434,26 @@ async function run(scenario: Scenario): Promise<Outcome> {
 	const foreignAt = new Map<Feature, { value: Value; at: number }>();
 	let blindHint = false;
 
+	/**
+	 * Someone else sets a value: always the same one per value in a run (the mark of the day turned
+	 * the first time), so no change of someone else returns to a value an own change was based on.
+	 */
 	function changeByOthers(feature: OwnFeature): void {
+		const before = serverValues(h)[feature];
 		let value: Value;
 		if (feature === 'due') {
 			value = FOREIGN.due;
 			h.server.due.set(A, FOREIGN.due);
 		} else if (feature === 'mark') {
 			const item = h.server.items.get(ITEM) ?? { ticket: A, doneToday: false };
-			value = !item.doneToday;
+			const first = foreignAt.get('mark');
+			value = first === undefined ? !item.doneToday : first.value === true;
 			h.server.items.set(ITEM, { ...item, doneToday: value });
 		} else {
 			value = FOREIGN.status;
 			h.server.status.set(A, FOREIGN.status);
 		}
+		if (before === value) return;
 		foreignActive.set(feature, value);
 		foreignAt.set(feature, { value, at: tick++ });
 	}
@@ -445,7 +480,10 @@ async function run(scenario: Scenario): Promise<Outcome> {
 		const after = serverValues(h);
 		for (const feature of FEATURES) {
 			if (before[feature] === after[feature]) continue;
-			const limit = fields.expected === undefined || isLimitM1(feature, before[feature]);
+			// The limit of the day plan with a done ticket (OF-3b §9): it compares "checked", the mark
+			// of the day or done, so a mark of someone else cannot show as a conflict.
+			const done = feature === 'mark' && before.status === 'done';
+			const limit = fields.expected === undefined || done || isLimitM1(feature, before[feature]);
 			if (foreignActive.has(feature) && !limit) {
 				outcome.i2.push(`${feature}: ${String(before[feature])} → ${String(after[feature])}`);
 			}
@@ -661,20 +699,18 @@ async function run(scenario: Scenario): Promise<Outcome> {
 		return [{ feature: 'status', value: done ? 'open' : 'done' }];
 	}
 
-	/** What the views show of a value, the waiting changes laid over it. */
-	function shownValue(feature: Feature): Value {
-		const main = h.outbox.apply(knownTicket(A));
-		if (feature === 'due') return main.due;
+	/** What the views show of a value of A someone else may change, the waiting changes over it. */
+	function shownValue(feature: OwnFeature): Value {
 		if (feature === 'mark') return h.outbox.checkRow(knownItem, knownTicket(A)).doneToday;
-		if (feature === 'status') return main.status;
-		const id = feature === 'c1' ? C1 : feature === 'c2' ? C2 : C3;
-		return h.outbox.apply(knownTicket(id)).status;
+		const main = h.outbox.apply(knownTicket(A));
+		return feature === 'due' ? main.due : main.status;
 	}
 
 	/** Makes a change and notes its wishes with the action they live in. */
 	async function change(kind: Kind): Promise<string | null | undefined> {
 		const before = userActions();
-		const seen = new Map(FEATURES.map((feature) => [feature, shownValue(feature)]));
+		const own: readonly OwnFeature[] = ['status', 'due', 'mark'];
+		const seen = new Map<Feature, Value>(own.map((feature) => [feature, shownValue(feature)]));
 		const made = await perform(kind);
 		await settle();
 		if (made === null) return undefined;
@@ -702,7 +738,15 @@ async function run(scenario: Scenario): Promise<Outcome> {
 		}
 		// Without a connection only a change of the user drops an action of the user.
 		const cancel = op === null && dropped !== undefined && !h.server.health;
-		if (cancel) for (const intent of intents) if (intent.op === dropped) intent.superseded = true;
+		if (cancel) {
+			for (const intent of intents) if (intent.op === dropped) intent.superseded = true;
+			// A change drops a waiting one only on the way back to what the user wanted without it.
+			for (const wish of made) {
+				const will = willNow(wish.feature);
+				if (will !== wish.value)
+					outcome.i1.push(`${wish.feature}: aufgehoben, gewollt ${String(will)}`);
+			}
+		}
 		for (const wish of made) {
 			const fresh = { op, discarded: false, undone: false, superseded: false, cancel, at: tick++ };
 			intents.push({ ...wish, ...fresh });
@@ -724,6 +768,7 @@ async function run(scenario: Scenario): Promise<Outcome> {
 	}
 
 	await offline();
+	const stepOps: (string | null | undefined)[] = [];
 	for (const entry of scenario.steps) {
 		const direct = entry.send === 'direct' || entry.send === 'directLost';
 		if (direct) {
@@ -731,6 +776,7 @@ async function run(scenario: Scenario): Promise<Outcome> {
 			if (entry.send === 'directLost') h.server.lose = 1;
 		}
 		const op = await change(entry.kind);
+		stepOps.push(op);
 		h.server.lose = 0;
 		const present = () => h.outbox.actions.some((action) => action.op === op);
 		if (direct) {
@@ -773,6 +819,11 @@ async function run(scenario: Scenario): Promise<Outcome> {
 		await settle();
 		if (entry.foreign !== null) changeByOthers(entry.foreign);
 	}
+	const late = scenario.lateDiscard === null ? undefined : stepOps[scenario.lateDiscard];
+	if (typeof late === 'string' && h.outbox.actions.some((action) => action.op === late)) {
+		await discardWithUndo(late);
+		await settle();
+	}
 
 	if (scenario.clock !== null) vi.setSystemTime(NOW + AUTO_SEND_MS + 60_000);
 	if (scenario.answer === 'conflict') changeByOthers(scenario.foreign);
@@ -813,20 +864,13 @@ async function run(scenario: Scenario): Promise<Outcome> {
 	}
 	if (blindHint) suspended.add('c3');
 	/** The wishes the user keeps for a value, in their order. */
-	const keptOf = (feature: Feature): Intent[] =>
-		intents.filter(
-			(intent) => intent.feature === feature && !intent.discarded && !intent.superseded
-		);
-	const willOf = (feature: Feature): Value => keptOf(feature).at(-1)?.value ?? initial[feature];
+	const willOf = willNow;
 	// The value of the server holds the will, or someone else set it after the last own change that
 	// writes the will (after the start without one), or a decision touching it is to be seen.
 	const holds = (feature: Feature): boolean => {
 		if (suspended.has(feature) || server[feature] === willOf(feature)) return true;
 		const foreign = foreignAt.get(feature);
-		const source =
-			keptOf(feature)
-				.filter((intent) => !intent.cancel)
-				.at(-1)?.at ?? -1;
+		const source = keptOf(feature).at(-1)?.at ?? -1;
 		return foreign !== undefined && foreign.at > source && server[feature] === foreign.value;
 	};
 	const text = (feature: Feature) =>
@@ -870,7 +914,9 @@ function describeScenario(scenario: Scenario): string {
 		.join(' → ');
 	const foreign = scenario.answer === 'conflict' ? `(${scenario.foreign})` : '';
 	const clock = scenario.clock === null ? '' : ` [48 h: ${scenario.clock.join(',')}]`;
-	return `${scenario.cls}: ${steps} ⇒ ${scenario.answer}${foreign}${clock}`;
+	const late =
+		scenario.lateDiscard === null ? '' : ` [spät verworfen: ${scenario.lateDiscard + 1}]`;
+	return `${scenario.cls}: ${steps}${late} ⇒ ${scenario.answer}${foreign}${clock}`;
 }
 
 /** How many of the possible runs of each length the drawn ones of the base class cover. */
@@ -901,6 +947,7 @@ function classCoverage(runs: readonly Scenario[]): string {
 async function check(runs: readonly Scenario[], coverage: string): Promise<string[]> {
 	const failures: string[] = [];
 	const counts = { i1: 0, i2: 0, i3: 0, i4: 0, hang: 0 };
+	const perClass = new Map<Cls, number>();
 	for (const scenario of runs) {
 		const outcome = await run(scenario);
 		const all: string[] = [];
@@ -908,12 +955,16 @@ async function check(runs: readonly Scenario[], coverage: string): Promise<strin
 			if (outcome[name].length > 0) counts[name] += 1;
 			all.push(...outcome[name].map((entry) => `${name.toUpperCase()} ${entry}`));
 		}
-		if (all.length > 0) failures.push(`${describeScenario(scenario)}: ${all.join('; ')}`);
+		if (all.length === 0) continue;
+		failures.push(`${describeScenario(scenario)}: ${all.join('; ')}`);
+		perClass.set(scenario.cls, (perClass.get(scenario.cls) ?? 0) + 1);
 	}
 	if (process.env.BYL_MATRIX_REPORT === '1') {
 		const broken = CHECKS.map((name) => `${name.toUpperCase()} ${counts[name]}`).join(', ');
+		const classes = [...perClass].map(([cls, count]) => `${cls} ${count}`).join(', ');
 		const lines = [
 			`Matrix: ${runs.length} Abläufe, verletzt: ${failures.length} (${broken})`,
+			`Verletzt je Klasse: ${classes === '' ? 'keine' : classes}`,
 			`Abdeckung: ${coverage}`,
 			...failures.slice(0, 40)
 		];

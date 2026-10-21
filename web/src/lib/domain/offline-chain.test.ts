@@ -272,6 +272,37 @@ describe('sub-tasks (OF-3b round 2)', () => {
 		expect(left.find((action) => action.op === SECOND)?.fallback).toEqual({ status: 'open' });
 	});
 
+	it('bases the status before of a sub-task on its own change before the completion', () => {
+		const own = status({
+			target: C,
+			payload: { status: 'in_progress' },
+			expected: { status: 'open' }
+		});
+		const later = completion({ op: SECOND, seq: 2, discarded: undefined, sent: undefined });
+		const settled = settleChains([own, later], context());
+		expect(settled.find((action) => action.op === SECOND)).toMatchObject({
+			childrenBefore: ['in_progress']
+		});
+	});
+
+	it('keeps what the user wants of a sub-task once a discarded completion arrived before another', () => {
+		const free = { discarded: undefined, sent: undefined, unanswered: undefined };
+		const second = completion({ op: SECOND, seq: 2, dependsOn: [FIRST], ...free });
+		const settled = settleChains([completion(), second], context());
+		expect(settled.find((action) => action.op === SECOND)).toMatchObject({
+			childrenBefore: ['done']
+		});
+		const left = leaveChain(settled, FIRST, { how: 'arrived' }, context());
+		const after = left.find((action) => action.op === SECOND) as KeptAction;
+		expect(after.fallback).toEqual({ status: 'open', children: { [C]: 'open' } });
+		// Discarded as well and changed nothing: take-backs open the ticket and the sub-task again.
+		const gone = leaveChain([{ ...after, discarded: true }], SECOND, { how: 'nothing' }, context());
+		expect(gone.map((action) => [action.target, action.payload])).toEqual([
+			[TICKET, { status: 'open' }],
+			[C, { status: 'open' }]
+		]);
+	});
+
 	it('takes back no sub-task whose status before is unknown, and names it', () => {
 		const blind = completion({ children: [C, 'tick00000000004'], childrenBefore: ['open', null] });
 		const settled = settleChains([blind], context());
