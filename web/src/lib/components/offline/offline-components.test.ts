@@ -417,6 +417,75 @@ describe('OfflineNotice (OF-3c)', () => {
 		main.blur();
 		expect(main.hasAttribute('tabindex')).toBe(false);
 	});
+
+	// MO-7a (ADR-0074 addendum OF-3c §8, rest of round 3): the region of the hints has no tabindex of
+	// its own any more (a click on the text of a hint focused it); after the last "Schließen" it gets
+	// `-1` only for that step, like the heading and the main content.
+	it('keeps the region of the hints without a tabindex and gives it one only after the last "Schließen", until the focus leaves it (MO-7a)', async () => {
+		const outbox = await outboxWith([], true, children);
+		render(OfflineNotice, { props: { outbox, onshow: vi.fn() } });
+		const status = screen.getByRole('status');
+		expect(status.hasAttribute('tabindex')).toBe(false);
+		const [first, second] = within(status).getAllByRole('button', { name: 'Schließen' });
+		first?.focus();
+		await fireEvent.click(first as HTMLElement);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(status.hasAttribute('tabindex')).toBe(false);
+		await fireEvent.click(second as HTMLElement);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(document.activeElement).toBe(status);
+		expect(status.getAttribute('tabindex')).toBe('-1');
+		status.blur();
+		expect(document.activeElement).toBe(document.body);
+		expect(status.hasAttribute('tabindex')).toBe(false);
+	});
+
+	/** The window or the tab loses the focus: `blur` on the element, which stays the active one. */
+	function windowBlur(element: HTMLElement): void {
+		element.dispatchEvent(new FocusEvent('blur'));
+		expect(document.activeElement).toBe(element);
+	}
+
+	it.each([
+		{ heading: 'plain', target: 'heading' },
+		{ heading: false, target: 'main' }
+	] as const)(
+		'keeps the tabindex of the $target while only the window or the tab loses the focus (MO-7a)',
+		async ({ heading, target }) => {
+			const outbox = await outsideFrame();
+			render(OfflineNoticeHarness, { props: { outbox, heading } });
+			await closeBoth();
+			const expected =
+				target === 'heading'
+					? screen.getByRole('heading', { name: 'Aufgaben' })
+					: screen.getByRole('main');
+			expect(document.activeElement).toBe(expected);
+			// Another tab or app: the focus comes back here, so the tabindex stays, twice in a row.
+			windowBlur(expected);
+			expect(expected.getAttribute('tabindex')).toBe('-1');
+			windowBlur(expected);
+			expect(expected.getAttribute('tabindex')).toBe('-1');
+			// The focus really leaves it: the tabindex goes.
+			expected.blur();
+			expect(expected.hasAttribute('tabindex')).toBe(false);
+		}
+	);
+
+	it('keeps the tabindex of the region while only the window or the tab loses the focus (MO-7a)', async () => {
+		const outbox = await outboxWith([], true, children);
+		render(OfflineNotice, { props: { outbox, onshow: vi.fn() } });
+		const status = screen.getByRole('status');
+		for (const button of within(status).getAllByRole('button', { name: 'Schließen' })) {
+			button.focus();
+			await fireEvent.click(button);
+			await vi.advanceTimersByTimeAsync(0);
+		}
+		expect(document.activeElement).toBe(status);
+		windowBlur(status);
+		expect(status.getAttribute('tabindex')).toBe('-1');
+		status.blur();
+		expect(status.hasAttribute('tabindex')).toBe(false);
+	});
 });
 
 describe('OutboxButton', () => {
