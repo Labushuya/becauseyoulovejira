@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
 	AUTO_SEND_MS,
 	CLOCK_CODE,
+	KEEP_MS,
 	OFFLINE_TEXTS,
 	type ActionOutcome,
 	type DayPlanAction,
@@ -221,6 +222,25 @@ describe('OfflineNotice', () => {
 	});
 });
 
+describe('OfflineNotice (OF-3b round 3)', () => {
+	it('names the changes deleted after 7 days and stays until it is closed (R2-2)', async () => {
+		const outbox = await outboxWith([stored({ createdAt: NOW - KEEP_MS })], true);
+		const { container } = render(OfflineNotice, { props: { outbox, onshow: vi.fn() } });
+		const text =
+			'1 gemerkte Änderung war älter als 7 Tage und wurde gelöscht, ohne sicher übertragen zu sein: HAUS-12. Bitte im Ticket prüfen.';
+		expect(statusText()).toContain(text);
+		const message = container.querySelector('.section-message');
+		expect(message?.getAttribute('data-tone')).toBe('warning');
+		await vi.advanceTimersByTimeAsync(120_000);
+		expect(statusText()).toContain(text);
+		const close = within(screen.getByRole('status')).getByRole('button', { name: 'Schließen' });
+		expect(close.getAttribute('aria-describedby')).not.toBeNull();
+		await fireEvent.click(close);
+		expect(statusText()).not.toContain(text);
+		expect(outbox.notices).toEqual([]);
+	});
+});
+
 describe('OutboxButton', () => {
 	it('shows "Offline · 2" without a connection and opens the dialog', async () => {
 		const outbox = await outboxWith([stored(), other(2)]);
@@ -425,9 +445,12 @@ describe('OutboxDialog', () => {
 		);
 		expect(within(first as HTMLElement).queryByRole('button', { name: 'Verwerfen' })).toBeNull();
 		expect(second?.textContent).toContain('Rücknahme: HAUS-12 auf „Offen“');
-		// Since OF-3b round 2 (S2) a take-back has no "Verwerfen" of its own and says why.
+		// Since OF-3b round 2 (S2) a take-back has no "Verwerfen" of its own and says why; since round
+		// 3 (R2-5) the way that always works first, "Rückgängig" only right after "Verwerfen".
 		expect(within(second as HTMLElement).queryByRole('button', { name: 'Verwerfen' })).toBeNull();
-		expect(second?.textContent).toContain(OFFLINE_TEXTS.takeBackHint);
+		expect(second?.textContent).toContain(
+			'Nimmt eine verworfene Änderung zurück. Wer es sich anders überlegt, setzt den Wert neu; direkt nach dem Verwerfen geht auch „Rückgängig“ im Hinweis.'
+		);
 	});
 
 	it('says why a change from the future waits and offers "Trotzdem übertragen" and "Verwerfen" (OF-2b)', async () => {

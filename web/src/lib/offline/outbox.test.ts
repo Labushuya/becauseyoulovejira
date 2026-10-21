@@ -352,7 +352,8 @@ describe('answers of the server (concept OF-0 §3.7)', () => {
 		h.send.mockRejectedValueOnce(refusal('op_id', 'validation_op_applied'));
 		await goOnline(h);
 		expect(h.storage.entries.size).toBe(0);
-		expect(h.get).toHaveBeenCalledWith(A);
+		// Since OF-3b round 3 within the time limit of a request (R2-10).
+		expect(h.get).toHaveBeenCalledWith(A, expect.any(AbortSignal));
 		const now = expect.objectContaining({ id: A, status: 'waiting' });
 		expect(h.sink.upsert).toHaveBeenCalledWith(now);
 	});

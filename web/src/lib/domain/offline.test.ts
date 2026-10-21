@@ -399,13 +399,32 @@ describe('the time (decision of the user 2)', () => {
 		const close = action({ op: THIRD, createdAt: NOW + DEVICE_FUTURE_MS });
 		const decided = action({ op: FOURTH, createdAt: ahead, late: true });
 		expect(isFromTheFuture(kept, NOW)).toBe(true);
-		expect(isFromTheFuture(marked, NOW)).toBe(true);
+		// Since round 3 of OF-3b (R2-6) a mark "sending" from the future lost its sender: it goes again
+		// with its identifier; only the time of the change itself counts.
+		expect(isFromTheFuture(marked, NOW)).toBe(false);
 		expect(isFromTheFuture(close, NOW)).toBe(false);
 		expect(isFromTheFuture(decided, NOW)).toBe(false);
 		expect(agedActions([kept, marked, close, decided], NOW)).toEqual({
-			expire: [FIRST, SECOND],
+			expire: [FIRST],
 			drop: []
 		});
+	});
+
+	it('takes a mark "sending" from the future as one whose sender died, also of a take-back (round 3, R2-6)', () => {
+		const ahead = NOW + 24 * 60 * 60_000;
+		const marked = action({ op: FIRST, state: 'sending', sendingSince: ahead, sent: true });
+		const back = action({
+			op: SECOND,
+			seq: 2,
+			state: 'sending',
+			sendingSince: NOW + 1,
+			sent: true,
+			undoes: FOURTH
+		});
+		expect(isFromTheFuture(marked, NOW)).toBe(false);
+		expect(agedActions([marked, back], NOW)).toEqual({ expire: [], drop: [] });
+		expect(nextToSend([marked, back], NOW)?.op).toBe(FIRST);
+		expect(nextToSend([back], NOW)?.op).toBe(SECOND);
 	});
 
 	it('never lets a take-back expire, also not with a time from the future (OF-3b round 2, S1)', () => {

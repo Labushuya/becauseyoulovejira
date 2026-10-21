@@ -12,12 +12,15 @@
 // - I1: every value has the wish of the last change the user kept for it (the value before without
 //   one; a change that dropped a waiting one writes nothing of its own, a change taken into another
 //   carries only what that one still changes), or someone else set it after the last own change that
-//   writes the will; a value a conflict, a refusal or a waiting decision touches (also through the
-//   changes waiting behind it) is left out, only that value;
+//   writes the will, or, under the limit M1 before the chain and without a change the user keeps, it
+//   has the value the views showed before the chain; a value a conflict, a refusal, a waiting decision
+//   (also through the changes waiting behind it) or a notice about a sub-task that is not done
+//   touches is left out, only that value;
 // - I2: no change of the outbox overwrites a value someone else set without a conflict, unless the
 //   view showed that value and the user changed it; the limit M1 counts where the value of someone
 //   else is the wish of a discarded own change that may have arrived, or where the server took an own
-//   request with that very wish without a change; a first attempt with a connection has no value
+//   request with that very wish without a change the first time (a repetition of the identifier takes
+//   nothing over, round 3); only the first request of a change of the class "direkt" has no value
 //   before (OF-2 §2), and the mark of the day of a done ticket is no value of its own (OF-3b §9);
 // - I3: no change whose request the server took leaves the outbox without a word after any refusal
 //   while its value contradicts the will;
@@ -27,9 +30,13 @@
 //   refusal, a change of the user older than 48 hours) and the ones waiting behind them.
 // The oracle is independent of the code it checks: it keeps what the user did and the values of the
 // fake server and reads of the outbox only what the dialog shows (state, what an action changes, what
-// it waits for) and the flags; every run starts the real outbox, its worker, the storage of the tests
-// and `verdictOf` against the fake server of $lib/test/outbox-fake.ts. The base class has every run of
-// one change and drawn runs of two and three; the classes of round 2 are drawn, all with fixed seeds.
+// it waits for), the flags and the notices; every run starts the real outbox, its worker, the storage
+// of the tests and `verdictOf` against the fake server of $lib/test/outbox-fake.ts. The base class has
+// every run of one change and drawn runs of two and three; the classes of round 2 are drawn, all with
+// fixed seeds. Since round 3 the fake server completes sub-tasks like the hook (only blocking ones, on
+// the step to "done"); the class "Unteraufgaben" keeps completions as well, may have A done before the
+// chain or completed by someone else in it, and a sub-task the server did not complete counts for I1
+// only where no notice names it.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DayPlanItem } from '$lib/data/day-plan';
@@ -103,7 +110,16 @@ interface Scenario {
 	clock: Decision[] | null;
 	/** "Verwerfen" of the change of this step after all steps, while it is still kept. */
 	lateDiscard: number | null;
+	/** The sub-tasks of A with "blocks_parent" on the server: the hook completes only these (round 3). */
+	blocking: readonly string[];
+	/** Someone else completed A before the chain ("Trotzdem erledigen"); the views still show it open. */
+	doneBefore: boolean;
+	/** The status someone else sets: "Wartet", in the class "Unteraufgaben" also "Erledigt" (round 3). */
+	foreignStatus: Status;
 }
+
+/** The server of every class but "Unteraufgaben": no blocking sub-task, nothing done before. */
+const PLAIN = { blocking: [], doneBefore: false, foreignStatus: FOREIGN.status } as const;
 
 const FEATURES: readonly Feature[] = ['status', 'due', 'mark', 'c1', 'c2', 'c3'];
 const BASE_KINDS: readonly Kind[] = ['prog', 'done', 'mark', 'due', 'plan'];
@@ -168,7 +184,15 @@ function baseScenarios(count: number, seed: number): Scenario[] {
 			for (const answer of BASE_ANSWERS) {
 				const steps = [{ kind, ...way }];
 				const foreign = ownFeatureOf(kind);
-				all.push({ cls: 'basis', steps, answer, foreign, clock: null, lateDiscard: null });
+				all.push({
+					cls: 'basis',
+					steps,
+					answer,
+					foreign,
+					clock: null,
+					lateDiscard: null,
+					...PLAIN
+				});
 			}
 		}
 	}
@@ -181,7 +205,7 @@ function baseScenarios(count: number, seed: number): Scenario[] {
 			}));
 			const answer = pick(random, BASE_ANSWERS);
 			const foreign = ownFeatureOf(pick(random, steps).kind);
-			all.push({ cls: 'basis', steps, answer, foreign, clock: null, lateDiscard: null });
+			all.push({ cls: 'basis', steps, answer, foreign, clock: null, lateDiscard: null, ...PLAIN });
 		}
 	}
 	return all;
@@ -259,19 +283,18 @@ const CLASSES: Readonly<Record<Exclude<Cls, 'basis'>, (random: () => number) => 
 	Unteraufgaben: (random) => {
 		// A completion, then a change of its sub-task of its own (M-2), discarded later.
 		if (random() < 0.35) {
-			const send = pick(random, ['lost', 'unreached'] as const);
+			const send = pick(random, ['offline', 'lost', 'unreached'] as const);
 			return [
 				step({ kind: pick(random, ['kids1', 'kids2', 'kidsBlind'] as const), send }),
 				step({ kind: 'kid', send: pick(random, ['offline', 'lost'] as const) })
 			];
 		}
+		// Since round 3 a completion with its sub-tasks is also kept (R2-1): a later change of the status
+		// is taken into it and drops the sub-tasks (OF-2, the last wish counts), and one behind a waiting
+		// change whose value before is "done" goes behind it.
 		return times(1 + Math.floor(random() * 3), () => {
 			const kind = pick(random, KID_KINDS);
-			// A completion with its sub-tasks is sent each time: a later change of the status would
-			// otherwise be taken into it and drop the sub-tasks (OF-2, the last wish counts).
-			const sends: readonly Send[] = kind.startsWith('kids')
-				? ['lost', 'unreached']
-				: ['offline', 'lost', 'unreached'];
+			const sends: readonly Send[] = ['offline', 'lost', 'unreached'];
 			const way = wayOf(random, sends, ['none', 'before', 'during', 'after'], ['none', 'now']);
 			return { kind, ...way };
 		});
@@ -284,9 +307,27 @@ const CLASSES: Readonly<Record<Exclude<Cls, 'basis'>, (random: () => number) => 
 	}
 };
 
+/**
+ * The server of a run of the class "Unteraufgaben" (round 3, R2-1): C1 blocks A or nothing does (the
+ * server never completes a sub-task the client did not name), A may be done before the chain, and
+ * someone else may complete A in the middle of it. From a source of its own, so the other classes draw
+ * what they drew before.
+ */
+function kidServer(extra: () => number, steps: Step[]): Pick<Scenario, keyof typeof PLAIN> {
+	const blocking = extra() < 0.5 ? [C1] : [];
+	const doneBefore = extra() < 0.25;
+	const foreignStatus: Status = extra() < 0.5 ? 'done' : FOREIGN.status;
+	if (extra() < 0.4) {
+		const at = Math.floor(extra() * steps.length);
+		steps.splice(at, 1, { ...(steps[at] as Step), foreign: 'status' });
+	}
+	return { blocking, doneBefore, foreignStatus };
+}
+
 /** `count` drawn runs of every class of round 2. */
 function classScenarios(count: number, seed: number): Scenario[] {
 	const random = seeded(seed + 1);
+	const extra = seeded(seed + 2);
 	const all: Scenario[] = [];
 	type Make = (random: () => number) => Step[];
 	for (const [cls, make] of Object.entries(CLASSES) as [Exclude<Cls, 'basis'>, Make][]) {
@@ -301,7 +342,8 @@ function classScenarios(count: number, seed: number): Scenario[] {
 			const early = completion >= 0 ? completion : 0;
 			const late = (cls === '48 Stunden' || cls === 'Unteraufgaben') && early < steps.length - 1;
 			const lateDiscard = late && random() < 0.6 ? early : null;
-			all.push({ cls, steps, answer, foreign, clock, lateDiscard });
+			const server = cls === 'Unteraufgaben' ? kidServer(extra, steps) : PLAIN;
+			all.push({ cls, steps, answer, foreign, clock, lateDiscard, ...server });
 		}
 	}
 	return all;
@@ -364,6 +406,16 @@ function mainFeatureOf(action: KeptAction): Feature | null {
 	return action.payload.action === 'today' ? 'mark' : featureOfTicket(action.ticket);
 }
 
+/** What an action asks for its main value, as the dialog names it (R2-4). */
+function wishOf(action: KeptAction): Value {
+	if (action.kind === 'ticket.update') {
+		const payload = action.payload;
+		return 'due' in payload ? payload.due : payload.status;
+	}
+	if (action.payload.action === 'today') return action.kind === 'dayplan.check';
+	return action.kind === 'dayplan.check' ? 'done' : (action.payload.status ?? 'open');
+}
+
 /** The value of A a take-back is for, for a change of someone else just before it is sent. */
 function mainOf(action: KeptAction): OwnFeature {
 	const main = mainFeatureOf(action);
@@ -388,8 +440,16 @@ async function run(scenario: Scenario): Promise<Outcome> {
 	h.server.items.set(ITEM, { ticket: A, doneToday: false });
 	// C3 is in progress on the server; the views never showed it, so a guess of its status is wrong.
 	h.server.status.set(C3, 'in_progress');
+	// The hook completes only blocking sub-tasks, on the step to "done" (round 3, R2-1).
+	h.server.blocking.set(A, [...scenario.blocking]);
+	if (scenario.doneBefore) h.server.status.set(A, 'done');
 	await settle();
 	const initial = serverValues(h);
+	/** What the views showed before the chain: A open where someone else completed it unseen. */
+	const shownBefore: Values = {
+		...initial,
+		...(scenario.doneBefore && { status: 'open' as Status })
+	};
 	const outcome: Outcome = { i1: [], i2: [], i3: [], i4: [], hang: [] };
 	let tick = 0;
 
@@ -433,6 +493,15 @@ async function run(scenario: Scenario): Promise<Outcome> {
 	const foreignActive = new Map<Feature, Value>();
 	const foreignAt = new Map<Feature, { value: Value; at: number }>();
 	let blindHint = false;
+	// Someone else completed A before the chain; the views never showed it.
+	if (scenario.doneBefore) {
+		foreignActive.set('status', 'done');
+		foreignAt.set('status', { value: 'done', at: tick++ });
+	}
+	/** The oracle's own bookkeeping of the requests (R2-4): identifiers with a request before. */
+	const requested = new Set<string>();
+	/** A step of the class "direkt" makes its change now: only its first request names no value before. */
+	let directStep = false;
 
 	/**
 	 * Someone else sets a value: always the same one per value in a run (the mark of the day turned
@@ -450,8 +519,8 @@ async function run(scenario: Scenario): Promise<Outcome> {
 			value = first === undefined ? !item.doneToday : first.value === true;
 			h.server.items.set(ITEM, { ...item, doneToday: value });
 		} else {
-			value = FOREIGN.status;
-			h.server.status.set(A, FOREIGN.status);
+			value = scenario.foreignStatus;
+			h.server.status.set(A, scenario.foreignStatus);
 		}
 		if (before === value) return;
 		foreignActive.set(feature, value);
@@ -470,27 +539,37 @@ async function run(scenario: Scenario): Promise<Outcome> {
 		);
 
 	/**
-	 * The writes of a request (I2). A first attempt with a connection names no value before (OF-2 §2).
-	 * The limit M1 counts where the value of someone else is the wish of a discarded own change that
-	 * may have arrived; and, the same limit of the server, where the server took an own request without
-	 * a change because someone else had set its very wish: it cannot tell this from the request
-	 * arriving (it takes the wish without a conflict), so from then on the value counts as the own one.
+	 * The writes of a request (I2). Only the first request of a change of the class "direkt" names no
+	 * value before (OF-2 §2; round 3, R2-4: no later one, no other step). The limit M1 counts where the
+	 * value of someone else is the wish of a discarded own change that may have arrived; and, the same
+	 * limit of the server, where the server took an own request the first time without a change because
+	 * someone else had set its very wish: it cannot tell this from the request arriving (it takes the
+	 * wish without a conflict), so from then on the value counts as the own one. A repetition of an
+	 * identifier the server applied before changes nothing and takes nothing over (R2-4).
 	 */
-	function noteWrites(action: KeptAction, before: Values, fields: OutboxFields, ok: boolean): void {
+	function noteWrites(
+		action: KeptAction,
+		before: Values,
+		fields: OutboxFields,
+		ok: boolean,
+		request: { first: boolean; direct: boolean; replay: boolean }
+	): void {
 		const after = serverValues(h);
+		const blind = fields.expected === undefined && request.direct && request.first;
 		for (const feature of FEATURES) {
 			if (before[feature] === after[feature]) continue;
 			// The limit of the day plan with a done ticket (OF-3b §9): it compares "checked", the mark
 			// of the day or done, so a mark of someone else cannot show as a conflict.
 			const done = feature === 'mark' && before.status === 'done';
-			const limit = fields.expected === undefined || done || isLimitM1(feature, before[feature]);
+			const limit = blind || done || isLimitM1(feature, before[feature]);
 			if (foreignActive.has(feature) && !limit) {
 				outcome.i2.push(`${feature}: ${String(before[feature])} → ${String(after[feature])}`);
 			}
 			foreignActive.delete(feature);
 		}
 		const main = mainFeatureOf(action);
-		if (ok && main !== null && before[main] === after[main]) foreignActive.delete(main);
+		if (!ok || request.replay || main === null || before[main] !== after[main]) return;
+		if (wishOf(action) === before[main]) foreignActive.delete(main);
 	}
 
 	// The requests: the first one of an identifier in its step may be lost, not reach the server or
@@ -502,6 +581,9 @@ async function run(scenario: Scenario): Promise<Outcome> {
 		request: () => Promise<T>
 	): Promise<T> {
 		const op = fields.opId;
+		const first = !requested.has(op);
+		requested.add(op);
+		const direct = directStep;
 		if (finalMode === 'missing') {
 			finalMode = null;
 			refused.set(op, touched(action));
@@ -540,6 +622,8 @@ async function run(scenario: Scenario): Promise<Outcome> {
 		}
 		if (mode === 'server5xx') throw new DataError('server', { status: 503 });
 		const before = serverValues(h);
+		const replay = h.server.applied.has(op);
+		const facts = { first, direct, replay };
 		let answer: T;
 		try {
 			answer = await request();
@@ -547,10 +631,10 @@ async function run(scenario: Scenario): Promise<Outcome> {
 			// The fake server loses an answer only after it took the request.
 			const lost = error instanceof DataError && error.kind === 'network';
 			if (lost) maybeArrived.add(op);
-			noteWrites(action, before, fields, lost);
+			noteWrites(action, before, fields, lost, facts);
 			throw error;
 		}
-		noteWrites(action, before, fields, true);
+		noteWrites(action, before, fields, true, facts);
 		if (lose || mode === 'lost' || mode === 'lost5xx') {
 			maybeArrived.add(op);
 			throw new DataError('network');
@@ -775,7 +859,9 @@ async function run(scenario: Scenario): Promise<Outcome> {
 			await online();
 			if (entry.send === 'directLost') h.server.lose = 1;
 		}
+		directStep = direct;
 		const op = await change(entry.kind);
+		directStep = false;
 		stepOps.push(op);
 		h.server.lose = 0;
 		const present = () => h.outbox.actions.some((action) => action.op === op);
@@ -863,12 +949,26 @@ async function run(scenario: Scenario): Promise<Outcome> {
 			for (const feature of touched(action)) suspended.add(feature);
 	}
 	if (blindHint) suspended.add('c3');
+	// A sub-task the server did not complete although a kept completion should have taken it along
+	// (the hook completes blocking ones on the step to "done" only): the notice names it and stays,
+	// the user decides in the ticket (round 3, R2-1).
+	const notices = h.outbox.notices.map((notice) => notice.text);
+	for (const id of [C1, C2, C3]) {
+		const named = `Unteraufgabe HAUS-${id.slice(-2)} ist nicht erledigt`;
+		const feature = featureOfTicket(id);
+		if (feature !== null && notices.some((text) => text.includes(named))) suspended.add(feature);
+	}
 	/** The wishes the user keeps for a value, in their order. */
 	const willOf = willNow;
 	// The value of the server holds the will, or someone else set it after the last own change that
 	// writes the will (after the start without one), or a decision touching it is to be seen.
 	const holds = (feature: Feature): boolean => {
 		if (suspended.has(feature) || server[feature] === willOf(feature)) return true;
+		// The limit M1 before the chain (round 3): someone else had set the very wish of a discarded
+		// own change that may have arrived, unseen; without a change the user keeps, its take-back
+		// goes back to what the views showed, as the server cannot tell the two apart (OF-3b §9).
+		const before = keptOf(feature).length === 0 && isLimitM1(feature, initial[feature]);
+		if (before && server[feature] === shownBefore[feature]) return true;
 		const foreign = foreignAt.get(feature);
 		const source = keptOf(feature).at(-1)?.at ?? -1;
 		return foreign !== undefined && foreign.at > source && server[feature] === foreign.value;
@@ -916,7 +1016,11 @@ function describeScenario(scenario: Scenario): string {
 	const clock = scenario.clock === null ? '' : ` [48 h: ${scenario.clock.join(',')}]`;
 	const late =
 		scenario.lateDiscard === null ? '' : ` [spät verworfen: ${scenario.lateDiscard + 1}]`;
-	return `${scenario.cls}: ${steps}${late} ⇒ ${scenario.answer}${foreign}${clock}`;
+	const server =
+		scenario.cls !== 'Unteraufgaben'
+			? ''
+			: ` {blockiert: ${scenario.blocking.map(featureOfTicket).join(',') || '–'}${scenario.doneBefore ? ', vorher erledigt' : ''}, fremd: ${scenario.foreignStatus}}`;
+	return `${scenario.cls}: ${steps}${late}${server} ⇒ ${scenario.answer}${foreign}${clock}`;
 }
 
 /** How many of the possible runs of each length the drawn ones of the base class cover. */
