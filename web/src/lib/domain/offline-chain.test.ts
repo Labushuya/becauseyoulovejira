@@ -1,16 +1,15 @@
-// Pure rules of the chains after "Verwerfen" (OF-3b, ADR-0074 addendum OF-3b): what the user wants of
-// a value (`targetOf`, `intentOf`), the take-backs a chain needs (`settleChains`), what passes on when
-// an action goes (`leaveChain`, `fallback`), the end of a discarded one after 48 hours
-// (`coveredAtExpiry`), the format of the new fields and "Trotzdem wieder öffnen".
+// Pure rules of the chains after "Verwerfen" (OF-3b, ADR-0074 addendum OF-3b with round 2): what the
+// user wants of a value (`targetOf`, `intentOf`), the take-backs a chain needs (`settleChains`), what
+// passes on when an action goes (`leaveChain`, `fallback`), the end of a discarded one after 48 hours
+// (`coveredAtExpiry`), "Rückgängig" once it went (`wishAgain`), a sub-task with a change of its own,
+// the format of the new fields and "Trotzdem wieder öffnen".
 
 import { describe, expect, it } from 'vitest';
 import {
 	coveredAtExpiry,
-	inverseOf,
 	leaveChain,
-	restoreAs,
 	settleChains,
-	takenBackBy,
+	wishAgain,
 	type ChainContext
 } from './offline-chain';
 import {
@@ -22,6 +21,7 @@ import {
 	reopenInstead,
 	statusFeature,
 	targetOf,
+	unknownChildren,
 	writesOf,
 	type DayPlanAction,
 	type KeptAction,
@@ -162,13 +162,13 @@ describe('the take-backs of a chain (OF-3b)', () => {
 	it('adjusts or drops a take-back that never left the device, and goes behind one that did', () => {
 		const settled = settleChains([status(kept)], context());
 		const back = settled.at(-1) as KeptAction;
-		expect(takenBackBy(settled, back).map((action) => action.op)).toEqual([FIRST]);
+		expect(back).toMatchObject({ undoes: FIRST, payload: { status: 'open' } });
 		// Kept again: the take-back that never left the device goes.
 		const again = status({ sent: true, unanswered: true });
 		const restored = settleChains([again, back], context());
 		expect(restored.map((action) => action.op)).toEqual([FIRST]);
-		// One that left the device, after the first one went, stays; discarded in turn ("Rückgängig"),
-		// it gets another one behind it.
+		// One that left the device, after the first one went, stays; a discarded one of an older build
+		// gets another one behind it (round 2: nothing discards a take-back any more).
 		const later = settleChains([{ ...back, ...kept }], context());
 		expect(later.map((action) => action.payload)).toEqual([{ status: 'open' }, { status: 'done' }]);
 		expect(later[1]).toMatchObject({ undoes: back.op, expected: { status: 'open' } });
@@ -209,25 +209,76 @@ describe('an action that goes (OF-3b)', () => {
 		expect(left[0]).not.toHaveProperty('fallback');
 	});
 
-	it('comes back as a take-back of "Verwerfen" on "Rückgängig", based on what the user wanted before', () => {
+	it('comes back as a normal change at the end of the chain on "Rückgängig", based on where it ends (round 2)', () => {
 		const original = status({ ...kept, fallback: { status: 'waiting' } });
-		const restored = restoreAs([], original, { op: SECOND, seq: 5, now: NOW });
-		expect(restored).toMatchObject({ op: SECOND, undoes: FIRST, expected: { status: 'waiting' } });
-		expect(restored).not.toHaveProperty('discarded');
+		// Nothing left of the chain: based on what the user wanted before it.
+		const [again] = wishAgain([], original, context()) ?? [];
+		expect(again).toMatchObject({ payload: { status: 'done' }, expected: { status: 'waiting' } });
+		expect(again).not.toHaveProperty('undoes');
+		expect(again).not.toHaveProperty('discarded');
+		// Its take-back was sent: the change comes behind it, based on its wish.
 		const takeBack = behind({
 			undoes: FIRST,
+			sent: true,
 			payload: { status: 'open' },
 			expected: { status: 'done' }
 		});
-		const turned = inverseOf(takeBack, { op: 'cccccccccccccccccccc', seq: 9, now: NOW });
-		expect(turned).toMatchObject({ payload: { status: 'done' }, expected: { status: 'open' } });
-		expect(turned.undoes).toBe(SECOND);
+		const behindIt = wishAgain([takeBack], original, context()) ?? [];
+		expect(behindIt.map((action) => action.op)).toEqual([SECOND, 'bbbbbbbbbbbbbbbbbbb1']);
+		expect(behindIt[1]).toMatchObject({ dependsOn: [SECOND], expected: { status: 'open' } });
+		// Its take-back met a conflict: it goes, and the change shows the change of someone else.
+		const conflict = { ...takeBack, state: 'conflict' as const };
+		const instead = wishAgain([conflict], original, context()) ?? [];
+		expect(instead).toMatchObject([{ payload: { status: 'done' }, expected: { status: 'done' } }]);
+		// A later change the user keeps sets the value: it keeps the wish should it go as well.
+		const later = behind({ seq: 3, payload: { status: 'waiting' }, expected: { status: 'open' } });
+		const passedOn = wishAgain([later], status(kept), context()) ?? [];
+		expect(passedOn).toMatchObject([{ op: SECOND, fallback: { status: 'done' } }]);
 	});
 
 	it('goes after 48 hours without being sent where its take-back holds whatever the server has', () => {
 		const discarded = status(kept);
 		expect(coveredAtExpiry(settleChains([discarded], context()), discarded)).toBe(true);
 		expect(coveredAtExpiry([discarded, behind()], discarded)).toBe(false);
+	});
+});
+
+describe('sub-tasks (OF-3b round 2)', () => {
+	const C = 'tick00000000003';
+	const completion = (overrides: Partial<OutboxAction> = {}) =>
+		status({
+			...kept,
+			completion: 'complete_children',
+			children: [C],
+			childrenBefore: ['open'],
+			...overrides
+		});
+
+	it('counts a change of a sub-task of its own for what the user wants of it (M-2)', () => {
+		const own = status({
+			op: SECOND,
+			seq: 2,
+			target: C,
+			payload: { status: 'in_progress' },
+			expected: { status: 'done' }
+		});
+		const settled = settleChains([completion(), own], context());
+		expect(settled.filter((action) => action.target === C).map((action) => action.op)).toEqual([
+			SECOND
+		]);
+		expect(settled.at(-1)).toMatchObject({ target: TICKET, payload: { status: 'open' } });
+		// Once the completion arrived, the change of the sub-task keeps what the user wants without it.
+		const left = leaveChain(settled, FIRST, { how: 'arrived' }, context());
+		expect(left.find((action) => action.op === SECOND)?.fallback).toEqual({ status: 'open' });
+	});
+
+	it('takes back no sub-task whose status before is unknown, and names it', () => {
+		const blind = completion({ children: [C, 'tick00000000004'], childrenBefore: ['open', null] });
+		const settled = settleChains([blind], context());
+		expect(settled.slice(1).map((action) => action.target)).toEqual([TICKET, C]);
+		expect(unknownChildren(blind)).toEqual(['tick00000000004']);
+		expect(unknownChildren(completion({ childrenBefore: undefined }))).toEqual([C]);
+		expect(parseAction(JSON.parse(JSON.stringify(blind)))).toEqual(blind);
 	});
 });
 

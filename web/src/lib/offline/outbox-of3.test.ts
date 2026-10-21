@@ -513,7 +513,9 @@ describe('"Verwerfen" of a change that may have arrived (OF-3, rest of OF-2b 2)'
 		h.send.mockRejectedValueOnce(new DataError('network'));
 		await h.outbox.changeStatus(ticket(A), { status: 'done' });
 		await settle();
-		h.send.mockRejectedValueOnce(new DataError('server', { status: 503 }));
+		// Since OF-3b round 2 (M-3) a 5xx keeps "may have arrived"; an answer after the lookup of the
+		// identifier (here a conflict) still says that nothing arrived unseen.
+		h.server.status.set(A, 'waiting');
 		await goOnline(h);
 		const answered = onlyAction(h);
 		expect(answered.unanswered).toBeUndefined();

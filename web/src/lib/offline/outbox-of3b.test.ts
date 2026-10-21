@@ -11,22 +11,32 @@
 // - M5: after 48 hours no button stays without an effect;
 // - M6: "Rückgängig" never skips a take-back that is under way;
 // - "Trotzdem erledigen" counts every compare-and-swap of the actions behind it.
+// Round 2 (after the review of OF-3b, each red against 2a5a52e unless noted in the log): a take-back
+// never expires (S1) and has no "Verwerfen" of its own (S2); H-1 a later change that expired keeps the
+// fallback; H-2c "Rückgängig" after "Verwerfen" at every point; M-2 a sub-task with a change of its
+// own; M-3 a 5xx keeps "may have arrived"; the low findings (unknown sub-tasks, start, storage after
+// three rounds, "Abmelden und verwerfen", the probe of `#pure`).
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DataError } from '$lib/data/errors';
-import { AUTO_SEND_MS, canReopenAnyway, type KeptAction } from '$lib/domain/offline';
+import { AUTO_SEND_MS, OFFLINE_TEXTS, canReopenAnyway, type KeptAction } from '$lib/domain/offline';
 import {
 	A,
 	ALL_OPS,
+	HeldStorage,
 	NOW,
+	STORAGE_FAILED,
+	STORED_OP,
 	entry,
 	goOffline,
 	goOnline,
 	harness,
 	settle,
+	stored,
 	ticket,
 	type Harness
 } from '$lib/test/outbox-fake';
+import { MemoryOutboxStorage } from './outbox-storage';
 
 const ITEM = 'item00000000001';
 const C = 'tick00000000003';
@@ -244,34 +254,29 @@ describe('taking back a completion on a day gone by (M4)', () => {
 });
 
 describe('after 48 hours (M5)', () => {
-	it('leaves no discarded change waiting for a decision, and every button changes something', async () => {
+	it('leaves no discarded change waiting for a decision, and sends the take-back on its own (round 2, S1)', async () => {
 		const h = await ready();
 		const original = await lost(h, () => h.outbox.changeStatus(ticket(A), { status: 'done' }));
 		await h.outbox.discard(original.op);
 		vi.setSystemTime(NOW + AUTO_SEND_MS + 60_000);
 		await goOnline(h);
-		const expired = h.outbox.expired;
-		expect(h.outbox.actions.filter((action) => action.discarded === true)).toEqual([]);
-		expect(expired).toHaveLength(1);
-		expect(expired[0]?.undoes).toBe(original.op);
-		const before = JSON.stringify(h.outbox.actions);
-		await h.outbox.sendAnyway(expired[0]?.op ?? '');
-		await settle();
-		expect(JSON.stringify(h.outbox.actions)).not.toBe(before);
+		expect(h.outbox.expired).toEqual([]);
 		expect(h.server.status.get(A)).toBe('open');
 		expect(h.outbox.count).toBe(0);
 	});
 
-	it('turns the take-back around on "Verwerfen", so the change stays whatever the server has', async () => {
+	it('offers no "Verwerfen" of a take-back that waits; setting the value anew decides instead (round 2, S2)', async () => {
 		const h = await ready();
 		const original = await lost(h, () => h.outbox.changeStatus(ticket(A), { status: 'done' }));
 		await h.outbox.discard(original.op);
-		vi.setSystemTime(NOW + AUTO_SEND_MS + 60_000);
-		await goOnline(h);
-		const [takeBack] = h.outbox.expired;
-		await goOffline(h);
+		const takeBack = h.outbox.actions.find((action) => action.undoes === original.op);
+		const flags = h.flags.show.mock.calls.length;
+		const before = JSON.stringify(h.outbox.actions);
 		await h.outbox.discard(takeBack?.op ?? '');
-		expect(h.outbox.actions.map((action) => action.payload)).toEqual([{ status: 'done' }]);
+		expect(JSON.stringify(h.outbox.actions)).toBe(before);
+		expect(h.flags.show.mock.calls.length).toBe(flags);
+		await h.outbox.changeStatus(h.outbox.apply(ticket(A)), { status: 'done' });
+		expect(h.outbox.actions.some((action) => action.undoes !== undefined)).toBe(false);
 		await goOnline(h);
 		expect(h.server.status.get(A)).toBe('done');
 		expect(h.outbox.count).toBe(0);
@@ -295,6 +300,226 @@ describe('"Rückgängig" while the take-back is under way (M6)', () => {
 		await settle();
 		expect(h.server.status.get(A)).toBe('done');
 		expect(h.outbox.count).toBe(0);
+	});
+});
+
+/** The first request of `op` fails with `failure` before it reaches the server. */
+function failOnce(h: Harness, op: string, failure: DataError): void {
+	const base = h.send.getMockImplementation();
+	let failed = false;
+	h.send.mockImplementation(async (action, fields, signal) => {
+		if (!failed && fields.opId === op) {
+			failed = true;
+			throw failure;
+		}
+		if (base === undefined) throw new Error('no fake server');
+		return base(action, fields, signal);
+	});
+}
+
+describe('a later change that expired (round 2, H-1)', () => {
+	it('takes the discarded change that arrived back once the later one is discarded after 48 hours', async () => {
+		const h = await ready();
+		const first = await lost(h, () => h.outbox.changeStatus(ticket(A), { status: 'done' }));
+		await h.outbox.changeStatus(h.outbox.apply(ticket(A)), { status: 'in_progress' });
+		const later = h.outbox.actions.at(-1) as KeptAction;
+		await h.outbox.discard(first.op);
+		vi.setSystemTime(NOW + AUTO_SEND_MS + 60_000);
+		await goOnline(h);
+		expect(h.outbox.expired.map((action) => action.op)).toEqual([later.op]);
+		expect(h.server.status.get(A)).toBe('done');
+		await h.outbox.discard(later.op);
+		await settle();
+		expect(h.server.status.get(A)).toBe('open');
+		expect(h.outbox.count).toBe(0);
+	});
+});
+
+describe('"Rückgängig" after "Verwerfen" leads back to the wish (round 2, H-2c)', () => {
+	async function discarded(h: Harness) {
+		const original = await lost(h, () => h.outbox.changeStatus(ticket(A), { status: 'done' }));
+		await h.outbox.discard(original.op);
+		const takeBack = h.outbox.actions.find((action) => action.undoes === original.op);
+		return { original, takeBack: takeBack as KeptAction, undo: undoOf(h) };
+	}
+
+	it('(a) right after "Verwerfen"', async () => {
+		const h = await ready();
+		const { undo } = await discarded(h);
+		undo();
+		await settle();
+		await goOnline(h);
+		expect(h.server.status.get(A)).toBe('done');
+		expect(h.outbox.count).toBe(0);
+	});
+
+	it('(b) once the take-back was sent and got no answer', async () => {
+		const h = await ready();
+		const { takeBack, undo } = await discarded(h);
+		h.server.lose = 1;
+		await goOnline(h);
+		expect(find(h, takeBack.op)).toMatchObject({ sent: true, unanswered: true });
+		expect(h.server.status.get(A)).toBe('open');
+		await goOffline(h);
+		undo();
+		await settle();
+		await goOnline(h);
+		expect(h.server.status.get(A)).toBe('done');
+		expect(h.outbox.count).toBe(0);
+	});
+
+	it('(c) once the take-back arrived', async () => {
+		const h = await ready();
+		const { undo } = await discarded(h);
+		await goOnline(h);
+		expect(h.server.status.get(A)).toBe('open');
+		expect(h.outbox.count).toBe(0);
+		undo();
+		await settle();
+		expect(h.server.status.get(A)).toBe('done');
+		expect(h.outbox.count).toBe(0);
+	});
+
+	it('(d) after a 503 for the take-back', async () => {
+		const h = await ready();
+		const { takeBack, undo } = await discarded(h);
+		failOnce(h, takeBack.op, new DataError('server', { status: 503 }));
+		await goOnline(h);
+		expect(find(h, takeBack.op)).toMatchObject({ state: 'queued', attempts: 1 });
+		undo();
+		await settle();
+		await vi.advanceTimersByTimeAsync(3_000);
+		expect(h.server.status.get(A)).toBe('done');
+		expect(h.outbox.count).toBe(0);
+	});
+
+	it('(e) once the take-back met a conflict: the wish comes back and shows the conflict', async () => {
+		const h = await ready();
+		const { takeBack, undo } = await discarded(h);
+		h.server.status.set(A, 'waiting');
+		await goOnline(h);
+		expect(h.outbox.conflicts.map((action) => action.op)).toEqual([takeBack.op]);
+		undo();
+		await settle();
+		const [conflict] = h.outbox.conflicts;
+		expect(h.outbox.count).toBe(1);
+		expect(conflict).toMatchObject({ payload: { status: 'done' }, outcome: { actual: 'waiting' } });
+		expect(conflict?.undoes).toBeUndefined();
+		expect(h.server.status.get(A)).toBe('waiting');
+	});
+});
+
+describe('a sub-task with a change of its own (round 2, M-2)', () => {
+	it('takes the completion back without a conflict against the own change of the sub-task', async () => {
+		const h = await ready();
+		h.outbox.apply(ticket(C));
+		const completion = await lost(h, () =>
+			h.outbox.changeStatus(ticket(A), {
+				status: 'done',
+				completion: 'complete_children',
+				children: [C]
+			})
+		);
+		await h.outbox.changeStatus(h.outbox.apply(ticket(C)), { status: 'in_progress' });
+		await h.outbox.discard(completion.op);
+		await goOnline(h);
+		expect(h.server.status.get(A)).toBe('open');
+		expect(h.server.status.get(C)).toBe('in_progress');
+		expect(h.outbox.conflicts).toEqual([]);
+		expect(h.outbox.count).toBe(0);
+	});
+});
+
+describe('a 5xx after a request without an answer (round 2, M-3)', () => {
+	it('keeps "may have arrived", so "Verwerfen" takes the change back', async () => {
+		const h = await ready();
+		const original = await lost(h, () => h.outbox.changeStatus(ticket(A), { status: 'done' }));
+		failOnce(h, original.op, new DataError('server', { status: 503 }));
+		await goOnline(h);
+		expect(find(h, original.op)).toMatchObject({ attempts: 1, unanswered: true });
+		await goOffline(h);
+		await h.outbox.discard(original.op);
+		await goOnline(h);
+		await vi.advanceTimersByTimeAsync(3_000);
+		expect(h.server.status.get(A)).toBe('open');
+		expect(h.outbox.count).toBe(0);
+	});
+});
+
+describe('the low findings of the review (round 2)', () => {
+	it('takes back no sub-task whose status before is unknown and says so', async () => {
+		const h = await ready();
+		const completion = await lost(h, () =>
+			h.outbox.changeStatus(ticket(A), {
+				status: 'done',
+				completion: 'complete_children',
+				children: [C]
+			})
+		);
+		expect(completion).toMatchObject({ children: [C], childrenBefore: [null] });
+		await h.outbox.discard(completion.op);
+		expect(h.flags.show.mock.calls.at(-1)?.[0].description).toContain(
+			OFFLINE_TEXTS.childrenUnknown(1)
+		);
+		expect(h.outbox.actions.some((action) => action.target === C)).toBe(false);
+		await goOnline(h);
+		expect(h.server.status.get(A)).toBe('open');
+		expect(h.outbox.count).toBe(0);
+	});
+
+	it('shows the flag of the storage when the device cannot be read at the start', async () => {
+		const storage = new MemoryOutboxStorage();
+		vi.spyOn(storage, 'list').mockRejectedValue(new DOMException('kaputt', 'UnknownError'));
+		const h = harness({ storage, support: ALL_OPS });
+		await settle();
+		expect(h.outbox.armed).toBe(false);
+		expect(h.flags.show).toHaveBeenCalledWith(
+			expect.objectContaining({ tone: 'error', title: STORAGE_FAILED })
+		);
+	});
+
+	it('names the storage, not the connection, when a change cannot be kept after three rounds', async () => {
+		const h = await ready();
+		await goOffline(h);
+		vi.spyOn(h.storage, 'swap').mockResolvedValue(false);
+		await expect(h.outbox.changeStatus(ticket(A), { status: 'done' })).rejects.toMatchObject({
+			message: STORAGE_FAILED
+		});
+	});
+
+	it('lets "Abmelden und verwerfen" wait for a step that writes the device', async () => {
+		const storage = new HeldStorage();
+		const h = harness({ storage, support: ALL_OPS });
+		await settle();
+		await goOffline(h);
+		storage.holding = true;
+		const change = h.outbox.changeStatus(ticket(A), { status: 'done' });
+		await settle();
+		const clear = h.outbox.clearUser();
+		await settle();
+		storage.open();
+		await change;
+		await clear;
+		expect(storage.entries.size).toBe(0);
+		expect(h.outbox.count).toBe(0);
+	});
+
+	it('numbers only the actions it makes: the probe sorts like the real run', async () => {
+		// A change older than 48 hours whose request got no answer: "Verwerfen" lets it go where its
+		// take-back holds whatever the server has, with exactly one new action.
+		const storage = new MemoryOutboxStorage();
+		const old = NOW - AUTO_SEND_MS - 60_000;
+		await storage.put(stored({ sent: true, unanswered: true, createdAt: old }));
+		const h = harness({ storage, support: ALL_OPS });
+		await settle();
+		await goOffline(h);
+		expect(h.outbox.expired.map((action) => action.op)).toEqual([STORED_OP]);
+		const numbers = vi.spyOn(storage, 'nextSeq');
+		await h.outbox.discard(STORED_OP);
+		expect(numbers).toHaveBeenCalledTimes(1);
+		expect(h.outbox.actions).toMatchObject([
+			{ undoes: STORED_OP, payload: { status: 'open' }, expected: { status: 'done' } }
+		]);
 	});
 });
 
