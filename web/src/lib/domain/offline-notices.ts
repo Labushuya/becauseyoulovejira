@@ -11,7 +11,9 @@
 // - A later change of the user that sets the status of the sub-task decides instead (R3-4): while it
 //   is kept, the notice does not show (that change shows, waiting or with its decision); once it
 //   arrived, the notice goes in the same transaction. Should it go without effect ("Verwerfen"), the
-//   notice shows again: the user wants the sub-task done once more.
+//   notice shows again: the user wants the sub-task done once more. Since round 2 a take-back decides
+//   nothing unless it sets the sub-task done (C-1), and a later completion that takes the sub-task
+//   along settles the notice only once the sub-task is read done (C-5).
 // - What the device holds is taken as it is: an entry this build cannot read is neither shown nor
 //   changed (a newer build may have written it).
 
@@ -24,6 +26,7 @@ import {
 	isTakeBack,
 	parseChangeRef,
 	statusFeature,
+	ticketOf,
 	type ChangeRef,
 	type KeptAction
 } from './offline';
@@ -118,13 +121,16 @@ export function parseNotices(current: unknown): OfflineNotice[] {
 	return notices.sort((a, b) => a.at - b.at);
 }
 
-/** Whether two notices say the same: one entry per action, one notice per sub-task and ticket. */
+/**
+ * Whether two notices say the same: one entry per action, one notice per sub-task (its ID, round 2,
+ * C-4: two sub-tasks without a key are two) and ticket.
+ */
 function sameNotice(a: OfflineNotice, b: OfflineNotice): boolean {
 	if (a.id === b.id) return true;
 	return (
 		a.kind === 'childNotDone' &&
 		b.kind === 'childNotDone' &&
-		a.key === b.key &&
+		a.child === b.child &&
 		a.parent === b.parent
 	);
 }
@@ -228,23 +234,41 @@ export function childNotice(
 
 /**
  * Whether `action` decides about the sub-task of a notice instead (OF-3c, R3-4): a change of the user
- * after the completion in their order, kept by them, that sets the status of the sub-task.
+ * after the completion in their order, kept by them, that sets the status of the sub-task. A take-back
+ * only carries out "Verwerfen" and decides nothing, unless it sets the sub-task done (round 2, C-1).
  */
 export function decidesInstead(notice: OfflineNotice, action: KeptAction): boolean {
-	return (
-		notice.kind === 'childNotDone' &&
-		action.seq > notice.after &&
-		action.discarded !== true &&
-		intentOf(action).has(statusFeature(notice.child))
-	);
+	if (notice.kind !== 'childNotDone' || action.seq <= notice.after) return false;
+	if (action.discarded === true) return false;
+	const wish = intentOf(action).get(statusFeature(notice.child));
+	if (wish === undefined) return false;
+	return !isTakeBack(action) || wish === 'done';
 }
 
-/** The notices as stored without those the arrived `action` decided instead; null for none. */
-export function withoutDecided(current: unknown, action: KeptAction): unknown[] | null {
+/**
+ * Whether the arrived `action` settled a notice it decides instead: a change of the sub-task itself,
+ * whose answer says what it is; a completion that takes it along only where the sub-task is read done
+ * afterwards (`done`, round 2, C-5): on a stale state it makes no step to "done" and completes nothing.
+ */
+export function settledBy(
+	notice: OfflineNotice,
+	action: KeptAction,
+	done: readonly string[] = []
+): boolean {
+	if (notice.kind !== 'childNotDone' || !decidesInstead(notice, action)) return false;
+	return ticketOf(action) === notice.child || done.includes(notice.child);
+}
+
+/** The notices as stored without those the arrived `action` settled (`settledBy`); null for none. */
+export function withoutDecided(
+	current: unknown,
+	action: KeptAction,
+	done: readonly string[] = []
+): unknown[] | null {
 	const list = listOf(current);
 	const kept = list.filter((raw) => {
 		const notice = parseNotice(raw);
-		return notice === null || !decidesInstead(notice, action);
+		return notice === null || !settledBy(notice, action, done);
 	});
 	return kept.length === list.length ? null : kept;
 }

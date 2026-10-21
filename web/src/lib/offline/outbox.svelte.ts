@@ -115,6 +115,7 @@ import {
 	droppedEntries,
 	noticeText,
 	parseNotices,
+	settledBy,
 	withDropped,
 	withNotices,
 	withoutDecided,
@@ -312,6 +313,16 @@ type Resolution =
 	| { kind: 'gone' };
 
 /**
+ * The change of the notices that goes with the deletion of an action (OF-3c): `device` on the notices
+ * as stored, in the same transaction; `unsaved` on those the storage failed to keep, which only this
+ * tab shows (round 2, C-6).
+ */
+interface Noting {
+	device: (current: unknown) => unknown[] | null;
+	unsaved?: (notices: readonly OfflineNotice[]) => readonly OfflineNotice[];
+}
+
+/**
  * A plan of a change of the device: the actions as they should be, the one that goes last, and per
  * action that goes the change of the notices written in the same transaction (OF-3c).
  */
@@ -319,7 +330,7 @@ interface Planned<R> {
 	after: readonly KeptAction[];
 	last?: string;
 	result: R;
-	noted?: ReadonlyMap<string, (current: unknown) => unknown[] | null>;
+	noted?: ReadonlyMap<string, Noting>;
 }
 
 /** What "Verwerfen" did, for its flag and its "Rückgängig" (OF-3b). */
@@ -379,12 +390,20 @@ export class OutboxStore {
 	/** Notices closed here whose deletion on the device is under way: a read meanwhile keeps them out. */
 	readonly #closing = new SvelteSet<string>();
 	/**
+	 * Arrived completions whose sub-tasks this tab reads again (round 2, C-5): until the reading decided
+	 * about a notice they decide instead, it stays hidden here as while they were kept.
+	 */
+	#reading = $state.raw<readonly KeptAction[]>([]);
+	/**
 	 * The notices in words, made when they show (OF-3c); not one about a sub-task while a later change
 	 * of the user decides about it (R3-4: that change shows instead).
 	 */
 	readonly #shownNotices = $derived(
 		[...this.#notices, ...this.#unsaved]
-			.filter((notice) => !this.#actions.some((action) => decidesInstead(notice, action)))
+			.filter(
+				(notice) =>
+					![...this.#actions, ...this.#reading].some((action) => decidesInstead(notice, action))
+			)
 			.map((notice) => ({ id: notice.id, text: noticeText(notice) }))
 	);
 
@@ -673,6 +692,7 @@ export class OutboxStore {
 		this.#notices = [];
 		this.#unsaved = [];
 		this.#closing.clear();
+		this.#reading = [];
 		this.#failing = null;
 		this.#update();
 	}
@@ -1234,6 +1254,12 @@ export class OutboxStore {
 			this.#report(error);
 			return null;
 		});
+		if (resolution?.kind === 'arrived') {
+			// A notice the completion decides goes only once its sub-task is read done (round 2, C-5);
+			// the answer goes to the view meanwhile, as today.
+			const arrived = resolution.action;
+			void this.#guard(OFFLINE_INTENTS.keepNotice, () => this.#checkChildren(arrived, true));
+		}
 		if (result.ok) {
 			this.#runner?.kick();
 			return result.value;
@@ -1327,18 +1353,29 @@ export class OutboxStore {
 
 	/**
 	 * Deletes `before` like `#swap` and changes the notices of its account in the same transaction
-	 * (OF-3c): the other tabs hear of both at once.
+	 * (OF-3c): the other tabs hear of both at once. This tab shows the notices as that transaction left
+	 * them, and those only it shows (`#unsaved`) changed alike, before the action goes (round 2, C-2 and
+	 * C-6): a notice the action decided never shows for a moment.
 	 */
-	async #dropNoting(
-		before: KeptAction,
-		note: (current: unknown) => unknown[] | null
-	): Promise<boolean> {
+	async #dropNoting(before: KeptAction, noting: Noting): Promise<boolean> {
 		const storage = this.#storage;
 		if (storage === null) throw new DataError('network');
 		const matches = (current: unknown) => sameAction(current, before);
+		const written = { done: false, notices: undefined as unknown };
+		const note = (current: unknown) => {
+			const next = noting.device(current);
+			written.done = true;
+			written.notices = next === null ? current : next;
+			return next;
+		};
 		const wrote = await storage.swapNoting(before.op, matches, null, before.user, note);
-		if (wrote) this.#gone([before.op]);
-		return wrote;
+		if (!wrote) return false;
+		if (before.user === this.#user) {
+			if (written.done) this.#showNotices(written.notices);
+			if (noting.unsaved !== undefined) this.#unsaved = noting.unsaved(this.#unsaved);
+		}
+		this.#gone([before.op]);
+		return true;
 	}
 
 	/**
@@ -1376,7 +1413,7 @@ export class OutboxStore {
 		before: readonly KeptAction[],
 		after: readonly KeptAction[],
 		last?: string,
-		noted?: ReadonlyMap<string, (current: unknown) => unknown[] | null>
+		noted?: ReadonlyMap<string, Noting>
 	): Promise<boolean> {
 		const known = (op: string) => before.find((action) => action.op === op);
 		for (const action of after) {
@@ -1519,10 +1556,10 @@ export class OutboxStore {
 			const first = entries[0];
 			if (first === undefined) return { after, result: true };
 			const notice = (run.head ??= { id: `dropped-${first.op}`, at: now });
-			const noted = new SvelteMap(
+			const noted = new SvelteMap<string, Noting>(
 				entries.map((entry) => [
 					entry.op,
-					(current: unknown) => withDropped(current, notice, entry)
+					{ device: (current: unknown) => withDropped(current, notice, entry) }
 				])
 			);
 			return { after, result: true, noted };
@@ -1585,12 +1622,15 @@ export class OutboxStore {
 			case 'arrived':
 				this.#sentInRun += 1;
 				this.#failing = null;
-				if (resolution.value !== null) await this.#arrived(resolution.action, resolution.value);
-				else {
-					await this.#reread(ticketOf(resolution.action));
-					if (isDayPlanAction(resolution.action)) this.#notifyChecks(null);
+				try {
+					if (resolution.value !== null) await this.#arrived(resolution.action, resolution.value);
+					else {
+						await this.#reread(ticketOf(resolution.action));
+						if (isDayPlanAction(resolution.action)) this.#notifyChecks(null);
+					}
+				} finally {
+					await this.#checkChildren(resolution.action);
 				}
-				await this.#checkChildren(resolution.action);
 				return true;
 			case 'kept':
 				void this.#connectivity.check();
@@ -1635,13 +1675,23 @@ export class OutboxStore {
 		const user = this.#user;
 		if (storage === null || user === null) return { kind: 'gone' };
 		await this.#read(storage, user, false);
-		const resolution = await this.#transform((before) =>
-			this.#resolution(before, sent.op, result, first, now)
-		);
-		// An arrival may have taken a notice along: this tab shows them as the device holds them now.
-		if (resolution?.kind === 'arrived' && this.#notices.length > 0) {
-			await this.#readNotices(storage, user);
+		// A completion that takes sub-tasks along keeps the notices it decides hidden until its
+		// sub-tasks are read (`#checkChildren`, round 2, C-5); only an arrival reads them.
+		const fresh = this.#actions.find((action) => action.op === sent.op);
+		const arrives = result.ok || verdictOf(result.failure).result === 'arrived';
+		const reading =
+			fresh !== undefined && arrives && childrenAlong(fresh).length > 0 ? fresh : null;
+		if (reading !== null) this.#reading = [...this.#reading, reading];
+		let resolution: Resolution | null = null;
+		try {
+			resolution = await this.#transform((before) =>
+				this.#resolution(before, sent.op, result, first, now)
+			);
+		} finally {
+			if (reading !== null && resolution?.kind !== 'arrived') this.#unread(reading.op);
 		}
+		// An arrival that took a notice along shows the notices as its transaction left them already
+		// (`#dropNoting`, round 2, C-2).
 		return resolution ?? { kind: 'gone' };
 	}
 
@@ -1659,8 +1709,17 @@ export class OutboxStore {
 			this.#pure((context) => settleChains(actions, context));
 		const leave = (how: Leave) =>
 			this.#pure((context) => settleChains(leaveChain(before, op, how, context), context));
-		// Arrived: the notices about a sub-task it decided instead go with it, in one transaction (R3-4).
-		const retire = new SvelteMap([[op, (current: unknown) => withoutDecided(current, fresh)]]);
+		// Arrived: the notices about a sub-task it settled go with it, in one transaction (R3-4), and so do
+		// those the storage failed to keep (round 2, C-6). One it takes along waits for the reading.
+		const retire = new SvelteMap<string, Noting>([
+			[
+				op,
+				{
+					device: (current: unknown) => withoutDecided(current, fresh),
+					unsaved: (notices) => notices.filter((notice) => !settledBy(notice, fresh))
+				}
+			]
+		]);
 		if (result.ok) {
 			const after = await leave({ how: 'arrived' });
 			const arrived = { kind: 'arrived', action: fresh, value: result.value } as const;
@@ -1761,18 +1820,66 @@ export class OutboxStore {
 	 * keeps should have taken it along shows as a notice that stays; nothing is sent on its own (round
 	 * 3, R2-1). A discarded completion is not what the user wants and names none. Since OF-3c the notice
 	 * is kept on the device; while a later change of the user sets the status of the sub-task, that
-	 * change decides and the notice does not show (R3-4, `decidesInstead`).
+	 * change decides and the notice does not show (R3-4, `decidesInstead`). Since round 2 (C-5) a notice
+	 * such a completion decides goes only for a sub-task read done; at the first attempt (`first`) only
+	 * the sub-tasks of such a notice are read, and nothing new is named, as before.
 	 */
-	async #checkChildren(action: KeptAction): Promise<void> {
-		const children = childrenAlong(action);
-		if (children.length === 0) return;
-		const read = await Promise.all(children.map((child) => this.#reread(child)));
-		if (action.discarded === true || action.user !== this.#user) return;
-		const at = this.#now();
-		const notices = read.flatMap((ticket) =>
-			ticket === null || ticket.status === 'done' ? [] : [childNotice(action, ticket, at)]
-		);
-		await this.#keepNotices(notices);
+	async #checkChildren(action: KeptAction, first = false): Promise<void> {
+		try {
+			const shown = [...this.#notices, ...this.#unsaved];
+			const asked = (child: string) =>
+				shown.some(
+					(notice) =>
+						notice.kind === 'childNotDone' &&
+						notice.child === child &&
+						decidesInstead(notice, action)
+				);
+			const children = childrenAlong(action).filter((child) => !first || asked(child));
+			if (children.length === 0) return;
+			const read = await Promise.all(children.map((child) => this.#reread(child)));
+			if (action.discarded === true || action.user !== this.#user) return;
+			const done = read.flatMap((ticket) => (ticket?.status === 'done' ? [ticket.id] : []));
+			await this.#retireAlong(action, done);
+			if (first) return;
+			const at = this.#now();
+			const notices = read.flatMap((ticket) =>
+				ticket === null || ticket.status === 'done' ? [] : [childNotice(action, ticket, at)]
+			);
+			await this.#keepNotices(notices);
+		} finally {
+			this.#unread(action.op);
+		}
+	}
+
+	/** The reading of the sub-tasks of an arrived completion is over (round 2, C-5). */
+	#unread(op: string): void {
+		if (this.#reading.some((action) => action.op === op)) {
+			this.#reading = this.#reading.filter((action) => action.op !== op);
+		}
+	}
+
+	/**
+	 * The notices an arrived completion decides that name a sub-task read done (`done`, round 2, C-5):
+	 * they go on the device in one transaction against what is stored, and from those only this tab
+	 * shows. A failing storage shows its flag; the notice then stays.
+	 */
+	async #retireAlong(action: KeptAction, done: readonly string[]): Promise<void> {
+		if (done.length === 0) return;
+		this.#unsaved = this.#unsaved.filter((notice) => !settledBy(notice, action, done));
+		const storage = this.#storage;
+		const user = this.#user;
+		if (storage === null || user === null) return;
+		try {
+			const stored = await withIntent(OFFLINE_INTENTS.keepNotice, () =>
+				this.#locked(() =>
+					storage.notices(user, (current) => withoutDecided(current, action, done))
+				)
+			);
+			this.#post();
+			if (this.#user === user) this.#showNotices(stored);
+		} catch (error) {
+			this.#report(error);
+		}
 	}
 
 	#settled(): void {

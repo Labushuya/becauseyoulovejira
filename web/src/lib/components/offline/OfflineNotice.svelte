@@ -15,7 +15,8 @@
 	// Since OF-3b round 3 the notices of the outbox stand here as warnings until "Schließen": what the
 	// deletion after 7 days took, a sub-task a completion should have taken along that is not done.
 	// Since OF-3c they come from the device, in every tab; after "Schließen" the focus goes to the next
-	// "Schließen", else to the region (`tabindex="-1"`), never to the page (R3-3).
+	// "Schließen", else to the region (`tabindex="-1"`), never to the page (R3-3); where the region goes
+	// with the last notice, to the heading of the view or the main content (round 2, C-3).
 	let { outbox, onshow }: { outbox: OutboxStore; onshow: () => void } = $props();
 
 	const uid = $props.id();
@@ -71,15 +72,22 @@
 		return [...(region?.querySelectorAll<HTMLButtonElement>('button[data-closes]') ?? [])];
 	}
 
-	/** "Schließen": the notice goes, the focus moves to the next "Schließen" or to the region. */
+	/**
+	 * "Schließen": the notice goes, the focus moves to the next "Schließen" or to the region. Where the
+	 * region goes with the last notice (the layout shows it outside the phone frame only for the notices),
+	 * to the heading of the view (`data-view-heading`), else to the main content (round 2, C-3).
+	 */
 	async function close(id: string) {
 		const buttons = closeButtons();
 		const index = buttons.findIndex((button) => button.dataset.closes === id);
 		const next = (buttons[index + 1] ?? buttons[index - 1])?.dataset.closes;
+		const main = region?.closest<HTMLElement>('main') ?? null;
 		const closing = outbox.closeNotice(id);
 		await tick();
 		const target = closeButtons().find((button) => button.dataset.closes === next);
-		(target ?? region)?.focus();
+		if (target !== undefined) target.focus();
+		else if (region?.isConnected === true) region.focus();
+		else (document.querySelector<HTMLElement>('[data-view-heading]') ?? main)?.focus();
 		await closing;
 	}
 </script>
