@@ -28,6 +28,7 @@ import {
 	goOffline,
 	goOnline,
 	harness,
+	refusal,
 	settle,
 	ticket,
 	type Harness
@@ -485,7 +486,8 @@ describe('"Verwerfen" of a change that may have arrived (OF-3, rest of OF-2b 2)'
 		const h = await ready();
 		const original = await lostAnswer(h);
 		await h.outbox.discard(original.op);
-		h.send.mockRejectedValueOnce(new DataError('forbidden', { status: 403 }));
+		// A refusal after the identifier was looked up (OF-3b: 403 and 404 come before it and show).
+		h.send.mockRejectedValueOnce(refusal('status', 'validation_recurrence_open_instance'));
 		await goOnline(h);
 		expect(h.outbox.count).toBe(0);
 		expect(h.outbox.refusals).toHaveLength(0);

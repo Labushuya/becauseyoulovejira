@@ -443,3 +443,72 @@ describe('OutboxDialog', () => {
 		expect(outbox.count).toBe(0);
 	});
 });
+
+describe('OutboxDialog (OF-3b)', () => {
+	const href = (id: string) => `/tickets/${id}` as never;
+
+	function dialog() {
+		return screen.getByRole('dialog', { name: 'Gemerkte Änderungen' });
+	}
+
+	it('asks whether to open the ticket again when taking back a completion was refused for a day gone by (M4)', async () => {
+		const back = check({
+			kind: 'dayplan.uncheck',
+			payload: { action: 'complete', status: 'open' },
+			expected: { doneToday: false, status: 'done' },
+			state: 'refused',
+			outcome: DAY_OVER
+		});
+		const outbox = await outboxWith([back]);
+		render(OutboxDialog, { props: { outbox, onclose: vi.fn(), ticketHref: href } });
+		expect(dialog().textContent).toContain('HAUS-12 im Tagesplan wieder offen');
+		expect(dialog().textContent).toContain('Der Tag ist vorbei. HAUS-12 trotzdem wieder öffnen?');
+		const buttons = within(dialog());
+		expect(buttons.getByRole('button', { name: 'Verwerfen' })).toBeTruthy();
+		await fireEvent.click(buttons.getByRole('button', { name: 'Trotzdem wieder öffnen' }));
+		await vi.advanceTimersByTimeAsync(0);
+		expect(outbox.actions).toMatchObject([
+			{ kind: 'ticket.update', target: 'tick00000000001', payload: { status: 'open' } }
+		]);
+	});
+
+	it('says that a discarded change refused with 404 may have arrived, and lets it go on "Verwerfen" (M2)', async () => {
+		const gone: ActionOutcome = { code: 'not_found', message: 'Nicht gefunden.' };
+		const refused = stored({
+			sent: true,
+			unanswered: true,
+			discarded: true,
+			state: 'refused',
+			outcome: gone
+		});
+		const outbox = await outboxWith([refused]);
+		render(OutboxDialog, { props: { outbox, onclose: vi.fn(), ticketHref: href } });
+		const [first] = within(dialog()).getAllByRole('listitem');
+		expect(first?.textContent).toContain('Nicht gefunden.');
+		expect(first?.textContent).toContain(
+			'Die Änderung ist vielleicht schon angekommen und ließ sich nicht zurücknehmen. Bitte im Ticket prüfen.'
+		);
+		await fireEvent.click(within(first as HTMLElement).getByRole('button', { name: 'Verwerfen' }));
+		await vi.advanceTimersByTimeAsync(0);
+		expect(outbox.count).toBe(0);
+	});
+
+	it('names a discarded change whose value a later change sets without saying it is taken back', async () => {
+		const original = stored({ sent: true, unanswered: true, discarded: true });
+		const later = stored({
+			op: 'zzzzzzzzzzzzzzzzzzz2',
+			seq: 2,
+			dependsOn: [original.op],
+			payload: { status: 'in_progress' },
+			expected: { status: 'done' }
+		});
+		const outbox = await outboxWith([original, later]);
+		render(OutboxDialog, { props: { outbox, onclose: vi.fn(), ticketHref: href } });
+		const [first, second] = within(dialog()).getAllByRole('listitem');
+		expect(first?.textContent).toContain(
+			'offline um 14:03 · verworfen, es gilt die spätere Änderung'
+		);
+		expect(first?.textContent).not.toContain('wird zurückgenommen');
+		expect(second?.textContent).toContain('HAUS-12 auf „In Arbeit“');
+	});
+});

@@ -8,6 +8,7 @@
 		OPEN_CHILDREN_CODE,
 		actionText,
 		canCompleteAnyway,
+		canReopenAnyway,
 		deviceTimeText,
 		dueOfServer,
 		isBroken,
@@ -36,9 +37,11 @@
 	// marks of the day plan: a check mark of a day gone by asks "… trotzdem erledigen?" for a task and
 	// lapses otherwise, a changed check mark is refused; a change taken back after it may have arrived
 	// says that it is taken back once there is a connection, its counter action stands as "Rücknahme".
-	// The buttons run steps of the outbox that never reject; a failing storage shows its own flag
-	// (OF-2b). It opens only through "Ansehen" or the symbol in the top bar, never on its own
-	// (ADR-0025).
+	// Since OF-3b a discarded change says so only while a take-back stands behind it, else that a
+	// later change sets the value; one the server refused with 403 or 404 says that it may have
+	// arrived; taking back a completion on a day gone by asks "… trotzdem wieder öffnen?". The buttons
+	// run steps of the outbox that never reject; a failing storage shows its own flag (OF-2b). It opens
+	// only through "Ansehen" or the symbol in the top bar, never on its own (ADR-0025).
 	let {
 		outbox,
 		onclose,
@@ -87,7 +90,11 @@
 
 	function stateText(action: KeptAction): string {
 		if (!isWaiting(action)) return OFFLINE_TEXTS.markDecision;
-		if (action.discarded === true) return OFFLINE_TEXTS.takingBack;
+		if (action.discarded === true) {
+			// Taken back only where a take-back stands behind it (OF-3b); else a later change decides.
+			const takenBack = actions.some((other) => other.undoes === action.op);
+			return takenBack ? OFFLINE_TEXTS.takingBack : OFFLINE_TEXTS.discardedLater;
+		}
 		if (action.state === 'sending') return OFFLINE_TEXTS.underway;
 		const blocker = actions.find(
 			(other) => action.dependsOn.includes(other.op) && needsDecision(other)
@@ -204,9 +211,12 @@
 							{@render discard(action)}
 						</div>
 					{:else if dayOver(action)}
-						<!-- A day gone by (decision of the user 3): a task may still be completed. -->
+						<!-- A day gone by (decision of the user 3): a task may still be completed, and taking a
+						     completion back may still open the ticket again (OF-3b). -->
 						{#if canCompleteAnyway(action)}
 							<p class="detail">{OFFLINE_TEXTS.dayOverDone(action.key || 'Ticket')}</p>
+						{:else if canReopenAnyway(action)}
+							<p class="detail">{OFFLINE_TEXTS.dayOverReopen(action.key || 'Ticket')}</p>
 						{:else}
 							<p class="detail">{OFFLINE_TEXTS.dayOverLapsed}</p>
 						{/if}
@@ -220,12 +230,24 @@
 								>
 									{OFFLINE_TEXTS.force}
 								</button>
+							{:else if canReopenAnyway(action)}
+								<button
+									class="button-primary button-small"
+									type="button"
+									onclick={() => void outbox.reopenAnyway(action.op)}
+								>
+									{OFFLINE_TEXTS.reopenAnyway}
+								</button>
 							{/if}
 							{@render discard(action)}
 						</div>
 					{:else if action.state === 'refused'}
 						{#if !isBroken(action)}
 							<p class="detail">{reasonOf(action)}</p>
+						{/if}
+						{#if action.discarded === true}
+							<!-- Refused with 403 or 404 after "Verwerfen" (OF-3b): it may stay in effect. -->
+							<p class="detail">{OFFLINE_TEXTS.refusedMaybeArrived}</p>
 						{/if}
 						<ProblemDetails problem={outbox.problemOf(action.op)} />
 						<div class="buttons">

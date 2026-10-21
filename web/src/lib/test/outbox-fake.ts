@@ -1,9 +1,11 @@
-// Test scaffold of the outbox (OF-2b, extended in OF-3), shared by offline/outbox-corrections.test.ts
-// and offline/outbox-of3.test.ts: a fake server that takes a change, can lose an answer and answers a
+// Test scaffold of the outbox (OF-2b, extended in OF-3 and OF-3b), shared by
+// offline/outbox-corrections.test.ts, offline/outbox-of3.test.ts, offline/outbox-of3b.test.ts and
+// offline/outbox-matrix.test.ts: a fake server that takes a change, can lose an answer and answers a
 // known identifier like `answerReplay` (the record as it is now, without comparing the content), a
 // conflict when the stored value is neither the expected nor the desired one (`conflictsOf`); since
-// OF-3 also the due date and the check marks of the day plan (`dayOver`: the day of the plan is over).
-// A storage whose writes finish on command, one that fails on command, and the harness of an outbox.
+// OF-3 also the due date and the check marks of the day plan (`dayOver`: the day of the plan is over),
+// since OF-3b the sub-tasks "Unteraufgaben mit erledigen" takes along. A storage whose writes finish
+// on command, one that fails on command, and the harness of an outbox.
 
 import { expect, vi } from 'vitest';
 import type { DayPlanItem } from '$lib/data/day-plan';
@@ -203,6 +205,10 @@ export function fakeServer() {
 			});
 		}
 		server.status.set(action.target, action.payload.status);
+		// "Unteraufgaben mit erledigen" completes the sub-tasks in the same save (OF-3b, M3).
+		if (action.payload.status === 'done' && action.completion === 'complete_children') {
+			for (const child of action.children ?? []) server.status.set(child, 'done');
+		}
 		server.applied.add(fields.opId);
 		lost();
 		return current(action.target);

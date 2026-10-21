@@ -1,0 +1,464 @@
+// The chains of the outbox and "Verwerfen" (OF-3b, ADR-0074 addendum OF-3b). Pure: the store passes
+// the actions of the device and a source of new identifiers, and writes what comes back with one
+// compare-and-swap per action.
+//
+// - A chain is the status of a ticket with the check marks of its entries, or its due date (OF-3). A
+//   take-back of a sub-task belongs to the chain of the completion it takes back while that waits.
+// - For every value of a chain the user wants the wish of the last change they keep, else the value
+//   before the chain (I1). Where the chain would end on another value, a take-back stands at its end.
+//   `settleChains` decides the take-backs anew at every change of the device: one that never left the
+//   device is adjusted or goes, one that left it stays and gets another one behind it where needed.
+//   The values before of the actions that never left the device follow from the ones before them.
+// - `leaveChain` lets an action go: arrived, changed nothing (a refusal or a conflict of a discarded
+//   one), or decided by the user. The next action that names a value is based on what the server has
+//   then and keeps what the user wants of it (`fallback`); without one a take-back carries it.
+
+import type { CalendarDate } from './berlin-date';
+import {
+	chainBaseOf,
+	changesSomething,
+	counterOf,
+	expectedOf,
+	fallbackOf,
+	inOrder,
+	intentOf,
+	isDayPlanAction,
+	isDerived,
+	isDueAction,
+	isFree,
+	isTakeBack,
+	mayHaveArrived,
+	priorOf,
+	rebasedBehind,
+	stateBefore,
+	ticketOf,
+	valuesOfState,
+	withExpected,
+	withFallback,
+	writesOf,
+	type Feature,
+	type FeatureValue,
+	type KeptAction,
+	type ServerState
+} from './offline';
+import type { Status } from './status';
+
+/** A new identifier, number of the order and time for an action the outbox makes itself. */
+export interface Fresh {
+	op: string;
+	seq: number;
+	now: number;
+}
+
+export interface ChainContext {
+	fresh: () => Fresh;
+	/** The key of a sub-task for its take-back (no title: no content of it), null when unknown. */
+	label?: (ticket: string) => string | null;
+}
+
+/** How an action leaves its chain. */
+export type Leave =
+	{ how: 'arrived' } | { how: 'nothing' } | { how: 'decided'; state: ServerState };
+
+/** A request of the action may be on its way or have arrived: under way, or without an answer. */
+export function mayBeThere(action: KeptAction): boolean {
+	return action.state === 'sending' || mayHaveArrived(action);
+}
+
+/** The chain of an action: its own, or for a derived take-back the one of what it takes back. */
+export function chainKeyOf(
+	action: KeptAction,
+	byOp: ReadonlyMap<string, KeptAction>,
+	depth = 0
+): string {
+	if (action.undoes !== undefined && isFree(action) && depth < 4) {
+		const undone = byOp.get(action.undoes);
+		if (undone !== undefined && undone !== action) return chainKeyOf(undone, byOp, depth + 1);
+	}
+	return isDueAction(action) ? `due:${action.target}` : `status:${ticketOf(action)}`;
+}
+
+function byOpOf(actions: readonly KeptAction[]): Map<string, KeptAction> {
+	return new Map(actions.map((action) => [action.op, action]));
+}
+
+/** The members of the chain of `action` in their order. */
+export function chainOf(actions: readonly KeptAction[], action: KeptAction): KeptAction[] {
+	const byOp = byOpOf(actions);
+	const key = chainKeyOf(action, byOp);
+	return inOrder(actions).filter((other) => chainKeyOf(other, byOp) === key);
+}
+
+interface Want {
+	wish: FeatureValue;
+	expected: FeatureValue;
+	/** The discarded action whose change it takes back, or the first one of the value. */
+	anchor: KeptAction;
+}
+
+/** The values before of the free actions from the ones before them; a fallback counts only first. */
+function recompute(actions: readonly KeptAction[]): KeptAction[] {
+	const values = new Map<Feature, FeatureValue>();
+	return actions.map((original) => {
+		let action = original;
+		if (isFree(action)) {
+			for (const [feature] of expectedOf(action)) {
+				if (!values.has(feature)) continue;
+				action = withExpected(action, feature, values.get(feature) as FeatureValue);
+				action = withFallback(action, feature, undefined);
+			}
+		}
+		for (const [feature, value] of priorOf(action)) {
+			if (!values.has(feature)) values.set(feature, value);
+		}
+		for (const [feature, value] of writesOf(action)) values.set(feature, value);
+		return action;
+	});
+}
+
+/** The take-back of `feature` for `want`, at the end of the chain. */
+function takeBackOf(
+	feature: Feature,
+	want: Want,
+	dependsOn: string[],
+	context: ChainContext
+): KeptAction {
+	const { op, seq, now } = context.fresh();
+	const anchor = want.anchor;
+	const head = {
+		v: 1 as const,
+		op,
+		seq,
+		user: anchor.user,
+		scope: anchor.scope,
+		dependsOn,
+		key: anchor.key,
+		title: anchor.title,
+		createdAt: now,
+		state: 'queued' as const,
+		attempts: 0,
+		nextAttemptAt: 0,
+		undoes: anchor.op
+	};
+	if (feature.startsWith('due:')) {
+		return {
+			...head,
+			kind: 'ticket.update',
+			target: feature.slice('due:'.length),
+			payload: { due: want.wish as CalendarDate | null },
+			expected: { due: want.expected as CalendarDate | null }
+		};
+	}
+	if (feature.startsWith('mark:') && isDayPlanAction(anchor)) {
+		const on = want.wish === true;
+		return {
+			...head,
+			kind: on ? 'dayplan.check' : 'dayplan.uncheck',
+			target: anchor.target,
+			ticket: anchor.ticket,
+			ticketKind: anchor.ticketKind,
+			payload: on ? { action: 'today', mode: 'today' } : { action: 'today' },
+			expected: { doneToday: want.expected === true, status: anchor.expected.status }
+		};
+	}
+	const ticket = feature.slice('status:'.length);
+	const wish = want.wish as Status;
+	const before = want.expected as Status;
+	if (ticket !== ticketOf(anchor)) {
+		// A sub-task a discarded completion took along (M3): opened like "Rückgängig" does it online.
+		return {
+			...head,
+			key: context.label?.(ticket) ?? '',
+			title: '',
+			kind: 'ticket.update',
+			target: ticket,
+			payload: { status: wish },
+			expected: { status: before }
+		};
+	}
+	if (isDayPlanAction(anchor) && anchor.discarded === true) {
+		// The counterpart of a discarded check mark goes the way of the day plan as well (OF-3).
+		const plan = {
+			...head,
+			target: anchor.target,
+			ticket: anchor.ticket,
+			ticketKind: anchor.ticketKind,
+			expected: { doneToday: anchor.expected.doneToday, status: before }
+		};
+		// Taking a completion back opens only a done ticket; otherwise the status goes directly.
+		if (anchor.kind === 'dayplan.check' && wish !== 'done' && before === 'done') {
+			return {
+				...plan,
+				kind: 'dayplan.uncheck',
+				payload: { action: 'complete', status: wish }
+			};
+		}
+		if (anchor.kind === 'dayplan.uncheck' && wish === 'done') {
+			return { ...plan, kind: 'dayplan.check', payload: { action: 'complete', mode: 'complete' } };
+		}
+	}
+	return {
+		...head,
+		kind: 'ticket.update',
+		target: ticket,
+		payload: { status: wish },
+		expected: { status: before }
+	};
+}
+
+/** What has to be taken back per value of a chain: where it ends otherwise than the user wants. */
+function wantsOf(fixed: readonly KeptAction[]): Map<Feature, Want> {
+	const wanted = new Map<Feature, Want>();
+	const features = new Set<Feature>();
+	for (const action of fixed) for (const [feature] of priorOf(action)) features.add(feature);
+	for (const feature of features) {
+		const base = chainBaseOf(fixed, feature);
+		if (base === undefined) continue;
+		let target = base.will;
+		let end = base.server;
+		let anchor: KeptAction | null = null;
+		for (const action of fixed) {
+			const writes = writesOf(action);
+			if (writes.has(feature)) end = writes.get(feature) as FeatureValue;
+			if (action.discarded === true) {
+				if (writes.has(feature)) anchor = action;
+				continue;
+			}
+			const intent = intentOf(action);
+			if (intent.has(feature)) target = intent.get(feature) as FeatureValue;
+		}
+		if (end === target) continue;
+		wanted.set(feature, { wish: target, expected: end, anchor: anchor ?? base.first });
+	}
+	return wanted;
+}
+
+function settleChain(
+	members: readonly KeptAction[],
+	present: ReadonlySet<string>,
+	context: ChainContext
+): KeptAction[] {
+	const derived = members.filter((action) => isDerived(action, present));
+	const fixed = recompute(members.filter((action) => !isDerived(action, present)));
+	const wanted = wantsOf(fixed);
+	const position = new Map(members.map((action, index) => [action.op, index]));
+	const kept: KeptAction[] = [];
+	const matched = new Set<Feature>();
+	for (const takeBack of derived) {
+		const writes = [...writesOf(takeBack)];
+		const only = writes.length === 1 ? writes[0] : undefined;
+		const want = only === undefined ? undefined : wanted.get(only[0]);
+		if (only === undefined || want === undefined || matched.has(only[0])) continue;
+		if (only[1] !== want.wish) continue;
+		if ((position.get(takeBack.op) ?? -1) < (position.get(want.anchor.op) ?? 0)) continue;
+		matched.add(only[0]);
+		const undoes = want.anchor.op;
+		kept.push(takeBack.undoes === undoes ? takeBack : { ...takeBack, undoes });
+	}
+	const settled = inOrder([...fixed, ...kept]);
+	for (const [feature, want] of wanted) {
+		if (matched.has(feature)) continue;
+		const before = settled.map((action) => action.op);
+		settled.push(takeBackOf(feature, want, before, context));
+	}
+	return recompute(settled);
+}
+
+/**
+ * The actions of the device as they should be (OF-3b): per chain the take-backs it needs, the values
+ * before of the actions that never left the device. A take-back that took everything back and changes
+ * nothing goes. New take-backs come last, with identifiers from `context.fresh`.
+ */
+export function settleChains(actions: readonly KeptAction[], context: ChainContext): KeptAction[] {
+	const present = new Set(actions.map((action) => action.op));
+	const spent = (action: KeptAction) =>
+		isTakeBack(action) &&
+		isFree(action) &&
+		!isDerived(action, present) &&
+		!changesSomething(action);
+	const live = inOrder(actions).filter((action) => !spent(action));
+	const alive = new Set(live.map((action) => action.op));
+	const byOp = byOpOf(live);
+	const chains = new Map<string, KeptAction[]>();
+	for (const action of live) {
+		const key = chainKeyOf(action, byOp);
+		chains.set(key, [...(chains.get(key) ?? []), action]);
+	}
+	const result: KeptAction[] = [];
+	for (const members of chains.values()) result.push(...settleChain(members, alive, context));
+	return result;
+}
+
+/**
+ * The actions once `op` left (OF-3b). Arrived: the next ones are based on its wish already. Changed
+ * nothing: they are based on its value before, and its derived take-backs go with it. Decided by the
+ * user: they are based on `state`, what the server had at the conflict or as last seen, and the user
+ * takes that. What the user wants of a value passes on to the next action that names it, or to a
+ * take-back when none does.
+ */
+export function leaveChain(
+	actions: readonly KeptAction[],
+	op: string,
+	leave: Leave,
+	context: ChainContext
+): KeptAction[] {
+	const ordered = inOrder(actions);
+	const self = ordered.find((action) => action.op === op);
+	if (self === undefined) return ordered;
+	const present = new Set(ordered.map((action) => action.op));
+	const members = chainOf(ordered, self);
+	const index = members.indexOf(self);
+	const gone = new Set([op]);
+	if (leave.how !== 'arrived') {
+		for (const action of members) {
+			if (action.undoes === op && isDerived(action, present)) gone.add(action.op);
+		}
+	}
+	let state: ServerState | null = null;
+	if (leave.how === 'decided') state = leave.state;
+	else if (leave.how === 'nothing') state = stateBefore(self);
+	const rebased = new Map<string, KeptAction>();
+	if (state !== null) {
+		const remaining = ordered.filter((action) => !gone.has(action.op) || action.op === op);
+		for (const next of rebasedBehind(remaining, op, state)) rebased.set(next.op, next);
+	}
+	let result = ordered
+		.filter((action) => !gone.has(action.op))
+		.map((action) => rebased.get(action.op) ?? action);
+	const later = new Set(members.slice(index + 1).map((action) => action.op));
+	const values = state === null ? new Map<Feature, FeatureValue>() : valuesOfState(self, state);
+	const writes = writesOf(self);
+	const created: KeptAction[] = [];
+	for (const [feature, before] of priorOf(self)) {
+		if (members.slice(0, index).some((action) => priorOf(action).has(feature))) continue;
+		let server = before;
+		if (leave.how === 'arrived' && writes.has(feature)) {
+			server = writes.get(feature) as FeatureValue;
+		} else if (values.has(feature)) {
+			server = values.get(feature) as FeatureValue;
+		}
+		const fallback = fallbackOf(self, feature);
+		const intent = intentOf(self);
+		let will = fallback === undefined ? before : fallback;
+		if (leave.how === 'decided') will = server;
+		else if (leave.how === 'arrived' && self.discarded !== true && intent.has(feature)) {
+			will = intent.get(feature) as FeatureValue;
+		}
+		const next = result.find((action) => later.has(action.op) && priorOf(action).has(feature));
+		if (next !== undefined) {
+			if (isTakeBack(next) || next.state === 'sending') continue;
+			const updated = withFallback(next, feature, will === server ? undefined : will);
+			result = result.map((action) => (action.op === next.op ? updated : action));
+		} else if (will !== server && !isChildOf(self, feature)) {
+			const chain = result.filter((action) => later.has(action.op)).map((action) => action.op);
+			const want = { wish: will, expected: server, anchor: self };
+			created.push(takeBackOf(feature, want, chain, context));
+		}
+	}
+	return [...result, ...created];
+}
+
+/** Whether `feature` is the status of a sub-task the action takes along, not of its own ticket. */
+function isChildOf(action: KeptAction, feature: Feature): boolean {
+	return feature.startsWith('status:') && feature !== `status:${ticketOf(action)}`;
+}
+
+/**
+ * The discarded actions whose change the take-back takes back (OF-3b): the discarded ones that set its
+ * value after the last change of it the user keeps. "Verwerfen" of the take-back keeps them again.
+ */
+export function takenBackBy(actions: readonly KeptAction[], takeBack: KeptAction): KeptAction[] {
+	const present = new Set(actions.map((action) => action.op));
+	const [feature] = [...writesOf(takeBack).keys()];
+	if (feature === undefined) return [];
+	let found: KeptAction[] = [];
+	for (const action of chainOf(actions, takeBack)) {
+		if (action.op === takeBack.op) break;
+		if (isDerived(action, present)) continue;
+		if (action.discarded === true && writesOf(action).has(feature)) found = [...found, action];
+		else if (action.discarded !== true && intentOf(action).has(feature)) found = [];
+	}
+	return found;
+}
+
+/**
+ * A take-back turned around (OF-3b): "Verwerfen" of a take-back that never left the device, after the
+ * action it takes back went. At its place, its value before as the wish and its wish as the value
+ * before, so it holds whatever the server has. It takes the take-back back in turn, so no later change
+ * is taken into it and "Verwerfen" of that one cannot drop it along.
+ */
+export function inverseOf(takeBack: KeptAction, fresh: Fresh): KeptAction {
+	const context = {
+		user: takeBack.user,
+		op: fresh.op,
+		seq: takeBack.seq,
+		now: fresh.now,
+		offline: true
+	};
+	return { ...counterOf(takeBack, context), dependsOn: [...takeBack.dependsOn] };
+}
+
+/**
+ * A discarded change the user wants again after it went (OF-3b, "Rückgängig"): its wish as a new
+ * action behind its chain; `settleChains` bases it on what is before it. It takes the "Verwerfen"
+ * back, so no later change is taken into it.
+ */
+export function restoreAs(
+	actions: readonly KeptAction[],
+	original: KeptAction,
+	fresh: Fresh
+): KeptAction {
+	const byOp = byOpOf(actions);
+	const key = chainKeyOf(original, byOp);
+	const dependsOn = inOrder(actions)
+		.filter((action) => chainKeyOf(action, byOp) === key)
+		.map((action) => action.op);
+	const copy: KeptAction = {
+		...original,
+		op: fresh.op,
+		seq: fresh.seq,
+		createdAt: fresh.now,
+		dependsOn,
+		state: 'queued',
+		attempts: 0,
+		nextAttemptAt: 0,
+		undoes: original.op
+	};
+	for (const field of [
+		'sent',
+		'unanswered',
+		'discarded',
+		'outcome',
+		'sendingSince',
+		'late',
+		'fallback'
+	] as const) {
+		delete copy[field];
+	}
+	// Once it and its take-backs went, the server has what the user wanted before it.
+	let restored = copy;
+	for (const [feature, before] of expectedOf(original)) {
+		const fallback = fallbackOf(original, feature);
+		restored = withExpected(restored, feature, fallback === undefined ? before : fallback);
+	}
+	return restored;
+}
+
+/**
+ * Whether a discarded action older than 48 hours may go without being sent (OF-3b): no request of it
+ * is under way any more, and every value it changes is taken back right behind it to its value before.
+ * The server has that value or the wish of the action; the take-back is based on the wish and ends on
+ * the value before, and the server takes a change to the value it already has without a conflict.
+ */
+export function coveredAtExpiry(actions: readonly KeptAction[], action: KeptAction): boolean {
+	const members = chainOf(actions, action);
+	const after = members.slice(members.indexOf(action) + 1);
+	for (const [feature, wish] of writesOf(action)) {
+		const before = priorOf(action).get(feature);
+		if (wish === before) continue;
+		const next = after.find((other) => priorOf(other).has(feature) || writesOf(other).has(feature));
+		if (next === undefined || next.undoes !== action.op || !isFree(next)) return false;
+		if (writesOf(next).get(feature) !== before) return false;
+	}
+	return true;
+}
