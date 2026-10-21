@@ -5,7 +5,7 @@
 	import { page } from '$app/state';
 	import { projectColorOf, type ShownColor } from '$lib/domain/colors';
 	import { NEST_SUBTASKS, TICKET_TABLE, withKeyDefaults } from '$lib/domain/columns';
-	import { keyLabel } from '$lib/domain/offline';
+	import { OFFLINE_TEXTS, keyLabel } from '$lib/domain/offline';
 	import { arrangeRows } from '$lib/domain/subtasks';
 	import {
 		GROUPING_LABELS,
@@ -476,14 +476,21 @@
 
 	/** Chosen rows for the bulk actions (plan BI-2). */
 	let selection = $state<Selection>(EMPTY_SELECTION);
+	/**
+	 * Whether a ticket may be chosen: not one "＋" created that the server does not have yet, a bulk
+	 * action would need the server (OF-4a round 2, A2).
+	 */
+	const choosable = (ticket: TicketSummary) => !store.isCreated(ticket.id);
 	/** Rows a selection may hold: every ticket that passes the filters and the pinned ones above. */
-	const selectable = $derived([...store.pinned, ...store.visible].map((ticket) => ticket.id));
+	const selectable = $derived(
+		[...store.pinned, ...store.visible].filter(choosable).map((ticket) => ticket.id)
+	);
 	/**
 	 * Rows of the head checkbox: every ticket that passes the filters, as before the pins; a pinned
 	 * ticket the filters hide is chosen only by its own box.
 	 */
 	const filteredIds = $derived(
-		[...store.pinnedInFilter, ...store.visible].map((ticket) => ticket.id)
+		[...store.pinnedInFilter, ...store.visible].filter(choosable).map((ticket) => ticket.id)
 	);
 	const head = $derived(headState(selection, filteredIds));
 	const chosenTickets = $derived(
@@ -505,14 +512,19 @@
 		if (headBox) headBox.indeterminate = head === 'some';
 	});
 
-	/** IDs of the rendered rows in their order on screen, for a Shift range. */
+	/**
+	 * IDs of the rendered rows in their order on screen, for a Shift range; without a ticket "＋"
+	 * created (OF-4a round 2, A2).
+	 */
 	function rowOrder(): string[] {
-		return [...(root?.querySelectorAll<HTMLElement>(ROW) ?? [])].flatMap((row) =>
-			row.dataset.ticketId ? [row.dataset.ticketId] : []
-		);
+		return [...(root?.querySelectorAll<HTMLElement>(ROW) ?? [])].flatMap((row) => {
+			const id = row.dataset.ticketId;
+			return id && !store.isCreated(id) ? [id] : [];
+		});
 	}
 
 	function select(id: string, on: boolean, range: boolean) {
+		if (store.isCreated(id)) return;
 		selection = clickRow(selection, id, on, rowOrder(), range);
 	}
 
@@ -642,6 +654,8 @@
 			measure={measureChip}
 			selected={selection.ids.includes(ticket.id)}
 			onselect={(on, range) => select(ticket.id, on, range)}
+			selectable={!store.isCreated(ticket.id)}
+			locked={store.isCreated(ticket.id) ? OFFLINE_TEXTS.createdLocked : null}
 			edit={{
 				projects: catalog.activeProjects,
 				tags: catalog.tags,
@@ -775,7 +789,7 @@
 			recurrenceText={ticket.recurring ? recurrenceTextOf(ticket) : ''}
 			{selecting}
 			selected={selection.ids.includes(ticket.id)}
-			onselect={(on) => chooseCard(ticket.id, on)}
+			onselect={store.isCreated(ticket.id) ? undefined : (on) => chooseCard(ticket.id, on)}
 			statusBusy={store.isPending(ticket.id)}
 			onstatus={(status) => void saveCell(ticket, { status })}
 			assignees={assigneesShown ? assignees : null}

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { tick } from 'svelte';
+	import { OFFLINE_TEXTS } from '$lib/domain/offline';
 	import { TITLE_MAX_LENGTH } from '$lib/domain/ticket';
 	import type { TicketDetailStore } from '$lib/stores/ticket-detail.svelte';
 	import CharmIcon from './CharmIcon.svelte';
@@ -10,7 +11,9 @@
 	// Title of the panel (E2 plan, T-7): a heading with "Titel bearbeiten". While editing, Enter
 	// or leaving the field saves and Escape cancels; the heading is the focus target of the panel.
 	// The charm of the ticket (ADR-0062) stands before the heading, not in it, so the name of the
-	// panel stays the title; the badge "Vorhaben" of an ongoing project (ADR-0065) after it.
+	// panel stays the title; the badge "Vorhaben" of an ongoing project (ADR-0065) after it. At a
+	// ticket "＋" created that the server does not have yet (OF-4a round 2, A6) "Titel bearbeiten"
+	// stays, locked with the reason ("gesperrt statt weg").
 	let {
 		store,
 		headingId,
@@ -19,12 +22,15 @@
 
 	const uid = $props.id();
 	const errorId = `${uid}-error`;
+	const lockedId = `${uid}-locked`;
 	let editButton = $state<HTMLButtonElement>();
 
 	const editing = $derived(store.isEditing('title'));
 	const error = $derived(store.fieldError('title'));
+	const locked = $derived(store.created);
 
 	async function start() {
+		if (locked) return;
 		store.edit('title');
 		await tick();
 		document.getElementById(`${uid}-input`)?.focus();
@@ -73,7 +79,9 @@
 			class="button-icon"
 			type="button"
 			aria-label="Titel bearbeiten"
-			title="Titel bearbeiten"
+			aria-disabled={locked ? 'true' : undefined}
+			aria-describedby={locked ? lockedId : undefined}
+			title={locked ? OFFLINE_TEXTS.createdLocked : 'Titel bearbeiten'}
 			bind:this={editButton}
 			onclick={start}
 		>
@@ -87,6 +95,9 @@
 				/>
 			</svg>
 		</button>
+		{#if locked}
+			<span class="visually-hidden" id={lockedId}>{OFFLINE_TEXTS.createdLocked}</span>
+		{/if}
 	{/if}
 	{#if error}
 		<p class="field-error" id={errorId}><ErrorIcon /><span>{error}</span></p>

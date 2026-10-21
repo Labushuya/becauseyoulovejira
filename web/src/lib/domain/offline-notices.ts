@@ -18,13 +18,17 @@
 //   changed (a newer build may have written it).
 // - Since OF-4a a creation "＋" the deletion after 7 days took keeps its title in the notice (C2: no
 //   text gets lost), and a discarded creation that arrived anyway names its record with a link
-//   (`created`, C4). These two are the only notices with a title.
+//   (`created`, C4). These two are the only notices with a title. Since round 2 a creation the server
+//   answers as arrived but the account no longer sees (`created` with `hidden`, A7) names its record
+//   the same way, and a change the deletion after 7 days took with its creation keeps the title of
+//   that creation (`along`, A8).
 
 import {
 	OFFLINE_TEXTS,
+	alongDropped,
 	changeOf,
 	changeText,
-	createdName,
+	createdInSentence,
 	inOrder,
 	intentOf,
 	isCreateAction,
@@ -66,6 +70,8 @@ export interface DroppedEntry {
 	readonly undoes?: ChangeRef | null;
 	/** A creation "＋" (OF-4a): its title stays readable until the notice is closed. */
 	readonly created?: CreatedRef;
+	/** A change that went with the creation it waited for (OF-4a round 2, A8): that creation. */
+	readonly along?: CreatedRef;
 }
 
 /** What the deletion after 7 days took in one run (round 3, R2-2). */
@@ -109,6 +115,11 @@ export interface CreatedNotice {
 	/** The key the server gave a ticket, '' for an entry or where unknown. */
 	readonly key: string;
 	readonly title: string;
+	/**
+	 * Not discarded: the server answered a repetition as arrived, but the account no longer sees the
+	 * record (`validation_op_applied`, OF-4a round 2, A7).
+	 */
+	readonly hidden?: true;
 }
 
 export type OfflineNotice = DroppedNotice | ChildNotice | CreatedNotice;
@@ -144,8 +155,14 @@ function parseEntry(raw: unknown): DroppedEntry | null {
 	const value = raw as Record<string, unknown>;
 	if (!isText(value.op, false) || !isText(value.key)) return null;
 	const created = createdOf(value.created);
-	if (created === null) return null;
-	const head = { op: value.op, key: value.key, ...(created !== undefined && { created }) };
+	const along = createdOf(value.along);
+	if (created === null || along === null) return null;
+	const head = {
+		op: value.op,
+		key: value.key,
+		...(created !== undefined && { created }),
+		...(along !== undefined && { along })
+	};
 	if (!('undoes' in value) || value.undoes === undefined) return head;
 	const undoes = value.undoes === null ? null : parseChangeRef(value.undoes);
 	if (undoes === null && value.undoes !== null) return null;
@@ -166,11 +183,13 @@ export function parseNotice(raw: unknown): OfflineNotice | null {
 		return { ...head, kind: 'childNotDone', key, parent, child, after };
 	}
 	if (value.kind === 'created') {
-		const { record, target, key, title } = value;
+		const { record, target, key, title, hidden } = value;
 		if (!isRecordKind(record) || !isText(target, false) || !isText(key) || !isTitle(title)) {
 			return null;
 		}
-		return { ...head, kind: 'created', record, target, key, title };
+		if (hidden !== undefined && hidden !== true) return null;
+		const notice = { ...head, kind: 'created' as const, record, target, key, title };
+		return hidden === true ? { ...notice, hidden: true as const } : notice;
 	}
 	if (value.kind !== 'dropped' || !Array.isArray(value.entries) || value.entries.length === 0) {
 		return null;
@@ -274,11 +293,18 @@ export function droppedEntries(
 	const gone = inOrder(before.filter((action) => drop.includes(action.op)));
 	const carried = (action: KeptAction) =>
 		action.discarded === true && after.some((other) => other.undoes === action.op);
+	// The changes that went with their creation name it (OF-4a round 2, A8).
+	const along = alongDropped(before, drop);
 	return gone
 		.filter((action) => !carried(action))
 		.map((action) => {
 			if (isCreateAction(action)) {
 				return { op: action.op, key: action.key, created: createdRefOf(action) };
+			}
+			const creation = along.get(action.op);
+			if (creation !== undefined) {
+				const { record, title } = createdRefOf(creation);
+				return { op: action.op, key: action.key, along: { record, title } };
 			}
 			if (!isTakeBack(action)) return { op: action.op, key: action.key };
 			const original = before.find((other) => other.op === action.undoes);
@@ -349,17 +375,28 @@ export function withoutDecided(
 	return kept.length === list.length ? null : kept;
 }
 
-/** The name of a dropped action: its key, "ein Ticket", or the creation with its title (OF-4a). */
+/**
+ * The name of a dropped action in the sentence: its key, "ein Ticket", or the creation with its title
+ * (OF-4a; "das neue Ticket „…“" since round 2, A10).
+ */
 function entryName(entry: DroppedEntry): string {
-	if (entry.created !== undefined) return createdName(entry.created.record, entry.created.title);
+	if (entry.created !== undefined) {
+		return createdInSentence(entry.created.record, entry.created.title);
+	}
 	return entry.key === '' ? 'ein Ticket' : entry.key;
 }
 
 /**
  * The notice about a creation the user discarded that arrived anyway (OF-4a, C4): one per action, with
- * the key of a ticket where the answer names it.
+ * the key of a ticket where the answer names it. `hidden`: one not discarded that the server answered
+ * as arrived, but the account no longer sees (round 2, A7).
  */
-export function createdNotice(action: CreateAction, key: string, at: number): CreatedNotice {
+export function createdNotice(
+	action: CreateAction,
+	key: string,
+	at: number,
+	hidden = false
+): CreatedNotice {
 	return {
 		v: 1,
 		id: `created-${action.op}`,
@@ -368,25 +405,44 @@ export function createdNotice(action: CreateAction, key: string, at: number): Cr
 		record: isTicketCreate(action) ? 'ticket' : 'inbox',
 		target: action.target,
 		key,
-		title: action.payload.title
+		title: action.payload.title,
+		...(hidden && { hidden: true as const })
 	};
 }
 
-/** The words of a notice, made when it shows. */
+/**
+ * The words of a notice, made when it shows. The changes the deletion after 7 days took with their
+ * creation count apart from it, in a sentence per creation (OF-4a round 2, A8).
+ */
 export function noticeText(notice: OfflineNotice): string {
 	if (notice.kind === 'childNotDone') return OFFLINE_TEXTS.childNotDone(notice.key, notice.parent);
 	if (notice.kind === 'created') {
-		return OFFLINE_TEXTS.createdAnyway(notice.record, notice.title, notice.key);
+		return notice.hidden === true
+			? OFFLINE_TEXTS.createdHidden(notice.record, notice.title)
+			: OFFLINE_TEXTS.createdAnyway(notice.record, notice.title, notice.key);
 	}
-	const keys = [...new Set(notice.entries.map(entryName))];
-	const backs = notice.entries.flatMap((entry) => {
+	const alongs = notice.entries.filter((entry) => entry.along !== undefined);
+	const own =
+		alongs.length === notice.entries.length
+			? notice.entries
+			: notice.entries.filter((entry) => entry.along === undefined);
+	const keys = [...new Set(own.map(entryName))];
+	const backs = own.flatMap((entry) => {
 		if (entry.created?.discarded === true) {
-			return [OFFLINE_TEXTS.droppedCreated(createdName(entry.created.record, entry.created.title))];
+			return [OFFLINE_TEXTS.droppedCreated(entry.created.record, entry.created.title)];
 		}
 		if (entry.undoes === undefined) return [];
 		if (entry.undoes === null) return [OFFLINE_TEXTS.droppedDiscardOf(entry.key)];
 		return [OFFLINE_TEXTS.droppedDiscard(changeText(entry.undoes))];
 	});
-	const head = OFFLINE_TEXTS.dropped(notice.entries.length, keys.join(', '));
-	return [head, ...new Set(backs), OFFLINE_TEXTS.checkTickets(keys.length)].join(' ');
+	const counts = new Map<string, number>();
+	if (own !== notice.entries) {
+		for (const entry of alongs) {
+			const title = entry.along?.title ?? '';
+			counts.set(title, (counts.get(title) ?? 0) + 1);
+		}
+	}
+	const along = [...counts].map(([title, count]) => OFFLINE_TEXTS.droppedAlong(count, title));
+	const head = OFFLINE_TEXTS.dropped(own.length, keys.join(', '));
+	return [head, ...along, ...new Set(backs), OFFLINE_TEXTS.checkTickets(keys.length)].join(' ');
 }

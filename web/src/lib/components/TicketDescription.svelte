@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { tick } from 'svelte';
+	import { OFFLINE_TEXTS } from '$lib/domain/offline';
 	import { DESCRIPTION_MAX_LENGTH, type Ticket } from '$lib/domain/ticket';
 	import type { TicketDetailStore } from '$lib/stores/ticket-detail.svelte';
 	import type { ProblemEntry } from '$lib/domain/problems';
@@ -19,13 +20,17 @@
 	// Tasks of the description can be ticked in the view (ADR-0032 section 6). If the description
 	// changed while it was edited, saving asks inline instead of overwriting: "Überschreiben" or
 	// "Verwerfen und neu laden". Inline and not as a confirmation, because the full view is a modal
-	// and no dialog opens from a dialog (ADR-0025 section 3); the panel asks the same way.
+	// and no dialog opens from a dialog (ADR-0025 section 3); the panel asks the same way. At a ticket
+	// "＋" created that the server does not have yet (OF-4a round 2, A6) "Bearbeiten" stays, locked with
+	// the reason ("gesperrt statt weg").
 	let { store, ticket }: { store: TicketDetailStore; ticket: Ticket } = $props();
 
 	const uid = $props.id();
 	const titleId = `${uid}-description-title`;
 	const errorId = `${uid}-description-error`;
 	const taskErrorId = `${uid}-task-error`;
+	const lockedId = `${uid}-locked`;
+	const locked = $derived(store.created);
 
 	let editButton = $state<HTMLButtonElement>();
 	let editor = $state<ReturnType<typeof RichTextEditor>>();
@@ -45,6 +50,7 @@
 	);
 
 	async function edit() {
+		if (locked) return;
 		taskError = null;
 		store.edit('description');
 		await tick();
@@ -92,11 +98,17 @@
 			<button
 				class="button-secondary button-small"
 				type="button"
+				aria-disabled={locked ? 'true' : undefined}
+				aria-describedby={locked ? lockedId : undefined}
+				title={locked ? OFFLINE_TEXTS.createdLocked : undefined}
 				bind:this={editButton}
 				onclick={edit}
 			>
 				Bearbeiten<span class="visually-hidden">: Beschreibung</span>
 			</button>
+			{#if locked}
+				<span class="visually-hidden" id={lockedId}>{OFFLINE_TEXTS.createdLocked}</span>
+			{/if}
 		{/if}
 	</div>
 	{#if editing}

@@ -2,8 +2,12 @@
 	import { tick, type Snippet } from 'svelte';
 	import type { CalendarDate } from '$lib/domain/berlin-date';
 	import { colorOf, inheritLabel, projectColorOf } from '$lib/domain/colors';
+	import { NOBODY_LABEL, assigneeName } from '$lib/domain/assignee';
 	import { overdueSinceText } from '$lib/domain/due-label';
+	import { PRIORITY_LABELS } from '$lib/domain/labels';
+	import { OFFLINE_TEXTS } from '$lib/domain/offline';
 	import type { OngoingFinishQuestion } from '$lib/domain/ongoing-finish';
+	import { projectChoiceLabel } from '$lib/domain/project-tree';
 	import { REOPEN_STATUS, type Ticket } from '$lib/domain/ticket';
 	import { insideModal } from '$lib/overlay/modal-context';
 	import { findAssignees, type AssigneeSource } from '$lib/stores/assignees.svelte';
@@ -17,6 +21,7 @@
 	import DueInput from './DueInput.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import KindSwitch from './KindSwitch.svelte';
+	import LockedControl from './offline/LockedControl.svelte';
 	import OngoingFinishDialog from './OngoingFinishDialog.svelte';
 	import PrioritySelect from './PrioritySelect.svelte';
 	import ProblemDetails from './problems/ProblemDetails.svelte';
@@ -54,7 +59,9 @@
 	// (`part` "fields"); the fixed bar at its bottom holds "Erledigt" (one tap, the check mark of the
 	// list) and the status with its questions above them (`part` "bar"). The status is the same
 	// control with the same marker, so no option is new; on the PC and in the full view everything
-	// stays one grid (`part` "all").
+	// stays one grid (`part` "all"). A ticket "＋" created that the server does not have yet (OF-4a
+	// round 2, A6) shows priority, "Zuständig", project and tags locked with the reason ("gesperrt
+	// statt weg"); status and due date stay editable.
 	let {
 		store,
 		catalog,
@@ -117,6 +124,8 @@
 			assignees.members.length > 0
 	);
 	const ongoing = $derived(store.value('kind') === 'ongoing');
+	/** Why the fields that need the server are locked: a ticket "＋" created (OF-4a round 2). */
+	const locked = $derived(store.created ? OFFLINE_TEXTS.createdLocked : null);
 	/** "überfällig seit 05.10." for an open ticket due before today (the saved due date), else null. */
 	const overdueSince = $derived(
 		today !== undefined && ticket.status !== 'done' && ticket.due !== null && ticket.due < today
@@ -266,30 +275,50 @@
 
 		<label for={ids.priority}>Priorität</label>
 		<div class="control" data-ticket-option="priority">
-			<PrioritySelect
-				id={ids.priority}
-				value={store.value('priority')}
-				busy={store.isSaving('priority')}
-				error={store.fieldError('priority')}
-				errorId={errorIdOf('priority')}
-				onchoose={(value) => store.choose('priority', value)}
-			/>
+			{#if locked !== null}
+				<LockedControl
+					id={ids.priority}
+					label="Priorität"
+					value={PRIORITY_LABELS[ticket.priority]}
+					reason={locked}
+				/>
+			{:else}
+				<PrioritySelect
+					id={ids.priority}
+					value={store.value('priority')}
+					busy={store.isSaving('priority')}
+					error={store.fieldError('priority')}
+					errorId={errorIdOf('priority')}
+					onchoose={(value) => store.choose('priority', value)}
+				/>
+			{/if}
 			{@render fieldError('priority')}
 		</div>
 
 		{#if assigneeShown && assignees}
 			<label for={ids.assignee}>Zuständig</label>
 			<div class="control" data-ticket-option="assignee">
-				<AssigneeField
-					id={ids.assignee}
-					value={store.value('assignee')}
-					members={assignees.members}
-					context={assignees.context}
-					busy={store.isSaving('assignee')}
-					error={store.fieldError('assignee')}
-					errorId={errorIdOf('assignee')}
-					onchoose={(value) => store.choose('assignee', value)}
-				/>
+				{#if locked !== null}
+					<LockedControl
+						id={ids.assignee}
+						label="Zuständig"
+						value={ticket.assignee
+							? assigneeName(ticket.assignee, assignees.context)
+							: NOBODY_LABEL}
+						reason={locked}
+					/>
+				{:else}
+					<AssigneeField
+						id={ids.assignee}
+						value={store.value('assignee')}
+						members={assignees.members}
+						context={assignees.context}
+						busy={store.isSaving('assignee')}
+						error={store.fieldError('assignee')}
+						errorId={errorIdOf('assignee')}
+						onchoose={(value) => store.choose('assignee', value)}
+					/>
+				{/if}
 				<ProblemDetails problem={store.fieldProblem('assignee')} />
 			</div>
 		{/if}
@@ -335,17 +364,27 @@
 
 		<label for={ids.project}>Projekt</label>
 		<div class="control" data-ticket-option="project">
-			<ProjectSelect
-				id={ids.project}
-				value={store.value('project')}
-				projects={catalog.activeProjects}
-				current={catalog.projectOf(ticket)}
-				busy={store.isSaving('project')}
-				error={store.fieldError('project')}
-				errorId={errorIdOf('project')}
-				hintId={ids.projectHint}
-				onchoose={(value) => store.choose('project', value)}
-			/>
+			{#if locked !== null}
+				{@const project = catalog.projectOf(ticket)}
+				<LockedControl
+					id={ids.project}
+					label="Projekt"
+					value={project ? projectChoiceLabel(project) : 'kein Projekt'}
+					reason={locked}
+				/>
+			{:else}
+				<ProjectSelect
+					id={ids.project}
+					value={store.value('project')}
+					projects={catalog.activeProjects}
+					current={catalog.projectOf(ticket)}
+					busy={store.isSaving('project')}
+					error={store.fieldError('project')}
+					errorId={errorIdOf('project')}
+					hintId={ids.projectHint}
+					onchoose={(value) => store.choose('project', value)}
+				/>
+			{/if}
 			{@render fieldError('project')}
 		</div>
 
@@ -396,18 +435,27 @@
 
 		<label for={ids.tags}>Tags</label>
 		<div class="control" data-ticket-option="tags">
-			<TagPicker
-				id={ids.tags}
-				selected={ticketTags}
-				tags={catalog.tags}
-				bind:text={() => store.tagInput, (text) => store.setTagInput(text)}
-				busy={store.isSaving('tags')}
-				error={store.fieldError('tags')}
-				errorId={errorIdOf('tags')}
-				onadd={(tagId) => store.addTag(tagId)}
-				onremove={(tagId) => store.removeTag(tagId)}
-				oncreate={createTag}
-			/>
+			{#if locked !== null}
+				<LockedControl
+					id={ids.tags}
+					label="Tags"
+					value={ticketTags.length === 0 ? 'keine' : ticketTags.map((tag) => tag.name).join(', ')}
+					reason={locked}
+				/>
+			{:else}
+				<TagPicker
+					id={ids.tags}
+					selected={ticketTags}
+					tags={catalog.tags}
+					bind:text={() => store.tagInput, (text) => store.setTagInput(text)}
+					busy={store.isSaving('tags')}
+					error={store.fieldError('tags')}
+					errorId={errorIdOf('tags')}
+					onadd={(tagId) => store.addTag(tagId)}
+					onremove={(tagId) => store.removeTag(tagId)}
+					oncreate={createTag}
+				/>
+			{/if}
 			{@render fieldError('tags')}
 		</div>
 		{@render parentRow?.()}

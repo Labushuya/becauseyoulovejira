@@ -718,6 +718,11 @@ export class TicketListStore {
 		return this.#overlay.createdTickets?.().find((ticket) => ticket.id === id) ?? null;
 	}
 
+	/** A ticket of the server the list holds (open, or a sub-task), never one "＋" created (OF-4a). */
+	#served(id: string): TicketSummary | null {
+		return this.#open.get(id) ?? this.#subtasks.get(id) ?? null;
+	}
+
 	/**
 	 * A ticket "＋" created that the server does not have yet (OF-4a): no menu, no pin, nothing that
 	 * needs the server until it has it.
@@ -928,7 +933,9 @@ export class TicketListStore {
 	/**
 	 * Inserts or replaces a ticket (own answer or realtime event). An older `updated` than the
 	 * one in the store is ignored, so a late event does not overwrite a newer answer. A done ticket
-	 * leaves the list; the view "Erledigte" shows it (ADR-0066).
+	 * leaves the list; the view "Erledigte" shows it (ADR-0066). Only a ticket of the server counts
+	 * for that, never one "＋" created as the outbox shows it: its `updated` is the time of the device
+	 * (OF-4a round 2, A4).
 	 */
 	upsert(incoming: TicketSummary): void {
 		if (this.#deleted.has(incoming.id)) return;
@@ -937,7 +944,7 @@ export class TicketListStore {
 		// A kept change of the outbox stays laid over it (OF-2).
 		const ticket = this.#overlay.apply(incoming);
 		this.#touched?.add(ticket.id);
-		const existing = this.find(ticket.id);
+		const existing = this.#served(ticket.id);
 		if (existing !== null && existing.updated > ticket.updated) return;
 		// Sub-tasks, open or done; a ticket released from its parent leaves them (ADR-0033).
 		if (ticket.parentId) this.#subtasks.set(ticket.id, ticket);
@@ -992,7 +999,7 @@ export class TicketListStore {
 			this.upsert(ticket);
 			return;
 		}
-		const existing = this.find(ticket.id);
+		const existing = this.#served(ticket.id);
 		if (existing !== null && existing.updated > ticket.updated) return;
 		this.upsert(ticket);
 		this.#dropUndo(ticket.id);

@@ -84,7 +84,9 @@
 	// first cell, apart from the bar of the open row at the very edge, with its name for screen
 	// readers; the row keeps its height. Keys grow with their number (KN-1): the table fits the
 	// default width of their column to the longest one, and a key the user's narrower column cuts
-	// off names itself in a title.
+	// off names itself in a title. A ticket "＋" created that the server does not have yet (OF-4a
+	// round 2) has no box of the selection, and its priority, project, tags and "Zuständig" stay locked
+	// with the reason (`locked`, "gesperrt statt weg"); status and due date stay editable.
 	let {
 		ticket,
 		nested = false,
@@ -106,6 +108,8 @@
 		measure = estimateChip,
 		selected = false,
 		onselect,
+		selectable = true,
+		locked = null,
 		edit,
 		menu,
 		menuBusy = false,
@@ -154,6 +158,16 @@
 		 * no selection cell (single rows in tests).
 		 */
 		onselect?: (on: boolean, range: boolean) => void;
+		/**
+		 * Whether the row may be chosen: a ticket "＋" created that the server does not have yet may not
+		 * (OF-4a round 2, A2); its cell of the selection stays, without a box.
+		 */
+		selectable?: boolean;
+		/**
+		 * Why priority, project, tags and "Zuständig" cannot be edited yet (a ticket "＋" created, OF-4a
+		 * round 2, A6): the cells stay, locked with this reason; null edits them as usual.
+		 */
+		locked?: string | null;
 		/** Editing in the cells (plan BI-3); without it the cells only show their value. */
 		edit?: RowEdit;
 		/** The menu "•••" of the ticket at the end of the actions (plan aktionsmenues, AM-2). */
@@ -312,19 +326,21 @@
 		<!-- The whole cell is the label: a click anywhere in it chooses, never opens the ticket. -->
 		<td class="select" data-col="select" onpointerdown={(event) => (rangeHeld = event.shiftKey)}>
 			{@render colorStripe()}
-			<label class="select-hit">
-				<input
-					type="checkbox"
-					aria-label={`${spoken} auswählen`}
-					checked={selected}
-					onkeydown={(event) => (rangeHeld = event.shiftKey)}
-					onchange={(event) => {
-						const range = rangeHeld;
-						rangeHeld = false;
-						onselect(event.currentTarget.checked, range);
-					}}
-				/>
-			</label>
+			{#if selectable}
+				<label class="select-hit">
+					<input
+						type="checkbox"
+						aria-label={`${spoken} auswählen`}
+						checked={selected}
+						onkeydown={(event) => (rangeHeld = event.shiftKey)}
+						onchange={(event) => {
+							const range = rangeHeld;
+							rangeHeld = false;
+							onselect(event.currentTarget.checked, range);
+						}}
+					/>
+				</label>
+			{/if}
 		</td>
 	{/if}
 	<td class="key" data-col="key" title={keyTitle}>
@@ -341,6 +357,7 @@
 					label={`Priorität von ${spoken}`}
 					buttonLabel={`Priorität von ${spoken}: ${PRIORITY_LABELS[ticket.priority]}, ändern`}
 					busy={edit.busy}
+					{locked}
 				>
 					{#snippet value()}<PriorityIcon priority={ticket.priority} />{/snippet}
 					{#snippet editor({ close })}
@@ -382,6 +399,7 @@
 					label={`Zuständig für ${spoken}`}
 					buttonLabel={`Zuständig für ${spoken}: ${ticket.assignee ? assigneeName(ticket.assignee, assignees.context) : NOBODY_LABEL}, ändern`}
 					busy={edit.busy}
+					{locked}
 				>
 					{#snippet value()}<AssigneeBadge
 							assignee={ticket.assignee}
@@ -481,6 +499,7 @@
 					label={`Projekt von ${spoken}`}
 					buttonLabel={`Projekt von ${spoken}: ${project ? projectChoiceLabel(project) : 'kein Projekt'}, ändern`}
 					busy={edit.busy}
+					{locked}
 				>
 					{#snippet value()}{@render projectValue()}{/snippet}
 					{#snippet editor({ close })}
@@ -512,6 +531,7 @@
 					label={`Tags von ${spoken}`}
 					buttonLabel={`Tags von ${spoken}: ${tags.length === 0 ? 'keine' : tags.map((tag) => tag.name).join(', ')}, ändern`}
 					busy={edit.busy}
+					{locked}
 				>
 					{#snippet value()}{@render tagsValue()}{/snippet}
 					{#snippet editor()}

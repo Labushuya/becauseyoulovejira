@@ -5,6 +5,9 @@
 		CLOCK_CODE,
 		OFFLINE_TEXTS,
 		actionName,
+		createdInSentence,
+		createdRecordOf,
+		isCreateAction,
 		reasonOf,
 		type KeptAction
 	} from '$lib/domain/offline';
@@ -53,8 +56,15 @@
 	const decisions = $derived(conflicts.length + refusals.length + expired.length);
 	const shown = $derived(offline || decisions > 0 || failing !== null || notices.length > 0);
 
-	/** The key of the ticket, a creation by its title (OF-4a), else "Ein Ticket". */
-	function nameOf(action: KeptAction | undefined): string {
+	/**
+	 * The key of the ticket, a creation by its title (OF-4a), else "Ein Ticket". In the middle of the
+	 * sentence a creation is "das neue Ticket „…“" (round 2, A10).
+	 */
+	function nameOf(action: KeptAction | undefined, inSentence = false): string {
+		const record = action === undefined ? null : createdRecordOf(action);
+		if (inSentence && action !== undefined && isCreateAction(action) && record !== null) {
+			return createdInSentence(record, action.payload.title);
+		}
 		const name = action === undefined ? '' : actionName(action);
 		return name === '' ? 'Ein Ticket' : name;
 	}
@@ -70,7 +80,11 @@
 	function refusalText(): string {
 		const first = refusals[0];
 		if (first === undefined) return '';
-		return OFFLINE_TEXTS.refusals(refusals.length, nameOf(first), reasonOf(first));
+		return OFFLINE_TEXTS.refusals(
+			refusals.length,
+			nameOf(first, refusals.length > 1),
+			reasonOf(first)
+		);
 	}
 
 	function refusalProblem() {

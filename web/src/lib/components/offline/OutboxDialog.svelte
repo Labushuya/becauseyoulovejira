@@ -10,6 +10,7 @@
 		actionText,
 		canCompleteAnyway,
 		canReopenAnyway,
+		createdRecordOf,
 		deviceTimeText,
 		dueOfServer,
 		intentOf,
@@ -143,8 +144,13 @@
 		const blocker = actions.find(
 			(other) => action.dependsOn.includes(other.op) && needsDecision(other)
 		);
-		if (blocker !== undefined) return OFFLINE_TEXTS.waitingFor(actionName(blocker) || 'Ticket');
-		return OFFLINE_TEXTS.waiting;
+		if (blocker === undefined) return OFFLINE_TEXTS.waiting;
+		// "wartet auf das neue Ticket „…“" in the middle of the sentence (OF-4a round 2, A10).
+		const record = createdRecordOf(blocker);
+		if (isCreateAction(blocker) && record !== null) {
+			return OFFLINE_TEXTS.waitingForCreated(record, blocker.payload.title);
+		}
+		return OFFLINE_TEXTS.waitingFor(actionName(blocker) || 'Ticket');
 	}
 
 	function metaText(action: KeptAction): string {

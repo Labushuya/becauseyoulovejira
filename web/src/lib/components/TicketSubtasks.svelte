@@ -2,6 +2,7 @@
 	import { tick, untrack } from 'svelte';
 	import type { ResolvedPathname } from '$app/types';
 	import { isCalendarDate, type CalendarDate } from '$lib/domain/berlin-date';
+	import { OFFLINE_TEXTS } from '$lib/domain/offline';
 	import {
 		TEMPLATE_STATUSES,
 		isTemplateStatus,
@@ -65,7 +66,9 @@
 	// "Auf Unteraufgaben übertragen …" first, so it comes back there. In the side panel the dialog
 	// waits while another dialog is open (the flag stood in front of it): no dialog over a dialog.
 	// In the phone frame (MO-4, ADR-0073 addendum MO-4) the check mark stands in a target of 44 px
-	// (a label around it, as in the cards of "Aufgaben"), the title and the status menu as well.
+	// (a label around it, as in the cards of "Aufgaben"), the title and the status menu as well. At a
+	// ticket "＋" created that the server does not have yet (OF-4a round 2, A6) "Unteraufgabe
+	// hinzufügen" stays, locked with the reason ("gesperrt statt weg").
 	let {
 		ticket,
 		list,
@@ -86,7 +89,8 @@
 			| 'setDone'
 			| 'changeField'
 			| 'addSubtask'
-		>;
+		> &
+			Partial<Pick<TicketListStore, 'isCreated'>>;
 		/** Address of the panel of a sub-task, with the list query of the current page. */
 		hrefOf: (id: string) => ResolvedPathname;
 		/** Names of project and tags of the ticket; without it those the ticket carries. */
@@ -114,9 +118,12 @@
 		due: `${uid}-due`,
 		dueError: `${uid}-due-error`,
 		hint: `${uid}-hint`,
-		error: `${uid}-error`
+		error: `${uid}-error`,
+		locked: `${uid}-locked`
 	};
 
+	/** A sub-task needs the ticket on the server (a ticket "＋" created, OF-4a round 2). */
+	const locked = $derived(list.isCreated?.(ticket.id) === true);
 	const subtasks = $derived(list.subtasksOf(ticket.id));
 	const progress = $derived(list.progressOf(ticket.id));
 	/** What a new sub-task takes from the ticket without asking, for the hint of the form. */
@@ -222,6 +229,7 @@
 	}
 
 	async function open() {
+		if (locked) return;
 		adding = true;
 		error = null;
 		announcement = '';
@@ -423,11 +431,17 @@
 				<button
 					class="button-secondary button-small"
 					type="button"
+					aria-disabled={locked ? 'true' : undefined}
+					aria-describedby={locked ? ids.locked : undefined}
+					title={locked ? OFFLINE_TEXTS.createdLocked : undefined}
 					bind:this={addButton}
 					onclick={open}
 				>
 					Unteraufgabe hinzufügen
 				</button>
+				{#if locked}
+					<span class="visually-hidden" id={ids.locked}>{OFFLINE_TEXTS.createdLocked}</span>
+				{/if}
 			{/if}
 			{#if transferShown}
 				<button

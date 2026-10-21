@@ -48,7 +48,10 @@
 //   never left the device, else it waits for it. "Verwerfen" of a creation that never left the device
 //   deletes it with its changes; one that may have arrived is never sent again and never deleted on
 //   the server: it is only looked up by its ID, and where it is there a notice that stays names it with
-//   a link (C1 to C4 of ADR-0074 addendum OF-4a).
+//   a link (C1 to C4 of ADR-0074 addendum OF-4a). Since round 2 a 5xx at the first attempt keeps a
+//   creation like a missing answer (A1); a lookup that does not find it, also after a refusal that
+//   followed a request without an answer, is final only 5 minutes after its last request (A5); a
+//   repetition the server answers with `validation_op_applied` names it in a notice (A7).
 
 import { createContext } from 'svelte';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
@@ -70,6 +73,7 @@ import {
 	childrenAlong,
 	completionInstead,
 	createdItemOf,
+	createdRecordOf,
 	createdTicketOf,
 	dueOfServer,
 	hasRoom,
@@ -83,6 +87,8 @@ import {
 	isTakeBack,
 	isTicketCreate,
 	isWaiting,
+	lookUpAgainAt,
+	mayStillArrive,
 	newOpId,
 	newRecordId,
 	nextToSend,
@@ -371,6 +377,8 @@ type Resolution =
 	| { kind: 'decision'; action: KeptAction }
 	| { kind: 'dropped'; action: KeptAction }
 	| { kind: 'refused'; failure: DataError }
+	/** A discarded creation not found while a request of it may still arrive (OF-4a round 2, A5). */
+	| { kind: 'lookLater' }
 	| { kind: 'gone' };
 
 /**
@@ -1546,6 +1554,13 @@ export class OutboxStore {
 			this.#runner?.kick();
 			return null;
 		}
+		const later = resolution?.kind === 'later' || resolution?.kind === 'lookLater';
+		if (later && isCreateAction(action)) {
+			// A creation after a 5xx (OF-4a round 2, A1): kept like one without an answer, sent again
+			// later under its identifier and its ID; "＋" says that it is kept.
+			this.#runner?.kick();
+			return null;
+		}
 		if (verdictOf(result.failure).result === 'network') void this.#connectivity.check();
 		throw result.failure;
 	}
@@ -1903,8 +1918,16 @@ export class OutboxStore {
 			}
 			if (!this.#signedIn(next.user)) return { go: false };
 			// Marked as sent before the request, in one transaction with the check that nobody changed
-			// it meanwhile; a change of the same ticket then becomes an action of its own (H1).
-			const sending: KeptAction = { ...next, state: 'sending', sendingSince: now, sent: true };
+			// it meanwhile; a change of the same ticket then becomes an action of its own (H1). A creation
+			// notes when its request left (OF-4a round 2, A5); a lookup is no request of it.
+			const request = isCreateAction(next) && next.discarded !== true;
+			const sending: KeptAction = {
+				...next,
+				state: 'sending',
+				sendingSince: now,
+				sent: true,
+				...(request && { lastSentAt: now })
+			};
 			if (!(await this.#swap(next, sending))) {
 				this.#swapMisses += 1;
 				await this.#read(storage, user, false);
@@ -1962,6 +1985,7 @@ export class OutboxStore {
 				if (!created) await this.#reread(ticketOf(resolution.action));
 				return true;
 			case 'refused':
+			case 'lookLater':
 			case 'gone':
 				return true;
 		}
@@ -1996,9 +2020,11 @@ export class OutboxStore {
 			fresh !== undefined && arrives && childrenAlong(fresh).length > 0 ? fresh : null;
 		if (reading !== null) this.#reading = [...this.#reading, reading];
 		let resolution: Resolution | null = null;
+		// A discarded creation was looked up, not sent (OF-4a, C4).
+		const lookedUp = !first && isCreateAction(sent) && sent.discarded === true;
 		try {
 			resolution = await this.#transform((before) =>
-				this.#resolution(before, sent.op, result, first, now)
+				this.#resolution(before, sent.op, result, { first, lookedUp }, now)
 			);
 		} finally {
 			if (reading !== null && resolution?.kind !== 'arrived') this.#unread(reading.op);
@@ -2008,12 +2034,15 @@ export class OutboxStore {
 		return resolution ?? { kind: 'gone' };
 	}
 
-	/** The plan of `#resolve` on the actions as read. */
+	/**
+	 * The plan of `#resolve` on the actions as read. `lookedUp`: the request was the lookup of a
+	 * discarded creation, not one of the creation itself (OF-4a, C4).
+	 */
 	async #resolution(
 		before: readonly KeptAction[],
 		op: string,
 		result: Attempt,
-		first: boolean,
+		{ first, lookedUp }: { first: boolean; lookedUp: boolean },
 		now: number
 	): Promise<Planned<Resolution>> {
 		const fresh = before.find((action) => action.op === op);
@@ -2053,10 +2082,19 @@ export class OutboxStore {
 			return { after, last: op, result: arrived, noted: retire };
 		}
 		const failure = result.failure;
-		const verdict = verdictOf(failure);
+		const verdict = verdictOf(failure, createdRecordOf(fresh));
 		if (verdict.result === 'arrived') {
 			const after = await leave({ how: 'arrived' });
 			const arrived = { kind: 'arrived', action: fresh, value: null } as const;
+			if (isCreateAction(fresh)) {
+				// Arrived, but the account no longer sees it (`validation_op_applied`, the trash for
+				// instance): a notice that stays names it with a link, never silently (round 2, A7).
+				const notice = createdNotice(fresh, '', now, true);
+				const noted = new SvelteMap<string, Noting>([
+					[op, { device: (current: unknown) => withNotices(current, [notice]) }]
+				]);
+				return { after, last: op, result: arrived, noted };
+			}
 			return { after, last: op, result: arrived, noted: retire };
 		}
 		const queued: KeptAction = withoutSending({ ...fresh, state: 'queued' });
@@ -2064,7 +2102,10 @@ export class OutboxStore {
 			const after = await settle(replaced(before, { ...queued, unanswered: true }));
 			return { after, result: { kind: 'kept' } };
 		}
-		if (first && fresh.discarded !== true) {
+		// A creation after a 5xx at its first attempt stays like one without an answer (round 2, A1): the
+		// server may have taken it, a new "＋" under another ID would make a second one (C1).
+		const keptAfter5xx = isCreateAction(fresh) && verdict.result === 'server';
+		if (first && fresh.discarded !== true && !keptAfter5xx) {
 			// As today: the store shows the refusal, nothing stays.
 			const after = await leave({ how: 'nothing' });
 			return { after, last: op, result: { kind: 'refused', failure } };
@@ -2088,13 +2129,23 @@ export class OutboxStore {
 			return { after, result: { kind: 'later', attempts } };
 		}
 		// An answer after the lookup of the identifier: nothing arrived unseen (OF-3); a discarded one
-		// stays kept.
+		// stays kept. A creation keeps that a request of it got no answer before: that request may still
+		// arrive (round 2, A5).
 		const answered: KeptAction = { ...queued };
+		const hanging = fresh.unanswered === true || fresh.unansweredBefore === true;
+		if (isCreateAction(fresh) && hanging && !lookedUp) answered.unansweredBefore = true;
 		if (fresh.discarded !== true) delete answered.unanswered;
 		// A discarded creation the server refused, or that the lookup does not find, is not there: it
-		// goes without a word (OF-4a, C4); nothing of it is to be taken back.
+		// goes without a word (OF-4a, C4); nothing of it is to be taken back. While a request of it may
+		// still arrive, it is looked up again once that is 5 minutes ago (round 2, A5).
 		const absent = isCreateAction(fresh);
 		if (fresh.discarded === true && (absent || !isMissing(failure))) {
+			if (absent && mayStillArrive(answered, now)) {
+				const again: KeptAction = { ...answered, nextAttemptAt: lookUpAgainAt(answered, now) };
+				delete again.outcome;
+				const after = await settle(replaced(before, again));
+				return { after, result: { kind: 'lookLater' } };
+			}
 			// "Verwerfen" was asked for: it changed nothing, so it goes without a word (OF-3).
 			const after = await leave({ how: 'nothing' });
 			return { after, last: op, result: { kind: 'dropped', action: fresh } };
@@ -2377,7 +2428,9 @@ export class OutboxStore {
 			// A round after a write that failed half way: only its changes are left to go.
 			return { after: rest, result: { kind: 'marked', action, along } };
 		}
-		if (!mayBeThere(action)) {
+		// A request of it may still arrive although the server answered a later one (refused after a
+		// request without an answer, round 2, A5): it stays to be looked up, like one that may be there.
+		if (!mayBeThere(action) && !mayStillArrive(action, this.#now())) {
 			const after = await this.#pure((context) =>
 				settleChains(
 					rest.filter((entry) => entry.op !== action.op),
@@ -2387,9 +2440,10 @@ export class OutboxStore {
 			return { after, last: action.op, result: { kind: 'deleted', action, along } };
 		}
 		// Older than 48 hours, it waited for a decision: the lookup asks nothing (no time of the device).
+		// A refused one is looked up the same way (round 2, A5).
 		const marked: KeptAction = { ...action, discarded: true };
-		if (marked.state === 'expired') {
-			marked.state = 'queued';
+		if (marked.state === 'expired' || marked.state === 'refused') {
+			Object.assign(marked, { state: 'queued', nextAttemptAt: 0 });
 			delete marked.outcome;
 		}
 		const after = await this.#pure((context) => settleChains(replaced(rest, marked), context));
@@ -2423,10 +2477,11 @@ export class OutboxStore {
 		const { action } = done;
 		const text = this.#textOf(action);
 		if (isCreateAction(action)) {
+			const record = isTicketCreate(action) ? 'ticket' : 'inbox';
 			this.#sink?.flags.show({
 				tone: 'success',
 				title: OFFLINE_TEXTS.discarded(text),
-				...(done.kind === 'marked' && { description: OFFLINE_TEXTS.createCheckHint }),
+				...(done.kind === 'marked' && { description: OFFLINE_TEXTS.createCheckHint(record) }),
 				action: { label: OFFLINE_TEXTS.undo, run: () => void this.#undoCreation(done) }
 			});
 			return;

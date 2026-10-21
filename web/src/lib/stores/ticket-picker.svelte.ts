@@ -117,6 +117,11 @@ export interface TicketPickerParts {
 		loadOpen(): void;
 		reload(): Promise<void>;
 		isNew(ticket: TicketSummary): boolean;
+		/**
+		 * A ticket "＋" created that the server does not have yet (OF-4a round 2, A3): the picker does
+		 * not offer it, nothing could be linked to it yet.
+		 */
+		isCreated?(id: string): boolean;
 	};
 	catalog: {
 		/** All projects by name, archived ones included, sub projects with their parent. */
@@ -131,8 +136,11 @@ export interface TicketPickerParts {
 export function ticketPickerSource(parts: TicketPickerParts): TicketPickerSource {
 	const { data, session, list, catalog, recent } = parts;
 	return {
+		// Without the tickets "＋" created that the server does not have yet, like the day plan (OF-4a
+		// round 2, A3); the list of the store itself while there is none.
 		get open() {
-			return list.open;
+			const shown = list.open.filter((ticket) => list.isCreated?.(ticket.id) !== true);
+			return shown.length === list.open.length ? list.open : shown;
 		},
 		get openState() {
 			return list.openState;

@@ -86,6 +86,11 @@ export const SEND_TIMEOUT_MS = 12_000;
 export const HEALTH_TIMEOUT_MS = 5_000;
 /** An action "sending" for longer than this lost its sender (closed or frozen tab). */
 export const STALE_SENDING_MS = SEND_TIMEOUT_MS + 3_000;
+/**
+ * A request may hang longer than its time limit (a proxy, a frozen connection): a lookup that does not
+ * find a discarded creation is final only this long after its last request (OF-4a round 2, A5).
+ */
+export const LOOKUP_FINAL_MS = 5 * 60 * 1000;
 /** The lease of the sending tab (concept §3.9): 8 s, renewed every 3 s while there is work. */
 export const LEASE_MS = 8_000;
 export const LEASE_RENEW_MS = 3_000;
@@ -107,11 +112,16 @@ export const OFFLINE_MESSAGES: Readonly<Record<string, string>> = Object.freeze(
 });
 
 /**
- * Words of the client for codes PocketBase itself answers to a creation (OF-4a): an ID that is taken
- * (ADR-0074 §5). Not part of the catalog of the hook.
+ * Words of the client for codes PocketBase itself answers to a creation (OF-4a), per kind of the
+ * record since round 2 (A10): an ID that is taken (ADR-0074 §5). Not part of the catalog of the hook.
  */
-export const CREATE_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
-	validation_not_unique: 'Die ID des neuen Eintrags ist auf dem Server schon vergeben.'
+export const CREATE_MESSAGES: Readonly<
+	Record<string, Readonly<Record<'ticket' | 'inbox', string>>>
+> = Object.freeze({
+	validation_not_unique: Object.freeze({
+		ticket: 'Die ID des neuen Tickets ist auf dem Server schon vergeben.',
+		inbox: 'Die ID des neuen Eingangseintrags ist auf dem Server schon vergeben.'
+	})
 });
 
 /** The message of a conflict as a whole (the hook). */
@@ -291,6 +301,16 @@ export interface ActionBase {
 	 * have arrived. An answer of the server clears it; "Verwerfen" then takes the action back.
 	 */
 	unanswered?: true;
+	/**
+	 * A creation "＋" (OF-4a round 2, A5): when its last request left, ms of the device. A lookup that
+	 * does not find it is final only LOOKUP_FINAL_MS after it (`mayStillArrive`).
+	 */
+	lastSentAt?: number;
+	/**
+	 * A creation the server answered (a refusal) after a request of it got no answer (OF-4a round 2,
+	 * A5): that request may still arrive, so "Verwerfen" looks it up instead of deleting it.
+	 */
+	unansweredBefore?: true;
 	/** "Trotzdem übertragen" after 48 hours: sent without the time of the device. */
 	late?: boolean;
 	outcome?: ActionOutcome;
@@ -542,6 +562,8 @@ function baseOf(raw: Record<string, unknown>, op: string, user: string): ActionB
 		...(finite(raw.sendingSince) && { sendingSince: raw.sendingSince }),
 		...(raw.sent === true && { sent: true as const }),
 		...(raw.unanswered === true && { unanswered: true as const }),
+		...(finite(raw.lastSentAt) && { lastSentAt: raw.lastSentAt }),
+		...(raw.unansweredBefore === true && { unansweredBefore: true as const }),
 		...(raw.late === true && { late: true }),
 		...(outcome !== undefined && { outcome }),
 		...(raw.discarded === true && { discarded: true as const }),
@@ -1598,7 +1620,11 @@ export function planCreate(change: CreateChange, context: PlanContext): ChangePl
 		change.kind === 'ticket.create'
 			? { ...head, kind: 'ticket.create', payload: change.payload, expected: {} }
 			: { ...head, kind: 'inbox.create', payload: change.payload, expected: {} };
-	return sendOrQueue(action, true, context);
+	const plan = sendOrQueue(action, true, context);
+	// The first attempt is its first request (round 2, A5).
+	return plan.kind === 'send'
+		? { kind: 'send', action: { ...plan.action, lastSentAt: context.now } }
+		: plan;
 }
 
 function sameState(a: CheckState, b: CheckState): boolean {
@@ -1768,7 +1794,38 @@ export function agedActions(
 		else if (isTakeBack(action) || isLookUp(action)) continue;
 		else if (isOld(action, now) || isFromTheFuture(action, now)) expire.push(action.op);
 	}
-	return { expire, drop };
+	// A creation that goes takes the changes that wait for it along, also through each other (OF-4a
+	// round 2, A8): none of them can arrive without it.
+	const along = alongDropped(actions, drop);
+	return {
+		expire: expire.filter((op) => !along.has(op)),
+		drop: [...drop, ...[...along.keys()].filter((op) => !drop.includes(op))]
+	};
+}
+
+/**
+ * The changes that wait for a creation of `drop`, also through each other, with the creation they wait
+ * for (OF-4a round 2, A8); among them also those of `drop`.
+ */
+export function alongDropped(
+	actions: readonly KeptAction[],
+	drop: readonly string[]
+): Map<string, CreateAction> {
+	const creationOf = new Map<string, CreateAction>();
+	const along = new Map<string, CreateAction>();
+	for (const action of inOrder(actions)) {
+		if (isCreateAction(action)) {
+			if (drop.includes(action.op)) creationOf.set(action.op, action);
+			continue;
+		}
+		const creation = action.dependsOn
+			.map((op) => creationOf.get(op))
+			.find((found) => found !== undefined);
+		if (creation === undefined) continue;
+		creationOf.set(action.op, creation);
+		along.set(action.op, creation);
+	}
+	return along;
 }
 
 /**
@@ -1777,6 +1834,29 @@ export function agedActions(
  */
 export function isLookUp(action: KeptAction): boolean {
 	return isCreateAction(action) && action.discarded === true;
+}
+
+/**
+ * Whether a request of a creation may still arrive (OF-4a round 2, A5): one of its requests got no
+ * answer, and its last request is less than LOOKUP_FINAL_MS ago (or the clock went back). A lookup that
+ * does not find it, or a refusal, is not final until then.
+ */
+export function mayStillArrive(action: KeptAction, now: number): boolean {
+	if (!isCreateAction(action)) return false;
+	if (action.unanswered !== true && action.unansweredBefore !== true) return false;
+	const since = action.lastSentAt ?? 0;
+	return now - since < LOOKUP_FINAL_MS;
+}
+
+/** When to look a creation up again whose request may still arrive (`mayStillArrive`). */
+export function lookUpAgainAt(action: KeptAction, now: number): number {
+	return Math.min(action.lastSentAt ?? now, now) + LOOKUP_FINAL_MS;
+}
+
+/** The kind of the record of a creation "＋", null for any other action (OF-4a round 2, A10). */
+export function createdRecordOf(action: KeptAction): 'ticket' | 'inbox' | null {
+	if (isTicketCreate(action)) return 'ticket';
+	return isInboxCreate(action) ? 'inbox' : null;
 }
 
 /**
@@ -2019,9 +2099,10 @@ function isConflict([, error]: [string, FieldFacts]): boolean {
  * (OF-3); a conflict at a field waits for a decision; open sub-tasks wait for the answer to the
  * question; a day of the plan gone by is refused for good with its own words (OF-3); 401 waits for
  * the sign-in; a missing answer (network, time limit, `aborted` by the limit) waits for the
- * connection; 5xx tries again later; every other answer is refused for good.
+ * connection; 5xx tries again later; every other answer is refused for good. `record`: the kind of the
+ * record of a creation, for the words of the codes PocketBase answers itself (OF-4a round 2, A10).
  */
-export function verdictOf(failure: FailureFacts): SendVerdict {
+export function verdictOf(failure: FailureFacts, record?: 'ticket' | 'inbox' | null): SendVerdict {
 	if (failure.kind === 'network' || failure.kind === 'aborted') return { result: 'network' };
 	if (failure.kind === 'session') return { result: 'session' };
 	const serverError = failure.status === 0 || failure.status >= 500;
@@ -2056,9 +2137,11 @@ export function verdictOf(failure: FailureFacts): SendVerdict {
 		};
 	}
 	const count = error.params?.count;
+	const own =
+		record === undefined || record === null ? undefined : CREATE_MESSAGES[error.code]?.[record];
 	const outcome: ActionOutcome = {
 		code: error.code,
-		message: OFFLINE_MESSAGES[error.code] ?? CREATE_MESSAGES[error.code] ?? error.message,
+		message: OFFLINE_MESSAGES[error.code] ?? own ?? error.message,
 		...(error.code === OPEN_CHILDREN_CODE && { count: finite(count) ? count : 1 }),
 		// The project or the tags of a creation (OF-4a): it may go again without them.
 		...(isCreateField(field) && { field })
@@ -2197,6 +2280,19 @@ export function createdName(record: 'ticket' | 'inbox', title: string): string {
 }
 
 /**
+ * A creation in the middle of a sentence (OF-4a round 2, A10): "das neue Ticket „Titel“" or "der neue
+ * Eingangseintrag „Titel“"; `accusative` after "auf" ("den neuen Eingangseintrag").
+ */
+export function createdInSentence(
+	record: 'ticket' | 'inbox',
+	title: string,
+	accusative = false
+): string {
+	if (record === 'ticket') return `das neue Ticket „${title}“`;
+	return `${accusative ? 'den neuen' : 'der neue'} Eingangseintrag „${title}“`;
+}
+
+/**
  * What the place of the key shows (concept §2.3): the key, or "Neu" for a ticket "＋" created that the
  * server does not have yet (OF-4a).
  */
@@ -2329,12 +2425,25 @@ export const OFFLINE_TEXTS = Object.freeze({
 	/** A refused creation of a ticket may go again without its project or its tags (concept §3.7). */
 	withoutProject: 'Ohne Projekt anlegen',
 	withoutTags: 'Ohne Tags anlegen',
-	/** The full text of a refused creation stays to be read and marked until the user decides (C2). */
-	createdText: 'Getippter Text:',
-	/** "Verwerfen" of a creation that may have arrived (OF-4a): it is not sent again, only looked up. */
-	createCheckHint:
-		'Vielleicht ist der Eintrag schon angekommen. Er wird nicht noch einmal gesendet; sobald eine Verbindung besteht, sieht die App nach und meldet sich, falls es ihn schon gibt.',
+	/**
+	 * "Verwerfen" of a creation that may have arrived (OF-4a): it is not sent again, only looked up; in
+	 * the words of its kind since round 2 (A10).
+	 */
+	createCheckHint: (record: 'ticket' | 'inbox') =>
+		record === 'ticket'
+			? 'Vielleicht ist das neue Ticket schon angekommen. Es wird nicht noch einmal gesendet; sobald eine Verbindung besteht, sieht die App nach und meldet sich, falls es das Ticket schon gibt.'
+			: 'Vielleicht ist der neue Eingangseintrag schon angekommen. Er wird nicht noch einmal gesendet; sobald eine Verbindung besteht, sieht die App nach und meldet sich, falls es ihn schon gibt.',
 	createChecking: 'verworfen, wird nachgesehen, sobald eine Verbindung besteht',
+	/**
+	 * A creation the server answers as arrived but the account no longer sees, the trash for instance
+	 * (`validation_op_applied`, OF-4a round 2, A7): a notice that stays, with a link.
+	 */
+	createdHidden: (record: 'ticket' | 'inbox', title: string) =>
+		record === 'ticket'
+			? `Das neue Ticket „${title}“ wurde angelegt, ist aber nicht mehr sichtbar (Papierkorb?). Bitte im Papierkorb prüfen.`
+			: `Der neue Eingangseintrag „${title}“ wurde angelegt, ist aber nicht mehr sichtbar. Bitte im Eingang prüfen.`,
+	/** What needs the server at a ticket "＋" created that it does not have yet (round 2, A6). */
+	createdLocked: 'Geht erst, wenn das Ticket übertragen ist.',
 	/** A discarded creation that arrived anyway (OF-4a): a notice that stays, with a link. */
 	createdAnyway: (record: 'ticket' | 'inbox', title: string, key: string) =>
 		record === 'ticket'
@@ -2342,8 +2451,15 @@ export const OFFLINE_TEXTS = Object.freeze({
 			: `Der verworfene Eintrag „${title}“ liegt schon im Eingang. Bitte dort prüfen und bei Bedarf verwerfen.`,
 	openItem: 'Eintrag ansehen',
 	/** A discarded creation the deletion after 7 days took before it was looked up (OF-4a, C3). */
-	droppedCreated: (name: string) =>
-		`Ob ${name} trotz „Verwerfen“ schon angelegt wurde, ließ sich nicht mehr nachsehen.`,
+	droppedCreated: (record: 'ticket' | 'inbox', title: string) =>
+		record === 'ticket'
+			? `Ob ${createdInSentence(record, title)} trotz „Verwerfen“ schon angelegt wurde, ließ sich nicht mehr nachsehen.`
+			: `Ob ${createdInSentence(record, title)} trotz „Verwerfen“ schon im Eingang liegt, ließ sich nicht mehr nachsehen.`,
+	/** The changes of a new ticket the deletion after 7 days took with its creation (round 2, A8). */
+	droppedAlong: (count: number, title: string) =>
+		count === 1
+			? `Mit dem neuen Ticket „${title}“ wurde auch 1 Änderung daran gelöscht.`
+			: `Mit dem neuen Ticket „${title}“ wurden auch ${count} Änderungen daran gelöscht.`,
 	/** A ticket or an entry "＋" created that the server does not have yet, in its panel (OF-4a). */
 	createdHint:
 		'Noch nicht übertragen. Status und Fälligkeit lassen sich schon ändern, alles andere erst, wenn das Ticket übertragen ist.',
@@ -2406,6 +2522,9 @@ export const OFFLINE_TEXTS = Object.freeze({
 	waiting: 'wartet',
 	underway: 'wird übertragen …',
 	waitingFor: (key: string) => `wartet auf ${key}`,
+	/** A change that waits for a creation (OF-4a round 2, A10): "wartet auf das neue Ticket „…“". */
+	waitingForCreated: (record: 'ticket' | 'inbox', title: string) =>
+		`wartet auf ${createdInSentence(record, title, true)}`,
 	offlineAt: (time: string) => `offline um ${time}`,
 	conflictMine: (time: string, text: string) =>
 		`Deine Änderung (offline um ${time} laut Gerät): ${text}`,
@@ -2540,10 +2659,8 @@ export const OFFLINE_INTENTS = Object.freeze({
 	/** "Ohne Projekt anlegen" and "Ohne Tags anlegen" of a refused creation (OF-4a). */
 	withoutField: (field: CreateField, text: string) =>
 		`${field === 'project' ? 'Ohne Projekt anlegen' : 'Ohne Tags anlegen'}: ${text}`,
-	/** "＋" kept for later (OF-4a). */
-	create: (text: string) => `Merken: ${text}`,
 	/** Looking up a discarded creation that may have arrived (OF-4a). */
-	lookUp: (text: string) => `Verworfenen neuen Eintrag nachsehen: ${text}`,
+	lookUp: (text: string) => `Nachsehen, ob schon angelegt: ${text}`,
 	/** The notices on the device (OF-3c). */
 	keepNotice: 'Hinweis zu gemerkten Änderungen auf diesem Gerät speichern',
 	closeNotice: 'Hinweis zu gemerkten Änderungen schließen'

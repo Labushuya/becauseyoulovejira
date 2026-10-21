@@ -361,15 +361,16 @@ export class InboxStore {
 
 	/**
 	 * Inserts or replaces an entry (own answer or realtime event). An older `updated` than the
-	 * stored one is ignored. A new entry joins the new ones; a handled one leaves them and joins
-	 * the loaded handled entries only where the loaded pages cover it.
+	 * stored one is ignored, only of an entry of the server: one "＋" put in has the time of the device
+	 * (OF-4a round 2, A4). A new entry joins the new ones; a handled one leaves them and joins the
+	 * loaded handled entries only where the loaded pages cover it.
 	 */
 	upsert(item: InboxItemSummary): void {
 		if (this.#deleted.has(item.id)) return;
 		// An entry "＋" put into the inbox shows from the outbox until the server has it (OF-4a).
 		if (this.#overlay?.isCreatedView(item) === true) return;
 		this.#touched?.add(item.id);
-		const existing = this.find(item.id);
+		const existing = this.#new.get(item.id) ?? this.#handled.get(item.id) ?? null;
 		if (existing !== null && existing.updated > item.updated) return;
 		if (item.state === 'new') {
 			// Back in the inbox by another way: "Rückgängig" has nothing left to do.

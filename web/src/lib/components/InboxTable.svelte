@@ -206,11 +206,14 @@
 	/** New entries and the view "Alle" are ordered by arrival, the others by their handling. */
 	const byArrival = $derived(query.state === 'new' || query.state === 'all');
 	const rows = $derived(store.visible);
+	/**
+	 * Whether an entry may be chosen: a new one, but not one "＋" put into the inbox that the server
+	 * does not have yet (OF-4a round 2, A2).
+	 */
+	const choosable = (item: InboxItemSummary) => item.state === 'new' && !store.isCreated(item.id);
 	/** Chosen entries that are shown and still new (a converted or discarded one drops out). */
-	const chosen = $derived(
-		rows.filter((item) => item.state === 'new' && selected.includes(item.id))
-	);
-	const selectable = $derived(rows.filter((item) => item.state === 'new'));
+	const chosen = $derived(rows.filter((item) => choosable(item) && selected.includes(item.id)));
+	const selectable = $derived(rows.filter(choosable));
 	const allChosen = $derived(selectable.length > 0 && chosen.length === selectable.length);
 	const ready = $derived(
 		showsNew ? store.state === 'ready' : store.state === 'ready' && store.handledLoad === 'ready'
@@ -541,8 +544,9 @@
 	/** A tap on a card opens its entry, or chooses it while choosing (MO-6). */
 	function tapCard(event: MouseEvent, item: InboxItemSummary) {
 		if (!isCardTap(event)) return;
-		if (selecting && item.state === 'new') toggle(item.id, !selected.includes(item.id));
-		else void goto(inboxItemHref(item.id, page.url));
+		if (!selecting || item.state !== 'new') void goto(inboxItemHref(item.id, page.url));
+		// One "＋" put in that the server does not have yet is not chosen (OF-4a round 2, A2).
+		else if (choosable(item)) toggle(item.id, !selected.includes(item.id));
 	}
 </script>
 
@@ -713,7 +717,7 @@
 	{@const linkedTicket =
 		item.state === 'converted' && item.ticket?.id === item.ticketId ? item.ticket : null}
 	{@const targetLabel = targetsReady ? targetText(targetOfItem(item, projects)) : ''}
-	{@const choosing = selecting && item.state === 'new' && !store.isCreated(item.id)}
+	{@const choosing = selecting && choosable(item)}
 	<!-- The title link is the keyboard target of the card; the tap on the card is a shortcut for it. -->
 	<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
 	<li

@@ -6,12 +6,15 @@
 	// ADR-0025 section 5): the value is the button, filling the cell, with a quiet hover and a
 	// pencil that shows on hover and keyboard focus. Tab reaches it, Enter or Space opens the editor,
 	// Escape closes it and the focus goes back to the cell (the Popover does both). The row ignores
-	// clicks on the button and inside the popover, so they never open the ticket.
+	// clicks on the button and inside the popover, so they never open the ticket. With `locked` (a
+	// ticket "＋" created, OF-4a round 2, A6) the cell stays a button with its value, but locked:
+	// `aria-disabled`, the reason as its description and title, no editor ("gesperrt statt weg").
 	let {
 		kind,
 		label,
 		buttonLabel,
 		busy = false,
+		locked = null,
 		value,
 		editor
 	}: {
@@ -23,11 +26,17 @@
 		buttonLabel: string;
 		/** A save of this ticket runs. */
 		busy?: boolean;
+		/** Why the value cannot be edited yet; null edits it. */
+		locked?: string | null;
 		/** The value as the cell shows it. */
 		value: Snippet;
 		/** The editor; `close` hides it and returns the focus to the cell. */
 		editor: Snippet<[{ close: () => void }]>;
 	} = $props();
+
+	const uid = $props.id();
+	/** A locked cell names field, ticket and value, without "ändern". */
+	const lockedLabel = $derived(buttonLabel.replace(/, ändern$/, ''));
 
 	/**
 	 * The editor renders once the cell is pointed at or focused, before the popover opens (so it is
@@ -37,46 +46,70 @@
 	let opened = $state(false);
 </script>
 
-<!-- Pointer and focus only prepare the editor; the button inside does the opening. -->
-<!-- svelte-ignore a11y_no_static_element_interactions -->
-<span
-	class="editable-cell"
-	aria-busy={busy ? 'true' : undefined}
-	onpointerenter={() => (opened = true)}
-	onfocusin={() => (opened = true)}
->
-	<Popover
-		{kind}
-		{label}
-		{buttonLabel}
-		buttonClass="cell-edit"
-		buttonTitle={buttonLabel}
-		onopen={() => (opened = true)}
+{#if locked !== null}
+	<button
+		class="cell-edit"
+		type="button"
+		aria-disabled="true"
+		aria-label={lockedLabel}
+		aria-describedby={`${uid}-locked`}
+		title={locked}
 	>
-		{#snippet button()}
-			<span class="value">{@render value()}</span>
-			<svg
-				class="edit-hint"
-				viewBox="0 0 16 16"
-				width="12"
-				height="12"
-				aria-hidden="true"
-				focusable="false"
-			>
-				<path d="M10.5 2.5l3 3-7.5 7.5H3v-3z" />
-			</svg>
-		{/snippet}
-		{#snippet children({ close })}
-			{#if opened}
-				{@render editor({ close })}
-			{/if}
-		{/snippet}
-	</Popover>
-</span>
+		<span class="value">{@render value()}</span>
+	</button>
+	<span class="visually-hidden" id={`${uid}-locked`}>{locked}</span>
+{:else}
+	<!-- Pointer and focus only prepare the editor; the button inside does the opening. -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<span
+		class="editable-cell"
+		aria-busy={busy ? 'true' : undefined}
+		onpointerenter={() => (opened = true)}
+		onfocusin={() => (opened = true)}
+	>
+		<Popover
+			{kind}
+			{label}
+			{buttonLabel}
+			buttonClass="cell-edit"
+			buttonTitle={buttonLabel}
+			onopen={() => (opened = true)}
+		>
+			{#snippet button()}
+				<span class="value">{@render value()}</span>
+				<svg
+					class="edit-hint"
+					viewBox="0 0 16 16"
+					width="12"
+					height="12"
+					aria-hidden="true"
+					focusable="false"
+				>
+					<path d="M10.5 2.5l3 3-7.5 7.5H3v-3z" />
+				</svg>
+			{/snippet}
+			{#snippet children({ close })}
+				{#if opened}
+					{@render editor({ close })}
+				{/if}
+			{/snippet}
+		</Popover>
+	</span>
+{/if}
 
 <style>
 	.editable-cell {
 		display: contents;
+	}
+
+	/* A locked cell (OF-4a round 2, A6): "not allowed" like every locked control, no fill. */
+	:global(button.cell-edit[aria-disabled='true']) {
+		cursor: not-allowed;
+		opacity: 0.75;
+	}
+
+	:global(button.cell-edit[aria-disabled='true']:hover) {
+		background: none;
 	}
 
 	/* The button fills the cell; the value keeps its look, the hover is a quiet fill. */

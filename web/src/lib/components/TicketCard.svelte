@@ -86,7 +86,10 @@
 		selecting?: boolean;
 		/** The card is chosen for a bulk action. */
 		selected?: boolean;
-		/** The box of the selection or a tap on the card changed the choice to `on`. */
+		/**
+		 * The box of the selection or a tap on the card changed the choice to `on`. Without it the card
+		 * cannot be chosen (a ticket "＋" created, OF-4a round 2, A2): no box, the check mark stays.
+		 */
 		onselect?: (on: boolean) => void;
 		/** A save of this ticket runs (the menu of the status waits). */
 		statusBusy?: boolean;
@@ -115,8 +118,13 @@
 		recurrenceText === '' ? 'Wiederkehrend' : `Wiederkehrend: ${recurrenceText}`
 	);
 	const tagNames = $derived(tags.map((tag) => tag.name).join(', '));
+	/** Choosing this card: "Auswählen" is on and the card may be chosen. */
+	const choosing = $derived(selecting && onselect !== undefined);
 
-	/** Controls of the card handle their own taps; the card only takes taps outside of them. */
+	/**
+	 * Controls of the card handle their own taps; the card only takes taps outside of them. While
+	 * choosing, a card that cannot be chosen takes no tap (OF-4a round 2, A2).
+	 */
 	function onclick(event: MouseEvent) {
 		if (!isCardTap(event)) return;
 		if (selecting) onselect?.(!selected);
@@ -141,7 +149,7 @@
 	{#if shownColor}
 		<span class="color-slot"><ColorMark shown={shownColor} kind="stripe" /></span>
 	{/if}
-	{#if selecting}
+	{#if choosing}
 		<!-- The whole target is the label: a tap anywhere in it chooses. -->
 		<label class="check-target" data-card-select>
 			<input
