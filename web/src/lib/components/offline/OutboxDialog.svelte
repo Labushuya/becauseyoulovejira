@@ -68,6 +68,9 @@
 	// hours) it shows its whole text, readable and selectable (the clipboard is blocked over HTTP), with
 	// "Als Eingangseintrag sichern" and "Verwerfen" (concept §2.1, C2). A creation of a ticket names the
 	// comments that wait for it and what "Verwerfen" does to them.
+	// Since round 2 of OF-4b an entry that keeps the text of a comment shows that whole text the same way
+	// in every state (K-1); "Als Eingangseintrag sichern" waits with `aria-busy` and `aria-disabled` while
+	// it runs (K-2); a comment saved after it may have arrived says that it is looked up (K-3).
 	let {
 		outbox,
 		onclose,
@@ -149,6 +152,10 @@
 		if (!isWaiting(action)) return OFFLINE_TEXTS.markDecision;
 		// A discarded creation is only looked up by its ID (OF-4a, C4).
 		if (action.discarded === true && isCreateAction(action)) {
+			// A comment saved as an entry after it may have arrived says so (round 2, K-3).
+			if (isCommentCreate(action) && action.saved === true) {
+				return OFFLINE_TEXTS.savedChecking(outbox.offline);
+			}
 			// With a connection in neutral words (OF-4b, B-3): it waits for its next lookup.
 			return OFFLINE_TEXTS.createChecking(outbox.offline);
 		}
@@ -260,11 +267,17 @@
 		</p>
 		<ProblemDetails problem={outbox.problemOf(action.op)} />
 		<div class="buttons">
-			{#if outbox.canSaveAsItem(action)}
+			{#if outbox.canSaveAsItem(action) || outbox.savingAsItem(action.op)}
+				{@const saving = outbox.savingAsItem(action.op)}
+				<!-- While it runs the button stays and waits (round 2, K-2): a second tap saves nothing. -->
 				<button
 					class="button-primary button-small"
 					type="button"
-					onclick={() => void outbox.saveAsItem(action.op)}
+					aria-disabled={saving ? 'true' : undefined}
+					aria-busy={saving ? 'true' : undefined}
+					onclick={() => {
+						if (!saving) void outbox.saveAsItem(action.op);
+					}}
 				>
 					{OFFLINE_TEXTS.saveAsItem}
 				</button>
@@ -304,6 +317,11 @@
 					{/if}
 					{#if commentsOf(action) > 0}
 						<p class="detail">{OFFLINE_TEXTS.withComments(commentsOf(action))}</p>
+					{/if}
+					{#if isInboxCreate(action) && action.payload.body !== undefined}
+						<!-- The whole text of a comment an entry keeps (round 2, K-1, C2): readable and
+						     selectable until it arrived, waiting, refused or older than 48 hours. -->
+						<blockquote class="comment-text">{action.payload.body}</blockquote>
 					{/if}
 					{#if isCommentCreate(action) && needsDecision(action) && action.discarded !== true}
 						{@render decideComment(action)}
@@ -482,7 +500,10 @@
 		margin-top: 0.25rem;
 	}
 
-	/* The whole text of a comment that waits for a decision (OF-4b): plain, selectable text. */
+	/*
+	 * The whole text of a comment that waits for a decision (OF-4b), and since round 2 of an entry that
+	 * keeps one (K-1): plain, selectable text.
+	 */
 	.comment-text {
 		margin: 0.25rem 0;
 		padding: 0.375rem 0.625rem;

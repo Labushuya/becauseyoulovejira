@@ -483,6 +483,11 @@ export interface CommentCreateAction extends ActionBase {
 	ticket: string;
 	payload: CommentCreatePayload;
 	expected: Record<string, never>;
+	/**
+	 * "Als Eingangseintrag sichern" after it may have arrived (OF-4b round 2, K-3): its text is in the
+	 * inbox; it is discarded and only looked up, and found, a notice says that its text is there twice.
+	 */
+	saved?: true;
 }
 
 /**
@@ -834,8 +839,8 @@ function createActionOf(
 
 /**
  * A comment kept for later (OF-4b): its ID of the client as `target`, the ID of its ticket, a text that
- * is not empty and not longer than a comment may be. It takes nothing back; anything else is not one
- * of this build.
+ * is not empty and not longer than a comment may be; saved as an entry after it may have arrived only
+ * once discarded (round 2, K-3). It takes nothing back; anything else is not one of this build.
  */
 function commentActionOf(
 	raw: Record<string, unknown>,
@@ -851,9 +856,17 @@ function commentActionOf(
 		RECORD_ID_PATTERN.test(ticket) &&
 		typeof body === 'string' &&
 		body.trim() !== '' &&
-		body.length <= COMMENT_MAX_LENGTH;
+		body.length <= COMMENT_MAX_LENGTH &&
+		(raw.saved === undefined || (raw.saved === true && base.discarded === true));
 	if (!valid) return null;
-	return { ...base, kind: 'comment.create', ticket, payload: { body }, expected: {} };
+	return {
+		...base,
+		kind: 'comment.create',
+		ticket,
+		payload: { body },
+		expected: {},
+		...(raw.saved === true && { saved: true as const })
+	};
 }
 
 /**
@@ -2587,7 +2600,9 @@ function whenText(device: string, reference: string): string {
  * The head of a comment from the outbox (OF-4b, concept §2.3): one kept for later "Offline geschrieben
  * um 14:03 (laut Gerät)"; one that arrived "… · übertragen 14:30" with the time of the server, which
  * counts (ADR-0074 §4), and without an accepted time of the device "Offline geschrieben · übertragen
- * 14:30". A time of the device on another day than the transfer (or than now) names its date.
+ * 14:30". A time of the device on another day than the transfer (or than now) names its date. Since
+ * round 2 (K-7) the head stands instead of the time of the comment, so a transfer before today names
+ * its date as well ("übertragen 19.10.2026 20:30").
  */
 export function offlineCommentText(
 	comment: Pick<Comment, 'created' | 'deviceAt'>,
@@ -2599,7 +2614,8 @@ export function offlineCommentText(
 		return OFFLINE_TEXTS.writtenOffline(whenText(device, toPocketBaseTimestamp(now)), null);
 	}
 	const when = comment.deviceAt ? whenText(comment.deviceAt, comment.created) : null;
-	return OFFLINE_TEXTS.writtenOffline(when, formatBerlinDateTime(comment.created).slice(11));
+	const synced = serverTimeText(comment.created, now) ?? formatBerlinDateTime(comment.created);
+	return OFFLINE_TEXTS.writtenOffline(when, synced);
 }
 
 /**
@@ -2757,8 +2773,28 @@ export const OFFLINE_TEXTS = Object.freeze({
 				? 'Kommentar als Eingangseintrag gemerkt. Er kommt in den Eingang, sobald die Verbindung zurück ist.'
 				: 'Kommentar als Eingangseintrag gemerkt. Er wird später erneut übertragen.',
 	saveAsItemFailed: 'Der Kommentar ließ sich nicht als Eingangseintrag sichern; er bleibt gemerkt.',
+	/**
+	 * A comment saved as an entry after it may have arrived waits for its lookup (OF-4b round 2, K-3);
+	 * with a connection in neutral words.
+	 */
+	savedChecking: (offline: boolean) =>
+		offline
+			? 'als Eingangseintrag gesichert, wird nachgesehen, sobald eine Verbindung besteht'
+			: 'als Eingangseintrag gesichert, wird nachgesehen',
+	/** Such a comment that arrived anyway (K-3): a notice that stays, with a link to its ticket. */
+	savedAnyway: (title: string, key: string) =>
+		`Der als Eingangseintrag gesicherte Kommentar „${title}“ ist schon angekommen${key === '' ? '' : ` (${key})`}; sein Text liegt jetzt zusätzlich im Eingang. Bitte im Ticket prüfen und bei Bedarf löschen.`,
+	/** Such a comment the deletion after 7 days took before it was looked up (K-3, C3). */
+	droppedSaved: (title: string) =>
+		`Ob der als Eingangseintrag gesicherte Kommentar „${title}“ schon angekommen ist, ließ sich nicht mehr nachsehen.`,
 	/** The whole text of a comment the deletion after 7 days took (OF-4b, C2). */
 	droppedComment: (ticket: string, text: string) => `Text des Kommentars zu ${ticket}: „${text}“`,
+	/**
+	 * The whole text of an entry that keeps a comment the deletion after 7 days took (OF-4b round 2,
+	 * K-1, C2), named by its title.
+	 */
+	droppedItemText: (title: string, text: string) =>
+		`Text des Eingangseintrags „${title}“: „${text}“`,
 	/**
 	 * The result of "＋" kept for later (OF-4a); kept while the connection is there (a 5xx, an answer
 	 * that got lost) in neutral words (OF-4b, B-3).

@@ -25,6 +25,9 @@
 // - Since OF-4b a comment the deletion after 7 days took keeps its whole text in the notice (C2), also
 //   one that went with the creation of its ticket; a discarded comment that arrived anyway names it with
 //   a link to its ticket (`created` with `ticket`). A build before OF-4b cannot read these notices.
+// - Since round 2 of OF-4b an entry of the inbox that keeps the text of a comment keeps that whole text
+//   in the notice of the deletion after 7 days (`body`, K-1), and a comment saved as an entry after it
+//   may have arrived is named in words of its own (`saved`, K-3): found, its text is there twice.
 
 import {
 	OFFLINE_TEXTS,
@@ -39,6 +42,7 @@ import {
 	intentOf,
 	isCommentCreate,
 	isCreateAction,
+	isInboxCreate,
 	isTakeBack,
 	parseChangeRef,
 	statusFeature,
@@ -48,6 +52,7 @@ import {
 	type CreatedKind,
 	type KeptAction
 } from './offline';
+import { INBOX_BODY_MAX_LENGTH } from './inbox';
 import { COMMENT_MAX_LENGTH, TITLE_MAX_LENGTH } from './ticket';
 
 /**
@@ -62,6 +67,10 @@ export interface CreatedRef {
 	readonly discarded?: true;
 	/** The ticket of a comment: its key, or "dem neuen Ticket „Titel“" (OF-4b). */
 	readonly ticket?: string;
+	/** The whole text of an entry of the inbox that keeps a comment, not discarded (round 2, K-1). */
+	readonly body?: string;
+	/** A comment saved as an entry after it may have arrived, so discarded (round 2, K-3). */
+	readonly saved?: true;
 }
 
 /** The creation of an action as a notice keeps it. */
@@ -75,13 +84,17 @@ function createdRefOf(action: CreateAction): CreatedRef {
 			record,
 			title: discarded ? commentExcerpt(body) : body,
 			...(discarded && { discarded: true as const }),
-			ticket: commentTicketName(action)
+			ticket: commentTicketName(action),
+			...(discarded && action.saved === true && { saved: true as const })
 		};
 	}
+	// The text of a comment an entry keeps stays readable as well (round 2, K-1), not of a discarded one.
+	const body = isInboxCreate(action) && !discarded ? action.payload.body : undefined;
 	return {
 		record,
 		title: action.payload.title,
-		...(discarded && { discarded: true as const })
+		...(discarded && { discarded: true as const }),
+		...(body !== undefined && { body })
 	};
 }
 
@@ -148,6 +161,8 @@ export interface CreatedNotice {
 	 * record (`validation_op_applied`, OF-4a round 2, A7).
 	 */
 	readonly hidden?: true;
+	/** A comment saved as an entry after it may have arrived: its text is there twice (round 2, K-3). */
+	readonly saved?: true;
 }
 
 export type OfflineNotice = DroppedNotice | ChildNotice | CreatedNotice;
@@ -181,16 +196,24 @@ function isTicketWords(value: unknown): value is string {
 function createdOf(value: unknown): CreatedRef | null | undefined {
 	if (value === undefined) return undefined;
 	if (typeof value !== 'object' || value === null) return null;
-	const { record, title, discarded, ticket } = value as Record<string, unknown>;
+	const { record, title, discarded, ticket, body, saved } = value as Record<string, unknown>;
 	if (!isRecordKind(record) || !isTitle(title, record)) return null;
 	if (discarded !== undefined && discarded !== true) return null;
 	// A comment names its ticket (OF-4b); nothing else does.
 	if ((record === 'comment') !== isTicketWords(ticket)) return null;
+	// The text an entry keeps (round 2, K-1), and a comment saved after it may have arrived (K-3).
+	const text = typeof body === 'string' && body !== '' && body.length <= INBOX_BODY_MAX_LENGTH;
+	if (body !== undefined && (record !== 'inbox' || discarded === true || !text)) return null;
+	if (saved !== undefined && (saved !== true || record !== 'comment' || discarded !== true)) {
+		return null;
+	}
 	return {
 		record,
 		title,
 		...(discarded === true && { discarded: true as const }),
-		...(record === 'comment' && { ticket: ticket as string })
+		...(record === 'comment' && { ticket: ticket as string }),
+		...(typeof body === 'string' && { body }),
+		...(saved === true && { saved: true as const })
 	};
 }
 
@@ -227,13 +250,15 @@ export function parseNotice(raw: unknown): OfflineNotice | null {
 		return { ...head, kind: 'childNotDone', key, parent, child, after };
 	}
 	if (value.kind === 'created') {
-		const { record, target, ticket, key, title, hidden } = value;
+		const { record, target, ticket, key, title, hidden, saved } = value;
 		if (!isRecordKind(record) || !isText(target, false) || !isText(key) || !isTitle(title)) {
 			return null;
 		}
 		if (hidden !== undefined && hidden !== true) return null;
 		// A comment leads to its ticket (OF-4b); nothing else names one.
 		if ((record === 'comment') !== isText(ticket, false)) return null;
+		// Only a comment is saved as an entry (round 2, K-3).
+		if (saved !== undefined && (saved !== true || record !== 'comment')) return null;
 		const notice = {
 			...head,
 			kind: 'created' as const,
@@ -241,7 +266,8 @@ export function parseNotice(raw: unknown): OfflineNotice | null {
 			target,
 			...(record === 'comment' && { ticket: ticket as string }),
 			key,
-			title
+			title,
+			...(saved === true && { saved: true as const })
 		};
 		return hidden === true ? { ...notice, hidden: true as const } : notice;
 	}
@@ -448,7 +474,7 @@ function entryName(entry: DroppedEntry): string {
  * The notice about a creation the user discarded that arrived anyway (OF-4a, C4): one per action, with
  * the key of a ticket where the answer names it. `hidden`: one not discarded that the server answered
  * as arrived, but the account no longer sees (round 2, A7). A comment (OF-4b) is named by the
- * beginning of its text and leads to its ticket.
+ * beginning of its text and leads to its ticket; one saved as an entry says so (round 2, K-3).
  */
 export function createdNotice(
 	action: CreateAction,
@@ -467,7 +493,8 @@ export function createdNotice(
 		...(comment && { ticket: action.ticket }),
 		key,
 		title: comment ? commentExcerpt(action.payload.body) : action.payload.title,
-		...(hidden && { hidden: true as const })
+		...(hidden && { hidden: true as const }),
+		...(comment && action.saved === true && { saved: true as const })
 	};
 }
 
@@ -478,9 +505,9 @@ export function createdNotice(
 export function noticeText(notice: OfflineNotice): string {
 	if (notice.kind === 'childNotDone') return OFFLINE_TEXTS.childNotDone(notice.key, notice.parent);
 	if (notice.kind === 'created') {
-		return notice.hidden === true
-			? OFFLINE_TEXTS.createdHidden(notice.record, notice.title)
-			: OFFLINE_TEXTS.createdAnyway(notice.record, notice.title, notice.key);
+		if (notice.hidden === true) return OFFLINE_TEXTS.createdHidden(notice.record, notice.title);
+		if (notice.saved === true) return OFFLINE_TEXTS.savedAnyway(notice.title, notice.key);
+		return OFFLINE_TEXTS.createdAnyway(notice.record, notice.title, notice.key);
 	}
 	const alongs = notice.entries.filter((entry) => entry.along !== undefined);
 	const own =
@@ -489,6 +516,7 @@ export function noticeText(notice: OfflineNotice): string {
 			: notice.entries.filter((entry) => entry.along === undefined);
 	const keys = [...new Set(own.map(entryName))];
 	const backs = own.flatMap((entry) => {
+		if (entry.created?.saved === true) return [OFFLINE_TEXTS.droppedSaved(entry.created.title)];
 		if (entry.created?.discarded === true) {
 			return [OFFLINE_TEXTS.droppedCreated(entry.created.record, entry.created.title)];
 		}
@@ -504,12 +532,17 @@ export function noticeText(notice: OfflineNotice): string {
 		}
 	}
 	const along = [...counts].map(([title, count]) => OFFLINE_TEXTS.droppedAlong(count, title));
-	// The whole text of a comment stays readable until the notice is closed (OF-4b, C2).
-	const texts = own.flatMap(({ created }) =>
-		created?.record === 'comment' && created.discarded !== true
-			? [OFFLINE_TEXTS.droppedComment(created.ticket ?? 'einem Ticket', created.title)]
-			: []
-	);
+	// The whole text of a comment stays readable until the notice is closed (OF-4b, C2), and so does the
+	// one of an entry that keeps a comment (round 2, K-1).
+	const texts = own.flatMap(({ created }) => {
+		if (created?.record === 'comment' && created.discarded !== true) {
+			return [OFFLINE_TEXTS.droppedComment(created.ticket ?? 'einem Ticket', created.title)];
+		}
+		if (created?.body !== undefined) {
+			return [OFFLINE_TEXTS.droppedItemText(created.title, created.body)];
+		}
+		return [];
+	});
 	const head = OFFLINE_TEXTS.dropped(own.length, keys.join(', '));
 	return [
 		head,

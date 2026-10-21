@@ -33,7 +33,7 @@ import {
 	type PlanContext,
 	type TicketCreateAction
 } from './offline';
-import { droppedEntries, noticeText } from './offline-notices';
+import { createdNotice, droppedEntries, noticeText, parseNotice } from './offline-notices';
 import { COMMENT_MAX_LENGTH } from './ticket';
 
 // 2026-10-20 14:30 in Berlin (CEST).
@@ -298,6 +298,16 @@ describe('the words of a comment (OF-4b)', () => {
 			'Offline geschrieben · übertragen 14:30'
 		);
 	});
+
+	it('names the day of a transfer before today, as the time of a comment does (round 2, K-7)', () => {
+		const yesterday = {
+			created: '2026-10-19 18:30:00.000Z',
+			deviceAt: '2026-10-19 18:03:00.000Z'
+		};
+		expect(offlineCommentText(yesterday, false, NOW)).toBe(
+			'Offline geschrieben um 20:03 (laut Gerät) · übertragen 19.10.2026 20:30'
+		);
+	});
 });
 
 describe('a comment in the chains and with the time (OF-4b)', () => {
@@ -376,6 +386,85 @@ describe('a comment in the chains and with the time (OF-4b)', () => {
 		const gone = droppedEntries([discarded], [discarded.op], []);
 		expect(noticeText({ ...notice, entries: gone })).toBe(
 			'1 gemerkte Änderung war älter als 7 Tage und wurde gelöscht, ohne sicher übertragen zu sein: der Kommentar „Bitte bis Freitag den Termin bestätigen…“. Ob der Kommentar „Bitte bis Freitag den Termin bestätigen…“ trotz „Verwerfen“ schon angekommen ist, ließ sich nicht mehr nachsehen. Bitte im Ticket prüfen.'
+		);
+	});
+});
+
+describe('the text of a comment kept elsewhere (OF-4b round 2)', () => {
+	const TITLE =
+		'Kommentar zu HAUS-12: Bitte bis Freitag den Termin bestätigen. Danach Anna Bescheid geben.';
+	const entry: InboxCreateAction = {
+		v: 2,
+		op: 'op000000000000000007',
+		seq: 7,
+		user: USER,
+		scope: `u:${USER}`,
+		kind: 'inbox.create',
+		target: 'eeeeeeeeeeeeeee',
+		dependsOn: [],
+		key: '',
+		title: TITLE,
+		createdAt: NOW - KEEP_MS - 1,
+		state: 'queued',
+		attempts: 0,
+		nextAttemptAt: 0,
+		payload: {
+			title: TITLE,
+			household: '',
+			preset: { project: null, tags: [], priority: null },
+			body: TEXT
+		},
+		expected: {}
+	};
+
+	it('keeps the whole text of an entry of the inbox in the notice of the deletion after 7 days (K-1)', () => {
+		const entries = droppedEntries([entry], [entry.op], []);
+		expect(entries).toEqual([
+			{ op: entry.op, key: '', created: { record: 'inbox', title: TITLE, body: TEXT } }
+		]);
+		const notice = { v: 1 as const, id: 'dropped-7', kind: 'dropped' as const, at: NOW, entries };
+		// The device keeps it as it is, a build of this round reads it back.
+		expect(parseNotice(JSON.parse(JSON.stringify(notice)))).toEqual(notice);
+		expect(noticeText(notice)).toBe(
+			`1 gemerkte Änderung war älter als 7 Tage und wurde gelöscht, ohne sicher übertragen zu sein: der neue Eingangseintrag „${TITLE}“. Text des Eingangseintrags „${TITLE}“: „${TEXT}“ Bitte im Ticket prüfen.`
+		);
+		// An entry discarded by the user keeps only its title.
+		const discarded: KeptAction = { ...entry, discarded: true, sent: true };
+		expect(droppedEntries([discarded], [discarded.op], [])[0]?.created).toEqual({
+			record: 'inbox',
+			title: TITLE,
+			discarded: true
+		});
+	});
+
+	it('marks a comment saved after it may have arrived, keeps the mark and names it once it is there (K-3)', () => {
+		const saved = comment({
+			state: 'queued',
+			sent: true,
+			unanswered: true,
+			discarded: true,
+			saved: true
+		});
+		expect(parseAction(JSON.parse(JSON.stringify(saved)))).toEqual(saved);
+		const notice = createdNotice(saved, 'HAUS-12', NOW);
+		expect(notice).toMatchObject({ kind: 'created', record: 'comment', saved: true });
+		expect(parseNotice(JSON.parse(JSON.stringify(notice)))).toEqual(notice);
+		expect(noticeText(notice)).toBe(
+			'Der als Eingangseintrag gesicherte Kommentar „Bitte bis Freitag den Termin bestätigen…“ ist schon angekommen (HAUS-12); sein Text liegt jetzt zusätzlich im Eingang. Bitte im Ticket prüfen und bei Bedarf löschen.'
+		);
+		// The deletion after 7 days says that it was not looked up, without "Verwerfen".
+		const old = { ...saved, createdAt: NOW - KEEP_MS - 1 };
+		const gone = droppedEntries([old], [old.op], []);
+		const dropped = {
+			v: 1 as const,
+			id: 'dropped-8',
+			kind: 'dropped' as const,
+			at: NOW,
+			entries: gone
+		};
+		expect(parseNotice(JSON.parse(JSON.stringify(dropped)))).toEqual(dropped);
+		expect(noticeText(dropped)).toContain(
+			'Ob der als Eingangseintrag gesicherte Kommentar „Bitte bis Freitag den Termin bestätigen…“ schon angekommen ist, ließ sich nicht mehr nachsehen.'
 		);
 	});
 });

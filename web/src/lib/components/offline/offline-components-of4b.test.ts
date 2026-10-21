@@ -3,28 +3,35 @@
 // that waits for a decision, readable and selectable, with "Als Eingangseintrag sichern" (C2), and a
 // creation of a ticket names its comments; the hints name a refused comment and a discarded one that
 // arrived anyway with a link to its ticket; the comment shows its head "Offline geschrieben um …" and,
-// kept, no action that needs the server; the form says that a comment was kept.
+// kept, no action that needs the server; the form says that a comment was kept. Round 2 (K-1, K-2,
+// K-7, K-8, K-9): an entry that keeps the text of a comment shows it whole in the dialog, "Als
+// Eingangseintrag sichern" is locked while it runs, the head of an arrived comment names the time of the
+// server once, the status region of the form stays in the tree while empty, and a later comment names
+// the refused earlier one it waits for.
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ResolvedPathname } from '$app/types';
+import type { InboxItem } from '$lib/domain/inbox';
 import {
 	COMMENT_REFUSED_CODE,
 	OFFLINE_TEXTS,
 	SET_ASIDE_CODE,
 	type CommentCreateAction,
+	type InboxCreateAction,
 	type KeptAction,
 	type TicketCreateAction
 } from '$lib/domain/offline';
 import type { Comment } from '$lib/domain/ticket';
 import { ConnectivityStore } from '$lib/offline/connectivity.svelte';
-import { OutboxNoWayError, OutboxStore } from '$lib/offline/outbox.svelte';
+import { OutboxNoWayError, OutboxStore, type Created } from '$lib/offline/outbox.svelte';
 import { MemoryOutboxStorage } from '$lib/offline/outbox-storage';
 import { TicketActivityStore, type CommentOverlay } from '$lib/stores/ticket-activity.svelte';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import { useProseMirrorStubs } from '$lib/test/prosemirror-stubs';
 import CommentList from '../CommentList.svelte';
+import formSource from '../CommentForm.svelte?raw';
 import OfflineNotice from './OfflineNotice.svelte';
 import OutboxDialog from './OutboxDialog.svelte';
 
@@ -91,6 +98,34 @@ const CREATION: TicketCreateAction = {
 		project: null,
 		tags: [],
 		household: ''
+	},
+	expected: {}
+};
+
+const ENTRY_TITLE =
+	'Kommentar zu HAUS-12: Bitte bis Freitag den Termin bestätigen. Danach Anna Bescheid geben.';
+
+/** An entry of the inbox that keeps the text of a comment ("Als Eingangseintrag sichern", format 2). */
+const SAVED_ENTRY: InboxCreateAction = {
+	v: 2,
+	op: 'zzzzzzzzzzzzzzzzzzz6',
+	seq: 6,
+	user: USER,
+	scope: `u:${USER}`,
+	kind: 'inbox.create',
+	target: 'eeeeeeeeeeeeee1',
+	dependsOn: [],
+	key: '',
+	title: ENTRY_TITLE,
+	createdAt: NOW - 20 * 60_000,
+	state: 'queued',
+	attempts: 0,
+	nextAttemptAt: 0,
+	payload: {
+		title: ENTRY_TITLE,
+		household: '',
+		preset: { project: null, tags: [], priority: null },
+		body: TEXT
 	},
 	expected: {}
 };
@@ -211,6 +246,76 @@ describe('OutboxDialog with comments (OF-4b)', () => {
 		expect(within(row).getByRole('button', { name: OFFLINE_TEXTS.sendAnyway })).toBeTruthy();
 		expect(within(row).getByRole('button', { name: 'Als Eingangseintrag sichern' })).toBeTruthy();
 	});
+
+	it('shows the whole text of an entry that keeps a comment: waiting, refused and older than 48 hours (K-1)', async () => {
+		const states: Partial<InboxCreateAction>[] = [
+			{ state: 'queued' },
+			{
+				state: 'refused',
+				sent: true,
+				outcome: { code: 'validation_household_member', message: 'Kein Mitglied mehr.' }
+			},
+			{ state: 'expired' }
+		];
+		for (const state of states) {
+			const outbox = await outboxWith([{ ...SAVED_ENTRY, ...state }]);
+			const { unmount } = render(OutboxDialog, {
+				props: { outbox, onclose: vi.fn(), ticketHref, itemHref }
+			});
+			const row = screen.getByText(OFFLINE_TEXTS.newItem).closest('li') as HTMLElement;
+			const text = row.querySelector('blockquote') as HTMLElement | null;
+			expect(text?.textContent, state.state).toBe(TEXT);
+			unmount();
+		}
+	});
+
+	it('locks "Als Eingangseintrag sichern" while it runs, so a second tap saves nothing more (K-2)', async () => {
+		const outbox = await outboxWith([REFUSED]);
+		const create = vi
+			.spyOn(outbox, 'createItem')
+			.mockReturnValue(new Promise<Created<InboxItem>>(() => undefined));
+		render(OutboxDialog, { props: { outbox, onclose: vi.fn(), ticketHref, itemHref } });
+		const row = screen.getByText('Kommentar zu HAUS-12').closest('li') as HTMLElement;
+		const button = within(row).getByRole('button', { name: 'Als Eingangseintrag sichern' });
+		expect(button.getAttribute('aria-busy')).toBeNull();
+		await fireEvent.click(button);
+		await tick();
+		const busy = within(row).getByRole('button', { name: 'Als Eingangseintrag sichern' });
+		expect(busy.getAttribute('aria-busy')).toBe('true');
+		expect(busy.getAttribute('aria-disabled')).toBe('true');
+		await fireEvent.click(busy);
+		expect(create).toHaveBeenCalledTimes(1);
+	});
+
+	it('says that a comment saved as an entry after it may have arrived is looked up (K-3)', async () => {
+		const saved = comment({ sent: true, unanswered: true, discarded: true, saved: true });
+		const outbox = await outboxWith([saved]);
+		render(OutboxDialog, { props: { outbox, onclose: vi.fn(), ticketHref, itemHref } });
+		const row = screen.getByText('Kommentar zu HAUS-12').closest('li') as HTMLElement;
+		expect(row.textContent).toContain(
+			'offline um 14:03 · als Eingangseintrag gesichert, wird nachgesehen'
+		);
+		expect(within(row).queryByRole('button')).toBeNull();
+	});
+
+	it('says that a later comment waits for the refused earlier one (K-9)', async () => {
+		const later = comment({
+			op: 'zzzzzzzzzzzzzzzzzzz7',
+			seq: 7,
+			target: 'cccccccccccccc2',
+			dependsOn: [REFUSED.op],
+			payload: { body: 'Noch etwas' }
+		});
+		const outbox = await outboxWith([REFUSED, later]);
+		render(OutboxDialog, { props: { outbox, onclose: vi.fn(), ticketHref, itemHref } });
+		const rows = screen
+			.getAllByText('Kommentar zu HAUS-12')
+			.map((element) => element.closest('li') as HTMLElement);
+		expect(rows).toHaveLength(2);
+		expect(rows[1]?.textContent).toContain(
+			`offline um 14:03 · wartet auf den Kommentar „${EXCERPT}“`
+		);
+	});
 });
 
 describe('OfflineNotice with comments (OF-4b)', () => {
@@ -320,6 +425,23 @@ describe('a comment of the outbox in the activity (OF-4b, concept §2.3)', () =>
 			'Offline geschrieben um 13:58 (laut Gerät) · übertragen 14:20'
 		);
 		expect(within(arrived).getByRole('button', { name: /Bearbeiten/ })).toBeTruthy();
+	});
+
+	it('names the time of the server only once in the head of one that arrived (K-7)', async () => {
+		await activity([KEPT]);
+		// What the head shows; the buttons name the comment with its time for screen readers only.
+		const head = article('Angekommen').querySelector('header')?.cloneNode(true) as HTMLElement;
+		for (const hidden of head.querySelectorAll('.visually-hidden')) hidden.remove();
+		expect(head.textContent).not.toContain('21.10.2026 14:20');
+		expect(head.textContent?.match(/14:20/g)).toHaveLength(1);
+	});
+
+	it('keeps the status region of the form in the tree while it is empty, only visually empty (K-8)', async () => {
+		await activity([KEPT]);
+		const region = document.querySelector('.comment-form [role="status"]');
+		expect(region?.textContent).toBe('');
+		// A region shown with `display: none` leaves the tree, and its first words would not be read.
+		expect(formSource).not.toMatch(/\.note[^{]*\{[^}]*display:\s*none/);
 	});
 
 	it('says in the form that a comment was kept', async () => {

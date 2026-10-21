@@ -29,7 +29,8 @@
 	// Since OF-4b a comment the outbox keeps for later stands with the mark "Noch nicht übertragen" (or
 	// "Entscheidung nötig") and the head "Offline geschrieben um 14:03 (laut Gerät)", without "Bearbeiten",
 	// "Löschen", "Anpinnen" and ticking tasks (they need the server); once it arrived, the server names
-	// "Offline geschrieben um 14:03 (laut Gerät) · übertragen 14:30" (concept §2.3).
+	// "Offline geschrieben um 14:03 (laut Gerät) · übertragen 14:30" (concept §2.3), since round 2 (K-7)
+	// instead of the time of the comment, so the time of the server stands only once.
 	let {
 		comment,
 		store,
@@ -123,7 +124,7 @@
 	<article aria-label={context} tabindex="-1" data-comment-id={comment.id}>
 		<header class="head">
 			<span class="author">{author}</span>
-			{#if !kept}
+			{#if offlineText === null}
 				<span class="time">{time}</span>
 			{/if}
 			{#if offlineText !== null}

@@ -517,6 +517,25 @@ function linkOf(notice: CreatedNotice): NonNullable<OutboxNotice['link']> {
 	return { record: notice.record, id: notice.target };
 }
 
+/**
+ * The comments of a ticket "＋" created with the key the server gave it once its creation arrived (OF-4b
+ * round 2, K-10): the dialog ("Kommentar zu HAUS-13"), the title of an entry that keeps the text of one
+ * and the notices name it from then on, no longer "dem neuen Ticket".
+ */
+function withTicketKey(
+	actions: readonly KeptAction[],
+	arrived: KeptAction,
+	value: Answer
+): KeptAction[] {
+	const key = isTicketCreate(arrived) ? ((value as Ticket).key ?? '') : '';
+	if (key === '') return [...actions];
+	return actions.map((action) =>
+		isCommentCreate(action) && action.ticket === arrived.target && action.key === ''
+			? { ...action, key }
+			: action
+	);
+}
+
 export class OutboxStore {
 	readonly #storage: OutboxStorage | null;
 	readonly #deps: OutboxDeps;
@@ -592,6 +611,11 @@ export class OutboxStore {
 	 * for the answer, so the comment does not show as kept meanwhile.
 	 */
 	readonly #directOps = new SvelteSet<string>();
+	/**
+	 * The comments whose "Als Eingangseintrag sichern" runs (OF-4b round 2, K-2): one run per comment at
+	 * a time, so a second tap makes no second entry.
+	 */
+	readonly #saving = new SvelteSet<string>();
 	/**
 	 * Comments kept for later per ticket (OF-4b, concept §2.3), oldest first: the activity shows them
 	 * next to those of the server until it has one under the same ID; a discarded one shows no more.
@@ -1078,29 +1102,50 @@ export class OutboxStore {
 	/**
 	 * Whether "Als Eingangseintrag sichern" is offered (OF-4b, concept §2.1): a comment that waits for a
 	 * decision (refused, set aside with its discarded ticket, older than 48 hours) and was not discarded,
-	 * where the server and the app put an entry into the inbox through the outbox.
+	 * where the server and the app put an entry into the inbox through the outbox; not while it runs for
+	 * this comment (round 2, K-2).
 	 */
 	canSaveAsItem(action: KeptAction): boolean {
 		return (
 			isCommentCreate(action) &&
 			needsDecision(action) &&
 			action.discarded !== true &&
+			!this.#saving.has(action.op) &&
 			this.#deps.sendItem !== undefined &&
 			supportsKind(this.#support, 'inbox.create')
 		);
+	}
+
+	/** Whether "Als Eingangseintrag sichern" of this comment runs now (round 2, K-2): its button waits. */
+	savingAsItem(op: string): boolean {
+		return this.#saving.has(op);
 	}
 
 	/**
 	 * "Als Eingangseintrag sichern" (OF-4b, C2): an entry of the inbox with the whole text of the comment,
 	 * with a connection at once, else kept like "＋"; then the comment goes. Where the entry cannot be
 	 * made, the comment stays and an error flag says so: its text never goes before it is kept elsewhere.
+	 * Since round 2 it runs once per comment at a time (K-2), and a comment that may have arrived is not
+	 * deleted but discarded and looked up like after "Verwerfen" (K-3, C4): found, a notice that stays says
+	 * that its text is in the inbox as well, with a link to its ticket (C3).
 	 */
 	async saveAsItem(op: string): Promise<void> {
 		const action = this.#find(op);
 		if (action === undefined || !isCommentCreate(action) || !this.canSaveAsItem(action)) return;
+		this.#saving.add(op);
+		try {
+			await this.#saveAsItem(action);
+		} finally {
+			this.#saving.delete(op);
+		}
+	}
+
+	async #saveAsItem(action: CommentCreateAction): Promise<void> {
+		const op = action.op;
+		const intent = OFFLINE_INTENTS.saveAsItem(actionText(action));
 		let saved: Created<InboxItem>;
 		try {
-			saved = await withIntent(OFFLINE_INTENTS.saveAsItem(actionText(action)), () =>
+			saved = await withIntent(intent, () =>
 				this.createItem({
 					title: savedItemTitle(action),
 					project: null,
@@ -1117,18 +1162,38 @@ export class OutboxStore {
 			});
 			return;
 		}
-		await this.#guard(OFFLINE_INTENTS.saveAsItem(actionText(action)), () =>
+		const done = { lookedUp: false };
+		await this.#guard(intent, () =>
 			this.#locked(async () => {
 				await this.#transform(async (before) => {
 					const current = before.find((entry) => entry.op === op);
-					if (current === undefined || !needsDecision(current)) return null;
-					return { after: before.filter((entry) => entry.op !== op), last: op, result: true };
+					if (current === undefined || !isCommentCreate(current)) return null;
+					if (!needsDecision(current) || current.discarded === true) return null;
+					if (!mayBeThere(current) && !mayStillArrive(current, this.#now())) {
+						done.lookedUp = false;
+						return { after: before.filter((entry) => entry.op !== op), last: op, result: true };
+					}
+					// It may be on the server: never sent again and never deleted there, only looked up.
+					const looked: CommentCreateAction = {
+						...current,
+						discarded: true,
+						saved: true,
+						state: 'queued',
+						nextAttemptAt: 0
+					};
+					delete looked.outcome;
+					done.lookedUp = true;
+					return {
+						after: await this.#pure((context) => settleChains(replaced(before, looked), context)),
+						result: true
+					};
 				});
 			})
 		);
 		this.#sink?.flags.show({
 			tone: 'success',
-			title: OFFLINE_TEXTS.savedAsItem(saved.kept, this.offline)
+			title: OFFLINE_TEXTS.savedAsItem(saved.kept, this.offline),
+			...(done.lookedUp && { description: OFFLINE_TEXTS.createCheckHint('comment') })
 		});
 		this.#runner?.kick();
 	}
@@ -2290,7 +2355,8 @@ export class OutboxStore {
 			]
 		]);
 		if (result.ok) {
-			const after = await leave({ how: 'arrived' });
+			// The comments of a ticket "＋" created take its key (OF-4b round 2, K-10).
+			const after = withTicketKey(await leave({ how: 'arrived' }), fresh, result.value);
 			const arrived = { kind: 'arrived', action: fresh, value: result.value } as const;
 			// A discarded creation that is there anyway (OF-4a, C4): a notice that stays names it with
 			// a link, written in the transaction that lets the action go; nothing is deleted.
