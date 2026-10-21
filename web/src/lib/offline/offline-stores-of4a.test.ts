@@ -13,7 +13,7 @@ import { FlagStore } from '$lib/stores/flags.svelte';
 import { InboxStore, type InboxData } from '$lib/stores/inbox.svelte';
 import { TicketDetailStore, type TicketDetailData } from '$lib/stores/ticket-detail.svelte';
 import { TicketListStore, type TicketListData } from '$lib/stores/ticket-list.svelte';
-import { ALL_OPS, NOW, USER, fakeServer, ticket } from '$lib/test/outbox-fake';
+import { ALL_OPS, NOW, USER, channelPair, fakeServer, ticket } from '$lib/test/outbox-fake';
 import { ConnectivityStore } from './connectivity.svelte';
 import { offlineTicketDetailData, offlineTicketListData } from './offline-data';
 import { OutboxStore } from './outbox.svelte';
@@ -48,8 +48,12 @@ function setup() {
 	fake.server.status.set(A, 'open');
 	const connectivity = new ConnectivityStore(async () => fake.server.health);
 	let call = 0;
+	// The device and the channel to another tab of it (round 2, A4: that tab sends the creation).
+	const storage = new MemoryOutboxStorage();
+	const [channel, otherTab] = channelPair();
 	const outbox = new OutboxStore({
-		storage: new MemoryOutboxStorage(),
+		storage,
+		channel,
 		connectivity,
 		send: fake.send,
 		sendDue: fake.sendDue,
@@ -129,8 +133,25 @@ function setup() {
 		await connectivity.check();
 		await settle();
 	};
-	return { fake, outbox, list, detail, inbox, flags, getTicket, getItem, offline, online };
+	return {
+		fake,
+		outbox,
+		list,
+		detail,
+		inbox,
+		flags,
+		getTicket,
+		getItem,
+		offline,
+		online,
+		storage,
+		otherTab
+	};
 }
+
+/** The device clock of the tests' device runs 10 minutes ahead of the server (round 2, A4). */
+const AHEAD = 10 * 60_000;
+const OP = 'bbbbbbbbbbbbbbbbbbbb';
 
 beforeEach(() => {
 	vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
@@ -251,5 +272,65 @@ describe('the inbox with an entry "＋" put into it (OF-4a)', () => {
 		expect(inbox.isCreated(ID)).toBe(false);
 		expect(inbox.newItems.map((item) => item.id)).toEqual([ID]);
 		expect(inbox.newCount).toBe(1);
+	});
+});
+
+describe('the record of the server with a device clock ahead (round 2, A4)', () => {
+	it('takes the ticket in the sending tab before the creation goes: no jump', async () => {
+		const { outbox, list, offline, online } = setup();
+		list.activate(EMPTY_LIST_QUERY);
+		await settle();
+		vi.setSystemTime(NOW + AHEAD);
+		await offline();
+		await outbox.createTicket(draft());
+		const upsert = list.upsert.bind(list);
+		const seen: [string | null, boolean][] = [];
+		vi.spyOn(list, 'upsert').mockImplementation((entry) => {
+			upsert(entry);
+			if (entry.id === ID) seen.push([list.find(ID)?.key ?? null, outbox.count > 0]);
+		});
+		await online();
+		// The first answer comes while the creation is still kept, and the list holds it already.
+		expect(seen[0]).toEqual(['TASK-1', true]);
+		expect(list.open.filter((entry) => entry.id === ID).map((entry) => entry.key)).toEqual([
+			'TASK-1'
+		]);
+	});
+
+	it('keeps the ticket of a realtime event that came before another tab let the creation go', async () => {
+		const { fake, outbox, list, offline, storage, otherTab } = setup();
+		list.activate(EMPTY_LIST_QUERY);
+		await settle();
+		vi.setSystemTime(NOW + AHEAD);
+		await offline();
+		await outbox.createTicket(draft());
+		const kept = outbox.actions[0];
+		if (kept === undefined || kept.kind !== 'ticket.create') throw new Error('Nothing kept.');
+		// Another tab sends it; the event of the server comes here before its action goes.
+		await fake.sendCreate(kept, { opId: OP }, new AbortController().signal);
+		list.upsert(fake.read(ID));
+		expect(list.isCreated(ID)).toBe(false);
+		expect(list.find(ID)?.key).toBe('TASK-1');
+		await storage.remove([OP]);
+		otherTab.post();
+		await settle();
+		expect(outbox.count).toBe(0);
+		expect(list.open.filter((entry) => entry.id === ID).map((entry) => entry.key)).toEqual([
+			'TASK-1'
+		]);
+	});
+
+	it('takes the entry of the server in the inbox while the creation is still kept', async () => {
+		const { fake, outbox, inbox, offline } = setup();
+		await inbox.load();
+		vi.setSystemTime(NOW + AHEAD);
+		await offline();
+		await outbox.createItem({ title: 'Milch kaufen', project: null, tags: [], priority: null });
+		const kept = outbox.actions[0];
+		if (kept === undefined || kept.kind !== 'inbox.create') throw new Error('Nothing kept.');
+		await fake.sendItem(kept, { opId: OP }, new AbortController().signal);
+		inbox.upsert(fake.readItem(ID));
+		expect(inbox.isCreated(ID)).toBe(false);
+		expect(inbox.newItems.map((item) => item.id)).toEqual([ID]);
 	});
 });

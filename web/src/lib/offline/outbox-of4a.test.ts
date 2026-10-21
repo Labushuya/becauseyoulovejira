@@ -276,7 +276,7 @@ describe('a refused creation (OF-4a, C2, concept §3.7)', () => {
 			state: 'refused',
 			outcome: {
 				code: 'validation_not_unique',
-				message: 'Die ID des neuen Eintrags ist auf dem Server schon vergeben.'
+				message: 'Die ID des neuen Tickets ist auf dem Server schon vergeben.'
 			}
 		});
 		expect(h.server.counter).toBe(0);
@@ -295,9 +295,14 @@ describe('a refused creation (OF-4a, C2, concept §3.7)', () => {
 		expect(h.outbox.actions.map((action) => action.state)).toEqual(['refused', 'queued']);
 		expect(h.send).not.toHaveBeenCalled();
 		await h.outbox.discard(OP);
+		// The change goes at once; the creation, whose first request got no answer, is looked up until
+		// that request is 5 minutes ago (round 2, A5), then it goes without a word.
+		expect(h.outbox.actions.map((action) => [action.op, action.discarded])).toEqual([[OP, true]]);
+		await vi.advanceTimersByTimeAsync(5 * 60_000);
 		expect(h.outbox.count).toBe(0);
 		expect(h.send).not.toHaveBeenCalled();
 		expect(records(h)).toEqual([]);
+		expect(h.outbox.notices).toEqual([]);
 	});
 });
 
@@ -332,7 +337,7 @@ describe('"Verwerfen" of a creation (OF-4a, C4)', () => {
 		const sentBefore = h.sendCreate.mock.calls.length;
 		await h.outbox.discard(OP);
 		const flag = h.flags.show.mock.calls.at(-1)?.[0];
-		expect(flag?.description).toBe(OFFLINE_TEXTS.createCheckHint);
+		expect(flag?.description).toBe(OFFLINE_TEXTS.createCheckHint('ticket'));
 		expect(h.outbox.createdTickets()).toEqual([]);
 		expect(only(h)).toMatchObject({ discarded: true });
 
@@ -361,6 +366,9 @@ describe('"Verwerfen" of a creation (OF-4a, C4)', () => {
 		expect(only(h)).toMatchObject({ unanswered: true });
 		await h.outbox.discard(OP);
 		await goOnline(h);
+		// Final only 5 minutes after its last request (round 2, A5): looked up once more then.
+		await vi.advanceTimersByTimeAsync(5 * 60_000);
+		expect(h.get).toHaveBeenCalledTimes(2);
 		expect(h.sendCreate).toHaveBeenCalledTimes(1);
 		expect(records(h)).toEqual([]);
 		expect(h.outbox.count).toBe(0);
@@ -489,7 +497,7 @@ describe('the time of a creation (OF-4a)', () => {
 		expect(h.outbox.count).toBe(0);
 		expect(records(h)).toEqual([]);
 		expect(h.outbox.notices.map((notice) => notice.text)).toEqual([
-			'1 gemerkte Änderung war älter als 7 Tage und wurde gelöscht, ohne sicher übertragen zu sein: Neues Ticket „Zahnarzt anrufen“. Bitte im Ticket prüfen.'
+			'1 gemerkte Änderung war älter als 7 Tage und wurde gelöscht, ohne sicher übertragen zu sein: das neue Ticket „Zahnarzt anrufen“. Bitte im Ticket prüfen.'
 		]);
 	});
 
@@ -522,7 +530,7 @@ describe('the time of a creation (OF-4a)', () => {
 		expect(records(h)).toEqual([ID]);
 	});
 
-	it('answers a repetition of a creation the account no longer sees as arrived, without a word', async () => {
+	it('answers a repetition of a creation the account no longer sees as arrived and names it (round 2, A7)', async () => {
 		const h = await ready();
 		await goOffline(h);
 		await h.outbox.createTicket(draft());
@@ -537,6 +545,6 @@ describe('the time of a creation (OF-4a)', () => {
 		});
 		expect(h.outbox.count).toBe(0);
 		expect(h.server.counter).toBe(1);
-		expect(h.outbox.notices).toEqual([]);
+		expect(h.outbox.notices.map((notice) => notice.id)).toEqual([`created-${OP}`]);
 	});
 });

@@ -1162,9 +1162,24 @@ async function check(runs: readonly Scenario[], coverage: string): Promise<strin
 
 // ----- the class "Anlegen" (OF-4a) -----
 
-/** How the creation is made and goes: kept, its first request lost, not reached, 5xx, or direct. */
+/**
+ * How the creation is made and goes: kept, its first request lost, not reached, 5xx, or direct; since
+ * round 2 (A1) also direct with a 5xx after the server took it (`direct5xx`).
+ */
 type CreateSend =
-	'offline' | 'lost' | 'unreached' | 'server5xx' | 'lost5xx' | 'direct' | 'directLost';
+	| 'offline'
+	| 'lost'
+	| 'unreached'
+	| 'server5xx'
+	| 'lost5xx'
+	| 'direct'
+	| 'directLost'
+	| 'direct5xx';
+
+/** The first attempt of the creation goes at once with a connection. */
+function isDirect(send: CreateSend): boolean {
+	return send === 'direct' || send === 'directLost' || send === 'direct5xx';
+}
 type CreateDiscard = 'none' | 'before' | 'during' | 'after' | 'late';
 type CreateAnswer = 'success' | 'refused' | 'server' | 'hidden';
 type CreateChoice = 'without' | 'discard' | 'none';
@@ -1195,7 +1210,8 @@ function createScenarios(count: number, seed: number): CreateScenario[] {
 		'server5xx',
 		'lost5xx',
 		'direct',
-		'directLost'
+		'directLost',
+		'direct5xx'
 	];
 	return times(count, (): CreateScenario => {
 		const record = random() < 0.25 ? 'inbox' : 'ticket';
@@ -1209,7 +1225,7 @@ function createScenarios(count: number, seed: number): CreateScenario[] {
 					}));
 		let discard = pick(random, ['none', 'none', 'before', 'during', 'after', 'late'] as const);
 		if (send === 'offline' && (discard === 'during' || discard === 'after')) discard = 'before';
-		if (send === 'direct' || send === 'directLost') {
+		if (isDirect(send)) {
 			if (discard === 'before' || discard === 'during') discard = 'after';
 		}
 		return {
@@ -1328,7 +1344,7 @@ async function runCreate(scenario: CreateScenario): Promise<Outcome> {
 		}
 		const answer = await request();
 		if (mode === 'lost' || mode === 'directLost') throw new DataError('network');
-		if (mode === 'lost5xx') throw new DataError('server', { status: 503 });
+		if (mode === 'lost5xx' || mode === 'direct5xx') throw new DataError('server', { status: 503 });
 		return answer;
 	}
 	const base = {
@@ -1388,17 +1404,19 @@ async function runCreate(scenario: CreateScenario): Promise<Outcome> {
 		await settle();
 	}
 
-	const direct = scenario.send === 'direct' || scenario.send === 'directLost';
+	const direct = isDirect(scenario.send);
 	if (direct) await online();
 	else await offline();
-	if (scenario.send === 'directLost') {
-		// The first request of the creation is its first attempt: its answer gets lost.
+	const firstSend = scenario.send;
+	if (firstSend === 'directLost' || firstSend === 'direct5xx') {
+		// The first request of the creation is its first attempt: its answer gets lost, or a proxy
+		// answers with a 5xx after the server took it (round 2, A1).
 		h.sendCreate.mockImplementationOnce((action, fields, signal) => {
-			firstMode.set(fields.opId, 'directLost');
+			firstMode.set(fields.opId, firstSend);
 			return watched(fields.opId, true, () => create(action, fields, signal));
 		});
 		h.sendItem.mockImplementationOnce((action, fields, signal) => {
-			firstMode.set(fields.opId, 'directLost');
+			firstMode.set(fields.opId, firstSend);
 			return watched(fields.opId, true, () => item(action, fields, signal));
 		});
 	}
@@ -1471,8 +1489,10 @@ async function runCreate(scenario: CreateScenario): Promise<Outcome> {
 		h.server.hidden.add(ID_OF_CREATED);
 		wantRecord = false;
 	}
+	// Over 5 minutes (round 2, A5): a lookup that does not find a discarded creation is final only
+	// 5 minutes after its last request, so the second lookup comes within the drain.
 	const drain = async () => {
-		for (let round = 0; round < 4; round++) await vi.advanceTimersByTimeAsync(61_000);
+		for (let round = 0; round < 6; round++) await vi.advanceTimersByTimeAsync(61_000);
 	};
 	await online();
 	await drain();

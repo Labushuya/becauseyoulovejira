@@ -17,7 +17,8 @@
 // `validation_op_applied` with its ID), an ID that is taken is refused at `id` with
 // `validation_not_unique`, a refusal of the hook (`refuseCreate`, e.g. an archived project) comes
 // before the key, and only a real creation draws a number of the counter (`counter`). With `strict` a
-// change or a read of a record the server does not have answers 404.
+// change or a read of a record the server does not have answers 404. Since OF-4a round 2 (A11) reading
+// a ticket needs `reachable` like every other request.
 
 import { expect, vi } from 'vitest';
 import type { DayPlanItem } from '$lib/data/day-plan';
@@ -504,8 +505,12 @@ export function harness(options: HarnessOptions = {}) {
 	const fake = options.shared ?? fakeServer();
 	const { server, send, sendDue, sendDayPlan, sendCreate, sendItem } = fake;
 	const connectivity = new ConnectivityStore(async () => server.health);
-	// As before OF-4a: reading a ticket ignores `reachable` (the existing runs rely on it).
-	const get = vi.fn<OutboxDeps['get']>(async (id) => fake.read(id));
+	// Since OF-4a round 2 (A11) reading a ticket needs `reachable` like every other request: the lookup
+	// of a discarded creation without a connection gets no answer.
+	const get = vi.fn<OutboxDeps['get']>(async (id) => {
+		if (!server.reachable) throw new DataError('network');
+		return fake.read(id);
+	});
 	const getItem = vi.fn<NonNullable<OutboxDeps['getItem']>>(async (id) => {
 		if (!server.reachable) throw new DataError('network');
 		return fake.readItem(id);

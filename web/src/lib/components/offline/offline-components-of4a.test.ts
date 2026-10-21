@@ -135,6 +135,31 @@ describe('OutboxDialog with a creation (OF-4a)', () => {
 		).toBe(`/tickets/${ID}`);
 	});
 
+	it('says what a change waits for in a sentence: "wartet auf das neue Ticket" (round 2, A10)', async () => {
+		const change: KeptAction = {
+			v: 1,
+			op: 'zzzzzzzzzzzzzzzzzzz2',
+			seq: 2,
+			user: USER,
+			scope: `u:${USER}`,
+			kind: 'ticket.update',
+			target: ID,
+			dependsOn: [REFUSED.op],
+			key: '',
+			title: TITLE,
+			createdAt: NOW - 20 * 60_000,
+			state: 'queued',
+			attempts: 0,
+			nextAttemptAt: 0,
+			payload: { status: 'done' },
+			expected: { status: 'open' }
+		};
+		const outbox = await outboxWith([REFUSED, change]);
+		render(OutboxDialog, { props: { outbox, onclose: vi.fn(), ticketHref, itemHref } });
+		const row = screen.getByText('Ticket erledigt').closest('li') as HTMLElement;
+		expect(row.textContent).toContain(`wartet auf das neue Ticket „${TITLE}“`);
+	});
+
 	it('says that a discarded creation that may have arrived is looked up, without "Verwerfen" (C4)', async () => {
 		const outbox = await outboxWith([creation({ sent: true, unanswered: true, discarded: true })]);
 		render(OutboxDialog, { props: { outbox, onclose: vi.fn(), ticketHref, itemHref } });
@@ -150,6 +175,22 @@ describe('OfflineNotice with a creation (OF-4a)', () => {
 		render(OfflineNotice, { props: { outbox, onshow: vi.fn() } });
 		expect(screen.getByRole('status').textContent).toContain(
 			`1 Änderung konnte nicht übertragen werden. Neues Ticket „${TITLE}“: Das Projekt ist archiviert.`
+		);
+	});
+
+	it('names a refused creation among others in the middle of the sentence in small letters (round 2, A10)', async () => {
+		const other: KeptAction = {
+			...REFUSED,
+			op: 'zzzzzzzzzzzzzzzzzzz3',
+			seq: 3,
+			target: 'bcdefghijklmnop',
+			payload: { ...REFUSED.payload, title: 'Fenster putzen' },
+			title: 'Fenster putzen'
+		};
+		const outbox = await outboxWith([REFUSED, other]);
+		render(OfflineNotice, { props: { outbox, onshow: vi.fn() } });
+		expect(screen.getByRole('status').textContent).toContain(
+			`2 Änderungen konnten nicht übertragen werden, darunter das neue Ticket „${TITLE}“: Das Projekt ist archiviert.`
 		);
 	});
 
