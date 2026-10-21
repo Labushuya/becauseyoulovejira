@@ -138,7 +138,10 @@
 	function stateText(action: KeptAction): string {
 		if (!isWaiting(action)) return OFFLINE_TEXTS.markDecision;
 		// A discarded creation is only looked up by its ID (OF-4a, C4).
-		if (action.discarded === true && isCreateAction(action)) return OFFLINE_TEXTS.createChecking;
+		if (action.discarded === true && isCreateAction(action)) {
+			// With a connection in neutral words (OF-4b, B-3): it waits for its next lookup.
+			return OFFLINE_TEXTS.createChecking(outbox.offline);
+		}
 		if (action.discarded === true) return discardedText(action);
 		if (action.state === 'sending') return OFFLINE_TEXTS.underway;
 		const blocker = actions.find(

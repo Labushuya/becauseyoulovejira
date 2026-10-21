@@ -66,11 +66,11 @@ const REFUSED = creation({
 	}
 });
 
-async function outboxWith(actions: KeptAction[], notices: unknown[] = []) {
+async function outboxWith(actions: KeptAction[], notices: unknown[] = [], online = false) {
 	const storage = new MemoryOutboxStorage();
 	for (const action of actions) await storage.put(action);
 	if (notices.length > 0) await storage.notices(USER, () => notices);
-	const connectivity = new ConnectivityStore(async () => false);
+	const connectivity = new ConnectivityStore(async () => online);
 	const refuse = async () => {
 		throw new OutboxNoWayError();
 	};
@@ -164,8 +164,21 @@ describe('OutboxDialog with a creation (OF-4a)', () => {
 		const outbox = await outboxWith([creation({ sent: true, unanswered: true, discarded: true })]);
 		render(OutboxDialog, { props: { outbox, onclose: vi.fn(), ticketHref, itemHref } });
 		const row = screen.getByText(OFFLINE_TEXTS.newTicket).closest('li') as HTMLElement;
-		expect(row.textContent).toContain(OFFLINE_TEXTS.createChecking);
+		expect(row.textContent).toContain(
+			'verworfen, wird nachgesehen, sobald eine Verbindung besteht'
+		);
 		expect(within(row).queryByRole('button', { name: 'Verwerfen' })).toBeNull();
+	});
+
+	it('says neutrally that it is looked up while the connection is there (OF-4b, B-3)', async () => {
+		const discarded = creation({ sent: true, unanswered: true, discarded: true });
+		// It waits for its second lookup 5 minutes after its last request (OF-4a round 2, A5).
+		const waiting = { ...discarded, nextAttemptAt: NOW + 4 * 60_000, lastSentAt: NOW - 60_000 };
+		const outbox = await outboxWith([waiting], [], true);
+		render(OutboxDialog, { props: { outbox, onclose: vi.fn(), ticketHref, itemHref } });
+		const row = screen.getByText(OFFLINE_TEXTS.newTicket).closest('li') as HTMLElement;
+		expect(row.textContent).toContain('offline um 14:03 · verworfen, wird nachgesehen');
+		expect(row.textContent).not.toContain('sobald eine Verbindung besteht');
 	});
 });
 

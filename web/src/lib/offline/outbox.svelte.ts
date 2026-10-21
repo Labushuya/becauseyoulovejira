@@ -2141,7 +2141,14 @@ export class OutboxStore {
 		const absent = isCreateAction(fresh);
 		if (fresh.discarded === true && (absent || !isMissing(failure))) {
 			if (absent && mayStillArrive(answered, now)) {
-				const again: KeptAction = { ...answered, nextAttemptAt: lookUpAgainAt(answered, now) };
+				// The time of its last request is "now" at most (OF-4b, B-4): after the clock went back,
+				// the next lookup 5 minutes later is final instead of every 5 minutes until it caught up.
+				const lastSentAt = Math.min(answered.lastSentAt ?? now, now);
+				const again: KeptAction = {
+					...answered,
+					lastSentAt,
+					nextAttemptAt: lookUpAgainAt({ ...answered, lastSentAt }, now)
+				};
 				delete again.outcome;
 				const after = await settle(replaced(before, again));
 				return { after, result: { kind: 'lookLater' } };

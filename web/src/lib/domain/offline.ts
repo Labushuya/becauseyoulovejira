@@ -2414,11 +2414,18 @@ export const OFFLINE_TEXTS = Object.freeze({
 	newTicket: 'Neues Ticket',
 	newItem: 'Neuer Eingangseintrag',
 	newKey: 'Neu',
-	/** The result of "＋" kept for later (OF-4a). */
-	keptTicket: (title: string) =>
-		`Ticket „${title}“ gemerkt. Es wird angelegt, sobald die Verbindung zurück ist.`,
-	keptItem: (title: string) =>
-		`„${title}“ gemerkt. Der Eintrag kommt in den Eingang, sobald die Verbindung zurück ist.`,
+	/**
+	 * The result of "＋" kept for later (OF-4a); kept while the connection is there (a 5xx, an answer
+	 * that got lost) in neutral words (OF-4b, B-3).
+	 */
+	keptTicket: (title: string, offline = true) =>
+		offline
+			? `Ticket „${title}“ gemerkt. Es wird angelegt, sobald die Verbindung zurück ist.`
+			: `Ticket „${title}“ gemerkt. Es wird später erneut übertragen.`,
+	keptItem: (title: string, offline = true) =>
+		offline
+			? `„${title}“ gemerkt. Der Eintrag kommt in den Eingang, sobald die Verbindung zurück ist.`
+			: `„${title}“ gemerkt. Der Eintrag wird später erneut übertragen.`,
 	/** New `#tags` need the server (concept §2.2, Stufe 2): nothing is kept, the line stays. */
 	newTags: (names: string) =>
 		`Neue Tags gehen nur mit Verbindung: ${names}. Entferne sie oder wähle vorhandene Tags, dann wird der Eintrag gemerkt.`,
@@ -2433,7 +2440,11 @@ export const OFFLINE_TEXTS = Object.freeze({
 		record === 'ticket'
 			? 'Vielleicht ist das neue Ticket schon angekommen. Es wird nicht noch einmal gesendet; sobald eine Verbindung besteht, sieht die App nach und meldet sich, falls es das Ticket schon gibt.'
 			: 'Vielleicht ist der neue Eingangseintrag schon angekommen. Er wird nicht noch einmal gesendet; sobald eine Verbindung besteht, sieht die App nach und meldet sich, falls es ihn schon gibt.',
-	createChecking: 'verworfen, wird nachgesehen, sobald eine Verbindung besteht',
+	/** A discarded creation waits for its lookup; with a connection in neutral words (OF-4b, B-3). */
+	createChecking: (offline: boolean) =>
+		offline
+			? 'verworfen, wird nachgesehen, sobald eine Verbindung besteht'
+			: 'verworfen, wird nachgesehen',
 	/**
 	 * A creation the server answers as arrived but the account no longer sees, the trash for instance
 	 * (`validation_op_applied`, OF-4a round 2, A7): a notice that stays, with a link.

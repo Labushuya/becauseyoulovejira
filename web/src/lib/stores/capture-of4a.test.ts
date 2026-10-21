@@ -86,6 +86,20 @@ describe('saveQuickEntry without a connection (OF-4a)', () => {
 		}
 	});
 
+	it('says it neutrally when the line was kept while the connection is there, after a 5xx (OF-4b, B-3)', async () => {
+		const online = { takes: () => true, offline: () => false };
+		const ticket = await saveQuickEntry(entry('Zahnarzt'), 'ticket', deps({ keep: online }));
+		expect(ticket).toMatchObject({
+			ok: true,
+			message: 'Ticket „Zahnarzt“ gemerkt. Es wird später erneut übertragen.'
+		});
+		const item = await saveQuickEntry(entry('Idee'), 'inbox', deps({ keep: online }));
+		expect(item).toMatchObject({
+			ok: true,
+			message: '„Idee“ gemerkt. Der Eintrag wird später erneut übertragen.'
+		});
+	});
+
 	it('asks the server for a new tag as today where the outbox does not take "＋" or the connection is there', async () => {
 		const outside = deps({ keep: { takes: () => false, offline: () => true } });
 		await saveQuickEntry(entry('Zahnarzt #Praxis'), 'ticket', outside);

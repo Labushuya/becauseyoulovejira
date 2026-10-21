@@ -3,10 +3,11 @@
 // range or a tap on its card (A2); what needs the server stays visible but locked with its reason,
 // "gesperrt statt weg" (A6): in the table priority, project, tags and "Zuständig", in the panel and the
 // full view the same fields, the title, the description and "Unteraufgabe hinzufügen". Status and due
-// date stay editable.
+// date stay editable. Since OF-4b (B-1) its card shows a locked box in the selection mode instead of
+// the check mark, and (B-2) a locked cell or box names its reason in a flag on a click or Enter.
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
-import { createRawSnippet, tick } from 'svelte';
+import { createRawSnippet, tick, type Component } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ResolvedPathname } from '$app/types';
 import type { InboxItem, InboxItemSummary } from '$lib/domain/inbox';
@@ -28,6 +29,7 @@ import {
 	type TicketListData,
 	type TicketOverlay
 } from '$lib/stores/ticket-list.svelte';
+import FlagContextHarness from '$lib/test/FlagContextHarness.svelte';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import EditableTitle from './EditableTitle.svelte';
 import InboxTable from './InboxTable.svelte';
@@ -136,10 +138,26 @@ async function showTable(open: TicketSummary[]) {
 	const search = createRawSnippet(() => ({
 		render: () => '<div><input type="search" aria-label="Suche" /></div>'
 	}));
-	render(TicketTable, { props: { store, catalog, bulk, search } });
+	// The flags of the app layout in the context (B-1, B-2).
+	const flags = new FlagStore();
+	render(FlagContextHarness, {
+		props: {
+			store: flags,
+			component: TicketTable as unknown as Component<Record<string, unknown>>,
+			props: { store, catalog, bulk, search }
+		}
+	});
 	await vi.advanceTimersByTimeAsync(0);
 	await tick();
-	return { store };
+	return { store, data, flags };
+}
+
+/** "Auswählen" in the menu of the list (the phone frame). */
+async function chooseMode(): Promise<void> {
+	const trigger = screen.getByRole('button', { name: 'Weitere Aktionen der Liste' });
+	const menu = document.getElementById(trigger.getAttribute('aria-controls') ?? '') as HTMLElement;
+	await fireEvent.click(within(menu).getByRole('menuitem', { name: 'Auswählen', hidden: true }));
+	await tick();
 }
 
 const rowOf = (id: string) =>
@@ -217,16 +235,13 @@ describe('the cells of a ticket "＋" created in the table (A6)', () => {
 });
 
 describe('the cards of the phone frame with a ticket "＋" created (A2)', () => {
-	it('has no box on its card, a tap does not choose it, and "Alle" leaves it out', async () => {
+	it('has no box that chooses its card, a tap does not choose it, and "Alle" leaves it out', async () => {
 		phone();
 		await showTable([ticket(1), ticket(2)]);
-		const trigger = screen.getByRole('button', { name: 'Weitere Aktionen der Liste' });
-		const menu = document.getElementById(
-			trigger.getAttribute('aria-controls') ?? ''
-		) as HTMLElement;
-		await fireEvent.click(within(menu).getByRole('menuitem', { name: 'Auswählen', hidden: true }));
-		await tick();
-		expect(screen.queryByRole('checkbox', { name: `${CREATED_NAME} auswählen` })).toBeNull();
+		await chooseMode();
+		// Since OF-4b (B-1) the box stands locked instead of the check mark; it chooses nothing.
+		const locked = screen.getByRole('checkbox', { name: `${CREATED_NAME} auswählen` });
+		expect(locked.getAttribute('aria-disabled')).toBe('true');
 		await fireEvent.click(rowOf(CREATED_ID).querySelector('.meta') as HTMLElement);
 		expect(countText()).toBe('');
 		const bar = screen.getByRole('group', { name: 'Auswahl' });
@@ -234,6 +249,43 @@ describe('the cards of the phone frame with a ticket "＋" created (A2)', () => 
 			within(bar).getByRole('checkbox', { name: 'Alle angezeigten Tickets auswählen' })
 		);
 		expect(countText()).toContain('2 Tickets ausgewählt');
+	});
+});
+
+describe('the locked controls of a ticket "＋" created name their reason (OF-4b, B-1 and B-2)', () => {
+	it('shows a locked box with the reason instead of the check mark while choosing, and a tap completes nothing (B-1)', async () => {
+		phone();
+		const { data, flags } = await showTable([ticket(1)]);
+		// Outside of the selection mode the check mark stands as before.
+		expect(screen.getByRole('checkbox', { name: `${CREATED_NAME} erledigt` })).toBeTruthy();
+		await chooseMode();
+		expect(screen.queryByRole('checkbox', { name: `${CREATED_NAME} erledigt` })).toBeNull();
+		const locked = screen.getByRole<HTMLInputElement>('checkbox', {
+			name: `${CREATED_NAME} auswählen`
+		});
+		expect(locked.getAttribute('aria-disabled')).toBe('true');
+		const reason = document.getElementById(locked.getAttribute('aria-describedby') ?? '');
+		expect(reason?.textContent).toBe(REASON);
+		await fireEvent.click(locked);
+		expect(locked.checked).toBe(false);
+		expect(data.setDone).not.toHaveBeenCalled();
+		expect(countText()).toBe('');
+		// The reason shows where a touch or a key reaches it, not only as a title.
+		expect(flags.flags.map((flag) => flag.title)).toEqual([REASON]);
+	});
+
+	it('names the reason of a locked cell in a flag on a click (B-2)', async () => {
+		const { flags } = await showTable([ticket(1)]);
+		const cell = screen.getByRole('button', { name: `Priorität von ${CREATED_NAME}: Mittel` });
+		await fireEvent.click(cell);
+		expect(flags.flags.map((flag) => ({ tone: flag.tone, title: flag.title }))).toEqual([
+			{ tone: 'info', title: REASON }
+		]);
+		// A cell of a ticket of the server opens its editor as before, without a flag.
+		await fireEvent.click(
+			screen.getByRole('button', { name: 'Priorität von TASK-1: Mittel, ändern' })
+		);
+		expect(flags.flags).toHaveLength(1);
 	});
 });
 
