@@ -7,17 +7,24 @@
 	import { getProjectRoute } from '$lib/project-route';
 	import { getCatalogStore } from '$lib/stores/catalog.svelte';
 	import { parentFrom, projectHref, projectsViewHref } from '$lib/ticket-links';
+	import { followViewArrow } from '$lib/view-arrow.svelte';
 
 	// "Neues Projekt" (E3 plan, T-11; package UI-8) in the panel next to the tiles. After creating,
 	// the panel switches to the new project in place (replaceState), so "back" leads to the tiles
 	// and not to an empty form. "Unterprojekt anlegen" (ADR-0034, UP-4) opens it with
-	// ?oberprojekt=<id>; the parent counts only if the field "Oberprojekt" offers it.
+	// ?oberprojekt=<id>; the parent counts only if the field "Oberprojekt" offers it. In the phone
+	// frame the form is a page whose arrow goes back through the history when the list lies right
+	// before it (MO-7b).
 	const route = getProjectRoute();
 	const catalog = getCatalogStore();
 	const choices = $derived(parentChoices(catalog.projects, null));
 	const wanted = $derived(parentFrom(page.url));
 	const initialParentId = $derived(
 		wanted !== null && choices.some((choice) => choice.id === wanted) ? wanted : null
+	);
+	const arrow = followViewArrow(
+		() => 'projects',
+		() => projectsViewHref(page.url)
 	);
 
 	async function save(draft: ProjectDraft) {
@@ -39,4 +46,6 @@
 	onsave={save}
 	onsaved={(project) => goto(projectHref(project.id, page.url), { replaceState: true })}
 	onclose={() => goto(projectsViewHref(page.url))}
+	backLabel={arrow.label}
+	onback={() => arrow.go()}
 />

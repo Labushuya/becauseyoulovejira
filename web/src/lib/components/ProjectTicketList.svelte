@@ -392,4 +392,21 @@
 	.pin {
 		display: inline-flex;
 	}
+
+	/*
+	 * Phone frame (MO-7b, ADR-0073 addendum MO-7b), on the page of a project: the link of a ticket and
+	 * "Alle … anzeigen" are targets of 44 px.
+	 */
+	@media (max-width: 39.99rem) {
+		:global(:root[data-mobile-layout='on']) .link {
+			align-items: center;
+			min-height: var(--control-height-touch);
+		}
+
+		:global(:root[data-mobile-layout='on']) .all {
+			display: inline-flex;
+			align-items: center;
+			min-height: var(--control-height-touch);
+		}
+	}
 </style>
