@@ -243,6 +243,7 @@
 		actionsShown={chosen.length > 0}
 		hint="Erst Tickets auswählen."
 		{onclear}
+		{selecting}
 		actions={bulkActions}
 		result={store.result && store.progress === null ? resultList : undefined}
 	/>
@@ -367,7 +368,8 @@
 				ondismissneed={(id) => store.dismissNeed(id)}
 			/>
 			{#if phone && (selecting || store.progress !== null || store.result !== null)}
-				<!-- The bar of "Auswählen" at the bottom, after the cards (MO-7b). -->
+				<!-- The bar of "Auswählen" at the bottom, after the cards (MO-7b); outside of "Auswählen"
+				     a result stands alone with "Ergebnis schließen", as on the PC (round 2). -->
 				{@render selectionBar(leaveSelectMode)}
 			{/if}
 		{/if}

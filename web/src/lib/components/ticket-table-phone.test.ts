@@ -539,6 +539,46 @@ describe('"Aufgaben" as cards in the phone frame (MO-3)', () => {
 		expect(screen.queryByRole('region', { name: /ausgewählt/ })).toBeNull();
 	});
 
+	// MO-7b round 2 (P-1, P-4): after an action the actions are closed; "Fertig" leaves "Auswählen"
+	// and the result stays alone with "Ergebnis schließen", like the bar of the PC after ×.
+	it('closes the actions after an action; "Fertig" leaves "Auswählen" and the result stands alone, as on the PC', async () => {
+		useWindow(true, true);
+		await showTable([ticket(1), ticket(2)]);
+		const trigger = screen.getByRole('button', { name: 'Weitere Aktionen der Liste' });
+		const menu = document.getElementById(
+			trigger.getAttribute('aria-controls') ?? ''
+		) as HTMLElement;
+		await fireEvent.click(within(menu).getByRole('menuitem', { name: 'Auswählen', hidden: true }));
+		await tick();
+		await fireEvent.click(card('TASK-2').querySelector('.meta') as HTMLElement);
+		const bar = () => screen.getByRole('region', { name: /ausgewählt$/ });
+		await fireEvent.click(within(bar()).getByRole('button', { name: 'Aktionen' }));
+		await tick();
+		// "Verschieben um" skips a ticket without a due date: a result without a failure.
+		await fireEvent.click(within(bar()).getByRole('button', { name: 'Fälligkeit …' }));
+		await fireEvent.click(screen.getByRole('radio', { name: 'Verschieben um' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Übernehmen' }));
+		await vi.advanceTimersByTimeAsync(0);
+		await vi.waitFor(() => expect(within(bar()).getByText(/1 Ticket übersprungen/)).toBeTruthy());
+		expect(within(bar()).getByText('1 Ticket ausgewählt')).toBeTruthy();
+		expect(within(bar()).queryByRole('group', { name: 'Sammelaktionen' })).toBeNull();
+		expect(
+			within(bar()).getByRole('button', { name: 'Aktionen' }).getAttribute('aria-expanded')
+		).toBe('false');
+
+		await fireEvent.click(within(bar()).getByRole('button', { name: 'Fertig' }));
+		await tick();
+		expect(screen.queryByRole('group', { name: 'Auswahl' })).toBeNull();
+		expect(screen.getByRole('checkbox', { name: 'TASK-1 erledigt' })).toBeTruthy();
+		const left = screen.getByRole('region', { name: '0 Tickets ausgewählt' });
+		expect(within(left).getByText(/1 Ticket übersprungen/)).toBeTruthy();
+		expect(within(left).queryByRole('button', { name: 'Aktionen' })).toBeNull();
+		expect(within(left).queryByRole('button', { name: 'Fertig' })).toBeNull();
+		await fireEvent.click(within(left).getByRole('button', { name: 'Ergebnis schließen' }));
+		await tick();
+		expect(screen.queryByRole('region', { name: /ausgewählt/ })).toBeNull();
+	});
+
 	it('renders fewer elements as cards than as rows of the table', async () => {
 		const tickets = Array.from({ length: 30 }, (_, index) =>
 			ticket(index + 1, { due: '2026-09-30', projectId: PROJECT.id, tagIds: ['tag000000000001'] })

@@ -1246,13 +1246,15 @@
 	{/if}
 
 	{#if bulk && phone && (selecting || bulk.busy || bulk.result !== null)}
-		<!-- The bar of "Auswählen" at the bottom, after the cards (MO-7b): "Fertig" leaves the mode. -->
+		<!-- The bar of "Auswählen" at the bottom, after the cards (MO-7b): "Fertig" leaves the mode;
+		     a result then stands alone with "Ergebnis schließen", as on the PC (round 2). -->
 		<BulkActionBar
 			tickets={chosenTickets}
 			store={bulk}
 			{catalog}
 			openBlockingOf={(id) => store.openBlockingOf(id)}
 			onclear={leaveSelectMode}
+			{selecting}
 		/>
 	{/if}
 </section>

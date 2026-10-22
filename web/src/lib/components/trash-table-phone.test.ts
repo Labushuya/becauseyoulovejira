@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { DataError } from '$lib/data/errors';
 import { PHONE_QUERY } from '$lib/domain/phone-layout';
 import type { ProjectRef } from '$lib/domain/ticket';
 import type { TrashItem, TrashPreview } from '$lib/domain/trash';
@@ -279,6 +280,72 @@ describe('"Papierkorb" as cards in the phone frame (MO-7b)', () => {
 		expect(screen.queryByRole('group', { name: 'Auswahl' })).toBeNull();
 		expect(screen.queryByRole('region', { name: /ausgewählt$/ })).toBeNull();
 		expect(screen.queryByRole('checkbox', { name: /auswählen$/ })).toBeNull();
+	});
+
+	// MO-7b round 2 (P-1, P-4): after an action the actions are closed; "Fertig" leaves "Auswählen",
+	// and the failures stay alone with "Ergebnis schließen", like the bar of the PC after ×, also
+	// while and after "Papierkorb leeren …" fails.
+	it('closes the actions after an action; after "Fertig" the failures stand alone, also after "Papierkorb leeren …" fails', async () => {
+		useWindow(true, true);
+		const { store, data } = await showView();
+		const restoreOne = data.restore;
+		data.restore = vi.fn<TrashData['restore']>(async (id, choices) => {
+			if (id === B) throw new DataError('server', { status: 500 });
+			return restoreOne(id, choices);
+		});
+		data.purgeAll = vi.fn<TrashData['purgeAll']>(async () => {
+			throw new DataError('server', { status: 500 });
+		});
+		const listMenu = () =>
+			menuOf(screen.getByRole('button', { name: 'Weitere Aktionen der Liste' }));
+		await fireEvent.click(
+			within(listMenu()).getByRole('menuitem', { name: 'Auswählen', hidden: true })
+		);
+		await tick();
+		await fireEvent.click(
+			screen.getByRole('checkbox', { name: 'Alle Tickets im Papierkorb auswählen' })
+		);
+		const bar = () => screen.getByRole('region', { name: /ausgewählt$/ });
+		await fireEvent.click(within(bar()).getByRole('button', { name: 'Aktionen' }));
+		await tick();
+		await fireEvent.click(within(bar()).getByRole('button', { name: 'Wiederherstellen' }));
+		await vi.waitFor(() =>
+			expect(within(bar()).getByText('1 Ticket wurde nicht bearbeitet:')).toBeTruthy()
+		);
+		// TASK-2 failed and stays chosen; the actions closed with the end of the action.
+		expect(within(bar()).getByText('1 Ticket ausgewählt')).toBeTruthy();
+		expect(within(bar()).queryByRole('group', { name: 'Sammelaktionen' })).toBeNull();
+		expect(
+			within(bar()).getByRole('button', { name: 'Aktionen' }).getAttribute('aria-expanded')
+		).toBe('false');
+
+		await fireEvent.click(within(bar()).getByRole('button', { name: 'Fertig' }));
+		await tick();
+		expect(screen.queryByRole('group', { name: 'Auswahl' })).toBeNull();
+		/** The bar after "Fertig": the number, the failures and "Ergebnis schließen", nothing else. */
+		function expectResultAlone() {
+			const left = screen.getByRole('region', { name: '0 Tickets ausgewählt' });
+			expect(within(left).getByText('1 Ticket wurde nicht bearbeitet:')).toBeTruthy();
+			expect(within(left).queryByRole('button', { name: 'Aktionen' })).toBeNull();
+			expect(within(left).queryByRole('button', { name: 'Fertig' })).toBeNull();
+			return left;
+		}
+		expectResultAlone();
+
+		await fireEvent.click(
+			within(listMenu()).getByRole('menuitem', { name: 'Papierkorb leeren …', hidden: true })
+		);
+		await tick();
+		const question = screen.getByRole('dialog', { name: 'Papierkorb leeren?' });
+		await fireEvent.click(within(question).getByRole('button', { name: 'Papierkorb leeren' }));
+		await vi.waitFor(() => expect(data.purgeAll).toHaveBeenCalledOnce());
+		await vi.waitFor(() => expect(store.progress).toBeNull());
+		await tick();
+		const left = expectResultAlone();
+
+		await fireEvent.click(within(left).getByRole('button', { name: 'Ergebnis schließen' }));
+		await tick();
+		expect(screen.queryByRole('region', { name: /ausgewählt$/ })).toBeNull();
 	});
 });
 

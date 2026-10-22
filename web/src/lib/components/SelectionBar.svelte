@@ -1,6 +1,7 @@
 <script lang="ts">
-	import type { Snippet } from 'svelte';
+	import { tick, type Snippet } from 'svelte';
 	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
+	import { findFlagStore } from '$lib/stores/flags.svelte';
 
 	// Bar of the chosen rows of a table (plan BI-2, ADR-0036 §3; since the trash, ADR-0037, shared
 	// by "Aufgaben" and "Papierkorb"): it names the number of chosen rows, offers the actions of its
@@ -12,8 +13,13 @@
 	// the bottom bar gives way), also below a short list; the owner puts it after its cards, where it
 	// keeps the room of its row, so the last card scrolls above it. Flat, one row of 44 px: the number,
 	// "Aktionen" and "Fertig" (`onclear`: the owner leaves "Auswählen"). "Aktionen" opens the same
-	// buttons as on the PC above the row, one level deeper; while nothing is chosen it stays, locked,
-	// and says why (`hint`). The flags stand at the top meanwhile (FlagGroup).
+	// buttons as on the PC above the row, one level deeper, and puts the focus on the first; while
+	// nothing is chosen it stays, locked, and says why (`hint`): to a screen reader, and in a flag on a
+	// tap or Enter (the rule of OF-4b). The actions close after an action and whenever they cannot be
+	// shown. Outside of "Auswählen" (`selecting` false) the bar only stands for a running action or a
+	// result: the row holds the number alone, without "Aktionen" and "Fertig", like the bar of the PC
+	// without a selection, and "Ergebnis schließen" of the result closes it (round 2 of MO-7b). The
+	// flags stand at the top meanwhile (FlagGroup).
 	let {
 		countText,
 		progress = null,
@@ -23,6 +29,7 @@
 		bar = $bindable(),
 		actions,
 		actionsShown = true,
+		selecting = true,
 		result
 	}: {
 		/** "3 Tickets ausgewählt". */
@@ -41,6 +48,11 @@
 		actions: Snippet;
 		/** False: nothing is chosen (the bar only shows a result); no buttons. */
 		actionsShown?: boolean;
+		/**
+		 * Phone frame: the owner is in "Auswählen". False: the bar stands only for a running action or
+		 * a result; no "Aktionen" and no "Fertig". The PC does not use it.
+		 */
+		selecting?: boolean;
 		/** Result of the last action (failures, notes); shown below, pass it only with content. */
 		result?: Snippet;
 	} = $props();
@@ -49,10 +61,37 @@
 	const ids = { actions: `${uid}-actions`, hint: `${uid}-hint` };
 	const mobileLayout = getMobileLayoutStore();
 	const phone = $derived(mobileLayout.active);
+	const flags = findFlagStore();
 
-	/** The actions of the phone frame are open above the row. */
-	let opened = $state(false);
-	const actionsOpen = $derived(opened && actionsShown && progress === null);
+	/** The actions of the phone frame can be shown: choosing, something chosen, no action running. */
+	const openable = $derived(selecting && actionsShown && progress === null);
+	/**
+	 * The actions of the phone frame are open above the row. "Aktionen" toggles it (a writable
+	 * $derived); whenever they cannot be shown it derives anew, so after an action, after the
+	 * selection emptied and after "Auswählen" they start closed.
+	 */
+	let opened = $derived.by(() => {
+		void openable;
+		return false;
+	});
+	const actionsOpen = $derived(opened && openable);
+	let actionsGroup = $state<HTMLElement>();
+
+	/** "Aktionen": opens or closes the actions; locked, it names why in a flag. */
+	async function toggleActions() {
+		if (!actionsShown) {
+			if (hint !== '') flags?.show({ tone: 'info', title: hint });
+			return;
+		}
+		opened = !opened;
+		if (!opened) return;
+		await tick();
+		actionsGroup
+			?.querySelector<HTMLElement>(
+				'button:not([disabled]):not([tabindex="-1"]), a[href]:not([tabindex="-1"])'
+			)
+			?.focus();
+	}
 </script>
 
 {#snippet progressBar(running: { total: number; done: number; text: string })}
@@ -80,7 +119,13 @@
 			<div class="result">{@render result()}</div>
 		{/if}
 		{#if actionsOpen}
-			<div class="actions" id={ids.actions} role="group" aria-label={label}>
+			<div
+				class="actions"
+				id={ids.actions}
+				role="group"
+				aria-label={label}
+				bind:this={actionsGroup}
+			>
 				{@render actions()}
 			</div>
 		{/if}
@@ -88,7 +133,7 @@
 			<p class="count" id={`${uid}-count`} aria-live="polite">{countText}</p>
 			{#if progress}
 				{@render progressBar(progress)}
-			{:else}
+			{:else if selecting}
 				<button
 					class="button-secondary"
 					type="button"
@@ -97,9 +142,7 @@
 					aria-disabled={actionsShown ? undefined : 'true'}
 					aria-describedby={!actionsShown && hint !== '' ? ids.hint : undefined}
 					title={!actionsShown && hint !== '' ? hint : undefined}
-					onclick={() => {
-						if (actionsShown) opened = !opened;
-					}}
+					onclick={() => void toggleActions()}
 				>
 					Aktionen
 				</button>
