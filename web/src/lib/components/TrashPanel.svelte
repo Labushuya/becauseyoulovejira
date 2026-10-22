@@ -26,7 +26,9 @@
 	// when it goes for good. The footer offers "Wiederherstellen" and "Endgültig löschen …"; a
 	// sub-task of a group has none (it comes back with its parent). A restore that needs a choice
 	// asks inline, like in the row. A blocked ticket (ADR-0047) shows the decision help right below
-	// its fields; "Endgültig löschen …" stays locked until nothing blocks it.
+	// its fields; "Endgültig löschen …" stays locked until nothing blocks it. In the phone frame
+	// (MO-7b, ADR-0073 addendum MO-7b) it is a page whose arrow goes back through the history when the
+	// list of the trash lies right before it (`backLabel`, `onback`, from the route).
 	let {
 		preview,
 		selfId,
@@ -39,7 +41,9 @@
 		ondetach,
 		onpurge,
 		ondismissneed,
-		onclose
+		onclose,
+		backLabel,
+		onback
 	}: {
 		preview: TrashPreview;
 		selfId: string | null;
@@ -60,6 +64,10 @@
 		onpurge: (() => void) | null;
 		ondismissneed: () => void;
 		onclose: () => void;
+		/** Name of the arrow back of the page in the phone frame (MO-7b), e.g. "Zum Papierkorb". */
+		backLabel?: string;
+		/** The arrow back in the phone frame; without it the way of the ×. */
+		onback?: () => void;
 	} = $props();
 
 	// "gelöscht von" names another account where its name is visible (ADR-0056 §4).
@@ -76,7 +84,7 @@
 	});
 </script>
 
-<Drawer labelledby={titleId} {onclose}>
+<Drawer labelledby={titleId} {onclose} {backLabel} {onback}>
 	{#snippet context()}<span class="key">{preview.key}</span> · im Papierkorb{/snippet}
 	<h2 id={titleId} tabindex="-1">{preview.title}</h2>
 	<dl class="meta">
