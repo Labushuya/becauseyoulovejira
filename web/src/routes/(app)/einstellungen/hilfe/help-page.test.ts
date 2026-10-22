@@ -894,9 +894,9 @@ describe('help page (EH-9)', () => {
 		expect(items).toContain(
 			'„Alle Kanäle jetzt abrufen“: ohne Verbindung gesperrt, mit „Nur mit Verbindung“.'
 		);
-		expect(items.some((item) => /„Alle Kanäle jetzt abrufen“/.test(item) && /Priorität/.test(item))).toBe(
-			false
-		);
+		expect(
+			items.some((item) => /„Alle Kanäle jetzt abrufen“/.test(item) && /Priorität/.test(item))
+		).toBe(false);
 		const reload = items.find((item) => item.startsWith('Neu laden:'));
 		expect(reload).toMatch(/„Ohne Verbindung neu laden\?“/);
 		expect(reload).toMatch(
@@ -914,7 +914,9 @@ describe('help page (EH-9)', () => {
 		expect(anyway).toMatch(/älter als 48 Stunden/);
 		expect(anyway).toMatch(/die Zeit des Geräts in der Zukunft liegt/);
 		const content = text(section);
-		expect(content).toMatch(/ein verworfener Eingangseintrag, der doch schon im Eingang liegt \(mit „Eintrag ansehen“\)/);
+		expect(content).toMatch(
+			/ein verworfener Eingangseintrag, der doch schon im Eingang liegt \(mit „Eintrag ansehen“\)/
+		);
 	});
 
 	it('explains moving a due date: mouse, menu or "m", undo, series and touch (ADR-0053 §12)', () => {

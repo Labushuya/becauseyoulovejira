@@ -383,8 +383,8 @@
 			<li>„Neues Ticket“ und „Erfassen“ im Eingang.</li>
 			<li>„Alle Kanäle jetzt abrufen“: ohne Verbindung gesperrt, mit „Nur mit Verbindung“.</li>
 			<li>
-				Alles andere, etwa Priorität, Projekt, Tags, Titel, Beschreibung und Unteraufgaben, Umwandeln
-				und Verwerfen im Eingang.
+				Alles andere, etwa Priorität, Projekt, Tags, Titel, Beschreibung und Unteraufgaben,
+				Umwandeln und Verwerfen im Eingang.
 			</li>
 		</ul>
 		<p>
@@ -425,10 +425,10 @@
 		<p>
 			Was die App ohne dein Zutun löscht oder nicht erreicht, steht als Hinweis über der Seite, bis
 			du „Schließen“ wählst: Änderungen, die nach 7 Tagen gelöscht wurden, eine Unteraufgabe, die
-			nicht mit erledigt wurde, ein verworfenes Ticket bzw. ein verworfener Kommentar, die doch schon
-			angekommen sind (mit „Ticket öffnen“), oder ein verworfener Eingangseintrag, der doch schon im
-			Eingang liegt (mit „Eintrag ansehen“). Die Hinweise bleiben auf diesem Gerät, in jedem Tab und
-			auch nach dem Neuladen; „Schließen“ in einem Tab schließt sie in allen.
+			nicht mit erledigt wurde, ein verworfenes Ticket bzw. ein verworfener Kommentar, die doch
+			schon angekommen sind (mit „Ticket öffnen“), oder ein verworfener Eingangseintrag, der doch
+			schon im Eingang liegt (mit „Eintrag ansehen“). Die Hinweise bleiben auf diesem Gerät, in
+			jedem Tab und auch nach dem Neuladen; „Schließen“ in einem Tab schließt sie in allen.
 		</p>
 		<h4 id="ohne-verbindung-grenzen">Grenzen</h4>
 		<ul>
@@ -454,8 +454,8 @@
 			</li>
 			<li>
 				<strong>Neu laden:</strong> Ohne Verbindung fragt die App vorher „Ohne Verbindung neu laden?“.
-				Gemerktes bleibt dabei erhalten, ohne Verbindung lässt sich die App aber erst wieder öffnen,
-				wenn der Server erreichbar ist.
+				Gemerktes bleibt dabei erhalten, ohne Verbindung lässt sich die App aber erst wieder öffnen, wenn
+				der Server erreichbar ist.
 			</li>
 			<li>
 				<strong>Nach einem Update:</strong> Drücke in jedem offenen Tab F5. Ein Tab mit der alten Fassung
