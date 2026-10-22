@@ -297,6 +297,93 @@ describe('new comment', () => {
 		expect(COMMENT_MAX_LENGTH).toBe(20_000);
 		expect((await newCommentField()).maxLength).toBe(20_000);
 	});
+
+	// MO-7b (M-1 of the review of MO-7a): the request may take a while (a slow connection, the outbox).
+	// The form takes the focus back only while it is still in the form or lost on the page, never from
+	// a field the user went to meanwhile.
+	describe('the focus after sending (MO-7b)', () => {
+		/** A field outside the form, where the user goes while the comment is sent. */
+		function otherField(): HTMLInputElement {
+			const field = document.createElement('input');
+			field.setAttribute('aria-label', 'Anderes Feld');
+			document.body.append(field);
+			return field;
+		}
+
+		/** Lets every step of the sending that follows the answer run. */
+		const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+		it('leaves the focus in another field after a sent comment', async () => {
+			const { data } = await renderComments();
+			let answer = () => {};
+			data.createComment.mockImplementationOnce(
+				(ticket: string, body: string) =>
+					new Promise<Comment>((resolve) => {
+						answer = () => resolve(comment({ id: 'slow1', ticket, body }));
+					})
+			);
+			const other = otherField();
+			await fireEvent.input(await newCommentField(), { target: { value: 'Langsam gesendet' } });
+			await fireEvent.click(screen.getByRole('button', { name: 'Kommentieren' }));
+			await vi.waitFor(() => expect(data.createComment).toHaveBeenCalled());
+
+			other.focus();
+			answer();
+			await vi.waitFor(() =>
+				expect(screen.getByRole('button', { name: 'Kommentar hinzufügen …' })).toBeTruthy()
+			);
+			await settle();
+
+			expect(document.activeElement).toBe(other);
+			other.remove();
+		});
+
+		it('leaves the focus in another field after a failure', async () => {
+			const { data } = await renderComments();
+			let fail = () => {};
+			data.createComment.mockImplementationOnce(
+				() =>
+					new Promise<Comment>((_resolve, reject) => {
+						fail = () => reject(new DataError('network'));
+					})
+			);
+			const other = otherField();
+			await fireEvent.input(await newCommentField(), { target: { value: 'Bleibt stehen' } });
+			await fireEvent.click(screen.getByRole('button', { name: 'Kommentieren' }));
+			await vi.waitFor(() => expect(data.createComment).toHaveBeenCalled());
+
+			other.focus();
+			fail();
+			await screen.findByText(/Server nicht erreichbar/);
+			await settle();
+
+			expect(document.activeElement).toBe(other);
+			other.remove();
+		});
+
+		it('takes the focus back from the page itself', async () => {
+			const { data } = await renderComments();
+			let answer = () => {};
+			data.createComment.mockImplementationOnce(
+				(ticket: string, body: string) =>
+					new Promise<Comment>((resolve) => {
+						answer = () => resolve(comment({ id: 'slow2', ticket, body }));
+					})
+			);
+			await fireEvent.input(await newCommentField(), { target: { value: 'Ins Leere getippt' } });
+			await fireEvent.click(screen.getByRole('button', { name: 'Kommentieren' }));
+			await vi.waitFor(() => expect(data.createComment).toHaveBeenCalled());
+
+			(document.activeElement as HTMLElement | null)?.blur();
+			answer();
+
+			await vi.waitFor(() =>
+				expect(document.activeElement).toBe(
+					screen.getByRole('button', { name: 'Kommentar hinzufügen …' })
+				)
+			);
+		});
+	});
 });
 
 describe('editing and deleting', () => {
