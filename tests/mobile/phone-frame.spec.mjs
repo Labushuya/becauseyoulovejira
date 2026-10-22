@@ -40,7 +40,9 @@
 // the bar of the selection at the bottom in the case of "Aufgaben" (flat above the bottom bar, its
 // actions behind "Aktionen", uncovered above a keyboard); on the PC the three lists keep their
 // tables. The case of the ticket no longer waits for the focus after "Kommentieren": the form takes
-// it back only while it is still in the form (M-1 of the review of MO-7a).
+// it back only while it is still in the form (M-1 of the review of MO-7a). Round 2 of MO-7b: Enter on
+// the locked "Aktionen" names why in a flag, opened the focus is on the first action, and "Mehr"
+// expects the number of the trash the server lists, as a whole number.
 //
 // The phone stands for another device in the home network (header X-Byl-Test-Remote-Address of the
 // test hooks, only in instances of the harness), so the pages of the administrator are "nur am PC".
@@ -337,7 +339,8 @@ function letters(count) {
 /**
  * The lists of MO-7b (a run mark appended), made up: a project with a name of one long word and a
  * sub project, a rule with a title of one long word, and two tickets in the trash, one with a title
- * of one long word.
+ * of one long word. `trashCount` is the number of the trash as the server lists it afterwards: the two
+ * and whatever another case put there before (round 2 of MO-7b, P-6).
  */
 async function seedLists() {
 	const { email, password } = mobileInstance();
@@ -360,7 +363,8 @@ async function seedLists() {
 		await remove(`/api/collections/tickets/records/${ticket.id}`, token);
 		trashed.push(title);
 	}
-	return { project: projectName, sub: subName, rule: ruleTitle, trashed };
+	const { items } = await api('GET', '/api/byl/trash', undefined, token);
+	return { project: projectName, sub: subName, rule: ruleTitle, trashed, trashCount: items.length };
 }
 
 test.describe('phone with the switch on', () => {
@@ -402,13 +406,15 @@ test.describe('phone with the switch on', () => {
 		const sheet = page.getByRole('dialog', { name: 'Mehr' });
 		await expect(sheet).toBeVisible();
 		const views = sheet.getByRole('navigation', { name: 'Ansichten' });
-		// The trash names its number since the lists of MO-7b put two tickets into it.
+		// The trash names its number since the lists of MO-7b put two tickets into it: the number the
+		// server lists, whole (no "2" of a "21").
+		expect(lists.trashCount).toBeGreaterThanOrEqual(lists.trashed.length);
 		await expect(views.getByRole('link')).toHaveText([
 			'Projekte',
 			'Wiederholungen',
 			'Kalender',
 			'Erledigte',
-			/^\s*Papierkorb 2/
+			new RegExp(`^\\s*Papierkorb ${lists.trashCount}\\b`)
 		]);
 		await expect(sheet.getByRole('link', { name: 'Neues Ticket' })).toBeVisible();
 		const settings = sheet.getByRole('navigation', { name: 'Einstellungen' });
@@ -513,10 +519,20 @@ test.describe('phone with the switch on', () => {
 		expect(flat.y + flat.height).toBeLessThanOrEqual(tabs.y);
 		expect(tabs.y - (flat.y + flat.height)).toBeLessThanOrEqual(12);
 		await expect(selection.getByRole('button', { name: 'Aktionen' })).toHaveAttribute('aria-disabled', 'true');
+		// Round 2 (P-2): Enter on the locked "Aktionen" names why in a flag, not only to a screen reader.
+		await selection.getByRole('button', { name: 'Aktionen' }).focus();
+		await page.keyboard.press('Enter');
+		const notes = page.getByRole('region', { name: 'Benachrichtigungen' });
+		await expect(notes.getByRole('listitem').filter({ hasText: 'Erst Tickets auswählen.' })).toBeVisible();
+		const closeNote = notes.getByRole('button', { name: 'Benachrichtigung schließen' });
+		while ((await closeNote.count()) > 0) await closeNote.first().click();
+		await expect(notes.getByRole('listitem')).toHaveCount(0);
 		await trashCard(shelf).locator('.card-meta').tap();
 		await expect(trashCard(shelf).getByRole('checkbox', { name: /auswählen$/ })).toBeChecked();
 		await expect(selection).toHaveAccessibleName('1 Ticket ausgewählt');
 		await selection.getByRole('button', { name: 'Aktionen' }).tap();
+		// Round 2 (P-3): opened, the focus is on the first action.
+		await expect(selection.getByRole('group', { name: 'Sammelaktionen' }).getByRole('button', { name: 'Wiederherstellen' })).toBeFocused();
 		await expect(selection.getByRole('group', { name: 'Sammelaktionen' }).getByRole('button', { name: 'Wiederherstellen' })).toBeVisible();
 		expect(await smallTargets(selection)).toEqual([]);
 		expect(await scrollsSideways(page)).toBe(false);
