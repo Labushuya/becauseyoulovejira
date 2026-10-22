@@ -602,4 +602,20 @@
 	.how a {
 		color: var(--color-brand-text);
 	}
+
+	/*
+	 * Phone frame (MO-7b, ADR-0073 addendum MO-7b): the weekdays and "So funktioniert’s" are targets
+	 * of 44 px (the labels of the choices have their height from base.css).
+	 */
+	@media (max-width: 39.99rem) {
+		:global(:root[data-mobile-layout='on']) .days .choice {
+			min-width: var(--control-height-touch);
+		}
+
+		:global(:root[data-mobile-layout='on']) .how summary {
+			display: flex;
+			align-items: center;
+			min-height: var(--control-height-touch);
+		}
+	}
 </style>

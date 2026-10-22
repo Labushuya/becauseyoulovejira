@@ -3,12 +3,14 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import type { ResolvedPathname } from '$app/types';
+	import { viewOfRoute } from '$lib/domain/area';
 	import { openInstancesOf, type RecurrenceRule } from '$lib/domain/recurrence-rule';
 	import { getCatalogStore } from '$lib/stores/catalog.svelte';
 	import { ticketLinks } from '$lib/stores/open-mode.svelte';
 	import { RECURRENCE_UNAVAILABLE, getRecurrenceStore } from '$lib/stores/recurrence.svelte';
 	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
 	import { findTicketReturn } from '$lib/ticket-return.svelte';
+	import { followViewArrow } from '$lib/view-arrow.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
 	import Drawer from './overlay/Drawer.svelte';
 	import RecurrencePanel from './RecurrencePanel.svelte';
@@ -19,7 +21,8 @@
 	// archived project) show at once. While it is being deleted the panel keeps the last known rule,
 	// so it does not turn into "nicht gefunden" before the navigation back (`back`). Its tickets open
 	// with the host of the place (ticketLinks), and back from a ticket it replaced the focus goes to
-	// the link of that ticket.
+	// the link of that ticket. In the phone frame the panel is a page whose arrow goes back through the
+	// history when the list of the rules or the calendar lies right before it (MO-7b).
 	let {
 		back,
 		section
@@ -37,6 +40,10 @@
 	const catalog = getCatalogStore();
 	const tickets = getTicketListStore();
 	const id = $derived(page.params.id ?? '');
+	const arrow = followViewArrow(
+		() => viewOfRoute(page.route.id) ?? 'recurrences',
+		() => back
+	);
 
 	/** The rule being deleted, until the navigation back. */
 	let removing = $state<RecurrenceRule | null>(null);
@@ -89,11 +96,18 @@
 			ondelete={() => remove(current)}
 			ondeleted={() => goto(back)}
 			onclose={() => goto(back)}
+			backLabel={arrow.label}
+			onback={() => arrow.go()}
 			initialFocus={() => ticketReturn?.focusTarget() ?? null}
 		/>
 	{/key}
 {:else}
-	<Drawer labelledby="rule-missing" onclose={() => goto(back)}>
+	<Drawer
+		labelledby="rule-missing"
+		onclose={() => goto(back)}
+		backLabel={arrow.label}
+		onback={() => arrow.go()}
+	>
 		{#snippet context()}Wiederholungen{/snippet}
 		{#if store.state === 'unavailable'}
 			<h2 id="rule-missing" tabindex="-1">Regel</h2>

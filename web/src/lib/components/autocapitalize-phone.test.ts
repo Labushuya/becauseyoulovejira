@@ -4,7 +4,8 @@
 // the system stays as it was, and on a PC the attribute does nothing. The title of "Neues Ticket",
 // the title of the ticket in panel and full view, the sub-tasks ("Unteraufgabe hinzufügen" and the
 // list of "Neues Ticket"), the titles of "Ticket duplizieren" and "Folge-Ticket anlegen", the new
-// comment and a comment being edited (the editor and its Markdown field).
+// comment and a comment being edited (the editor and its Markdown field); since MO-7b the title of
+// the template of a rule.
 
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
@@ -33,6 +34,7 @@ import DuplicateDialog from './DuplicateDialog.svelte';
 import EditableTitle from './EditableTitle.svelte';
 import FollowUpDialog from './FollowUpDialog.svelte';
 import NewTicketForm from './NewTicketForm.svelte';
+import RecurrenceTemplateFields from './RecurrenceTemplateFields.svelte';
 import TemplateSubtaskList from './TemplateSubtaskList.svelte';
 import TicketSubtasks from './TicketSubtasks.svelte';
 
@@ -119,6 +121,30 @@ describe.each(WINDOWS)('titles and comments %s (MO-7a)', (_name, narrow, enabled
 		await fireEvent.click(screen.getByRole('button', { name: /^Weitere Optionen/ }));
 		await fireEvent.click(screen.getByRole('button', { name: 'Unteraufgabe hinzufügen' }));
 		expect(capitalization(screen.getByLabelText(/^Titel der Unteraufgabe 1/))).toBe(expected);
+	});
+
+	// MO-7b: the title of the template of a rule ("Wiederholungen" and the inline editor at the ticket).
+	it('the title of the template of a rule (MO-7b)', () => {
+		useWindow(narrow, enabled);
+		render(RecurrenceTemplateFields, {
+			props: {
+				values: {
+					title: 'Müll rausbringen',
+					description: '',
+					projectId: null,
+					tagIds: [],
+					priority: 'medium',
+					initialStatus: 'open',
+					subtasks: [],
+					color: null,
+					charm: null
+				},
+				projects: [],
+				tags: [],
+				oncreatetag: vi.fn()
+			}
+		});
+		expect(capitalization(screen.getByLabelText('Titel'))).toBe(expected);
 	});
 
 	it('the list of sub-tasks of a template', () => {

@@ -10,6 +10,7 @@
 	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
 	import { recurrenceHref, recurrencesHref } from '$lib/ticket-links';
 	import { ticketLinks } from '$lib/stores/open-mode.svelte';
+	import { followViewArrow } from '$lib/view-arrow.svelte';
 
 	// Ticket links open the panel or the full view, as the user last chose (plan BI-1).
 	const links = ticketLinks();
@@ -17,8 +18,14 @@
 	// "Neue Regel" (E5 plan, T-6 and package 5): a rule without a ticket (ADR-0023 section 1). The
 	// first ticket comes when the lead time is reached, right after saving if it already is. After
 	// creating, the panel switches to the new rule in place (replaceState), so "back" leads to the
-	// overview and not to an empty form. Before the E5 migration the panel says when rules come.
+	// overview and not to an empty form. Before the E5 migration the panel says when rules come. In the
+	// phone frame the form is a page whose arrow goes back through the history when the list lies right
+	// before it (MO-7b).
 	const store = getRecurrenceStore();
+	const arrow = followViewArrow(
+		() => 'recurrences',
+		() => recurrencesHref()
+	);
 	const catalog = getCatalogStore();
 	const tickets = getTicketListStore();
 
@@ -34,7 +41,12 @@
 </svelte:head>
 
 {#if store.state === 'unavailable'}
-	<Drawer labelledby="rule-unavailable" onclose={() => goto(recurrencesHref())}>
+	<Drawer
+		labelledby="rule-unavailable"
+		onclose={() => goto(recurrencesHref())}
+		backLabel={arrow.label}
+		onback={() => arrow.go()}
+	>
 		{#snippet context()}Wiederholungen{/snippet}
 		<h2 id="rule-unavailable" tabindex="-1">Neue Regel</h2>
 		<SectionMessage tone="info">{RECURRENCE_UNAVAILABLE}</SectionMessage>
@@ -58,6 +70,8 @@
 		onsave={(draft) => store.create(draft as RuleDraft)}
 		onsaved={(rule) => goto(recurrenceHref(rule.id), { replaceState: true })}
 		onclose={() => goto(recurrencesHref())}
+		backLabel={arrow.label}
+		onback={() => arrow.go()}
 	/>
 {/if}
 

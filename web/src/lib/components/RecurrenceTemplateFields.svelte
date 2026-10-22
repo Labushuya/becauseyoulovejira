@@ -13,6 +13,7 @@
 		type ProjectRef,
 		type TagRef
 	} from '$lib/domain/ticket';
+	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 	import type { EnsureTagResult } from '$lib/stores/catalog.svelte';
 	import CharmPicker from './CharmPicker.svelte';
 	import ColorChoice from './ColorChoice.svelte';
@@ -40,7 +41,8 @@
 	// without an own choice the "Status beim Anlegen"; a failed question for it says why with "Erneut
 	// versuchen" (`subtaskStatusProblem`, UT-2). The color of the next tickets, "Wie Projekt
 	// (Blau)" first, after its migration (`colorsAvailable`, ADR-0052); the charm after its migration
-	// (`charmsAvailable`, ADR-0062).
+	// (`charmsAvailable`, ADR-0062). In the phone frame the keyboard starts the title with a capital
+	// letter (MO-7b, `autocapitalize`, like the titles since MO-7a).
 	let {
 		values = $bindable(),
 		tagText = $bindable(''),
@@ -132,6 +134,7 @@
 	};
 
 	let tagError = $state<string | null>(null);
+	const mobileLayout = getMobileLayoutStore();
 
 	/** "Status beim Anlegen" as shown: the answer of a new rule, else the one of the template. */
 	const shownStatus = $derived(askStatus ? chosenStatus : values.initialStatus);
@@ -191,6 +194,7 @@
 			required
 			aria-required="true"
 			autocomplete="off"
+			autocapitalize={mobileLayout.active ? 'sentences' : undefined}
 			maxlength={TITLE_MAX_LENGTH}
 			value={values.title}
 			oninput={(event) => (values = { ...values, title: event.currentTarget.value })}

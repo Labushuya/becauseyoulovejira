@@ -1,9 +1,12 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import type { ResolvedPathname } from '$app/types';
 	import { areaMover } from '$lib/area-move-entry';
+	import { isCardTap } from '$lib/card-tap';
 	import type { CalendarDate } from '$lib/domain/berlin-date';
 	import { MORE_COLUMNS_HINT } from '$lib/domain/labels';
 	import { projectChoiceLabel, projectPath } from '$lib/domain/project-tree';
+	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 	import { rowMenus } from '$lib/overlay/context-menu';
 	import { getColumnPrefs } from '$lib/stores/column-prefs.svelte';
 	import ActionsMenu, { type MenuAction } from './ActionsMenu.svelte';
@@ -42,6 +45,11 @@
 	// this order; title, state and action stay, and the caption then names the panel, where the
 	// rest stands. The title takes at most two lines; the view shares the column state with its
 	// menu "Spalten".
+	// Phone frame (MO-7b, ADR-0073 addendum MO-7b): with the switch "Handy-Ansicht (Vorschau)" on and
+	// below 40rem the same component shows cards instead of the table, like the inbox (MO-6): the title
+	// with its charm (up to three lines, the link to the rule), a muted line with the state, the
+	// rhythm, the next ticket, the keys of the open tickets (links in the line) and the project, "•••"
+	// with the menu of the row. A tap on the card opens the rule. Nothing of a column goes.
 	let {
 		rules,
 		today,
@@ -135,145 +143,231 @@
 		}
 		return entries;
 	}
+
+	/** The phone frame (MO-7b): cards instead of the table. */
+	const mobileLayout = getMobileLayoutStore();
+	const phone = $derived(mobileLayout.active);
+
+	/** A tap on a card opens its rule, like the click on the title (MO-7b). */
+	function tapCard(event: MouseEvent, rule: RecurrenceRule) {
+		if (isCardTap(event)) void goto(hrefOf(rule));
+	}
 </script>
 
-<div class="frame" bind:this={frame}>
-	<table {@attach rowMenus}>
-		<caption
-			>{CAPTION}{#if columnFit.fit.autoHidden.length > 0}<span class="caption-more"
-					>{MORE_COLUMNS_HINT}</span
-				>{/if}</caption
-		>
-		<colgroup>
-			{#each columnFit.shownColumns as column (column.id)}
-				<col
-					data-column={column.id}
-					style:width={column.flexible ? undefined : `${columnFit.widthOf(column.id)}px`}
-				/>
-			{/each}
-		</colgroup>
-		<thead>
-			<tr>
-				{#each columnFit.shownColumns as column (column.id)}
-					<ResizableHeader {column} fit={columnFit}>
-						{#if column.id === 'actions'}
-							<span class="visually-hidden">{column.label}</span>
-						{:else}
-							{column.label}
-						{/if}
-					</ResizableHeader>
-				{/each}
-			</tr>
-		</thead>
-		<tbody>
-			{#each rules as rule (rule.id)}
-				{@const open = openTicketsOf(rule)}
-				{@const project = projectOf(rule)}
-				{@const waiting = isWaiting(rule)}
-				<tr
-					class="row"
-					class:active={rule.id === activeId}
-					class:paused={!rule.active}
-					data-rule-row={rule.id}
-				>
-					<th class="title" scope="row" data-col="title">
-						<!-- At most two lines, cut off only visually (ADR-0030 section 6). -->
-						<div class="title-clamp">
-							<!-- The charm of the template (ADR-0062), as before the title of a ticket. -->
-							<CharmIcon charm={rule.charm} />
-							<a
-								class="title-link"
-								href={hrefOf(rule)}
-								data-rule-id={rule.id}
-								data-row-link
-								title={rule.title.length >= LONG_TITLE ? rule.title : undefined}
-								aria-current={rule.id === activeId ? 'page' : undefined}>{rule.title}</a
-							>
-						</div>
-					</th>
-					{#if shown.has('rhythm')}
-						<td class="text" data-col="rhythm" title={rhythmOf(rule)}>{rhythmOf(rule)}</td>
-					{/if}
-					{#if shown.has('next')}
-						{@const keys = (open ?? []).map((ticket) => ticket.key)}
-						{@const note = nextTicketNote(rule, today, keys)}
-						<td class="date" data-col="next" title={nextTicketText(rule, today, keys)}>
-							{nextTicketDate(rule, today, keys)}
-							{#if note !== ''}<span class="note">{note}</span>{/if}
-						</td>
-					{/if}
-					{#if shown.has('open')}
-						<td
-							class="key"
-							data-col="open"
-							title={open !== undefined && open.length > 1
-								? open.map((ticket) => ticket.key).join(', ')
-								: undefined}
+{#if phone}
+	<!-- Cards instead of the table (MO-7b): the same order, menus and links. -->
+	<ol class="rule-cards" aria-label="Regeln" {@attach rowMenus}>
+		{#each rules as rule (rule.id)}
+			{@const open = openTicketsOf(rule)}
+			{@const project = projectOf(rule)}
+			{@const waiting = isWaiting(rule)}
+			<!-- The title link is the keyboard target of the card; the tap on the card is a shortcut for it. -->
+			<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
+			<li
+				class="rule-card"
+				class:active={rule.id === activeId}
+				class:paused={!rule.active}
+				data-rule-row={rule.id}
+				data-menu-row
+				aria-busy={busyId === rule.id ? 'true' : undefined}
+				onclick={(event) => tapCard(event, rule)}
+			>
+				<div class="card-body">
+					<!-- Up to three lines, cut off only visually; screen readers read the whole title. -->
+					<p class="card-title">
+						<CharmIcon charm={rule.charm} /><a
+							class="title-link"
+							href={hrefOf(rule)}
+							data-rule-id={rule.id}
+							data-row-link
+							title={rule.title.length >= LONG_TITLE ? rule.title : undefined}
+							aria-current={rule.id === activeId ? 'page' : undefined}>{rule.title}</a
 						>
-							{#if open === undefined}
-								<span aria-hidden="true">…</span><span class="visually-hidden">wird geladen</span>
-							{:else if open.length === 0}
-								<span aria-hidden="true">–</span><span class="visually-hidden">keins</span>
-							{:else}
-								{#if open.length > 1}
-									<span class="count"
-										>{open.length}<span class="visually-hidden">&nbsp;offene Tickets</span>:</span
-									>
-								{/if}
-								{#each open as ticket, index (ticket.id)}
-									{#if index > 0}<span aria-hidden="true">,&nbsp;</span>{/if}<a
-										class="key-link"
-										href={ticketHrefOf(ticket.id)}
-										data-ticket-link={ticket.id}
-										title={`${ticket.key} · ${ticket.title}`}>{ticket.key}</a
-									>
-								{/each}
-							{/if}
-						</td>
-					{/if}
-					{#if shown.has('project')}
-						<td
-							class="text"
-							data-col="project"
-							title={project === null ? undefined : projectChoiceLabel(project)}
-						>
-							{#if project === null}
-								<span aria-hidden="true">–</span><span class="visually-hidden">kein Projekt</span>
-							{:else}
-								<!-- A sub project with its path, "Haus › Garten" (ADR-0034). -->
-								{projectPath(project)} <span class="code">({project.code})</span>
-							{/if}
-						</td>
-					{/if}
-					<td
-						class="state"
-						data-col="state"
-						title={waiting ? 'Wartet auf deine Entscheidung (im Panel der Regel)' : undefined}
-					>
+					</p>
+					<p class="card-meta">
 						<Lozenge
 							label={ruleStateLabel(rule)}
 							icon={waiting ? 'warning' : rule.active ? 'refresh' : 'pause'}
 							tone={waiting ? 'neutral' : rule.active ? 'brand' : 'muted'}
 						/>
-					</td>
-					<td
-						class="actions"
-						data-col="actions"
-						aria-busy={busyId === rule.id ? 'true' : undefined}
-					>
-						<ActionsMenu
-							label={`Weitere Aktionen für „${rule.title}“`}
-							buttonLabel={`Weitere Aktionen für „${rule.title}“`}
-							buttonTitle="Weitere Aktionen"
-							buttonClass="button-icon row-menu"
-							items={menuOf(rule, open)}
-						/>
-					</td>
+						<span>{rhythmOf(rule)}</span>
+						{#if rule.active}
+							<span
+								>{nextTicketText(
+									rule,
+									today,
+									(open ?? []).map((ticket) => ticket.key)
+								)}</span
+							>
+						{/if}
+						{#if open !== undefined && open.length > 0}
+							<span
+								>{open.length === 1 ? 'Offen:' : `${open.length} offen:`}
+								{#each open as ticket, index (ticket.id)}{#if index > 0},
+									{/if}<a
+										class="key-link"
+										href={ticketHrefOf(ticket.id)}
+										data-ticket-link={ticket.id}
+										title={`${ticket.key} · ${ticket.title}`}>{ticket.key}</a
+									>{/each}</span
+							>
+						{/if}
+						{#if project !== null}
+							<span>{projectPath(project)} <span class="code">({project.code})</span></span>
+						{/if}
+					</p>
+				</div>
+				<div class="card-end">
+					<ActionsMenu
+						label={`Weitere Aktionen für „${rule.title}“`}
+						buttonLabel={`Weitere Aktionen für „${rule.title}“`}
+						buttonTitle="Weitere Aktionen"
+						buttonClass="button-icon row-menu"
+						items={menuOf(rule, open)}
+					/>
+				</div>
+			</li>
+		{/each}
+	</ol>
+{:else}
+	<div class="frame" bind:this={frame}>
+		<table {@attach rowMenus}>
+			<caption
+				>{CAPTION}{#if columnFit.fit.autoHidden.length > 0}<span class="caption-more"
+						>{MORE_COLUMNS_HINT}</span
+					>{/if}</caption
+			>
+			<colgroup>
+				{#each columnFit.shownColumns as column (column.id)}
+					<col
+						data-column={column.id}
+						style:width={column.flexible ? undefined : `${columnFit.widthOf(column.id)}px`}
+					/>
+				{/each}
+			</colgroup>
+			<thead>
+				<tr>
+					{#each columnFit.shownColumns as column (column.id)}
+						<ResizableHeader {column} fit={columnFit}>
+							{#if column.id === 'actions'}
+								<span class="visually-hidden">{column.label}</span>
+							{:else}
+								{column.label}
+							{/if}
+						</ResizableHeader>
+					{/each}
 				</tr>
-			{/each}
-		</tbody>
-	</table>
-</div>
+			</thead>
+			<tbody>
+				{#each rules as rule (rule.id)}
+					{@const open = openTicketsOf(rule)}
+					{@const project = projectOf(rule)}
+					{@const waiting = isWaiting(rule)}
+					<tr
+						class="row"
+						class:active={rule.id === activeId}
+						class:paused={!rule.active}
+						data-rule-row={rule.id}
+					>
+						<th class="title" scope="row" data-col="title">
+							<!-- At most two lines, cut off only visually (ADR-0030 section 6). -->
+							<div class="title-clamp">
+								<!-- The charm of the template (ADR-0062), as before the title of a ticket. -->
+								<CharmIcon charm={rule.charm} />
+								<a
+									class="title-link"
+									href={hrefOf(rule)}
+									data-rule-id={rule.id}
+									data-row-link
+									title={rule.title.length >= LONG_TITLE ? rule.title : undefined}
+									aria-current={rule.id === activeId ? 'page' : undefined}>{rule.title}</a
+								>
+							</div>
+						</th>
+						{#if shown.has('rhythm')}
+							<td class="text" data-col="rhythm" title={rhythmOf(rule)}>{rhythmOf(rule)}</td>
+						{/if}
+						{#if shown.has('next')}
+							{@const keys = (open ?? []).map((ticket) => ticket.key)}
+							{@const note = nextTicketNote(rule, today, keys)}
+							<td class="date" data-col="next" title={nextTicketText(rule, today, keys)}>
+								{nextTicketDate(rule, today, keys)}
+								{#if note !== ''}<span class="note">{note}</span>{/if}
+							</td>
+						{/if}
+						{#if shown.has('open')}
+							<td
+								class="key"
+								data-col="open"
+								title={open !== undefined && open.length > 1
+									? open.map((ticket) => ticket.key).join(', ')
+									: undefined}
+							>
+								{#if open === undefined}
+									<span aria-hidden="true">…</span><span class="visually-hidden">wird geladen</span>
+								{:else if open.length === 0}
+									<span aria-hidden="true">–</span><span class="visually-hidden">keins</span>
+								{:else}
+									{#if open.length > 1}
+										<span class="count"
+											>{open.length}<span class="visually-hidden">&nbsp;offene Tickets</span>:</span
+										>
+									{/if}
+									{#each open as ticket, index (ticket.id)}
+										{#if index > 0}<span aria-hidden="true">,&nbsp;</span>{/if}<a
+											class="key-link"
+											href={ticketHrefOf(ticket.id)}
+											data-ticket-link={ticket.id}
+											title={`${ticket.key} · ${ticket.title}`}>{ticket.key}</a
+										>
+									{/each}
+								{/if}
+							</td>
+						{/if}
+						{#if shown.has('project')}
+							<td
+								class="text"
+								data-col="project"
+								title={project === null ? undefined : projectChoiceLabel(project)}
+							>
+								{#if project === null}
+									<span aria-hidden="true">–</span><span class="visually-hidden">kein Projekt</span>
+								{:else}
+									<!-- A sub project with its path, "Haus › Garten" (ADR-0034). -->
+									{projectPath(project)} <span class="code">({project.code})</span>
+								{/if}
+							</td>
+						{/if}
+						<td
+							class="state"
+							data-col="state"
+							title={waiting ? 'Wartet auf deine Entscheidung (im Panel der Regel)' : undefined}
+						>
+							<Lozenge
+								label={ruleStateLabel(rule)}
+								icon={waiting ? 'warning' : rule.active ? 'refresh' : 'pause'}
+								tone={waiting ? 'neutral' : rule.active ? 'brand' : 'muted'}
+							/>
+						</td>
+						<td
+							class="actions"
+							data-col="actions"
+							aria-busy={busyId === rule.id ? 'true' : undefined}
+						>
+							<ActionsMenu
+								label={`Weitere Aktionen für „${rule.title}“`}
+								buttonLabel={`Weitere Aktionen für „${rule.title}“`}
+								buttonTitle="Weitere Aktionen"
+								buttonClass="button-icon row-menu"
+								items={menuOf(rule, open)}
+							/>
+						</td>
+					</tr>
+				{/each}
+			</tbody>
+		</table>
+	</div>
+{/if}
 
 <style>
 	/* The measured frame of fitColumns (ADR-0030); the table takes its width and never more. */
@@ -425,5 +519,81 @@
 	/* The menu "•••" of the row (AM-4) in 3.5rem, at the small control height of base.css. */
 	.actions {
 		text-align: right;
+	}
+
+	/*
+	 * Phone frame (MO-7b, ADR-0073 addendum MO-7b): the cards in a framed list like the table, each
+	 * the body and "•••"; the title in up to three lines, long words wrap, the line of the state, the
+	 * rhythm and the next ticket wraps. Off, or from 40rem, the table stays as it was.
+	 */
+	@media (max-width: 39.99rem) {
+		:global(:root[data-mobile-layout='on']) .rule-cards {
+			min-width: 0;
+			margin: 0;
+			padding: 0;
+			overflow: hidden;
+			list-style: none;
+			background: var(--color-surface);
+			border: 1px solid var(--color-line);
+			border-radius: var(--radius-surface);
+		}
+
+		:global(:root[data-mobile-layout='on']) .rule-card {
+			display: flex;
+			gap: 0.25rem;
+			align-items: flex-start;
+			padding: 0.5rem 0.25rem 0.75rem 0.75rem;
+			border-top: 1px solid var(--color-line);
+			cursor: pointer;
+		}
+
+		:global(:root[data-mobile-layout='on']) .rule-card:first-child {
+			border-top: none;
+		}
+
+		:global(:root[data-mobile-layout='on']) .rule-card.active {
+			background: var(--color-brand-soft-bg);
+			box-shadow: inset 3px 0 0 var(--color-brand);
+		}
+
+		:global(:root[data-mobile-layout='on']) .card-body {
+			display: grid;
+			flex: 1 1 auto;
+			gap: 0.375rem;
+			min-width: 0;
+			padding-top: 0.625rem;
+		}
+
+		/* Up to three lines; the clamp is visual only, screen readers read the whole title. */
+		:global(:root[data-mobile-layout='on']) .card-title {
+			display: -webkit-box;
+			margin: 0;
+			overflow: hidden;
+			font-size: var(--font-size-body);
+			overflow-wrap: anywhere;
+			-webkit-box-orient: vertical;
+			-webkit-line-clamp: 3;
+			line-clamp: 3;
+		}
+
+		:global(:root[data-mobile-layout='on']) .card-meta {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 0.25rem 0.75rem;
+			align-items: center;
+			min-width: 0;
+			margin: 0;
+			font-size: var(--font-size-control);
+			color: var(--color-text-muted);
+			overflow-wrap: anywhere;
+		}
+
+		:global(:root[data-mobile-layout='on']) .card-meta > span {
+			min-width: 0;
+		}
+
+		:global(:root[data-mobile-layout='on']) .card-end {
+			flex: none;
+		}
 	}
 </style>
