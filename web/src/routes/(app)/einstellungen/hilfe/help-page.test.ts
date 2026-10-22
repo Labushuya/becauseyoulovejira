@@ -881,6 +881,42 @@ describe('help page (EH-9)', () => {
 		}
 	});
 
+	// MO-7b (M-4 to M-6 of the review of MO-7a): the section in the words of the code. The lock of "Alle
+	// Kanäle jetzt abrufen" is its own point (it alone is locked, every other change is refused); the
+	// reload says what offline.ts says; "Status, Fälligkeit und Kommentare" holds for a new ticket only,
+	// a new entry waits for "Umwandeln", "Verknüpfen" and "Verwerfen"; "Trotzdem übertragen" also with
+	// the time of the device in the future; the discarded entry that arrived anyway with "Eintrag
+	// ansehen".
+	it('states the limits of changes without a connection in the words of the app (MO-7b)', () => {
+		const { container } = render(Page);
+		const section = container.querySelector<HTMLElement>('section#ohne-verbindung')!;
+		const items = [...section.querySelectorAll('li')].map((item) => text(item).trim());
+		expect(items).toContain(
+			'„Alle Kanäle jetzt abrufen“: ohne Verbindung gesperrt, mit „Nur mit Verbindung“.'
+		);
+		expect(items.some((item) => /„Alle Kanäle jetzt abrufen“/.test(item) && /Priorität/.test(item))).toBe(
+			false
+		);
+		const reload = items.find((item) => item.startsWith('Neu laden:'));
+		expect(reload).toMatch(/„Ohne Verbindung neu laden\?“/);
+		expect(reload).toMatch(
+			/lässt sich die App aber erst wieder öffnen, wenn der Server erreichbar ist\./
+		);
+		expect(reload).not.toMatch(/startet die App nicht neu/);
+		const quick = items.find((item) => item.startsWith('„＋“'));
+		expect(quick).toMatch(
+			/Bei einem neuen Ticket steht bis zur Übertragung statt des Keys „Neu“; Status, Fälligkeit und Kommentare gehen daran schon, alles andere erst danach\./
+		);
+		expect(quick).toMatch(
+			/Umwandeln, Verknüpfen und Verwerfen gehen bei einem neuen Eintrag erst, sobald er übertragen ist\./
+		);
+		const anyway = items.find((item) => item.startsWith('„Trotzdem übertragen“'));
+		expect(anyway).toMatch(/älter als 48 Stunden/);
+		expect(anyway).toMatch(/die Zeit des Geräts in der Zukunft liegt/);
+		const content = text(section);
+		expect(content).toMatch(/ein verworfener Eingangseintrag, der doch schon im Eingang liegt \(mit „Eintrag ansehen“\)/);
+	});
+
 	it('explains moving a due date: mouse, menu or "m", undo, series and touch (ADR-0053 §12)', () => {
 		const { container } = render(Page);
 		const section = container.querySelector<HTMLElement>('section#kalender')!;
