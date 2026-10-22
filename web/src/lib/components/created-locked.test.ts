@@ -165,6 +165,11 @@ const rowOf = (id: string) =>
 const box = (key: string) =>
 	screen.getByRole<HTMLInputElement>('checkbox', { name: `${key} auswählen` });
 const countText = () => screen.queryByRole('region', { name: /ausgewählt/ })?.textContent ?? '';
+/**
+ * Nothing is chosen: on the PC no bar; in the phone frame since MO-7b the bar of "Auswählen" at the
+ * bottom with "0 Tickets ausgewählt" (it stands from the start, its actions locked).
+ */
+const NOTHING_CHOSEN = /^\s*0 Tickets ausgewählt/;
 
 beforeEach(() => {
 	vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
@@ -243,7 +248,7 @@ describe('the cards of the phone frame with a ticket "＋" created (A2)', () => 
 		const locked = screen.getByRole('checkbox', { name: `${CREATED_NAME} auswählen` });
 		expect(locked.getAttribute('aria-disabled')).toBe('true');
 		await fireEvent.click(rowOf(CREATED_ID).querySelector('.meta') as HTMLElement);
-		expect(countText()).toBe('');
+		expect(countText()).toMatch(NOTHING_CHOSEN);
 		const bar = screen.getByRole('group', { name: 'Auswahl' });
 		await fireEvent.click(
 			within(bar).getByRole('checkbox', { name: 'Alle angezeigten Tickets auswählen' })
@@ -269,7 +274,7 @@ describe('the locked controls of a ticket "＋" created name their reason (OF-4b
 		await fireEvent.click(locked);
 		expect(locked.checked).toBe(false);
 		expect(data.setDone).not.toHaveBeenCalled();
-		expect(countText()).toBe('');
+		expect(countText()).toMatch(NOTHING_CHOSEN);
 		// The reason shows where a touch or a key reaches it, not only as a title.
 		expect(flags.flags.map((flag) => flag.title)).toEqual([REASON]);
 	});
@@ -282,7 +287,7 @@ describe('the locked controls of a ticket "＋" created name their reason (OF-4b
 		expect(flags.flags.map((flag) => ({ tone: flag.tone, title: flag.title }))).toEqual([
 			{ tone: 'info', title: REASON }
 		]);
-		expect(countText()).toBe('');
+		expect(countText()).toMatch(NOTHING_CHOSEN);
 		expect(data.setDone).not.toHaveBeenCalled();
 		expect(mocks.goto).not.toHaveBeenCalled();
 		// A card of the server is still chosen by a tap on its body, without a flag.

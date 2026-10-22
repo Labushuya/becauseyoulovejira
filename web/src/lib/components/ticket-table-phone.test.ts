@@ -486,12 +486,28 @@ describe('"Aufgaben" as cards in the phone frame (MO-3)', () => {
 		const bar = screen.getByRole('group', { name: 'Auswahl' });
 		const range = within(bar).getByRole('button', { name: 'Bereich' });
 		expect(range.getAttribute('aria-disabled')).toBe('true');
+		// MO-7b: the bar of the selection stands after the cards at the bottom, from the start of
+		// "Auswählen", its actions locked while nothing is chosen; "Fertig" moved into it.
+		expect(within(bar).queryByRole('button', { name: 'Fertig' })).toBeNull();
+		const empty = screen.getByRole('region', { name: '0 Tickets ausgewählt' });
+		expect(
+			within(empty).getByRole('button', { name: 'Aktionen' }).getAttribute('aria-disabled')
+		).toBe('true');
+		const list = document.querySelector('.card-list') as HTMLElement;
+		expect(list.compareDocumentPosition(empty) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
 		// Default order: newest first, so the cards are 4, 3, 2, 1. A tap on the card chooses it.
 		await fireEvent.click(card('TASK-4').querySelector('.meta') as HTMLElement);
 		expect(box('TASK-4').checked).toBe(true);
 		expect(mocks.goto).not.toHaveBeenCalled();
-		expect(screen.getByRole('region', { name: /1 Ticket ausgewählt/ })).toBeTruthy();
+		const chosen = screen.getByRole('region', { name: /1 Ticket ausgewählt/ });
+		await fireEvent.click(within(chosen).getByRole('button', { name: 'Aktionen' }));
+		await tick();
+		expect(
+			within(within(chosen).getByRole('group', { name: 'Sammelaktionen' })).getByRole('button', {
+				name: 'Erledigen'
+			})
+		).toBeTruthy();
 
 		// "Bereich", then the last one: every card in between, and "Bereich" is off again.
 		await fireEvent.click(range);
@@ -513,7 +529,11 @@ describe('"Aufgaben" as cards in the phone frame (MO-3)', () => {
 		await fireEvent.click(all);
 		expect(['TASK-4', 'TASK-3', 'TASK-2', 'TASK-1'].every((key) => box(key).checked)).toBe(true);
 
-		await fireEvent.click(within(bar).getByRole('button', { name: 'Fertig' }));
+		await fireEvent.click(
+			within(screen.getByRole('region', { name: /ausgewählt$/ })).getByRole('button', {
+				name: 'Fertig'
+			})
+		);
 		expect(screen.queryByRole('group', { name: 'Auswahl' })).toBeNull();
 		expect(screen.getByRole('checkbox', { name: 'TASK-1 erledigt' })).toBeTruthy();
 		expect(screen.queryByRole('region', { name: /ausgewählt/ })).toBeNull();
@@ -604,7 +624,8 @@ describe('styles of the cards in the phone frame (MO-3)', () => {
 		);
 	});
 
-	it('gives the heads of the sections and the choices of the sheet 44 px, and the bar of the selection its place below the top bar', () => {
+	// MO-7b: the bar of the selection moved from below the top bar to the bottom, above the bottom bar.
+	it('gives the heads of the sections and the choices of the sheet 44 px, and the bar of the selection its place above the bottom bar', () => {
 		expect(rule('TicketTable.svelte', '.card-head .group-toggle')).toMatch(
 			/min-height: var\(--control-height-touch\);/
 		);
@@ -612,7 +633,7 @@ describe('styles of the cards in the phone frame (MO-3)', () => {
 			/min-height: var\(--control-height-touch\);/
 		);
 		expect(rule('SelectionBar.svelte', '.bulk-bar')).toMatch(
-			/top: calc\(var\(--top-bar-height\) \+ var\(--safe-top\) \+ 0\.5rem\);/
+			/bottom: calc\(var\(--bottom-bar-height\) \+ var\(--safe-bottom\) \+ 0\.5rem\);/
 		);
 	});
 });

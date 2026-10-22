@@ -41,6 +41,8 @@
 	// "Erledigen" and the status "Erledigt" ask "Vorhaben abschließen?" once when the chosen tickets
 	// hold open ongoing projects, with their number (VH-1); "Abbrechen" changes no ticket. The
 	// question about open sub-tasks follows after it.
+	// In the phone frame (MO-7b) the glass bar is the bar of "Auswählen" at the bottom: it stands from
+	// the start of "Auswählen", its actions behind "Aktionen", locked while nothing is chosen.
 	let {
 		tickets,
 		store,
@@ -146,6 +148,7 @@
 		? { total: store.progress.total, done: store.progress.done, text: progressText(store.progress) }
 		: null}
 	actionsShown={count > 0}
+	hint="Erst Tickets auswählen."
 	{onclear}
 	bind:bar
 	result={store.result && !busy ? resultList : undefined}
