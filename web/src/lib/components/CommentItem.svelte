@@ -5,6 +5,7 @@
 	import { offlineCommentText } from '$lib/domain/offline';
 	import { personLabel } from '$lib/domain/people';
 	import { COMMENT_MAX_LENGTH, type Comment } from '$lib/domain/ticket';
+	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 	import type { CommentViewStore } from '$lib/stores/comment-view.svelte';
 	import { findPeople } from '$lib/stores/people.svelte';
 	import type { TicketActivityStore } from '$lib/stores/ticket-activity.svelte';
@@ -31,6 +32,8 @@
 	// "Löschen", "Anpinnen" and ticking tasks (they need the server); once it arrived, the server names
 	// "Offline geschrieben um 14:03 (laut Gerät) · übertragen 14:30" (concept §2.3), since round 2 (K-7)
 	// instead of the time of the comment, so the time of the server stands only once.
+	// In the phone frame the keyboard starts sentences of an edited comment with a capital letter
+	// (MO-7a, as the new comment).
 	let {
 		comment,
 		store,
@@ -54,6 +57,7 @@
 	const uid = $props.id();
 	const errorId = `${uid}-error`;
 	const pinErrorId = `${uid}-pin-error`;
+	const mobileLayout = getMobileLayoutStore();
 
 	let editButton = $state<HTMLButtonElement>();
 	let editText = $state<ReturnType<typeof RichTextEditor>>();
@@ -186,6 +190,7 @@
 				bind:value={() => store.editValue(comment.id), (value) => store.setEdit(comment.id, value)}
 				invalid={error !== null}
 				describedby={error ? errorId : undefined}
+				autocapitalize={mobileLayout.active ? 'sentences' : undefined}
 				onsubmit={() => void endEdit(true)}
 			/>
 			{#if error}

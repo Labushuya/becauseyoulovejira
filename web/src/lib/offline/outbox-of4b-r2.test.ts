@@ -156,6 +156,52 @@ describe('"Als Eingangseintrag sichern" once at a time (K-2)', () => {
 	});
 });
 
+// MO-7a (ADR-0074 addendum OF-4b, rest L-1 of the second reading): while "Als Eingangseintrag sichern"
+// runs for a comment, "Trotzdem übertragen" and "Verwerfen" of the same comment do nothing; before,
+// the comment went to the server as well (its text twice) or was discarded with "Rückgängig" while its
+// entry came anyway.
+describe('"Trotzdem übertragen" and "Verwerfen" wait while "Als Eingangseintrag sichern" runs (MO-7a, L-1)', () => {
+	/** A comment older than 48 hours that never left the device. */
+	async function expired(): Promise<Harness> {
+		const h = await ready();
+		await goOffline(h);
+		await h.outbox.createComment(ON_A, TEXT);
+		vi.setSystemTime(NOW + AUTO_SEND_MS + MINUTE);
+		await goOnline(h);
+		expect(only(h)).toMatchObject({ kind: 'comment.create', state: 'expired' });
+		return h;
+	}
+
+	it('does not send the comment on "Trotzdem übertragen" while its text is saved', async () => {
+		const h = await expired();
+		const saving = h.outbox.saveAsItem(FIRST_OP);
+		expect(h.outbox.savingAsItem(FIRST_OP)).toBe(true);
+		await h.outbox.sendAnyway(FIRST_OP);
+		await saving;
+		await settle();
+		expect(entries(h).map((record) => record.body)).toEqual([TEXT]);
+		expect(h.sendComment).not.toHaveBeenCalled();
+		expect(h.server.comments.size).toBe(0);
+		expect(h.outbox.count).toBe(0);
+	});
+
+	it('does not discard the comment while its text is saved', async () => {
+		const h = await refused();
+		const before = h.flags.show.mock.calls.length;
+		const saving = h.outbox.saveAsItem(FIRST_OP);
+		expect(h.outbox.savingAsItem(FIRST_OP)).toBe(true);
+		await h.outbox.discard(FIRST_OP);
+		await saving;
+		await settle();
+		expect(entries(h).map((record) => record.body)).toEqual([TEXT]);
+		expect(h.outbox.count).toBe(0);
+		// Only the flag of saving: no "verworfen" with "Rückgängig" that would bring the text back.
+		expect(h.flags.show.mock.calls.slice(before).map(([flag]) => flag.title)).toEqual([
+			OFFLINE_TEXTS.savedAsItem(false, false)
+		]);
+	});
+});
+
 describe('"Als Eingangseintrag sichern" of a comment that may have arrived (K-3)', () => {
 	/**
 	 * A comment whose request got no answer, 48 hours later: it waits for a decision and may be there

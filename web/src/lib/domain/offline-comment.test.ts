@@ -304,8 +304,45 @@ describe('the words of a comment (OF-4b)', () => {
 			created: '2026-10-19 18:30:00.000Z',
 			deviceAt: '2026-10-19 18:03:00.000Z'
 		};
+		// Since MO-7a (L-3) the time of the device of a day before today names its date as well.
 		expect(offlineCommentText(yesterday, false, NOW)).toBe(
-			'Offline geschrieben um 20:03 (laut Gerät) · übertragen 19.10.2026 20:30'
+			'Offline geschrieben am 19.10.2026 um 20:03 (laut Gerät) · übertragen 19.10.2026 20:30'
+		);
+	});
+
+	// MO-7a (rest L-3 of the second reading of OF-4b): "um 20:03" without a date stood for a time of the
+	// device of an earlier day once the transfer was not today either; the head names the date of the
+	// time of the device whenever it is not today, or not the day of the transfer.
+	it('names the date of the time of the device whenever it is not today (MO-7a, L-3)', () => {
+		const days = [
+			// Written and sent the day before.
+			[
+				{ created: '2026-10-19 18:30:00.000Z', deviceAt: '2026-10-19 18:03:00.000Z' },
+				'Offline geschrieben am 19.10.2026 um 20:03 (laut Gerät) · übertragen 19.10.2026 20:30'
+			],
+			// Written two days ago, sent the day before.
+			[
+				{ created: '2026-10-19 06:30:00.000Z', deviceAt: '2026-10-18 21:50:00.000Z' },
+				'Offline geschrieben am 18.10.2026 um 23:50 (laut Gerät) · übertragen 19.10.2026 08:30'
+			],
+			// Written the day before, sent today.
+			[
+				{ created: '2026-10-20 06:30:00.000Z', deviceAt: '2026-10-19 21:50:00.000Z' },
+				'Offline geschrieben am 19.10.2026 um 23:50 (laut Gerät) · übertragen 08:30'
+			],
+			// Written and sent today: the time alone.
+			[
+				{ created: '2026-10-20 12:30:00.000Z', deviceAt: '2026-10-20 12:03:00.000Z' },
+				'Offline geschrieben um 14:03 (laut Gerät) · übertragen 14:30'
+			]
+		] as const;
+		for (const [comment, text] of days) {
+			expect(offlineCommentText(comment, false, NOW), comment.created).toBe(text);
+		}
+		// Kept for later: the date when it was written before today.
+		const kept = { created: '2026-10-19 18:03:00.000Z', deviceAt: '2026-10-19 18:03:00.000Z' };
+		expect(offlineCommentText(kept, true, NOW)).toBe(
+			'Offline geschrieben am 19.10.2026 um 20:03 (laut Gerät)'
 		);
 	});
 });

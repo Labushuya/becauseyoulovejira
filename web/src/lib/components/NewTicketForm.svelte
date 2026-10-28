@@ -47,6 +47,7 @@
 		type TicketSummary
 	} from '$lib/domain/ticket';
 	import { restartNeeded } from '$lib/guidance/texts';
+	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 	import { findAreaStore } from '$lib/stores/area.svelte';
 	import { findAssignees, type AssigneeSource } from '$lib/stores/assignees.svelte';
 	import type { EnsureTagResult } from '$lib/stores/catalog.svelte';
@@ -129,6 +130,10 @@
 	// Since MO-6c (ADR-0073 addendum MO-6c, on the PC as well, user decision) leaving the page within
 	// the app with typed input asks the same question as "Abbrechen", the way "Erfassen" does since
 	// MO-6b: a link, the bar, "Mehr", the bar of the views, the back gesture and browser back.
+	// Since MO-7a (ADR-0073 addendum MO-7a) after the pattern of TicketRouteLayout: no question of
+	// the browser after "Verwerfen", the question again once its navigation ended and the form is
+	// still there, the form unlocked after a failed request, and the focus back in the form after
+	// "Weiter bearbeiten".
 	let {
 		projects = [],
 		initialProject = null,
@@ -263,6 +268,8 @@
 
 	/** The question before entered data is lost; "Weiter bearbeiten" keeps it. */
 	let confirmingDiscard = $state(false);
+	/** In the phone frame the title starts with a capital letter (MO-7a, as "＋" since MO-5). */
+	const mobileLayout = getMobileLayoutStore();
 
 	const uid = $props.id();
 	const ids = {
@@ -483,14 +490,18 @@
 			sources.length > 0 ||
 			ticketSources.length > 0
 	);
-	// Leaving the page in the phone frame asks first while the form holds input (MO-1b).
-	$effect(() => registerUnsavedInput(() => dirty));
+	// Leaving the page in the phone frame asks first while the form holds input (MO-1b), not after
+	// "Verwerfen" (MO-7a, as TicketRouteLayout): a new build turns the navigation it starts into a
+	// page load, and the browser would ask a second time.
+	$effect(() => registerUnsavedInput(() => !discarding && dirty));
 	const dueError = $derived(dueInvalid ? 'Ungültiges Datum.' : (fieldErrors.due ?? null));
 
 	/** A navigation held up by the question: its target and, for back and forward, the step. */
 	let leaving = $state<{ url: URL; delta: number | undefined } | null>(null);
 	/** Set once the input is discarded on purpose ("Verwerfen"): leaving asks no more. */
 	let discarding = false;
+	/** The control of the form that had the focus last; "Weiter bearbeiten" goes back there. */
+	let lastField: HTMLElement | null = null;
 	/** The question is open, for "Abbrechen" or for a navigation. */
 	const asking = $derived(confirmingDiscard || leaving !== null);
 
@@ -529,7 +540,32 @@
 		discarding = true;
 		if (target === null) oncancel();
 		else if (target.delta !== undefined && target.delta !== 0) history.go(target.delta);
-		else await goto(appHref(target.url));
+		else {
+			try {
+				await goto(appHref(target.url));
+			} finally {
+				// Still here once the navigation ended (it kept this form, MO-7a): the input that is
+				// left asks again before the next way out.
+				discarding = false;
+			}
+		}
+	}
+
+	/**
+	 * "Weiter bearbeiten": the question closes. After a navigation the dialog gives the focus back to
+	 * the link or button tapped outside the form; it goes back into the form instead (MO-7a), to the
+	 * control that had it last, else to the title. After "Abbrechen" it stays on "Abbrechen".
+	 */
+	function keepEditing() {
+		const navigating = leaving !== null;
+		confirmingDiscard = false;
+		leaving = null;
+		if (!navigating) return;
+		void tick().then(() => {
+			if (form === undefined || form.contains(document.activeElement)) return;
+			const target = lastField !== null && form.contains(lastField) ? lastField : titleInput;
+			target?.focus();
+		});
 	}
 
 	$effect(() => {
@@ -601,57 +637,65 @@
 		message = null;
 		fieldErrors = {};
 		errorIndex = {};
-		const result = await oncreate(
-			{
-				title,
-				description,
-				status,
-				priority,
-				due: due === '' ? null : (due as CalendarDate),
-				project: project === '' ? null : project,
-				// Only tags the catalog knows: a preset may name a tag deleted since.
-				tags: chosenTags.map((tag) => tag.id),
-				// Only an own color goes along (ADR-0052); none is "wie Projekt".
-				...(colorsAvailable && color !== null && { color }),
-				// Only a chosen charm goes along (ADR-0062).
-				...(charmsAvailable && charm !== null && { charm }),
-				// Only a chosen member goes along (ADR-0068); "Niemand" sends no field.
-				...(chosenAssignee !== '' && { assignee: chosenAssignee }),
-				// "Laufendes Vorhaben" (ADR-0065); a task sends nothing.
-				...(kindShown && ongoing && { kind: 'ongoing' as const }),
-				// A sub-task (ADR-0033), blocking its parent unless switched off.
-				...(parentShown && parent !== null && { parent: parent.id }),
-				...(parentShown && parent !== null && !blocksParent && { blocksParent: false })
-			},
-			rhythm === null
-				? null
-				: {
-						values: rhythm,
-						initialStatus: statusAvailable && repeatStatus !== '' ? repeatStatus : null
-					},
-			{
-				// A status only where the row has an own one (UT-1); without one the server gives the
-				// sub-task the status of the ticket, and the template of a series its own.
-				subtasks: subtasksShown
-					? filledSubtasks.map((entry) => ({
-							title: entry.title.trim(),
-							priority: entry.priority,
-							...(subtaskStatusAvailable && entry.status !== undefined && { status: entry.status })
-						}))
-					: [],
-				ticketSources: ticketSourcesShown ? ticketSources.map((ticket) => ticket.id) : [],
-				sources: sourcesShown ? [...sources] : [],
-				pin: pinShown && pin && !isDone,
-				dayPlan: dayPlanShown && dayPlan && !isDone,
-				templateSubtasks:
-					rhythm !== null && subtasksAvailable && templateSubtasks && filledSubtasks.length > 0
-			}
-		);
+		let result: CreateResult | undefined;
+		try {
+			result = await oncreate(
+				{
+					title,
+					description,
+					status,
+					priority,
+					due: due === '' ? null : (due as CalendarDate),
+					project: project === '' ? null : project,
+					// Only tags the catalog knows: a preset may name a tag deleted since.
+					tags: chosenTags.map((tag) => tag.id),
+					// Only an own color goes along (ADR-0052); none is "wie Projekt".
+					...(colorsAvailable && color !== null && { color }),
+					// Only a chosen charm goes along (ADR-0062).
+					...(charmsAvailable && charm !== null && { charm }),
+					// Only a chosen member goes along (ADR-0068); "Niemand" sends no field.
+					...(chosenAssignee !== '' && { assignee: chosenAssignee }),
+					// "Laufendes Vorhaben" (ADR-0065); a task sends nothing.
+					...(kindShown && ongoing && { kind: 'ongoing' as const }),
+					// A sub-task (ADR-0033), blocking its parent unless switched off.
+					...(parentShown && parent !== null && { parent: parent.id }),
+					...(parentShown && parent !== null && !blocksParent && { blocksParent: false })
+				},
+				rhythm === null
+					? null
+					: {
+							values: rhythm,
+							initialStatus: statusAvailable && repeatStatus !== '' ? repeatStatus : null
+						},
+				{
+					// A status only where the row has an own one (UT-1); without one the server gives the
+					// sub-task the status of the ticket, and the template of a series its own.
+					subtasks: subtasksShown
+						? filledSubtasks.map((entry) => ({
+								title: entry.title.trim(),
+								priority: entry.priority,
+								...(subtaskStatusAvailable &&
+									entry.status !== undefined && { status: entry.status })
+							}))
+						: [],
+					ticketSources: ticketSourcesShown ? ticketSources.map((ticket) => ticket.id) : [],
+					sources: sourcesShown ? [...sources] : [],
+					pin: pinShown && pin && !isDone,
+					dayPlan: dayPlanShown && dayPlan && !isDone,
+					templateSubtasks:
+						rhythm !== null && subtasksAvailable && templateSubtasks && filledSubtasks.length > 0
+				}
+			);
+		} finally {
+			// Unlocked again after a refusal and after an exception of `oncreate` (MO-7a; it goes on to
+			// the log of the session); after creating, the request stays locked while the route
+			// switches to the new ticket (MO-6c).
+			if (result?.ok !== true) pending = false;
+		}
 		if (result.ok) {
 			oncreated(result.ticket.id);
 			return;
 		}
-		pending = false;
 		message = result.message;
 		messageProblem = result.problem ?? null;
 		fieldErrors = result.fields;
@@ -841,6 +885,9 @@
 		novalidate
 		aria-busy={pending ? 'true' : undefined}
 		onsubmit={submit}
+		onfocusin={(event) => {
+			if (event.target instanceof HTMLElement) lastField = event.target;
+		}}
 		bind:this={form}
 	>
 		<div class="field" data-ticket-option="title">
@@ -850,6 +897,7 @@
 				type="text"
 				required
 				aria-required="true"
+				autocapitalize={mobileLayout.active ? 'sentences' : undefined}
 				maxlength={TITLE_MAX_LENGTH}
 				aria-invalid={fieldErrors.title ? 'true' : undefined}
 				aria-describedby={fieldErrors.title ? ids.titleError : undefined}
@@ -1391,10 +1439,7 @@
 	confirmLabel="Verwerfen"
 	cancelLabel="Weiter bearbeiten"
 	onconfirm={() => void discard()}
-	oncancel={() => {
-		confirmingDiscard = false;
-		leaving = null;
-	}}
+	oncancel={keepEditing}
 >
 	<p>Die Eingaben gehen verloren.</p>
 </ConfirmDialog>

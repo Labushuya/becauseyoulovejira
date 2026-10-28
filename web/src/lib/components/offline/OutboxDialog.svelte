@@ -239,11 +239,17 @@
 	}
 </script>
 
-{#snippet discard(action: KeptAction)}
+{#snippet discard(action: KeptAction, lockedBy: string | null = null)}
+	<!-- Locked while the comment is saved as an entry (MO-7a, L-1): it stays, with the reason. -->
 	<button
 		class="button-secondary button-small"
 		type="button"
-		onclick={() => void outbox.discard(action.op)}
+		aria-disabled={lockedBy !== null ? 'true' : undefined}
+		aria-describedby={lockedBy ?? undefined}
+		title={lockedBy !== null ? OFFLINE_TEXTS.savingAsItemLocked : undefined}
+		onclick={() => {
+			if (lockedBy === null) void outbox.discard(action.op);
+		}}
 	>
 		{OFFLINE_TEXTS.discard}
 	</button>
@@ -266,9 +272,10 @@
 			{action.state === 'expired' ? expiredHint(action) : reasonOf(action)}
 		</p>
 		<ProblemDetails problem={outbox.problemOf(action.op)} />
+		{@const saving = outbox.savingAsItem(action.op)}
+		{@const lockedBy = saving ? `${uid}-saving-${action.op}` : null}
 		<div class="buttons">
-			{#if outbox.canSaveAsItem(action) || outbox.savingAsItem(action.op)}
-				{@const saving = outbox.savingAsItem(action.op)}
+			{#if outbox.canSaveAsItem(action) || saving}
 				<!-- While it runs the button stays and waits (round 2, K-2): a second tap saves nothing. -->
 				<button
 					class="button-primary button-small"
@@ -283,19 +290,28 @@
 				</button>
 			{/if}
 			{#if action.state === 'expired'}
+				<!-- Locked while the comment is saved as an entry (MO-7a, L-1), with the reason. -->
 				<button
 					class="button-secondary button-small"
 					type="button"
-					onclick={() => void outbox.sendAnyway(action.op)}
+					aria-disabled={lockedBy !== null ? 'true' : undefined}
+					aria-describedby={lockedBy ?? undefined}
+					title={lockedBy !== null ? OFFLINE_TEXTS.savingAsItemLocked : undefined}
+					onclick={() => {
+						if (lockedBy === null) void outbox.sendAnyway(action.op);
+					}}
 				>
 					{OFFLINE_TEXTS.sendAnyway}
 				</button>
 			{/if}
-			{@render discard(action)}
+			{@render discard(action, lockedBy)}
 			{#if !isSetAside(action)}
 				{@render open(action)}
 			{/if}
 		</div>
+		{#if lockedBy !== null}
+			<span class="visually-hidden" id={lockedBy}>{OFFLINE_TEXTS.savingAsItemLocked}</span>
+		{/if}
 	{/if}
 {/snippet}
 

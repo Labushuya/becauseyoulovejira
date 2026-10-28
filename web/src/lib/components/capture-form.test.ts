@@ -16,6 +16,7 @@ import type { Ticket } from '$lib/domain/ticket';
 import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 import type { CaptureSaveResult } from '$lib/stores/capture';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
+import { hasUnsavedInput } from '$lib/unsaved-input';
 import CaptureForm from './CaptureForm.svelte';
 import CapturePage from '../../routes/(app)/eingang/neu/+page.svelte';
 
@@ -323,13 +324,21 @@ describe('capture form: leaving with typed input (MO-6b)', () => {
 		expect(field(/^Was\?/).value).toBe('Milch kaufen');
 		expect(mocks.goto).not.toHaveBeenCalled();
 
+		// SvelteKit runs the guards inside goto, before the navigation ends (since MO-7a the form asks
+		// again once it ended and the form is still there).
+		const again: { cancel: ReturnType<typeof vi.fn> }[] = [];
+		mocks.goto.mockImplementationOnce(async (...args: unknown[]) => {
+			again.push(navigate(String(args[0]), '/(app)/tagesplan'));
+			return undefined;
+		});
 		const bar = navigate('/tagesplan?tag=2031-05-15', '/(app)/tagesplan');
 		expect(bar.cancel).toHaveBeenCalledOnce();
 		await answer('Verwerfen');
 		expect(mocks.goto).toHaveBeenCalledWith('/tagesplan?tag=2031-05-15');
 		expect(onclose).not.toHaveBeenCalled();
 		// The navigation that "Verwerfen" starts again passes.
-		expect(navigate('/tagesplan?tag=2031-05-15', '/(app)/tagesplan').cancel).not.toHaveBeenCalled();
+		expect(again).toHaveLength(1);
+		expect(again[0]?.cancel).not.toHaveBeenCalled();
 	});
 
 	it('asks before back and the back gesture, and steps through the history after "Verwerfen"', async () => {
@@ -409,6 +418,134 @@ describe('capture form: leaving with typed input (MO-6b)', () => {
 			await answer('Weiter bearbeiten');
 			expect(field(/^Was\?/).value).toBe('Rasen mähen');
 		});
+	});
+});
+
+/** A promise and the function that fulfils it. */
+function deferred<T>() {
+	let resolve!: (value: T) => void;
+	const promise = new Promise<T>((res) => {
+		resolve = res;
+	});
+	return { promise, resolve };
+}
+
+// MO-7a (ADR-0073 addendum MO-7a): the remaining safeguards of MO-6b, after the pattern of
+// TicketRouteLayout, the same as in "Neues Ticket".
+describe('capture form: safeguards of leaving (MO-7a)', () => {
+	it('reports no unsaved input while the navigation of "Verwerfen" runs, nor after "Verwerfen" of "Schließen"', async () => {
+		const navigation = deferred<undefined>();
+		mocks.goto.mockReturnValueOnce(navigation.promise);
+		const { onclose } = renderForm();
+		await fireEvent.input(field(/^Was\?/), { target: { value: 'Milch kaufen' } });
+		expect(hasUnsavedInput()).toBe(true);
+
+		expect(navigate('/eingang', '/(app)/eingang').cancel).toHaveBeenCalledOnce();
+		await answer('Verwerfen');
+		expect(mocks.goto).toHaveBeenCalledExactlyOnceWith('/eingang');
+		// A new build turns this navigation into a page load: the browser must not ask a second time.
+		expect(hasUnsavedInput()).toBe(false);
+		navigation.resolve(undefined);
+		cleanup();
+
+		renderForm({ onclose });
+		await fireEvent.input(field(/^Was\?/), { target: { value: 'Idee' } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Schließen' }));
+		await answer('Verwerfen');
+		expect(onclose).toHaveBeenCalledOnce();
+		expect(hasUnsavedInput()).toBe(false);
+	});
+
+	it('asks again once the navigation of "Verwerfen" ended and the form is still there', async () => {
+		renderForm();
+		await fireEvent.input(field(/^Was\?/), { target: { value: 'Milch kaufen' } });
+		expect(navigate('/eingang', '/(app)/eingang').cancel).toHaveBeenCalledOnce();
+		await answer('Verwerfen');
+		await vi.waitFor(() => expect(mocks.goto).toHaveBeenCalledExactlyOnceWith('/eingang'));
+		await tick();
+
+		expect(field(/^Was\?/).value).toBe('Milch kaufen');
+		await vi.waitFor(() => expect(hasUnsavedInput()).toBe(true));
+		expect(navigate('/tagesplan', '/(app)/tagesplan').cancel).toHaveBeenCalledOnce();
+		await tick();
+		expect(question()?.open).toBe(true);
+	});
+
+	it('unlocks the form when saving fails with an exception, and the error still reaches the log of the session', async () => {
+		const failure = new Error('kaputt');
+		const rejections: unknown[] = [];
+		// The problem log of the app listens to unhandled rejections (ADR-0071); here this listener.
+		const onRejection = (reason: unknown) => rejections.push(reason);
+		process.on('unhandledRejection', onRejection);
+		try {
+			const { onsave } = renderForm();
+			onsave.mockRejectedValueOnce(failure);
+			await fireEvent.input(field(/^Was\?/), { target: { value: 'A' } });
+			await fireEvent.click(submitButton());
+			await vi.waitFor(() => expect(submitButton().textContent?.trim()).toBe('Ticket anlegen'));
+			expect(submitButton().getAttribute('aria-disabled')).toBeNull();
+			await vi.waitFor(() => expect(rejections).toEqual([failure]));
+			expect(field(/^Was\?/).value).toBe('A');
+			// Unlocked, the question before leaving works again.
+			expect(navigate('/eingang', '/(app)/eingang').cancel).toHaveBeenCalledOnce();
+		} finally {
+			process.off('unhandledRejection', onRejection);
+		}
+	});
+
+	it('unlocks the form when saving the page of a web link fails with an exception', async () => {
+		const failure = new Error('kaputt');
+		const rejections: unknown[] = [];
+		const onRejection = (reason: unknown) => rejections.push(reason);
+		process.on('unhandledRejection', onRejection);
+		try {
+			const onsavepage = vi.fn(async () => {
+				throw failure;
+			});
+			renderForm({
+				template: 'link',
+				initial: { url: 'https://example.com/a', what: 'Artikel' },
+				onsavepage
+			});
+			await fireEvent.click(submitButton());
+			await vi.waitFor(() => expect(onsavepage).toHaveBeenCalledOnce());
+			await vi.waitFor(() => expect(submitButton().textContent?.trim()).toBe('In den Eingang'));
+			expect(submitButton().getAttribute('aria-disabled')).toBeNull();
+			await vi.waitFor(() => expect(rejections).toEqual([failure]));
+		} finally {
+			process.off('unhandledRejection', onRejection);
+		}
+	});
+
+	it('brings the focus back to the field of the form after "Weiter bearbeiten" instead of the link tapped', async () => {
+		renderForm();
+		await fireEvent.input(field(/^Was\?/), { target: { value: 'Milch kaufen' } });
+		const due = field(/^Fällig/);
+		due.focus();
+		const link = document.createElement('a');
+		link.href = '/eingang';
+		link.textContent = 'Eingang';
+		document.body.append(link);
+		try {
+			link.focus();
+			expect(document.activeElement).toBe(link);
+			expect(navigate('/eingang', '/(app)/eingang').cancel).toHaveBeenCalledOnce();
+			await answer('Weiter bearbeiten');
+			await vi.waitFor(() => expect(document.activeElement).toBe(due));
+			expect(field(/^Was\?/).value).toBe('Milch kaufen');
+		} finally {
+			link.remove();
+		}
+	});
+
+	it('keeps the focus on "Schließen" after "Weiter bearbeiten" of its own question', async () => {
+		renderForm();
+		await fireEvent.input(field(/^Was\?/), { target: { value: 'Idee' } });
+		const close = screen.getByRole('button', { name: 'Schließen' });
+		close.focus();
+		await fireEvent.click(close);
+		await answer('Weiter bearbeiten');
+		await vi.waitFor(() => expect(document.activeElement).toBe(close));
 	});
 });
 

@@ -106,7 +106,10 @@
 	} = $props();
 
 	const mobileLayout = getMobileLayoutStore();
-	/** The phone frame applies: the check mark in a target of 44 px (MO-4). */
+	/**
+	 * The phone frame applies: the check mark in a target of 44 px (MO-4), the title of a new sub-task
+	 * starts with a capital letter (MO-7a).
+	 */
 	const framed = $derived(mobileLayout.active);
 
 	const uid = $props.id();
@@ -366,6 +369,7 @@
 				maxlength={TITLE_MAX_LENGTH}
 				placeholder="Titel der Unteraufgabe"
 				autocomplete="off"
+				autocapitalize={framed ? 'sentences' : undefined}
 				bind:value={text}
 				bind:this={input}
 				aria-busy={busy ? 'true' : undefined}

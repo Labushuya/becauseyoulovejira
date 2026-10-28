@@ -1116,6 +1116,21 @@ describe('app layout: phone frame (MO-1a, ADR-0073)', () => {
 		expect(within(screen.getByRole('main')).getByText(CONTENT)).toBeTruthy();
 	});
 
+	// OF-3c round 3 (C2-1) and MO-7a: the main content of the real layout is no stop of the focus,
+	// on the PC and in the frame; only the hints of the outbox give it a tabindex for one step.
+	it.each([
+		['on a PC', false, false],
+		['on a PC with the switch on', false, true],
+		['in the phone frame', true, true]
+	])('gives the main content no tabindex %s (OF-3c, MO-7a)', async (_name, narrow, enabled) => {
+		windowOf(narrow);
+		getMobileLayoutStore().choose(enabled);
+		await enter('/', '/(app)/(tickets)');
+		const main = screen.getByRole('main');
+		expect(within(main).getByText(CONTENT)).toBeTruthy();
+		expect(main.hasAttribute('tabindex')).toBe(false);
+	});
+
 	it('starts with the day plan when the app opens at its start page', async () => {
 		windowOf(true);
 		getMobileLayoutStore().choose(true);

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
+	import { tick, untrack } from 'svelte';
 	import { beforeNavigate, goto } from '$app/navigation';
 	import type { ResolvedPathname } from '$app/types';
 	import { INBOX_BODY_MAX_LENGTH, INBOX_SOURCE_URL_MAX_LENGTH } from '$lib/domain/inbox';
@@ -52,7 +52,10 @@
 	// object (as in the quick entry, MO-5). Off, or from 40rem, the form stays as it was.
 	// Since MO-6b (ADR-0073 addendum MO-6b, on the PC as well, user decision) leaving the page within
 	// the app with typed input asks the same question as "Schließen": a link, the bar, "Mehr", the
-	// back gesture and browser back.
+	// back gesture and browser back. Since MO-7a (ADR-0073 addendum MO-7a) after the pattern of
+	// TicketRouteLayout, as "Neues Ticket": no question of the browser after "Verwerfen", the question
+	// again once its navigation ended and the form is still there, the form unlocked after a failed
+	// save, and the focus back in the form after "Weiter bearbeiten".
 	let {
 		template,
 		initial = {},
@@ -157,13 +160,17 @@
 				: value !== baseline[key as keyof CaptureInput]
 		) || tagText.trim() !== ''
 	);
-	// Leaving the page in the phone frame asks first while the form holds input (MO-1b).
-	$effect(() => registerUnsavedInput(() => dirty));
+	// Leaving the page in the phone frame asks first while the form holds input (MO-1b), not after
+	// "Verwerfen" (MO-7a, as TicketRouteLayout): a new build turns the navigation it starts into a
+	// page load, and the browser would ask a second time.
+	$effect(() => registerUnsavedInput(() => !discarding && dirty));
 
 	/** A navigation held up by the question: its target and, for back and forward, the step. */
 	let leaving = $state<{ url: URL; delta: number | undefined } | null>(null);
 	/** Set once the input is discarded on purpose ("Verwerfen"): leaving asks no more. */
 	let discarding = false;
+	/** The control of the form that had the focus last; "Weiter bearbeiten" goes back there. */
+	let lastField: HTMLElement | null = null;
 	/** The question is open, for "Schließen" or for a navigation. */
 	const asking = $derived(confirmingDiscard || leaving !== null);
 
@@ -194,7 +201,32 @@
 		discarding = true;
 		if (target === null) onclose();
 		else if (target.delta !== undefined && target.delta !== 0) history.go(target.delta);
-		else await goto(appHref(target.url));
+		else {
+			try {
+				await goto(appHref(target.url));
+			} finally {
+				// Still here once the navigation ended (it kept this form, MO-7a): the input that is
+				// left asks again before the next way out.
+				discarding = false;
+			}
+		}
+	}
+
+	/**
+	 * "Weiter bearbeiten": the question closes. After a navigation the dialog gives the focus back to
+	 * the link or button tapped outside the form; it goes back into the form instead (MO-7a), to the
+	 * control that had it last, else to the first field. After "Schließen" it stays on "Schließen".
+	 */
+	function keepEditing() {
+		const navigating = leaving !== null;
+		confirmingDiscard = false;
+		leaving = null;
+		if (!navigating) return;
+		void tick().then(() => {
+			if (form === undefined || form.contains(document.activeElement)) return;
+			if (lastField !== null && form.contains(lastField)) lastField.focus();
+			else focusFirst();
+		});
 	}
 
 	/** Focus on the first field of the template (on open and after saving). */
@@ -226,52 +258,55 @@
 		}
 		errors = {};
 		pending = true;
-		const outcome = await onsave(built.capture, targetOf(template, to));
-		if (!outcome.ok && outcome.duplicate !== undefined) {
+		try {
+			const outcome = await onsave(built.capture, targetOf(template, to));
+			if (!outcome.ok && outcome.duplicate !== undefined) {
+				// Already there: a result, not an error; the input stays for a change.
+				const { itemId, ticketId } = outcome.duplicate;
+				const existing: CaptureTarget | null =
+					ticketId !== '' ? 'ticket' : itemId !== '' ? 'inbox' : null;
+				result =
+					existing === null
+						? { text: outcome.message ?? '', href: null, target: 'inbox' }
+						: {
+								text: outcome.message ?? '',
+								href: resultHref(existing, existing === 'ticket' ? ticketId : itemId),
+								target: existing
+							};
+				return;
+			}
+			if (!outcome.ok) {
+				message = outcome.message;
+				messageProblem = outcome.problem ?? null;
+				errors = outcome.fields;
+				return;
+			}
+			// The page copy of a web link follows the save; the entry stays, whatever the page answers.
+			let pageText = '';
+			if (offersPage && savePage && outcome.target === 'inbox' && onsavepage) {
+				const page = await onsavepage(outcome.id, built.capture.title);
+				pageText = page.ok
+					? page.truncated
+						? ' Seiteninhalt gesichert (auf 2 MB gekürzt).'
+						: ' Seiteninhalt gesichert.'
+					: page.message === null
+						? ''
+						: ` Seiteninhalt nicht gesichert: ${page.message}`;
+			}
+			result = {
+				text: `${outcome.message}${pageText}`,
+				href: resultHref(outcome.target, outcome.id),
+				target: outcome.target
+			};
+			input = { ...EMPTY_CAPTURE_INPUT, tagIds: [] };
+			baseline = input;
+			tagText = '';
+			focusFirst();
+		} finally {
+			// Unlocked after every answer and after an exception of saving (MO-7a; it goes on to the
+			// log of the session), so the form and the question before leaving work again.
 			pending = false;
-			// Already there: a result, not an error; the input stays for a change.
-			const { itemId, ticketId } = outcome.duplicate;
-			const existing: CaptureTarget | null =
-				ticketId !== '' ? 'ticket' : itemId !== '' ? 'inbox' : null;
-			result =
-				existing === null
-					? { text: outcome.message ?? '', href: null, target: 'inbox' }
-					: {
-							text: outcome.message ?? '',
-							href: resultHref(existing, existing === 'ticket' ? ticketId : itemId),
-							target: existing
-						};
-			return;
 		}
-		if (!outcome.ok) {
-			pending = false;
-			message = outcome.message;
-			messageProblem = outcome.problem ?? null;
-			errors = outcome.fields;
-			return;
-		}
-		// The page copy of a web link follows the save; the entry stays, whatever the page answers.
-		let pageText = '';
-		if (offersPage && savePage && outcome.target === 'inbox' && onsavepage) {
-			const page = await onsavepage(outcome.id, built.capture.title);
-			pageText = page.ok
-				? page.truncated
-					? ' Seiteninhalt gesichert (auf 2 MB gekürzt).'
-					: ' Seiteninhalt gesichert.'
-				: page.message === null
-					? ''
-					: ` Seiteninhalt nicht gesichert: ${page.message}`;
-		}
-		pending = false;
-		result = {
-			text: `${outcome.message}${pageText}`,
-			href: resultHref(outcome.target, outcome.id),
-			target: outcome.target
-		};
-		input = { ...EMPTY_CAPTURE_INPUT, tagIds: [] };
-		baseline = input;
-		tagText = '';
-		focusFirst();
 	}
 
 	function close() {
@@ -370,6 +405,9 @@
 		novalidate
 		aria-busy={pending ? 'true' : undefined}
 		onsubmit={(event) => save(effectiveTarget, event)}
+		onfocusin={(event) => {
+			if (event.target instanceof HTMLElement) lastField = event.target;
+		}}
 		bind:this={form}
 	>
 		<fieldset class="templates">
@@ -558,10 +596,7 @@
 	confirmLabel="Verwerfen"
 	cancelLabel="Weiter bearbeiten"
 	onconfirm={() => void discard()}
-	oncancel={() => {
-		confirmingDiscard = false;
-		leaving = null;
-	}}
+	oncancel={keepEditing}
 >
 	<p>Die Eingaben gehen verloren.</p>
 </ConfirmDialog>

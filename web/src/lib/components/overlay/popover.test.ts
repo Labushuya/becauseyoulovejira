@@ -319,4 +319,54 @@ describe('popover source', () => {
 		expect(source).not.toMatch(/outline:\s*(none|0)/);
 		expect(source).toMatch(/\.menu :global\(\[role='separator'\]\)[^}]*var\(--color-separator\)/);
 	});
+
+	// MO-7a (ADR-0073 addendum MO-7a): a locked entry (aria-disabled) is muted on every device, in
+	// the muted text color (4.5 : 1 on thick glass, glass-contrast.test.ts) instead of the text color,
+	// without the accent fill on hover and keyboard focus, and with "not allowed" as pointer (busy
+	// entries keep the busy one). Its name still says why; the focus ring of base.css stays.
+	it('mutes a locked menu entry on the PC and on the phone alike (MO-7a)', () => {
+		const style = (/<style>([\s\S]*)<\/style>/.exec(source)?.[1] ?? '').replace(
+			/\/\*[\s\S]*?\*\//g,
+			''
+		);
+		const rules = [...style.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((match) => ({
+			selector: (match[1] ?? '').replace(/\s+/g, ''),
+			declarations: match[2] ?? '',
+			// Braces open before the rule: 0 is the top level, outside of any @media.
+			depth: [...style.slice(0, match.index)].reduce(
+				(open, char) => open + (char === '{' ? 1 : char === '}' ? -1 : 0),
+				0
+			)
+		}));
+		const ROWS = ":is([role='menuitem'],[role='menuitemradio'],[role='menuitemcheckbox'])";
+		const LOCKED = `${ROWS}[aria-disabled='true']`;
+		const of = (part: string) =>
+			rules.filter((rule) =>
+				rule.selector.split(/,(?![^(]*\))/).some((one) => one === `.menu:global(${part})`)
+			);
+
+		const muted = of(LOCKED);
+		expect(muted).toHaveLength(1);
+		expect(muted[0]?.depth).toBe(0);
+		expect(muted[0]?.declarations).toMatch(/color:\s*var\(--color-text-muted\)/);
+		expect(muted[0]?.declarations).toMatch(/background:\s*none/);
+
+		// Hover and keyboard focus keep it muted, after the accent rule of the rows (it wins anyway by
+		// its higher specificity, the attribute).
+		const focused = of(`${LOCKED}:is(:hover,:focus-visible)`);
+		expect(focused).toHaveLength(1);
+		expect(focused[0]?.depth).toBe(0);
+		expect(focused[0]?.declarations).toMatch(/color:\s*var\(--color-text-muted\)/);
+		expect(focused[0]?.declarations).toMatch(/background:\s*none/);
+		const accent = rules.findIndex(
+			(rule) => rule.selector === `.menu:global(${ROWS}:is(:hover,:focus-visible))`
+		);
+		expect(accent).toBeGreaterThan(-1);
+		expect(rules.indexOf(focused[0] as (typeof rules)[number])).toBeGreaterThan(accent);
+
+		const pointer = of(`${LOCKED}:not([aria-busy='true'])`);
+		expect(pointer).toHaveLength(1);
+		expect(pointer[0]?.depth).toBe(0);
+		expect(pointer[0]?.declarations).toMatch(/cursor:\s*not-allowed/);
+	});
 });

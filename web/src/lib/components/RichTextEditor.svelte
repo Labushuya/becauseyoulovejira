@@ -47,6 +47,7 @@
 		placeholder = '',
 		invalid = false,
 		describedby,
+		autocapitalize,
 		onsubmit
 	}: {
 		value?: string;
@@ -58,6 +59,11 @@
 		invalid?: boolean;
 		/** IDs of further descriptions, e.g. a field error. */
 		describedby?: string;
+		/**
+		 * The keyboard starts sentences with a capital letter, in the editor and its Markdown field;
+		 * comments set it in the phone frame (MO-7a).
+		 */
+		autocapitalize?: 'sentences';
 		/** Ctrl+Enter: save or send. */
 		onsubmit?: () => void;
 	} = $props();
@@ -137,7 +143,8 @@
 			? { 'aria-controls': slashListId, 'aria-activedescendant': slashOptionId(slashIndex) }
 			: {}),
 		...(describedBy ? { 'aria-describedby': describedBy } : {}),
-		...(invalid || tooLong ? { 'aria-invalid': 'true' } : {})
+		...(invalid || tooLong ? { 'aria-invalid': 'true' } : {}),
+		...(autocapitalize ? { autocapitalize } : {})
 	});
 	const numbers = new Intl.NumberFormat('de-DE');
 
@@ -356,6 +363,7 @@
 					{maxlength}
 					bind:value
 					bind:textarea
+					{autocapitalize}
 					aria-invalid={invalid ? 'true' : undefined}
 					aria-describedby={[describedby, reason !== null || failed ? hintId : null]
 						.filter(Boolean)

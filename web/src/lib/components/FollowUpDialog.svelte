@@ -11,6 +11,7 @@
 		type FollowUpTake
 	} from '$lib/domain/ticket-origins';
 	import type { ProjectRef, Ticket } from '$lib/domain/ticket';
+	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 	import { insideModal } from '$lib/overlay/modal-context';
 	import type { TicketFollowUpStore } from '$lib/stores/ticket-follow-up.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
@@ -50,6 +51,8 @@
 	const formId = `${uid}-form`;
 	const describedId = `${uid}-described`;
 	const inline = insideModal();
+	/** In the phone frame the title starts with a capital letter (MO-7a, as "＋" since MO-5). */
+	const mobileLayout = getMobileLayoutStore();
 
 	let title = $state(untrack(() => followUpTitle(ticket.title)));
 	let take = $state<FollowUpTake>({ ...DEFAULT_FOLLOW_UP_TAKE });
@@ -116,6 +119,7 @@
 					type="text"
 					maxlength={FOLLOW_UP_TITLE_MAX}
 					autocomplete="off"
+					autocapitalize={mobileLayout.active ? 'sentences' : undefined}
 					bind:value={title}
 					oninput={() => (titleError = '')}
 				/>

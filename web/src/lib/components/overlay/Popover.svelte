@@ -376,6 +376,45 @@
 		background: var(--color-brand);
 	}
 
+	/*
+	 * A locked entry (aria-disabled, e.g. "Nach oben" at the top of the day plan or "Alle Kanäle jetzt
+	 * abrufen" without a connection) is muted on every device (MO-7a, ADR-0073 addendum MO-7a): the
+	 * muted text (4.5 : 1 on thick glass, glass-contrast.test.ts, so its name stays readable) and no
+	 * accent fill on hover or keyboard focus, so it never looks like a choice. It stays in the menu,
+	 * its name says why, the arrow keys still reach it (APG), and the focus ring of base.css shows
+	 * where. The pointer says "not allowed", except over a busy entry (aria-busy, ADR-0026).
+	 */
+	.menu
+		:global(
+			:is(
+				[role='menuitem'],
+				[role='menuitemradio'],
+				[role='menuitemcheckbox']
+			)[aria-disabled='true']
+		),
+	.menu
+		:global(
+			:is(
+					[role='menuitem'],
+					[role='menuitemradio'],
+					[role='menuitemcheckbox']
+				)[aria-disabled='true']:is(:hover, :focus-visible)
+		) {
+		color: var(--color-text-muted);
+		background: none;
+	}
+
+	.menu
+		:global(
+			:is(
+					[role='menuitem'],
+					[role='menuitemradio'],
+					[role='menuitemcheckbox']
+				)[aria-disabled='true']:not([aria-busy='true'])
+		) {
+		cursor: not-allowed;
+	}
+
 	.menu :global([role='separator']) {
 		height: 1px;
 		margin: 0.25rem 0.5rem;
