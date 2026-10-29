@@ -12,7 +12,7 @@
 	},
 	"dependencies": {
 		"imapflow": "^2.5.2",
-		"postal-mime": "^4.0.7"
+		"postal-mime": "^4.0.8"
 	},
 	"devDependencies": {
 		"@types/node": "^24.19.2",
