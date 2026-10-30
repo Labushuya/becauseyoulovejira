@@ -43,6 +43,15 @@
 // it back only while it is still in the form (M-1 of the review of MO-7a). Round 2 of MO-7b: Enter on
 // the locked "Aktionen" names why in a flag, opened the focus is on the first action, and "Mehr"
 // expects the number of the trash the server lists, as a whole number.
+// Since MO-7c1 (manifest BYL-E6-2239 ff.) without a case of its own, in the case of "Mehr": the login
+// page before the sign-in, "Erledigte" (entries of 44 px, the filters of 44 px, the title in at least
+// 60 % of its entry, a tap beside the link opens the ticket as a page with its arrow back), the help
+// with the parts about the keyboard folded, and the error page of an unknown address, each at 360 and
+// 412 px. Faster: the other cases open their page with the stored session instead of the login page
+// (a page of the app loaded anew, so the start stays the business of the case of the start), the
+// seeds share one sign-in through the API and create at once what does not depend on each other, the
+// overlays appear without movement except in the case of the overlays, and the flags close in one step
+// inside the page (Q-5 of the review of MO-7b).
 //
 // The phone stands for another device in the home network (header X-Byl-Test-Remote-Address of the
 // test hooks, only in instances of the harness), so the pages of the administrator are "nur am PC".
@@ -79,14 +88,12 @@ async function switchOn(page) {
 	await page.addInitScript(() => localStorage.setItem('byl-mobile-layout', 'on'));
 }
 
-/** Signs in on the login page; the app then opens its start page. */
-async function signIn(page) {
-	const { url, email, password } = mobileInstance();
-	await page.goto(`${url}/login`);
+/** Signs in on the login page that is open; the app then opens its start page. */
+async function submitLogin(page) {
+	const { email, password } = mobileInstance();
 	await page.getByLabel('E-Mail').fill(email);
 	await page.getByLabel('Passwort').fill(password);
 	await page.getByRole('button', { name: 'Anmelden' }).click();
-	return url;
 }
 
 /** The session of the invented account, signed in once per worker through the API (MO-7c1). */
@@ -368,11 +375,14 @@ async function expectPageOf(locator, viewport) {
 	expect(Math.abs(box.y + box.height - viewport.height)).toBeLessThanOrEqual(1);
 }
 
-/** The share of a card that its title takes (MO-7b: no title below about 60 % of the card). */
-async function cardTitleShare(card) {
+/**
+ * The share of a card that its title takes (MO-7b: no title below about 60 % of the card); the title
+ * of an entry of "Erledigte" is `.title` (MO-7c1).
+ */
+async function cardTitleShare(card, title = '.card-title') {
 	const whole = await card.boundingBox();
-	const title = await card.locator('.card-title').boundingBox();
-	return title.width / whole.width;
+	const part = await card.locator(title).boundingBox();
+	return part.width / whole.width;
 }
 
 /** A deletion of the invented account; a ticket goes to the trash (ADR-0037). */
@@ -394,7 +404,8 @@ function letters(count) {
  * The lists of MO-7b (a run mark appended), made up: a project with a name of one long word and a
  * sub project, a rule with a title of one long word, and two tickets in the trash, one with a title
  * of one long word. `trashCount` is the number of the trash as the server lists it afterwards: the two
- * and whatever another case put there before (round 2 of MO-7b, P-6).
+ * and whatever another case put there before (round 2 of MO-7b, P-6). Since MO-7c1 also `done`, a
+ * done ticket with a title of one long word for "Erledigte".
  */
 async function seedLists() {
 	const { token, record } = await account();
@@ -403,8 +414,14 @@ async function seedLists() {
 	const subName = `Fenster ${mark}`;
 	const ruleTitle = `Monatliche_Abrechnung_der_Nebenkosten_mit_allen_Belegen_${mark}`;
 	const trashed = [`Altes_Regal_im_Keller_abbauen_und_zum_Wertstoffhof_bringen_${mark}`, `Kaputte Lampe ${mark}`];
-	// The project with its sub project, the rule and each ticket for the trash at once (MO-7c1).
+	const done = `Garage_ausräumen_und_alles_zum_Recyclinghof_bringen_lassen_${mark}`;
+	// The project with its sub project, the rule, each ticket for the trash and a done ticket with a
+	// title of one long word for "Erledigte" (MO-7c1) at once.
 	await Promise.all([
+		(async () => {
+			const ticket = await api('POST', '/api/collections/tickets/records', { owner: record.id, title: done }, token);
+			await api('PATCH', `/api/collections/tickets/records/${ticket.id}`, { status: 'done' }, token);
+		})(),
 		(async () => {
 			const project = await api('POST', '/api/collections/projects/records', { owner: record.id, name: projectName, code: letters(5) }, token);
 			await api('POST', '/api/collections/projects/records', { owner: record.id, name: subName, code: letters(5), parent: project.id }, token);
@@ -421,7 +438,7 @@ async function seedLists() {
 		})
 	]);
 	const { items } = await api('GET', '/api/byl/trash', undefined, token);
-	return { project: projectName, sub: subName, rule: ruleTitle, trashed, trashCount: items.length };
+	return { project: projectName, sub: subName, rule: ruleTitle, trashed, trashCount: items.length, done };
 }
 
 test.describe('phone with the switch on', () => {
@@ -432,7 +449,24 @@ test.describe('phone with the switch on', () => {
 	test('starts at the day plan with the bottom bar at the bottom, opens "Mehr" as a sheet with every other view and the pages "nur am PC", shows projects, rules and the trash as cards with their pages and the bar of the selection, and keeps "Aufgaben" a tap away', async ({ page }) => {
 		const lists = await seedLists();
 		await switchOn(page);
-		const url = await signIn(page);
+		const { url } = mobileInstance();
+		const large = { width: 412, height: 915 };
+		// MO-7c1: the login page on a small and a large phone before the sign-in, without sideways
+		// scrolling, the fields and the button of 44 px in view, the keys of the keyboard said.
+		await page.setViewportSize(SMALL_PHONE.viewport);
+		await page.goto(`${url}/login`);
+		const login = page.getByRole('main');
+		await expect(login.getByRole('heading', { name: 'Anmelden' })).toBeVisible();
+		for (const size of [SMALL_PHONE.viewport, large]) {
+			await page.setViewportSize(size);
+			expect(await scrollsSideways(page)).toBe(false);
+			expect(await smallTargets(login)).toEqual([]);
+			await expectUncovered(login.getByRole('button', { name: 'Anmelden' }), size);
+		}
+		await expect(page.getByLabel('E-Mail')).toHaveAttribute('enterkeyhint', 'next');
+		await expect(page.getByLabel('Passwort')).toHaveAttribute('enterkeyhint', 'done');
+		await page.setViewportSize(PHONE.viewport);
+		await submitLogin(page);
 		await expect(page).toHaveURL(`${url}/tagesplan`);
 		await expect(viewHeading(page, 'Tagesplan')).toBeAttached();
 
@@ -522,9 +556,10 @@ test.describe('phone with the switch on', () => {
 			expect(await smallTargets(page.locator('.phone-tools'))).toEqual([]);
 			expect(await cardTitleShare(card)).toBeGreaterThanOrEqual(0.6);
 		}
-		async function openAndBack(card, name, back, list) {
+		/** A tap on `spot` of the card (its muted line by default) opens the page; its arrow goes back. */
+		async function openAndBack(card, name, back, list, spot = card.locator('.card-meta')) {
 			const start = await historyLength();
-			await card.locator('.card-meta').tap();
+			await spot.tap();
 			const panel = page.getByRole('complementary', { name });
 			await expectPageOf(panel, small);
 			expect(await scrollsSideways(page)).toBe(false);
@@ -595,20 +630,57 @@ test.describe('phone with the switch on', () => {
 		await expect(selection).toHaveCount(0);
 		await expect(page.getByRole('checkbox', { name: /auswählen$/ })).toHaveCount(0);
 
-		// A large phone: the three lists keep to their width, the titles their share.
-		await page.setViewportSize({ width: 412, height: 915 });
-		await expect(trashCard(shelf)).toBeVisible();
+		// MO-7c1 "Erledigte": two taps away, every target of 44 px (the filters too), no sideways
+		// scrolling, the title in at least 60 % of its entry; a tap on the entry beside its link opens
+		// the ticket as a page, whose arrow goes back through the history without a second entry.
+		await openUnderMore('Erledigte');
+		await expect(page).toHaveURL(`${url}/erledigt`);
+		const doneEntry = page.locator('li[data-ticket-id]').filter({ hasText: lists.done });
+		await expect(doneEntry).toBeVisible();
 		expect(await scrollsSideways(page)).toBe(false);
-		expect(await cardTitleShare(trashCard(shelf))).toBeGreaterThanOrEqual(0.6);
-		for (const [name, card] of [
-			['Projekte', projectCard(lists.project)],
-			['Wiederholungen', ruleCard]
+		expect(await smallTargets(page.locator('.done-view'))).toEqual([]);
+		expect(await cardTitleShare(doneEntry, '.title')).toBeGreaterThanOrEqual(0.6);
+		await openAndBack(doneEntry, lists.done, 'Zu den Erledigten', `${url}/erledigt`, doneEntry.locator('.time-cell'));
+
+		// MO-7c1 "Hilfe" under "Mehr": the parts about the keyboard folded, open on a tap of 44 px; the
+		// bulk actions of the inbox named under "Ohne Verbindung"; no sideways scrolling.
+		/** The help under "Mehr": two taps. */
+		async function openHelp() {
+			await bar.getByRole('button', { name: /^Mehr/ }).tap();
+			await page.getByRole('dialog', { name: 'Mehr' }).getByRole('navigation', { name: 'Einstellungen' }).getByRole('link', { name: 'Hilfe' }).tap();
+			await expect(page).toHaveURL(`${url}/einstellungen/hilfe`);
+		}
+		await openHelp();
+		const shortcuts = page.locator('section#tastaturkuerzel details');
+		await expect(shortcuts).not.toHaveAttribute('open', /.*/);
+		await expect(page.locator('section#kalender details')).not.toHaveAttribute('open', /.*/);
+		expect(await scrollsSideways(page)).toBe(false);
+		const unfold = shortcuts.locator('summary');
+		await expectTarget(unfold);
+		await unfold.tap();
+		await expect(shortcuts).toHaveAttribute('open', '');
+		await expect(shortcuts.getByText(/öffnest du die wichtigsten Tasten/)).toBeVisible();
+		expect(await scrollsSideways(page)).toBe(false);
+		await expect(page.locator('section#ohne-verbindung')).toContainText(
+			'„Gesammelt umwandeln (3)“, „Mit Ticket verknüpfen … (3)“, „Verwerfen (3)“ und „Wiederherstellen (3)“: ohne Verbindung gesperrt'
+		);
+
+		// A large phone: the lists keep to their width, the titles their share; the help too.
+		await page.setViewportSize(large);
+		await expect(page.locator('section#tastaturkuerzel')).toBeVisible();
+		expect(await scrollsSideways(page)).toBe(false);
+		for (const [name, card, title] of [
+			['Papierkorb', trashCard(shelf), '.card-title'],
+			['Projekte', projectCard(lists.project), '.card-title'],
+			['Wiederholungen', ruleCard, '.card-title'],
+			['Erledigte', doneEntry, '.title']
 		]) {
 			await openUnderMore(name);
 			await expect(card).toBeVisible();
 			expect(await scrollsSideways(page)).toBe(false);
-			expect(await cardTitleShare(card)).toBeGreaterThanOrEqual(0.6);
+			expect(await cardTitleShare(card, title)).toBeGreaterThanOrEqual(0.6);
 		}
+		expect(await smallTargets(page.locator('.done-view'))).toEqual([]);
 		await page.setViewportSize(PHONE.viewport);
 
 		// A tap on "Aufgaben" leads there: the day plan only opens first at the start of the app.
@@ -620,6 +692,22 @@ test.describe('phone with the switch on', () => {
 
 		await bar.getByRole('button', { name: 'Erfassen' }).click();
 		await expect(page.getByRole('dialog', { name: 'Schnellerfassung' })).toBeVisible();
+
+		// MO-7c1: an address the app does not know shows the error page, on a small and a large phone
+		// without sideways scrolling and with "Zur Übersicht" of 44 px in view, which leads back into
+		// the app.
+		await page.goto(`${url}/gibt-es-nicht`);
+		const missing = page.getByRole('main');
+		await expect(missing.getByRole('heading', { name: 'Seite nicht gefunden' })).toBeVisible();
+		for (const size of [SMALL_PHONE.viewport, large]) {
+			await page.setViewportSize(size);
+			expect(await scrollsSideways(page)).toBe(false);
+			expect(await smallTargets(missing)).toEqual([]);
+			await expectUncovered(missing.getByRole('link', { name: 'Zur Übersicht' }), size);
+		}
+		await missing.getByRole('link', { name: 'Zur Übersicht' }).tap();
+		await expect(bar).toBeVisible();
+		await expect(viewHeading(page, 'Aufgaben')).toBeAttached();
 	});
 });
 
