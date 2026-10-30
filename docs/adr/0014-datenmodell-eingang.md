@@ -155,3 +155,25 @@ Neue Felder an `tickets`:
 ## Nachtrag (2026-10-04, [ADR-0061](0061-verschieben-zwischen-bereichen-und-aufloesen.md) Nachtrag E7-4b): Fingerabdrücke verschobener Einträge
 
 §3 bekommt eine dritte Quelle für die harte Stufe: Verlässt ein Eintrag seinen Bereich (Verschieben zwischen Privat und Haushalt), behält der Bereich seinen Fingerabdruck in `inbox_moved_fingerprints` (Migration `1790204300`, nur die Hooks lesen und schreiben). Die Eingangswege prüfen nach den Einträgen des Bereichs diese Merker. Ein Treffer ist ein Duplikat ohne Eintrag, mit dem Zustand `moved` und dem Text „In einen anderen Bereich verschoben.“. So kommt dasselbe Objekt nicht wieder, auch nicht nach dem Zurückschieben oder wenn der Eintrag mit seinem Haushalt gelöscht wurde. Der Index `UNIQUE (scope, fingerprint)` von `inbox_items` bleibt unverändert.
+
+## Nachtrag (2026-10-30, EG-1): Mehrere Einträge verwerfen und wiederherstellen
+
+**Kontext.** Verwerfen und Wiederherstellen gingen nur Eintrag für Eintrag; als Sammelaktion gab es nur „Gesammelt umwandeln“ und „Mit Ticket verknüpfen …“. Wer viele unerwünschte Einträge loswerden will, musste jede Zeile einzeln verwerfen.
+
+**Entscheidung.**
+
+- **Wo:** „Verwerfen (n)“ steht in der Ansicht „Neu“ bei den Sammelaktionen (am PC in der Abschnittsleiste, am Handy in der Leiste der Auswahl unten hinter „Aktionen“). „Wiederherstellen (n)“ steht allein in der Ansicht „Verworfen“; ihre Einträge sind dafür jetzt ebenfalls wählbar (Spalte „Auswahl“, „Alle“, am Handy „Auswählen“). „Verknüpft“ und „Alle“ bleiben ohne Auswahl. Ohne Auswahl sind die Knöpfe wie die übrigen gesperrt („Erst Einträge auswählen.“).
+- **Wie (§4):** Der Client schickt je Eintrag dasselbe Update von `state` wie beim einzelnen Verwerfen bzw. Wiederherstellen, einen nach dem anderen. Kein Batch-API, keine Änderung am Server; der Hook prüft jeden Zustandswechsel wie bisher. Ein Fehler bricht nichts ab, eine abgelaufene Sitzung beendet den Lauf (Anmeldung). Umgesetzt in `InboxStore.discardMany`, `restoreMany` und `undoDiscardMany`, die Regeln und Wortlaute in `domain/inbox-bulk.ts`.
+- **Was:** Verworfen wird nur, was einzeln verworfen werden könnte (Zustand „Neu“), wiederhergestellt nur Verworfenes. Jeder Eintrag wird beim Senden gegen den Stand des Stores geprüft. Was sich seit der Auswahl geändert hat (etwa in einem anderen Tab verknüpft), gerade eine eigene Aktion hat oder noch nicht übertragen ist, wird übersprungen und mit Grund genannt („Nicht mehr neu.“, „Schon verworfen.“, „Schon verknüpft.“, „Schon im Eingang.“, „Verknüpft, nicht verworfen.“, „Nicht mehr verworfen.“, „Wird gerade bearbeitet.“, „Noch nicht übertragen.“). Geänderte Einträge verlassen die Auswahl, ein fehlgeschlagener bleibt gewählt.
+- **Rückmeldung wie in Aufgaben und Papierkorb:** Fortschritt („Verwerfen: 1 von 3 Einträgen“) und Ergebnis (Fehler als `.alert-error` „1 Eintrag wurde nicht verworfen:“, Übersprungenes neutral „2 Einträge übersprungen:“, „Ergebnis schließen“) stehen in der `SelectionBar`: am PC über der Tabelle, nur solange ein Lauf geht oder ein Ergebnis steht (die Knöpfe bleiben in der Abschnittsleiste), am Handy in der Leiste unten, nach „Fertig“ allein. Das Flag nennt das Ergebnis („3 Einträge verworfen.“, „2 Einträge verworfen, 1 übersprungen, 1 fehlgeschlagen.“; ging nichts, als Fehler „Keiner der 3 Einträge wurde verworfen.“). Während eines Laufs warten alle Sammelaktionen. Der Fokus bleibt am PC auf dem Knopf, am Handy geht er zurück in die Leiste (wie `BulkActionBar`).
+- **Ein „Rückgängig“:** Das Flag nach „Verwerfen (n)“ bietet es so lange wie beim einzelnen Verwerfen (Laufzeit des Flags, 8 s). Es stellt alle Einträge dieses Laufs nacheinander wieder her, auch wenn sie nicht mehr geladen sind; Teilfehler stehen im Ergebnis und im Flag. „Wiederherstellen (n)“ hat wie das einzelne kein „Rückgängig“.
+- **Ohne Verbindung:** Wo der Postausgang die fehlende Verbindung erkennt (derselbe Zustand wie bei „Alle Kanäle jetzt abrufen“, OF-3), bleiben beide Knöpfe sichtbar, aber gesperrt: `aria-disabled`, daneben „Nur mit Verbindung“ über `aria-describedby`, ein Tipp oder Enter zeigt das Info-Flag „„Verwerfen (3)“ geht nur mit Verbindung.“. Der Postausgang merkt das Verwerfen nicht.
+- **Nicht Teil davon:** Löschen bleibt gesperrt (Nachtrag vom 2026-10-01), es gibt keinen Papierkorb für Einträge, und Regeln für Kanäle oder Absender („künftig nicht mehr abrufen“) gehören bewusst nicht dazu.
+
+**Alternativen.**
+
+- **Sammel-Route im Server:** verworfen wie „Kein Batch-API“ in §4; eine zweite Prüfung desselben Zustandswechsels für einen Gewinn, den die Zahl der Einträge im Eingang nicht braucht.
+- **„Löschen (n)“:** verworfen; Löschen bleibt gesperrt, damit die Sperre gegen erneutes Eintreffen bleibt.
+- **Auswahl auch in „Alle“ mit beiden Aktionen:** verworfen; die Ansichten „Neu“ und „Verworfen“ zeigen genau die Einträge, für die eine Aktion gilt.
+
+**Folgen.** Nur Oberfläche, Tests und Doku: nach dem Build F5, kein Neustart. Viele Einträge brauchen viele Anfragen, eine nach der anderen; „Gesammelt umwandeln“ und „Mit Ticket verknüpfen …“ bleiben ohne Verbindung wie bisher bedienbar.
