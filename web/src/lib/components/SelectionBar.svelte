@@ -23,6 +23,7 @@
 	let {
 		countText,
 		progress = null,
+		progressId,
 		label = 'Sammelaktionen',
 		hint = '',
 		onclear,
@@ -36,6 +37,11 @@
 		countText: string;
 		/** The running action, null while none runs. */
 		progress?: { total: number; done: number; text: string } | null;
+		/**
+		 * ID of the text of the progress, for actions of the owner outside the bar that the run locks
+		 * (their `aria-describedby`, EG-1 round 2); without it the bar makes its own.
+		 */
+		progressId?: string;
 		/** Name of the group of buttons. */
 		label?: string;
 		/** Why "Aktionen" is locked in the phone frame while nothing is chosen, e.g. "Erst Tickets auswählen.". */
@@ -59,6 +65,7 @@
 
 	const uid = $props.id();
 	const ids = { actions: `${uid}-actions`, hint: `${uid}-hint` };
+	const progressTextId = $derived(progressId ?? `${uid}-progress`);
 	const mobileLayout = getMobileLayoutStore();
 	const phone = $derived(mobileLayout.active);
 	const flags = findFlagStore();
@@ -96,9 +103,8 @@
 
 {#snippet progressBar(running: { total: number; done: number; text: string })}
 	<div class="progress" role="status">
-		<progress max={running.total} value={running.done} aria-labelledby={`${uid}-progress`}
-		></progress>
-		<span id={`${uid}-progress`}>{running.text}</span>
+		<progress max={running.total} value={running.done} aria-labelledby={progressTextId}></progress>
+		<span id={progressTextId}>{running.text}</span>
 	</div>
 {/snippet}
 

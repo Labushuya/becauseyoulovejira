@@ -166,6 +166,7 @@ async function setup(
 		onlinkitem,
 		onclipboard,
 		syncAll: syncAll as unknown as SyncAllStore,
+		offline: options.offline ?? false,
 		tools
 	};
 	let view;
@@ -554,6 +555,138 @@ describe('the inbox as cards in the phone frame (MO-6)', () => {
 		const list = view.container.querySelector('.card-list') as HTMLElement;
 		expect(files).not.toBeNull();
 		expect(list.compareDocumentPosition(files) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+	});
+});
+
+// EG-1 (ADR-0014 addendum EG-1): "Verwerfen (n)" and "Wiederherstellen (n)" in the bar of the
+// selection at the bottom, with the progress and the result in the same bar.
+describe('several entries at once in the phone frame (EG-1)', () => {
+	const GONE = [
+		item('item00000000007', {
+			title: 'Alt eins',
+			state: 'discarded',
+			handledAt: '2026-09-21 10:00:00.000Z'
+		}),
+		item('item00000000008', {
+			title: 'Alt zwei',
+			state: 'discarded',
+			handledAt: '2026-09-20 10:00:00.000Z'
+		})
+	];
+
+	/** "Auswählen" from the menu of the list, then a tap on each card of `titles`. */
+	async function choose(...titles: string[]) {
+		const menu = menuOf(screen.getByRole('button', { name: 'Weitere Aktionen der Liste' }));
+		await fireEvent.click(within(menu).getByRole('menuitem', { name: 'Auswählen', hidden: true }));
+		await tick();
+		for (const title of titles) {
+			await fireEvent.click(card(title).querySelector('.card-meta') as HTMLElement);
+		}
+	}
+
+	/** "Aktionen" of the bar at the bottom, opened; returns the group of the bulk actions. */
+	async function actionsOf(region: HTMLElement): Promise<HTMLElement> {
+		await fireEvent.click(within(region).getByRole('button', { name: 'Aktionen' }));
+		await tick();
+		return within(region).getByRole('group', { name: 'Sammelaktionen' });
+	}
+
+	it('discards the chosen entries with "Verwerfen (n)" behind "Aktionen"; "Rückgängig" brings them back, the focus stays in the bar', async () => {
+		useWindow(true, true);
+		const { data } = await setup();
+		await choose('Artikel', 'Milch kaufen');
+		const region = screen.getByRole('region', { name: '2 Einträge ausgewählt' });
+		const actions = await actionsOf(region);
+		await fireEvent.click(within(actions).getByRole('button', { name: 'Verwerfen (2)' }));
+		await vi.waitFor(() => expect(data.discard.mock.calls).toEqual([[C.id], [A.id]]));
+		await vi.waitFor(() => expect(card('Artikel')).toBeUndefined());
+		expect(card('Milch kaufen')).toBeUndefined();
+		const flags = within(screen.getByRole('region', { name: 'Benachrichtigungen' }));
+		await vi.waitFor(() =>
+			expect(flags.getByRole('listitem').textContent).toContain('2 Einträge verworfen.')
+		);
+		// "Auswählen" goes on with the bar; the focus went back into it, on "Aktionen".
+		const after = screen.getByRole('region', { name: '0 Einträge ausgewählt' });
+		await vi.waitFor(() =>
+			expect(document.activeElement).toBe(within(after).getByRole('button', { name: 'Aktionen' }))
+		);
+
+		await fireEvent.click(flags.getByRole('button', { name: 'Rückgängig' }));
+		await vi.waitFor(() => expect(data.restore.mock.calls).toEqual([[C.id], [A.id]]));
+		// Both cards are back (the fake answers with its own titles).
+		await vi.waitFor(() =>
+			expect(
+				[...document.querySelectorAll<HTMLElement>('li[data-item-id]')].map(
+					(entry) => entry.dataset.itemId
+				)
+			).toEqual(expect.arrayContaining([C.id, A.id]))
+		);
+	});
+
+	it('restores the chosen entries with "Wiederherstellen (n)" in the view "Verworfen"', async () => {
+		useWindow(true, true);
+		mocks.page.url = new URL('http://localhost:3000/eingang?zustand=verworfen');
+		const { data } = await setup({ query: { source: null, state: 'discarded' }, handled: GONE });
+		await vi.waitFor(() => expect(card('Alt eins')).toBeDefined());
+		await choose('Alt eins', 'Alt zwei');
+		const actions = await actionsOf(screen.getByRole('region', { name: '2 Einträge ausgewählt' }));
+		expect(
+			within(actions)
+				.getAllByRole('button')
+				.map((button) => button.textContent?.trim())
+		).toEqual(['Wiederherstellen (2)']);
+		await fireEvent.click(within(actions).getByRole('button', { name: 'Wiederherstellen (2)' }));
+		await vi.waitFor(() =>
+			expect(data.restore.mock.calls).toEqual([['item00000000007'], ['item00000000008']])
+		);
+		await vi.waitFor(() => expect(card('Alt eins')).toBeUndefined());
+		await vi.waitFor(() =>
+			expect(
+				within(screen.getByRole('region', { name: 'Benachrichtigungen' })).getByRole('listitem')
+					.textContent
+			).toContain('2 Einträge wiederhergestellt.')
+		);
+	});
+
+	it('keeps "Wiederherstellen (n)" without a connection, locked, and names why on a tap or Enter', async () => {
+		useWindow(true, true);
+		mocks.page.url = new URL('http://localhost:3000/eingang?zustand=verworfen');
+		const { data, flags } = await setup({
+			query: { source: null, state: 'discarded' },
+			handled: GONE,
+			offline: true
+		});
+		await vi.waitFor(() => expect(card('Alt eins')).toBeDefined());
+		await choose('Alt eins');
+		const actions = await actionsOf(screen.getByRole('region', { name: '1 Eintrag ausgewählt' }));
+		const button = within(actions).getByRole('button', { name: 'Wiederherstellen (1)' });
+		expect(button.getAttribute('aria-disabled')).toBe('true');
+		expect(button.hasAttribute('disabled')).toBe(false);
+		expect(
+			document.getElementById(button.getAttribute('aria-describedby') ?? '')?.textContent
+		).toBe('Nur mit Verbindung');
+		await fireEvent.click(button);
+		expect(data.restore).not.toHaveBeenCalled();
+		expect(flags.flags.map((flag) => [flag.tone, flag.title])).toEqual([
+			['info', '„Wiederherstellen (1)“ geht nur mit Verbindung.']
+		]);
+	});
+
+	// Round 2 of EG-1 (review E-1).
+	it('ends "Auswählen" and empties the selection when another view is chosen (E-1)', async () => {
+		useWindow(true, true);
+		const { store } = await setup({ handled: GONE });
+		await choose('Artikel');
+		expect(screen.getByRole('region', { name: '1 Eintrag ausgewählt' })).toBeTruthy();
+		store.activate({ source: null, state: 'discarded' });
+		await vi.waitFor(() => expect(card('Alt eins')).toBeDefined());
+		// "Auswählen" ended with the view: no boxes on the discarded cards and no bar.
+		expect(card('Alt eins').querySelector('input[type="checkbox"]')).toBeNull();
+		expect(screen.queryByRole('region', { name: /ausgewählt$/ })).toBeNull();
+		store.activate({ source: null, state: 'new' });
+		await vi.waitFor(() => expect(card('Artikel')).toBeDefined());
+		expect(card('Artikel').querySelector('input[type="checkbox"]')).toBeNull();
+		expect(screen.queryByRole('region', { name: /ausgewählt$/ })).toBeNull();
 	});
 });
 

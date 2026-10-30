@@ -79,7 +79,7 @@
 	// "Alle Kanäle jetzt abrufen" (package A, item 4): new entries arrive through the realtime
 	// subscription of the inbox store; the flag leads to the card of a connection that failed.
 	// Without a connection (the state of the hint "Keine Verbindung" of the outbox, OF-3) it is
-	// locked and says why.
+	// locked and says why, as are "Verwerfen (n)" and "Wiederherstellen (n)" of the table (EG-1).
 	const outbox = findOutbox();
 	const syncAll = new SyncAllStore(
 		syncAllData(pb),
@@ -324,6 +324,7 @@
 			onclipboard={fromClipboard}
 			{clipboardHint}
 			{syncAll}
+			offline={outbox?.offline === true}
 		>
 			{#snippet actions()}
 				<SyncAllButton store={syncAll} />
