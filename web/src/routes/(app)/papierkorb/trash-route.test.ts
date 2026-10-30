@@ -24,7 +24,8 @@ const mocks = vi.hoisted(() => ({
 	store: null as unknown
 }));
 
-vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
+// Since MO-7b the preview follows its arrivals for the arrow of the phone frame (afterNavigate).
+vi.mock('$app/navigation', () => ({ goto: mocks.goto, afterNavigate: vi.fn() }));
 vi.mock('$app/state', () => ({ page: mocks.page }));
 vi.mock('$lib/auth.svelte', () => ({
 	auth: { userId: 'user00000000001', ensureValid: () => true, logout: vi.fn() }

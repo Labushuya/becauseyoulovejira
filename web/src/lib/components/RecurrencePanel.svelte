@@ -44,9 +44,11 @@
 	import type { ProblemEntry } from '$lib/domain/problems';
 	import type { EditResult } from '$lib/stores/catalog-editor';
 	import type { EnsureTagResult } from '$lib/stores/catalog.svelte';
+	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 	import { helpHref } from '$lib/settings-sections';
 	import { appHref } from '$lib/ticket-links';
 	import { registerUnsavedInput } from '$lib/unsaved-input';
+	import ActionsMenu, { type MenuAction } from './ActionsMenu.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import Lozenge from './guidance/Lozenge.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
@@ -75,6 +77,10 @@
 	// link that replaces the panel (a ticket, another rule, another view) asks "Änderungen
 	// verwerfen?" inline at the top while input is unsaved, never as a dialog; back from a ticket
 	// the focus goes to its link (`initialFocus`).
+	// Phone frame (MO-7b, ADR-0073 addendum MO-7b): a page whose arrow goes back through the history
+	// when the list of the rules (or the calendar) lies right before it (`backLabel`, `onback`, from
+	// the route), with the question of the × before typed input goes; the actions of the head stand in
+	// "•••", the hint on Strg+Enter is left out, the link to the help is a target of 44 px.
 	let {
 		rule = null,
 		today,
@@ -99,6 +105,8 @@
 		onsaved,
 		ondeleted,
 		onclose,
+		backLabel,
+		onback,
 		initialFocus = null
 	}: {
 		/** Rule of the panel; null for "Neue Regel". */
@@ -151,6 +159,10 @@
 		ondeleted?: () => void;
 		/** × and Escape (after the question about unsaved input). */
 		onclose: () => void;
+		/** Name of the arrow back of the page in the phone frame (MO-7b), e.g. "Zu den Wiederholungen". */
+		backLabel?: string;
+		/** The arrow back in the phone frame (after the same question); without it the way of the ×. */
+		onback?: () => void;
 		/**
 		 * Where the focus goes when the panel opens instead of its title: the link of the ticket the
 		 * user came back from (ADR-0054 §7); null or no element keeps the title.
@@ -333,11 +345,45 @@
 		else await goto(appHref(target.url));
 	}
 
-	function close() {
+	/** Where "Verwerfen" of the question leads: the way of the × or of the arrow (MO-7b). */
+	let discardWay: () => void = () => onclose();
+
+	/** Leaves the panel on `way`, after the question while the form holds input. */
+	function leave(way: () => void) {
 		if (busy || deleting) return;
-		if (dirty) confirmingDiscard = true;
-		else onclose();
+		if (!dirty) {
+			way();
+			return;
+		}
+		discardWay = way;
+		confirmingDiscard = true;
 	}
+
+	function close() {
+		leave(onclose);
+	}
+
+	/** The arrow of the page in the phone frame (MO-7b). */
+	function back() {
+		leave(onback ?? onclose);
+	}
+
+	/** The phone frame (MO-7b): the actions of the head in "•••", no hint on keys. */
+	const mobileLayout = getMobileLayoutStore();
+	const phone = $derived(mobileLayout.active);
+	const headActions = $derived.by((): MenuAction[] => {
+		const entries: MenuAction[] = [];
+		if (move !== null) entries.push({ label: move.label, dialog: true, onselect: move.run });
+		if (rule !== null && ondelete) {
+			entries.push({
+				label: 'Löschen …',
+				dialog: true,
+				separated: entries.length > 0,
+				onselect: askDelete
+			});
+		}
+		return entries;
+	});
 
 	/** Field errors of the server: rhythm fields to the form, template fields to theirs. */
 	function fromServer(fields: Readonly<Record<string, string>>): void {
@@ -498,20 +544,38 @@
 	}
 </script>
 
-<Drawer labelledby={ids.heading} closeFromFields onclose={close} {onkeydown}>
+<Drawer
+	labelledby={ids.heading}
+	closeFromFields
+	onclose={close}
+	{backLabel}
+	onback={back}
+	{onkeydown}
+>
 	{#snippet context()}
 		{rule === null ? 'Wiederholungen' : 'Wiederholung'}
 	{/snippet}
 	{#snippet actions()}
-		{#if move !== null}
-			<button class="button-subtle" type="button" aria-haspopup="dialog" onclick={move.run}>
-				{move.label}
-			</button>
-		{/if}
-		{#if rule !== null && ondelete}
-			<button class="button-subtle" type="button" aria-haspopup="dialog" onclick={askDelete}>
-				Löschen …
-			</button>
+		{#if phone}
+			{#if headActions.length > 0}
+				<ActionsMenu
+					label={`Weitere Aktionen für „${rule?.title ?? ''}“`}
+					buttonLabel="Weitere Aktionen"
+					buttonTitle="Weitere Aktionen"
+					items={headActions}
+				/>
+			{/if}
+		{:else}
+			{#if move !== null}
+				<button class="button-subtle" type="button" aria-haspopup="dialog" onclick={move.run}>
+					{move.label}
+				</button>
+			{/if}
+			{#if rule !== null && ondelete}
+				<button class="button-subtle" type="button" aria-haspopup="dialog" onclick={askDelete}>
+					Löschen …
+				</button>
+			{/if}
 		{/if}
 	{/snippet}
 	{#snippet footer()}
@@ -698,7 +762,9 @@
 		{#if message}
 			<ProblemDetails problem={messageProblem} />
 		{/if}
-		<p class="hint">Tipp: <kbd>Strg</kbd>+<kbd>Enter</kbd> speichert.</p>
+		{#if !phone}
+			<p class="hint">Tipp: <kbd>Strg</kbd>+<kbd>Enter</kbd> speichert.</p>
+		{/if}
 	</form>
 </Drawer>
 
@@ -728,7 +794,7 @@
 	onconfirm={() => {
 		confirmingDiscard = false;
 		discarding = true;
-		onclose();
+		discardWay();
 	}}
 	oncancel={() => (confirmingDiscard = false)}
 >
@@ -830,5 +896,18 @@
 	.hint {
 		font-size: var(--font-size-small);
 		color: var(--color-text-muted);
+	}
+
+	/*
+	 * Phone frame (MO-7b, ADR-0073 addendum MO-7b): the link to the help and the keys of the open
+	 * tickets are targets of 44 px; long titles of the open tickets wrap.
+	 */
+	@media (max-width: 39.99rem) {
+		:global(:root[data-mobile-layout='on']) .help-link,
+		:global(:root[data-mobile-layout='on']) .open-list .key-link {
+			display: inline-flex;
+			align-items: center;
+			min-height: var(--control-height-touch);
+		}
 	}
 </style>

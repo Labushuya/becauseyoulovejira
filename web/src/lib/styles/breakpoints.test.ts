@@ -138,7 +138,9 @@ describe('breakpoints (MO-1a, ADR-0073)', () => {
 		// since MO-5 the sheet of the quick entry (its two buttons side by side, the folded help, the
 		// link to the result); since MO-6 the inbox (its cards, the bar of the selection, the filter
 		// sheet, the page of an entry with its main actions) and the button "Filter" shared with
-		// "Aufgaben".
+		// "Aufgaben"; since MO-7b "Projekte", "Wiederholungen" and "Papierkorb" (their cards, the row of
+		// the view, the filter sheet, the pages of a project and a rule with their targets) and the bar
+		// of the selection at the bottom.
 		expect([...new Set(places)].sort()).toEqual([
 			'lib/components/Breadcrumbs.svelte',
 			'lib/components/CharmPicker.svelte',
@@ -150,7 +152,14 @@ describe('breakpoints (MO-1a, ADR-0073)', () => {
 			'lib/components/InboxPanel.svelte',
 			'lib/components/InboxTable.svelte',
 			'lib/components/MarkdownEditor.svelte',
+			'lib/components/ProjectPanel.svelte',
+			'lib/components/ProjectTable.svelte',
+			'lib/components/ProjectTicketList.svelte',
+			'lib/components/ProjectsView.svelte',
 			'lib/components/QuickCapture.svelte',
+			'lib/components/RecurrenceForm.svelte',
+			'lib/components/RecurrencePanel.svelte',
+			'lib/components/RecurrenceTable.svelte',
 			'lib/components/SectionBar.svelte',
 			'lib/components/SelectionBar.svelte',
 			'lib/components/SortChoice.svelte',
@@ -163,6 +172,8 @@ describe('breakpoints (MO-1a, ADR-0073)', () => {
 			'lib/components/TicketParentField.svelte',
 			'lib/components/TicketSubtasks.svelte',
 			'lib/components/TicketTable.svelte',
+			'lib/components/TrashTable.svelte',
+			'lib/components/TrashView.svelte',
 			'lib/components/ViewWithPanel.svelte',
 			'lib/components/day-plan/DayPlanList.svelte',
 			'lib/components/day-plan/DayPlanPool.svelte',

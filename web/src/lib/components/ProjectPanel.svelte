@@ -22,9 +22,11 @@
 		type ProjectCounts
 	} from '$lib/domain/project-tree';
 	import { restartNeeded } from '$lib/guidance/texts';
+	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 	import type { EditResult } from '$lib/stores/catalog-editor';
 	import { appHref } from '$lib/ticket-links';
 	import { registerUnsavedInput } from '$lib/unsaved-input';
+	import ActionsMenu, { type MenuAction } from './ActionsMenu.svelte';
 	import Breadcrumbs from './Breadcrumbs.svelte';
 	import ColorChoice from './ColorChoice.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
@@ -58,6 +60,10 @@
 	// list. Tickets in the projects (ADR-0054): a link that replaces the panel (a ticket, another
 	// project, another view) asks "Änderungen verwerfen?" inline at the top while input is unsaved,
 	// never as a dialog; back from a ticket the focus goes to its link (`initialFocus`).
+	// Phone frame (MO-7b, ADR-0073 addendum MO-7b): a page whose arrow goes back through the history
+	// when the list of the projects lies right before it (`backLabel`, `onback`, from the route), with
+	// the question of the × before typed input goes; the actions of the head ("In den Haushalt
+	// verschieben …", "Löschen …") stand in "•••"; links and buttons are targets of 44 px.
 	let {
 		project = null,
 		active = null,
@@ -81,6 +87,8 @@
 		onsaved,
 		ondeleted,
 		onclose,
+		backLabel,
+		onback,
 		openTickets,
 		initialFocus = null
 	}: {
@@ -130,6 +138,10 @@
 		ondeleted?: () => void;
 		/** × and Escape (after the question about unsaved input). */
 		onclose: () => void;
+		/** Name of the arrow back of the page in the phone frame (MO-7b), e.g. "Zu den Projekten". */
+		backLabel?: string;
+		/** The arrow back in the phone frame (after the same question); without it the way of the ×. */
+		onback?: () => void;
 		/**
 		 * The open tickets of the project, below the heading "Offene Tickets"; the argument gives the
 		 * focus to that heading.
@@ -296,11 +308,45 @@
 		return value === null ? '–' : String(value);
 	}
 
-	function close() {
+	/** Where "Verwerfen" of the question leads: the way of the × or of the arrow (MO-7b). */
+	let discardWay: () => void = () => onclose();
+
+	/** Leaves the panel on `way`, after the question while the form holds input. */
+	function leave(way: () => void) {
 		if (busy) return;
-		if (dirty) confirmingDiscard = true;
-		else onclose();
+		if (!dirty) {
+			way();
+			return;
+		}
+		discardWay = way;
+		confirmingDiscard = true;
 	}
+
+	function close() {
+		leave(onclose);
+	}
+
+	/** The arrow of the page in the phone frame (MO-7b). */
+	function back() {
+		leave(onback ?? onclose);
+	}
+
+	/** The phone frame (MO-7b): the actions of the head in "•••". */
+	const mobileLayout = getMobileLayoutStore();
+	const phone = $derived(mobileLayout.active);
+	const headActions = $derived.by((): MenuAction[] => {
+		const entries: MenuAction[] = [];
+		if (move !== null) entries.push({ label: move.label, dialog: true, onselect: move.run });
+		if (canDelete) {
+			entries.push({
+				label: 'Löschen …',
+				dialog: true,
+				separated: entries.length > 0,
+				onselect: askDelete
+			});
+		}
+		return entries;
+	});
 
 	async function run<T>(action: () => Promise<EditResult<T>>): Promise<EditResult<T> | null> {
 		if (busy) return null;
@@ -413,7 +459,7 @@
 	}
 </script>
 
-<Drawer labelledby={ids.heading} closeFromFields onclose={close}>
+<Drawer labelledby={ids.heading} closeFromFields onclose={close} {backLabel} onback={back}>
 	{#snippet context()}
 		{#if project && parent}
 			<Breadcrumbs
@@ -431,15 +477,26 @@
 		{/if}
 	{/snippet}
 	{#snippet actions()}
-		{#if move !== null}
-			<button class="button-subtle" type="button" aria-haspopup="dialog" onclick={move.run}>
-				{move.label}
-			</button>
-		{/if}
-		{#if canDelete}
-			<button class="button-subtle" type="button" aria-haspopup="dialog" onclick={askDelete}>
-				Löschen …
-			</button>
+		{#if phone}
+			{#if headActions.length > 0}
+				<ActionsMenu
+					label={`Weitere Aktionen für „${project?.name ?? ''}“`}
+					buttonLabel="Weitere Aktionen"
+					buttonTitle="Weitere Aktionen"
+					items={headActions}
+				/>
+			{/if}
+		{:else}
+			{#if move !== null}
+				<button class="button-subtle" type="button" aria-haspopup="dialog" onclick={move.run}>
+					{move.label}
+				</button>
+			{/if}
+			{#if canDelete}
+				<button class="button-subtle" type="button" aria-haspopup="dialog" onclick={askDelete}>
+					Löschen …
+				</button>
+			{/if}
 		{/if}
 	{/snippet}
 	{#snippet footer()}
@@ -769,7 +826,7 @@
 	onconfirm={() => {
 		confirmingDiscard = false;
 		discarding = true;
-		onclose();
+		discardWay();
 	}}
 	oncancel={() => (confirmingDiscard = false)}
 >
@@ -908,5 +965,33 @@
 
 	.add {
 		text-decoration: none;
+	}
+
+	/*
+	 * Phone frame (MO-7b, ADR-0073 addendum MO-7b): "Tickets anzeigen" and the links of the sub
+	 * projects are targets of 44 px; a long name in the numbers ("davon direkt in …") and in the
+	 * headings of the open tickets wraps instead of pushing the page wider.
+	 */
+	@media (max-width: 39.99rem) {
+		:global(:root[data-mobile-layout='on']) .tickets,
+		:global(:root[data-mobile-layout='on']) .sub-projects a {
+			display: inline-flex;
+			align-items: center;
+			min-height: var(--control-height-touch);
+		}
+
+		:global(:root[data-mobile-layout='on']) .stats {
+			min-width: 0;
+			overflow-wrap: anywhere;
+		}
+
+		:global(:root[data-mobile-layout='on']) .stats.direct {
+			display: block;
+		}
+
+		:global(:root[data-mobile-layout='on']) .tickets-section :global(h4),
+		:global(:root[data-mobile-layout='on']) .context-code {
+			overflow-wrap: anywhere;
+		}
 	}
 </style>

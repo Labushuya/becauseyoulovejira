@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { afterNavigate, goto } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import type { ResolvedPathname } from '$app/types';
 	import { viewOfRoute } from '$lib/domain/area';
@@ -9,8 +9,7 @@
 	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
 	import { getTicketSourcesStore } from '$lib/stores/ticket-sources.svelte';
 	import { findTicketReturn } from '$lib/ticket-return.svelte';
-	import { arrowBack } from '$lib/views';
-	import { previousEntry } from '$lib/way-back';
+	import { followViewArrow } from '$lib/view-arrow.svelte';
 	import InboxPanel from './InboxPanel.svelte';
 
 	// Panel of one inbox entry as a route (/eingang/<record id>, E4 plan T-3; next to the calendar
@@ -19,7 +18,8 @@
 	// In the phone frame (MO-6, ADR-0073 addendum MO-6) the entry is a page whose arrow goes back
 	// through the history when the page of a view lies right before it: the list of the inbox with
 	// its chips, or the view where "＋" captured the entry ("Eintrag ansehen"), named after it. From
-	// elsewhere it leads to the view of the route like the × (`back`).
+	// elsewhere it leads to the view of the route like the × (`back`). Since MO-7b the arrow is shared
+	// with the project, the rule and the preview of the trash (lib/view-arrow.svelte.ts).
 	let {
 		back,
 		section
@@ -40,17 +40,11 @@
 	const id = $derived(page.params.id ?? '');
 	const title = $derived(inbox.find(id)?.title);
 
-	/** The page before this one, when a link of the app or a step forward led here (MO-6). */
-	let previous = $state<string | null>(null);
-	afterNavigate(({ type, from, delta }) => {
-		previous = previousEntry({ type, from: from?.url ?? null, delta });
-	});
-	const way = $derived(arrowBack(previous, viewOfRoute(page.route.id) ?? 'inbox'));
-
-	function onback() {
-		if (way.throughHistory) history.back();
-		else void goto(back);
-	}
+	/** The arrow of the page, after the page before this one (MO-6). */
+	const arrow = followViewArrow(
+		() => viewOfRoute(page.route.id) ?? 'inbox',
+		() => back
+	);
 </script>
 
 <svelte:head>
@@ -67,8 +61,8 @@
 		today={tickets.today}
 		{sources}
 		onclose={() => goto(back)}
-		backLabel={way.label}
-		{onback}
+		backLabel={arrow.label}
+		onback={() => arrow.go()}
 		initialFocus={() => ticketReturn?.focusTarget() ?? null}
 	/>
 {/key}

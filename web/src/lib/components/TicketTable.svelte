@@ -149,8 +149,10 @@
 	// together with "Gruppieren" and the sort. "Spalten" has no place without columns; what the card
 	// leaves out is in the ticket. The selection of the bulk actions is one level deeper: "Auswählen"
 	// shows a box on every card, "Alle" chooses every shown ticket, and "Bereich" makes the next tap
-	// choose up to there, the way of Shift+click for a finger. No virtualization, as for the table:
-	// the cards render the rows the table renders, with fewer elements (no editors of the cells).
+	// choose up to there, the way of Shift+click for a finger. The bulk actions stand in the bar of the
+	// selection at the bottom after the cards (MO-7b, SelectionBar, shared with "Eingang" and
+	// "Papierkorb") with "Fertig". No virtualization, as for the table: the cards render the rows the
+	// table renders, with fewer elements (no editors of the cells).
 	let {
 		store,
 		catalog,
@@ -943,7 +945,8 @@
 	<p class="visually-hidden" aria-live="polite">{store.announcement}</p>
 
 	{#if bulk && selecting}
-		<!-- "Auswählen" in the phone frame (MO-3): all shown, a range by tap, and the way out. -->
+		<!-- "Auswählen" in the phone frame (MO-3): all shown and a range by tap; the way out ("Fertig")
+		     is in the bar of the selection at the bottom since MO-7b. -->
 		<div class="select-mode" role="group" aria-label="Auswahl">
 			<label class="select-all">
 				<input
@@ -968,7 +971,6 @@
 			>
 				Bereich
 			</button>
-			<button class="button-secondary" type="button" onclick={leaveSelectMode}>Fertig</button>
 			<p class="range-hint" id={ids.rangeHint} aria-live="polite">
 				{rangeNext
 					? 'Jetzt das letzte Ticket des Bereichs antippen.'
@@ -977,7 +979,7 @@
 		</div>
 	{/if}
 
-	{#if bulk && (chosenTickets.length > 0 || bulk.busy || bulk.result !== null)}
+	{#if bulk && !phone && (chosenTickets.length > 0 || bulk.busy || bulk.result !== null)}
 		<BulkActionBar
 			tickets={chosenTickets}
 			store={bulk}
@@ -1241,6 +1243,19 @@
 				{/if}
 			</table>
 		</div>
+	{/if}
+
+	{#if bulk && phone && (selecting || bulk.busy || bulk.result !== null)}
+		<!-- The bar of "Auswählen" at the bottom, after the cards (MO-7b): "Fertig" leaves the mode;
+		     a result then stands alone with "Ergebnis schließen", as on the PC (round 2). -->
+		<BulkActionBar
+			tickets={chosenTickets}
+			store={bulk}
+			{catalog}
+			openBlockingOf={(id) => store.openBlockingOf(id)}
+			onclear={leaveSelectMode}
+			{selecting}
+		/>
 	{/if}
 </section>
 

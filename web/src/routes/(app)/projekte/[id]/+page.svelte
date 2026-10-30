@@ -19,6 +19,7 @@
 		projectsViewHref
 	} from '$lib/ticket-links';
 	import { findTicketReturn } from '$lib/ticket-return.svelte';
+	import { followViewArrow } from '$lib/view-arrow.svelte';
 
 	// Panel of one project (/projekte/<record id>, package UI-8); a reload opens the same panel. The
 	// project comes from the catalog, so live changes show at once. While it is being deleted the
@@ -27,7 +28,8 @@
 	// choices of "Oberprojekt", the sub projects and "Mit Oberprojekt zurückholen". The section
 	// "Offene Tickets" (ADR-0034, addendum "Offene Tickets in Projekten") lists the open tickets of
 	// the list store; the questions of their menu open in the layout. Back from a ticket it
-	// replaced (ADR-0054), the focus goes to the link of that ticket.
+	// replaced (ADR-0054), the focus goes to the link of that ticket. In the phone frame the panel is a
+	// page whose arrow goes back through the history when the list lies right before it (MO-7b).
 	const route = getProjectRoute();
 	const ticketReturn = findTicketReturn();
 	const catalog = getCatalogStore();
@@ -36,6 +38,10 @@
 	const duplicates = findTicketDuplicateStore() !== null;
 	const id = $derived(page.params.id ?? '');
 	const back = $derived(projectsViewHref(page.url));
+	const arrow = followViewArrow(
+		() => 'projects',
+		() => back
+	);
 
 	/** The project being deleted, until the navigation back to the tiles. */
 	let removing = $state<Project | null>(null);
@@ -94,6 +100,8 @@
 			ondelete={() => remove(current)}
 			ondeleted={() => goto(back)}
 			onclose={() => goto(back)}
+			backLabel={arrow.label}
+			onback={() => arrow.go()}
 			initialFocus={() => ticketReturn?.focusTarget() ?? null}
 		>
 			{#snippet openTickets(headingOf)}
@@ -112,7 +120,12 @@
 		</ProjectPanel>
 	{/key}
 {:else}
-	<Drawer labelledby="project-missing" onclose={() => goto(back)}>
+	<Drawer
+		labelledby="project-missing"
+		onclose={() => goto(back)}
+		backLabel={arrow.label}
+		onback={() => arrow.go()}
+	>
 		{#snippet context()}Projekte{/snippet}
 		{#if catalog.state === 'error' && catalog.error}
 			<h2 id="project-missing" tabindex="-1">Projekt</h2>

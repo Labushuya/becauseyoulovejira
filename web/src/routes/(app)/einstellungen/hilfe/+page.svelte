@@ -357,9 +357,10 @@
 			<li>Die Fälligkeit im Ticket.</li>
 			<li>Haken im Tagesplan und ihr Zurücknehmen.</li>
 			<li>
-				„＋“: ein neues Ticket oder einen Eintrag für den Eingang. Bis zur Übertragung steht statt
-				des Keys „Neu“; Status, Fälligkeit und Kommentare gehen daran schon, alles andere erst
-				danach.
+				„＋“: ein neues Ticket oder einen Eintrag für den Eingang. Bei einem neuen Ticket steht bis
+				zur Übertragung statt des Keys „Neu“; Status, Fälligkeit und Kommentare gehen daran schon,
+				alles andere erst danach. Umwandeln, Verknüpfen und Verwerfen gehen bei einem neuen Eintrag
+				erst, sobald er übertragen ist.
 			</li>
 			<li>
 				Kommentare, auch an einem neuen Ticket, das noch nicht übertragen ist. Sie stehen gleich mit
@@ -380,10 +381,10 @@
 				wählst.
 			</li>
 			<li>„Neues Ticket“ und „Erfassen“ im Eingang.</li>
+			<li>„Alle Kanäle jetzt abrufen“: ohne Verbindung gesperrt, mit „Nur mit Verbindung“.</li>
 			<li>
 				Alles andere, etwa Priorität, Projekt, Tags, Titel, Beschreibung und Unteraufgaben,
-				Umwandeln und Verwerfen im Eingang und „Alle Kanäle jetzt abrufen“ (dann gesperrt, mit „Nur
-				mit Verbindung“).
+				Umwandeln und Verwerfen im Eingang.
 			</li>
 		</ul>
 		<p>
@@ -403,8 +404,8 @@
 				falls es schon da ist. „Rückgängig“ in der Meldung danach holt die Änderung zurück.
 			</li>
 			<li>
-				„Trotzdem übertragen“ bei einer Änderung, die älter als 48 Stunden ist; sie geht dann ohne
-				die Zeit des Geräts.
+				„Trotzdem übertragen“ bei einer Änderung, die älter als 48 Stunden ist oder bei der die Zeit
+				des Geräts in der Zukunft liegt; sie geht dann ohne die Zeit des Geräts.
 			</li>
 			<li>
 				„Als Eingangseintrag sichern“ bei einem Kommentar, der nicht übertragen werden kann: Sein
@@ -424,9 +425,10 @@
 		<p>
 			Was die App ohne dein Zutun löscht oder nicht erreicht, steht als Hinweis über der Seite, bis
 			du „Schließen“ wählst: Änderungen, die nach 7 Tagen gelöscht wurden, eine Unteraufgabe, die
-			nicht mit erledigt wurde, oder ein verworfenes Ticket bzw. ein verworfener Kommentar, die doch
-			schon angekommen sind (mit „Ticket öffnen“). Die Hinweise bleiben auf diesem Gerät, in jedem
-			Tab und auch nach dem Neuladen; „Schließen“ in einem Tab schließt sie in allen.
+			nicht mit erledigt wurde, ein verworfenes Ticket bzw. ein verworfener Kommentar, die doch
+			schon angekommen sind (mit „Ticket öffnen“), oder ein verworfener Eingangseintrag, der doch
+			schon im Eingang liegt (mit „Eintrag ansehen“). Die Hinweise bleiben auf diesem Gerät, in
+			jedem Tab und auch nach dem Neuladen; „Schließen“ in einem Tab schließt sie in allen.
 		</p>
 		<h4 id="ohne-verbindung-grenzen">Grenzen</h4>
 		<ul>
@@ -451,8 +453,9 @@
 				nicht im Hintergrund.
 			</li>
 			<li>
-				<strong>Neu laden:</strong> Ohne Verbindung startet die App nicht neu; vorher fragt sie „Ohne
-				Verbindung neu laden?“. Gemerktes bleibt dabei erhalten.
+				<strong>Neu laden:</strong> Ohne Verbindung fragt die App vorher „Ohne Verbindung neu laden?“.
+				Gemerktes bleibt dabei erhalten, ohne Verbindung lässt sich die App aber erst wieder öffnen, wenn
+				der Server erreichbar ist.
 			</li>
 			<li>
 				<strong>Nach einem Update:</strong> Drücke in jedem offenen Tab F5. Ein Tab mit der alten Fassung

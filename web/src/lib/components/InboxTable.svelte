@@ -52,6 +52,7 @@
 	import MoveSourceDialog from './MoveSourceDialog.svelte';
 	import PendingMark from './offline/PendingMark.svelte';
 	import SectionBar from './SectionBar.svelte';
+	import SelectionBar from './SelectionBar.svelte';
 	import { ColumnFit } from './table/column-fit.svelte';
 	import ResizableHeader from './table/ResizableHeader.svelte';
 	import ViewSwitch from './ViewSwitch.svelte';
@@ -95,7 +96,9 @@
 	// (the chips "Quelle" and "Zustand", "Zielprojekt" and the grouping in the filter sheet) and the
 	// menu of the list ("Auswählen", "Aus Zwischenablage", "Alle Kanäle jetzt abrufen"); the files come
 	// after the list. "Auswählen" shows a box on every new entry for "Gesammelt umwandeln" and "Mit
-	// Ticket verknüpfen …". "Spalten" has no place without columns; the entry shows every value.
+	// Ticket verknüpfen …", which stand in the bar of the selection at the bottom (MO-7b, SelectionBar,
+	// shared with "Aufgaben" and "Papierkorb"). "Spalten" has no place without columns; the entry shows
+	// every value.
 	let {
 		store,
 		flags,
@@ -965,7 +968,8 @@
 			<p class="sync-status" role="status">{syncAll.running ? syncAll.status : ''}</p>
 		{/if}
 		{#if selecting}
-			<!-- "Auswählen" (MO-6): all new entries shown, the bulk actions, and the way out. -->
+			<!-- "Auswählen" (MO-6): all new entries shown; the bulk actions and the way out ("Fertig")
+			     are in the bar of the selection at the bottom since MO-7b. -->
 			<div class="select-mode" role="group" aria-label="Auswahl">
 				<label class="select-all">
 					<input
@@ -977,8 +981,6 @@
 					/>
 					Alle
 				</label>
-				<button class="button-secondary" type="button" onclick={leaveSelectMode}>Fertig</button>
-				<div class="select-bulk">{@render bulkButtons()}</div>
 			</div>
 		{/if}
 	{:else}
@@ -1168,6 +1170,18 @@
 		>
 			{store.loadingMoreHandled ? 'Wird geladen …' : 'Weitere laden'}
 		</button>
+	{/if}
+	{#if selecting}
+		<!-- The bar of "Auswählen" at the bottom, after the cards (MO-7b, shared with "Aufgaben"). -->
+		<SelectionBar
+			countText={chosen.length === 1
+				? '1 Eintrag ausgewählt'
+				: `${chosen.length} Einträge ausgewählt`}
+			actionsShown={chosen.length > 0}
+			hint="Erst Einträge auswählen."
+			onclear={leaveSelectMode}
+			actions={bulkButtons}
+		/>
 	{/if}
 	{#if phone}
 		<!-- The files after the list in the phone frame (MO-6): one level deeper, still there. -->
@@ -1532,14 +1546,6 @@
 			align-items: center;
 			padding-right: 0.5rem;
 			font-size: var(--font-size-body);
-		}
-
-		:global(:root[data-mobile-layout='on']) .select-bulk {
-			display: flex;
-			flex: 1 1 100%;
-			flex-wrap: wrap;
-			gap: 0.5rem;
-			align-items: center;
 		}
 
 		:global(:root[data-mobile-layout='on']) .bulk,

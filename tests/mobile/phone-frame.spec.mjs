@@ -34,6 +34,15 @@
 // the overlays of today with the switch off; four and two cases of the PC), every check of before
 // stays. A locked entry of a menu is muted, and the region of the hints has a tabindex only for one
 // step.
+// Since MO-7b (manifest BYL-E6-2206 ff.) without a case of its own: "Projekte", "Wiederholungen" and
+// "Papierkorb" in the case of "Mehr" (cards at 360 and 412 px, the title in at least 60 % of its card,
+// the filter sheet, each page with its arrow back through the history, "Auswählen" in the trash), and
+// the bar of the selection at the bottom in the case of "Aufgaben" (flat above the bottom bar, its
+// actions behind "Aktionen", uncovered above a keyboard); on the PC the three lists keep their
+// tables. The case of the ticket no longer waits for the focus after "Kommentieren": the form takes
+// it back only while it is still in the form (M-1 of the review of MO-7a). Round 2 of MO-7b: Enter on
+// the locked "Aktionen" names why in a flag, opened the focus is on the first action, and "Mehr"
+// expects the number of the trash the server lists, as a whole number.
 //
 // The phone stands for another device in the home network (header X-Byl-Test-Remote-Address of the
 // test hooks, only in instances of the harness), so the pages of the administrator are "nur am PC".
@@ -295,11 +304,76 @@ function scrollsSidewaysInside(locator) {
 	return locator.evaluate((element) => element.scrollWidth > element.clientWidth);
 }
 
+/** The page fills the window: the panel of an entry, a project, a rule or a form in the phone frame (MO-4). */
+async function expectPageOf(locator, viewport) {
+	await expect(locator).toBeVisible();
+	await settled(locator);
+	const box = await locator.boundingBox();
+	expect(Math.abs(box.x)).toBeLessThanOrEqual(1);
+	expect(Math.abs(box.width - viewport.width)).toBeLessThanOrEqual(1);
+	expect(Math.abs(box.y + box.height - viewport.height)).toBeLessThanOrEqual(1);
+}
+
+/** The share of a card that its title takes (MO-7b: no title below about 60 % of the card). */
+async function cardTitleShare(card) {
+	const whole = await card.boundingBox();
+	const title = await card.locator('.card-title').boundingBox();
+	return title.width / whole.width;
+}
+
+/** A deletion of the invented account; a ticket goes to the trash (ADR-0037). */
+async function remove(path, token) {
+	const response = await fetch(`${mobileInstance().url}${path}`, {
+		method: 'DELETE',
+		headers: { Authorization: token },
+		signal: AbortSignal.timeout(BROWSER_STEP_MS)
+	});
+	if (!response.ok) throw new Error(`DELETE ${path} of the smoke test answered ${response.status}.`);
+}
+
+/** Capital letters A to Z for the code of a project. */
+function letters(count) {
+	return Array.from(randomBytes(count), (byte) => String.fromCharCode(65 + (byte % 26))).join('');
+}
+
+/**
+ * The lists of MO-7b (a run mark appended), made up: a project with a name of one long word and a
+ * sub project, a rule with a title of one long word, and two tickets in the trash, one with a title
+ * of one long word. `trashCount` is the number of the trash as the server lists it afterwards: the two
+ * and whatever another case put there before (round 2 of MO-7b, P-6).
+ */
+async function seedLists() {
+	const { email, password } = mobileInstance();
+	const { token, record } = await api('POST', '/api/collections/users/auth-with-password', { identity: email, password });
+	const mark = randomBytes(3).toString('hex');
+	const projectName = `Renovierung_des_Dachbodens_mit_Dämmung_und_neuen_Fenstern_${mark}`;
+	const project = await api('POST', '/api/collections/projects/records', { owner: record.id, name: projectName, code: letters(5) }, token);
+	const subName = `Fenster ${mark}`;
+	await api('POST', '/api/collections/projects/records', { owner: record.id, name: subName, code: letters(5), parent: project.id }, token);
+	const ruleTitle = `Monatliche_Abrechnung_der_Nebenkosten_mit_allen_Belegen_${mark}`;
+	await api(
+		'POST',
+		'/api/collections/recurrence_rules/records',
+		{ owner: record.id, title: ruleTitle, description: '', priority: 'medium', initial_status: 'open', mode: 'calendar', freq: 'monthly', interval: 1, weekdays: [], month_day: 1, anchor: '2099-01-01', lead_days: 3 },
+		token
+	);
+	const trashed = [];
+	for (const title of [`Altes_Regal_im_Keller_abbauen_und_zum_Wertstoffhof_bringen_${mark}`, `Kaputte Lampe ${mark}`]) {
+		const ticket = await api('POST', '/api/collections/tickets/records', { owner: record.id, title }, token);
+		await remove(`/api/collections/tickets/records/${ticket.id}`, token);
+		trashed.push(title);
+	}
+	const { items } = await api('GET', '/api/byl/trash', undefined, token);
+	return { project: projectName, sub: subName, rule: ruleTitle, trashed, trashCount: items.length };
+}
+
 test.describe('phone with the switch on', () => {
 	test.use({ ...PHONE, extraHTTPHeaders: ANOTHER_DEVICE });
 
-	// MO-7a: the start and "Mehr" in one case (before two, each with its own sign-in).
-	test('starts at the day plan with the bottom bar at the bottom, opens "Mehr" as a sheet with every other view and the pages "nur am PC", and keeps "Aufgaben" a tap away', async ({ page }) => {
+	// MO-7a: the start and "Mehr" in one case (before two, each with its own sign-in). MO-7b: the views
+	// under "Mehr" with lists ("Projekte", "Wiederholungen", "Papierkorb") in the same case.
+	test('starts at the day plan with the bottom bar at the bottom, opens "Mehr" as a sheet with every other view and the pages "nur am PC", shows projects, rules and the trash as cards with their pages and the bar of the selection, and keeps "Aufgaben" a tap away', async ({ page }) => {
+		const lists = await seedLists();
 		await switchOn(page);
 		const url = await signIn(page);
 		await expect(page).toHaveURL(`${url}/tagesplan`);
@@ -332,12 +406,15 @@ test.describe('phone with the switch on', () => {
 		const sheet = page.getByRole('dialog', { name: 'Mehr' });
 		await expect(sheet).toBeVisible();
 		const views = sheet.getByRole('navigation', { name: 'Ansichten' });
+		// The trash names its number since the lists of MO-7b put two tickets into it: the number the
+		// server lists, whole (no "2" of a "21").
+		expect(lists.trashCount).toBeGreaterThanOrEqual(lists.trashed.length);
 		await expect(views.getByRole('link')).toHaveText([
 			'Projekte',
 			'Wiederholungen',
 			'Kalender',
 			'Erledigte',
-			'Papierkorb'
+			new RegExp(`^\\s*Papierkorb ${lists.trashCount}\\b`)
 		]);
 		await expect(sheet.getByRole('link', { name: 'Neues Ticket' })).toBeVisible();
 		const settings = sheet.getByRole('navigation', { name: 'Einstellungen' });
@@ -367,6 +444,117 @@ test.describe('phone with the switch on', () => {
 		await expect(page).toHaveURL(new RegExp(`^${url}/kalender`));
 		await expect(sheet).toHaveCount(0);
 		await expect(bar.getByRole('button', { name: 'Mehr, aktuell: Kalender' })).toBeVisible();
+
+		// MO-7b on a small phone: "Projekte", "Wiederholungen" and "Papierkorb" two taps away, as cards
+		// without sideways scrolling, every target of 44 px, the title in at least 60 % of its card; a tap
+		// on a card opens its page, whose arrow goes back through the history without a second entry.
+		const small = SMALL_PHONE.viewport;
+		await page.setViewportSize(small);
+		const historyLength = () => page.evaluate(() => window.history.length);
+		/** A view under "Mehr": two taps. */
+		async function openUnderMore(name) {
+			await bar.getByRole('button', { name: /^Mehr/ }).tap();
+			await page.getByRole('dialog', { name: 'Mehr' }).getByRole('navigation', { name: 'Ansichten' }).getByRole('link', { name }).tap();
+			await expect(viewHeading(page, name)).toBeAttached();
+		}
+		async function expectCards(card) {
+			await expect(card).toBeVisible();
+			await expect(page.getByRole('table')).toHaveCount(0);
+			expect(await scrollsSideways(page)).toBe(false);
+			expect(await smallTargets(card.locator('xpath=..'))).toEqual([]);
+			expect(await smallTargets(page.locator('.phone-tools'))).toEqual([]);
+			expect(await cardTitleShare(card)).toBeGreaterThanOrEqual(0.6);
+		}
+		async function openAndBack(card, name, back, list) {
+			const start = await historyLength();
+			await card.locator('.card-meta').tap();
+			const panel = page.getByRole('complementary', { name });
+			await expectPageOf(panel, small);
+			expect(await scrollsSideways(page)).toBe(false);
+			expect(await scrollsSidewaysInside(panel.locator('.body').first())).toBe(false);
+			expect(await smallTargets(panel)).toEqual([]);
+			const arrow = panel.getByRole('button', { name: back, exact: true });
+			await expectTarget(arrow);
+			await arrow.tap();
+			await expect(page).toHaveURL(list);
+			await expect(panel).toHaveCount(0);
+			expect(await historyLength()).toBe(start + 1);
+		}
+
+		await openUnderMore('Projekte');
+		await expect(page).toHaveURL(`${url}/projekte`);
+		const projectCard = (name) => page.locator('li[data-project-row]').filter({ has: page.getByRole('link', { name, exact: true }) });
+		await expectCards(projectCard(lists.project));
+		await expect(projectCard(lists.sub)).toHaveClass(/child/);
+		// "Filter" opens the sheet with "Archivierte anzeigen" and the sort the cards have no headers for.
+		await page.locator('.phone-tools').getByRole('button', { name: 'Filter', exact: true }).tap();
+		const filters = page.getByRole('dialog', { name: 'Filter' });
+		await expectSheet(filters.locator('.frame'), small);
+		await expect(filters.getByRole('group', { name: 'Sortieren nach' })).toBeVisible();
+		expect(await smallTargets(filters)).toEqual([]);
+		await filters.getByRole('button', { name: /Projekte? anzeigen$/ }).tap();
+		await expect(filters).toHaveCount(0);
+		await openAndBack(projectCard(lists.project), lists.project, 'Zu den Projekten', `${url}/projekte`);
+
+		await openUnderMore('Wiederholungen');
+		const ruleCard = page.locator('li[data-rule-row]').filter({ hasText: lists.rule });
+		await expectCards(ruleCard);
+		await openAndBack(ruleCard, lists.rule, 'Zu den Wiederholungen', `${url}/wiederholungen`);
+
+		await openUnderMore('Papierkorb');
+		const trashCard = (title) => page.locator('li[data-trash-row]').filter({ hasText: title });
+		const [shelf, lamp] = lists.trashed;
+		await expectCards(trashCard(shelf));
+		await openAndBack(trashCard(lamp), lamp, 'Zum Papierkorb', `${url}/papierkorb`);
+		// "Auswählen": the bar of the selection, flat, fixed at the bottom right above the bottom bar,
+		// also below the short list; "Aktionen" locked until a card is chosen, then one level deeper.
+		await page.getByRole('button', { name: 'Weitere Aktionen der Liste' }).tap();
+		await page.getByRole('menu', { name: 'Aktionen der Liste' }).getByRole('menuitem', { name: 'Auswählen' }).tap();
+		const selection = page.locator('[data-selection-bar]');
+		await expect(selection).toHaveAccessibleName('0 Tickets ausgewählt');
+		await expectUncovered(selection.locator('.phone-row'), small);
+		const flat = await selection.boundingBox();
+		const tabs = await bar.boundingBox();
+		expect(flat.height).toBeLessThanOrEqual(80);
+		expect(flat.y + flat.height).toBeLessThanOrEqual(tabs.y);
+		expect(tabs.y - (flat.y + flat.height)).toBeLessThanOrEqual(12);
+		await expect(selection.getByRole('button', { name: 'Aktionen' })).toHaveAttribute('aria-disabled', 'true');
+		// Round 2 (P-2): Enter on the locked "Aktionen" names why in a flag, not only to a screen reader.
+		await selection.getByRole('button', { name: 'Aktionen' }).focus();
+		await page.keyboard.press('Enter');
+		const notes = page.getByRole('region', { name: 'Benachrichtigungen' });
+		await expect(notes.getByRole('listitem').filter({ hasText: 'Erst Tickets auswählen.' })).toBeVisible();
+		const closeNote = notes.getByRole('button', { name: 'Benachrichtigung schließen' });
+		while ((await closeNote.count()) > 0) await closeNote.first().click();
+		await expect(notes.getByRole('listitem')).toHaveCount(0);
+		await trashCard(shelf).locator('.card-meta').tap();
+		await expect(trashCard(shelf).getByRole('checkbox', { name: /auswählen$/ })).toBeChecked();
+		await expect(selection).toHaveAccessibleName('1 Ticket ausgewählt');
+		await selection.getByRole('button', { name: 'Aktionen' }).tap();
+		// Round 2 (P-3): opened, the focus is on the first action.
+		await expect(selection.getByRole('group', { name: 'Sammelaktionen' }).getByRole('button', { name: 'Wiederherstellen' })).toBeFocused();
+		await expect(selection.getByRole('group', { name: 'Sammelaktionen' }).getByRole('button', { name: 'Wiederherstellen' })).toBeVisible();
+		expect(await smallTargets(selection)).toEqual([]);
+		expect(await scrollsSideways(page)).toBe(false);
+		await selection.getByRole('button', { name: 'Fertig' }).tap();
+		await expect(selection).toHaveCount(0);
+		await expect(page.getByRole('checkbox', { name: /auswählen$/ })).toHaveCount(0);
+
+		// A large phone: the three lists keep to their width, the titles their share.
+		await page.setViewportSize({ width: 412, height: 915 });
+		await expect(trashCard(shelf)).toBeVisible();
+		expect(await scrollsSideways(page)).toBe(false);
+		expect(await cardTitleShare(trashCard(shelf))).toBeGreaterThanOrEqual(0.6);
+		for (const [name, card] of [
+			['Projekte', projectCard(lists.project)],
+			['Wiederholungen', ruleCard]
+		]) {
+			await openUnderMore(name);
+			await expect(card).toBeVisible();
+			expect(await scrollsSideways(page)).toBe(false);
+			expect(await cardTitleShare(card)).toBeGreaterThanOrEqual(0.6);
+		}
+		await page.setViewportSize(PHONE.viewport);
 
 		// A tap on "Aufgaben" leads there: the day plan only opens first at the start of the app.
 		await bar.getByRole('link', { name: 'Aufgaben' }).click();
@@ -682,6 +870,18 @@ test.describe('small phone with the switch on: "Aufgaben" (MO-3)', () => {
 		await list.getByRole('menuitem', { name: 'Auswählen' }).click();
 		const choosing = page.getByRole('group', { name: 'Auswahl' });
 		await expect(choosing).toBeVisible();
+		// MO-7b: the bar of the selection stands from the start, flat and fixed at the bottom right above
+		// the bottom bar, "Aktionen" locked while nothing is chosen.
+		const tabBar = page.getByRole('navigation', { name: 'Hauptnavigation' });
+		const chosen = page.locator('[data-selection-bar]');
+		await expect(chosen).toHaveAccessibleName('0 Tickets ausgewählt');
+		await expectUncovered(chosen.locator('.phone-row'), viewport);
+		const flat = await chosen.boundingBox();
+		const tabs = await tabBar.boundingBox();
+		expect(flat.height).toBeLessThanOrEqual(80);
+		expect(flat.y + flat.height).toBeLessThanOrEqual(tabs.y);
+		expect(tabs.y - (flat.y + flat.height)).toBeLessThanOrEqual(12);
+		await expect(chosen.getByRole('button', { name: 'Aktionen' })).toHaveAttribute('aria-disabled', 'true');
 		await expectTarget(cardOf(plants).locator('.check-target'));
 		await toCentre(cardOf(plants));
 		await cardOf(plants).locator('.check-target').tap();
@@ -693,11 +893,21 @@ test.describe('small phone with the switch on: "Aufgaben" (MO-3)', () => {
 		for (const title of [plants, taxes, invoice]) {
 			await expect(cardOf(title).getByRole('checkbox', { name: /auswählen$/ })).toBeChecked();
 		}
-		const chosen = page.getByRole('region', { name: /Tickets ausgewählt$/ });
-		await expect(chosen).toBeVisible();
+		// The bulk actions one level deeper, behind "Aktionen", each a target of 44 px.
+		await expect(chosen).toHaveAccessibleName('3 Tickets ausgewählt');
+		await chosen.getByRole('button', { name: 'Aktionen' }).click();
 		expect((await chosen.getByRole('button', { name: 'Erledigen' }).boundingBox()).height).toBeGreaterThanOrEqual(TARGET_MIN_PX);
+		expect(await smallTargets(chosen)).toEqual([]);
 		expect(await scrollsSideways(page)).toBe(false);
-		await choosing.getByRole('button', { name: 'Fertig' }).click();
+		// The keyboard covers nothing of it: with the focus in the search the bottom bar gives way, and in
+		// the window above a keyboard the row with "Fertig" stays in view and uncovered.
+		const typing = { width: 360, height: 500 };
+		await page.getByRole('searchbox', { name: 'Suche' }).focus();
+		await expect(tabBar).toBeHidden();
+		await page.setViewportSize(typing);
+		await expectUncovered(chosen.getByRole('button', { name: 'Fertig' }), typing);
+		await page.setViewportSize(viewport);
+		await chosen.getByRole('button', { name: 'Fertig' }).click();
 		await expect(choosing).toHaveCount(0);
 		await expect(chosen).toHaveCount(0);
 
@@ -805,10 +1015,8 @@ test.describe('small phone with the switch on: the ticket as a page (MO-4)', () 
 		expect(sendBox.y + sendBox.height).toBeLessThanOrEqual(barTop);
 		await send.click();
 		await expect(panel.getByText('Am Handy angesehen')).toBeVisible();
-		// The form gives the focus back to "Kommentar hinzufügen …" once the request ended (with the
-		// outbox a moment after the comment shows); only then the next field (MO-7a: before, the test
-		// could type into the tags first and lose the focus, also at 6c8d30f).
-		await expect(panel.getByRole('button', { name: 'Kommentar hinzufügen …' })).toBeFocused();
+		// No wait for the focus before the next field since MO-7b: the form takes the focus back only
+		// while it is still in the form (M-1), so typing into the tags right away keeps it there.
 
 		// The suggestions of the tags stay at their field, with options of 44 px.
 		const tags = panel.getByLabel('Tags', { exact: true });
@@ -1468,9 +1676,10 @@ test.describe('PC with the switch on', () => {
 	});
 
 	// MO-7a: the day plan (MO-2) and the inbox (MO-6) of the PC in one case (before two).
-	test('keeps the day plan and the inbox of the PC: arrows and handle, suggestions before the plan, the pool beside it; table, chips, bulk actions and the panel with × (MO-2, MO-6)', async ({ page }) => {
+	test('keeps the day plan and the inbox of the PC: arrows and handle, suggestions before the plan, the pool beside it; table, chips, bulk actions and the panel with ×; projects, rules and the trash as tables (MO-2, MO-6, MO-7b)', async ({ page }) => {
 		const [planned] = await seed([{ title: 'Rechnung bezahlen', planned: true }]);
 		const { mail } = await seedInbox();
+		await seedLists();
 		await switchOn(page);
 		await signIn(page);
 		await expect(viewHeading(page, 'Aufgaben')).toBeVisible();
@@ -1509,5 +1718,23 @@ test.describe('PC with the switch on', () => {
 		await expect(panel.locator('footer').getByRole('button', { name: 'Mit Ticket verknüpfen …' })).toBeVisible();
 		// The columns of the table fit themselves to the narrower list once the panel stands beside it.
 		await expect.poll(() => scrollsSideways(page)).toBe(false);
+
+		// MO-7b: "Projekte", "Wiederholungen" and "Papierkorb" keep the tables of the PC with "Spalten",
+		// no cards, and the bar of the selection above the table instead of at the bottom.
+		for (const [name, cards] of [
+			['Projekte', 'li[data-project-row]'],
+			['Wiederholungen', 'li[data-rule-row]'],
+			['Papierkorb', 'li[data-trash-row]']
+		]) {
+			await page.getByRole('navigation', { name: 'Ansicht' }).getByRole('link', { name: new RegExp(`^${name}`) }).click();
+			await expect(viewHeading(page, name)).toBeVisible();
+			await expect(page.getByRole('table')).toBeVisible();
+			await expect(page.locator(cards)).toHaveCount(0);
+			await expect(page.getByRole('button', { name: 'Spalten' })).toBeVisible();
+			expect(await scrollsSideways(page)).toBe(false);
+		}
+		await page.getByRole('checkbox', { name: 'Alle Tickets im Papierkorb auswählen' }).check();
+		await expect(page.getByRole('region', { name: /Tickets ausgewählt$/ }).getByRole('button', { name: 'Wiederherstellen' })).toBeVisible();
+		await expect(page.locator('[data-selection-bar]')).toHaveCount(0);
 	});
 });

@@ -14,6 +14,7 @@
 	import { getTrashStore } from '$lib/stores/trash.svelte';
 	import { trashHref } from '$lib/ticket-links';
 	import { TrashArea } from '$lib/trash-area.svelte';
+	import { followViewArrow } from '$lib/view-arrow.svelte';
 
 	// Preview of one ticket in the trash (/papierkorb/<record id>, ADR-0037 §9), read-only. It loads
 	// through the trash route and again when the trash changes (another tab restored or deleted it).
@@ -23,8 +24,13 @@
 	// help of a blocked ticket (ADR-0047) answers with the preview afterwards; a sub-task restored on
 	// its own leaves the preview of its group in place, and a choice its restore needs (target
 	// project) asks in the same inline question. In a household "Endgültig löschen …" needs the
-	// owner or the right "purge" (E7-3, ADR-0059 §6).
+	// owner or the right "purge" (E7-3, ADR-0059 §6). In the phone frame the preview is a page whose
+	// arrow goes back through the history when the list of the trash lies right before it (MO-7b).
 	const store = getTrashStore();
+	const arrow = followViewArrow(
+		() => 'trash',
+		() => trashHref()
+	);
 	const catalog = getCatalogStore();
 	const links = ticketLinks();
 	const trashArea = new TrashArea();
@@ -121,6 +127,8 @@
 		onpurge={trashArea.canPurge ? () => (asking = true) : null}
 		ondismissneed={dismissNeed}
 		onclose={() => goto(trashHref())}
+		backLabel={arrow.label}
+		onback={() => arrow.go()}
 	/>
 	<ConfirmDialog
 		open={asking}
@@ -135,7 +143,12 @@
 		</p>
 	</ConfirmDialog>
 {:else}
-	<Drawer labelledby="trash-missing" onclose={() => goto(trashHref())}>
+	<Drawer
+		labelledby="trash-missing"
+		onclose={() => goto(trashHref())}
+		backLabel={arrow.label}
+		onback={() => arrow.go()}
+	>
 		{#snippet context()}Papierkorb{/snippet}
 		{#if loading}
 			<h2 id="trash-missing" class="visually-hidden" tabindex="-1">Ticket im Papierkorb</h2>

@@ -41,12 +41,16 @@
 	// "Erledigen" and the status "Erledigt" ask "Vorhaben abschließen?" once when the chosen tickets
 	// hold open ongoing projects, with their number (VH-1); "Abbrechen" changes no ticket. The
 	// question about open sub-tasks follows after it.
+	// In the phone frame (MO-7b) the glass bar is the bar of "Auswählen" at the bottom: it stands from
+	// the start of "Auswählen", its actions behind "Aktionen", locked while nothing is chosen; after
+	// "Fertig" a result stands alone with "Ergebnis schließen" (`selecting` false, round 2).
 	let {
 		tickets,
 		store,
 		catalog,
 		openBlockingOf,
-		onclear
+		onclear,
+		selecting = true
 	}: {
 		/** The chosen tickets, in the order of the table. */
 		tickets: readonly TicketSummary[];
@@ -56,6 +60,8 @@
 		openBlockingOf: (id: string) => readonly TicketSummary[];
 		/** "Auswahl aufheben". */
 		onclear: () => void;
+		/** Phone frame: "Auswählen" is on (SelectionBar); false: only a running action or a result. */
+		selecting?: boolean;
 	} = $props();
 
 	type Dialog = 'due' | 'project' | 'tags' | 'complete' | 'delete';
@@ -146,7 +152,9 @@
 		? { total: store.progress.total, done: store.progress.done, text: progressText(store.progress) }
 		: null}
 	actionsShown={count > 0}
+	hint="Erst Tickets auswählen."
 	{onclear}
+	{selecting}
 	bind:bar
 	result={store.result && !busy ? resultList : undefined}
 >

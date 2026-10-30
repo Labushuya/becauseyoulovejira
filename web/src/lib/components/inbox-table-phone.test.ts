@@ -487,18 +487,28 @@ describe('the inbox as cards in the phone frame (MO-6)', () => {
 		);
 	});
 
+	// MO-7b: the bulk actions and "Fertig" moved into the bar of the selection at the bottom, shared
+	// with "Aufgaben" and "Papierkorb"; it stands from the start of "Auswählen", locked while nothing
+	// is chosen.
 	it('chooses with "Auswählen": a box on every new entry, a tap chooses, "Alle", the bulk actions and "Fertig"', async () => {
 		useWindow(true, true);
-		const { onbulk, onlink } = await setup();
+		const { onbulk, onlink, view } = await setup();
 		expect(screen.queryByRole('checkbox', { name: 'Eintrag „Artikel“ auswählen' })).toBeNull();
 
 		const menu = menuOf(screen.getByRole('button', { name: 'Weitere Aktionen der Liste' }));
 		await fireEvent.click(within(menu).getByRole('menuitem', { name: 'Auswählen', hidden: true }));
 		await tick();
 		const bar = screen.getByRole('group', { name: 'Auswahl' });
-		const convert = within(bar).getByRole('button', { name: 'Gesammelt umwandeln' });
-		expect(convert.getAttribute('aria-disabled')).toBe('true');
-		expect(within(bar).getByText('Erst Einträge auswählen.')).toBeTruthy();
+		expect(within(bar).queryByRole('button', { name: /^Gesammelt umwandeln/ })).toBeNull();
+		expect(within(bar).queryByRole('button', { name: 'Fertig' })).toBeNull();
+		const empty = screen.getByRole('region', { name: '0 Einträge ausgewählt' });
+		const locked = within(empty).getByRole('button', { name: 'Aktionen' });
+		expect(locked.getAttribute('aria-disabled')).toBe('true');
+		expect(
+			document.getElementById(locked.getAttribute('aria-describedby') ?? '')?.textContent
+		).toBe('Erst Einträge auswählen.');
+		const list = view.container.querySelector('.card-list') as HTMLElement;
+		expect(list.compareDocumentPosition(empty) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 		const box = (title: string) =>
 			screen.getByRole<HTMLInputElement>('checkbox', { name: `Eintrag „${title}“ auswählen` });
 		expect(box('Artikel').closest('label')?.classList.contains('check-target')).toBe(true);
@@ -508,9 +518,15 @@ describe('the inbox as cards in the phone frame (MO-6)', () => {
 		expect(box('Artikel').checked).toBe(true);
 		expect(mocks.goto).not.toHaveBeenCalled();
 		expect(card('Artikel').classList.contains('chosen')).toBe(true);
-		await fireEvent.click(within(bar).getByRole('button', { name: 'Gesammelt umwandeln (1)' }));
+		const chosen = screen.getByRole('region', { name: '1 Eintrag ausgewählt' });
+		await fireEvent.click(within(chosen).getByRole('button', { name: 'Aktionen' }));
+		await tick();
+		const actions = within(chosen).getByRole('group', { name: 'Sammelaktionen' });
+		await fireEvent.click(within(actions).getByRole('button', { name: 'Gesammelt umwandeln (1)' }));
 		expect(onbulk).toHaveBeenCalledOnce();
-		await fireEvent.click(within(bar).getByRole('button', { name: 'Mit Ticket verknüpfen … (1)' }));
+		await fireEvent.click(
+			within(actions).getByRole('button', { name: 'Mit Ticket verknüpfen … (1)' })
+		);
 		expect(onlink).toHaveBeenCalledOnce();
 
 		const all = within(bar).getByRole<HTMLInputElement>('checkbox', {
@@ -521,8 +537,13 @@ describe('the inbox as cards in the phone frame (MO-6)', () => {
 			['Rechnung September', 'Artikel', 'Milch kaufen'].every((title) => box(title).checked)
 		).toBe(true);
 
-		await fireEvent.click(within(bar).getByRole('button', { name: 'Fertig' }));
+		await fireEvent.click(
+			within(screen.getByRole('region', { name: '3 Einträge ausgewählt' })).getByRole('button', {
+				name: 'Fertig'
+			})
+		);
 		expect(screen.queryByRole('group', { name: 'Auswahl' })).toBeNull();
+		expect(screen.queryByRole('region', { name: /ausgewählt$/ })).toBeNull();
 		expect(screen.queryByRole('checkbox', { name: /auswählen$/ })).toBeNull();
 	});
 
