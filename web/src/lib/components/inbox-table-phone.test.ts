@@ -671,6 +671,23 @@ describe('several entries at once in the phone frame (EG-1)', () => {
 			['info', '„Wiederherstellen (1)“ geht nur mit Verbindung.']
 		]);
 	});
+
+	// Round 2 of EG-1 (review E-1).
+	it('ends "Auswählen" and empties the selection when another view is chosen (E-1)', async () => {
+		useWindow(true, true);
+		const { store } = await setup({ handled: GONE });
+		await choose('Artikel');
+		expect(screen.getByRole('region', { name: '1 Eintrag ausgewählt' })).toBeTruthy();
+		store.activate({ source: null, state: 'discarded' });
+		await vi.waitFor(() => expect(card('Alt eins')).toBeDefined());
+		// "Auswählen" ended with the view: no boxes on the discarded cards and no bar.
+		expect(card('Alt eins').querySelector('input[type="checkbox"]')).toBeNull();
+		expect(screen.queryByRole('region', { name: /ausgewählt$/ })).toBeNull();
+		store.activate({ source: null, state: 'new' });
+		await vi.waitFor(() => expect(card('Artikel')).toBeDefined());
+		expect(card('Artikel').querySelector('input[type="checkbox"]')).toBeNull();
+		expect(screen.queryByRole('region', { name: /ausgewählt$/ })).toBeNull();
+	});
 });
 
 describe('the inbox outside the phone frame stays the table (MO-6)', () => {

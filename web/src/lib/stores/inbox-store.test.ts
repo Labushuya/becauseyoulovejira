@@ -457,7 +457,8 @@ describe('several entries at once (EG-1)', () => {
 		expect(store.find(A.id)?.state).toBe('new');
 		expect(store.bulkResult).toEqual({
 			verb: 'verworfen',
-			failures: [{ id: A.id, title: A.title, reason: SERVER_FAILURE }],
+			// Since round 2 a failure keeps its request for "Details" (E-7, checked below).
+			failures: [{ id: A.id, title: A.title, reason: SERVER_FAILURE, problem: expect.any(Object) }],
 			skipped: []
 		});
 		expect(shown(flags)).toEqual([
@@ -521,7 +522,7 @@ describe('several entries at once (EG-1)', () => {
 		expect(store.find(B.id)?.state).toBe('new');
 		expect(store.bulkResult).toEqual({
 			verb: 'wiederhergestellt',
-			failures: [{ id: A.id, title: A.title, reason: SERVER_FAILURE }],
+			failures: [{ id: A.id, title: A.title, reason: SERVER_FAILURE, problem: expect.any(Object) }],
 			skipped: []
 		});
 		expect(shown(flags)).toEqual([
@@ -570,6 +571,128 @@ describe('several entries at once (EG-1)', () => {
 		expect(data.discard).toHaveBeenCalledTimes(2);
 		expect(store.bulkResult).toBeNull();
 		expect(flags.flags).toEqual([]);
+	});
+
+	// Round 2 of EG-1 (review E-2, E-3, E-4, E-7 and E-8).
+	const T3 = '2026-09-25 11:00:00.000Z';
+
+	it('restores the rest of a run when the chip "Quelle" changes meanwhile; only a deleted entry is skipped (E-2)', async () => {
+		const D = discarded(item('item00000000006'), T1);
+		const E = discarded(item('item00000000007'), T0);
+		const F = discarded(item('item00000000008'), T0);
+		const { store, data, flags } = setup();
+		data.listHandled.mockResolvedValueOnce({ items: [D, E, F], page: 1, hasMore: false });
+		store.activate({ source: null, state: 'discarded' });
+		await vi.waitFor(() => expect(store.handledLoad).toBe('ready'));
+		const first = deferred<InboxItemSummary>();
+		data.restore.mockReturnValueOnce(first.promise);
+		const run = store.restoreMany([entry(D), entry(E), entry(F)]);
+		// Meanwhile another source is chosen (the view loads anew, without these entries) and another
+		// tab deletes one of them.
+		store.activate({ source: 'mail', state: 'discarded' });
+		store.remove(F.id);
+		first.resolve(item(D.id, { updated: T2 }));
+		await run;
+		// The server decides on the unloaded one; the deleted one is named as before.
+		expect(data.restore.mock.calls).toEqual([[D.id], [E.id]]);
+		expect(store.bulkResult).toEqual({
+			verb: 'wiederhergestellt',
+			failures: [],
+			skipped: [{ id: F.id, title: F.title, reason: 'Nicht mehr verworfen.' }]
+		});
+		expect(shown(flags)).toEqual([
+			['success', '2 Einträge wiederhergestellt, 1 übersprungen.', undefined]
+		]);
+	});
+
+	it('keeps a result for its view only: another state drops it, another source does not (E-3)', async () => {
+		const { store } = setup();
+		store.activate({ source: null, state: 'new' });
+		await vi.waitFor(() => expect(store.state).toBe('ready'));
+		await store.discardMany([entry(A), { id: 'item00000000077', title: 'Weg' }]);
+		expect(store.bulkResult?.skipped).toHaveLength(1);
+		store.activate({ source: 'mail', state: 'new' });
+		expect(store.bulkResult?.skipped).toHaveLength(1);
+		store.activate({ source: 'mail', state: 'discarded' });
+		expect(store.bulkResult).toBeNull();
+	});
+
+	it('keeps no result of a run that ends in another view; its error flag then carries "Details" (E-3, E-7)', async () => {
+		const { store, data, flags } = setup();
+		store.activate({ source: null, state: 'new' });
+		await vi.waitFor(() => expect(store.state).toBe('ready'));
+		const first = deferred<InboxItemSummary>();
+		data.discard.mockReturnValueOnce(first.promise);
+		data.discard.mockRejectedValueOnce(new DataError('server'));
+		const run = store.discardMany([entry(A), entry(B)]);
+		store.activate({ source: null, state: 'converted' });
+		first.reject(new DataError('server'));
+		await run;
+		expect(data.discard).toHaveBeenCalledTimes(2);
+		expect(store.bulkResult).toBeNull();
+		// No "Die Gründe stehen bei der Auswahl.": no result stands; the flag offers the request.
+		expect(flags.flags.map((flag) => [flag.tone, flag.title, flag.description])).toEqual([
+			['error', 'Keiner der 2 Einträge wurde verworfen.', '']
+		]);
+		expect(flags.flags[0]?.problem).toEqual(expect.objectContaining({ source: 'client' }));
+	});
+
+	it('says "Nichts verworfen" in an info flag without "Rückgängig" when every entry was skipped (E-4)', async () => {
+		const { store, data, flags } = await mixed();
+		await store.discardMany([entry(GONE), entry(LINKED)]);
+		expect(data.discard).not.toHaveBeenCalled();
+		expect(shown(flags)).toEqual([['info', 'Nichts verworfen: 2 übersprungen.', undefined]]);
+		expect(store.canUndoBulk).toBe(false);
+	});
+
+	it('keeps the failed request of a failure for "Details", like one failed action (E-7)', async () => {
+		const { store, data } = setup();
+		await store.load();
+		data.discard.mockRejectedValueOnce(new DataError('server', { status: 500 }));
+		await store.discardMany([entry(A), entry(B)]);
+		expect(store.bulkResult?.failures).toEqual([
+			{
+				id: A.id,
+				title: A.title,
+				reason: expect.any(String),
+				problem: expect.objectContaining({
+					source: 'client',
+					outcome: expect.objectContaining({ status: 500 })
+				})
+			}
+		]);
+	});
+
+	it('skips in "Rückgängig" what was restored or linked meanwhile and leaves what was discarded before (E-8)', async () => {
+		const { store, data, flags } = await mixed();
+		await store.discardMany([entry(A), entry(B), entry(C), entry(GONE)]);
+		expect(store.bulkResult?.skipped).toEqual([
+			{ id: GONE.id, title: GONE.title, reason: 'Schon verworfen.' }
+		]);
+		// Meanwhile another tab restores A and links B to a ticket.
+		store.upsert({ ...A, updated: T3 });
+		store.upsert({
+			...B,
+			state: 'converted',
+			ticketId: 'tick00000000002',
+			handledAt: T3,
+			updated: T3
+		});
+		await store.undoDiscardMany();
+		expect(data.restore.mock.calls).toEqual([[C.id]]);
+		expect(store.find(GONE.id)?.state).toBe('discarded');
+		expect(store.find(B.id)?.state).toBe('converted');
+		expect(store.bulkResult).toEqual({
+			verb: 'wiederhergestellt',
+			failures: [],
+			skipped: [
+				{ id: A.id, title: A.title, reason: 'Schon im Eingang.' },
+				{ id: B.id, title: B.title, reason: 'Verknüpft, nicht verworfen.' }
+			]
+		});
+		expect(shown(flags)).toEqual([
+			['success', '1 Eintrag wiederhergestellt, 2 übersprungen.', undefined]
+		]);
 	});
 });
 

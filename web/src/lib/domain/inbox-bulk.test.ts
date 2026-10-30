@@ -4,9 +4,11 @@
 import { describe, expect, it } from 'vitest';
 import {
 	bulkFailureTitle,
+	bulkKindOf,
 	bulkOfflineText,
 	bulkProgressText,
 	bulkResultTitle,
+	bulkRunningText,
 	bulkSkipReason,
 	bulkSkippedTitle,
 	BULK_OFFLINE_HINT
@@ -54,5 +56,28 @@ describe('rules of several entries at once (EG-1)', () => {
 	it('names why an action is locked without a connection, like "Alle Kanäle jetzt abrufen"', () => {
 		expect(BULK_OFFLINE_HINT).toBe('Nur mit Verbindung');
 		expect(bulkOfflineText('Verwerfen (3)')).toBe('„Verwerfen (3)“ geht nur mit Verbindung.');
+	});
+
+	// Round 2 of EG-1 (review E-3, E-4 and E-5).
+	it('gives the views "Neu" and "Verworfen" their action and the others none', () => {
+		expect(bulkKindOf('new')).toBe('discard');
+		expect(bulkKindOf('discarded')).toBe('restore');
+		expect(bulkKindOf('converted')).toBeNull();
+		expect(bulkKindOf('all')).toBeNull();
+	});
+
+	it('says "Nichts verworfen" when every chosen entry was skipped', () => {
+		expect(bulkResultTitle({ total: 3, done: 0, skipped: 3, failed: 0 }, 'verworfen')).toBe(
+			'Nichts verworfen: 3 übersprungen.'
+		);
+		expect(bulkResultTitle({ total: 1, done: 0, skipped: 1, failed: 0 }, 'wiederhergestellt')).toBe(
+			'Nichts wiederhergestellt: 1 übersprungen.'
+		);
+	});
+
+	it('names why an action waits while a run goes on', () => {
+		expect(bulkRunningText('Gesammelt umwandeln (3)', 'Verwerfen')).toBe(
+			'„Gesammelt umwandeln (3)“ geht erst, wenn „Verwerfen“ fertig ist.'
+		);
 	});
 });

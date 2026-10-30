@@ -648,9 +648,10 @@ describe('several entries at once (EG-1)', () => {
 		await vi.waitFor(() => expect(data.discard).toHaveBeenCalledTimes(3));
 		const failures = await vi.waitFor(() => within(bar()).getByRole('alert'));
 		expect(within(failures).getByText('1 Eintrag wurde nicht verworfen:')).toBeTruthy();
-		expect(within(failures).getByRole('listitem').textContent?.trim()).toBe(
-			`„Artikel“: ${SERVER_FAILURE}`
-		);
+		// The item holds "Details" of the request besides the reason since round 2 (E-7).
+		expect(
+			within(within(failures).getByRole('listitem')).getByText(`„Artikel“: ${SERVER_FAILURE}`)
+		).toBeTruthy();
 		// The failed entry stays, still chosen, for another try.
 		expect(box('Artikel').checked).toBe(true);
 		expect(screen.getByRole('button', { name: 'Verwerfen (1)' })).toBeTruthy();
@@ -669,9 +670,8 @@ describe('several entries at once (EG-1)', () => {
 		const undone = await vi.waitFor(() =>
 			within(within(bar()).getByRole('alert')).getByText('1 Eintrag wurde nicht wiederhergestellt:')
 		);
-		expect(undone.closest('[role="alert"]')?.querySelector('li')?.textContent?.trim()).toBe(
-			`„Milch kaufen“: ${SERVER_FAILURE}`
-		);
+		const undoneItem = undone.closest('[role="alert"]')?.querySelector('li') as HTMLElement;
+		expect(within(undoneItem).getByText(`„Milch kaufen“: ${SERVER_FAILURE}`)).toBeTruthy();
 		await vi.waitFor(() =>
 			expect(screen.getByRole('link', { name: 'Rechnung September' })).toBeTruthy()
 		);
@@ -736,6 +736,167 @@ describe('several entries at once (EG-1)', () => {
 		expect(
 			screen.getByRole('button', { name: 'Gesammelt umwandeln (1)' }).hasAttribute('aria-disabled')
 		).toBe(false);
+	});
+
+	// Round 2 of EG-1 (review E-1, E-3, E-5 and E-7).
+	const caption = () => screen.getByRole('table').querySelector('caption')?.textContent;
+
+	it('empties the selection when another view is chosen (E-1)', async () => {
+		const { store } = setup();
+		await table();
+		await fireEvent.click(box('Milch kaufen'));
+		expect(screen.getByRole('button', { name: 'Verwerfen (1)' })).toBeTruthy();
+		store.activate({ source: null, state: 'discarded' });
+		await vi.waitFor(() =>
+			expect(caption()).toBe('Eingang · verworfen, zuletzt verworfene zuerst')
+		);
+		expect(screen.getByRole('button', { name: 'Wiederherstellen' })).toBeTruthy();
+		store.activate({ source: null, state: 'new' });
+		await vi.waitFor(() => expect(caption()).toBe('Eingang · neu, neueste zuerst'));
+		expect(box('Milch kaufen').checked).toBe(false);
+		expect(screen.getByRole('button', { name: 'Verwerfen' }).getAttribute('aria-disabled')).toBe(
+			'true'
+		);
+	});
+
+	it('drops a discarded entry from the selection once it leaves the view, by its row action or in another tab (E-1)', async () => {
+		const gone = [
+			item('item00000000007', {
+				title: 'Alt eins',
+				state: 'discarded',
+				handledAt: '2026-09-21 10:00:00.000Z'
+			}),
+			item('item00000000008', {
+				title: 'Alt zwei',
+				state: 'discarded',
+				handledAt: '2026-09-20 10:00:00.000Z'
+			})
+		];
+		const { store } = setup({ query: { source: null, state: 'discarded' }, handled: gone });
+		await table();
+		await fireEvent.click(box('Alt eins'));
+		await fireEvent.click(box('Alt zwei'));
+		// "Wiederherstellen" of its row brings "Alt eins" back to "Neu"; another tab restores "Alt zwei".
+		await fireEvent.click(screen.getByRole('button', { name: 'Wiederherstellen: „Alt eins“' }));
+		await vi.waitFor(() =>
+			expect(screen.queryByRole('link', { name: /Alt eins|Eintrag 7/ })).toBeNull()
+		);
+		store.upsert({
+			...gone[1]!,
+			state: 'new',
+			handledAt: null,
+			updated: '2026-09-25 11:00:00.000Z'
+		});
+		await vi.waitFor(() => expect(screen.queryByRole('link', { name: 'Alt zwei' })).toBeNull());
+		// Both come back discarded from another tab: neither is chosen any more.
+		store.upsert({
+			...gone[0]!,
+			handledAt: '2026-09-25 12:00:00.000Z',
+			updated: '2026-09-25 12:00:00.000Z'
+		});
+		store.upsert({
+			...gone[1]!,
+			handledAt: '2026-09-25 12:30:00.000Z',
+			updated: '2026-09-25 12:30:00.000Z'
+		});
+		await vi.waitFor(() => expect(screen.getByRole('link', { name: 'Alt zwei' })).toBeTruthy());
+		expect(box('Alt eins').checked).toBe(false);
+		expect(box('Alt zwei').checked).toBe(false);
+		expect(
+			screen.getByRole('button', { name: 'Wiederherstellen' }).getAttribute('aria-disabled')
+		).toBe('true');
+	});
+
+	it('drops a new entry from the selection once it is converted or discarded elsewhere (E-1)', async () => {
+		const { store } = setup();
+		await table();
+		await fireEvent.click(box('Milch kaufen'));
+		await fireEvent.click(box('Artikel'));
+		await fireEvent.click(box('Rechnung September'));
+		// "Umwandeln" in the panel converts "Milch kaufen"; another tab discards "Artikel".
+		store.markConverted(A.id, 'tick00000000009', '2026-09-25 10:00:00.000Z');
+		store.upsert({
+			...C,
+			state: 'discarded',
+			handledAt: '2026-09-25 10:00:00.000Z',
+			updated: '2026-09-25 10:00:00.000Z'
+		});
+		await vi.waitFor(() => expect(screen.queryByRole('link', { name: 'Artikel' })).toBeNull());
+		// Both come back new (released, restored in another tab): neither is chosen any more.
+		store.upsert({ ...A, updated: '2026-09-25 11:00:00.000Z' });
+		store.upsert({ ...C, updated: '2026-09-25 11:00:00.000Z' });
+		await vi.waitFor(() => expect(screen.getByRole('link', { name: 'Artikel' })).toBeTruthy());
+		expect(box('Milch kaufen').checked).toBe(false);
+		expect(box('Artikel').checked).toBe(false);
+		expect(box('Rechnung September').checked).toBe(true);
+		expect(screen.getByRole('button', { name: 'Verwerfen (1)' })).toBeTruthy();
+	});
+
+	it('shows a result only in its view: another view drops it (E-3)', async () => {
+		const { store, data } = setup();
+		await table();
+		data.discard.mockRejectedValueOnce(new DataError('server'));
+		await fireEvent.click(box('Milch kaufen'));
+		await fireEvent.click(screen.getByRole('button', { name: 'Verwerfen (1)' }));
+		await vi.waitFor(() => expect(within(bar()).getByRole('alert')).toBeTruthy());
+		store.activate({ source: null, state: 'converted' });
+		await vi.waitFor(() =>
+			expect(caption()).toBe('Eingang · verknüpft, zuletzt verknüpfte zuerst')
+		);
+		expect(screen.queryByRole('region', { name: /ausgewählt$/ })).toBeNull();
+		store.activate({ source: null, state: 'new' });
+		await vi.waitFor(() => expect(caption()).toBe('Eingang · neu, neueste zuerst'));
+		expect(screen.queryByRole('region', { name: /ausgewählt$/ })).toBeNull();
+	});
+
+	it('keeps every bulk action locked while a run goes on, with the progress as reason and a flag on a click or Enter (E-5)', async () => {
+		const onlink = vi.fn();
+		const { data, onbulk, flags } = setup({ onlink });
+		await table();
+		await fireEvent.click(
+			screen.getByRole('checkbox', { name: 'Alle angezeigten Einträge auswählen' })
+		);
+		const first = deferred<InboxItemSummary>();
+		data.discard.mockReturnValueOnce(first.promise);
+		await fireEvent.click(screen.getByRole('button', { name: 'Verwerfen (3)' }));
+		const progress = within(bar()).getByText('Verwerfen: 0 von 3 Einträgen');
+		expect(progress.id).not.toBe('');
+		for (const name of [
+			'Gesammelt umwandeln (3)',
+			'Mit Ticket verknüpfen … (3)',
+			'Verwerfen (3)'
+		]) {
+			const button = screen.getByRole('button', { name });
+			expect(button.getAttribute('aria-disabled')).toBe('true');
+			// A button, not disabled: Enter reaches it and is a click in the browser.
+			expect(button.hasAttribute('disabled')).toBe(false);
+			expect(button.getAttribute('aria-describedby')).toBe(progress.id);
+			await fireEvent.click(button);
+		}
+		expect(onbulk).not.toHaveBeenCalled();
+		expect(onlink).not.toHaveBeenCalled();
+		expect(data.discard).toHaveBeenCalledOnce();
+		expect(flags.flags.map((flag) => [flag.tone, flag.title])).toEqual([
+			['info', '„Verwerfen (3)“ geht erst, wenn „Verwerfen“ fertig ist.'],
+			['info', '„Mit Ticket verknüpfen … (3)“ geht erst, wenn „Verwerfen“ fertig ist.'],
+			['info', '„Gesammelt umwandeln (3)“ geht erst, wenn „Verwerfen“ fertig ist.']
+		]);
+		first.resolve({ ...B, state: 'discarded', updated: '2026-09-25 09:00:00.000Z' });
+		await vi.waitFor(() => expect(data.discard).toHaveBeenCalledTimes(3));
+	});
+
+	it('offers "Details" of a failed request in the result, like one failed action (E-7)', async () => {
+		const { data } = setup();
+		await table();
+		data.discard.mockRejectedValueOnce(new DataError('server'));
+		await fireEvent.click(box('Milch kaufen'));
+		await fireEvent.click(screen.getByRole('button', { name: 'Verwerfen (1)' }));
+		const failures = await vi.waitFor(() => within(bar()).getByRole('alert'));
+		const failure = within(failures).getByRole('listitem');
+		expect(within(failure).getByText(`„Milch kaufen“: ${SERVER_FAILURE}`)).toBeTruthy();
+		const details = within(failure).getByRole('button', { name: /^Details/ });
+		await fireEvent.click(details);
+		expect(details.getAttribute('aria-expanded')).toBe('true');
 	});
 });
 
