@@ -4,9 +4,19 @@
 // (stores/inbox.svelte.ts) runs the entries one after the other through the Record API; there is no
 // batch API (ADR-0014 §4).
 
-import type { InboxState } from './inbox';
+import type { InboxState, InboxView } from './inbox';
+import type { ProblemEntry } from './problems';
 
 export type InboxBulkKind = 'discard' | 'restore';
+
+/**
+ * The bulk action of a view: "Verwerfen (n)" in "Neu", "Wiederherstellen (n)" in "Verworfen"; the
+ * views "Verknüpft" and "Alle" have no selection, so neither a progress nor a result stands there.
+ */
+export function bulkKindOf(view: InboxView): InboxBulkKind | null {
+	if (view === 'new') return 'discard';
+	return view === 'discarded' ? 'restore' : null;
+}
 
 /** Name of the action on its button and in the progress. */
 export const BULK_LABELS: Readonly<Record<InboxBulkKind, string>> = Object.freeze({
@@ -34,9 +44,10 @@ export const BULK_SKIP_REASONS = Object.freeze({
 
 /**
  * Why an action leaves a chosen entry out, or null when it applies. `state` is the state the store
- * knows now (it may have changed since the choice, e.g. in another tab); null: the store does not
- * know the entry any more. It holds every new entry and the loaded discarded ones of the view, so an
- * unknown entry is no longer new, or no longer discarded.
+ * knows now (it may have changed since the choice, e.g. in another tab); null: the entry is gone. The
+ * store holds every new entry, so for "Verwerfen" an unknown entry is no longer new; "Wiederherstellen"
+ * sends one that is only no longer loaded (another view or source, the server decides) and names only
+ * one deleted meanwhile.
  */
 export function bulkSkipReason(kind: InboxBulkKind, state: InboxState | null): string | null {
 	if (state === null) return kind === 'discard' ? 'Nicht mehr neu.' : 'Nicht mehr verworfen.';
@@ -54,6 +65,8 @@ export interface InboxBulkEntry {
 /** An entry the action left out or could not change, with the reason. */
 export interface InboxBulkProblem extends InboxBulkEntry {
 	reason: string;
+	/** The failed request behind a failure, for "Details" (FP-1, ADR-0071); none for a skipped entry. */
+	problem?: ProblemEntry;
 }
 
 /** Result of the last run, shown in the bar of the selection until the next one or "Ergebnis schließen". */
@@ -93,13 +106,17 @@ export function bulkProgressText(progress: InboxBulkProgress): string {
 
 /**
  * Title of the flag after a run: "2 Einträge verworfen, 1 übersprungen, 1 fehlgeschlagen.", or, when
- * every request failed, "Keiner der 2 Einträge wurde verworfen." (like the trash).
+ * every request failed, "Keiner der 2 Einträge wurde verworfen." (like the trash), and when every
+ * chosen entry was skipped "Nichts verworfen: 3 übersprungen." (like "Nichts übertragen: …").
  */
 export function bulkResultTitle(counts: InboxBulkCounts, verb: string): string {
 	if (counts.done === 0 && counts.failed > 0) {
 		return counts.total === 1
 			? `Der Eintrag wurde nicht ${verb}.`
 			: `Keiner der ${counts.total} Einträge wurde ${verb}.`;
+	}
+	if (counts.done === 0 && counts.skipped > 0) {
+		return `Nichts ${verb}: ${counts.skipped} übersprungen.`;
 	}
 	const parts = [`${entryCount(counts.done)} ${verb}`];
 	if (counts.skipped > 0) parts.push(`${counts.skipped} übersprungen`);
@@ -126,4 +143,12 @@ export const BULK_OFFLINE_HINT = 'Nur mit Verbindung';
 /** The flag of a tap or Enter on a locked action: "„Verwerfen (3)“ geht nur mit Verbindung.". */
 export function bulkOfflineText(label: string): string {
 	return `„${label}“ geht nur mit Verbindung.`;
+}
+
+/**
+ * The flag of a click or Enter on a bulk action while a run goes on (the progress names it):
+ * "„Gesammelt umwandeln (3)“ geht erst, wenn „Verwerfen“ fertig ist.".
+ */
+export function bulkRunningText(label: string, running: string): string {
+	return `„${label}“ geht erst, wenn „${running}“ fertig ist.`;
 }
