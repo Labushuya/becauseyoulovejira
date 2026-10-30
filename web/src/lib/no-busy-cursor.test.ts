@@ -148,7 +148,13 @@ describe('busy regions', () => {
 
 	it('marks the selection bar busy only while a bulk action runs', async () => {
 		const { rerender } = render(SelectionBar, {
-			props: { countText: '3 Tickets ausgewählt', onclear: () => undefined, actions }
+			// The hint is required since MO-7c1 (Q-3).
+			props: {
+				countText: '3 Tickets ausgewählt',
+				hint: 'Erst Tickets auswählen.',
+				onclear: () => undefined,
+				actions
+			}
 		});
 		const bar = screen.getByRole('region', { name: '3 Tickets ausgewählt' });
 		expect(bar.getAttribute('aria-busy')).toBeNull();

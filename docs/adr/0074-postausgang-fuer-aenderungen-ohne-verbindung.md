@@ -740,3 +740,11 @@ Mit dem Paket MO-7a der Handy-Ansicht ([ADR-0073](0073-smartphone-layout.md) Nac
 ### 4. Tests
 
 - Vitest: `offline-components.test.ts` (Region ohne `tabindex`, Wechsel von Fenster oder Tab für Überschrift, `main` und Region), `routes/(app)/app-layout.test.ts` (`main` ohne `tabindex`), `offline/outbox-of4b-r2.test.ts` und `offline-components-of4b.test.ts` (L-1), `domain/offline-comment.test.ts` (L-3), `channels/github-repo-picker.test.ts` (neu), `einstellungen/hilfe/help-page.test.ts` (Abschnitt und Sprungmarke; die Liste der Sprungmarken um „Ohne Verbindung“ ergänzt). Smoke: das `tabindex` der Hinweisregion vor und nach „Schließen“ im Fall „keeps a check mark without a connection …“.
+
+## Ergänzung (2026-10-30, MO-7c1): Sammelaktionen des Eingangs nur mit Verbindung
+
+Mit dem Paket MO-7c1 ([ADR-0073](0073-smartphone-layout.md) Nachtrag MO-7c1, [ADR-0014](0014-datenmodell-eingang.md) Nachtrag EG-1). Nur Oberfläche, Tests und Doku: nach dem Build F5, kein Neustart.
+
+- Ohne Verbindung (derselbe Zustand wie bei „Alle Kanäle jetzt abrufen“, OF-3) sind alle Sammelaktionen des Eingangs gesperrt statt weg: „Gesammelt umwandeln (n)“, „Mit Ticket verknüpfen … (n)“, „Verwerfen (n)“ und „Wiederherstellen (n)“, je mit „Nur mit Verbindung“ und dem Info-Flag „„… (n)“ geht nur mit Verbindung.“ bei Tipp oder Enter. Der Postausgang merkt keine davon; sie sind keine neuen Arten von Änderungen.
+- Die Hilfe „Ohne Verbindung“ nennt sie unter „Was nur mit Verbindung geht“ als eigenen Punkt: „Die Sammelaktionen im Eingang, „Gesammelt umwandeln (3)“, „Mit Ticket verknüpfen … (3)“, „Verwerfen (3)“ und „Wiederherstellen (3)“: ohne Verbindung gesperrt, mit „Nur mit Verbindung“.“ Einzelnes Umwandeln und Verwerfen im Eingang bleibt unter „Alles andere“ (abgelehnt, nicht gesperrt).
+- Tests: `help-page.test.ts` („names the bulk actions of the inbox among what goes only with a connection (MO-7c1)“, am Stand `c9ff4e2` rot), die Sperre in `inbox-table.test.ts` und `inbox-table-phone.test.ts`. Manifest BYL-E6-2244 und BYL-E6-2245.

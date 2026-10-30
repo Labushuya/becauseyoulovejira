@@ -672,6 +672,35 @@ describe('several entries at once in the phone frame (EG-1)', () => {
 		]);
 	});
 
+	// MO-7c1: the other bulk actions of the view "Neu" behind "Aktionen" are locked the same way.
+	it('locks "Gesammelt umwandeln (n)" and "Mit Ticket verknüpfen … (n)" without a connection as well (MO-7c1)', async () => {
+		useWindow(true, true);
+		const { onbulk, onlink, flags } = await setup({ offline: true });
+		await choose('Artikel');
+		const actions = await actionsOf(screen.getByRole('region', { name: '1 Eintrag ausgewählt' }));
+		for (const name of [
+			'Gesammelt umwandeln (1)',
+			'Mit Ticket verknüpfen … (1)',
+			'Verwerfen (1)'
+		]) {
+			const button = within(actions).getByRole('button', { name });
+			expect(button.getAttribute('aria-disabled'), name).toBe('true');
+			expect(button.hasAttribute('disabled'), name).toBe(false);
+			expect(
+				document.getElementById(button.getAttribute('aria-describedby') ?? '')?.textContent,
+				name
+			).toBe('Nur mit Verbindung');
+			await fireEvent.click(button);
+		}
+		expect(onbulk).not.toHaveBeenCalled();
+		expect(onlink).not.toHaveBeenCalled();
+		expect(flags.flags.map((flag) => [flag.tone, flag.title])).toEqual([
+			['info', '„Verwerfen (1)“ geht nur mit Verbindung.'],
+			['info', '„Mit Ticket verknüpfen … (1)“ geht nur mit Verbindung.'],
+			['info', '„Gesammelt umwandeln (1)“ geht nur mit Verbindung.']
+		]);
+	});
+
 	// Round 2 of EG-1 (review E-1).
 	it('ends "Auswählen" and empties the selection when another view is chosen (E-1)', async () => {
 		useWindow(true, true);

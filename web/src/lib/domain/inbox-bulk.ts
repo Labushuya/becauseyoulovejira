@@ -129,6 +129,19 @@ export function bulkFailureTitle(count: number, verb: string): string {
 	return count === 1 ? `1 Eintrag wurde nicht ${verb}:` : `${count} Einträge wurden nicht ${verb}:`;
 }
 
+/**
+ * The reason of a flag whose result does not stand at the selection (MO-7c1, F-1): the first failure
+ * with its entry, and how many follow, e.g. "„Artikel“: Der Server … Dazu 1 weiterer Fehler.".
+ */
+export function bulkFailureNote(failures: readonly InboxBulkProblem[]): string {
+	const [first] = failures;
+	if (first === undefined) return '';
+	const rest = failures.length - 1;
+	const more =
+		rest === 0 ? '' : rest === 1 ? ' Dazu 1 weiterer Fehler.' : ` Dazu ${rest} weitere Fehler.`;
+	return `„${first.title}“: ${first.reason}${more}`;
+}
+
 /** Head of the skipped entries of the result: "2 Einträge übersprungen:". */
 export function bulkSkippedTitle(count: number): string {
 	return `${entryCount(count)} übersprungen:`;

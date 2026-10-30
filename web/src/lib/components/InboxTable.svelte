@@ -45,6 +45,7 @@
 	import type { TicketSummary } from '$lib/domain/ticket';
 	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 	import { rowMenus } from '$lib/overlay/context-menu';
+	import { keepFocusAtBar } from '$lib/selection-focus';
 	import { getColumnPrefs } from '$lib/stores/column-prefs.svelte';
 	import { findConnectionNames } from '$lib/stores/connection-names.svelte';
 	import type { FlagSink } from '$lib/stores/flags.svelte';
@@ -121,7 +122,9 @@
 	// on or a result stands, in the phone frame in the bar at the bottom. Its flag offers "Rückgängig"
 	// for the discarded ones. The focus stays on the button, in the phone frame it goes back into the
 	// bar. Without a connection (`offline`, OF-3) both stay, locked: `aria-disabled`, "Nur mit
-	// Verbindung" beside them, and a tap or Enter names it in a flag. Round 2 (after the review): the
+	// Verbindung" beside them, and a tap or Enter names it in a flag; since MO-7c1 "Gesammelt umwandeln
+	// (n)" and "Mit Ticket verknüpfen … (n)" as well, and "Ergebnis schließen" leaves the focus in the
+	// bar or on the heading (lib/selection-focus.ts). Round 2 (after the review): the
 	// selection belongs to its view, so another view empties it (and ends "Auswählen"), and an entry
 	// that leaves the state of the view drops out; progress and result stand only in the views with a
 	// selection; while a run goes on, every bulk action on the PC names the progress as its reason and
@@ -182,8 +185,9 @@
 		 */
 		syncAll?: SyncAllStore | null;
 		/**
-		 * The connection is missing (OF-3, the state of the outbox): "Verwerfen (n)" and
-		 * "Wiederherstellen (n)" stay, locked, and say why (EG-1).
+		 * The connection is missing (OF-3, the state of the outbox): every bulk action stays, locked, and
+		 * says why ("Verwerfen (n)" and "Wiederherstellen (n)" since EG-1, "Gesammelt umwandeln (n)" and
+		 * "Mit Ticket verknüpfen … (n)" since MO-7c1).
 		 */
 		offline?: boolean;
 		/** Further ways into the inbox under the chips (drop zone for files, package 8). */
@@ -403,6 +407,27 @@
 		if (phone && bulkBar && !bulkBar.contains(document.activeElement)) {
 			bulkBar.querySelector<HTMLElement>('button:not([disabled]), [tabindex]')?.focus();
 		}
+	}
+
+	/**
+	 * "Gesammelt umwandeln (n)" and "Mit Ticket verknüpfen … (n)": while a run goes on or without a
+	 * connection they only name why (MO-7c1, like "Verwerfen (n)" of EG-1), else they start.
+	 */
+	function startBulk(label: string, start: () => void) {
+		if (chosen.length === 0 || lockedByRun(label)) return;
+		if (offline) {
+			flags.show({ tone: 'info', title: bulkOfflineText(label) });
+			return;
+		}
+		start();
+	}
+
+	/** "Ergebnis schließen": the focus stays in the bar or goes to the heading (MO-7c1, Q-1). */
+	async function closeBulkResult() {
+		const away = heading;
+		store.dismissBulkResult();
+		await tick();
+		keepFocusAtBar(bulkBar, away);
 	}
 
 	/**
@@ -965,20 +990,22 @@
 
 <!-- "Gesammelt umwandeln", "Mit Ticket verknüpfen …" and "Verwerfen (n)" for the chosen new entries;
      "Wiederherstellen (n)" for the chosen discarded ones (EG-1). While a run goes on, all wait and
-     name the progress as their reason (EG-1 round 2). -->
+     name the progress as their reason (EG-1 round 2). Without a connection every one of them stays,
+     locked, and names why ("Verwerfen (n)" and "Wiederherstellen (n)" since EG-1, "Gesammelt
+     umwandeln (n)" and "Mit Ticket verknüpfen … (n)" since MO-7c1). -->
 {#snippet bulkButtons()}
 	{@const count = chosen.length > 0 ? ` (${chosen.length})` : ''}
 	{@const describedBy = chosen.length === 0 ? ids.bulkHint : bulkRunning ? ids.progress : undefined}
+	{@const locked = chosen.length > 0 && offline}
 	{#if showsNew}
 		{@const convertLabel = `Gesammelt umwandeln${count}`}
 		<button
 			class="bulk"
 			type="button"
-			aria-disabled={chosen.length === 0 || bulkRunning ? 'true' : undefined}
-			aria-describedby={describedBy}
-			onclick={() => {
-				if (chosen.length > 0 && !lockedByRun(convertLabel)) onbulk();
-			}}
+			aria-disabled={chosen.length === 0 || locked || bulkRunning ? 'true' : undefined}
+			aria-describedby={describedBy ?? (locked ? ids.offlineHint : undefined)}
+			title={locked ? BULK_OFFLINE_HINT : undefined}
+			onclick={() => startBulk(convertLabel, onbulk)}
 		>
 			{convertLabel}
 		</button>
@@ -988,11 +1015,10 @@
 			<button
 				class="bulk"
 				type="button"
-				aria-disabled={chosen.length === 0 || bulkRunning ? 'true' : undefined}
-				aria-describedby={describedBy}
-				onclick={() => {
-					if (chosen.length > 0 && !lockedByRun(linkLabel)) link();
-				}}
+				aria-disabled={chosen.length === 0 || locked || bulkRunning ? 'true' : undefined}
+				aria-describedby={describedBy ?? (locked ? ids.offlineHint : undefined)}
+				title={locked ? BULK_OFFLINE_HINT : undefined}
+				onclick={() => startBulk(linkLabel, link)}
 			>
 				{linkLabel}
 			</button>
@@ -1001,7 +1027,6 @@
 	{#if bulkKind !== null}
 		{@const kind = bulkKind}
 		{@const label = `${BULK_LABELS[kind]}${count}`}
-		{@const locked = chosen.length > 0 && offline}
 		<button
 			class="bulk"
 			type="button"
@@ -1052,11 +1077,7 @@
 				</ul>
 			</SectionMessage>
 		{/if}
-		<button
-			class="text-button result-close"
-			type="button"
-			onclick={() => store.dismissBulkResult()}
-		>
+		<button class="text-button result-close" type="button" onclick={() => void closeBulkResult()}>
 			Ergebnis schließen
 		</button>
 	{/if}

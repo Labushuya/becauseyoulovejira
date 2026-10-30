@@ -732,10 +732,11 @@ describe('several entries at once (EG-1)', () => {
 		expect(flags.flags.map((flag) => [flag.tone, flag.title])).toEqual([
 			['info', '„Verwerfen (1)“ geht nur mit Verbindung.']
 		]);
-		// The other bulk actions stay as they were (EG-1 locks only its own).
+		// EG-1 locked only its own; since MO-7c1 the other bulk actions are locked as well (see "bulk
+		// actions of the inbox after MO-7c1").
 		expect(
-			screen.getByRole('button', { name: 'Gesammelt umwandeln (1)' }).hasAttribute('aria-disabled')
-		).toBe(false);
+			screen.getByRole('button', { name: 'Gesammelt umwandeln (1)' }).getAttribute('aria-disabled')
+		).toBe('true');
 	});
 
 	// Round 2 of EG-1 (review E-1, E-3, E-5 and E-7).
@@ -897,6 +898,72 @@ describe('several entries at once (EG-1)', () => {
 		const details = within(failure).getByRole('button', { name: /^Details/ });
 		await fireEvent.click(details);
 		expect(details.getAttribute('aria-expanded')).toBe('true');
+	});
+});
+
+// MO-7c1: the other bulk actions of the inbox without a connection, and the focus after "Ergebnis
+// schließen" (Q-1 of the review of MO-7b).
+describe('bulk actions of the inbox after MO-7c1', () => {
+	const box = (title: string) =>
+		screen.getByRole<HTMLInputElement>('checkbox', { name: `Eintrag „${title}“ auswählen` });
+
+	it('locks "Gesammelt umwandeln (n)" and "Mit Ticket verknüpfen … (n)" without a connection and names why on a click or Enter', async () => {
+		const onlink = vi.fn();
+		const { onbulk, flags } = setup({ offline: true, onlink });
+		await table();
+		await fireEvent.click(box('Artikel'));
+		const hint = screen.getByText('Nur mit Verbindung');
+		for (const name of ['Gesammelt umwandeln (1)', 'Mit Ticket verknüpfen … (1)']) {
+			const button = screen.getByRole('button', { name });
+			expect(button.getAttribute('aria-disabled')).toBe('true');
+			// A button, not disabled: Enter reaches it and is a click in the browser.
+			expect(button.hasAttribute('disabled')).toBe(false);
+			expect(button.getAttribute('aria-describedby')).toBe(hint.id);
+			expect(button.getAttribute('title')).toBe('Nur mit Verbindung');
+			await fireEvent.click(button);
+		}
+		expect(onbulk).not.toHaveBeenCalled();
+		expect(onlink).not.toHaveBeenCalled();
+		expect(flags.flags.map((flag) => [flag.tone, flag.title])).toEqual([
+			['info', '„Mit Ticket verknüpfen … (1)“ geht nur mit Verbindung.'],
+			['info', '„Gesammelt umwandeln (1)“ geht nur mit Verbindung.']
+		]);
+	});
+
+	it('keeps both open with a connection', async () => {
+		const onlink = vi.fn();
+		const { onbulk } = setup({ onlink });
+		await table();
+		await fireEvent.click(box('Artikel'));
+		const convert = screen.getByRole('button', { name: 'Gesammelt umwandeln (1)' });
+		const link = screen.getByRole('button', { name: 'Mit Ticket verknüpfen … (1)' });
+		expect(convert.hasAttribute('aria-disabled')).toBe(false);
+		expect(link.hasAttribute('aria-disabled')).toBe(false);
+		expect(screen.queryByText('Nur mit Verbindung')).toBeNull();
+		await fireEvent.click(convert);
+		await fireEvent.click(link);
+		expect(onbulk).toHaveBeenCalledOnce();
+		expect(onlink).toHaveBeenCalledOnce();
+	});
+
+	it('puts the focus on the heading after "Ergebnis schließen" once the bar is gone (Q-1)', async () => {
+		const { data } = setup();
+		await table();
+		data.discard.mockRejectedValueOnce(new DataError('server'));
+		await fireEvent.click(box('Milch kaufen'));
+		await fireEvent.click(screen.getByRole('button', { name: 'Verwerfen (1)' }));
+		const bar = await vi.waitFor(() => screen.getByRole('region', { name: /ausgewählt$/ }));
+		await vi.waitFor(() => within(bar).getByRole('alert'));
+		const close = within(bar).getByRole('button', { name: 'Ergebnis schließen' });
+		close.focus();
+		await fireEvent.click(close);
+		await tick();
+		expect(screen.queryByRole('region', { name: /ausgewählt$/ })).toBeNull();
+		await vi.waitFor(() =>
+			expect(document.activeElement).toBe(
+				screen.getByRole('heading', { level: 2, name: 'Eingang' })
+			)
+		);
 	});
 });
 

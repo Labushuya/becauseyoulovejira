@@ -43,6 +43,15 @@
 // it back only while it is still in the form (M-1 of the review of MO-7a). Round 2 of MO-7b: Enter on
 // the locked "Aktionen" names why in a flag, opened the focus is on the first action, and "Mehr"
 // expects the number of the trash the server lists, as a whole number.
+// Since MO-7c1 (manifest BYL-E6-2239 ff.) without a case of its own, in the case of "Mehr": the login
+// page before the sign-in, "Erledigte" (entries of 44 px, the filters of 44 px, the title in at least
+// 60 % of its entry, a tap beside the link opens the ticket as a page with its arrow back), the help
+// with the parts about the keyboard folded, and the error page of an unknown address, each at 360 and
+// 412 px. Faster: the other cases open their page with the stored session instead of the login page
+// (a page of the app loaded anew, so the start stays the business of the case of the start), the
+// seeds share one sign-in through the API and create at once what does not depend on each other, the
+// overlays appear without movement except in the case of the overlays, and the flags close in one step
+// inside the page (Q-5 of the review of MO-7b).
 //
 // The phone stands for another device in the home network (header X-Byl-Test-Remote-Address of the
 // test hooks, only in instances of the harness), so the pages of the administrator are "nur am PC".
@@ -52,6 +61,11 @@ import { randomBytes } from 'node:crypto';
 import { expect, test } from '@playwright/test';
 import { BROWSER_STEP_MS } from '../support/timing.mjs';
 import { mobileInstance } from './instance.mjs';
+
+// Since MO-7c1 the overlays appear without movement (prefers-reduced-motion, ADR-0025 §2: the place
+// is the same, only the sliding and fading of about 200 ms each are gone); no check waits for them
+// any more. The case of the overlays (MO-1b) keeps the movement and checks the sheets after it.
+test.use({ reducedMotion: 'reduce' });
 
 const PHONE = {
 	viewport: { width: 390, height: 844 },
@@ -74,13 +88,44 @@ async function switchOn(page) {
 	await page.addInitScript(() => localStorage.setItem('byl-mobile-layout', 'on'));
 }
 
-/** Signs in on the login page; the app then opens its start page. */
-async function signIn(page) {
-	const { url, email, password } = mobileInstance();
-	await page.goto(`${url}/login`);
+/** Signs in on the login page that is open; the app then opens its start page. */
+async function submitLogin(page) {
+	const { email, password } = mobileInstance();
 	await page.getByLabel('E-Mail').fill(email);
 	await page.getByLabel('Passwort').fill(password);
 	await page.getByRole('button', { name: 'Anmelden' }).click();
+}
+
+/** The session of the invented account, signed in once per worker through the API (MO-7c1). */
+let session = null;
+
+/** Token and record of the invented account; the first call signs in, later ones reuse it. */
+function account() {
+	if (session === null) {
+		const { email, password } = mobileInstance();
+		session = api('POST', '/api/collections/users/auth-with-password', { identity: email, password }).catch((error) => {
+			session = null;
+			throw error;
+		});
+	}
+	return session;
+}
+
+/**
+ * Opens `path` of the app already signed in (MO-7c1, instead of the login page in every case): the
+ * session stands in localStorage where the app keeps it (LocalAuthStore "pocketbase_auth") before the
+ * first page, so the app checks it like a stored session. The page loads as a page of the app loaded
+ * anew (referrer of the app), so the start view of MO-1a stays out of it: the case of the start signs
+ * in through the login page and checks it. The token stays in memory and in the browser of the test,
+ * never on disk or in the output.
+ */
+async function openSignedIn(page, path) {
+	const { url } = mobileInstance();
+	const { token, record } = await account();
+	await page.addInitScript((stored) => {
+		if (localStorage.getItem('pocketbase_auth') === null) localStorage.setItem('pocketbase_auth', stored);
+	}, JSON.stringify({ token, record }));
+	await page.goto(`${url}${path}`, { referer: `${url}/` });
 	return url;
 }
 
@@ -170,22 +215,38 @@ function berlinToday() {
  * planned). Returns their titles.
  */
 async function seed(entries) {
-	const { email, password } = mobileInstance();
-	const { token, record } = await api('POST', '/api/collections/users/auth-with-password', { identity: email, password });
+	const { token, record } = await account();
 	const mark = randomBytes(3).toString('hex');
-	const titles = [];
-	for (const { title, planned = false, dueToday = false } of entries) {
-		const name = `${title} ${mark}`;
-		const ticket = await api(
-			'POST',
-			'/api/collections/tickets/records',
-			{ owner: record.id, title: name, ...(dueToday ? { due: `${berlinToday()} 00:00:00.000Z` } : {}) },
-			token
-		);
-		if (planned) await api('POST', '/api/byl/dayplan/items', { ticket: ticket.id }, token);
-		titles.push(name);
+	const titles = entries.map(({ title }) => `${title} ${mark}`);
+	// The tickets at once (MO-7c1), then the day plan one after the other, in the order of `entries`.
+	const tickets = await Promise.all(
+		entries.map(({ dueToday = false }, index) =>
+			api(
+				'POST',
+				'/api/collections/tickets/records',
+				{ owner: record.id, title: titles[index], ...(dueToday ? { due: `${berlinToday()} 00:00:00.000Z` } : {}) },
+				token
+			)
+		)
+	);
+	for (const [index, { planned = false }] of entries.entries()) {
+		if (planned) await api('POST', '/api/byl/dayplan/items', { ticket: tickets[index].id }, token);
 	}
 	return titles;
+}
+
+/**
+ * Closes every flag with its ×, in one step inside the page, and waits until none is left. Before,
+ * the case counted the flags and then clicked: a flag that left on its own (after 8 s) in between
+ * left the click waiting for a button that was gone (Q-5 of the review of MO-7b). Only to clear the
+ * way: the case of the overlays taps the × of the flag of "Link kopieren" for real and checks its 44 px.
+ */
+async function closeFlags(page) {
+	const flags = page.getByRole('region', { name: 'Benachrichtigungen' });
+	await flags.evaluate((region) => {
+		for (const button of region.querySelectorAll('button[aria-label="Benachrichtigung schließen"]')) button.click();
+	});
+	await expect(flags.getByRole('listitem')).toHaveCount(0);
 }
 
 /** Scrolls the element to the middle of the window, away from the bottom bar and its flags (MO-3). */
@@ -209,8 +270,7 @@ const LONG_LINK = 'https://example.com/ein/sehr/langer/pfad/ohne/leerzeichen/der
  * record and the titles.
  */
 async function seedTicket(others) {
-	const { email, password } = mobileInstance();
-	const { token, record } = await api('POST', '/api/collections/users/auth-with-password', { identity: email, password });
+	const { token, record } = await account();
 	const mark = randomBytes(3).toString('hex');
 	const tag = await api('POST', '/api/collections/tags/records', { owner: record.id, name: `Garten ${mark}` }, token);
 	const description = [
@@ -231,19 +291,18 @@ async function seedTicket(others) {
 	const title = `Mmm_Steuererklärung_für_das_vergangene_Jahr_mit_allen_Belegen_der_Handwerker_${mark}`;
 	const ticket = await api('POST', '/api/collections/tickets/records', { owner: record.id, title, description, tags: [tag.id], priority: 'high' }, token);
 	const subtask = `Belege sortieren ${mark}`;
-	await api('POST', '/api/collections/tickets/records', { owner: record.id, title: subtask, parent: ticket.id }, token);
-	await api(
-		'POST',
-		'/api/collections/comments/records',
-		{ ticket: ticket.id, author: record.id, body: `Siehe ${LONG_LINK}\n\n\`\`\`\nnoch_eine_lange_zeile_im_codeblock_des_kommentars_die_nicht_umbricht\n\`\`\`` },
-		token
-	);
-	const titles = [];
-	for (let index = 0; index < others; index++) {
-		const name = `Ccc Füller ${String(index + 1).padStart(2, '0')} ${mark}`;
-		await api('POST', '/api/collections/tickets/records', { owner: record.id, title: name }, token);
-		titles.push(name);
-	}
+	const titles = Array.from({ length: others }, (_, index) => `Ccc Füller ${String(index + 1).padStart(2, '0')} ${mark}`);
+	// The rest at once (MO-7c1): nothing of it depends on another, the list sorts by title.
+	await Promise.all([
+		api('POST', '/api/collections/tickets/records', { owner: record.id, title: subtask, parent: ticket.id }, token),
+		api(
+			'POST',
+			'/api/collections/comments/records',
+			{ ticket: ticket.id, author: record.id, body: `Siehe ${LONG_LINK}\n\n\`\`\`\nnoch_eine_lange_zeile_im_codeblock_des_kommentars_die_nicht_umbricht\n\`\`\`` },
+			token
+		),
+		...titles.map((name) => api('POST', '/api/collections/tickets/records', { owner: record.id, title: name }, token))
+	]);
 	return { ticket, title, subtask, tag: tag.name, others: titles };
 }
 
@@ -253,21 +312,23 @@ async function seedTicket(others) {
  * code, and two plain notes. Returns their records with the titles.
  */
 async function seedInbox() {
-	const { email, password } = mobileInstance();
-	const { token, record } = await api('POST', '/api/collections/users/auth-with-password', { identity: email, password });
+	const { token, record } = await account();
 	const mark = randomBytes(3).toString('hex');
 	const create = (body) => api('POST', '/api/collections/inbox_items/records', { owner: record.id, ...body }, token);
-	const mail = await create({
-		channel: 'eml',
-		kind: 'mail',
-		title: `Rechnung_über_die_Reparatur_der_Heizungsanlage_im_Keller_vom_vergangenen_Winter_${mark}`,
-		body: `Guten Tag,\n\nhier die Rechnung: ${LONG_LINK}\n\n\`\`\`\nRechnungsnummer-2026-0001-0002-0003-0004-0005-0006-0007-0008\n\`\`\``,
-		source_url: LONG_LINK,
-		source_ref: `<${mark}@example.com>`,
-		source_meta: { from: `Anna Beispiel <anna.beispiel.mit.einer.sehr.langen.adresse.${mark}@example.com>` }
-	});
-	const note = await create({ channel: 'manual', kind: 'todo', title: `Paket abholen ${mark}` });
-	const other = await create({ channel: 'manual', kind: 'todo', title: `Fahrrad reparieren ${mark}` });
+	// At once (MO-7c1): the three entries do not depend on each other.
+	const [mail, note, other] = await Promise.all([
+		create({
+			channel: 'eml',
+			kind: 'mail',
+			title: `Rechnung_über_die_Reparatur_der_Heizungsanlage_im_Keller_vom_vergangenen_Winter_${mark}`,
+			body: `Guten Tag,\n\nhier die Rechnung: ${LONG_LINK}\n\n\`\`\`\nRechnungsnummer-2026-0001-0002-0003-0004-0005-0006-0007-0008\n\`\`\``,
+			source_url: LONG_LINK,
+			source_ref: `<${mark}@example.com>`,
+			source_meta: { from: `Anna Beispiel <anna.beispiel.mit.einer.sehr.langen.adresse.${mark}@example.com>` }
+		}),
+		create({ channel: 'manual', kind: 'todo', title: `Paket abholen ${mark}` }),
+		create({ channel: 'manual', kind: 'todo', title: `Fahrrad reparieren ${mark}` })
+	]);
 	return { mail, note, other, mark };
 }
 
@@ -314,11 +375,14 @@ async function expectPageOf(locator, viewport) {
 	expect(Math.abs(box.y + box.height - viewport.height)).toBeLessThanOrEqual(1);
 }
 
-/** The share of a card that its title takes (MO-7b: no title below about 60 % of the card). */
-async function cardTitleShare(card) {
+/**
+ * The share of a card that its title takes (MO-7b: no title below about 60 % of the card); the title
+ * of an entry of "Erledigte" is `.title` (MO-7c1).
+ */
+async function cardTitleShare(card, title = '.card-title') {
 	const whole = await card.boundingBox();
-	const title = await card.locator('.card-title').boundingBox();
-	return title.width / whole.width;
+	const part = await card.locator(title).boundingBox();
+	return part.width / whole.width;
 }
 
 /** A deletion of the invented account; a ticket goes to the trash (ADR-0037). */
@@ -340,31 +404,41 @@ function letters(count) {
  * The lists of MO-7b (a run mark appended), made up: a project with a name of one long word and a
  * sub project, a rule with a title of one long word, and two tickets in the trash, one with a title
  * of one long word. `trashCount` is the number of the trash as the server lists it afterwards: the two
- * and whatever another case put there before (round 2 of MO-7b, P-6).
+ * and whatever another case put there before (round 2 of MO-7b, P-6). Since MO-7c1 also `done`, a
+ * done ticket with a title of one long word for "Erledigte".
  */
 async function seedLists() {
-	const { email, password } = mobileInstance();
-	const { token, record } = await api('POST', '/api/collections/users/auth-with-password', { identity: email, password });
+	const { token, record } = await account();
 	const mark = randomBytes(3).toString('hex');
 	const projectName = `Renovierung_des_Dachbodens_mit_Dämmung_und_neuen_Fenstern_${mark}`;
-	const project = await api('POST', '/api/collections/projects/records', { owner: record.id, name: projectName, code: letters(5) }, token);
 	const subName = `Fenster ${mark}`;
-	await api('POST', '/api/collections/projects/records', { owner: record.id, name: subName, code: letters(5), parent: project.id }, token);
 	const ruleTitle = `Monatliche_Abrechnung_der_Nebenkosten_mit_allen_Belegen_${mark}`;
-	await api(
-		'POST',
-		'/api/collections/recurrence_rules/records',
-		{ owner: record.id, title: ruleTitle, description: '', priority: 'medium', initial_status: 'open', mode: 'calendar', freq: 'monthly', interval: 1, weekdays: [], month_day: 1, anchor: '2099-01-01', lead_days: 3 },
-		token
-	);
-	const trashed = [];
-	for (const title of [`Altes_Regal_im_Keller_abbauen_und_zum_Wertstoffhof_bringen_${mark}`, `Kaputte Lampe ${mark}`]) {
-		const ticket = await api('POST', '/api/collections/tickets/records', { owner: record.id, title }, token);
-		await remove(`/api/collections/tickets/records/${ticket.id}`, token);
-		trashed.push(title);
-	}
+	const trashed = [`Altes_Regal_im_Keller_abbauen_und_zum_Wertstoffhof_bringen_${mark}`, `Kaputte Lampe ${mark}`];
+	const done = `Garage_ausräumen_und_alles_zum_Recyclinghof_bringen_lassen_${mark}`;
+	// The project with its sub project, the rule, each ticket for the trash and a done ticket with a
+	// title of one long word for "Erledigte" (MO-7c1) at once.
+	await Promise.all([
+		(async () => {
+			const ticket = await api('POST', '/api/collections/tickets/records', { owner: record.id, title: done }, token);
+			await api('PATCH', `/api/collections/tickets/records/${ticket.id}`, { status: 'done' }, token);
+		})(),
+		(async () => {
+			const project = await api('POST', '/api/collections/projects/records', { owner: record.id, name: projectName, code: letters(5) }, token);
+			await api('POST', '/api/collections/projects/records', { owner: record.id, name: subName, code: letters(5), parent: project.id }, token);
+		})(),
+		api(
+			'POST',
+			'/api/collections/recurrence_rules/records',
+			{ owner: record.id, title: ruleTitle, description: '', priority: 'medium', initial_status: 'open', mode: 'calendar', freq: 'monthly', interval: 1, weekdays: [], month_day: 1, anchor: '2099-01-01', lead_days: 3 },
+			token
+		),
+		...trashed.map(async (title) => {
+			const ticket = await api('POST', '/api/collections/tickets/records', { owner: record.id, title }, token);
+			await remove(`/api/collections/tickets/records/${ticket.id}`, token);
+		})
+	]);
 	const { items } = await api('GET', '/api/byl/trash', undefined, token);
-	return { project: projectName, sub: subName, rule: ruleTitle, trashed, trashCount: items.length };
+	return { project: projectName, sub: subName, rule: ruleTitle, trashed, trashCount: items.length, done };
 }
 
 test.describe('phone with the switch on', () => {
@@ -375,7 +449,24 @@ test.describe('phone with the switch on', () => {
 	test('starts at the day plan with the bottom bar at the bottom, opens "Mehr" as a sheet with every other view and the pages "nur am PC", shows projects, rules and the trash as cards with their pages and the bar of the selection, and keeps "Aufgaben" a tap away', async ({ page }) => {
 		const lists = await seedLists();
 		await switchOn(page);
-		const url = await signIn(page);
+		const { url } = mobileInstance();
+		const large = { width: 412, height: 915 };
+		// MO-7c1: the login page on a small and a large phone before the sign-in, without sideways
+		// scrolling, the fields and the button of 44 px in view, the keys of the keyboard said.
+		await page.setViewportSize(SMALL_PHONE.viewport);
+		await page.goto(`${url}/login`);
+		const login = page.getByRole('main');
+		await expect(login.getByRole('heading', { name: 'Anmelden' })).toBeVisible();
+		for (const size of [SMALL_PHONE.viewport, large]) {
+			await page.setViewportSize(size);
+			expect(await scrollsSideways(page)).toBe(false);
+			expect(await smallTargets(login)).toEqual([]);
+			await expectUncovered(login.getByRole('button', { name: 'Anmelden' }), size);
+		}
+		await expect(page.getByLabel('E-Mail')).toHaveAttribute('enterkeyhint', 'next');
+		await expect(page.getByLabel('Passwort')).toHaveAttribute('enterkeyhint', 'done');
+		await page.setViewportSize(PHONE.viewport);
+		await submitLogin(page);
 		await expect(page).toHaveURL(`${url}/tagesplan`);
 		await expect(viewHeading(page, 'Tagesplan')).toBeAttached();
 
@@ -465,9 +556,10 @@ test.describe('phone with the switch on', () => {
 			expect(await smallTargets(page.locator('.phone-tools'))).toEqual([]);
 			expect(await cardTitleShare(card)).toBeGreaterThanOrEqual(0.6);
 		}
-		async function openAndBack(card, name, back, list) {
+		/** A tap on `spot` of the card (its muted line by default) opens the page; its arrow goes back. */
+		async function openAndBack(card, name, back, list, spot = card.locator('.card-meta')) {
 			const start = await historyLength();
-			await card.locator('.card-meta').tap();
+			await spot.tap();
 			const panel = page.getByRole('complementary', { name });
 			await expectPageOf(panel, small);
 			expect(await scrollsSideways(page)).toBe(false);
@@ -524,9 +616,7 @@ test.describe('phone with the switch on', () => {
 		await page.keyboard.press('Enter');
 		const notes = page.getByRole('region', { name: 'Benachrichtigungen' });
 		await expect(notes.getByRole('listitem').filter({ hasText: 'Erst Tickets auswählen.' })).toBeVisible();
-		const closeNote = notes.getByRole('button', { name: 'Benachrichtigung schließen' });
-		while ((await closeNote.count()) > 0) await closeNote.first().click();
-		await expect(notes.getByRole('listitem')).toHaveCount(0);
+		await closeFlags(page);
 		await trashCard(shelf).locator('.card-meta').tap();
 		await expect(trashCard(shelf).getByRole('checkbox', { name: /auswählen$/ })).toBeChecked();
 		await expect(selection).toHaveAccessibleName('1 Ticket ausgewählt');
@@ -540,20 +630,57 @@ test.describe('phone with the switch on', () => {
 		await expect(selection).toHaveCount(0);
 		await expect(page.getByRole('checkbox', { name: /auswählen$/ })).toHaveCount(0);
 
-		// A large phone: the three lists keep to their width, the titles their share.
-		await page.setViewportSize({ width: 412, height: 915 });
-		await expect(trashCard(shelf)).toBeVisible();
+		// MO-7c1 "Erledigte": two taps away, every target of 44 px (the filters too), no sideways
+		// scrolling, the title in at least 60 % of its entry; a tap on the entry beside its link opens
+		// the ticket as a page, whose arrow goes back through the history without a second entry.
+		await openUnderMore('Erledigte');
+		await expect(page).toHaveURL(`${url}/erledigt`);
+		const doneEntry = page.locator('li[data-ticket-id]').filter({ hasText: lists.done });
+		await expect(doneEntry).toBeVisible();
 		expect(await scrollsSideways(page)).toBe(false);
-		expect(await cardTitleShare(trashCard(shelf))).toBeGreaterThanOrEqual(0.6);
-		for (const [name, card] of [
-			['Projekte', projectCard(lists.project)],
-			['Wiederholungen', ruleCard]
+		expect(await smallTargets(page.locator('.done-view'))).toEqual([]);
+		expect(await cardTitleShare(doneEntry, '.title')).toBeGreaterThanOrEqual(0.6);
+		await openAndBack(doneEntry, lists.done, 'Zu den Erledigten', `${url}/erledigt`, doneEntry.locator('.time-cell'));
+
+		// MO-7c1 "Hilfe" under "Mehr": the parts about the keyboard folded, open on a tap of 44 px; the
+		// bulk actions of the inbox named under "Ohne Verbindung"; no sideways scrolling.
+		/** The help under "Mehr": two taps. */
+		async function openHelp() {
+			await bar.getByRole('button', { name: /^Mehr/ }).tap();
+			await page.getByRole('dialog', { name: 'Mehr' }).getByRole('navigation', { name: 'Einstellungen' }).getByRole('link', { name: 'Hilfe' }).tap();
+			await expect(page).toHaveURL(`${url}/einstellungen/hilfe`);
+		}
+		await openHelp();
+		const shortcuts = page.locator('section#tastaturkuerzel details');
+		await expect(shortcuts).not.toHaveAttribute('open', /.*/);
+		await expect(page.locator('section#kalender details')).not.toHaveAttribute('open', /.*/);
+		expect(await scrollsSideways(page)).toBe(false);
+		const unfold = shortcuts.locator('summary');
+		await expectTarget(unfold);
+		await unfold.tap();
+		await expect(shortcuts).toHaveAttribute('open', '');
+		await expect(shortcuts.getByText(/öffnest du die wichtigsten Tasten/)).toBeVisible();
+		expect(await scrollsSideways(page)).toBe(false);
+		await expect(page.locator('section#ohne-verbindung')).toContainText(
+			'„Gesammelt umwandeln (3)“, „Mit Ticket verknüpfen … (3)“, „Verwerfen (3)“ und „Wiederherstellen (3)“: ohne Verbindung gesperrt'
+		);
+
+		// A large phone: the lists keep to their width, the titles their share; the help too.
+		await page.setViewportSize(large);
+		await expect(page.locator('section#tastaturkuerzel')).toBeVisible();
+		expect(await scrollsSideways(page)).toBe(false);
+		for (const [name, card, title] of [
+			['Papierkorb', trashCard(shelf), '.card-title'],
+			['Projekte', projectCard(lists.project), '.card-title'],
+			['Wiederholungen', ruleCard, '.card-title'],
+			['Erledigte', doneEntry, '.title']
 		]) {
 			await openUnderMore(name);
 			await expect(card).toBeVisible();
 			expect(await scrollsSideways(page)).toBe(false);
-			expect(await cardTitleShare(card)).toBeGreaterThanOrEqual(0.6);
+			expect(await cardTitleShare(card, title)).toBeGreaterThanOrEqual(0.6);
 		}
+		expect(await smallTargets(page.locator('.done-view'))).toEqual([]);
 		await page.setViewportSize(PHONE.viewport);
 
 		// A tap on "Aufgaben" leads there: the day plan only opens first at the start of the app.
@@ -565,16 +692,33 @@ test.describe('phone with the switch on', () => {
 
 		await bar.getByRole('button', { name: 'Erfassen' }).click();
 		await expect(page.getByRole('dialog', { name: 'Schnellerfassung' })).toBeVisible();
+
+		// MO-7c1: an address the app does not know shows the error page, on a small and a large phone
+		// without sideways scrolling and with "Zur Übersicht" of 44 px in view, which leads back into
+		// the app.
+		await page.goto(`${url}/gibt-es-nicht`);
+		const missing = page.getByRole('main');
+		await expect(missing.getByRole('heading', { name: 'Seite nicht gefunden' })).toBeVisible();
+		for (const size of [SMALL_PHONE.viewport, large]) {
+			await page.setViewportSize(size);
+			expect(await scrollsSideways(page)).toBe(false);
+			expect(await smallTargets(missing)).toEqual([]);
+			await expectUncovered(missing.getByRole('link', { name: 'Zur Übersicht' }), size);
+		}
+		await missing.getByRole('link', { name: 'Zur Übersicht' }).tap();
+		await expect(bar).toBeVisible();
+		await expect(viewHeading(page, 'Aufgaben')).toBeAttached();
 	});
 });
 
 test.describe('small phone with the switch on: overlays (MO-1b)', () => {
-	test.use({ ...SMALL_PHONE, extraHTTPHeaders: ANOTHER_DEVICE });
+	// With the movement of the overlays: each sheet is checked once it has slid in (MO-7c1).
+	test.use({ ...SMALL_PHONE, extraHTTPHeaders: ANOTHER_DEVICE, reducedMotion: 'no-preference' });
 	const viewport = SMALL_PHONE.viewport;
 
 	test('shows dialogs, menus, pickers and questions as sheets with "Schließen", and the flags uncovered', async ({ page }) => {
 		await switchOn(page);
-		const url = await signIn(page);
+		const url = await openSignedIn(page, '/tagesplan');
 		await expect(page).toHaveURL(`${url}/tagesplan`);
 		const bar = page.getByRole('navigation', { name: 'Hauptnavigation' });
 
@@ -630,6 +774,9 @@ test.describe('small phone with the switch on: overlays (MO-1b)', () => {
 		await menu.getByRole('menuitem', { name: 'Schließen', exact: true }).click();
 		await expect(menu).toBeHidden();
 		await expect(more).toBeFocused();
+		// A real tap on its × closes the flag; the other cases close theirs inside the page (MO-7c1).
+		await copied.getByRole('button', { name: 'Benachrichtigung schließen' }).tap();
+		await expect(copied).toHaveCount(0);
 
 		// A question (size S) is a sheet as well, with buttons of 44 px.
 		await more.click();
@@ -690,7 +837,7 @@ test.describe('small phone with the switch on: the day plan (MO-2)', () => {
 			{ title: 'Arzt anrufen', dueToday: true }
 		]);
 		await switchOn(page);
-		const url = await signIn(page);
+		const url = await openSignedIn(page, '/tagesplan');
 		await expect(page).toHaveURL(`${url}/tagesplan`);
 		const plan = page.getByRole('group', { name: 'Einträge des Plans' });
 		const row = (title) => plan.locator('[data-item-id]').filter({ hasText: title });
@@ -799,7 +946,7 @@ test.describe('small phone with the switch on: "Aufgaben" (MO-3)', () => {
 			{ title: 'Pflanzen umtopfen' }
 		]);
 		await switchOn(page);
-		const url = await signIn(page);
+		const url = await openSignedIn(page, '/tagesplan');
 		await expect(page).toHaveURL(`${url}/tagesplan`);
 		await page.getByRole('navigation', { name: 'Hauptnavigation' }).getByRole('link', { name: 'Aufgaben' }).click();
 		await expect(viewHeading(page, 'Aufgaben')).toBeAttached();
@@ -858,10 +1005,8 @@ test.describe('small phone with the switch on: "Aufgaben" (MO-3)', () => {
 		await flags.getByRole('button', { name: 'Rückgängig' }).click();
 		await expect(cardOf(plants)).toBeVisible();
 		// The flag "… wieder offen." stands above the bottom bar for 8 s; closed, it covers no card.
-		const closeFlag = flags.getByRole('button', { name: 'Benachrichtigung schließen' });
 		await expect(flags.getByRole('listitem').filter({ hasText: 'wieder offen' })).toBeVisible();
-		while ((await closeFlag.count()) > 0) await closeFlag.first().click();
-		await expect(flags.getByRole('listitem')).toHaveCount(0);
+		await closeFlags(page);
 
 		// "Auswählen" is in the menu of the list; "Bereich" chooses up to the next card tapped.
 		await page.getByRole('button', { name: 'Weitere Aktionen der Liste' }).click();
@@ -925,7 +1070,7 @@ test.describe('small phone with the switch on: the ticket as a page (MO-4)', () 
 	test('opens the ticket as a page with targets of 44 px, edits it and goes back to the list with its sort and place', async ({ page }) => {
 		const { ticket, title, subtask } = await seedTicket(12);
 		await switchOn(page);
-		const url = await signIn(page);
+		const url = await openSignedIn(page, '/tagesplan');
 		await expect(page).toHaveURL(`${url}/tagesplan`);
 		await page.goto(`${url}/?sort=titel`);
 		const card = page.locator('li[data-ticket-id]').filter({ hasText: title });
@@ -1077,7 +1222,7 @@ test.describe('small phone with the switch on: the quick entry (MO-5)', () => {
 	test('captures with "＋", typing and one tap, keeps the keyboard for the next line, and "Ticket ansehen" goes back without a loop', async ({ page }) => {
 		const mark = randomBytes(3).toString('hex');
 		await switchOn(page);
-		const url = await signIn(page);
+		const url = await openSignedIn(page, '/tagesplan');
 		await expect(page).toHaveURL(`${url}/tagesplan`);
 		const bar = page.getByRole('navigation', { name: 'Hauptnavigation' });
 
@@ -1197,7 +1342,7 @@ test.describe('small phone with the switch on: the inbox (MO-6)', () => {
 	test('shows the inbox as cards, opens an entry as a page and back without a loop, discards with "Rückgängig" and converts as a page', async ({ page }) => {
 		const { mail, note, other } = await seedInbox();
 		await switchOn(page);
-		const url = await signIn(page);
+		const url = await openSignedIn(page, '/tagesplan');
 		await expect(page).toHaveURL(`${url}/tagesplan`);
 		const bar = page.getByRole('navigation', { name: 'Hauptnavigation' });
 		await bar.getByRole('link', { name: /^Eingang/ }).click();
@@ -1306,7 +1451,7 @@ test.describe('small phone with the switch on: the inbox (MO-6)', () => {
 	test('captures with "Erfassen", pastes with "Aus Zwischenablage", and "Eintrag ansehen" of "＋" goes back to the day plan', async ({ page }) => {
 		const mark = randomBytes(3).toString('hex');
 		await switchOn(page);
-		const url = await signIn(page);
+		const url = await openSignedIn(page, '/tagesplan');
 		await expect(page).toHaveURL(`${url}/tagesplan`);
 		const bar = page.getByRole('navigation', { name: 'Hauptnavigation' });
 		await bar.getByRole('link', { name: /^Eingang/ }).click();
@@ -1375,8 +1520,7 @@ test.describe('small phone with the switch on: changes without a connection (OF-
 
 	/** Open tickets of the account (a run mark appended) with the token, for checks through the API. */
 	async function seedOpen(titles) {
-		const { email, password } = mobileInstance();
-		const { token, record } = await api('POST', '/api/collections/users/auth-with-password', { identity: email, password });
+		const { token, record } = await account();
 		const mark = randomBytes(3).toString('hex');
 		const tickets = [];
 		for (const title of titles) {
@@ -1389,7 +1533,7 @@ test.describe('small phone with the switch on: changes without a connection (OF-
 	async function openTasks(page) {
 		const asked = page.waitForResponse((response) => response.url().endsWith('/api/byl/tickets/create') && response.request().method() === 'GET');
 		await switchOn(page);
-		const url = await signIn(page);
+		const url = await openSignedIn(page, '/tagesplan');
 		await asked;
 		await page.waitForFunction(async () => (await indexedDB.databases()).some((database) => database.name === 'byl-offline'));
 		await page.getByRole('navigation', { name: 'Hauptnavigation' }).getByRole('link', { name: 'Aufgaben' }).click();
@@ -1552,7 +1696,7 @@ test.describe('phone with the switch off', () => {
 	// MO-7a: the view of today and the overlays of today (MO-1b, before a case of its own on a small
 	// phone) in one case; the overlays on the small phone, the switch again on the phone.
 	test('shows the view of today with the switch reachable, a dialog in the middle and a picker at its button, without "Schließen"', async ({ page }) => {
-		const url = await signIn(page);
+		const url = await openSignedIn(page, '/');
 		await expect(page).toHaveURL(`${url}/`);
 		await expect(viewHeading(page, 'Aufgaben')).toBeVisible();
 		await expect(page.getByRole('navigation', { name: 'Hauptnavigation' })).toHaveCount(0);
@@ -1606,7 +1750,7 @@ test.describe('PC with the switch on', () => {
 	test('shows no element of the phone frame and keeps "Aufgaben", its table, the quick entry and the side panel of the PC (MO-1a, MO-3, MO-4, MO-5)', async ({ page }) => {
 		const [open, cellar] = await seed([{ title: 'Garage aufräumen' }, { title: 'Keller entrümpeln' }]);
 		await switchOn(page);
-		const url = await signIn(page);
+		const url = await openSignedIn(page, '/');
 		await expect(page).toHaveURL(`${url}/`);
 		await expect(viewHeading(page, 'Aufgaben')).toBeVisible();
 		await expect(page.locator('[data-phone-frame]')).toHaveCount(0);
@@ -1677,11 +1821,9 @@ test.describe('PC with the switch on', () => {
 
 	// MO-7a: the day plan (MO-2) and the inbox (MO-6) of the PC in one case (before two).
 	test('keeps the day plan and the inbox of the PC: arrows and handle, suggestions before the plan, the pool beside it; table, chips, bulk actions and the panel with ×; projects, rules and the trash as tables (MO-2, MO-6, MO-7b)', async ({ page }) => {
-		const [planned] = await seed([{ title: 'Rechnung bezahlen', planned: true }]);
-		const { mail } = await seedInbox();
-		await seedLists();
+		const [[planned], { mail }] = await Promise.all([seed([{ title: 'Rechnung bezahlen', planned: true }]), seedInbox(), seedLists()]);
 		await switchOn(page);
-		await signIn(page);
+		await openSignedIn(page, '/');
 		await expect(viewHeading(page, 'Aufgaben')).toBeVisible();
 		await page.getByRole('navigation', { name: 'Ansicht' }).getByRole('link', { name: 'Tagesplan' }).click();
 		await expect(viewHeading(page, 'Tagesplan')).toBeVisible();

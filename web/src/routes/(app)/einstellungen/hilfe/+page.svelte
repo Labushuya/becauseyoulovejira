@@ -13,6 +13,7 @@
 	} from '$lib/domain/backup';
 	import { KEY_PLACEHOLDER, ingestExamples } from '$lib/domain/inbox-keys';
 	import HostPlatformNote from '$lib/components/guidance/HostPlatformNote.svelte';
+	import KeyboardFold from '$lib/components/help/KeyboardFold.svelte';
 	import PcOnly from '$lib/components/guidance/PcOnly.svelte';
 	import SectionMessage from '$lib/components/guidance/SectionMessage.svelte';
 	import OngoingOrRecurrenceHelp from '$lib/components/help/OngoingOrRecurrenceHelp.svelte';
@@ -48,7 +49,8 @@
 	// Verwalter fragen.", and "Betrieb" and "Sicherung & Notfall" become one sentence for them.
 	// Since MO-7a the section "Ohne Verbindung" (ADR-0074) says what the outbox keeps (OF-2 to OF-4b),
 	// what goes only with a connection, the dialog "Gemerkte Änderungen", the notices that stay and
-	// the limits, in the words of OFFLINE_TEXTS.
+	// the limits, in the words of OFFLINE_TEXTS. Since MO-7c1 it names the locked bulk actions of the
+	// inbox, and in the phone frame the parts about the keyboard are folded (KeyboardFold).
 
 	const mode = $derived(appContext.capabilities.mode);
 
@@ -79,11 +81,13 @@
 
 	<section id="tastaturkuerzel" aria-labelledby="tastaturkuerzel-title">
 		<h3 id="tastaturkuerzel-title">Tastaturkürzel</h3>
-		<p>
-			Mit <kbd>?</kbd> öffnest du die wichtigsten Tasten überall in der App, außer beim Tippen in einem
-			Feld.
-		</p>
-		<ShortcutList headingLevel={4} />
+		<KeyboardFold label="Tastaturkürzel anzeigen">
+			<p>
+				Mit <kbd>?</kbd> öffnest du die wichtigsten Tasten überall in der App, außer beim Tippen in einem
+				Feld.
+			</p>
+			<ShortcutList headingLevel={4} />
+		</KeyboardFold>
 	</section>
 
 	<section id="kurzsyntax" aria-labelledby="kurzsyntax-title">
@@ -180,17 +184,19 @@
 			mit der Agenda, und der Monat zeigt Punkte statt Titel.
 		</p>
 		<h4>Mit der Tastatur</h4>
-		<ul>
-			<li>
-				Im Monat und in der Woche: die Pfeiltasten von Tag zu Tag, <kbd>Pos1</kbd> und
-				<kbd>Ende</kbd>
-				zum Anfang und Ende der Woche (mit <kbd>Strg</kbd> des Monats).
-			</li>
-			<li><kbd>Bild auf</kbd> und <kbd>Bild ab</kbd>: einen Monat bzw. eine Woche weiter.</li>
-			<li><kbd>Enter</kbd> führt in die Einträge des Tages, <kbd>Esc</kbd> zurück zum Tag.</li>
-			<li><kbd>Umschalt</kbd>+<kbd>F10</kbd> öffnet das Menü eines Tickets.</li>
-			<li><kbd>m</kbd> auf einem offenen Ticket verschiebt seine Fälligkeit (siehe unten).</li>
-		</ul>
+		<KeyboardFold label="Tasten im Kalender anzeigen">
+			<ul>
+				<li>
+					Im Monat und in der Woche: die Pfeiltasten von Tag zu Tag, <kbd>Pos1</kbd> und
+					<kbd>Ende</kbd>
+					zum Anfang und Ende der Woche (mit <kbd>Strg</kbd> des Monats).
+				</li>
+				<li><kbd>Bild auf</kbd> und <kbd>Bild ab</kbd>: einen Monat bzw. eine Woche weiter.</li>
+				<li><kbd>Enter</kbd> führt in die Einträge des Tages, <kbd>Esc</kbd> zurück zum Tag.</li>
+				<li><kbd>Umschalt</kbd>+<kbd>F10</kbd> öffnet das Menü eines Tickets.</li>
+				<li><kbd>m</kbd> auf einem offenen Ticket verschiebt seine Fälligkeit (siehe unten).</li>
+			</ul>
+		</KeyboardFold>
 		<h4>Fälligkeit verschieben</h4>
 		<p>
 			Im Monat und in der Woche ziehst du ein offenes Ticket mit der Maus auf einen anderen Tag; das
@@ -382,6 +388,11 @@
 			</li>
 			<li>„Neues Ticket“ und „Erfassen“ im Eingang.</li>
 			<li>„Alle Kanäle jetzt abrufen“: ohne Verbindung gesperrt, mit „Nur mit Verbindung“.</li>
+			<li>
+				Die Sammelaktionen im Eingang, „Gesammelt umwandeln (3)“, „Mit Ticket verknüpfen … (3)“,
+				„Verwerfen (3)“ und „Wiederherstellen (3)“: ohne Verbindung gesperrt, mit „Nur mit
+				Verbindung“.
+			</li>
 			<li>
 				Alles andere, etwa Priorität, Projekt, Tags, Titel, Beschreibung und Unteraufgaben,
 				Umwandeln und Verwerfen im Eingang.

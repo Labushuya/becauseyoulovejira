@@ -25,7 +25,7 @@
 		progress = null,
 		progressId,
 		label = 'Sammelaktionen',
-		hint = '',
+		hint,
 		onclear,
 		bar = $bindable(),
 		actions,
@@ -44,8 +44,11 @@
 		progressId?: string;
 		/** Name of the group of buttons. */
 		label?: string;
-		/** Why "Aktionen" is locked in the phone frame while nothing is chosen, e.g. "Erst Tickets auswählen.". */
-		hint?: string;
+		/**
+		 * Why "Aktionen" is locked in the phone frame while nothing is chosen, e.g. "Erst Tickets
+		 * auswählen.". Required since MO-7c1 (Q-3): without it a locked "Aktionen" would say nothing.
+		 */
+		hint: string;
 		/** "Auswahl aufheben"; in the phone frame "Fertig". */
 		onclear: () => void;
 		/** The bar, e.g. to keep the focus inside after an action. */

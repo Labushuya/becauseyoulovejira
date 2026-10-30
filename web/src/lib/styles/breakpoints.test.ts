@@ -140,7 +140,8 @@ describe('breakpoints (MO-1a, ADR-0073)', () => {
 		// sheet, the page of an entry with its main actions) and the button "Filter" shared with
 		// "Aufgaben"; since MO-7b "Projekte", "Wiederholungen" and "Papierkorb" (their cards, the row of
 		// the view, the filter sheet, the pages of a project and a rule with their targets) and the bar
-		// of the selection at the bottom.
+		// of the selection at the bottom; since MO-7c1 "Erledigte" (the entries as cards, the filters of
+		// 44 px) and the folded parts about the keyboard in the help.
 		expect([...new Set(places)].sort()).toEqual([
 			'lib/components/Breadcrumbs.svelte',
 			'lib/components/CharmPicker.svelte',
@@ -180,7 +181,10 @@ describe('breakpoints (MO-1a, ADR-0073)', () => {
 			'lib/components/day-plan/DayPlanSort.svelte',
 			'lib/components/day-plan/DayPlanSuggestions.svelte',
 			'lib/components/day-plan/DayPlanView.svelte',
+			'lib/components/done/DoneFilterBar.svelte',
+			'lib/components/done/DoneView.svelte',
 			'lib/components/editor/EditorToolbar.svelte',
+			'lib/components/help/KeyboardFold.svelte',
 			'lib/components/overlay/Drawer.svelte',
 			'lib/components/overlay/FlagGroup.svelte',
 			'lib/styles/base.css',

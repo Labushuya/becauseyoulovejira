@@ -24,6 +24,7 @@
 	import { retentionText } from '$lib/domain/trash';
 	import { findTrashStore } from '$lib/stores/trash.svelte';
 	import { areaMover } from '$lib/area-move-entry';
+	import { keepFocusAtBar } from '$lib/selection-focus';
 
 	// Bar of the bulk actions (plan BI-2, ADR-0036 §3): it appears with at least one chosen row,
 	// names their number and offers "Fälligkeit …", "Priorität", "Status", "Projekt …", since
@@ -44,13 +45,16 @@
 	// In the phone frame (MO-7b) the glass bar is the bar of "Auswählen" at the bottom: it stands from
 	// the start of "Auswählen", its actions behind "Aktionen", locked while nothing is chosen; after
 	// "Fertig" a result stands alone with "Ergebnis schließen" (`selecting` false, round 2).
+	// After an action and after "Ergebnis schließen" the focus stays in the bar, and goes to the heading
+	// of the list once the bar is gone (MO-7c1, Q-1; lib/selection-focus.ts).
 	let {
 		tickets,
 		store,
 		catalog,
 		openBlockingOf,
 		onclear,
-		selecting = true
+		selecting = true,
+		heading
 	}: {
 		/** The chosen tickets, in the order of the table. */
 		tickets: readonly TicketSummary[];
@@ -62,6 +66,8 @@
 		onclear: () => void;
 		/** Phone frame: "Auswählen" is on (SelectionBar); false: only a running action or a result. */
 		selecting?: boolean;
+		/** The heading of the list: the focus goes there once the bar is gone (MO-7c1). */
+		heading?: HTMLElement;
 	} = $props();
 
 	type Dialog = 'due' | 'project' | 'tags' | 'complete' | 'delete';
@@ -110,13 +116,20 @@
 
 	/** Runs an action on the chosen tickets and closes its dialog. */
 	async function run(action: BulkAction) {
+		const away = heading;
 		dialog = null;
 		await store.run(action, chosenIds);
 		await tick();
-		// The focus stays in the bar (the rows may have left the list).
-		if (bar && !bar.contains(document.activeElement)) {
-			bar.querySelector<HTMLElement>('button:not([disabled]), [tabindex]')?.focus();
-		}
+		// The focus stays in the bar (the rows may have left the list), or goes to the heading.
+		keepFocusAtBar(bar, away);
+	}
+
+	/** "Ergebnis schließen": its button goes, the focus stays in the bar or goes to the heading (Q-1). */
+	async function closeResult() {
+		const away = heading;
+		store.dismissResult();
+		await tick();
+		keepFocusAtBar(bar, away);
 	}
 
 	/** "Erledigen": open ongoing projects among the chosen ones ask first, once for all. */
@@ -287,7 +300,7 @@
 				</ul>
 			</SectionMessage>
 		{/if}
-		<button class="text-button" type="button" onclick={() => store.dismissResult()}>
+		<button class="text-button" type="button" onclick={() => void closeResult()}>
 			Ergebnis schließen
 		</button>
 	{/if}

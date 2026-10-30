@@ -7,9 +7,11 @@
 
 import { readFileSync } from 'node:fs';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { page } from '$app/state';
 import { MOVE_TEXTS } from '$lib/domain/area-move';
+import { PHONE_QUERY } from '$lib/domain/phone-layout';
+import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 import { MEMBER_CONTEXT, PC_CONTEXT, REMOTE_CONTEXT, useContext } from '$lib/test/context';
 import {
 	EMERGENCY_LOSSES,
@@ -1663,6 +1665,86 @@ describe('help page in the context of the tab (KOB-1, ADR-0057)', () => {
 
 		expect(text(container)).not.toMatch(COMMANDS);
 		expect(text(screen.getByRole('region', { name: 'Betrieb' })).trim()).toBe('Betrieb');
+	});
+});
+
+// MO-7c1 (concept MO-0 §6 "Hilfe (Abschnitte zur Tastatur am Handy eingeklappt)", ADR-0073 addendum
+// MO-7c1): in the phone frame the parts that only matter with a keyboard are folded into a native
+// disclosure (details and summary, open on a tap); their headings stay headings of the page. On the
+// PC and on a phone with the switch off they stand open as before. The tap itself is checked in a
+// browser by tests/mobile/phone-frame.spec.mjs.
+describe('the parts about the keyboard in the phone frame (MO-7c1)', () => {
+	let stop: (() => void) | null = null;
+
+	/** The window of the test: narrow (a phone) or wide (a PC), with the switch on or off. */
+	function useWindow(narrow: boolean, enabled: boolean): void {
+		vi.stubGlobal('matchMedia', (media: string) => ({
+			matches: media === PHONE_QUERY ? narrow : false,
+			media,
+			addEventListener: () => undefined,
+			removeEventListener: () => undefined
+		}));
+		stop = getMobileLayoutStore().connect();
+		getMobileLayoutStore().choose(enabled);
+	}
+
+	afterEach(() => {
+		stop?.();
+		stop = null;
+		getMobileLayoutStore().choose(false);
+		vi.unstubAllGlobals();
+		localStorage.clear();
+	});
+
+	it('folds the shortcuts and the keys of the calendar on the phone, the headings stay', () => {
+		useWindow(true, true);
+		const { container } = render(Page);
+
+		const shortcuts = container.querySelector<HTMLElement>('section#tastaturkuerzel')!;
+		expect(
+			within(shortcuts).getByRole('heading', { level: 3, name: 'Tastaturkürzel' })
+		).toBeTruthy();
+		const fold = shortcuts.querySelector('details')!;
+		expect(fold).not.toBeNull();
+		expect(fold.open).toBe(false);
+		expect(fold.firstElementChild?.tagName).toBe('SUMMARY');
+		expect(text(fold.firstElementChild!).trim()).toBe('Tastaturkürzel anzeigen');
+		// What only a keyboard needs stands inside: the key "?" and the list of the shortcuts.
+		expect(text(fold)).toMatch(/Mit \? öffnest du die wichtigsten Tasten/);
+
+		const calendar = container.querySelector<HTMLElement>('section#kalender')!;
+		expect(
+			within(calendar).getByRole('heading', { level: 4, name: 'Mit der Tastatur' })
+		).toBeTruthy();
+		const keys = calendar.querySelector('details')!;
+		expect(keys).not.toBeNull();
+		expect(keys.open).toBe(false);
+		expect(text(keys.firstElementChild!).trim()).toBe('Tasten im Kalender anzeigen');
+		expect(text(keys)).toMatch(/Bild auf/);
+		// Moving a due date stays open: the menu "Fälligkeit verschieben …" is the way of a phone.
+		expect(text(calendar.querySelector('details')!)).not.toMatch(/Fälligkeit verschieben …/);
+	});
+
+	it.each([
+		['a PC with the switch on', false, true],
+		['a phone with the switch off', true, false]
+	])('keeps them open on %s, as before', (_name, narrow, enabled) => {
+		useWindow(narrow, enabled);
+		const { container } = render(Page);
+		expect(container.querySelector('section#tastaturkuerzel details')).toBeNull();
+		expect(container.querySelector('section#kalender details')).toBeNull();
+		expect(text(container.querySelector('section#tastaturkuerzel')!)).toMatch(
+			/Mit \? öffnest du die wichtigsten Tasten/
+		);
+	});
+
+	it('names the bulk actions of the inbox among what goes only with a connection (MO-7c1)', () => {
+		const { container } = render(Page);
+		const section = container.querySelector<HTMLElement>('section#ohne-verbindung')!;
+		const items = [...section.querySelectorAll('li')].map((item) => text(item).trim());
+		expect(items).toContain(
+			'Die Sammelaktionen im Eingang, „Gesammelt umwandeln (3)“, „Mit Ticket verknüpfen … (3)“, „Verwerfen (3)“ und „Wiederherstellen (3)“: ohne Verbindung gesperrt, mit „Nur mit Verbindung“.'
+		);
 	});
 });
 
