@@ -238,8 +238,8 @@ async function seed(entries) {
 /**
  * Closes every flag with its ×, in one step inside the page, and waits until none is left. Before,
  * the case counted the flags and then clicked: a flag that left on its own (after 8 s) in between
- * left the click waiting for a button that was gone (Q-5 of the review of MO-7b). The × and its 44 px
- * are checked in the cases of the overlays and the inbox.
+ * left the click waiting for a button that was gone (Q-5 of the review of MO-7b). Only to clear the
+ * way: the case of the overlays taps the × of the flag of "Link kopieren" for real and checks its 44 px.
  */
 async function closeFlags(page) {
 	const flags = page.getByRole('region', { name: 'Benachrichtigungen' });
@@ -774,6 +774,9 @@ test.describe('small phone with the switch on: overlays (MO-1b)', () => {
 		await menu.getByRole('menuitem', { name: 'Schließen', exact: true }).click();
 		await expect(menu).toBeHidden();
 		await expect(more).toBeFocused();
+		// A real tap on its × closes the flag; the other cases close theirs inside the page (MO-7c1).
+		await copied.getByRole('button', { name: 'Benachrichtigung schließen' }).tap();
+		await expect(copied).toHaveCount(0);
 
 		// A question (size S) is a sheet as well, with buttons of 44 px.
 		await more.click();
