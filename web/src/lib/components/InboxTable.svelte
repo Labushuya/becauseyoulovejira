@@ -15,6 +15,16 @@
 		type InboxItemSummary,
 		type InboxView
 	} from '$lib/domain/inbox';
+	import {
+		BULK_LABELS,
+		BULK_OFFLINE_HINT,
+		BULK_STATES,
+		bulkFailureTitle,
+		bulkOfflineText,
+		bulkProgressText,
+		bulkSkippedTitle,
+		type InboxBulkKind
+	} from '$lib/domain/inbox-bulk';
 	import { type InboxQuery } from '$lib/domain/inbox-query';
 	import { MORE_COLUMNS_HINT } from '$lib/domain/labels';
 	import type { ProblemEntry } from '$lib/domain/problems';
@@ -46,6 +56,7 @@
 	import ColumnsPopover from './ColumnsPopover.svelte';
 	import FilterPopover from './FilterPopover.svelte';
 	import EmptyState from './guidance/EmptyState.svelte';
+	import ErrorIcon from './ErrorIcon.svelte';
 	import FilterButton from './FilterButton.svelte';
 	import FilterSheet from './FilterSheet.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
@@ -99,6 +110,15 @@
 	// Ticket verknüpfen …", which stand in the bar of the selection at the bottom (MO-7b, SelectionBar,
 	// shared with "Aufgaben" and "Papierkorb"). "Spalten" has no place without columns; the entry shows
 	// every value.
+	// Several entries at once (EG-1, ADR-0014 addendum EG-1): "Verwerfen (n)" stands with the bulk
+	// actions of the view "Neu", "Wiederherstellen (n)" alone in the view "Verworfen", whose discarded
+	// entries can be chosen as well (box, "Alle", "Auswählen" in the phone frame). The store runs the
+	// chosen entries one after the other; the progress and the result (failures, skipped entries,
+	// "Ergebnis schließen") stand in the SelectionBar, on the PC above the table only while a run goes
+	// on or a result stands, in the phone frame in the bar at the bottom. Its flag offers "Rückgängig"
+	// for the discarded ones. The focus stays on the button, in the phone frame it goes back into the
+	// bar. Without a connection (`offline`, OF-3) both stay, locked: `aria-disabled`, "Nur mit
+	// Verbindung" beside them, and a tap or Enter names it in a flag.
 	let {
 		store,
 		flags,
@@ -111,6 +131,7 @@
 		projectsNewCount = 0,
 		clipboardHint = null,
 		syncAll = null,
+		offline = false,
 		onclipboard,
 		onbulk,
 		onlink,
@@ -153,6 +174,11 @@
 		 * status; on the PC the button of `actions` stands in the bar.
 		 */
 		syncAll?: SyncAllStore | null;
+		/**
+		 * The connection is missing (OF-3, the state of the outbox): "Verwerfen (n)" and
+		 * "Wiederherstellen (n)" stay, locked, and say why (EG-1).
+		 */
+		offline?: boolean;
 		/** Further ways into the inbox under the chips (drop zone for files, package 8). */
 		tools?: Snippet;
 		/** First actions of the section bar ("Alle Kanäle jetzt abrufen", package A item 4). */
@@ -169,7 +195,8 @@
 	const ids = {
 		heading: `${uid}-heading`,
 		caption: `${uid}-caption`,
-		bulkHint: `${uid}-bulk-hint`
+		bulkHint: `${uid}-bulk-hint`,
+		offlineHint: `${uid}-offline-hint`
 	};
 
 	/** Titles from this length get a tooltip with the whole text (only they can be cut off). */
@@ -210,11 +237,19 @@
 	const byArrival = $derived(query.state === 'new' || query.state === 'all');
 	const rows = $derived(store.visible);
 	/**
-	 * Whether an entry may be chosen: a new one, but not one "＋" put into the inbox that the server
-	 * does not have yet (OF-4a round 2, A2).
+	 * The bulk action of the view (EG-1): "Verwerfen (n)" with the new entries, "Wiederherstellen (n)"
+	 * with the discarded ones; the views "Verknüpft" and "Alle" have no selection.
 	 */
-	const choosable = (item: InboxItemSummary) => item.state === 'new' && !store.isCreated(item.id);
-	/** Chosen entries that are shown and still new (a converted or discarded one drops out). */
+	const bulkKind = $derived<InboxBulkKind | null>(
+		showsNew ? 'discard' : query.state === 'discarded' ? 'restore' : null
+	);
+	/**
+	 * Whether an entry may be chosen: one in the state of the view (new, or discarded since EG-1), but
+	 * not one "＋" put into the inbox that the server does not have yet (OF-4a round 2, A2).
+	 */
+	const choosable = (item: InboxItemSummary) =>
+		bulkKind !== null && item.state === BULK_STATES[bulkKind] && !store.isCreated(item.id);
+	/** Chosen entries that are shown and still in the state of the view (another one drops out). */
 	const chosen = $derived(rows.filter((item) => choosable(item) && selected.includes(item.id)));
 	const selectable = $derived(rows.filter(choosable));
 	const allChosen = $derived(selectable.length > 0 && chosen.length === selectable.length);
@@ -244,11 +279,12 @@
 	let root = $state<HTMLElement>();
 	let heading = $state<HTMLElement>();
 
-	// Columns (ADR-0030): the selection exists only for new entries, the target project only once the
-	// server knows it (ADR-0049).
+	// Columns (ADR-0030): the selection exists only in the views "Neu" and (since EG-1) "Verworfen",
+	// the target project only once the server knows it (ADR-0049).
 	const columnFit = new ColumnFit(getColumnPrefs('inbox'), () =>
 		INBOX_TABLE.columns.filter(
-			(column) => (showsNew || column.id !== 'select') && (targetsReady || column.id !== 'target')
+			(column) =>
+				(bulkKind !== null || column.id !== 'select') && (targetsReady || column.id !== 'target')
 		)
 	);
 	const shown = $derived(columnFit.shown);
@@ -321,6 +357,33 @@
 		}
 		selected = selected.filter((entry) => entry !== item.id);
 		await focusNear(item.id, index);
+	}
+
+	/** The SelectionBar of a running bulk action and of its result (EG-1). */
+	let bulkBar = $state<HTMLElement>();
+	const bulkRunning = $derived(store.bulkProgress !== null);
+
+	/**
+	 * "Verwerfen (n)" or "Wiederherstellen (n)" of the chosen entries (EG-1); without a connection it
+	 * only names why. Entries the run changed leave the selection, a failed one stays chosen for
+	 * another try. The focus stays on the button; in the phone frame, where the actions close, it
+	 * goes back into the bar (as in BulkActionBar).
+	 */
+	async function runBulk(kind: InboxBulkKind, label: string) {
+		if (chosen.length === 0 || bulkRunning) return;
+		if (offline) {
+			flags.show({ tone: 'info', title: bulkOfflineText(label) });
+			return;
+		}
+		const entries = chosen.map(({ id, title }) => ({ id, title }));
+		if (kind === 'discard') await store.discardMany(entries);
+		else await store.restoreMany(entries);
+		const ran = new Set(entries.map((entry) => entry.id));
+		selected = selected.filter((id) => !ran.has(id) || store.find(id)?.state === BULK_STATES[kind]);
+		await tick();
+		if (phone && bulkBar && !bulkBar.contains(document.activeElement)) {
+			bulkBar.querySelector<HTMLElement>('button:not([disabled]), [tabindex]')?.focus();
+		}
 	}
 
 	/**
@@ -513,9 +576,10 @@
 	}
 
 	// "Auswählen" in the phone frame (MO-6, the way of MO-3): the boxes of the selection show on the
-	// new entries while the mode is on or something is chosen; "Fertig" leaves it and clears it.
+	// new entries (since EG-1 on the discarded ones in "Verworfen") while the mode is on or something
+	// is chosen; "Fertig" leaves it and clears it.
 	let selectMode = $state(false);
-	const selecting = $derived(phone && showsNew && (selectMode || chosen.length > 0));
+	const selecting = $derived(phone && bulkKind !== null && (selectMode || chosen.length > 0));
 
 	function leaveSelectMode() {
 		selectMode = false;
@@ -525,7 +589,7 @@
 	/** The menu "•••" of the list in the phone frame: what the bar of the PC shows besides. */
 	const listActions = $derived.by((): MenuAction[] => {
 		const entries: MenuAction[] = [];
-		if (showsNew && selectable.length > 0) {
+		if (bulkKind !== null && selectable.length > 0) {
 			entries.push({ label: 'Auswählen', locked: selecting, onselect: () => (selectMode = true) });
 		}
 		const clipboard = onclipboard;
@@ -533,11 +597,11 @@
 		const sync = syncAll;
 		if (sync !== null) {
 			// Without a connection (OF-3) the entry stays, locked, and names why.
-			const offline = sync.offline && !sync.running;
+			const syncLocked = sync.offline && !sync.running;
 			entries.push({
-				label: offline ? SYNC_OFFLINE_LABEL : 'Alle Kanäle jetzt abrufen',
+				label: syncLocked ? SYNC_OFFLINE_LABEL : 'Alle Kanäle jetzt abrufen',
 				busy: sync.running,
-				locked: offline,
+				locked: syncLocked,
 				onselect: () => void sync.runAll()
 			});
 		}
@@ -547,9 +611,12 @@
 	/** A tap on a card opens its entry, or chooses it while choosing (MO-6). */
 	function tapCard(event: MouseEvent, item: InboxItemSummary) {
 		if (!isCardTap(event)) return;
-		if (!selecting || item.state !== 'new') void goto(inboxItemHref(item.id, page.url));
-		// One "＋" put in that the server does not have yet is not chosen (OF-4a round 2, A2).
-		else if (choosable(item)) toggle(item.id, !selected.includes(item.id));
+		if (!selecting || bulkKind === null || item.state !== BULK_STATES[bulkKind]) {
+			void goto(inboxItemHref(item.id, page.url));
+		} else if (choosable(item)) {
+			// One "＋" put in that the server does not have yet is not chosen (OF-4a round 2, A2).
+			toggle(item.id, !selected.includes(item.id));
+		}
 	}
 </script>
 
@@ -847,35 +914,116 @@
 	</li>
 {/snippet}
 
-<!-- "Gesammelt umwandeln" and "Mit Ticket verknüpfen …" for the chosen new entries. -->
+<!-- "Gesammelt umwandeln", "Mit Ticket verknüpfen …" and "Verwerfen (n)" for the chosen new entries;
+     "Wiederherstellen (n)" for the chosen discarded ones (EG-1). While a run goes on, all wait. -->
 {#snippet bulkButtons()}
-	<button
-		class="bulk"
-		type="button"
-		aria-disabled={chosen.length === 0 ? 'true' : undefined}
-		aria-describedby={chosen.length === 0 ? ids.bulkHint : undefined}
-		onclick={() => {
-			if (chosen.length > 0) onbulk();
-		}}
-	>
-		Gesammelt umwandeln{chosen.length > 0 ? ` (${chosen.length})` : ''}
-	</button>
-	{#if onlink}
+	{#if showsNew}
 		<button
 			class="bulk"
 			type="button"
-			aria-disabled={chosen.length === 0 ? 'true' : undefined}
+			aria-disabled={chosen.length === 0 || bulkRunning ? 'true' : undefined}
 			aria-describedby={chosen.length === 0 ? ids.bulkHint : undefined}
 			onclick={() => {
-				if (chosen.length > 0) onlink();
+				if (chosen.length > 0 && !bulkRunning) onbulk();
 			}}
 		>
-			Mit Ticket verknüpfen …{chosen.length > 0 ? ` (${chosen.length})` : ''}
+			Gesammelt umwandeln{chosen.length > 0 ? ` (${chosen.length})` : ''}
+		</button>
+		{#if onlink}
+			<button
+				class="bulk"
+				type="button"
+				aria-disabled={chosen.length === 0 || bulkRunning ? 'true' : undefined}
+				aria-describedby={chosen.length === 0 ? ids.bulkHint : undefined}
+				onclick={() => {
+					if (chosen.length > 0 && !bulkRunning) onlink();
+				}}
+			>
+				Mit Ticket verknüpfen …{chosen.length > 0 ? ` (${chosen.length})` : ''}
+			</button>
+		{/if}
+	{/if}
+	{#if bulkKind !== null}
+		{@const kind = bulkKind}
+		{@const label = `${BULK_LABELS[kind]}${chosen.length > 0 ? ` (${chosen.length})` : ''}`}
+		{@const locked = chosen.length > 0 && offline}
+		<button
+			class="bulk"
+			type="button"
+			aria-disabled={chosen.length === 0 || locked || bulkRunning ? 'true' : undefined}
+			aria-busy={bulkRunning ? 'true' : undefined}
+			aria-describedby={chosen.length === 0 ? ids.bulkHint : locked ? ids.offlineHint : undefined}
+			title={locked ? BULK_OFFLINE_HINT : undefined}
+			onclick={() => void runBulk(kind, label)}
+		>
+			{label}
 		</button>
 	{/if}
 	{#if chosen.length === 0}
 		<span class="hint" id={ids.bulkHint}>Erst Einträge auswählen.</span>
+	{:else if offline}
+		<span class="hint offline-hint" id={ids.offlineHint}>{BULK_OFFLINE_HINT}</span>
 	{/if}
+{/snippet}
+
+<!-- The result of the last bulk action of EG-1: failures as errors, skipped entries neutral. -->
+{#snippet bulkResultList()}
+	{#if store.bulkResult}
+		{@const result = store.bulkResult}
+		{#if result.failures.length > 0}
+			<div class="alert-error bulk-failures" role="alert">
+				<ErrorIcon />
+				<div>
+					<p class="result-title">{bulkFailureTitle(result.failures.length, result.verb)}</p>
+					<ul>
+						{#each result.failures as failure (failure.id)}
+							<li>„{failure.title}“: {failure.reason}</li>
+						{/each}
+					</ul>
+				</div>
+			</div>
+		{/if}
+		{#if result.skipped.length > 0}
+			<SectionMessage tone="info" compact>
+				{bulkSkippedTitle(result.skipped.length)}
+				<ul class="bulk-skipped">
+					{#each result.skipped as skip (skip.id)}
+						<li>„{skip.title}“: {skip.reason}</li>
+					{/each}
+				</ul>
+			</SectionMessage>
+		{/if}
+		<button
+			class="text-button result-close"
+			type="button"
+			onclick={() => store.dismissBulkResult()}
+		>
+			Ergebnis schließen
+		</button>
+	{/if}
+{/snippet}
+
+<!-- The SelectionBar of "Auswählen" (phone frame) or of a running bulk action and its result (EG-1). -->
+{#snippet selectionBar(barSelecting: boolean)}
+	<SelectionBar
+		countText={chosen.length === 1
+			? '1 Eintrag ausgewählt'
+			: `${chosen.length} Einträge ausgewählt`}
+		progress={store.bulkProgress
+			? {
+					total: store.bulkProgress.total,
+					done: store.bulkProgress.done,
+					text: bulkProgressText(store.bulkProgress)
+				}
+			: null}
+		actionsShown={phone && chosen.length > 0}
+		hint="Erst Einträge auswählen."
+		onclear={leaveSelectMode}
+		selecting={barSelecting}
+		bind:bar={bulkBar}
+		actions={bulkButtons}
+		result={store.bulkResult && !bulkRunning ? bulkResultList : undefined}
+	/>
 {/snippet}
 
 <!-- The chips of the URL, the target project and the grouping: above the table, in the sheet (MO-6). -->
@@ -955,7 +1103,7 @@
 					Aus Zwischenablage
 				</button>
 			{/if}
-			{#if showsNew}
+			{#if bulkKind !== null}
 				{@render bulkButtons()}
 			{/if}
 			<ColumnsPopover fit={columnFit} always="Auswahl, Titel und Aktionen sind immer sichtbar." />
@@ -996,6 +1144,12 @@
 			<p class="clipboard-hint">{clipboardHint}</p>
 		{/if}
 	</div>
+
+	{#if !phone && (store.bulkProgress !== null || store.bulkResult !== null)}
+		<!-- A running bulk action of EG-1 and its result above the table, like the bar of the trash;
+		     the buttons stay in the section bar. -->
+		{@render selectionBar(true)}
+	{/if}
 
 	{#snippet failure(message: string, problem: ProblemEntry | null = null)}
 		<SectionMessage tone="error" live {problem}>
@@ -1171,17 +1325,10 @@
 			{store.loadingMoreHandled ? 'Wird geladen …' : 'Weitere laden'}
 		</button>
 	{/if}
-	{#if selecting}
-		<!-- The bar of "Auswählen" at the bottom, after the cards (MO-7b, shared with "Aufgaben"). -->
-		<SelectionBar
-			countText={chosen.length === 1
-				? '1 Eintrag ausgewählt'
-				: `${chosen.length} Einträge ausgewählt`}
-			actionsShown={chosen.length > 0}
-			hint="Erst Einträge auswählen."
-			onclear={leaveSelectMode}
-			actions={bulkButtons}
-		/>
+	{#if phone && (selecting || store.bulkProgress !== null || store.bulkResult !== null)}
+		<!-- The bar of "Auswählen" at the bottom, after the cards (MO-7b, shared with "Aufgaben");
+		     outside of "Auswählen" a run of EG-1 or its result stands alone, as in the trash. -->
+		{@render selectionBar(selecting)}
 	{/if}
 	{#if phone}
 		<!-- The files after the list in the phone frame (MO-6): one level deeper, still there. -->
@@ -1290,9 +1437,26 @@
 		cursor: not-allowed;
 	}
 
+	/* A bulk action of EG-1 runs. */
+	.bulk[aria-busy='true'] {
+		cursor: progress;
+	}
+
 	.hint {
 		font-size: var(--font-size-small);
 		color: var(--color-text-muted);
+	}
+
+	/* The result of a bulk action of EG-1, as in the bars of "Aufgaben" and "Papierkorb". */
+	.bulk-failures ul,
+	.bulk-skipped {
+		display: grid;
+		gap: 0.125rem;
+		margin-top: 0.25rem;
+	}
+
+	.result-title {
+		font-weight: 600;
 	}
 
 	/* The measured frame of fitColumns (ADR-0030); the table takes its width and never more. */
@@ -1550,8 +1714,14 @@
 
 		:global(:root[data-mobile-layout='on']) .bulk,
 		:global(:root[data-mobile-layout='on']) .more,
-		:global(:root[data-mobile-layout='on']) .duplicate .text-button {
+		:global(:root[data-mobile-layout='on']) .duplicate .text-button,
+		:global(:root[data-mobile-layout='on']) .result-close {
 			min-height: var(--control-height-touch);
+		}
+
+		/* "Nur mit Verbindung" (EG-1) takes the whole row of the actions in the bar at the bottom. */
+		:global(:root[data-mobile-layout='on']) .offline-hint {
+			grid-column: 1 / -1;
 		}
 
 		:global(:root[data-mobile-layout='on']) .sheet-filters {
