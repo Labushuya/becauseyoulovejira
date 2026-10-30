@@ -630,11 +630,67 @@ describe('several entries at once (EG-1)', () => {
 		await run;
 		expect(data.discard).toHaveBeenCalledTimes(2);
 		expect(store.bulkResult).toBeNull();
-		// No "Die Gründe stehen bei der Auswahl.": no result stands; the flag offers the request.
+		// No "Die Gründe stehen bei der Auswahl.": no result stands; the flag offers the request and,
+		// since MO-7c1 (F-1), names the reason of the first failure.
 		expect(flags.flags.map((flag) => [flag.tone, flag.title, flag.description])).toEqual([
-			['error', 'Keiner der 2 Einträge wurde verworfen.', '']
+			[
+				'error',
+				'Keiner der 2 Einträge wurde verworfen.',
+				`„${A.title}“: ${SERVER_FAILURE} Dazu 1 weiterer Fehler.`
+			]
 		]);
 		expect(flags.flags[0]?.problem).toEqual(expect.objectContaining({ source: 'client' }));
+	});
+
+	// MO-7c1 (F-1 of the review of EG-1): a run with failures whose result cannot stand at the
+	// selection (it ended in another view, or "Rückgängig" ran in "Alle" or "Verknüpft") warns with the
+	// reason and "Details" instead of a flag of success.
+	it('warns with the reason and "Details" when a run with failures ends in another view (F-1)', async () => {
+		const { store, data, flags } = setup();
+		store.activate({ source: null, state: 'new' });
+		await vi.waitFor(() => expect(store.state).toBe('ready'));
+		const first = deferred<InboxItemSummary>();
+		data.discard.mockReturnValueOnce(first.promise);
+		data.discard.mockRejectedValueOnce(new DataError('server'));
+		const run = store.discardMany([entry(A), entry(B)]);
+		store.activate({ source: null, state: 'all' });
+		first.resolve(discarded(A, T2));
+		await run;
+		expect(store.bulkResult).toBeNull();
+		expect(shown(flags)).toEqual([
+			['error', '1 Eintrag verworfen, 1 fehlgeschlagen.', 'Rückgängig']
+		]);
+		expect(flags.flags[0]?.description).toBe(`„${B.title}“: ${SERVER_FAILURE}`);
+		expect(flags.flags[0]?.problem).toEqual(expect.objectContaining({ source: 'client' }));
+		// "Rückgängig" stays for the one that was discarded.
+		expect(store.canUndoBulk).toBe(true);
+	});
+
+	it('warns with the reason and "Details" when "Rückgängig" in the view "Alle" fails for an entry (F-1)', async () => {
+		const { store, data, flags } = setup();
+		await store.load();
+		await store.discardMany([entry(A), entry(B)]);
+		store.activate({ source: null, state: 'all' });
+		data.restore.mockRejectedValueOnce(new DataError('server'));
+		await store.undoDiscardMany();
+		expect(data.restore.mock.calls).toEqual([[A.id], [B.id]]);
+		expect(shown(flags)).toEqual([
+			['error', '1 Eintrag wiederhergestellt, 1 fehlgeschlagen.', undefined]
+		]);
+		expect(flags.flags[0]?.description).toBe(`„${A.title}“: ${SERVER_FAILURE}`);
+		expect(flags.flags[0]?.problem).toEqual(expect.objectContaining({ source: 'client' }));
+	});
+
+	it('keeps the flag of success where the result stands at the selection (F-1, counter-check)', async () => {
+		const { store, data, flags } = setup();
+		await store.load();
+		data.discard.mockRejectedValueOnce(new DataError('server'));
+		await store.discardMany([entry(A), entry(B)]);
+		expect(store.bulkResult?.failures).toHaveLength(1);
+		expect(shown(flags)).toEqual([
+			['success', '1 Eintrag verworfen, 1 fehlgeschlagen.', 'Rückgängig']
+		]);
+		expect(flags.flags[0]?.description).toBe('');
 	});
 
 	it('says "Nichts verworfen" in an info flag without "Rückgängig" when every entry was skipped (E-4)', async () => {

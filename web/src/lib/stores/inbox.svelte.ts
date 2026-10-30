@@ -37,6 +37,7 @@ import {
 	BULK_LABELS,
 	BULK_SKIP_REASONS,
 	BULK_VERBS,
+	bulkFailureNote,
 	bulkKindOf,
 	bulkResultTitle,
 	bulkSkipReason,
@@ -960,7 +961,10 @@ export class InboxStore {
 	 * Keeps the result of a run (only with failures or skipped entries, and only while its view is
 	 * still shown) and shows its flag: an error flag when no entry changed and requests failed, an
 	 * info flag when every entry was skipped, otherwise a success flag, with `undo` as "Rückgängig"
-	 * when entries changed. Returns the ID of a flag with "Rückgängig", else null.
+	 * when entries changed. Failures whose result cannot stand at the selection (the run ended in
+	 * another view, or "Rückgängig" ran in "Alle" or "Verknüpft") make it an error flag with the reason
+	 * of the first one and its "Details" (MO-7c1, F-1), "Rückgängig" included; it stays until closed,
+	 * like every error flag. Returns the ID of a flag with "Rückgängig", else null.
 	 */
 	#finishMany(outcome: BulkRun, verb: string, undo: (() => void) | null): string | null {
 		const counts = {
@@ -973,26 +977,34 @@ export class InboxStore {
 		// Another view meanwhile: the result would stand without its selection (EG-1 round 2).
 		const kept = (counts.skipped > 0 || counts.failed > 0) && this.#query.state === outcome.view;
 		this.#bulkResult = kept ? { verb, failures: outcome.failures, skipped: outcome.skipped } : null;
+		// The reasons stand at the selection of the view; without it the flag names the first one and
+		// offers "Details" of its request.
+		const shown = kept && bulkKindOf(outcome.view) !== null;
+		const problem = outcome.failures.find((failure) => failure.problem !== undefined)?.problem;
+		const unseen =
+			counts.failed > 0 && !shown
+				? {
+						description: bulkFailureNote(outcome.failures),
+						...(problem !== undefined && { problem })
+					}
+				: null;
 		if (counts.done === 0 && counts.failed > 0) {
-			// The reasons stand at the selection of the view; without it the flag offers "Details".
-			const shown = kept && bulkKindOf(outcome.view) !== null;
-			const problem = outcome.failures.find((failure) => failure.problem !== undefined)?.problem;
 			this.#flags.show({
 				tone: 'error',
 				title,
-				...(shown
-					? { description: 'Die Gründe stehen bei der Auswahl.' }
-					: problem !== undefined && { problem })
+				...(unseen ?? { description: 'Die Gründe stehen bei der Auswahl.' })
 			});
 			return null;
 		}
+		const tone = unseen !== null ? 'error' : counts.done === 0 ? 'info' : 'success';
 		if (undo === null || counts.done === 0) {
-			this.#flags.show({ tone: counts.done === 0 ? 'info' : 'success', title });
+			this.#flags.show({ tone, title, ...(unseen ?? {}) });
 			return null;
 		}
 		const flagId = this.#flags.show({
-			tone: 'success',
+			tone,
 			title,
+			...(unseen ?? {}),
 			action: { label: 'Rückgängig', run: undo },
 			onclose: () => {
 				if (this.#bulkUndo?.flagId === flagId) this.#bulkUndo = null;
