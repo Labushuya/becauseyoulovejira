@@ -369,6 +369,210 @@ describe('discard with "Rückgängig"', () => {
 	});
 });
 
+// EG-1 (ADR-0014 addendum EG-1): "Verwerfen (n)" and "Wiederherstellen (n)" of the chosen entries,
+// one entry after the other like the other bulk actions (no batch API), with one "Rückgängig".
+describe('several entries at once (EG-1)', () => {
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	const SERVER_FAILURE =
+		'Der Server hat mit einem Fehler geantwortet. Bitte später erneut versuchen.';
+	const C = item('item00000000003', { created: T0 });
+	const GONE = discarded(item('item00000000004'), T1);
+	const LINKED = item('item00000000005', {
+		state: 'converted',
+		ticketId: 'tick00000000001',
+		handledAt: T1,
+		updated: T1
+	});
+	const entry = ({ id, title }: InboxItemSummary) => ({ id, title });
+	const shown = (flags: FlagStore) =>
+		flags.flags.map((flag) => [flag.tone, flag.title, flag.action?.label]);
+
+	/** The store in the view "Alle": three new entries, a discarded and a linked one. */
+	async function mixed() {
+		const context = setup({ newItems: [A, B, C] });
+		context.data.listHandled.mockResolvedValue({ items: [GONE, LINKED], page: 1, hasMore: false });
+		context.store.activate({ source: null, state: 'all' });
+		await vi.waitFor(() => expect(context.store.handledLoad).toBe('ready'));
+		await vi.waitFor(() => expect(context.store.state).toBe('ready'));
+		return context;
+	}
+
+	it('discards the new ones of a mixed choice one after the other and names the skipped ones with their reason', async () => {
+		const { store, data, flags } = await mixed();
+		const first = deferred<InboxItemSummary>();
+		data.discard.mockReturnValueOnce(first.promise);
+		const unknown = { id: 'item00000000077', title: 'Weg' };
+		const run = store.discardMany([entry(A), entry(GONE), entry(LINKED), entry(B), unknown]);
+		expect(store.bulkProgress).toEqual({ label: 'Verwerfen', total: 5, done: 0 });
+		expect(store.isPending(A.id)).toBe(true);
+		// One after the other: the next request waits for the answer of the first, a second run waits.
+		expect(data.discard.mock.calls).toEqual([[A.id]]);
+		await store.discardMany([entry(C)]);
+		expect(data.discard.mock.calls).toEqual([[A.id]]);
+		first.resolve(discarded(A, T2));
+		await run;
+		expect(data.discard.mock.calls).toEqual([[A.id], [B.id]]);
+		expect(store.bulkProgress).toBeNull();
+		expect(store.newItems.map((value) => value.id)).toEqual([C.id]);
+		expect(store.bulkResult).toEqual({
+			verb: 'verworfen',
+			failures: [],
+			skipped: [
+				{ id: GONE.id, title: GONE.title, reason: 'Schon verworfen.' },
+				{ id: LINKED.id, title: LINKED.title, reason: 'Schon verknüpft.' },
+				{ id: unknown.id, title: 'Weg', reason: 'Nicht mehr neu.' }
+			]
+		});
+		expect(shown(flags)).toEqual([
+			['success', '2 Einträge verworfen, 3 übersprungen.', 'Rückgängig']
+		]);
+		expect(store.canUndoBulk).toBe(true);
+	});
+
+	it('skips an entry whose own action still runs', async () => {
+		const { store, data } = setup();
+		await store.load();
+		const single = deferred<InboxItemSummary>();
+		data.discard.mockReturnValueOnce(single.promise);
+		const one = store.discard(A.id);
+		await store.discardMany([entry(A), entry(B)]);
+		expect(store.bulkResult?.skipped).toEqual([
+			{ id: A.id, title: A.title, reason: 'Wird gerade bearbeitet.' }
+		]);
+		expect(store.isPending(A.id)).toBe(true);
+		single.resolve(discarded(A, T2));
+		await one;
+		expect(data.discard.mock.calls).toEqual([[A.id], [B.id]]);
+	});
+
+	it('goes on after a failure, names it with its reason and keeps that entry new', async () => {
+		const { store, data, flags } = setup();
+		await store.load();
+		data.discard.mockRejectedValueOnce(new DataError('server'));
+		await store.discardMany([entry(A), entry(B)]);
+		expect(data.discard.mock.calls).toEqual([[A.id], [B.id]]);
+		expect(store.find(A.id)?.state).toBe('new');
+		expect(store.bulkResult).toEqual({
+			verb: 'verworfen',
+			failures: [{ id: A.id, title: A.title, reason: SERVER_FAILURE }],
+			skipped: []
+		});
+		expect(shown(flags)).toEqual([
+			['success', '1 Eintrag verworfen, 1 fehlgeschlagen.', 'Rückgängig']
+		]);
+	});
+
+	it('shows an error flag without "Rückgängig" when no entry could be discarded', async () => {
+		const { store, data, flags } = setup();
+		await store.load();
+		data.discard.mockRejectedValue(new DataError('server'));
+		await store.discardMany([entry(A), entry(B)]);
+		expect(
+			flags.flags.map((flag) => [flag.tone, flag.title, flag.description, flag.action])
+		).toEqual([
+			[
+				'error',
+				'Keiner der 2 Einträge wurde verworfen.',
+				'Die Gründe stehen bei der Auswahl.',
+				null
+			]
+		]);
+		expect(store.canUndoBulk).toBe(false);
+		expect(store.bulkResult?.failures).toHaveLength(2);
+	});
+
+	it('restores every entry of the run with one "Rückgängig" in its flag', async () => {
+		vi.useFakeTimers();
+		const { store, data, flags } = setup();
+		await store.load();
+		await store.discardMany([entry(A), entry(B)]);
+		expect(store.newItems).toEqual([]);
+		flags.act(flags.flags[0]?.id ?? '');
+		await vi.waitFor(() =>
+			expect(store.newItems.map((value) => value.id).sort()).toEqual([A.id, B.id])
+		);
+		expect(data.restore.mock.calls).toEqual([[A.id], [B.id]]);
+		expect(store.canUndoBulk).toBe(false);
+		expect(store.bulkResult).toBeNull();
+		expect(shown(flags)).toEqual([['success', '2 Einträge wiederhergestellt.', undefined]]);
+	});
+
+	it('offers "Rückgängig" as long as the flag of one discarded entry, 8 s', async () => {
+		vi.useFakeTimers();
+		const { store, flags } = setup();
+		await store.load();
+		await store.discardMany([entry(A)]);
+		expect(store.canUndoBulk).toBe(true);
+		await vi.advanceTimersByTimeAsync(FLAG_DURATION_MS);
+		expect(flags.flags).toEqual([]);
+		expect(store.canUndoBulk).toBe(false);
+	});
+
+	it('names a failed restore of "Rückgängig" in the result and in its flag', async () => {
+		const { store, data, flags } = setup();
+		await store.load();
+		await store.discardMany([entry(A), entry(B)]);
+		data.restore.mockRejectedValueOnce(new DataError('server'));
+		await store.undoDiscardMany();
+		expect(data.restore.mock.calls).toEqual([[A.id], [B.id]]);
+		expect(store.find(B.id)?.state).toBe('new');
+		expect(store.bulkResult).toEqual({
+			verb: 'wiederhergestellt',
+			failures: [{ id: A.id, title: A.title, reason: SERVER_FAILURE }],
+			skipped: []
+		});
+		expect(shown(flags)).toEqual([
+			['success', '1 Eintrag wiederhergestellt, 1 fehlgeschlagen.', undefined]
+		]);
+	});
+
+	it('restores the discarded ones of a choice and names the others', async () => {
+		const { store, data, flags } = await mixed();
+		await store.restoreMany([entry(GONE), entry(A), entry(LINKED)]);
+		expect(data.restore.mock.calls).toEqual([[GONE.id]]);
+		expect(store.find(GONE.id)?.state).toBe('new');
+		expect(store.bulkResult).toEqual({
+			verb: 'wiederhergestellt',
+			failures: [],
+			skipped: [
+				{ id: A.id, title: A.title, reason: 'Schon im Eingang.' },
+				{ id: LINKED.id, title: LINKED.title, reason: 'Verknüpft, nicht verworfen.' }
+			]
+		});
+		expect(shown(flags)).toEqual([
+			['success', '1 Eintrag wiederhergestellt, 2 übersprungen.', undefined]
+		]);
+		store.dismissBulkResult();
+		expect(store.bulkResult).toBeNull();
+	});
+
+	it('stops at an ended session without a result, and reset ends a running run', async () => {
+		const { store, data, session, flags } = setup();
+		await store.load();
+		data.discard.mockRejectedValueOnce(new DataError('session'));
+		await store.discardMany([entry(A), entry(B)]);
+		expect(session.logout).toHaveBeenCalledOnce();
+		expect(data.discard).toHaveBeenCalledOnce();
+		expect(store.bulkProgress).toBeNull();
+		expect(store.bulkResult).toBeNull();
+		expect(flags.flags).toEqual([]);
+
+		const pending = deferred<InboxItemSummary>();
+		data.discard.mockReturnValueOnce(pending.promise);
+		const run = store.discardMany([entry(A), entry(B)]);
+		store.reset();
+		expect(store.bulkProgress).toBeNull();
+		pending.resolve(discarded(A, T2));
+		await run;
+		expect(data.discard).toHaveBeenCalledTimes(2);
+		expect(store.bulkResult).toBeNull();
+		expect(flags.flags).toEqual([]);
+	});
+});
+
 describe('updates', () => {
 	it('ignores older events and deleted entries', async () => {
 		const { store } = setup();
