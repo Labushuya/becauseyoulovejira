@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import { resolve } from '$app/paths';
 	import type { ResolvedPathname } from '$app/types';
 	import { TRASH_TABLE, withKeyDefaults } from '$lib/domain/columns';
@@ -19,6 +20,7 @@
 	} from '$lib/domain/trash';
 	import { restartNeeded } from '$lib/guidance/texts';
 	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
+	import { keepFocusAtBar } from '$lib/selection-focus';
 	import { getColumnPrefs } from '$lib/stores/column-prefs.svelte';
 	import type { TrashStore } from '$lib/stores/trash.svelte';
 	import { trashItemHref } from '$lib/ticket-links';
@@ -55,7 +57,9 @@
 	// switch of the PC) and the menu of the list with "Auswählen" and "Papierkorb leeren …". The bulk
 	// actions are one level deeper: "Auswählen" shows a box on every card and "Alle" above them, and the
 	// bar of the selection stands at the bottom after the cards (SelectionBar, shared with "Aufgaben"
-	// and "Eingang"), its actions behind "Aktionen", "Fertig" leaves it.
+	// and "Eingang"), its actions behind "Aktionen", "Fertig" leaves it. Since MO-7c1 the focus after
+	// "Wiederherstellen" of the chosen tickets and after "Ergebnis schließen" stays in the bar, or goes to
+	// the heading once the bar is gone (lib/selection-focus.ts), as in "Aufgaben".
 	let {
 		store,
 		projects,
@@ -144,6 +148,28 @@
 		selection = EMPTY_SELECTION;
 	}
 
+	/** The bar of the chosen tickets, for the focus after its actions (MO-7c1). */
+	let bar = $state<HTMLElement>();
+
+	/**
+	 * "Wiederherstellen" of the chosen tickets: the focus stays in the bar like after the bulk actions of
+	 * "Aufgaben" (BulkActionBar), or goes to the heading once the bar is gone (Q-2 of the review of MO-7b).
+	 */
+	async function restoreChosen() {
+		const away = heading;
+		await store.runMany('restore', chosen);
+		await tick();
+		keepFocusAtBar(bar, away);
+	}
+
+	/** "Ergebnis schließen": the focus stays in the bar or goes to the heading (Q-1). */
+	async function closeResult() {
+		const away = heading;
+		store.dismissResult();
+		await tick();
+		keepFocusAtBar(bar, away);
+	}
+
 	/** The phone frame (MO-7b): cards, the row of the view, "Auswählen" and the bar at the bottom. */
 	const mobileLayout = getMobileLayoutStore();
 	const phone = $derived(mobileLayout.active);
@@ -211,11 +237,7 @@
 {/snippet}
 
 {#snippet bulkActions()}
-	<button
-		class="button-secondary"
-		type="button"
-		onclick={() => void store.runMany('restore', chosen)}
-	>
+	<button class="button-secondary" type="button" onclick={() => void restoreChosen()}>
 		Wiederherstellen
 	</button>
 	{#if canPurge}
@@ -244,6 +266,7 @@
 		hint="Erst Tickets auswählen."
 		{onclear}
 		{selecting}
+		bind:bar
 		actions={bulkActions}
 		result={store.result && store.progress === null ? resultList : undefined}
 	/>
@@ -419,7 +442,7 @@
 				</ul>
 			</SectionMessage>
 		{/if}
-		<button class="text-button" type="button" onclick={() => store.dismissResult()}>
+		<button class="text-button" type="button" onclick={() => void closeResult()}>
 			Ergebnis schließen
 		</button>
 	{/if}

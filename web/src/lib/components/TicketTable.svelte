@@ -986,6 +986,7 @@
 			{catalog}
 			openBlockingOf={(id) => store.openBlockingOf(id)}
 			onclear={clearSelection}
+			{heading}
 		/>
 	{/if}
 
@@ -1255,6 +1256,7 @@
 			openBlockingOf={(id) => store.openBlockingOf(id)}
 			onclear={leaveSelectMode}
 			{selecting}
+			{heading}
 		/>
 	{/if}
 </section>

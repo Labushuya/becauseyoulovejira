@@ -349,6 +349,74 @@ describe('"Papierkorb" as cards in the phone frame (MO-7b)', () => {
 	});
 });
 
+// MO-7c1 (Q-1 and Q-2 of the review of MO-7b): "Wiederherstellen" of the chosen tickets gives the
+// focus back like the bar of "Aufgaben" (BulkActionBar.run), and "Ergebnis schließen" as well: into
+// the bar while it stands, otherwise to the heading "Papierkorb", never to the page (body).
+describe('the focus after the bulk actions of the trash (MO-7c1)', () => {
+	const heading = () => screen.getByRole('heading', { level: 2, name: 'Papierkorb' });
+
+	it('keeps the focus in the bar after "Wiederherstellen" and puts it on the heading once the bar is gone (Q-1, Q-2)', async () => {
+		useWindow(true, true);
+		const { data } = await showView();
+		const restoreOne = data.restore;
+		data.restore = vi.fn<TrashData['restore']>(async (id, choices) => {
+			if (id === B) throw new DataError('server', { status: 500 });
+			return restoreOne(id, choices);
+		});
+		await fireEvent.click(
+			within(menuOf(screen.getByRole('button', { name: 'Weitere Aktionen der Liste' }))).getByRole(
+				'menuitem',
+				{ name: 'Auswählen', hidden: true }
+			)
+		);
+		await tick();
+		await fireEvent.click(
+			screen.getByRole('checkbox', { name: 'Alle Tickets im Papierkorb auswählen' })
+		);
+		const bar = () => screen.getByRole('region', { name: /ausgewählt$/ });
+		await fireEvent.click(within(bar()).getByRole('button', { name: 'Aktionen' }));
+		await tick();
+		const restore = within(bar()).getByRole('button', { name: 'Wiederherstellen' });
+		restore.focus();
+		await fireEvent.click(restore);
+		await vi.waitFor(() =>
+			expect(within(bar()).getByText('1 Ticket wurde nicht bearbeitet:')).toBeTruthy()
+		);
+		// The actions closed with the end of the action and took "Wiederherstellen" with them; the focus
+		// goes to the first button of the bar, like after the actions of "Aufgaben": the result stands
+		// first, so "Ergebnis schließen".
+		await vi.waitFor(() =>
+			expect(document.activeElement).toBe(
+				within(bar()).getByRole('button', { name: 'Ergebnis schließen' })
+			)
+		);
+
+		await fireEvent.click(within(bar()).getByRole('button', { name: 'Fertig' }));
+		await tick();
+		const left = screen.getByRole('region', { name: '0 Tickets ausgewählt' });
+		await fireEvent.click(within(left).getByRole('button', { name: 'Ergebnis schließen' }));
+		await tick();
+		expect(screen.queryByRole('region', { name: /ausgewählt$/ })).toBeNull();
+		await vi.waitFor(() => expect(document.activeElement).toBe(heading()));
+	});
+
+	it('puts the focus on the heading on the PC once "Wiederherstellen" leaves nothing to show (Q-2)', async () => {
+		useWindow(false, true);
+		await showView();
+		await fireEvent.click(screen.getByRole('checkbox', { name: 'HAUS-1 auswählen' }));
+		const restore = within(screen.getByRole('region', { name: '1 Ticket ausgewählt' })).getByRole(
+			'button',
+			{ name: 'Wiederherstellen' }
+		);
+		restore.focus();
+		await fireEvent.click(restore);
+		await vi.waitFor(() =>
+			expect(screen.queryByRole('region', { name: /ausgewählt$/ })).toBeNull()
+		);
+		await vi.waitFor(() => expect(document.activeElement).toBe(heading()));
+	});
+});
+
 describe('the preview of the trash as a page (MO-7b)', () => {
 	it('names the arrow after its way back and goes back through it', async () => {
 		useWindow(true, true);

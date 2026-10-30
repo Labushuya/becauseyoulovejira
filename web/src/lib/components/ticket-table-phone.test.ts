@@ -599,6 +599,57 @@ describe('"Aufgaben" as cards in the phone frame (MO-3)', () => {
 	});
 });
 
+// MO-7c1 (Q-1 of the review of MO-7b): "Ergebnis schließen" takes its button away; the focus goes
+// into the bar while it stands, otherwise to the heading of the list, never to the page (body).
+describe('the focus after "Ergebnis schließen" (MO-7c1)', () => {
+	/** "Auswählen", TASK-2 chosen, "Fälligkeit …" with "Verschieben um": a result with a skipped ticket. */
+	async function skipOne() {
+		const bar = () => screen.getByRole('region', { name: /ausgewählt$/ });
+		await fireEvent.click(within(bar()).getByRole('button', { name: 'Aktionen' }));
+		await tick();
+		await fireEvent.click(within(bar()).getByRole('button', { name: 'Fälligkeit …' }));
+		await fireEvent.click(screen.getByRole('radio', { name: 'Verschieben um' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Übernehmen' }));
+		await vi.advanceTimersByTimeAsync(0);
+		await vi.waitFor(() => expect(within(bar()).getByText(/1 Ticket übersprungen/)).toBeTruthy());
+		return bar;
+	}
+
+	it('puts the focus into the bar while "Auswählen" goes on, and on the heading once the bar is gone (Q-1)', async () => {
+		useWindow(true, true);
+		await showTable([ticket(1), ticket(2)]);
+		const trigger = screen.getByRole('button', { name: 'Weitere Aktionen der Liste' });
+		const menu = document.getElementById(
+			trigger.getAttribute('aria-controls') ?? ''
+		) as HTMLElement;
+		await fireEvent.click(within(menu).getByRole('menuitem', { name: 'Auswählen', hidden: true }));
+		await tick();
+		await fireEvent.click(card('TASK-2').querySelector('.meta') as HTMLElement);
+
+		// Still choosing: the bar stays, the focus goes to its first button, "Aktionen".
+		let bar = await skipOne();
+		await fireEvent.click(within(bar()).getByRole('button', { name: 'Ergebnis schließen' }));
+		await tick();
+		await vi.waitFor(() =>
+			expect(document.activeElement).toBe(within(bar()).getByRole('button', { name: 'Aktionen' }))
+		);
+
+		// After "Fertig" the result stands alone; closed, the bar goes and the heading takes the focus.
+		bar = await skipOne();
+		await fireEvent.click(within(bar()).getByRole('button', { name: 'Fertig' }));
+		await tick();
+		const left = screen.getByRole('region', { name: '0 Tickets ausgewählt' });
+		await fireEvent.click(within(left).getByRole('button', { name: 'Ergebnis schließen' }));
+		await tick();
+		expect(screen.queryByRole('region', { name: /ausgewählt/ })).toBeNull();
+		await vi.waitFor(() =>
+			expect(document.activeElement).toBe(
+				screen.getByRole('heading', { level: 2, name: 'Aufgaben' })
+			)
+		);
+	});
+});
+
 describe('"Aufgaben" outside the phone frame stays the table (MO-3)', () => {
 	it.each([
 		['a PC with the switch on', false, true],
