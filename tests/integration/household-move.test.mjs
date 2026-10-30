@@ -745,6 +745,10 @@ describe('dissolving a household (ADR-0061 §5)', () => {
 			mode: 'calendar',
 			freq: 'monthly',
 			month_day: 1,
+			// Far ahead, so the rule makes no ticket of the household yet (with the default lead time
+			// of 3 days it would on the last days of a month and on the 1st).
+			anchor: '2040-01-01',
+			lead_days: 0,
 			initial_status: 'open',
 			project: project.id
 		});

@@ -581,6 +581,10 @@ describe('an orphaned household (E7-4c, ADR-0061 addendum E7-4c)', () => {
 			mode: 'calendar',
 			freq: 'monthly',
 			month_day: 1,
+			// Far ahead, so the rule makes no ticket of the household yet (with the default lead time
+			// of 3 days it would on the last days of a month and on the 1st).
+			anchor: '2040-01-01',
+			lead_days: 0,
 			initial_status: 'open'
 		});
 		const marks = superuser.collection('inbox_moved_fingerprints');
