@@ -369,6 +369,389 @@ describe('discard with "Rückgängig"', () => {
 	});
 });
 
+// EG-1 (ADR-0014 addendum EG-1): "Verwerfen (n)" and "Wiederherstellen (n)" of the chosen entries,
+// one entry after the other like the other bulk actions (no batch API), with one "Rückgängig".
+describe('several entries at once (EG-1)', () => {
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	const SERVER_FAILURE =
+		'Der Server hat mit einem Fehler geantwortet. Bitte später erneut versuchen.';
+	const C = item('item00000000003', { created: T0 });
+	const GONE = discarded(item('item00000000004'), T1);
+	const LINKED = item('item00000000005', {
+		state: 'converted',
+		ticketId: 'tick00000000001',
+		handledAt: T1,
+		updated: T1
+	});
+	const entry = ({ id, title }: InboxItemSummary) => ({ id, title });
+	const shown = (flags: FlagStore) =>
+		flags.flags.map((flag) => [flag.tone, flag.title, flag.action?.label]);
+
+	/** The store in the view "Alle": three new entries, a discarded and a linked one. */
+	async function mixed() {
+		const context = setup({ newItems: [A, B, C] });
+		context.data.listHandled.mockResolvedValue({ items: [GONE, LINKED], page: 1, hasMore: false });
+		context.store.activate({ source: null, state: 'all' });
+		await vi.waitFor(() => expect(context.store.handledLoad).toBe('ready'));
+		await vi.waitFor(() => expect(context.store.state).toBe('ready'));
+		return context;
+	}
+
+	it('discards the new ones of a mixed choice one after the other and names the skipped ones with their reason', async () => {
+		const { store, data, flags } = await mixed();
+		const first = deferred<InboxItemSummary>();
+		data.discard.mockReturnValueOnce(first.promise);
+		const unknown = { id: 'item00000000077', title: 'Weg' };
+		const run = store.discardMany([entry(A), entry(GONE), entry(LINKED), entry(B), unknown]);
+		expect(store.bulkProgress).toEqual({ label: 'Verwerfen', total: 5, done: 0 });
+		expect(store.isPending(A.id)).toBe(true);
+		// One after the other: the next request waits for the answer of the first, a second run waits.
+		expect(data.discard.mock.calls).toEqual([[A.id]]);
+		await store.discardMany([entry(C)]);
+		expect(data.discard.mock.calls).toEqual([[A.id]]);
+		first.resolve(discarded(A, T2));
+		await run;
+		expect(data.discard.mock.calls).toEqual([[A.id], [B.id]]);
+		expect(store.bulkProgress).toBeNull();
+		expect(store.newItems.map((value) => value.id)).toEqual([C.id]);
+		expect(store.bulkResult).toEqual({
+			verb: 'verworfen',
+			failures: [],
+			skipped: [
+				{ id: GONE.id, title: GONE.title, reason: 'Schon verworfen.' },
+				{ id: LINKED.id, title: LINKED.title, reason: 'Schon verknüpft.' },
+				{ id: unknown.id, title: 'Weg', reason: 'Nicht mehr neu.' }
+			]
+		});
+		expect(shown(flags)).toEqual([
+			['success', '2 Einträge verworfen, 3 übersprungen.', 'Rückgängig']
+		]);
+		expect(store.canUndoBulk).toBe(true);
+	});
+
+	it('skips an entry whose own action still runs', async () => {
+		const { store, data } = setup();
+		await store.load();
+		const single = deferred<InboxItemSummary>();
+		data.discard.mockReturnValueOnce(single.promise);
+		const one = store.discard(A.id);
+		await store.discardMany([entry(A), entry(B)]);
+		expect(store.bulkResult?.skipped).toEqual([
+			{ id: A.id, title: A.title, reason: 'Wird gerade bearbeitet.' }
+		]);
+		expect(store.isPending(A.id)).toBe(true);
+		single.resolve(discarded(A, T2));
+		await one;
+		expect(data.discard.mock.calls).toEqual([[A.id], [B.id]]);
+	});
+
+	it('goes on after a failure, names it with its reason and keeps that entry new', async () => {
+		const { store, data, flags } = setup();
+		await store.load();
+		data.discard.mockRejectedValueOnce(new DataError('server'));
+		await store.discardMany([entry(A), entry(B)]);
+		expect(data.discard.mock.calls).toEqual([[A.id], [B.id]]);
+		expect(store.find(A.id)?.state).toBe('new');
+		expect(store.bulkResult).toEqual({
+			verb: 'verworfen',
+			// Since round 2 a failure keeps its request for "Details" (E-7, checked below).
+			failures: [{ id: A.id, title: A.title, reason: SERVER_FAILURE, problem: expect.any(Object) }],
+			skipped: []
+		});
+		expect(shown(flags)).toEqual([
+			['success', '1 Eintrag verworfen, 1 fehlgeschlagen.', 'Rückgängig']
+		]);
+	});
+
+	it('shows an error flag without "Rückgängig" when no entry could be discarded', async () => {
+		const { store, data, flags } = setup();
+		await store.load();
+		data.discard.mockRejectedValue(new DataError('server'));
+		await store.discardMany([entry(A), entry(B)]);
+		expect(
+			flags.flags.map((flag) => [flag.tone, flag.title, flag.description, flag.action])
+		).toEqual([
+			[
+				'error',
+				'Keiner der 2 Einträge wurde verworfen.',
+				'Die Gründe stehen bei der Auswahl.',
+				null
+			]
+		]);
+		expect(store.canUndoBulk).toBe(false);
+		expect(store.bulkResult?.failures).toHaveLength(2);
+	});
+
+	it('restores every entry of the run with one "Rückgängig" in its flag', async () => {
+		vi.useFakeTimers();
+		const { store, data, flags } = setup();
+		await store.load();
+		await store.discardMany([entry(A), entry(B)]);
+		expect(store.newItems).toEqual([]);
+		flags.act(flags.flags[0]?.id ?? '');
+		await vi.waitFor(() =>
+			expect(store.newItems.map((value) => value.id).sort()).toEqual([A.id, B.id])
+		);
+		expect(data.restore.mock.calls).toEqual([[A.id], [B.id]]);
+		expect(store.canUndoBulk).toBe(false);
+		expect(store.bulkResult).toBeNull();
+		expect(shown(flags)).toEqual([['success', '2 Einträge wiederhergestellt.', undefined]]);
+	});
+
+	it('offers "Rückgängig" as long as the flag of one discarded entry, 8 s', async () => {
+		vi.useFakeTimers();
+		const { store, flags } = setup();
+		await store.load();
+		await store.discardMany([entry(A)]);
+		expect(store.canUndoBulk).toBe(true);
+		await vi.advanceTimersByTimeAsync(FLAG_DURATION_MS);
+		expect(flags.flags).toEqual([]);
+		expect(store.canUndoBulk).toBe(false);
+	});
+
+	it('names a failed restore of "Rückgängig" in the result and in its flag', async () => {
+		const { store, data, flags } = setup();
+		await store.load();
+		await store.discardMany([entry(A), entry(B)]);
+		data.restore.mockRejectedValueOnce(new DataError('server'));
+		await store.undoDiscardMany();
+		expect(data.restore.mock.calls).toEqual([[A.id], [B.id]]);
+		expect(store.find(B.id)?.state).toBe('new');
+		expect(store.bulkResult).toEqual({
+			verb: 'wiederhergestellt',
+			failures: [{ id: A.id, title: A.title, reason: SERVER_FAILURE, problem: expect.any(Object) }],
+			skipped: []
+		});
+		expect(shown(flags)).toEqual([
+			['success', '1 Eintrag wiederhergestellt, 1 fehlgeschlagen.', undefined]
+		]);
+	});
+
+	it('restores the discarded ones of a choice and names the others', async () => {
+		const { store, data, flags } = await mixed();
+		await store.restoreMany([entry(GONE), entry(A), entry(LINKED)]);
+		expect(data.restore.mock.calls).toEqual([[GONE.id]]);
+		expect(store.find(GONE.id)?.state).toBe('new');
+		expect(store.bulkResult).toEqual({
+			verb: 'wiederhergestellt',
+			failures: [],
+			skipped: [
+				{ id: A.id, title: A.title, reason: 'Schon im Eingang.' },
+				{ id: LINKED.id, title: LINKED.title, reason: 'Verknüpft, nicht verworfen.' }
+			]
+		});
+		expect(shown(flags)).toEqual([
+			['success', '1 Eintrag wiederhergestellt, 2 übersprungen.', undefined]
+		]);
+		store.dismissBulkResult();
+		expect(store.bulkResult).toBeNull();
+	});
+
+	it('stops at an ended session without a result, and reset ends a running run', async () => {
+		const { store, data, session, flags } = setup();
+		await store.load();
+		data.discard.mockRejectedValueOnce(new DataError('session'));
+		await store.discardMany([entry(A), entry(B)]);
+		expect(session.logout).toHaveBeenCalledOnce();
+		expect(data.discard).toHaveBeenCalledOnce();
+		expect(store.bulkProgress).toBeNull();
+		expect(store.bulkResult).toBeNull();
+		expect(flags.flags).toEqual([]);
+
+		const pending = deferred<InboxItemSummary>();
+		data.discard.mockReturnValueOnce(pending.promise);
+		const run = store.discardMany([entry(A), entry(B)]);
+		store.reset();
+		expect(store.bulkProgress).toBeNull();
+		pending.resolve(discarded(A, T2));
+		await run;
+		expect(data.discard).toHaveBeenCalledTimes(2);
+		expect(store.bulkResult).toBeNull();
+		expect(flags.flags).toEqual([]);
+	});
+
+	// Round 2 of EG-1 (review E-2, E-3, E-4, E-7 and E-8).
+	const T3 = '2026-09-25 11:00:00.000Z';
+
+	it('restores the rest of a run when the chip "Quelle" changes meanwhile; only a deleted entry is skipped (E-2)', async () => {
+		const D = discarded(item('item00000000006'), T1);
+		const E = discarded(item('item00000000007'), T0);
+		const F = discarded(item('item00000000008'), T0);
+		const { store, data, flags } = setup();
+		data.listHandled.mockResolvedValueOnce({ items: [D, E, F], page: 1, hasMore: false });
+		store.activate({ source: null, state: 'discarded' });
+		await vi.waitFor(() => expect(store.handledLoad).toBe('ready'));
+		const first = deferred<InboxItemSummary>();
+		data.restore.mockReturnValueOnce(first.promise);
+		const run = store.restoreMany([entry(D), entry(E), entry(F)]);
+		// Meanwhile another source is chosen (the view loads anew, without these entries) and another
+		// tab deletes one of them.
+		store.activate({ source: 'mail', state: 'discarded' });
+		store.remove(F.id);
+		first.resolve(item(D.id, { updated: T2 }));
+		await run;
+		// The server decides on the unloaded one; the deleted one is named as before.
+		expect(data.restore.mock.calls).toEqual([[D.id], [E.id]]);
+		expect(store.bulkResult).toEqual({
+			verb: 'wiederhergestellt',
+			failures: [],
+			skipped: [{ id: F.id, title: F.title, reason: 'Nicht mehr verworfen.' }]
+		});
+		expect(shown(flags)).toEqual([
+			['success', '2 Einträge wiederhergestellt, 1 übersprungen.', undefined]
+		]);
+	});
+
+	it('keeps a result for its view only: another state drops it, another source does not (E-3)', async () => {
+		const { store } = setup();
+		store.activate({ source: null, state: 'new' });
+		await vi.waitFor(() => expect(store.state).toBe('ready'));
+		await store.discardMany([entry(A), { id: 'item00000000077', title: 'Weg' }]);
+		expect(store.bulkResult?.skipped).toHaveLength(1);
+		store.activate({ source: 'mail', state: 'new' });
+		expect(store.bulkResult?.skipped).toHaveLength(1);
+		store.activate({ source: 'mail', state: 'discarded' });
+		expect(store.bulkResult).toBeNull();
+	});
+
+	it('keeps no result of a run that ends in another view; its error flag then carries "Details" (E-3, E-7)', async () => {
+		const { store, data, flags } = setup();
+		store.activate({ source: null, state: 'new' });
+		await vi.waitFor(() => expect(store.state).toBe('ready'));
+		const first = deferred<InboxItemSummary>();
+		data.discard.mockReturnValueOnce(first.promise);
+		data.discard.mockRejectedValueOnce(new DataError('server'));
+		const run = store.discardMany([entry(A), entry(B)]);
+		store.activate({ source: null, state: 'converted' });
+		first.reject(new DataError('server'));
+		await run;
+		expect(data.discard).toHaveBeenCalledTimes(2);
+		expect(store.bulkResult).toBeNull();
+		// No "Die Gründe stehen bei der Auswahl.": no result stands; the flag offers the request and,
+		// since MO-7c1 (F-1), names the reason of the first failure.
+		expect(flags.flags.map((flag) => [flag.tone, flag.title, flag.description])).toEqual([
+			[
+				'error',
+				'Keiner der 2 Einträge wurde verworfen.',
+				`„${A.title}“: ${SERVER_FAILURE} Dazu 1 weiterer Fehler.`
+			]
+		]);
+		expect(flags.flags[0]?.problem).toEqual(expect.objectContaining({ source: 'client' }));
+	});
+
+	// MO-7c1 (F-1 of the review of EG-1): a run with failures whose result cannot stand at the
+	// selection (it ended in another view, or "Rückgängig" ran in "Alle" or "Verknüpft") warns with the
+	// reason and "Details" instead of a flag of success.
+	it('warns with the reason and "Details" when a run with failures ends in another view (F-1)', async () => {
+		const { store, data, flags } = setup();
+		store.activate({ source: null, state: 'new' });
+		await vi.waitFor(() => expect(store.state).toBe('ready'));
+		const first = deferred<InboxItemSummary>();
+		data.discard.mockReturnValueOnce(first.promise);
+		data.discard.mockRejectedValueOnce(new DataError('server'));
+		const run = store.discardMany([entry(A), entry(B)]);
+		store.activate({ source: null, state: 'all' });
+		first.resolve(discarded(A, T2));
+		await run;
+		expect(store.bulkResult).toBeNull();
+		expect(shown(flags)).toEqual([
+			['error', '1 Eintrag verworfen, 1 fehlgeschlagen.', 'Rückgängig']
+		]);
+		expect(flags.flags[0]?.description).toBe(`„${B.title}“: ${SERVER_FAILURE}`);
+		expect(flags.flags[0]?.problem).toEqual(expect.objectContaining({ source: 'client' }));
+		// "Rückgängig" stays for the one that was discarded.
+		expect(store.canUndoBulk).toBe(true);
+	});
+
+	it('warns with the reason and "Details" when "Rückgängig" in the view "Alle" fails for an entry (F-1)', async () => {
+		const { store, data, flags } = setup();
+		await store.load();
+		await store.discardMany([entry(A), entry(B)]);
+		store.activate({ source: null, state: 'all' });
+		data.restore.mockRejectedValueOnce(new DataError('server'));
+		await store.undoDiscardMany();
+		expect(data.restore.mock.calls).toEqual([[A.id], [B.id]]);
+		expect(shown(flags)).toEqual([
+			['error', '1 Eintrag wiederhergestellt, 1 fehlgeschlagen.', undefined]
+		]);
+		expect(flags.flags[0]?.description).toBe(`„${A.title}“: ${SERVER_FAILURE}`);
+		expect(flags.flags[0]?.problem).toEqual(expect.objectContaining({ source: 'client' }));
+	});
+
+	it('keeps the flag of success where the result stands at the selection (F-1, counter-check)', async () => {
+		const { store, data, flags } = setup();
+		await store.load();
+		data.discard.mockRejectedValueOnce(new DataError('server'));
+		await store.discardMany([entry(A), entry(B)]);
+		expect(store.bulkResult?.failures).toHaveLength(1);
+		expect(shown(flags)).toEqual([
+			['success', '1 Eintrag verworfen, 1 fehlgeschlagen.', 'Rückgängig']
+		]);
+		expect(flags.flags[0]?.description).toBe('');
+	});
+
+	it('says "Nichts verworfen" in an info flag without "Rückgängig" when every entry was skipped (E-4)', async () => {
+		const { store, data, flags } = await mixed();
+		await store.discardMany([entry(GONE), entry(LINKED)]);
+		expect(data.discard).not.toHaveBeenCalled();
+		expect(shown(flags)).toEqual([['info', 'Nichts verworfen: 2 übersprungen.', undefined]]);
+		expect(store.canUndoBulk).toBe(false);
+	});
+
+	it('keeps the failed request of a failure for "Details", like one failed action (E-7)', async () => {
+		const { store, data } = setup();
+		await store.load();
+		data.discard.mockRejectedValueOnce(new DataError('server', { status: 500 }));
+		await store.discardMany([entry(A), entry(B)]);
+		expect(store.bulkResult?.failures).toEqual([
+			{
+				id: A.id,
+				title: A.title,
+				reason: expect.any(String),
+				problem: expect.objectContaining({
+					source: 'client',
+					outcome: expect.objectContaining({ status: 500 })
+				})
+			}
+		]);
+	});
+
+	it('skips in "Rückgängig" what was restored or linked meanwhile and leaves what was discarded before (E-8)', async () => {
+		const { store, data, flags } = await mixed();
+		await store.discardMany([entry(A), entry(B), entry(C), entry(GONE)]);
+		expect(store.bulkResult?.skipped).toEqual([
+			{ id: GONE.id, title: GONE.title, reason: 'Schon verworfen.' }
+		]);
+		// Meanwhile another tab restores A and links B to a ticket.
+		store.upsert({ ...A, updated: T3 });
+		store.upsert({
+			...B,
+			state: 'converted',
+			ticketId: 'tick00000000002',
+			handledAt: T3,
+			updated: T3
+		});
+		await store.undoDiscardMany();
+		expect(data.restore.mock.calls).toEqual([[C.id]]);
+		expect(store.find(GONE.id)?.state).toBe('discarded');
+		expect(store.find(B.id)?.state).toBe('converted');
+		expect(store.bulkResult).toEqual({
+			verb: 'wiederhergestellt',
+			failures: [],
+			skipped: [
+				{ id: A.id, title: A.title, reason: 'Schon im Eingang.' },
+				{ id: B.id, title: B.title, reason: 'Verknüpft, nicht verworfen.' }
+			]
+		});
+		expect(shown(flags)).toEqual([
+			['success', '1 Eintrag wiederhergestellt, 2 übersprungen.', undefined]
+		]);
+	});
+});
+
 describe('updates', () => {
 	it('ignores older events and deleted entries', async () => {
 		const { store } = setup();

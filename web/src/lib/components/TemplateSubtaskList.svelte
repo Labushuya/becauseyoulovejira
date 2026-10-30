@@ -16,6 +16,7 @@
 	} from '$lib/domain/series-template';
 	import { isPriority } from '$lib/domain/status';
 	import { DEFAULT_PRIORITY, TITLE_MAX_LENGTH } from '$lib/domain/ticket';
+	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
 	import PrioritySelect from './PrioritySelect.svelte';
@@ -81,6 +82,9 @@
 		/** What the list is for, below its legend; without one the text of the template. */
 		hint?: string;
 	} = $props();
+
+	/** In the phone frame the titles start with a capital letter (MO-7a, as "＋" since MO-5). */
+	const mobileLayout = getMobileLayoutStore();
 
 	/**
 	 * What the list of a template means, before and after the hooks of UT-1; "offene … ohne
@@ -247,6 +251,7 @@
 							required
 							aria-required="true"
 							autocomplete="off"
+							autocapitalize={mobileLayout.active ? 'sentences' : undefined}
 							maxlength={TITLE_MAX_LENGTH}
 							data-row-part="title"
 							value={entry.title}

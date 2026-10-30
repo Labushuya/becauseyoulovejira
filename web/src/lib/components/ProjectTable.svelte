@@ -1,6 +1,8 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	import { goto } from '$app/navigation';
 	import type { ResolvedPathname } from '$app/types';
+	import { isCardTap } from '$lib/card-tap';
 	import { colorText, projectColorOf } from '$lib/domain/colors';
 	import { MORE_COLUMNS_HINT } from '$lib/domain/labels';
 	import type { Project } from '$lib/domain/project';
@@ -12,6 +14,7 @@
 		type ProjectSort,
 		type ProjectSortKey
 	} from '$lib/domain/project-view';
+	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 	import { rowMenus } from '$lib/overlay/context-menu';
 	import { getColumnPrefs } from '$lib/stores/column-prefs.svelte';
 	import ActionsMenu, { type MenuAction } from './ActionsMenu.svelte';
@@ -44,6 +47,13 @@
 	// open rows render their list. The focus stays on the button (APG "Disclosure"); the list follows
 	// it in the reading order. The color of a project (ADR-0052: its own, else of its parent) is a dot
 	// before the name, named for screen readers after it.
+	// Phone frame (MO-7b, ADR-0073 addendum MO-7b): with the switch "Handy-Ansicht (Vorschau)" on and
+	// below 40rem the same component shows cards instead of the table, like the inbox (MO-6): the name
+	// with its colour (up to three lines, the link to the project), a muted line with the code, the
+	// numbers ("inkl. Unterprojekte" for a parent) and "Archiviert", "•••" with the menu of the row. A
+	// sub project is indented below its parent; the parent folds them with "N Unterprojekte" (44 px).
+	// A tap on the card opens the project. The open tickets of a project are on its page, the sort is
+	// in the filter sheet of the view: cards have no column headers and no room for a list per row.
 	let {
 		rows,
 		activeOf,
@@ -125,206 +135,303 @@
 
 	/** Note of the numbers of a parent (ADR-0034, UP-6), as title and for screen readers. */
 	const INCLUDING_SUB_PROJECTS = 'inkl. Unterprojekte';
+
+	/** The phone frame (MO-7b): cards instead of the table. */
+	const mobileLayout = getMobileLayoutStore();
+	const phone = $derived(mobileLayout.active);
+
+	/** A tap on a card opens its project, like the click on the name (MO-7b). */
+	function tapCard(event: MouseEvent, project: Project) {
+		if (isCardTap(event)) void goto(hrefOf(project));
+	}
+
+	function subProjectCount(count: number): string {
+		return count === 1 ? '1 Unterprojekt' : `${count} Unterprojekte`;
+	}
 </script>
 
-<div class="frame" bind:this={frame}>
-	<table {@attach rowMenus}>
-		<caption
-			>{caption}{#if columnFit.fit.autoHidden.length > 0}<span class="caption-more"
-					>{MORE_COLUMNS_HINT}</span
-				>{/if}</caption
-		>
-		<colgroup>
-			{#each columnFit.shownColumns as column (column.id)}
-				<col
-					data-column={column.id}
-					style:width={column.flexible ? undefined : `${columnFit.widthOf(column.id)}px`}
-				/>
-			{/each}
-		</colgroup>
-		<thead>
-			<tr>
-				<!-- Every column but the actions sorts; its ID is the sort key (T-5). -->
-				{#each columnFit.shownColumns as column (column.id)}
-					{@const key = column.id as ProjectSortKey}
-					{@const sorted = sort?.key === key ? sort : null}
-					{@const direction = sorted === null ? null : projectSortDirection(sorted)}
-					{#if column.id === 'actions'}
-						<ResizableHeader {column} fit={columnFit}>
-							<span class="visually-hidden">{column.label}</span>
-						</ResizableHeader>
-					{:else}
-						<ResizableHeader {column} fit={columnFit} ariaSort={direction ?? undefined}>
-							<button
-								class="sort"
-								class:sorted={sorted !== null}
-								type="button"
-								onclick={() => onsort(key)}
-							>
-								<span aria-hidden="true">{column.label}</span>
-								<span class="visually-hidden">
-									Nach {PROJECT_COLUMN_LABELS[key]} sortieren{sorted === null
-										? ''
-										: `, sortiert: ${projectSortOrderLabel(sorted)}`}
-								</span>
-								<svg
-									class="sort-icon"
-									data-direction={direction ?? 'none'}
-									viewBox="0 0 12 12"
-									aria-hidden="true"
-									focusable="false"
-								>
-									{#if direction === 'ascending'}
-										<path d="M6 2.5v7M3 5.5l3-3 3 3" />
-									{:else if direction === 'descending'}
-										<path d="M6 2.5v7M3 6.5l3 3 3-3" />
-									{:else}
-										<path d="M3.5 4.5L6 2l2.5 2.5M3.5 7.5L6 10l2.5-2.5" />
-									{/if}
-								</svg>
-							</button>
-						</ResizableHeader>
-					{/if}
-				{/each}
-			</tr>
-		</thead>
-		<tbody>
-			{#each rows as row (row.project.id)}
-				{@const project = row.project}
-				{@const fresh = newOf(project)}
-				{@const aggregated = aggregatedOf(project)}
-				{@const open = ticketList !== undefined && ticketsOpen(project)}
-				{@const color = projectColorOf(project)}
-				<tr
-					class="row"
-					class:active={project.id === activeId}
-					class:archived={project.archived}
-					class:context={row.context}
-					class:child={row.depth === 1}
-					data-project-row={project.id}
-				>
-					<td class="code" class:with-tickets={ticketList !== undefined} data-col="code">
-						{#if ticketList}
-							<span class="code-cell">
-								<button
-									class="button-icon fold"
-									type="button"
-									aria-expanded={open}
-									aria-controls={open ? ticketsId(project) : undefined}
-									aria-label={`Offene Tickets von „${project.name}“`}
-									title={open ? 'Offene Tickets ausblenden' : 'Offene Tickets anzeigen'}
-									data-tickets-toggle={project.id}
-									onclick={() => ontoggletickets(project)}
-								>
-									<svg viewBox="0 0 12 12" aria-hidden="true" focusable="false">
-										<path d={open ? 'M3 4.5l3 3 3-3' : 'M4.5 3l3 3-3 3'} />
-									</svg>
-								</button>
-								<span class="code-text">{project.code}</span>
-							</span>
-						{:else}
-							{project.code}
+{#if phone}
+	<!-- Cards instead of the table (MO-7b): the same tree, order, menus and links. -->
+	<ol class="project-cards" aria-label="Projekte" {@attach rowMenus}>
+		{#each rows as row (row.project.id)}
+			{@const project = row.project}
+			{@const fresh = newOf(project)}
+			{@const aggregated = aggregatedOf(project)}
+			{@const color = projectColorOf(project)}
+			<!-- The name link is the keyboard target of the card; the tap on the card is a shortcut for it. -->
+			<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
+			<li
+				class="project-card"
+				class:active={project.id === activeId}
+				class:archived={project.archived}
+				class:context={row.context}
+				class:child={row.depth === 1}
+				data-project-row={project.id}
+				data-menu-row
+				onclick={(event) => tapCard(event, project)}
+			>
+				<div class="card-body">
+					<!-- Up to three lines, cut off only visually; screen readers read the whole name. -->
+					<p class="card-title">
+						{#if row.depth === 1 && project.parent}
+							<span class="visually-hidden">Unterprojekt von {project.parent.name},</span>
 						{/if}
-					</td>
-					<th class="name" scope="row" data-col="name">
-						<span class="name-cell">
-							{#if row.childCount > 0}
+						{#if color}<span class="name-color"><ColorMark shown={color} named={false} /></span
+							>{/if}<a
+							class="title-link"
+							href={hrefOf(project)}
+							data-project-id={project.id}
+							data-row-link
+							aria-current={project.id === activeId ? 'page' : undefined}>{project.name}</a
+						>{#if color}<span class="visually-hidden">, {colorText(color)}</span>{/if}
+						{#if row.context}
+							<span class="visually-hidden">(passt nicht zur Suche, Kontext)</span>
+						{/if}
+					</p>
+					<p class="card-meta">
+						<span class="card-code">{project.code}</span>
+						<span><strong>{number(activeOf(project))}</strong> aktiv</span>
+						<span><strong>{number(totalOf(project))}</strong> gesamt</span>
+						{#if fresh > 0}
+							<span class="fresh"><strong>{fresh}</strong> neu</span>
+						{/if}
+						{#if aggregated}
+							<span>{INCLUDING_SUB_PROJECTS}</span>
+						{/if}
+						{#if project.archived}
+							<span>Archiviert</span>
+						{/if}
+					</p>
+					{#if row.childCount > 0}
+						{@const count = subProjectCount(row.childCount)}
+						<!-- The name starts with the visible count; aria-expanded says whether they show. -->
+						<button
+							class="button-subtle card-fold"
+							type="button"
+							aria-expanded={!row.collapsed}
+							aria-label={`${count} von ${project.name}`}
+							onclick={() => ontoggle(project)}
+						>
+							<svg viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+								<path d={row.collapsed ? 'M4.5 3l3 3-3 3' : 'M3 4.5l3 3 3-3'} />
+							</svg>
+							{count}
+						</button>
+					{/if}
+				</div>
+				<div class="card-end">
+					<ActionsMenu
+						label={`Weitere Aktionen für „${project.name}“`}
+						buttonLabel={`Weitere Aktionen für „${project.name}“`}
+						buttonTitle="Weitere Aktionen"
+						buttonClass="button-icon row-menu"
+						items={menuOf(project)}
+					/>
+				</div>
+			</li>
+		{/each}
+	</ol>
+{:else}
+	<div class="frame" bind:this={frame}>
+		<table {@attach rowMenus}>
+			<caption
+				>{caption}{#if columnFit.fit.autoHidden.length > 0}<span class="caption-more"
+						>{MORE_COLUMNS_HINT}</span
+					>{/if}</caption
+			>
+			<colgroup>
+				{#each columnFit.shownColumns as column (column.id)}
+					<col
+						data-column={column.id}
+						style:width={column.flexible ? undefined : `${columnFit.widthOf(column.id)}px`}
+					/>
+				{/each}
+			</colgroup>
+			<thead>
+				<tr>
+					<!-- Every column but the actions sorts; its ID is the sort key (T-5). -->
+					{#each columnFit.shownColumns as column (column.id)}
+						{@const key = column.id as ProjectSortKey}
+						{@const sorted = sort?.key === key ? sort : null}
+						{@const direction = sorted === null ? null : projectSortDirection(sorted)}
+						{#if column.id === 'actions'}
+							<ResizableHeader {column} fit={columnFit}>
+								<span class="visually-hidden">{column.label}</span>
+							</ResizableHeader>
+						{:else}
+							<ResizableHeader {column} fit={columnFit} ariaSort={direction ?? undefined}>
 								<button
-									class="button-icon fold"
+									class="sort"
+									class:sorted={sorted !== null}
 									type="button"
-									aria-expanded={!row.collapsed}
-									aria-label={`Unterprojekte von ${project.name}`}
-									title={row.collapsed ? 'Unterprojekte einblenden' : 'Unterprojekte ausblenden'}
-									onclick={() => ontoggle(project)}
+									onclick={() => onsort(key)}
 								>
-									<svg viewBox="0 0 12 12" aria-hidden="true" focusable="false">
-										<path d={row.collapsed ? 'M4.5 3l3 3-3 3' : 'M3 4.5l3 3 3-3'} />
+									<span aria-hidden="true">{column.label}</span>
+									<span class="visually-hidden">
+										Nach {PROJECT_COLUMN_LABELS[key]} sortieren{sorted === null
+											? ''
+											: `, sortiert: ${projectSortOrderLabel(sorted)}`}
+									</span>
+									<svg
+										class="sort-icon"
+										data-direction={direction ?? 'none'}
+										viewBox="0 0 12 12"
+										aria-hidden="true"
+										focusable="false"
+									>
+										{#if direction === 'ascending'}
+											<path d="M6 2.5v7M3 5.5l3-3 3 3" />
+										{:else if direction === 'descending'}
+											<path d="M6 2.5v7M3 6.5l3 3 3-3" />
+										{:else}
+											<path d="M3.5 4.5L6 2l2.5 2.5M3.5 7.5L6 10l2.5-2.5" />
+										{/if}
 									</svg>
 								</button>
-							{/if}
-							{#if row.depth === 1 && project.parent}
-								<span class="visually-hidden">Unterprojekt von {project.parent.name},</span>
-							{/if}
-							{#if color}<span class="name-color"><ColorMark shown={color} named={false} /></span
-								>{/if}
-							<a
-								class="title-link"
-								href={hrefOf(project)}
-								data-project-id={project.id}
-								data-row-link
-								aria-current={project.id === activeId ? 'page' : undefined}>{project.name}</a
-							>
-							{#if color}<span class="visually-hidden">, {colorText(color)}</span>{/if}
-							{#if row.context}
-								<span class="visually-hidden">(passt nicht zur Suche, Kontext)</span>
-							{/if}
-						</span>
-					</th>
-					{#if shown.has('active')}
-						<td
-							class="number"
-							data-col="active"
-							title={aggregated ? INCLUDING_SUB_PROJECTS : undefined}
-							>{number(activeOf(project))}{#if aggregated}<span class="visually-hidden"
-									>, {INCLUDING_SUB_PROJECTS}</span
-								>{/if}</td
-						>
-					{/if}
-					{#if shown.has('total')}
-						<td
-							class="number"
-							data-col="total"
-							title={aggregated ? INCLUDING_SUB_PROJECTS : undefined}
-							>{number(totalOf(project))}{#if aggregated}<span class="visually-hidden"
-									>, {INCLUDING_SUB_PROJECTS}</span
-								>{/if}</td
-						>
-					{/if}
-					{#if shown.has('new')}
-						<td
-							class="number"
-							class:fresh={fresh > 0}
-							data-col="new"
-							title={aggregated ? INCLUDING_SUB_PROJECTS : undefined}
-							>{fresh}{#if aggregated}<span class="visually-hidden">, {INCLUDING_SUB_PROJECTS}</span
-								>{/if}</td
-						>
-					{/if}
-					{#if shown.has('archived')}
-						<td class="state" data-col="archived">
-							{#if project.archived}
-								Archiviert
+							</ResizableHeader>
+						{/if}
+					{/each}
+				</tr>
+			</thead>
+			<tbody>
+				{#each rows as row (row.project.id)}
+					{@const project = row.project}
+					{@const fresh = newOf(project)}
+					{@const aggregated = aggregatedOf(project)}
+					{@const open = ticketList !== undefined && ticketsOpen(project)}
+					{@const color = projectColorOf(project)}
+					<tr
+						class="row"
+						class:active={project.id === activeId}
+						class:archived={project.archived}
+						class:context={row.context}
+						class:child={row.depth === 1}
+						data-project-row={project.id}
+					>
+						<td class="code" class:with-tickets={ticketList !== undefined} data-col="code">
+							{#if ticketList}
+								<span class="code-cell">
+									<button
+										class="button-icon fold"
+										type="button"
+										aria-expanded={open}
+										aria-controls={open ? ticketsId(project) : undefined}
+										aria-label={`Offene Tickets von „${project.name}“`}
+										title={open ? 'Offene Tickets ausblenden' : 'Offene Tickets anzeigen'}
+										data-tickets-toggle={project.id}
+										onclick={() => ontoggletickets(project)}
+									>
+										<svg viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+											<path d={open ? 'M3 4.5l3 3 3-3' : 'M4.5 3l3 3-3 3'} />
+										</svg>
+									</button>
+									<span class="code-text">{project.code}</span>
+								</span>
 							{:else}
-								<span aria-hidden="true">–</span><span class="visually-hidden">nein</span>
+								{project.code}
 							{/if}
 						</td>
-					{/if}
-					<td class="actions" data-col="actions">
-						<ActionsMenu
-							label={`Weitere Aktionen für „${project.name}“`}
-							buttonLabel={`Weitere Aktionen für „${project.name}“`}
-							buttonTitle="Weitere Aktionen"
-							buttonClass="button-icon row-menu"
-							items={menuOf(project)}
-						/>
-					</td>
-				</tr>
-				{#if open && ticketList}
-					<tr class="tickets-row" class:child={row.depth === 1} data-tickets-of={project.id}>
-						<td
-							class="tickets"
-							id={ticketsId(project)}
-							colspan={columnFit.shownColumns.length}
-							style:--tickets-indent={`${columnFit.widthOf('code')}px`}
-						>
-							{@render ticketList(project)}
+						<th class="name" scope="row" data-col="name">
+							<span class="name-cell">
+								{#if row.childCount > 0}
+									<button
+										class="button-icon fold"
+										type="button"
+										aria-expanded={!row.collapsed}
+										aria-label={`Unterprojekte von ${project.name}`}
+										title={row.collapsed ? 'Unterprojekte einblenden' : 'Unterprojekte ausblenden'}
+										onclick={() => ontoggle(project)}
+									>
+										<svg viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+											<path d={row.collapsed ? 'M4.5 3l3 3-3 3' : 'M3 4.5l3 3 3-3'} />
+										</svg>
+									</button>
+								{/if}
+								{#if row.depth === 1 && project.parent}
+									<span class="visually-hidden">Unterprojekt von {project.parent.name},</span>
+								{/if}
+								{#if color}<span class="name-color"><ColorMark shown={color} named={false} /></span
+									>{/if}
+								<a
+									class="title-link"
+									href={hrefOf(project)}
+									data-project-id={project.id}
+									data-row-link
+									aria-current={project.id === activeId ? 'page' : undefined}>{project.name}</a
+								>
+								{#if color}<span class="visually-hidden">, {colorText(color)}</span>{/if}
+								{#if row.context}
+									<span class="visually-hidden">(passt nicht zur Suche, Kontext)</span>
+								{/if}
+							</span>
+						</th>
+						{#if shown.has('active')}
+							<td
+								class="number"
+								data-col="active"
+								title={aggregated ? INCLUDING_SUB_PROJECTS : undefined}
+								>{number(activeOf(project))}{#if aggregated}<span class="visually-hidden"
+										>, {INCLUDING_SUB_PROJECTS}</span
+									>{/if}</td
+							>
+						{/if}
+						{#if shown.has('total')}
+							<td
+								class="number"
+								data-col="total"
+								title={aggregated ? INCLUDING_SUB_PROJECTS : undefined}
+								>{number(totalOf(project))}{#if aggregated}<span class="visually-hidden"
+										>, {INCLUDING_SUB_PROJECTS}</span
+									>{/if}</td
+							>
+						{/if}
+						{#if shown.has('new')}
+							<td
+								class="number"
+								class:fresh={fresh > 0}
+								data-col="new"
+								title={aggregated ? INCLUDING_SUB_PROJECTS : undefined}
+								>{fresh}{#if aggregated}<span class="visually-hidden"
+										>, {INCLUDING_SUB_PROJECTS}</span
+									>{/if}</td
+							>
+						{/if}
+						{#if shown.has('archived')}
+							<td class="state" data-col="archived">
+								{#if project.archived}
+									Archiviert
+								{:else}
+									<span aria-hidden="true">–</span><span class="visually-hidden">nein</span>
+								{/if}
+							</td>
+						{/if}
+						<td class="actions" data-col="actions">
+							<ActionsMenu
+								label={`Weitere Aktionen für „${project.name}“`}
+								buttonLabel={`Weitere Aktionen für „${project.name}“`}
+								buttonTitle="Weitere Aktionen"
+								buttonClass="button-icon row-menu"
+								items={menuOf(project)}
+							/>
 						</td>
 					</tr>
-				{/if}
-			{/each}
-		</tbody>
-	</table>
-</div>
+					{#if open && ticketList}
+						<tr class="tickets-row" class:child={row.depth === 1} data-tickets-of={project.id}>
+							<td
+								class="tickets"
+								id={ticketsId(project)}
+								colspan={columnFit.shownColumns.length}
+								style:--tickets-indent={`${columnFit.widthOf('code')}px`}
+							>
+								{@render ticketList(project)}
+							</td>
+						</tr>
+					{/if}
+				{/each}
+			</tbody>
+		</table>
+	</div>
+{/if}
 
 <style>
 	/* The measured frame of fitColumns (ADR-0030); the table takes its width and never more. */
@@ -550,5 +657,126 @@
 	.actions {
 		padding-block: 0.25rem;
 		text-align: right;
+	}
+
+	/*
+	 * Phone frame (MO-7b, ADR-0073 addendum MO-7b): the cards in a framed list like the table, each
+	 * the body and "•••"; the name in up to three lines, long words wrap; a sub project indented below
+	 * its parent with the line of the tiles; the fold of the sub projects a target of 44 px. Off, or
+	 * from 40rem, the table stays as it was.
+	 */
+	@media (max-width: 39.99rem) {
+		:global(:root[data-mobile-layout='on']) .project-cards {
+			min-width: 0;
+			margin: 0;
+			padding: 0;
+			overflow: hidden;
+			list-style: none;
+			background: var(--color-surface);
+			border: 1px solid var(--color-line);
+			border-radius: var(--radius-surface);
+		}
+
+		:global(:root[data-mobile-layout='on']) .project-card {
+			display: flex;
+			gap: 0.25rem;
+			align-items: flex-start;
+			padding: 0.5rem 0.25rem 0.75rem 0.75rem;
+			border-top: 1px solid var(--color-line);
+			cursor: pointer;
+		}
+
+		:global(:root[data-mobile-layout='on']) .project-card:first-child {
+			border-top: none;
+		}
+
+		/* A sub project below its parent, indented with a line that ties it to the parent. */
+		:global(:root[data-mobile-layout='on']) .project-card.child {
+			padding-left: 1.5rem;
+		}
+
+		:global(:root[data-mobile-layout='on']) .project-card.child .card-body {
+			padding-left: 0.75rem;
+			border-left: 2px solid var(--color-line);
+		}
+
+		:global(:root[data-mobile-layout='on']) .project-card.active {
+			background: var(--color-brand-soft-bg);
+			box-shadow: inset 3px 0 0 var(--color-brand);
+		}
+
+		:global(:root[data-mobile-layout='on']) .card-body {
+			display: grid;
+			flex: 1 1 auto;
+			gap: 0.375rem;
+			justify-items: start;
+			min-width: 0;
+			padding-top: 0.625rem;
+		}
+
+		/* Up to three lines; the clamp is visual only, screen readers read the whole name. */
+		:global(:root[data-mobile-layout='on']) .card-title {
+			display: -webkit-box;
+			margin: 0;
+			overflow: hidden;
+			font-size: var(--font-size-body);
+			font-weight: 600;
+			overflow-wrap: anywhere;
+			-webkit-box-orient: vertical;
+			-webkit-line-clamp: 3;
+			line-clamp: 3;
+		}
+
+		:global(:root[data-mobile-layout='on']) .card-title .name-color {
+			display: inline-flex;
+			margin-right: 0.375rem;
+			vertical-align: middle;
+		}
+
+		:global(:root[data-mobile-layout='on']) .card-meta {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 0 0.75rem;
+			min-width: 0;
+			margin: 0;
+			font-size: var(--font-size-control);
+			color: var(--color-text-muted);
+			overflow-wrap: anywhere;
+		}
+
+		:global(:root[data-mobile-layout='on']) .card-meta strong {
+			font-weight: 600;
+			font-variant-numeric: tabular-nums;
+			color: var(--color-text);
+		}
+
+		:global(:root[data-mobile-layout='on']) .card-meta .fresh,
+		:global(:root[data-mobile-layout='on']) .card-meta .fresh strong {
+			color: var(--color-brand-text);
+		}
+
+		:global(:root[data-mobile-layout='on']) .card-code {
+			font-family: var(--font-mono);
+			color: var(--color-brand-text);
+		}
+
+		:global(:root[data-mobile-layout='on']) .card-fold {
+			gap: 0.375rem;
+			font-size: var(--font-size-control);
+		}
+
+		:global(:root[data-mobile-layout='on']) .card-fold svg {
+			width: 0.75rem;
+			height: 0.75rem;
+			fill: none;
+			stroke: currentColor;
+			stroke-width: 1.5;
+			stroke-linecap: round;
+			stroke-linejoin: round;
+		}
+
+		:global(:root[data-mobile-layout='on']) .card-end {
+			flex: none;
+		}
 	}
 </style>

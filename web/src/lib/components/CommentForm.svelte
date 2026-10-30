@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import { COMMENT_MAX_LENGTH } from '$lib/domain/ticket';
+	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 	import type { TicketActivityStore } from '$lib/stores/ticket-activity.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import ProblemDetails from './problems/ProblemDetails.svelte';
@@ -14,7 +15,10 @@
 	// text stays after a failure. After sending the field closes and the focus goes back to
 	// "Kommentar hinzufügen …", unless `onposted` shows the new comment and takes the focus there
 	// (at the end of the list, "Älteste zuerst"). A comment the outbox keeps for later (OF-4b) says so
-	// below in the polite status region.
+	// below in the polite status region. In the phone frame the keyboard starts sentences with a
+	// capital letter (MO-7a, as "＋" since MO-5). The request may take a while (a slow connection, the
+	// outbox): afterwards the form takes the focus back only while it is still in the form or lost on
+	// the page, never from a field the user went to meanwhile (MO-7b).
 	let {
 		store,
 		onposted
@@ -27,9 +31,11 @@
 	const uid = $props.id();
 	const hintId = `${uid}-hint`;
 	const errorId = `${uid}-error`;
+	const mobileLayout = getMobileLayoutStore();
 
 	let editor = $state<ReturnType<typeof RichTextEditor>>();
 	let opener = $state<HTMLButtonElement>();
+	let root = $state<HTMLElement>();
 	let opened = $state(false);
 
 	const empty = $derived(store.newComment.trim() === '');
@@ -42,6 +48,12 @@
 		editor?.focus();
 	}
 
+	/** The focus is still in the form or lost on the page, so it may come back after the request. */
+	function focusStaysHere(): boolean {
+		const active = document.activeElement;
+		return active === null || active === document.body || (root?.contains(active) ?? false);
+	}
+
 	async function send() {
 		editor?.flush();
 		if (store.newComment.trim() === '') {
@@ -49,17 +61,21 @@
 			return;
 		}
 		if (store.posting) return;
-		if (!(await store.post())) {
-			editor?.focus();
+		const posted = await store.post();
+		// Read before the editor closes: its field leaves the page and the focus with it.
+		const ours = focusStaysHere();
+		if (!posted) {
+			if (ours) editor?.focus();
 			return;
 		}
 		opened = false;
 		await tick();
+		if (!ours) return;
 		if (!((await onposted?.()) ?? false)) opener?.focus();
 	}
 </script>
 
-<div class="comment-form">
+<div class="comment-form" bind:this={root}>
 	{#if expanded}
 		<RichTextEditor
 			bind:this={editor}
@@ -70,6 +86,7 @@
 			bind:value={() => store.newComment, (value) => store.setNewComment(value)}
 			invalid={store.postError !== null}
 			describedby={store.postError ? errorId : undefined}
+			autocapitalize={mobileLayout.active ? 'sentences' : undefined}
 			onsubmit={() => void send()}
 		/>
 		{#if store.postError}

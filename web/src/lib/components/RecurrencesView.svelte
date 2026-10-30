@@ -43,6 +43,9 @@
 	// the focus to the link of its rule; after deleting, to the rule that followed it (or the one
 	// before), else to the heading. Before the E5 migration a neutral hint says when the rules come
 	// (restartNeeded); the empty list offers "Regel anlegen".
+	// Phone frame (MO-7b, ADR-0073 addendum MO-7b): cards instead of the table (RecurrenceTable); the
+	// row of the view holds "Neue Regel" and "So funktioniert’s". The rules have no filter and no sort
+	// on the PC, so there is no filter sheet; "Spalten" has no place without columns.
 	let {
 		store,
 		tickets,
@@ -228,12 +231,21 @@
 	}
 </script>
 
+<!-- The row of the view in the phone frame (MO-7b): "Neue Regel" and the help. -->
+{#snippet phoneTools()}
+	{#if store.state !== 'unavailable'}
+		<a class="button-primary new" id={NEW_RULE_LINK_ID} href={newRecurrenceHref()}>Neue Regel</a>
+		<a class="button-subtle help-link" href={helpHref('wiederholungen')}>So funktioniert’s</a>
+	{/if}
+{/snippet}
+
 <section class="recurrences-view" aria-labelledby={headingId} bind:this={root}>
 	<SectionBar
 		title="Wiederholungen"
 		{headingId}
 		count={store.state === 'ready' ? rules.length : null}
 		{countLabel}
+		phone={phoneTools}
 		bind:heading
 	>
 		{#snippet start()}

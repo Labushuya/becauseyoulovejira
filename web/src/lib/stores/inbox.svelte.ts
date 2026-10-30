@@ -5,7 +5,10 @@
 // through the same idempotent `upsert` and `remove`; after a reconnection the store reconciles
 // once. A duplicate answer of the server is an outcome, not an error. Results of discarding,
 // restoring and assigning go out as flags (ADR-0025 section 8): a discarded entry leaves the list
-// at once, and "Rückgängig" stands in its flag.
+// at once, and "Rückgängig" stands in its flag. Since EG-1 (ADR-0014 addendum EG-1) "Verwerfen (n)"
+// and "Wiederherstellen (n)" run over the chosen entries one after the other, with a progress, a
+// result of failures and skipped entries, and one "Rückgängig" for every entry a run discarded. A
+// result belongs to the view its run started in: another view drops it (round 2 of EG-1).
 
 import type PocketBase from 'pocketbase';
 import { createContext, untrack } from 'svelte';
@@ -31,6 +34,20 @@ import {
 } from '$lib/data/inbox';
 import type { RequestOptions } from '$lib/data/options';
 import {
+	BULK_LABELS,
+	BULK_SKIP_REASONS,
+	BULK_VERBS,
+	bulkFailureNote,
+	bulkKindOf,
+	bulkResultTitle,
+	bulkSkipReason,
+	type InboxBulkEntry,
+	type InboxBulkKind,
+	type InboxBulkProblem,
+	type InboxBulkProgress,
+	type InboxBulkResult
+} from '$lib/domain/inbox-bulk';
+import {
 	compareHandled,
 	compareNewest,
 	findSoftDuplicates,
@@ -39,6 +56,7 @@ import {
 	type InboxDuplicate,
 	type InboxItem,
 	type InboxItemSummary,
+	type InboxView,
 	type ListedView,
 	type SoftDuplicates
 } from '$lib/domain/inbox';
@@ -125,6 +143,16 @@ export type InboxActionResult =
 	| { ok: true; item: InboxItemSummary }
 	| { ok: false; message: string | null; problem?: ProblemEntry };
 
+/** What one run of "Verwerfen (n)", "Wiederherstellen (n)" or its "Rückgängig" did (EG-1). */
+interface BulkRun {
+	/** The view the run started in; its result stands only there. */
+	view: InboxView;
+	total: number;
+	done: InboxBulkEntry[];
+	failures: InboxBulkProblem[];
+	skipped: InboxBulkProblem[];
+}
+
 /** Whether two queries load the same entries (the grouping only arranges them). */
 function sameQuery(a: InboxQuery, b: InboxQuery): boolean {
 	return a.source === b.source && a.state === b.state && (a.target ?? null) === (b.target ?? null);
@@ -160,6 +188,18 @@ export class InboxStore {
 	readonly #pending = new SvelteSet<string>();
 	/** IDs changed while a load runs: its older snapshot must not remove them. */
 	#touched: Set<string> | null = null;
+
+	/** The running "Verwerfen (n)", "Wiederherstellen (n)" or its "Rückgängig" (EG-1). */
+	#bulkProgress = $state<InboxBulkProgress | null>(null);
+	/**
+	 * Result of the last run with failures or skipped entries, null without one; only while the view
+	 * the run started in is shown.
+	 */
+	#bulkResult = $state<InboxBulkResult | null>(null);
+	/** The entries of the last "Verwerfen (n)" while its flag offers "Rückgängig". */
+	#bulkUndo = $state<{ flagId: string; entries: readonly InboxBulkEntry[] } | null>(null);
+	/** Number of the current run; reset() counts on, so a running run stops. */
+	#bulkRun = 0;
 
 	#newController: AbortController | null = null;
 	#handledController: AbortController | null = null;
@@ -338,6 +378,8 @@ export class InboxStore {
 		void this.load();
 		const before = this.#query;
 		this.#query = query;
+		// The result of a run belongs to its view (EG-1 round 2): another view drops it.
+		if (before.state !== query.state) this.#bulkResult = null;
 		if (sameQuery(before, query) && (query.state === 'new' || this.#handledLoad !== 'idle')) {
 			return;
 		}
@@ -543,6 +585,82 @@ export class InboxStore {
 		return this.#undoFlags.has(id);
 	}
 
+	/** The running bulk action of EG-1, null while none runs. */
+	get bulkProgress(): InboxBulkProgress | null {
+		return this.#bulkProgress;
+	}
+
+	/** Result of the last bulk action with its failures and skipped entries, null without one. */
+	get bulkResult(): InboxBulkResult | null {
+		return this.#bulkResult;
+	}
+
+	/** "Ergebnis schließen". */
+	dismissBulkResult(): void {
+		this.#bulkResult = null;
+	}
+
+	/** True while the flag of the last "Verwerfen (n)" offers "Rückgängig". */
+	get canUndoBulk(): boolean {
+		return this.#bulkUndo !== null;
+	}
+
+	/**
+	 * "Verwerfen (n)" (EG-1): discards the chosen entries that are new, one after the other; the
+	 * others are skipped with their reason. The flag names the outcome and offers "Rückgängig" for
+	 * FLAG_DURATION_MS, like one discarded entry, for every entry of the run. Nothing runs while
+	 * another run goes on.
+	 */
+	async discardMany(entries: readonly InboxBulkEntry[]): Promise<void> {
+		if (this.#bulkProgress !== null || entries.length === 0) return;
+		this.#dropBulkUndo();
+		const run = await this.#runMany(
+			BULK_LABELS.discard,
+			entries,
+			(id) => this.#skipOf('discard', id),
+			(id) => this.#data.discard(id)
+		);
+		if (run === null) return;
+		const flagId = this.#finishMany(run, BULK_VERBS.discard, () => void this.undoDiscardMany());
+		if (flagId !== null) this.#bulkUndo = { flagId, entries: run.done };
+	}
+
+	/**
+	 * "Wiederherstellen (n)" (EG-1): restores the chosen entries that are discarded, one after the
+	 * other. Another view or source chip during the run unloads the rest; such an entry is sent anyway
+	 * and the server decides (it refuses a linked one), like "Rückgängig" (EG-1 round 2).
+	 */
+	async restoreMany(entries: readonly InboxBulkEntry[]): Promise<void> {
+		if (this.#bulkProgress !== null || entries.length === 0) return;
+		this.#dropBulkUndo();
+		const run = await this.#runMany(
+			BULK_LABELS.restore,
+			entries,
+			(id) => this.#skipOf('restore', id, true),
+			(id) => this.#data.restore(id)
+		);
+		if (run !== null) this.#finishMany(run, BULK_VERBS.restore, null);
+	}
+
+	/**
+	 * "Rückgängig" of the flag after "Verwerfen (n)": restores every entry of that run, one after the
+	 * other. A discarded entry is often no longer loaded (it left the new ones); only one the store
+	 * knows in another state than "discarded" is skipped. Failures stand in the result and the flag.
+	 */
+	async undoDiscardMany(): Promise<void> {
+		const undo = this.#bulkUndo;
+		if (undo === null || this.#bulkProgress !== null) return;
+		this.#bulkUndo = null;
+		this.#flags.dismiss(undo.flagId);
+		const run = await this.#runMany(
+			'Rückgängig',
+			undo.entries,
+			(id) => this.#skipOf('restore', id, true),
+			(id) => this.#data.restore(id)
+		);
+		if (run !== null) this.#finishMany(run, BULK_VERBS.restore, null);
+	}
+
 	/** "Dem Ticket zuordnen": the entry counts as converted into the ticket. */
 	async assign(id: string, ticketId: string, ticketKey = ''): Promise<InboxActionResult> {
 		const result = await this.#act(
@@ -690,6 +808,11 @@ export class InboxStore {
 		this.#reconcileController = null;
 		this.#touched = null;
 		for (const id of [...this.#undoFlags.keys()]) this.#dropUndo(id);
+		// A running bulk action stops after its current request, its result and "Rückgängig" go.
+		this.#bulkRun += 1;
+		this.#bulkProgress = null;
+		this.#bulkResult = null;
+		this.#dropBulkUndo();
 		this.#new.clear();
 		this.#handled.clear();
 		this.#deleted.clear();
@@ -735,6 +858,159 @@ export class InboxStore {
 		if (undoable === undefined) return;
 		this.#undoFlags.delete(id);
 		this.#flags.dismiss(undoable.flagId);
+	}
+
+	/** Ends the chance of "Rückgängig" of the last "Verwerfen (n)" and closes its flag. */
+	#dropBulkUndo(): void {
+		const undo = this.#bulkUndo;
+		this.#bulkUndo = null;
+		if (undo !== null) this.#flags.dismiss(undo.flagId);
+	}
+
+	/**
+	 * Why a bulk action leaves an entry out, null to run it: an action of its own still runs, it is
+	 * one "＋" put into the inbox that the server does not have yet, or its state does not fit (see
+	 * bulkSkipReason). `unknownRuns`: an entry the store does not know is sent anyway ("Rückgängig":
+	 * a discarded entry left the loaded ones; "Wiederherstellen (n)": another view unloaded it), unless
+	 * it was deleted.
+	 */
+	#skipOf(kind: InboxBulkKind, id: string, unknownRuns = false): string | null {
+		if (this.#pending.has(id)) return BULK_SKIP_REASONS.pending;
+		if (this.isCreated(id)) return BULK_SKIP_REASONS.created;
+		const state = this.find(id)?.state ?? null;
+		if (state === null && unknownRuns && !this.#deleted.has(id)) return null;
+		return bulkSkipReason(kind, state);
+	}
+
+	/**
+	 * Runs one bulk action over the chosen entries, one after the other (EG-1; no batch API, ADR-0014
+	 * §4), with the progress: an entry it does not apply to is skipped with its reason, a failure is
+	 * kept with its reason and the run goes on. An ended session stops the run (the login follows),
+	 * and so does reset(); then it returns null and nothing is reported.
+	 */
+	async #runMany(
+		label: string,
+		entries: readonly InboxBulkEntry[],
+		skipOf: (id: string) => string | null,
+		call: (id: string) => Promise<InboxItemSummary>
+	): Promise<BulkRun | null> {
+		this.#bulkRun += 1;
+		const run = this.#bulkRun;
+		this.#bulkResult = null;
+		this.#bulkProgress = { label, total: entries.length, done: 0 };
+		const outcome: BulkRun = {
+			view: this.#query.state,
+			total: entries.length,
+			done: [],
+			failures: [],
+			skipped: []
+		};
+		try {
+			for (const [index, entry] of entries.entries()) {
+				const reason = skipOf(entry.id);
+				if (reason !== null) {
+					outcome.skipped.push({ ...entry, reason });
+				} else {
+					if (!this.#session.ensureValid()) return null;
+					const sent = await this.#sendOne(run, entry, call);
+					if (sent === 'stopped') return null;
+					if (sent === null) outcome.done.push(entry);
+					else outcome.failures.push(sent);
+				}
+				if (run === this.#bulkRun) {
+					this.#bulkProgress = { label, total: entries.length, done: index + 1 };
+				}
+			}
+		} finally {
+			if (run === this.#bulkRun) this.#bulkProgress = null;
+		}
+		return outcome;
+	}
+
+	/**
+	 * One request of a bulk action: null when it changed the entry, the failure with its reason and
+	 * its request for "Details" (FP-1), or "stopped" after an ended session (the login follows) or
+	 * reset().
+	 */
+	async #sendOne(
+		run: number,
+		entry: InboxBulkEntry,
+		call: (id: string) => Promise<InboxItemSummary>
+	): Promise<InboxBulkProblem | 'stopped' | null> {
+		this.#pending.add(entry.id);
+		try {
+			const item = await call(entry.id);
+			if (run !== this.#bulkRun) return 'stopped';
+			this.upsert(item);
+			return null;
+		} catch (error) {
+			if (run !== this.#bulkRun) return 'stopped';
+			const failure = toDataError(error);
+			if (failure.kind === 'session') {
+				this.#session.logout();
+				return 'stopped';
+			}
+			const field = Object.values(failure.fields)[0]?.message;
+			return { ...entry, reason: field ?? failure.message, ...problemDetails(error) };
+		} finally {
+			if (run === this.#bulkRun) this.#pending.delete(entry.id);
+		}
+	}
+
+	/**
+	 * Keeps the result of a run (only with failures or skipped entries, and only while its view is
+	 * still shown) and shows its flag: an error flag when no entry changed and requests failed, an
+	 * info flag when every entry was skipped, otherwise a success flag, with `undo` as "Rückgängig"
+	 * when entries changed. Failures whose result cannot stand at the selection (the run ended in
+	 * another view, or "Rückgängig" ran in "Alle" or "Verknüpft") make it an error flag with the reason
+	 * of the first one and its "Details" (MO-7c1, F-1), "Rückgängig" included; it stays until closed,
+	 * like every error flag. Returns the ID of a flag with "Rückgängig", else null.
+	 */
+	#finishMany(outcome: BulkRun, verb: string, undo: (() => void) | null): string | null {
+		const counts = {
+			total: outcome.total,
+			done: outcome.done.length,
+			skipped: outcome.skipped.length,
+			failed: outcome.failures.length
+		};
+		const title = bulkResultTitle(counts, verb);
+		// Another view meanwhile: the result would stand without its selection (EG-1 round 2).
+		const kept = (counts.skipped > 0 || counts.failed > 0) && this.#query.state === outcome.view;
+		this.#bulkResult = kept ? { verb, failures: outcome.failures, skipped: outcome.skipped } : null;
+		// The reasons stand at the selection of the view; without it the flag names the first one and
+		// offers "Details" of its request.
+		const shown = kept && bulkKindOf(outcome.view) !== null;
+		const problem = outcome.failures.find((failure) => failure.problem !== undefined)?.problem;
+		const unseen =
+			counts.failed > 0 && !shown
+				? {
+						description: bulkFailureNote(outcome.failures),
+						...(problem !== undefined && { problem })
+					}
+				: null;
+		if (counts.done === 0 && counts.failed > 0) {
+			this.#flags.show({
+				tone: 'error',
+				title,
+				...(unseen ?? { description: 'Die Gründe stehen bei der Auswahl.' })
+			});
+			return null;
+		}
+		const tone = unseen !== null ? 'error' : counts.done === 0 ? 'info' : 'success';
+		if (undo === null || counts.done === 0) {
+			this.#flags.show({ tone, title, ...(unseen ?? {}) });
+			return null;
+		}
+		const flagId = this.#flags.show({
+			tone,
+			title,
+			...(unseen ?? {}),
+			action: { label: 'Rückgängig', run: undo },
+			onclose: () => {
+				if (this.#bulkUndo?.flagId === flagId) this.#bulkUndo = null;
+			}
+		});
+		return flagId;
 	}
 
 	/** Channels of the source chip for the server filter of handled entries, null for all. */

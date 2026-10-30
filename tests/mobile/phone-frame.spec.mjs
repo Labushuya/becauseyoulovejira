@@ -29,6 +29,29 @@
 // history, "Verwerfen" with "Rückgängig" above the bottom bar, "Umwandeln" as a page and back,
 // "Erfassen" with the keys of the keyboard, "Aus Zwischenablage" with the field to paste into, and
 // "Eintrag ansehen" of "＋" back to the day plan; on a PC the table of today.
+// Since MO-7a (ADR-0073 addendum MO-7a, concept MO-0 §5: at most 15 cases) 13 cases instead of 19:
+// cases with the same window and the same start share one sign-in (the start and "Mehr"; the view and
+// the overlays of today with the switch off; four and two cases of the PC), every check of before
+// stays. A locked entry of a menu is muted, and the region of the hints has a tabindex only for one
+// step.
+// Since MO-7b (manifest BYL-E6-2206 ff.) without a case of its own: "Projekte", "Wiederholungen" and
+// "Papierkorb" in the case of "Mehr" (cards at 360 and 412 px, the title in at least 60 % of its card,
+// the filter sheet, each page with its arrow back through the history, "Auswählen" in the trash), and
+// the bar of the selection at the bottom in the case of "Aufgaben" (flat above the bottom bar, its
+// actions behind "Aktionen", uncovered above a keyboard); on the PC the three lists keep their
+// tables. The case of the ticket no longer waits for the focus after "Kommentieren": the form takes
+// it back only while it is still in the form (M-1 of the review of MO-7a). Round 2 of MO-7b: Enter on
+// the locked "Aktionen" names why in a flag, opened the focus is on the first action, and "Mehr"
+// expects the number of the trash the server lists, as a whole number.
+// Since MO-7c1 (manifest BYL-E6-2239 ff.) without a case of its own, in the case of "Mehr": the login
+// page before the sign-in, "Erledigte" (entries of 44 px, the filters of 44 px, the title in at least
+// 60 % of its entry, a tap beside the link opens the ticket as a page with its arrow back), the help
+// with the parts about the keyboard folded, and the error page of an unknown address, each at 360 and
+// 412 px. Faster: the other cases open their page with the stored session instead of the login page
+// (a page of the app loaded anew, so the start stays the business of the case of the start), the
+// seeds share one sign-in through the API and create at once what does not depend on each other, the
+// overlays appear without movement except in the case of the overlays, and the flags close in one step
+// inside the page (Q-5 of the review of MO-7b).
 //
 // The phone stands for another device in the home network (header X-Byl-Test-Remote-Address of the
 // test hooks, only in instances of the harness), so the pages of the administrator are "nur am PC".
@@ -38,6 +61,11 @@ import { randomBytes } from 'node:crypto';
 import { expect, test } from '@playwright/test';
 import { BROWSER_STEP_MS } from '../support/timing.mjs';
 import { mobileInstance } from './instance.mjs';
+
+// Since MO-7c1 the overlays appear without movement (prefers-reduced-motion, ADR-0025 §2: the place
+// is the same, only the sliding and fading of about 200 ms each are gone); no check waits for them
+// any more. The case of the overlays (MO-1b) keeps the movement and checks the sheets after it.
+test.use({ reducedMotion: 'reduce' });
 
 const PHONE = {
 	viewport: { width: 390, height: 844 },
@@ -60,13 +88,44 @@ async function switchOn(page) {
 	await page.addInitScript(() => localStorage.setItem('byl-mobile-layout', 'on'));
 }
 
-/** Signs in on the login page; the app then opens its start page. */
-async function signIn(page) {
-	const { url, email, password } = mobileInstance();
-	await page.goto(`${url}/login`);
+/** Signs in on the login page that is open; the app then opens its start page. */
+async function submitLogin(page) {
+	const { email, password } = mobileInstance();
 	await page.getByLabel('E-Mail').fill(email);
 	await page.getByLabel('Passwort').fill(password);
 	await page.getByRole('button', { name: 'Anmelden' }).click();
+}
+
+/** The session of the invented account, signed in once per worker through the API (MO-7c1). */
+let session = null;
+
+/** Token and record of the invented account; the first call signs in, later ones reuse it. */
+function account() {
+	if (session === null) {
+		const { email, password } = mobileInstance();
+		session = api('POST', '/api/collections/users/auth-with-password', { identity: email, password }).catch((error) => {
+			session = null;
+			throw error;
+		});
+	}
+	return session;
+}
+
+/**
+ * Opens `path` of the app already signed in (MO-7c1, instead of the login page in every case): the
+ * session stands in localStorage where the app keeps it (LocalAuthStore "pocketbase_auth") before the
+ * first page, so the app checks it like a stored session. The page loads as a page of the app loaded
+ * anew (referrer of the app), so the start view of MO-1a stays out of it: the case of the start signs
+ * in through the login page and checks it. The token stays in memory and in the browser of the test,
+ * never on disk or in the output.
+ */
+async function openSignedIn(page, path) {
+	const { url } = mobileInstance();
+	const { token, record } = await account();
+	await page.addInitScript((stored) => {
+		if (localStorage.getItem('pocketbase_auth') === null) localStorage.setItem('pocketbase_auth', stored);
+	}, JSON.stringify({ token, record }));
+	await page.goto(`${url}${path}`, { referer: `${url}/` });
 	return url;
 }
 
@@ -156,22 +215,38 @@ function berlinToday() {
  * planned). Returns their titles.
  */
 async function seed(entries) {
-	const { email, password } = mobileInstance();
-	const { token, record } = await api('POST', '/api/collections/users/auth-with-password', { identity: email, password });
+	const { token, record } = await account();
 	const mark = randomBytes(3).toString('hex');
-	const titles = [];
-	for (const { title, planned = false, dueToday = false } of entries) {
-		const name = `${title} ${mark}`;
-		const ticket = await api(
-			'POST',
-			'/api/collections/tickets/records',
-			{ owner: record.id, title: name, ...(dueToday ? { due: `${berlinToday()} 00:00:00.000Z` } : {}) },
-			token
-		);
-		if (planned) await api('POST', '/api/byl/dayplan/items', { ticket: ticket.id }, token);
-		titles.push(name);
+	const titles = entries.map(({ title }) => `${title} ${mark}`);
+	// The tickets at once (MO-7c1), then the day plan one after the other, in the order of `entries`.
+	const tickets = await Promise.all(
+		entries.map(({ dueToday = false }, index) =>
+			api(
+				'POST',
+				'/api/collections/tickets/records',
+				{ owner: record.id, title: titles[index], ...(dueToday ? { due: `${berlinToday()} 00:00:00.000Z` } : {}) },
+				token
+			)
+		)
+	);
+	for (const [index, { planned = false }] of entries.entries()) {
+		if (planned) await api('POST', '/api/byl/dayplan/items', { ticket: tickets[index].id }, token);
 	}
 	return titles;
+}
+
+/**
+ * Closes every flag with its ×, in one step inside the page, and waits until none is left. Before,
+ * the case counted the flags and then clicked: a flag that left on its own (after 8 s) in between
+ * left the click waiting for a button that was gone (Q-5 of the review of MO-7b). Only to clear the
+ * way: the case of the overlays taps the × of the flag of "Link kopieren" for real and checks its 44 px.
+ */
+async function closeFlags(page) {
+	const flags = page.getByRole('region', { name: 'Benachrichtigungen' });
+	await flags.evaluate((region) => {
+		for (const button of region.querySelectorAll('button[aria-label="Benachrichtigung schließen"]')) button.click();
+	});
+	await expect(flags.getByRole('listitem')).toHaveCount(0);
 }
 
 /** Scrolls the element to the middle of the window, away from the bottom bar and its flags (MO-3). */
@@ -195,8 +270,7 @@ const LONG_LINK = 'https://example.com/ein/sehr/langer/pfad/ohne/leerzeichen/der
  * record and the titles.
  */
 async function seedTicket(others) {
-	const { email, password } = mobileInstance();
-	const { token, record } = await api('POST', '/api/collections/users/auth-with-password', { identity: email, password });
+	const { token, record } = await account();
 	const mark = randomBytes(3).toString('hex');
 	const tag = await api('POST', '/api/collections/tags/records', { owner: record.id, name: `Garten ${mark}` }, token);
 	const description = [
@@ -217,19 +291,18 @@ async function seedTicket(others) {
 	const title = `Mmm_Steuererklärung_für_das_vergangene_Jahr_mit_allen_Belegen_der_Handwerker_${mark}`;
 	const ticket = await api('POST', '/api/collections/tickets/records', { owner: record.id, title, description, tags: [tag.id], priority: 'high' }, token);
 	const subtask = `Belege sortieren ${mark}`;
-	await api('POST', '/api/collections/tickets/records', { owner: record.id, title: subtask, parent: ticket.id }, token);
-	await api(
-		'POST',
-		'/api/collections/comments/records',
-		{ ticket: ticket.id, author: record.id, body: `Siehe ${LONG_LINK}\n\n\`\`\`\nnoch_eine_lange_zeile_im_codeblock_des_kommentars_die_nicht_umbricht\n\`\`\`` },
-		token
-	);
-	const titles = [];
-	for (let index = 0; index < others; index++) {
-		const name = `Ccc Füller ${String(index + 1).padStart(2, '0')} ${mark}`;
-		await api('POST', '/api/collections/tickets/records', { owner: record.id, title: name }, token);
-		titles.push(name);
-	}
+	const titles = Array.from({ length: others }, (_, index) => `Ccc Füller ${String(index + 1).padStart(2, '0')} ${mark}`);
+	// The rest at once (MO-7c1): nothing of it depends on another, the list sorts by title.
+	await Promise.all([
+		api('POST', '/api/collections/tickets/records', { owner: record.id, title: subtask, parent: ticket.id }, token),
+		api(
+			'POST',
+			'/api/collections/comments/records',
+			{ ticket: ticket.id, author: record.id, body: `Siehe ${LONG_LINK}\n\n\`\`\`\nnoch_eine_lange_zeile_im_codeblock_des_kommentars_die_nicht_umbricht\n\`\`\`` },
+			token
+		),
+		...titles.map((name) => api('POST', '/api/collections/tickets/records', { owner: record.id, title: name }, token))
+	]);
 	return { ticket, title, subtask, tag: tag.name, others: titles };
 }
 
@@ -239,21 +312,23 @@ async function seedTicket(others) {
  * code, and two plain notes. Returns their records with the titles.
  */
 async function seedInbox() {
-	const { email, password } = mobileInstance();
-	const { token, record } = await api('POST', '/api/collections/users/auth-with-password', { identity: email, password });
+	const { token, record } = await account();
 	const mark = randomBytes(3).toString('hex');
 	const create = (body) => api('POST', '/api/collections/inbox_items/records', { owner: record.id, ...body }, token);
-	const mail = await create({
-		channel: 'eml',
-		kind: 'mail',
-		title: `Rechnung_über_die_Reparatur_der_Heizungsanlage_im_Keller_vom_vergangenen_Winter_${mark}`,
-		body: `Guten Tag,\n\nhier die Rechnung: ${LONG_LINK}\n\n\`\`\`\nRechnungsnummer-2026-0001-0002-0003-0004-0005-0006-0007-0008\n\`\`\``,
-		source_url: LONG_LINK,
-		source_ref: `<${mark}@example.com>`,
-		source_meta: { from: `Anna Beispiel <anna.beispiel.mit.einer.sehr.langen.adresse.${mark}@example.com>` }
-	});
-	const note = await create({ channel: 'manual', kind: 'todo', title: `Paket abholen ${mark}` });
-	const other = await create({ channel: 'manual', kind: 'todo', title: `Fahrrad reparieren ${mark}` });
+	// At once (MO-7c1): the three entries do not depend on each other.
+	const [mail, note, other] = await Promise.all([
+		create({
+			channel: 'eml',
+			kind: 'mail',
+			title: `Rechnung_über_die_Reparatur_der_Heizungsanlage_im_Keller_vom_vergangenen_Winter_${mark}`,
+			body: `Guten Tag,\n\nhier die Rechnung: ${LONG_LINK}\n\n\`\`\`\nRechnungsnummer-2026-0001-0002-0003-0004-0005-0006-0007-0008\n\`\`\``,
+			source_url: LONG_LINK,
+			source_ref: `<${mark}@example.com>`,
+			source_meta: { from: `Anna Beispiel <anna.beispiel.mit.einer.sehr.langen.adresse.${mark}@example.com>` }
+		}),
+		create({ channel: 'manual', kind: 'todo', title: `Paket abholen ${mark}` }),
+		create({ channel: 'manual', kind: 'todo', title: `Fahrrad reparieren ${mark}` })
+	]);
 	return { mail, note, other, mark };
 }
 
@@ -290,12 +365,108 @@ function scrollsSidewaysInside(locator) {
 	return locator.evaluate((element) => element.scrollWidth > element.clientWidth);
 }
 
+/** The page fills the window: the panel of an entry, a project, a rule or a form in the phone frame (MO-4). */
+async function expectPageOf(locator, viewport) {
+	await expect(locator).toBeVisible();
+	await settled(locator);
+	const box = await locator.boundingBox();
+	expect(Math.abs(box.x)).toBeLessThanOrEqual(1);
+	expect(Math.abs(box.width - viewport.width)).toBeLessThanOrEqual(1);
+	expect(Math.abs(box.y + box.height - viewport.height)).toBeLessThanOrEqual(1);
+}
+
+/**
+ * The share of a card that its title takes (MO-7b: no title below about 60 % of the card); the title
+ * of an entry of "Erledigte" is `.title` (MO-7c1).
+ */
+async function cardTitleShare(card, title = '.card-title') {
+	const whole = await card.boundingBox();
+	const part = await card.locator(title).boundingBox();
+	return part.width / whole.width;
+}
+
+/** A deletion of the invented account; a ticket goes to the trash (ADR-0037). */
+async function remove(path, token) {
+	const response = await fetch(`${mobileInstance().url}${path}`, {
+		method: 'DELETE',
+		headers: { Authorization: token },
+		signal: AbortSignal.timeout(BROWSER_STEP_MS)
+	});
+	if (!response.ok) throw new Error(`DELETE ${path} of the smoke test answered ${response.status}.`);
+}
+
+/** Capital letters A to Z for the code of a project. */
+function letters(count) {
+	return Array.from(randomBytes(count), (byte) => String.fromCharCode(65 + (byte % 26))).join('');
+}
+
+/**
+ * The lists of MO-7b (a run mark appended), made up: a project with a name of one long word and a
+ * sub project, a rule with a title of one long word, and two tickets in the trash, one with a title
+ * of one long word. `trashCount` is the number of the trash as the server lists it afterwards: the two
+ * and whatever another case put there before (round 2 of MO-7b, P-6). Since MO-7c1 also `done`, a
+ * done ticket with a title of one long word for "Erledigte".
+ */
+async function seedLists() {
+	const { token, record } = await account();
+	const mark = randomBytes(3).toString('hex');
+	const projectName = `Renovierung_des_Dachbodens_mit_Dämmung_und_neuen_Fenstern_${mark}`;
+	const subName = `Fenster ${mark}`;
+	const ruleTitle = `Monatliche_Abrechnung_der_Nebenkosten_mit_allen_Belegen_${mark}`;
+	const trashed = [`Altes_Regal_im_Keller_abbauen_und_zum_Wertstoffhof_bringen_${mark}`, `Kaputte Lampe ${mark}`];
+	const done = `Garage_ausräumen_und_alles_zum_Recyclinghof_bringen_lassen_${mark}`;
+	// The project with its sub project, the rule, each ticket for the trash and a done ticket with a
+	// title of one long word for "Erledigte" (MO-7c1) at once.
+	await Promise.all([
+		(async () => {
+			const ticket = await api('POST', '/api/collections/tickets/records', { owner: record.id, title: done }, token);
+			await api('PATCH', `/api/collections/tickets/records/${ticket.id}`, { status: 'done' }, token);
+		})(),
+		(async () => {
+			const project = await api('POST', '/api/collections/projects/records', { owner: record.id, name: projectName, code: letters(5) }, token);
+			await api('POST', '/api/collections/projects/records', { owner: record.id, name: subName, code: letters(5), parent: project.id }, token);
+		})(),
+		api(
+			'POST',
+			'/api/collections/recurrence_rules/records',
+			{ owner: record.id, title: ruleTitle, description: '', priority: 'medium', initial_status: 'open', mode: 'calendar', freq: 'monthly', interval: 1, weekdays: [], month_day: 1, anchor: '2099-01-01', lead_days: 3 },
+			token
+		),
+		...trashed.map(async (title) => {
+			const ticket = await api('POST', '/api/collections/tickets/records', { owner: record.id, title }, token);
+			await remove(`/api/collections/tickets/records/${ticket.id}`, token);
+		})
+	]);
+	const { items } = await api('GET', '/api/byl/trash', undefined, token);
+	return { project: projectName, sub: subName, rule: ruleTitle, trashed, trashCount: items.length, done };
+}
+
 test.describe('phone with the switch on', () => {
 	test.use({ ...PHONE, extraHTTPHeaders: ANOTHER_DEVICE });
 
-	test('starts at the day plan, with the bottom bar at the bottom and no horizontal scrolling', async ({ page }) => {
+	// MO-7a: the start and "Mehr" in one case (before two, each with its own sign-in). MO-7b: the views
+	// under "Mehr" with lists ("Projekte", "Wiederholungen", "Papierkorb") in the same case.
+	test('starts at the day plan with the bottom bar at the bottom, opens "Mehr" as a sheet with every other view and the pages "nur am PC", shows projects, rules and the trash as cards with their pages and the bar of the selection, and keeps "Aufgaben" a tap away', async ({ page }) => {
+		const lists = await seedLists();
 		await switchOn(page);
-		const url = await signIn(page);
+		const { url } = mobileInstance();
+		const large = { width: 412, height: 915 };
+		// MO-7c1: the login page on a small and a large phone before the sign-in, without sideways
+		// scrolling, the fields and the button of 44 px in view, the keys of the keyboard said.
+		await page.setViewportSize(SMALL_PHONE.viewport);
+		await page.goto(`${url}/login`);
+		const login = page.getByRole('main');
+		await expect(login.getByRole('heading', { name: 'Anmelden' })).toBeVisible();
+		for (const size of [SMALL_PHONE.viewport, large]) {
+			await page.setViewportSize(size);
+			expect(await scrollsSideways(page)).toBe(false);
+			expect(await smallTargets(login)).toEqual([]);
+			await expectUncovered(login.getByRole('button', { name: 'Anmelden' }), size);
+		}
+		await expect(page.getByLabel('E-Mail')).toHaveAttribute('enterkeyhint', 'next');
+		await expect(page.getByLabel('Passwort')).toHaveAttribute('enterkeyhint', 'done');
+		await page.setViewportSize(PHONE.viewport);
+		await submitLogin(page);
 		await expect(page).toHaveURL(`${url}/tagesplan`);
 		await expect(viewHeading(page, 'Tagesplan')).toBeAttached();
 
@@ -319,24 +490,22 @@ test.describe('phone with the switch on', () => {
 		await expect(page.locator('#new-ticket-link')).toHaveCount(0);
 		expect(await viewportContent(page)).toBe(VIEWPORT_PHONE);
 		expect(await scrollsSideways(page)).toBe(false);
-	});
 
-	test('opens "Mehr" as a sheet with every other view and the pages "nur am PC", and keeps "Aufgaben" a tap away', async ({ page }) => {
-		await switchOn(page);
-		const url = await signIn(page);
+		// "Mehr" from the start at the day plan.
 		await expect(page).toHaveURL(`${url}/tagesplan`);
-		const bar = page.getByRole('navigation', { name: 'Hauptnavigation' });
-
 		await bar.getByRole('button', { name: 'Mehr' }).click();
 		const sheet = page.getByRole('dialog', { name: 'Mehr' });
 		await expect(sheet).toBeVisible();
 		const views = sheet.getByRole('navigation', { name: 'Ansichten' });
+		// The trash names its number since the lists of MO-7b put two tickets into it: the number the
+		// server lists, whole (no "2" of a "21").
+		expect(lists.trashCount).toBeGreaterThanOrEqual(lists.trashed.length);
 		await expect(views.getByRole('link')).toHaveText([
 			'Projekte',
 			'Wiederholungen',
 			'Kalender',
 			'Erledigte',
-			'Papierkorb'
+			new RegExp(`^\\s*Papierkorb ${lists.trashCount}\\b`)
 		]);
 		await expect(sheet.getByRole('link', { name: 'Neues Ticket' })).toBeVisible();
 		const settings = sheet.getByRole('navigation', { name: 'Einstellungen' });
@@ -367,6 +536,153 @@ test.describe('phone with the switch on', () => {
 		await expect(sheet).toHaveCount(0);
 		await expect(bar.getByRole('button', { name: 'Mehr, aktuell: Kalender' })).toBeVisible();
 
+		// MO-7b on a small phone: "Projekte", "Wiederholungen" and "Papierkorb" two taps away, as cards
+		// without sideways scrolling, every target of 44 px, the title in at least 60 % of its card; a tap
+		// on a card opens its page, whose arrow goes back through the history without a second entry.
+		const small = SMALL_PHONE.viewport;
+		await page.setViewportSize(small);
+		const historyLength = () => page.evaluate(() => window.history.length);
+		/** A view under "Mehr": two taps. */
+		async function openUnderMore(name) {
+			await bar.getByRole('button', { name: /^Mehr/ }).tap();
+			await page.getByRole('dialog', { name: 'Mehr' }).getByRole('navigation', { name: 'Ansichten' }).getByRole('link', { name }).tap();
+			await expect(viewHeading(page, name)).toBeAttached();
+		}
+		async function expectCards(card) {
+			await expect(card).toBeVisible();
+			await expect(page.getByRole('table')).toHaveCount(0);
+			expect(await scrollsSideways(page)).toBe(false);
+			expect(await smallTargets(card.locator('xpath=..'))).toEqual([]);
+			expect(await smallTargets(page.locator('.phone-tools'))).toEqual([]);
+			expect(await cardTitleShare(card)).toBeGreaterThanOrEqual(0.6);
+		}
+		/** A tap on `spot` of the card (its muted line by default) opens the page; its arrow goes back. */
+		async function openAndBack(card, name, back, list, spot = card.locator('.card-meta')) {
+			const start = await historyLength();
+			await spot.tap();
+			const panel = page.getByRole('complementary', { name });
+			await expectPageOf(panel, small);
+			expect(await scrollsSideways(page)).toBe(false);
+			expect(await scrollsSidewaysInside(panel.locator('.body').first())).toBe(false);
+			expect(await smallTargets(panel)).toEqual([]);
+			const arrow = panel.getByRole('button', { name: back, exact: true });
+			await expectTarget(arrow);
+			await arrow.tap();
+			await expect(page).toHaveURL(list);
+			await expect(panel).toHaveCount(0);
+			expect(await historyLength()).toBe(start + 1);
+		}
+
+		await openUnderMore('Projekte');
+		await expect(page).toHaveURL(`${url}/projekte`);
+		const projectCard = (name) => page.locator('li[data-project-row]').filter({ has: page.getByRole('link', { name, exact: true }) });
+		await expectCards(projectCard(lists.project));
+		await expect(projectCard(lists.sub)).toHaveClass(/child/);
+		// "Filter" opens the sheet with "Archivierte anzeigen" and the sort the cards have no headers for.
+		await page.locator('.phone-tools').getByRole('button', { name: 'Filter', exact: true }).tap();
+		const filters = page.getByRole('dialog', { name: 'Filter' });
+		await expectSheet(filters.locator('.frame'), small);
+		await expect(filters.getByRole('group', { name: 'Sortieren nach' })).toBeVisible();
+		expect(await smallTargets(filters)).toEqual([]);
+		await filters.getByRole('button', { name: /Projekte? anzeigen$/ }).tap();
+		await expect(filters).toHaveCount(0);
+		await openAndBack(projectCard(lists.project), lists.project, 'Zu den Projekten', `${url}/projekte`);
+
+		await openUnderMore('Wiederholungen');
+		const ruleCard = page.locator('li[data-rule-row]').filter({ hasText: lists.rule });
+		await expectCards(ruleCard);
+		await openAndBack(ruleCard, lists.rule, 'Zu den Wiederholungen', `${url}/wiederholungen`);
+
+		await openUnderMore('Papierkorb');
+		const trashCard = (title) => page.locator('li[data-trash-row]').filter({ hasText: title });
+		const [shelf, lamp] = lists.trashed;
+		await expectCards(trashCard(shelf));
+		await openAndBack(trashCard(lamp), lamp, 'Zum Papierkorb', `${url}/papierkorb`);
+		// "Auswählen": the bar of the selection, flat, fixed at the bottom right above the bottom bar,
+		// also below the short list; "Aktionen" locked until a card is chosen, then one level deeper.
+		await page.getByRole('button', { name: 'Weitere Aktionen der Liste' }).tap();
+		await page.getByRole('menu', { name: 'Aktionen der Liste' }).getByRole('menuitem', { name: 'Auswählen' }).tap();
+		const selection = page.locator('[data-selection-bar]');
+		await expect(selection).toHaveAccessibleName('0 Tickets ausgewählt');
+		await expectUncovered(selection.locator('.phone-row'), small);
+		const flat = await selection.boundingBox();
+		const tabs = await bar.boundingBox();
+		expect(flat.height).toBeLessThanOrEqual(80);
+		expect(flat.y + flat.height).toBeLessThanOrEqual(tabs.y);
+		expect(tabs.y - (flat.y + flat.height)).toBeLessThanOrEqual(12);
+		await expect(selection.getByRole('button', { name: 'Aktionen' })).toHaveAttribute('aria-disabled', 'true');
+		// Round 2 (P-2): Enter on the locked "Aktionen" names why in a flag, not only to a screen reader.
+		await selection.getByRole('button', { name: 'Aktionen' }).focus();
+		await page.keyboard.press('Enter');
+		const notes = page.getByRole('region', { name: 'Benachrichtigungen' });
+		await expect(notes.getByRole('listitem').filter({ hasText: 'Erst Tickets auswählen.' })).toBeVisible();
+		await closeFlags(page);
+		await trashCard(shelf).locator('.card-meta').tap();
+		await expect(trashCard(shelf).getByRole('checkbox', { name: /auswählen$/ })).toBeChecked();
+		await expect(selection).toHaveAccessibleName('1 Ticket ausgewählt');
+		await selection.getByRole('button', { name: 'Aktionen' }).tap();
+		// Round 2 (P-3): opened, the focus is on the first action.
+		await expect(selection.getByRole('group', { name: 'Sammelaktionen' }).getByRole('button', { name: 'Wiederherstellen' })).toBeFocused();
+		await expect(selection.getByRole('group', { name: 'Sammelaktionen' }).getByRole('button', { name: 'Wiederherstellen' })).toBeVisible();
+		expect(await smallTargets(selection)).toEqual([]);
+		expect(await scrollsSideways(page)).toBe(false);
+		await selection.getByRole('button', { name: 'Fertig' }).tap();
+		await expect(selection).toHaveCount(0);
+		await expect(page.getByRole('checkbox', { name: /auswählen$/ })).toHaveCount(0);
+
+		// MO-7c1 "Erledigte": two taps away, every target of 44 px (the filters too), no sideways
+		// scrolling, the title in at least 60 % of its entry; a tap on the entry beside its link opens
+		// the ticket as a page, whose arrow goes back through the history without a second entry.
+		await openUnderMore('Erledigte');
+		await expect(page).toHaveURL(`${url}/erledigt`);
+		const doneEntry = page.locator('li[data-ticket-id]').filter({ hasText: lists.done });
+		await expect(doneEntry).toBeVisible();
+		expect(await scrollsSideways(page)).toBe(false);
+		expect(await smallTargets(page.locator('.done-view'))).toEqual([]);
+		expect(await cardTitleShare(doneEntry, '.title')).toBeGreaterThanOrEqual(0.6);
+		await openAndBack(doneEntry, lists.done, 'Zu den Erledigten', `${url}/erledigt`, doneEntry.locator('.time-cell'));
+
+		// MO-7c1 "Hilfe" under "Mehr": the parts about the keyboard folded, open on a tap of 44 px; the
+		// bulk actions of the inbox named under "Ohne Verbindung"; no sideways scrolling.
+		/** The help under "Mehr": two taps. */
+		async function openHelp() {
+			await bar.getByRole('button', { name: /^Mehr/ }).tap();
+			await page.getByRole('dialog', { name: 'Mehr' }).getByRole('navigation', { name: 'Einstellungen' }).getByRole('link', { name: 'Hilfe' }).tap();
+			await expect(page).toHaveURL(`${url}/einstellungen/hilfe`);
+		}
+		await openHelp();
+		const shortcuts = page.locator('section#tastaturkuerzel details');
+		await expect(shortcuts).not.toHaveAttribute('open', /.*/);
+		await expect(page.locator('section#kalender details')).not.toHaveAttribute('open', /.*/);
+		expect(await scrollsSideways(page)).toBe(false);
+		const unfold = shortcuts.locator('summary');
+		await expectTarget(unfold);
+		await unfold.tap();
+		await expect(shortcuts).toHaveAttribute('open', '');
+		await expect(shortcuts.getByText(/öffnest du die wichtigsten Tasten/)).toBeVisible();
+		expect(await scrollsSideways(page)).toBe(false);
+		await expect(page.locator('section#ohne-verbindung')).toContainText(
+			'„Gesammelt umwandeln (3)“, „Mit Ticket verknüpfen … (3)“, „Verwerfen (3)“ und „Wiederherstellen (3)“: ohne Verbindung gesperrt'
+		);
+
+		// A large phone: the lists keep to their width, the titles their share; the help too.
+		await page.setViewportSize(large);
+		await expect(page.locator('section#tastaturkuerzel')).toBeVisible();
+		expect(await scrollsSideways(page)).toBe(false);
+		for (const [name, card, title] of [
+			['Papierkorb', trashCard(shelf), '.card-title'],
+			['Projekte', projectCard(lists.project), '.card-title'],
+			['Wiederholungen', ruleCard, '.card-title'],
+			['Erledigte', doneEntry, '.title']
+		]) {
+			await openUnderMore(name);
+			await expect(card).toBeVisible();
+			expect(await scrollsSideways(page)).toBe(false);
+			expect(await cardTitleShare(card, title)).toBeGreaterThanOrEqual(0.6);
+		}
+		expect(await smallTargets(page.locator('.done-view'))).toEqual([]);
+		await page.setViewportSize(PHONE.viewport);
+
 		// A tap on "Aufgaben" leads there: the day plan only opens first at the start of the app.
 		await bar.getByRole('link', { name: 'Aufgaben' }).click();
 		await expect(viewHeading(page, 'Aufgaben')).toBeAttached();
@@ -376,16 +692,33 @@ test.describe('phone with the switch on', () => {
 
 		await bar.getByRole('button', { name: 'Erfassen' }).click();
 		await expect(page.getByRole('dialog', { name: 'Schnellerfassung' })).toBeVisible();
+
+		// MO-7c1: an address the app does not know shows the error page, on a small and a large phone
+		// without sideways scrolling and with "Zur Übersicht" of 44 px in view, which leads back into
+		// the app.
+		await page.goto(`${url}/gibt-es-nicht`);
+		const missing = page.getByRole('main');
+		await expect(missing.getByRole('heading', { name: 'Seite nicht gefunden' })).toBeVisible();
+		for (const size of [SMALL_PHONE.viewport, large]) {
+			await page.setViewportSize(size);
+			expect(await scrollsSideways(page)).toBe(false);
+			expect(await smallTargets(missing)).toEqual([]);
+			await expectUncovered(missing.getByRole('link', { name: 'Zur Übersicht' }), size);
+		}
+		await missing.getByRole('link', { name: 'Zur Übersicht' }).tap();
+		await expect(bar).toBeVisible();
+		await expect(viewHeading(page, 'Aufgaben')).toBeAttached();
 	});
 });
 
 test.describe('small phone with the switch on: overlays (MO-1b)', () => {
-	test.use({ ...SMALL_PHONE, extraHTTPHeaders: ANOTHER_DEVICE });
+	// With the movement of the overlays: each sheet is checked once it has slid in (MO-7c1).
+	test.use({ ...SMALL_PHONE, extraHTTPHeaders: ANOTHER_DEVICE, reducedMotion: 'no-preference' });
 	const viewport = SMALL_PHONE.viewport;
 
 	test('shows dialogs, menus, pickers and questions as sheets with "Schließen", and the flags uncovered', async ({ page }) => {
 		await switchOn(page);
-		const url = await signIn(page);
+		const url = await openSignedIn(page, '/tagesplan');
 		await expect(page).toHaveURL(`${url}/tagesplan`);
 		const bar = page.getByRole('navigation', { name: 'Hauptnavigation' });
 
@@ -441,6 +774,9 @@ test.describe('small phone with the switch on: overlays (MO-1b)', () => {
 		await menu.getByRole('menuitem', { name: 'Schließen', exact: true }).click();
 		await expect(menu).toBeHidden();
 		await expect(more).toBeFocused();
+		// A real tap on its × closes the flag; the other cases close theirs inside the page (MO-7c1).
+		await copied.getByRole('button', { name: 'Benachrichtigung schließen' }).tap();
+		await expect(copied).toHaveCount(0);
 
 		// A question (size S) is a sheet as well, with buttons of 44 px.
 		await more.click();
@@ -490,34 +826,6 @@ test.describe('small phone with the switch on: overlays (MO-1b)', () => {
 	});
 });
 
-test.describe('small phone with the switch off: overlays as today (MO-1b)', () => {
-	test.use({ ...SMALL_PHONE, extraHTTPHeaders: ANOTHER_DEVICE });
-
-	test('keeps a dialog in the middle and a picker at its button, without "Schließen"', async ({ page }) => {
-		await signIn(page);
-		await expect(viewHeading(page, 'Aufgaben')).toBeVisible();
-
-		await page.getByRole('banner').getByRole('button', { name: /Schnellerfassung/ }).click();
-		const quick = page.getByRole('dialog', { name: 'Schnellerfassung' });
-		const frame = quick.locator('.frame');
-		await expect(frame).toBeVisible();
-		await settled(frame);
-		const box = await frame.boundingBox();
-		expect(box.width).toBeLessThan(SMALL_PHONE.viewport.width);
-		expect(box.y + box.height).toBeLessThan(SMALL_PHONE.viewport.height - 1);
-		await quick.getByRole('button', { name: 'Schließen', exact: true }).click();
-		await expect(quick).toHaveCount(0);
-
-		await page.getByRole('button', { name: 'Gruppieren', exact: true }).click();
-		const picker = page.getByRole('dialog', { name: 'Gruppieren' });
-		await expect(picker).toBeVisible();
-		await settled(picker);
-		expect((await picker.boundingBox()).width).toBeLessThan(SMALL_PHONE.viewport.width);
-		await expect(picker.getByRole('button', { name: 'Schließen' })).toHaveCount(0);
-		expect(await scrollsSideways(page)).toBe(false);
-	});
-});
-
 test.describe('small phone with the switch on: the day plan (MO-2)', () => {
 	test.use({ ...SMALL_PHONE, extraHTTPHeaders: ANOTHER_DEVICE });
 	const viewport = SMALL_PHONE.viewport;
@@ -529,7 +837,7 @@ test.describe('small phone with the switch on: the day plan (MO-2)', () => {
 			{ title: 'Arzt anrufen', dueToday: true }
 		]);
 		await switchOn(page);
-		const url = await signIn(page);
+		const url = await openSignedIn(page, '/tagesplan');
 		await expect(page).toHaveURL(`${url}/tagesplan`);
 		const plan = page.getByRole('group', { name: 'Einträge des Plans' });
 		const row = (title) => plan.locator('[data-item-id]').filter({ hasText: title });
@@ -573,7 +881,20 @@ test.describe('small phone with the switch on: the day plan (MO-2)', () => {
 		await more.click();
 		const menu = page.getByRole('menu', { name: /^Aktionen für / });
 		await expectSheet(menu, viewport);
-		await expect(menu.getByRole('menuitem', { name: 'Nach oben' })).toHaveAttribute('aria-disabled', 'true');
+		const up = menu.getByRole('menuitem', { name: 'Nach oben' });
+		await expect(up).toHaveAttribute('aria-disabled', 'true');
+		// MO-7a: the locked entry is muted, in the color of muted text, unlike the entry beside it.
+		const muted = await page.evaluate(() => {
+			const probe = document.createElement('span');
+			probe.style.color = 'var(--color-text-muted)';
+			document.body.append(probe);
+			const color = getComputedStyle(probe).color;
+			probe.remove();
+			return color;
+		});
+		const colorOf = (locator) => locator.evaluate((element) => getComputedStyle(element).color);
+		expect(await colorOf(up)).toBe(muted);
+		expect(await colorOf(menu.getByRole('menuitem', { name: 'Nach unten' }))).not.toBe(muted);
 		await menu.getByRole('menuitem', { name: 'Nach unten' }).click();
 		await expect(menu).toBeHidden();
 		await expect(plan.locator('[data-item-id]').first()).toContainText(flowers);
@@ -625,7 +946,7 @@ test.describe('small phone with the switch on: "Aufgaben" (MO-3)', () => {
 			{ title: 'Pflanzen umtopfen' }
 		]);
 		await switchOn(page);
-		const url = await signIn(page);
+		const url = await openSignedIn(page, '/tagesplan');
 		await expect(page).toHaveURL(`${url}/tagesplan`);
 		await page.getByRole('navigation', { name: 'Hauptnavigation' }).getByRole('link', { name: 'Aufgaben' }).click();
 		await expect(viewHeading(page, 'Aufgaben')).toBeAttached();
@@ -684,10 +1005,8 @@ test.describe('small phone with the switch on: "Aufgaben" (MO-3)', () => {
 		await flags.getByRole('button', { name: 'Rückgängig' }).click();
 		await expect(cardOf(plants)).toBeVisible();
 		// The flag "… wieder offen." stands above the bottom bar for 8 s; closed, it covers no card.
-		const closeFlag = flags.getByRole('button', { name: 'Benachrichtigung schließen' });
 		await expect(flags.getByRole('listitem').filter({ hasText: 'wieder offen' })).toBeVisible();
-		while ((await closeFlag.count()) > 0) await closeFlag.first().click();
-		await expect(flags.getByRole('listitem')).toHaveCount(0);
+		await closeFlags(page);
 
 		// "Auswählen" is in the menu of the list; "Bereich" chooses up to the next card tapped.
 		await page.getByRole('button', { name: 'Weitere Aktionen der Liste' }).click();
@@ -696,6 +1015,18 @@ test.describe('small phone with the switch on: "Aufgaben" (MO-3)', () => {
 		await list.getByRole('menuitem', { name: 'Auswählen' }).click();
 		const choosing = page.getByRole('group', { name: 'Auswahl' });
 		await expect(choosing).toBeVisible();
+		// MO-7b: the bar of the selection stands from the start, flat and fixed at the bottom right above
+		// the bottom bar, "Aktionen" locked while nothing is chosen.
+		const tabBar = page.getByRole('navigation', { name: 'Hauptnavigation' });
+		const chosen = page.locator('[data-selection-bar]');
+		await expect(chosen).toHaveAccessibleName('0 Tickets ausgewählt');
+		await expectUncovered(chosen.locator('.phone-row'), viewport);
+		const flat = await chosen.boundingBox();
+		const tabs = await tabBar.boundingBox();
+		expect(flat.height).toBeLessThanOrEqual(80);
+		expect(flat.y + flat.height).toBeLessThanOrEqual(tabs.y);
+		expect(tabs.y - (flat.y + flat.height)).toBeLessThanOrEqual(12);
+		await expect(chosen.getByRole('button', { name: 'Aktionen' })).toHaveAttribute('aria-disabled', 'true');
 		await expectTarget(cardOf(plants).locator('.check-target'));
 		await toCentre(cardOf(plants));
 		await cardOf(plants).locator('.check-target').tap();
@@ -707,11 +1038,21 @@ test.describe('small phone with the switch on: "Aufgaben" (MO-3)', () => {
 		for (const title of [plants, taxes, invoice]) {
 			await expect(cardOf(title).getByRole('checkbox', { name: /auswählen$/ })).toBeChecked();
 		}
-		const chosen = page.getByRole('region', { name: /Tickets ausgewählt$/ });
-		await expect(chosen).toBeVisible();
+		// The bulk actions one level deeper, behind "Aktionen", each a target of 44 px.
+		await expect(chosen).toHaveAccessibleName('3 Tickets ausgewählt');
+		await chosen.getByRole('button', { name: 'Aktionen' }).click();
 		expect((await chosen.getByRole('button', { name: 'Erledigen' }).boundingBox()).height).toBeGreaterThanOrEqual(TARGET_MIN_PX);
+		expect(await smallTargets(chosen)).toEqual([]);
 		expect(await scrollsSideways(page)).toBe(false);
-		await choosing.getByRole('button', { name: 'Fertig' }).click();
+		// The keyboard covers nothing of it: with the focus in the search the bottom bar gives way, and in
+		// the window above a keyboard the row with "Fertig" stays in view and uncovered.
+		const typing = { width: 360, height: 500 };
+		await page.getByRole('searchbox', { name: 'Suche' }).focus();
+		await expect(tabBar).toBeHidden();
+		await page.setViewportSize(typing);
+		await expectUncovered(chosen.getByRole('button', { name: 'Fertig' }), typing);
+		await page.setViewportSize(viewport);
+		await chosen.getByRole('button', { name: 'Fertig' }).click();
 		await expect(choosing).toHaveCount(0);
 		await expect(chosen).toHaveCount(0);
 
@@ -729,7 +1070,7 @@ test.describe('small phone with the switch on: the ticket as a page (MO-4)', () 
 	test('opens the ticket as a page with targets of 44 px, edits it and goes back to the list with its sort and place', async ({ page }) => {
 		const { ticket, title, subtask } = await seedTicket(12);
 		await switchOn(page);
-		const url = await signIn(page);
+		const url = await openSignedIn(page, '/tagesplan');
 		await expect(page).toHaveURL(`${url}/tagesplan`);
 		await page.goto(`${url}/?sort=titel`);
 		const card = page.locator('li[data-ticket-id]').filter({ hasText: title });
@@ -819,6 +1160,8 @@ test.describe('small phone with the switch on: the ticket as a page (MO-4)', () 
 		expect(sendBox.y + sendBox.height).toBeLessThanOrEqual(barTop);
 		await send.click();
 		await expect(panel.getByText('Am Handy angesehen')).toBeVisible();
+		// No wait for the focus before the next field since MO-7b: the form takes the focus back only
+		// while it is still in the form (M-1), so typing into the tags right away keeps it there.
 
 		// The suggestions of the tags stay at their field, with options of 44 px.
 		const tags = panel.getByLabel('Tags', { exact: true });
@@ -879,7 +1222,7 @@ test.describe('small phone with the switch on: the quick entry (MO-5)', () => {
 	test('captures with "＋", typing and one tap, keeps the keyboard for the next line, and "Ticket ansehen" goes back without a loop', async ({ page }) => {
 		const mark = randomBytes(3).toString('hex');
 		await switchOn(page);
-		const url = await signIn(page);
+		const url = await openSignedIn(page, '/tagesplan');
 		await expect(page).toHaveURL(`${url}/tagesplan`);
 		const bar = page.getByRole('navigation', { name: 'Hauptnavigation' });
 
@@ -999,7 +1342,7 @@ test.describe('small phone with the switch on: the inbox (MO-6)', () => {
 	test('shows the inbox as cards, opens an entry as a page and back without a loop, discards with "Rückgängig" and converts as a page', async ({ page }) => {
 		const { mail, note, other } = await seedInbox();
 		await switchOn(page);
-		const url = await signIn(page);
+		const url = await openSignedIn(page, '/tagesplan');
 		await expect(page).toHaveURL(`${url}/tagesplan`);
 		const bar = page.getByRole('navigation', { name: 'Hauptnavigation' });
 		await bar.getByRole('link', { name: /^Eingang/ }).click();
@@ -1108,7 +1451,7 @@ test.describe('small phone with the switch on: the inbox (MO-6)', () => {
 	test('captures with "Erfassen", pastes with "Aus Zwischenablage", and "Eintrag ansehen" of "＋" goes back to the day plan', async ({ page }) => {
 		const mark = randomBytes(3).toString('hex');
 		await switchOn(page);
-		const url = await signIn(page);
+		const url = await openSignedIn(page, '/tagesplan');
 		await expect(page).toHaveURL(`${url}/tagesplan`);
 		const bar = page.getByRole('navigation', { name: 'Hauptnavigation' });
 		await bar.getByRole('link', { name: /^Eingang/ }).click();
@@ -1177,8 +1520,7 @@ test.describe('small phone with the switch on: changes without a connection (OF-
 
 	/** Open tickets of the account (a run mark appended) with the token, for checks through the API. */
 	async function seedOpen(titles) {
-		const { email, password } = mobileInstance();
-		const { token, record } = await api('POST', '/api/collections/users/auth-with-password', { identity: email, password });
+		const { token, record } = await account();
 		const mark = randomBytes(3).toString('hex');
 		const tickets = [];
 		for (const title of titles) {
@@ -1191,7 +1533,7 @@ test.describe('small phone with the switch on: changes without a connection (OF-
 	async function openTasks(page) {
 		const asked = page.waitForResponse((response) => response.url().endsWith('/api/byl/tickets/create') && response.request().method() === 'GET');
 		await switchOn(page);
-		const url = await signIn(page);
+		const url = await openSignedIn(page, '/tagesplan');
 		await asked;
 		await page.waitForFunction(async () => (await indexedDB.databases()).some((database) => database.name === 'byl-offline'));
 		await page.getByRole('navigation', { name: 'Hauptnavigation' }).getByRole('link', { name: 'Aufgaben' }).click();
@@ -1307,11 +1649,14 @@ test.describe('small phone with the switch on: changes without a connection (OF-
 		const hints = page.locator('.offline-notice');
 		await expect(hints.getByText(dropped)).toBeVisible();
 		expect(await device('get')).toMatchObject([{ v: 1, kind: 'dropped', entries: [{ op: action.op, key: trash.key }] }]);
+		// MO-7a: the region of the hints has no tabindex of its own, only for the step after "Schließen".
+		await expect(hints).not.toHaveAttribute('tabindex');
 		const close = hints.getByRole('button', { name: 'Schließen' });
 		await expectTarget(close);
 		await close.click();
 		await expect(hints.getByText(dropped)).toHaveCount(0);
 		await expect(hints).toBeFocused();
+		await expect(hints).toHaveAttribute('tabindex', '-1');
 		await expect.poll(() => device('get')).toBeNull();
 	});
 
@@ -1348,8 +1693,10 @@ test.describe('small phone with the switch on: changes without a connection (OF-
 test.describe('phone with the switch off', () => {
 	test.use({ ...PHONE, extraHTTPHeaders: ANOTHER_DEVICE });
 
-	test('shows the view of today, and the switch is reachable there', async ({ page }) => {
-		const url = await signIn(page);
+	// MO-7a: the view of today and the overlays of today (MO-1b, before a case of its own on a small
+	// phone) in one case; the overlays on the small phone, the switch again on the phone.
+	test('shows the view of today with the switch reachable, a dialog in the middle and a picker at its button, without "Schließen"', async ({ page }) => {
+		const url = await openSignedIn(page, '/');
 		await expect(page).toHaveURL(`${url}/`);
 		await expect(viewHeading(page, 'Aufgaben')).toBeVisible();
 		await expect(page.getByRole('navigation', { name: 'Hauptnavigation' })).toHaveCount(0);
@@ -1357,6 +1704,32 @@ test.describe('phone with the switch off', () => {
 		await expect(page.getByRole('navigation', { name: 'Ansicht' })).toBeVisible();
 		await expect(page.getByRole('banner').getByRole('button', { name: 'Abmelden' })).toBeVisible();
 		expect(await viewportContent(page)).toBe(VIEWPORT_BASE);
+
+		// The overlays as today (MO-1b) on a small phone: a dialog in the middle, a picker at its button.
+		await page.setViewportSize(SMALL_PHONE.viewport);
+		await expect(viewHeading(page, 'Aufgaben')).toBeVisible();
+		await page.getByRole('banner').getByRole('button', { name: /Schnellerfassung/ }).click();
+		const quick = page.getByRole('dialog', { name: 'Schnellerfassung' });
+		const frame = quick.locator('.frame');
+		await expect(frame).toBeVisible();
+		await settled(frame);
+		const box = await frame.boundingBox();
+		expect(box.width).toBeLessThan(SMALL_PHONE.viewport.width);
+		expect(box.y + box.height).toBeLessThan(SMALL_PHONE.viewport.height - 1);
+		await quick.getByRole('button', { name: 'Schließen', exact: true }).click();
+		await expect(quick).toHaveCount(0);
+
+		const group = page.getByRole('button', { name: 'Gruppieren', exact: true });
+		await group.click();
+		const picker = page.getByRole('dialog', { name: 'Gruppieren' });
+		await expect(picker).toBeVisible();
+		await settled(picker);
+		expect((await picker.boundingBox()).width).toBeLessThan(SMALL_PHONE.viewport.width);
+		await expect(picker.getByRole('button', { name: 'Schließen' })).toHaveCount(0);
+		expect(await scrollsSideways(page)).toBe(false);
+		await page.keyboard.press('Escape');
+		await expect(picker).toBeHidden();
+		await page.setViewportSize(PHONE.viewport);
 
 		// The gear of the header, then "Darstellung": the switch turns the frame on at once.
 		await page.getByRole('banner').getByRole('link', { name: 'Einstellungen' }).click();
@@ -1372,9 +1745,12 @@ test.describe('phone with the switch off', () => {
 test.describe('PC with the switch on', () => {
 	test.use(DESKTOP);
 
-	test('shows no element of the phone frame and starts at "Aufgaben"', async ({ page }) => {
+	// MO-7a: the start, "Aufgaben", the quick entry and the side panel of the PC in one case (before
+	// four, each with its own sign-in); the day plan and the inbox in the next.
+	test('shows no element of the phone frame and keeps "Aufgaben", its table, the quick entry and the side panel of the PC (MO-1a, MO-3, MO-4, MO-5)', async ({ page }) => {
+		const [open, cellar] = await seed([{ title: 'Garage aufräumen' }, { title: 'Keller entrümpeln' }]);
 		await switchOn(page);
-		const url = await signIn(page);
+		const url = await openSignedIn(page, '/');
 		await expect(page).toHaveURL(`${url}/`);
 		await expect(viewHeading(page, 'Aufgaben')).toBeVisible();
 		await expect(page.locator('[data-phone-frame]')).toHaveCount(0);
@@ -1387,35 +1763,8 @@ test.describe('PC with the switch on', () => {
 		await expect(page.locator('html')).toHaveAttribute('data-mobile-layout', 'on');
 		expect(await viewportContent(page)).toBe(VIEWPORT_BASE);
 		expect(await scrollsSideways(page)).toBe(false);
-	});
 
-	test('keeps the day plan of the PC: arrows and handle in the row, the suggestions before the plan, the pool beside it (MO-2)', async ({ page }) => {
-		const [planned] = await seed([{ title: 'Rechnung bezahlen', planned: true }]);
-		await switchOn(page);
-		await signIn(page);
-		await expect(viewHeading(page, 'Aufgaben')).toBeVisible();
-		await page.getByRole('navigation', { name: 'Ansicht' }).getByRole('link', { name: 'Tagesplan' }).click();
-		await expect(viewHeading(page, 'Tagesplan')).toBeVisible();
-		const row = page.getByRole('group', { name: 'Einträge des Plans' }).locator('[data-item-id]').filter({ hasText: planned });
-		await expect(row.getByRole('button', { name: /nach oben$/ })).toBeVisible();
-		await expect(row.getByRole('button', { name: /nach unten$/ })).toBeVisible();
-		await expect(row.locator('.handle')).toBeVisible();
-		await expect(row.locator('.check-target')).toHaveCount(0);
-		const suggestions = page.getByRole('button', { name: /^Vorschläge/ });
-		await expect(suggestions).toHaveAttribute('aria-expanded', 'true');
-		const plan = page.getByRole('heading', { name: 'Plan', exact: true });
-		expect((await suggestions.boundingBox()).y).toBeLessThan((await plan.boundingBox()).y);
-		const pool = page.getByRole('heading', { name: 'Pool', exact: true });
-		await expect(pool).toBeVisible();
-		await expect(page.getByRole('button', { name: 'Hinzufügen …' })).toHaveCount(0);
-		expect((await pool.boundingBox()).x).toBeGreaterThan((await plan.boundingBox()).x + 200);
-		expect(await scrollsSideways(page)).toBe(false);
-	});
-
-	test('keeps the table of "Aufgaben" on the PC: the filter bar, "Gruppieren", "Spalten", no cards (MO-3)', async ({ page }) => {
-		const [open] = await seed([{ title: 'Garage aufräumen' }]);
-		await switchOn(page);
-		await signIn(page);
+		// The table of "Aufgaben" on the PC: the filter bar, "Gruppieren", "Spalten", no cards (MO-3).
 		await expect(viewHeading(page, 'Aufgaben')).toBeVisible();
 		await expect(page.getByRole('table')).toBeVisible();
 		await expect(page.getByRole('row').filter({ hasText: open })).toBeVisible();
@@ -1428,11 +1777,8 @@ test.describe('PC with the switch on', () => {
 		await expect(page.getByRole('checkbox', { name: 'Alle angezeigten Tickets auswählen' })).toBeVisible();
 		await expect(page.getByRole('button', { name: 'Filter', exact: true })).toHaveCount(0);
 		expect(await scrollsSideways(page)).toBe(false);
-	});
 
-	test('keeps the quick entry of the PC: in the middle with "Abbrechen", the keys in the hint, no folded help (MO-5)', async ({ page }) => {
-		await switchOn(page);
-		await signIn(page);
+		// The quick entry of the PC: in the middle with "Abbrechen", the keys in the hint, no folded help (MO-5).
 		await expect(viewHeading(page, 'Aufgaben')).toBeVisible();
 		await page.getByRole('banner').getByRole('button', { name: /Schnellerfassung/ }).click();
 		const quick = page.getByRole('dialog', { name: 'Schnellerfassung' });
@@ -1450,20 +1796,16 @@ test.describe('PC with the switch on', () => {
 		expect(await line.evaluate((element) => element.hasAttribute('autocapitalize'))).toBe(false);
 		await quick.getByRole('button', { name: 'Abbrechen' }).click();
 		await expect(quick).toHaveCount(0);
-	});
 
-	test('keeps the side panel of the PC: ×, "Vollansicht", the status in the fields, no bar (MO-4)', async ({ page }) => {
-		const [open] = await seed([{ title: 'Keller entrümpeln' }]);
-		await switchOn(page);
-		await signIn(page);
+		// The side panel of the PC: ×, "Vollansicht", the status in the fields, no bar (MO-4).
 		await expect(page.getByRole('table')).toBeVisible();
-		const row = page.getByRole('row').filter({ hasText: open });
+		const row = page.getByRole('row').filter({ hasText: cellar });
 		await row.getByRole('button', { name: /^Weitere Aktionen für / }).click();
 		const menu = page.getByRole('menu', { name: /^Weitere Aktionen für / });
 		await expect(menu.getByRole('menuitem', { name: 'In Vollansicht öffnen' })).toBeVisible();
 		await page.keyboard.press('Escape');
-		await row.getByRole('link', { name: open }).click();
-		const panel = page.getByRole('complementary', { name: open });
+		await row.getByRole('link', { name: cellar }).click();
+		const panel = page.getByRole('complementary', { name: cellar });
 		await expect(panel).toBeVisible();
 		await expect(panel.getByRole('button', { name: 'Panel schließen' })).toBeVisible();
 		await expect(panel.getByRole('link', { name: 'Vollansicht öffnen' })).toBeVisible();
@@ -1477,11 +1819,30 @@ test.describe('PC with the switch on', () => {
 		expect(await scrollsSideways(page)).toBe(false);
 	});
 
-	test('keeps the inbox of the PC: the table, the chips, the bulk actions and the panel with × (MO-6)', async ({ page }) => {
-		const { mail } = await seedInbox();
+	// MO-7a: the day plan (MO-2) and the inbox (MO-6) of the PC in one case (before two).
+	test('keeps the day plan and the inbox of the PC: arrows and handle, suggestions before the plan, the pool beside it; table, chips, bulk actions and the panel with ×; projects, rules and the trash as tables (MO-2, MO-6, MO-7b)', async ({ page }) => {
+		const [[planned], { mail }] = await Promise.all([seed([{ title: 'Rechnung bezahlen', planned: true }]), seedInbox(), seedLists()]);
 		await switchOn(page);
-		await signIn(page);
+		await openSignedIn(page, '/');
 		await expect(viewHeading(page, 'Aufgaben')).toBeVisible();
+		await page.getByRole('navigation', { name: 'Ansicht' }).getByRole('link', { name: 'Tagesplan' }).click();
+		await expect(viewHeading(page, 'Tagesplan')).toBeVisible();
+		const row = page.getByRole('group', { name: 'Einträge des Plans' }).locator('[data-item-id]').filter({ hasText: planned });
+		await expect(row.getByRole('button', { name: /nach oben$/ })).toBeVisible();
+		await expect(row.getByRole('button', { name: /nach unten$/ })).toBeVisible();
+		await expect(row.locator('.handle')).toBeVisible();
+		await expect(row.locator('.check-target')).toHaveCount(0);
+		const suggestions = page.getByRole('button', { name: /^Vorschläge/ });
+		await expect(suggestions).toHaveAttribute('aria-expanded', 'true');
+		const plan = page.getByRole('heading', { name: 'Plan', exact: true });
+		expect((await suggestions.boundingBox()).y).toBeLessThan((await plan.boundingBox()).y);
+		const pool = page.getByRole('heading', { name: 'Pool', exact: true });
+		await expect(pool).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Hinzufügen …' })).toHaveCount(0);
+		expect((await pool.boundingBox()).x).toBeGreaterThan((await plan.boundingBox()).x + 200);
+		expect(await scrollsSideways(page)).toBe(false);
+
+		// The inbox of the PC: the table, the chips, the bulk actions and the panel with × (MO-6).
 		await page.getByRole('navigation', { name: 'Ansicht' }).getByRole('link', { name: /^Eingang/ }).click();
 		await expect(viewHeading(page, 'Eingang')).toBeVisible();
 		await expect(page.getByRole('table')).toBeVisible();
@@ -1499,5 +1860,23 @@ test.describe('PC with the switch on', () => {
 		await expect(panel.locator('footer').getByRole('button', { name: 'Mit Ticket verknüpfen …' })).toBeVisible();
 		// The columns of the table fit themselves to the narrower list once the panel stands beside it.
 		await expect.poll(() => scrollsSideways(page)).toBe(false);
+
+		// MO-7b: "Projekte", "Wiederholungen" and "Papierkorb" keep the tables of the PC with "Spalten",
+		// no cards, and the bar of the selection above the table instead of at the bottom.
+		for (const [name, cards] of [
+			['Projekte', 'li[data-project-row]'],
+			['Wiederholungen', 'li[data-rule-row]'],
+			['Papierkorb', 'li[data-trash-row]']
+		]) {
+			await page.getByRole('navigation', { name: 'Ansicht' }).getByRole('link', { name: new RegExp(`^${name}`) }).click();
+			await expect(viewHeading(page, name)).toBeVisible();
+			await expect(page.getByRole('table')).toBeVisible();
+			await expect(page.locator(cards)).toHaveCount(0);
+			await expect(page.getByRole('button', { name: 'Spalten' })).toBeVisible();
+			expect(await scrollsSideways(page)).toBe(false);
+		}
+		await page.getByRole('checkbox', { name: 'Alle Tickets im Papierkorb auswählen' }).check();
+		await expect(page.getByRole('region', { name: /Tickets ausgewählt$/ }).getByRole('button', { name: 'Wiederherstellen' })).toBeVisible();
+		await expect(page.locator('[data-selection-bar]')).toHaveCount(0);
 	});
 });

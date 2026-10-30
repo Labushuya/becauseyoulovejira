@@ -22,6 +22,7 @@
 	import type { ProjectRef, Ticket } from '$lib/domain/ticket';
 	import type { TicketOrigin } from '$lib/domain/ticket-origins';
 	import { restartNeeded } from '$lib/guidance/texts';
+	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 	import { insideModal } from '$lib/overlay/modal-context';
 	import { findAreaStore } from '$lib/stores/area.svelte';
 	import type { TicketDuplicateStore } from '$lib/stores/ticket-duplicate.svelte';
@@ -113,6 +114,8 @@
 	/** In the full view (a modal) the form stands inline instead of in a dialog of its own. */
 	const inline = insideModal();
 	const area = findAreaStore();
+	/** In the phone frame the title starts with a capital letter (MO-7a, as "＋" since MO-5). */
+	const mobileLayout = getMobileLayoutStore();
 
 	/** The area of the original: by its scope, else the area of the tab (MV-2). */
 	const origin: DuplicateArea = untrack(() =>
@@ -264,6 +267,7 @@
 				type="text"
 				maxlength="200"
 				autocomplete="off"
+				autocapitalize={mobileLayout.active ? 'sentences' : undefined}
 				bind:value={answers.title}
 				aria-invalid={errors.title ? 'true' : undefined}
 				aria-describedby={errors.title ? ids.titleError : undefined}

@@ -1,8 +1,15 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import { resolve } from '$app/paths';
 	import type { ResolvedPathname } from '$app/types';
 	import { TRASH_TABLE, withKeyDefaults } from '$lib/domain/columns';
-	import { EMPTY_SELECTION, keepShown, type Selection } from '$lib/domain/selection';
+	import {
+		EMPTY_SELECTION,
+		headState,
+		keepShown,
+		toggleAll,
+		type Selection
+	} from '$lib/domain/selection';
 	import type { ProjectRef } from '$lib/domain/ticket';
 	import {
 		BLOCKED_RETENTION,
@@ -12,11 +19,16 @@
 		type TrashItem
 	} from '$lib/domain/trash';
 	import { restartNeeded } from '$lib/guidance/texts';
+	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
+	import { keepFocusAtBar } from '$lib/selection-focus';
 	import { getColumnPrefs } from '$lib/stores/column-prefs.svelte';
 	import type { TrashStore } from '$lib/stores/trash.svelte';
 	import { trashItemHref } from '$lib/ticket-links';
+	import ActionsMenu, { type MenuAction } from './ActionsMenu.svelte';
 	import ColumnsPopover from './ColumnsPopover.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
+	import FilterButton from './FilterButton.svelte';
+	import FilterSheet from './FilterSheet.svelte';
 	import EmptyState from './guidance/EmptyState.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
 	import ConfirmDialog from './overlay/ConfirmDialog.svelte';
@@ -40,6 +52,14 @@
 	// (E7-3, ADR-0059 §6) deleting for good needs the owner or the right "purge": without it
 	// `canPurge` is false and the actions are not offered (the server refuses them with 403), and
 	// the retention belongs to the household (`retentionHref` to its page, null without the right).
+	// Phone frame (MO-7b, ADR-0073 addendum MO-7b): cards instead of the table (TrashTable); the row of
+	// the view holds "Filter" (the sheet with "Nur blockierte", only while blocked tickets exist, as the
+	// switch of the PC) and the menu of the list with "Auswählen" and "Papierkorb leeren …". The bulk
+	// actions are one level deeper: "Auswählen" shows a box on every card and "Alle" above them, and the
+	// bar of the selection stands at the bottom after the cards (SelectionBar, shared with "Aufgaben"
+	// and "Eingang"), its actions behind "Aktionen", "Fertig" leaves it. Since MO-7c1 the focus after
+	// "Wiederherstellen" of the chosen tickets and after "Ergebnis schließen" stays in the bar, or goes to
+	// the heading once the bar is gone (lib/selection-focus.ts), as in "Aufgaben".
 	let {
 		store,
 		projects,
@@ -127,7 +147,130 @@
 		event.preventDefault();
 		selection = EMPTY_SELECTION;
 	}
+
+	/** The bar of the chosen tickets, for the focus after its actions (MO-7c1). */
+	let bar = $state<HTMLElement>();
+
+	/**
+	 * "Wiederherstellen" of the chosen tickets: the focus stays in the bar like after the bulk actions of
+	 * "Aufgaben" (BulkActionBar), or goes to the heading once the bar is gone (Q-2 of the review of MO-7b).
+	 */
+	async function restoreChosen() {
+		const away = heading;
+		await store.runMany('restore', chosen);
+		await tick();
+		keepFocusAtBar(bar, away);
+	}
+
+	/** "Ergebnis schließen": the focus stays in the bar or goes to the heading (Q-1). */
+	async function closeResult() {
+		const away = heading;
+		store.dismissResult();
+		await tick();
+		keepFocusAtBar(bar, away);
+	}
+
+	/** The phone frame (MO-7b): cards, the row of the view, "Auswählen" and the bar at the bottom. */
+	const mobileLayout = getMobileLayoutStore();
+	const phone = $derived(mobileLayout.active);
+	let selectMode = $state(false);
+	/** "Auswählen" lasts while there are cards to choose (an emptied trash ends it). */
+	const selecting = $derived(phone && items.length > 0 && (selectMode || chosen.length > 0));
+	const head = $derived(headState(selection, order));
+	let headBox = $state<HTMLInputElement>();
+
+	$effect(() => {
+		if (headBox) headBox.indeterminate = head === 'some';
+	});
+
+	function leaveSelectMode() {
+		selectMode = false;
+		selection = EMPTY_SELECTION;
+	}
+
+	/** The switch "Nur blockierte" is offered while blocked tickets exist or it is on (ADR-0047). */
+	const blockedOffered = $derived(store.state === 'ready' && (blockedCount > 0 || onlyBlocked));
+	let filtersOpen = $state(false);
+
+	/** The menu "•••" of the list in the phone frame: what the bar of the PC shows besides. */
+	const listActions = $derived.by((): MenuAction[] => {
+		if (store.state !== 'ready' || store.items.length === 0) return [];
+		const entries: MenuAction[] = [
+			{ label: 'Auswählen', locked: selecting, onselect: () => (selectMode = true) }
+		];
+		if (canPurge) {
+			entries.push({
+				label: 'Papierkorb leeren …',
+				dialog: true,
+				busy: store.progress !== null,
+				onselect: () => (asking = { kind: 'empty' })
+			});
+		}
+		return entries;
+	});
 </script>
+
+<!-- "Nur blockierte" (ADR-0047): in the bar of the PC, in the filter sheet of the phone frame. -->
+{#snippet blockedSwitch()}
+	<label class="switch">
+		<input type="checkbox" role="switch" bind:checked={onlyBlocked} />
+		Nur blockierte ({blockedCount})
+	</label>
+{/snippet}
+
+<!-- The row of the view in the phone frame (MO-7b): "Filter" and the menu of the list. -->
+{#snippet phoneTools()}
+	{#if blockedOffered}
+		<FilterButton count={onlyBlocked ? 1 : 0} onclick={() => (filtersOpen = true)} />
+	{/if}
+	{#if listActions.length > 0}
+		<ActionsMenu
+			label="Aktionen der Liste"
+			buttonLabel="Weitere Aktionen der Liste"
+			items={listActions}
+		/>
+	{/if}
+{/snippet}
+
+{#snippet sheetFilters()}
+	{@render blockedSwitch()}
+{/snippet}
+
+{#snippet bulkActions()}
+	<button class="button-secondary" type="button" onclick={() => void restoreChosen()}>
+		Wiederherstellen
+	</button>
+	{#if canPurge}
+		<button
+			class="button-secondary"
+			type="button"
+			aria-haspopup="dialog"
+			onclick={() => (asking = { kind: 'many' })}
+		>
+			Endgültig löschen …
+		</button>
+	{/if}
+{/snippet}
+
+{#snippet selectionBar(onclear: () => void)}
+	<SelectionBar
+		countText={chosen.length === 1 ? '1 Ticket ausgewählt' : `${chosen.length} Tickets ausgewählt`}
+		progress={store.progress
+			? {
+					total: store.progress.total,
+					done: store.progress.done,
+					text: `${store.progress.label}: ${store.progress.done} von ${tickets(store.progress.total)}`
+				}
+			: null}
+		actionsShown={chosen.length > 0}
+		hint="Erst Tickets auswählen."
+		{onclear}
+		{selecting}
+		bind:bar
+		actions={bulkActions}
+		result={store.result && store.progress === null ? resultList : undefined}
+	/>
+{/snippet}
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <section class="trash-view" aria-labelledby={headingId} {onkeydown}>
@@ -136,17 +279,15 @@
 		{headingId}
 		count={store.state === 'ready' ? store.items.length : null}
 		{countLabel}
+		phone={phoneTools}
 		bind:heading
 	>
 		{#snippet start()}
 			<ViewSwitch current="trash" {inboxCount} {projectsNewCount} />
 		{/snippet}
 		{#snippet end()}
-			{#if store.state === 'ready' && (blockedCount > 0 || onlyBlocked)}
-				<label class="switch">
-					<input type="checkbox" role="switch" bind:checked={onlyBlocked} />
-					Nur blockierte ({blockedCount})
-				</label>
+			{#if blockedOffered}
+				{@render blockedSwitch()}
 			{/if}
 			{#if store.state === 'ready' && store.items.length > 0}
 				{#if canPurge}
@@ -215,42 +356,23 @@
 				{/snippet}
 			</EmptyState>
 		{:else}
-			{#if chosen.length > 0 || store.progress !== null || store.result !== null}
-				<SelectionBar
-					countText={chosen.length === 1
-						? '1 Ticket ausgewählt'
-						: `${chosen.length} Tickets ausgewählt`}
-					progress={store.progress
-						? {
-								total: store.progress.total,
-								done: store.progress.done,
-								text: `${store.progress.label}: ${store.progress.done} von ${tickets(store.progress.total)}`
-							}
-						: null}
-					actionsShown={chosen.length > 0}
-					onclear={() => (selection = EMPTY_SELECTION)}
-					result={store.result && store.progress === null ? resultList : undefined}
-				>
-					{#snippet actions()}
-						<button
-							class="button-secondary"
-							type="button"
-							onclick={() => void store.runMany('restore', chosen)}
-						>
-							Wiederherstellen
-						</button>
-						{#if canPurge}
-							<button
-								class="button-secondary"
-								type="button"
-								aria-haspopup="dialog"
-								onclick={() => (asking = { kind: 'many' })}
-							>
-								Endgültig löschen …
-							</button>
-						{/if}
-					{/snippet}
-				</SelectionBar>
+			{#if !phone && (chosen.length > 0 || store.progress !== null || store.result !== null)}
+				{@render selectionBar(() => (selection = EMPTY_SELECTION))}
+			{/if}
+			{#if selecting}
+				<!-- "Auswählen" in the phone frame (MO-7b): every shown ticket at once. -->
+				<div class="select-mode" role="group" aria-label="Auswahl">
+					<label class="select-all">
+						<input
+							type="checkbox"
+							aria-label="Alle Tickets im Papierkorb auswählen"
+							checked={head === 'all'}
+							bind:this={headBox}
+							onchange={() => (selection = toggleAll(selection, order))}
+						/>
+						Alle
+					</label>
+				</div>
 			{/if}
 			<TrashTable
 				{items}
@@ -260,6 +382,7 @@
 				{projects}
 				{activeId}
 				{columnFit}
+				{selecting}
 				hrefOf={trashItemHref}
 				needOf={(id) => store.needOf(id)}
 				isBusy={(id) => store.isBusy(id)}
@@ -267,9 +390,27 @@
 				onpurge={canPurge ? (item) => (asking = { kind: 'one', item }) : null}
 				ondismissneed={(id) => store.dismissNeed(id)}
 			/>
+			{#if phone && (selecting || store.progress !== null || store.result !== null)}
+				<!-- The bar of "Auswählen" at the bottom, after the cards (MO-7b); outside of "Auswählen"
+				     a result stands alone with "Ergebnis schließen", as on the PC (round 2). -->
+				{@render selectionBar(leaveSelectMode)}
+			{/if}
 		{/if}
 	{/if}
 </section>
+
+<!-- The filter sheet of the phone frame (MO-7b); the modal gives the focus back to "Filter". -->
+{#if phone && filtersOpen}
+	<FilterSheet
+		count={items.length}
+		filtered={onlyBlocked}
+		onreset={() => (onlyBlocked = false)}
+		onclose={() => (filtersOpen = false)}
+		filters={sheetFilters}
+		ticketOrder={false}
+		noun={{ one: 'Ticket', many: 'Tickets' }}
+	/>
+{/if}
 
 {#snippet resultList()}
 	{#if store.result}
@@ -301,7 +442,7 @@
 				</ul>
 			</SectionMessage>
 		{/if}
-		<button class="text-button" type="button" onclick={() => store.dismissResult()}>
+		<button class="text-button" type="button" onclick={() => void closeResult()}>
 			Ergebnis schließen
 		</button>
 	{/if}
@@ -383,6 +524,25 @@
 
 		to {
 			visibility: visible;
+		}
+	}
+
+	/* Phone frame (MO-7b, ADR-0073 addendum MO-7b): "Alle" of "Auswählen" above the cards. */
+	@media (max-width: 39.99rem) {
+		:global(:root[data-mobile-layout='on']) .select-mode {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 0.5rem;
+			align-items: center;
+			margin-bottom: 0.75rem;
+		}
+
+		:global(:root[data-mobile-layout='on']) .select-all {
+			display: inline-flex;
+			gap: 0.5rem;
+			align-items: center;
+			padding-right: 0.5rem;
+			font-size: var(--font-size-body);
 		}
 	}
 </style>

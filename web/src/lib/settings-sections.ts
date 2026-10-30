@@ -221,6 +221,8 @@ export const HELP_SECTIONS = [
 	{ id: 'vorhaben-oder-wiederholung', label: 'Laufendes Vorhaben oder Wiederholung?' },
 	// The view "Erledigte" (ADR-0066): groups, loading more, filters, reopening.
 	{ id: 'erledigte', label: 'Erledigte' },
+	// Changes without a connection (ADR-0074, MO-7a): what is kept, what not, the dialog, the limits.
+	{ id: 'ohne-verbindung', label: 'Ohne Verbindung' },
 	{ id: 'zugangsdaten', label: 'Kanäle und Zugangsdaten' },
 	// Own inbox (ADR-0038): linked from its card on "Kanäle".
 	{ id: 'eigener-eingang', label: 'Eigener Eingang (API)' },

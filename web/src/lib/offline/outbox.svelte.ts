@@ -2666,11 +2666,12 @@ export class OutboxStore {
 	 * identifier; the take-backs behind it follow (`settleChains`). A take-back that waits or is sent
 	 * has no "Verwerfen" of its own (round 2, S2): nothing happens, the dialog offers none. A discarded
 	 * one that the server refused with 403 or 404 goes. Every way shows a flag with "Rückgängig"; a
-	 * failing storage shows its flag (G6b).
+	 * failing storage shows its flag (G6b). While "Als Eingangseintrag sichern" runs for a comment, its
+	 * "Verwerfen" does nothing (MO-7a, L-1): the entry comes anyway, and the comment goes with it.
 	 */
 	async discard(op: string): Promise<void> {
 		const action = this.#find(op);
-		if (action === undefined) return;
+		if (action === undefined || this.#saving.has(op)) return;
 		await this.#guard(OFFLINE_INTENTS.discard(actionText(action)), () =>
 			this.#locked(async () => {
 				const done = await this.#transform((before) => this.#discardPlan(before, op));
@@ -2993,10 +2994,13 @@ export class OutboxStore {
 		);
 	}
 
-	/** "Trotzdem übertragen" after 48 hours: sent without the time of the device (decision 2). */
+	/**
+	 * "Trotzdem übertragen" after 48 hours: sent without the time of the device (decision 2). Not while
+	 * "Als Eingangseintrag sichern" runs for this comment (MO-7a, L-1): its text would arrive twice.
+	 */
 	async sendAnyway(op: string): Promise<void> {
 		const action = this.#find(op);
-		if (action === undefined || action.state !== 'expired') return;
+		if (action === undefined || action.state !== 'expired' || this.#saving.has(op)) return;
 		await this.#guard(OFFLINE_INTENTS.sendAnyway(actionText(action)), () =>
 			this.#requeue(op, (current) =>
 				current.state === 'expired' ? { ...current, late: true } : null

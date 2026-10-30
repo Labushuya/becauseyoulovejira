@@ -748,7 +748,11 @@ a.button-subtle {
 		min-height: var(--control-height-touch);
 	}
 
+	/* The field takes the whole height of its frame, over its lines, so every tap in it reaches it (MO-7b). */
 	:root[data-mobile-layout='on'] .search-field input {
+		align-self: stretch;
+		min-height: var(--control-height-touch);
+		margin-block: -1px;
 		font-size: var(--font-size-field-touch);
 	}
 

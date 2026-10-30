@@ -26,9 +26,10 @@
 	// Since OF-3b round 3 the notices of the outbox stand here as warnings until "Schließen": what the
 	// deletion after 7 days took, a sub-task a completion should have taken along that is not done.
 	// Since OF-3c they come from the device, in every tab; after "Schließen" the focus goes to the next
-	// "Schließen", else to the region (`tabindex="-1"`), never to the page (R3-3); where the region goes
-	// with the last notice, to the heading of the view or the main content (round 2, C-3), with a
-	// `tabindex` only until the focus leaves it (round 3, C2-1).
+	// "Schließen", else to the region, never to the page (R3-3); where the region goes with the last
+	// notice, to the heading of the view or the main content (round 2, C-3), with a `tabindex` only
+	// until the focus leaves it (round 3, C2-1). Since MO-7a the region has no `tabindex` of its own
+	// either and gets one the same way, and a change of window or tab keeps it.
 	// Since OF-4a a notice about a discarded creation that arrived anyway leads to its record, and a
 	// creation is named by its title (it has no key yet).
 	let {
@@ -120,17 +121,34 @@
 		target.focus({ preventScroll: true });
 		const taken = document.activeElement === target;
 		if (own) return taken;
-		if (taken) {
-			target.addEventListener('blur', () => target.removeAttribute('tabindex'), { once: true });
-		} else target.removeAttribute('tabindex');
+		if (taken) release(target);
+		else target.removeAttribute('tabindex');
 		return taken;
 	}
 
 	/**
-	 * "Schließen": the notice goes, the focus moves to the next "Schließen" or to the region. Where the
-	 * region goes with the last notice (the layout shows it outside the phone frame only for the notices),
-	 * to the heading of the view (`data-view-heading`) in the main content, else to the main content
-	 * (round 2, C-3; round 3, C2-1 and C2-6).
+	 * Takes the temporary `tabindex` from `target` once the focus has left it. A `blur` while it stays
+	 * the active element is the window or the tab losing the focus (another tab, another app): the
+	 * focus comes back to it then, so the `tabindex` stays and the next `blur` decides (MO-7a; before,
+	 * the focus could land on the page after such a change).
+	 */
+	function release(target: HTMLElement): void {
+		target.addEventListener(
+			'blur',
+			() => {
+				if (document.activeElement === target) release(target);
+				else target.removeAttribute('tabindex');
+			},
+			{ once: true }
+		);
+	}
+
+	/**
+	 * "Schließen": the notice goes, the focus moves to the next "Schließen" or to the region, which has
+	 * no `tabindex` of its own (MO-7a: a click on the text of a hint focused it). Where the region goes
+	 * with the last notice (the layout shows it outside the phone frame only for the notices), to the
+	 * heading of the view (`data-view-heading`) in the main content, else to the main content (round 2,
+	 * C-3; round 3, C2-1 and C2-6).
 	 */
 	async function close(id: string) {
 		const buttons = closeButtons();
@@ -140,9 +158,9 @@
 		const closing = outbox.closeNotice(id);
 		await tick();
 		const target = closeButtons().find((button) => button.dataset.closes === next);
-		if (target !== undefined) target.focus();
-		else if (region?.isConnected === true) region.focus();
-		else if (main !== null) {
+		if (target !== undefined) {
+			target.focus();
+		} else if (!(region?.isConnected === true && rest(region)) && main !== null) {
 			const heading = main.querySelector<HTMLElement>('[data-view-heading]');
 			if (heading === null || !rest(heading)) rest(main);
 		}
@@ -150,7 +168,7 @@
 	}
 </script>
 
-<div class="offline-notice" class:shown role="status" tabindex="-1" bind:this={region}>
+<div class="offline-notice" class:shown role="status" bind:this={region}>
 	{#if offline}
 		<SectionMessage tone="warning">
 			{offlineText()}

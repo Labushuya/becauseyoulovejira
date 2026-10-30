@@ -79,6 +79,8 @@ function setup(
 		handled?: InboxItemSummary[];
 		/** Projects of the catalog (target projects, ADR-0049). */
 		projects?: Project[];
+		/** The connection is missing (OF-3): the bulk actions of EG-1 are locked. */
+		offline?: boolean;
 	} = {}
 ) {
 	const data = {
@@ -141,7 +143,8 @@ function setup(
 			openTickets: options.tickets ?? [],
 			projects,
 			onbulk,
-			onlink: options.onlink
+			onlink: options.onlink,
+			offline: options.offline ?? false
 		}
 	});
 	// The flags of the app layout (ADR-0025 section 8).
@@ -484,7 +487,8 @@ describe('inbox table', () => {
 		expect(screen.getByRole('table').querySelector('caption')?.textContent).toBe(
 			'Eingang · verworfen, zuletzt verworfene zuerst'
 		);
-		expect(view.queryByRole('checkbox')).toBeNull();
+		// Since EG-1 discarded entries can be chosen for "Wiederherstellen (n)"; nothing else is offered.
+		expect(view.getByRole('checkbox', { name: 'Eintrag „Alt“ auswählen' })).toBeTruthy();
 		expect(screen.queryByRole('button', { name: /Gesammelt umwandeln/ })).toBeNull();
 		await fireEvent.click(view.getByRole('button', { name: 'Wiederherstellen: „Alt“' }));
 		await vi.waitFor(() => expect(data.restore).toHaveBeenCalledWith('item00000000009'));
@@ -554,6 +558,415 @@ describe('inbox table', () => {
 	});
 });
 
+// EG-1 (ADR-0014 addendum EG-1): "Verwerfen (n)" in the view "Neu" and "Wiederherstellen (n)" in the
+// view "Verworfen", one entry after the other, with the progress and the result above the table.
+describe('several entries at once (EG-1)', () => {
+	const SERVER_FAILURE =
+		'Der Server hat mit einem Fehler geantwortet. Bitte später erneut versuchen.';
+
+	function deferred<T>() {
+		let resolve!: (value: T) => void;
+		const promise = new Promise<T>((done) => {
+			resolve = done;
+		});
+		return { promise, resolve };
+	}
+
+	const box = (title: string) =>
+		screen.getByRole<HTMLInputElement>('checkbox', { name: `Eintrag „${title}“ auswählen` });
+
+	/** The bar of the running action and of its result, above the table. */
+	const bar = () => screen.getByRole('region', { name: /ausgewählt$/ });
+
+	it('discards the chosen entries with "Verwerfen (n)" one after the other, names a skipped one and keeps the focus', async () => {
+		const { data, store } = setup();
+		await table();
+		const locked = screen.getByRole('button', { name: 'Verwerfen' });
+		expect(locked.getAttribute('aria-disabled')).toBe('true');
+		expect(locked.getAttribute('aria-describedby')).toBe(
+			screen.getByText('Erst Einträge auswählen.').id
+		);
+		await fireEvent.click(locked);
+		expect(data.discard).not.toHaveBeenCalled();
+
+		await fireEvent.click(
+			screen.getByRole('checkbox', { name: 'Alle angezeigten Einträge auswählen' })
+		);
+		const chosen = screen.getByRole('button', { name: 'Verwerfen (3)' });
+		expect(chosen.hasAttribute('aria-disabled')).toBe(false);
+		const first = deferred<InboxItemSummary>();
+		data.discard.mockReturnValueOnce(first.promise);
+		chosen.focus();
+		await fireEvent.click(chosen);
+		// Newest first: "Rechnung September" goes first; the progress stands above the table.
+		expect(data.discard.mock.calls).toEqual([[B.id]]);
+		expect(within(bar()).getByText('Verwerfen: 0 von 3 Einträgen')).toBeTruthy();
+		expect(bar().getAttribute('aria-busy')).toBe('true');
+		expect(chosen.getAttribute('aria-disabled')).toBe('true');
+		// Meanwhile another tab links "Artikel" to a ticket: it is no longer new, skipped and named.
+		store.upsert({
+			...C,
+			state: 'converted',
+			ticketId: 'tick00000000009',
+			handledAt: '2026-09-25 09:30:00.000Z',
+			updated: '2026-09-25 09:30:00.000Z'
+		});
+		first.resolve({ ...B, state: 'discarded', updated: '2026-09-25 09:00:00.000Z' });
+		await vi.waitFor(() => expect(data.discard.mock.calls).toEqual([[B.id], [A.id]]));
+		await vi.waitFor(() => expect(within(bar()).getByText('1 Eintrag übersprungen:')).toBeTruthy());
+		expect(within(bar()).getByRole('listitem').textContent?.trim()).toBe(
+			'„Artikel“: Nicht mehr neu.'
+		);
+		expect(screen.queryByRole('link', { name: 'Milch kaufen' })).toBeNull();
+		await vi.waitFor(() =>
+			expect(flagSection().getByRole('listitem').textContent).toContain(
+				'2 Einträge verworfen, 1 übersprungen.'
+			)
+		);
+		expect(flagSection().getByRole('button', { name: 'Rückgängig' })).toBeTruthy();
+		// The focus stays on the button, which waits for the next choice.
+		const after = screen.getByRole('button', { name: 'Verwerfen' });
+		expect(document.activeElement).toBe(after);
+		expect(after.getAttribute('aria-disabled')).toBe('true');
+
+		await fireEvent.click(within(bar()).getByRole('button', { name: 'Ergebnis schließen' }));
+		expect(screen.queryByRole('region', { name: /ausgewählt$/ })).toBeNull();
+	});
+
+	it('names failures of "Verwerfen (n)" and of its "Rückgängig" in the result; the rest goes on', async () => {
+		const { data } = setup();
+		await table();
+		data.discard.mockImplementation(async (id) => {
+			if (id === C.id) throw new DataError('server');
+			const entry = [A, B].find((value) => value.id === id)!;
+			return { ...entry, state: 'discarded', updated: '2026-09-25 09:00:00.000Z' };
+		});
+		await fireEvent.click(
+			screen.getByRole('checkbox', { name: 'Alle angezeigten Einträge auswählen' })
+		);
+		await fireEvent.click(screen.getByRole('button', { name: 'Verwerfen (3)' }));
+		await vi.waitFor(() => expect(data.discard).toHaveBeenCalledTimes(3));
+		const failures = await vi.waitFor(() => within(bar()).getByRole('alert'));
+		expect(within(failures).getByText('1 Eintrag wurde nicht verworfen:')).toBeTruthy();
+		// The item holds "Details" of the request besides the reason since round 2 (E-7).
+		expect(
+			within(within(failures).getByRole('listitem')).getByText(`„Artikel“: ${SERVER_FAILURE}`)
+		).toBeTruthy();
+		// The failed entry stays, still chosen, for another try.
+		expect(box('Artikel').checked).toBe(true);
+		expect(screen.getByRole('button', { name: 'Verwerfen (1)' })).toBeTruthy();
+		await vi.waitFor(() =>
+			expect(flagSection().getByRole('listitem').textContent).toContain(
+				'2 Einträge verworfen, 1 fehlgeschlagen.'
+			)
+		);
+
+		data.restore.mockImplementation(async (id) => {
+			if (id === A.id) throw new DataError('server');
+			return { ...B, updated: '2026-09-25 10:00:00.000Z' };
+		});
+		await fireEvent.click(flagSection().getByRole('button', { name: 'Rückgängig' }));
+		await vi.waitFor(() => expect(data.restore.mock.calls).toEqual([[B.id], [A.id]]));
+		const undone = await vi.waitFor(() =>
+			within(within(bar()).getByRole('alert')).getByText('1 Eintrag wurde nicht wiederhergestellt:')
+		);
+		const undoneItem = undone.closest('[role="alert"]')?.querySelector('li') as HTMLElement;
+		expect(within(undoneItem).getByText(`„Milch kaufen“: ${SERVER_FAILURE}`)).toBeTruthy();
+		await vi.waitFor(() =>
+			expect(screen.getByRole('link', { name: 'Rechnung September' })).toBeTruthy()
+		);
+		await vi.waitFor(() =>
+			expect(flagSection().getByRole('listitem').textContent).toContain(
+				'1 Eintrag wiederhergestellt, 1 fehlgeschlagen.'
+			)
+		);
+	});
+
+	it('restores the chosen entries with "Wiederherstellen (n)" in the view "Verworfen"', async () => {
+		const gone = [
+			item('item00000000007', {
+				title: 'Alt eins',
+				state: 'discarded',
+				handledAt: '2026-09-21 10:00:00.000Z'
+			}),
+			item('item00000000008', {
+				title: 'Alt zwei',
+				state: 'discarded',
+				handledAt: '2026-09-20 10:00:00.000Z'
+			})
+		];
+		const { data } = setup({ query: { source: null, state: 'discarded' }, handled: gone });
+		await table();
+		expect(screen.queryByRole('button', { name: /^Gesammelt umwandeln/ })).toBeNull();
+		expect(screen.queryByRole('button', { name: /^Verwerfen/ })).toBeNull();
+		const locked = screen.getByRole('button', { name: 'Wiederherstellen' });
+		expect(locked.getAttribute('aria-disabled')).toBe('true');
+
+		await fireEvent.click(box('Alt eins'));
+		await fireEvent.click(box('Alt zwei'));
+		await fireEvent.click(screen.getByRole('button', { name: 'Wiederherstellen (2)' }));
+		await vi.waitFor(() =>
+			expect(data.restore.mock.calls).toEqual([['item00000000007'], ['item00000000008']])
+		);
+		await vi.waitFor(() => expect(screen.queryByRole('link', { name: 'Alt eins' })).toBeNull());
+		expect(screen.queryByRole('link', { name: 'Alt zwei' })).toBeNull();
+		const flag = await vi.waitFor(() => flagSection().getByRole('listitem'));
+		expect(flag.textContent).toContain('2 Einträge wiederhergestellt.');
+		expect(within(flag).queryByRole('button', { name: 'Rückgängig' })).toBeNull();
+		// Nothing failed or was skipped: no result stands above the table.
+		expect(screen.queryByRole('region', { name: /ausgewählt$/ })).toBeNull();
+	});
+
+	it('keeps "Verwerfen (n)" without a connection, locked, and names why on a click or Enter', async () => {
+		const { data, flags } = setup({ offline: true });
+		await table();
+		await fireEvent.click(box('Artikel'));
+		const button = screen.getByRole('button', { name: 'Verwerfen (1)' });
+		expect(button.getAttribute('aria-disabled')).toBe('true');
+		// A button, not disabled: Enter reaches it and is a click in the browser.
+		expect(button.hasAttribute('disabled')).toBe(false);
+		const hint = screen.getByText('Nur mit Verbindung');
+		expect(button.getAttribute('aria-describedby')).toBe(hint.id);
+		await fireEvent.click(button);
+		expect(data.discard).not.toHaveBeenCalled();
+		expect(flags.flags.map((flag) => [flag.tone, flag.title])).toEqual([
+			['info', '„Verwerfen (1)“ geht nur mit Verbindung.']
+		]);
+		// EG-1 locked only its own; since MO-7c1 the other bulk actions are locked as well (see "bulk
+		// actions of the inbox after MO-7c1").
+		expect(
+			screen.getByRole('button', { name: 'Gesammelt umwandeln (1)' }).getAttribute('aria-disabled')
+		).toBe('true');
+	});
+
+	// Round 2 of EG-1 (review E-1, E-3, E-5 and E-7).
+	const caption = () => screen.getByRole('table').querySelector('caption')?.textContent;
+
+	it('empties the selection when another view is chosen (E-1)', async () => {
+		const { store } = setup();
+		await table();
+		await fireEvent.click(box('Milch kaufen'));
+		expect(screen.getByRole('button', { name: 'Verwerfen (1)' })).toBeTruthy();
+		store.activate({ source: null, state: 'discarded' });
+		await vi.waitFor(() =>
+			expect(caption()).toBe('Eingang · verworfen, zuletzt verworfene zuerst')
+		);
+		expect(screen.getByRole('button', { name: 'Wiederherstellen' })).toBeTruthy();
+		store.activate({ source: null, state: 'new' });
+		await vi.waitFor(() => expect(caption()).toBe('Eingang · neu, neueste zuerst'));
+		expect(box('Milch kaufen').checked).toBe(false);
+		expect(screen.getByRole('button', { name: 'Verwerfen' }).getAttribute('aria-disabled')).toBe(
+			'true'
+		);
+	});
+
+	it('drops a discarded entry from the selection once it leaves the view, by its row action or in another tab (E-1)', async () => {
+		const gone = [
+			item('item00000000007', {
+				title: 'Alt eins',
+				state: 'discarded',
+				handledAt: '2026-09-21 10:00:00.000Z'
+			}),
+			item('item00000000008', {
+				title: 'Alt zwei',
+				state: 'discarded',
+				handledAt: '2026-09-20 10:00:00.000Z'
+			})
+		];
+		const { store } = setup({ query: { source: null, state: 'discarded' }, handled: gone });
+		await table();
+		await fireEvent.click(box('Alt eins'));
+		await fireEvent.click(box('Alt zwei'));
+		// "Wiederherstellen" of its row brings "Alt eins" back to "Neu"; another tab restores "Alt zwei".
+		await fireEvent.click(screen.getByRole('button', { name: 'Wiederherstellen: „Alt eins“' }));
+		await vi.waitFor(() =>
+			expect(screen.queryByRole('link', { name: /Alt eins|Eintrag 7/ })).toBeNull()
+		);
+		store.upsert({
+			...gone[1]!,
+			state: 'new',
+			handledAt: null,
+			updated: '2026-09-25 11:00:00.000Z'
+		});
+		await vi.waitFor(() => expect(screen.queryByRole('link', { name: 'Alt zwei' })).toBeNull());
+		// Both come back discarded from another tab: neither is chosen any more.
+		store.upsert({
+			...gone[0]!,
+			handledAt: '2026-09-25 12:00:00.000Z',
+			updated: '2026-09-25 12:00:00.000Z'
+		});
+		store.upsert({
+			...gone[1]!,
+			handledAt: '2026-09-25 12:30:00.000Z',
+			updated: '2026-09-25 12:30:00.000Z'
+		});
+		await vi.waitFor(() => expect(screen.getByRole('link', { name: 'Alt zwei' })).toBeTruthy());
+		expect(box('Alt eins').checked).toBe(false);
+		expect(box('Alt zwei').checked).toBe(false);
+		expect(
+			screen.getByRole('button', { name: 'Wiederherstellen' }).getAttribute('aria-disabled')
+		).toBe('true');
+	});
+
+	it('drops a new entry from the selection once it is converted or discarded elsewhere (E-1)', async () => {
+		const { store } = setup();
+		await table();
+		await fireEvent.click(box('Milch kaufen'));
+		await fireEvent.click(box('Artikel'));
+		await fireEvent.click(box('Rechnung September'));
+		// "Umwandeln" in the panel converts "Milch kaufen"; another tab discards "Artikel".
+		store.markConverted(A.id, 'tick00000000009', '2026-09-25 10:00:00.000Z');
+		store.upsert({
+			...C,
+			state: 'discarded',
+			handledAt: '2026-09-25 10:00:00.000Z',
+			updated: '2026-09-25 10:00:00.000Z'
+		});
+		await vi.waitFor(() => expect(screen.queryByRole('link', { name: 'Artikel' })).toBeNull());
+		// Both come back new (released, restored in another tab): neither is chosen any more.
+		store.upsert({ ...A, updated: '2026-09-25 11:00:00.000Z' });
+		store.upsert({ ...C, updated: '2026-09-25 11:00:00.000Z' });
+		await vi.waitFor(() => expect(screen.getByRole('link', { name: 'Artikel' })).toBeTruthy());
+		expect(box('Milch kaufen').checked).toBe(false);
+		expect(box('Artikel').checked).toBe(false);
+		expect(box('Rechnung September').checked).toBe(true);
+		expect(screen.getByRole('button', { name: 'Verwerfen (1)' })).toBeTruthy();
+	});
+
+	it('shows a result only in its view: another view drops it (E-3)', async () => {
+		const { store, data } = setup();
+		await table();
+		data.discard.mockRejectedValueOnce(new DataError('server'));
+		await fireEvent.click(box('Milch kaufen'));
+		await fireEvent.click(screen.getByRole('button', { name: 'Verwerfen (1)' }));
+		await vi.waitFor(() => expect(within(bar()).getByRole('alert')).toBeTruthy());
+		store.activate({ source: null, state: 'converted' });
+		await vi.waitFor(() =>
+			expect(caption()).toBe('Eingang · verknüpft, zuletzt verknüpfte zuerst')
+		);
+		expect(screen.queryByRole('region', { name: /ausgewählt$/ })).toBeNull();
+		store.activate({ source: null, state: 'new' });
+		await vi.waitFor(() => expect(caption()).toBe('Eingang · neu, neueste zuerst'));
+		expect(screen.queryByRole('region', { name: /ausgewählt$/ })).toBeNull();
+	});
+
+	it('keeps every bulk action locked while a run goes on, with the progress as reason and a flag on a click or Enter (E-5)', async () => {
+		const onlink = vi.fn();
+		const { data, onbulk, flags } = setup({ onlink });
+		await table();
+		await fireEvent.click(
+			screen.getByRole('checkbox', { name: 'Alle angezeigten Einträge auswählen' })
+		);
+		const first = deferred<InboxItemSummary>();
+		data.discard.mockReturnValueOnce(first.promise);
+		await fireEvent.click(screen.getByRole('button', { name: 'Verwerfen (3)' }));
+		const progress = within(bar()).getByText('Verwerfen: 0 von 3 Einträgen');
+		expect(progress.id).not.toBe('');
+		for (const name of [
+			'Gesammelt umwandeln (3)',
+			'Mit Ticket verknüpfen … (3)',
+			'Verwerfen (3)'
+		]) {
+			const button = screen.getByRole('button', { name });
+			expect(button.getAttribute('aria-disabled')).toBe('true');
+			// A button, not disabled: Enter reaches it and is a click in the browser.
+			expect(button.hasAttribute('disabled')).toBe(false);
+			expect(button.getAttribute('aria-describedby')).toBe(progress.id);
+			await fireEvent.click(button);
+		}
+		expect(onbulk).not.toHaveBeenCalled();
+		expect(onlink).not.toHaveBeenCalled();
+		expect(data.discard).toHaveBeenCalledOnce();
+		expect(flags.flags.map((flag) => [flag.tone, flag.title])).toEqual([
+			['info', '„Verwerfen (3)“ geht erst, wenn „Verwerfen“ fertig ist.'],
+			['info', '„Mit Ticket verknüpfen … (3)“ geht erst, wenn „Verwerfen“ fertig ist.'],
+			['info', '„Gesammelt umwandeln (3)“ geht erst, wenn „Verwerfen“ fertig ist.']
+		]);
+		first.resolve({ ...B, state: 'discarded', updated: '2026-09-25 09:00:00.000Z' });
+		await vi.waitFor(() => expect(data.discard).toHaveBeenCalledTimes(3));
+	});
+
+	it('offers "Details" of a failed request in the result, like one failed action (E-7)', async () => {
+		const { data } = setup();
+		await table();
+		data.discard.mockRejectedValueOnce(new DataError('server'));
+		await fireEvent.click(box('Milch kaufen'));
+		await fireEvent.click(screen.getByRole('button', { name: 'Verwerfen (1)' }));
+		const failures = await vi.waitFor(() => within(bar()).getByRole('alert'));
+		const failure = within(failures).getByRole('listitem');
+		expect(within(failure).getByText(`„Milch kaufen“: ${SERVER_FAILURE}`)).toBeTruthy();
+		const details = within(failure).getByRole('button', { name: /^Details/ });
+		await fireEvent.click(details);
+		expect(details.getAttribute('aria-expanded')).toBe('true');
+	});
+});
+
+// MO-7c1: the other bulk actions of the inbox without a connection, and the focus after "Ergebnis
+// schließen" (Q-1 of the review of MO-7b).
+describe('bulk actions of the inbox after MO-7c1', () => {
+	const box = (title: string) =>
+		screen.getByRole<HTMLInputElement>('checkbox', { name: `Eintrag „${title}“ auswählen` });
+
+	it('locks "Gesammelt umwandeln (n)" and "Mit Ticket verknüpfen … (n)" without a connection and names why on a click or Enter', async () => {
+		const onlink = vi.fn();
+		const { onbulk, flags } = setup({ offline: true, onlink });
+		await table();
+		await fireEvent.click(box('Artikel'));
+		const hint = screen.getByText('Nur mit Verbindung');
+		for (const name of ['Gesammelt umwandeln (1)', 'Mit Ticket verknüpfen … (1)']) {
+			const button = screen.getByRole('button', { name });
+			expect(button.getAttribute('aria-disabled')).toBe('true');
+			// A button, not disabled: Enter reaches it and is a click in the browser.
+			expect(button.hasAttribute('disabled')).toBe(false);
+			expect(button.getAttribute('aria-describedby')).toBe(hint.id);
+			expect(button.getAttribute('title')).toBe('Nur mit Verbindung');
+			await fireEvent.click(button);
+		}
+		expect(onbulk).not.toHaveBeenCalled();
+		expect(onlink).not.toHaveBeenCalled();
+		expect(flags.flags.map((flag) => [flag.tone, flag.title])).toEqual([
+			['info', '„Mit Ticket verknüpfen … (1)“ geht nur mit Verbindung.'],
+			['info', '„Gesammelt umwandeln (1)“ geht nur mit Verbindung.']
+		]);
+	});
+
+	it('keeps both open with a connection', async () => {
+		const onlink = vi.fn();
+		const { onbulk } = setup({ onlink });
+		await table();
+		await fireEvent.click(box('Artikel'));
+		const convert = screen.getByRole('button', { name: 'Gesammelt umwandeln (1)' });
+		const link = screen.getByRole('button', { name: 'Mit Ticket verknüpfen … (1)' });
+		expect(convert.hasAttribute('aria-disabled')).toBe(false);
+		expect(link.hasAttribute('aria-disabled')).toBe(false);
+		expect(screen.queryByText('Nur mit Verbindung')).toBeNull();
+		await fireEvent.click(convert);
+		await fireEvent.click(link);
+		expect(onbulk).toHaveBeenCalledOnce();
+		expect(onlink).toHaveBeenCalledOnce();
+	});
+
+	it('puts the focus on the heading after "Ergebnis schließen" once the bar is gone (Q-1)', async () => {
+		const { data } = setup();
+		await table();
+		data.discard.mockRejectedValueOnce(new DataError('server'));
+		await fireEvent.click(box('Milch kaufen'));
+		await fireEvent.click(screen.getByRole('button', { name: 'Verwerfen (1)' }));
+		const bar = await vi.waitFor(() => screen.getByRole('region', { name: /ausgewählt$/ }));
+		await vi.waitFor(() => within(bar).getByRole('alert'));
+		const close = within(bar).getByRole('button', { name: 'Ergebnis schließen' });
+		close.focus();
+		await fireEvent.click(close);
+		await tick();
+		expect(screen.queryByRole('region', { name: /ausgewählt$/ })).toBeNull();
+		await vi.waitFor(() =>
+			expect(document.activeElement).toBe(
+				screen.getByRole('heading', { level: 2, name: 'Eingang' })
+			)
+		);
+	});
+});
+
 describe('columns of the inbox (ADR-0030, package SP-5)', () => {
 	useResizeObserverStub();
 
@@ -579,11 +992,28 @@ describe('columns of the inbox (ADR-0030, package SP-5)', () => {
 		);
 	});
 
-	it('has no selection column for handled entries', async () => {
-		setup({ query: { source: null, state: 'discarded' } });
+	// Since EG-1 the view "Verworfen" has the selection too ("Wiederherstellen (n)"); "Verknüpft" and
+	// "Alle" have none ("Alle" is checked above).
+	it('has no selection column for linked entries', async () => {
+		setup({ query: { source: null, state: 'converted' } });
 		await table();
 
 		expect(marks()).toEqual(['kind', 'title', 'source', 'source-date', 'arrival', 'actions']);
+	});
+
+	it('has the selection column in the view "Verworfen" (EG-1)', async () => {
+		setup({ query: { source: null, state: 'discarded' } });
+		await table();
+
+		expect(marks()).toEqual([
+			'select',
+			'kind',
+			'title',
+			'source',
+			'source-date',
+			'arrival',
+			'actions'
+		]);
 	});
 
 	it('resizes a column with its grip and stores it under byl-columns-inbox', async () => {

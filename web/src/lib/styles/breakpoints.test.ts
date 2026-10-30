@@ -138,7 +138,10 @@ describe('breakpoints (MO-1a, ADR-0073)', () => {
 		// since MO-5 the sheet of the quick entry (its two buttons side by side, the folded help, the
 		// link to the result); since MO-6 the inbox (its cards, the bar of the selection, the filter
 		// sheet, the page of an entry with its main actions) and the button "Filter" shared with
-		// "Aufgaben".
+		// "Aufgaben"; since MO-7b "Projekte", "Wiederholungen" and "Papierkorb" (their cards, the row of
+		// the view, the filter sheet, the pages of a project and a rule with their targets) and the bar
+		// of the selection at the bottom; since MO-7c1 "Erledigte" (the entries as cards, the filters of
+		// 44 px) and the folded parts about the keyboard in the help.
 		expect([...new Set(places)].sort()).toEqual([
 			'lib/components/Breadcrumbs.svelte',
 			'lib/components/CharmPicker.svelte',
@@ -150,7 +153,14 @@ describe('breakpoints (MO-1a, ADR-0073)', () => {
 			'lib/components/InboxPanel.svelte',
 			'lib/components/InboxTable.svelte',
 			'lib/components/MarkdownEditor.svelte',
+			'lib/components/ProjectPanel.svelte',
+			'lib/components/ProjectTable.svelte',
+			'lib/components/ProjectTicketList.svelte',
+			'lib/components/ProjectsView.svelte',
 			'lib/components/QuickCapture.svelte',
+			'lib/components/RecurrenceForm.svelte',
+			'lib/components/RecurrencePanel.svelte',
+			'lib/components/RecurrenceTable.svelte',
 			'lib/components/SectionBar.svelte',
 			'lib/components/SelectionBar.svelte',
 			'lib/components/SortChoice.svelte',
@@ -163,13 +173,18 @@ describe('breakpoints (MO-1a, ADR-0073)', () => {
 			'lib/components/TicketParentField.svelte',
 			'lib/components/TicketSubtasks.svelte',
 			'lib/components/TicketTable.svelte',
+			'lib/components/TrashTable.svelte',
+			'lib/components/TrashView.svelte',
 			'lib/components/ViewWithPanel.svelte',
 			'lib/components/day-plan/DayPlanList.svelte',
 			'lib/components/day-plan/DayPlanPool.svelte',
 			'lib/components/day-plan/DayPlanSort.svelte',
 			'lib/components/day-plan/DayPlanSuggestions.svelte',
 			'lib/components/day-plan/DayPlanView.svelte',
+			'lib/components/done/DoneFilterBar.svelte',
+			'lib/components/done/DoneView.svelte',
 			'lib/components/editor/EditorToolbar.svelte',
+			'lib/components/help/KeyboardFold.svelte',
 			'lib/components/overlay/Drawer.svelte',
 			'lib/components/overlay/FlagGroup.svelte',
 			'lib/styles/base.css',

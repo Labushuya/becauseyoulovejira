@@ -297,4 +297,24 @@
 		stroke-width: 2;
 		stroke-linecap: round;
 	}
+
+	/*
+	 * Phone frame (MO-7c1, ADR-0073 addendum MO-7c1): the search over the whole width, the choices of
+	 * "Projekt", "Tag", "Charm" and "Zuständig" as targets of 44 px like the choices of the filter sheet
+	 * of "Aufgaben" (FilterBar); "Zurücksetzen" has them from base.css. Off, or from 40rem, nothing
+	 * changes.
+	 */
+	@media (max-width: 39.99rem) {
+		:global(:root[data-mobile-layout='on']) .done-filters .search-field {
+			flex: 1 1 100%;
+		}
+
+		:global(:root[data-mobile-layout='on']) .done-filters .search-field input[type='search'] {
+			width: 100%;
+		}
+
+		:global(:root[data-mobile-layout='on']) .done-filters :global(.toggle) {
+			min-height: var(--control-height-touch);
+		}
+	}
 </style>

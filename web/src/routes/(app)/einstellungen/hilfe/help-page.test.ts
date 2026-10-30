@@ -7,9 +7,11 @@
 
 import { readFileSync } from 'node:fs';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { page } from '$app/state';
 import { MOVE_TEXTS } from '$lib/domain/area-move';
+import { PHONE_QUERY } from '$lib/domain/phone-layout';
+import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 import { MEMBER_CONTEXT, PC_CONTEXT, REMOTE_CONTEXT, useContext } from '$lib/test/context';
 import {
 	EMERGENCY_LOSSES,
@@ -59,6 +61,8 @@ describe('help page (EH-9)', () => {
 			'Tagesplan',
 			'Laufendes Vorhaben oder Wiederholung?',
 			'Erledigte',
+			// Since MO-7a: what works without a connection (ADR-0074).
+			'Ohne Verbindung',
 			'Kanäle und Zugangsdaten',
 			'Eigener Eingang (API)',
 			'WhatsApp Web',
@@ -790,6 +794,131 @@ describe('help page (EH-9)', () => {
 		expect(content).toMatch(/„Mehr laden“/);
 		expect(content).toMatch(/„Wieder öffnen“/);
 		expect(content).toMatch(/„Rückgängig“ in der Meldung erledigt es\s+erneut/);
+	});
+
+	// MO-7a (concept OF-0 §8 and §5, ADR-0074): what the outbox keeps since OF-2 to OF-4b, what it does
+	// not, the dialog "Gemerkte Änderungen", the notices that stay and the limits, in the words of the
+	// app (OFFLINE_TEXTS).
+	it('explains changes without a connection: what is kept, what is not, the dialog, the notices and the limits (MO-7a)', () => {
+		const { container } = render(Page);
+		const section = container.querySelector<HTMLElement>('section#ohne-verbindung')!;
+		expect(section).not.toBeNull();
+		expect(section.getAttribute('aria-labelledby')).toBe('ohne-verbindung-title');
+		expect(helpHref('ohne-verbindung')).toBe('/einstellungen/hilfe#ohne-verbindung');
+		expect(
+			within(section)
+				.getAllByRole('heading', { level: 4 })
+				.map((heading) => heading.textContent?.trim())
+		).toEqual([
+			'Was gemerkt wird',
+			'Was nur mit Verbindung geht',
+			'Gemerkte Änderungen',
+			'Hinweise, die bleiben',
+			'Grenzen'
+		]);
+		expect(within(section).getByRole('link', { name: 'Darstellung' }).getAttribute('href')).toBe(
+			'/einstellungen/darstellung'
+		);
+		const content = text(section);
+		// Only in the phone view, after about 12 seconds without an answer.
+		expect(content).toMatch(/„Handy-Ansicht \(Vorschau\)“/);
+		expect(content).toMatch(/nach etwa 12 Sekunden/);
+		// Kept: check mark and status, due date, the day plan, "＋", comments.
+		for (const kept of [
+			/Abhaken und den Status/,
+			/Fälligkeit/,
+			/Haken im Tagesplan/,
+			/„＋“/,
+			/Kommentare/,
+			/„Noch nicht übertragen“/,
+			/„Entscheidung nötig“/,
+			/„Neu“/,
+			/„Offline geschrieben um … \(laut Gerät\)“/,
+			/„offline um 14:03 \(laut Gerät\), abgeglichen um 14:30“/
+		]) {
+			expect(content).toMatch(kept);
+		}
+		// Not kept: moving in the calendar, new tags, "Neues Ticket", "Erfassen", everything else.
+		for (const notKept of [
+			/im Kalender verschieben/,
+			/Neue Tags/,
+			/„Neues Ticket“ und „Erfassen“/,
+			/„Alle Kanäle jetzt abrufen“/,
+			/„Nur mit Verbindung“/,
+			/„Keine Verbindung\. Das geht nur mit Verbindung, nichts wurde gemerkt\.“/
+		]) {
+			expect(content).toMatch(notKept);
+		}
+		// The dialog and its buttons, the notices that stay.
+		for (const word of [
+			'„Erneut versuchen“',
+			'„Ansehen“',
+			'„Offline · 3“',
+			'„Gemerkte Änderungen“',
+			'„Verwerfen“',
+			'„Rückgängig“',
+			'„Trotzdem übertragen“',
+			'„Als Eingangseintrag sichern“',
+			'„Meine Änderung übernehmen“',
+			'„Ohne Projekt anlegen“',
+			'„Ohne Tags anlegen“',
+			'„Schließen“'
+		]) {
+			expect(content).toContain(word);
+		}
+		// The limits.
+		for (const limit of [
+			/48 Stunden/,
+			/7 Tage/,
+			/Nur dieses Gerät/,
+			/Nur in der Handy-Ansicht/,
+			/mit einem Update für alle eingeschaltet/,
+			/Nur bei offener App/,
+			/„Ohne Verbindung neu laden\?“/,
+			/in jedem offenen Tab F5/,
+			/„Abmelden und 3 gemerkte Änderungen verwerfen\?“/,
+			/den Speicher bei Speichermangel räumen/
+		]) {
+			expect(content).toMatch(limit);
+		}
+	});
+
+	// MO-7b (M-4 to M-6 of the review of MO-7a): the section in the words of the code. The lock of "Alle
+	// Kanäle jetzt abrufen" is its own point (it alone is locked, every other change is refused); the
+	// reload says what offline.ts says; "Status, Fälligkeit und Kommentare" holds for a new ticket only,
+	// a new entry waits for "Umwandeln", "Verknüpfen" and "Verwerfen"; "Trotzdem übertragen" also with
+	// the time of the device in the future; the discarded entry that arrived anyway with "Eintrag
+	// ansehen".
+	it('states the limits of changes without a connection in the words of the app (MO-7b)', () => {
+		const { container } = render(Page);
+		const section = container.querySelector<HTMLElement>('section#ohne-verbindung')!;
+		const items = [...section.querySelectorAll('li')].map((item) => text(item).trim());
+		expect(items).toContain(
+			'„Alle Kanäle jetzt abrufen“: ohne Verbindung gesperrt, mit „Nur mit Verbindung“.'
+		);
+		expect(
+			items.some((item) => /„Alle Kanäle jetzt abrufen“/.test(item) && /Priorität/.test(item))
+		).toBe(false);
+		const reload = items.find((item) => item.startsWith('Neu laden:'));
+		expect(reload).toMatch(/„Ohne Verbindung neu laden\?“/);
+		expect(reload).toMatch(
+			/lässt sich die App aber erst wieder öffnen, wenn der Server erreichbar ist\./
+		);
+		expect(reload).not.toMatch(/startet die App nicht neu/);
+		const quick = items.find((item) => item.startsWith('„＋“'));
+		expect(quick).toMatch(
+			/Bei einem neuen Ticket steht bis zur Übertragung statt des Keys „Neu“; Status, Fälligkeit und Kommentare gehen daran schon, alles andere erst danach\./
+		);
+		expect(quick).toMatch(
+			/Umwandeln, Verknüpfen und Verwerfen gehen bei einem neuen Eintrag erst, sobald er übertragen ist\./
+		);
+		const anyway = items.find((item) => item.startsWith('„Trotzdem übertragen“'));
+		expect(anyway).toMatch(/älter als 48 Stunden/);
+		expect(anyway).toMatch(/die Zeit des Geräts in der Zukunft liegt/);
+		const content = text(section);
+		expect(content).toMatch(
+			/ein verworfener Eingangseintrag, der doch schon im Eingang liegt \(mit „Eintrag ansehen“\)/
+		);
 	});
 
 	it('explains moving a due date: mouse, menu or "m", undo, series and touch (ADR-0053 §12)', () => {
@@ -1536,6 +1665,86 @@ describe('help page in the context of the tab (KOB-1, ADR-0057)', () => {
 
 		expect(text(container)).not.toMatch(COMMANDS);
 		expect(text(screen.getByRole('region', { name: 'Betrieb' })).trim()).toBe('Betrieb');
+	});
+});
+
+// MO-7c1 (concept MO-0 §6 "Hilfe (Abschnitte zur Tastatur am Handy eingeklappt)", ADR-0073 addendum
+// MO-7c1): in the phone frame the parts that only matter with a keyboard are folded into a native
+// disclosure (details and summary, open on a tap); their headings stay headings of the page. On the
+// PC and on a phone with the switch off they stand open as before. The tap itself is checked in a
+// browser by tests/mobile/phone-frame.spec.mjs.
+describe('the parts about the keyboard in the phone frame (MO-7c1)', () => {
+	let stop: (() => void) | null = null;
+
+	/** The window of the test: narrow (a phone) or wide (a PC), with the switch on or off. */
+	function useWindow(narrow: boolean, enabled: boolean): void {
+		vi.stubGlobal('matchMedia', (media: string) => ({
+			matches: media === PHONE_QUERY ? narrow : false,
+			media,
+			addEventListener: () => undefined,
+			removeEventListener: () => undefined
+		}));
+		stop = getMobileLayoutStore().connect();
+		getMobileLayoutStore().choose(enabled);
+	}
+
+	afterEach(() => {
+		stop?.();
+		stop = null;
+		getMobileLayoutStore().choose(false);
+		vi.unstubAllGlobals();
+		localStorage.clear();
+	});
+
+	it('folds the shortcuts and the keys of the calendar on the phone, the headings stay', () => {
+		useWindow(true, true);
+		const { container } = render(Page);
+
+		const shortcuts = container.querySelector<HTMLElement>('section#tastaturkuerzel')!;
+		expect(
+			within(shortcuts).getByRole('heading', { level: 3, name: 'Tastaturkürzel' })
+		).toBeTruthy();
+		const fold = shortcuts.querySelector('details')!;
+		expect(fold).not.toBeNull();
+		expect(fold.open).toBe(false);
+		expect(fold.firstElementChild?.tagName).toBe('SUMMARY');
+		expect(text(fold.firstElementChild!).trim()).toBe('Tastaturkürzel anzeigen');
+		// What only a keyboard needs stands inside: the key "?" and the list of the shortcuts.
+		expect(text(fold)).toMatch(/Mit \? öffnest du die wichtigsten Tasten/);
+
+		const calendar = container.querySelector<HTMLElement>('section#kalender')!;
+		expect(
+			within(calendar).getByRole('heading', { level: 4, name: 'Mit der Tastatur' })
+		).toBeTruthy();
+		const keys = calendar.querySelector('details')!;
+		expect(keys).not.toBeNull();
+		expect(keys.open).toBe(false);
+		expect(text(keys.firstElementChild!).trim()).toBe('Tasten im Kalender anzeigen');
+		expect(text(keys)).toMatch(/Bild auf/);
+		// Moving a due date stays open: the menu "Fälligkeit verschieben …" is the way of a phone.
+		expect(text(calendar.querySelector('details')!)).not.toMatch(/Fälligkeit verschieben …/);
+	});
+
+	it.each([
+		['a PC with the switch on', false, true],
+		['a phone with the switch off', true, false]
+	])('keeps them open on %s, as before', (_name, narrow, enabled) => {
+		useWindow(narrow, enabled);
+		const { container } = render(Page);
+		expect(container.querySelector('section#tastaturkuerzel details')).toBeNull();
+		expect(container.querySelector('section#kalender details')).toBeNull();
+		expect(text(container.querySelector('section#tastaturkuerzel')!)).toMatch(
+			/Mit \? öffnest du die wichtigsten Tasten/
+		);
+	});
+
+	it('names the bulk actions of the inbox among what goes only with a connection (MO-7c1)', () => {
+		const { container } = render(Page);
+		const section = container.querySelector<HTMLElement>('section#ohne-verbindung')!;
+		const items = [...section.querySelectorAll('li')].map((item) => text(item).trim());
+		expect(items).toContain(
+			'Die Sammelaktionen im Eingang, „Gesammelt umwandeln (3)“, „Mit Ticket verknüpfen … (3)“, „Verwerfen (3)“ und „Wiederherstellen (3)“: ohne Verbindung gesperrt, mit „Nur mit Verbindung“.'
+		);
 	});
 });
 

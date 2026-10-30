@@ -13,6 +13,7 @@
 	} from '$lib/domain/backup';
 	import { KEY_PLACEHOLDER, ingestExamples } from '$lib/domain/inbox-keys';
 	import HostPlatformNote from '$lib/components/guidance/HostPlatformNote.svelte';
+	import KeyboardFold from '$lib/components/help/KeyboardFold.svelte';
 	import PcOnly from '$lib/components/guidance/PcOnly.svelte';
 	import SectionMessage from '$lib/components/guidance/SectionMessage.svelte';
 	import OngoingOrRecurrenceHelp from '$lib/components/help/OngoingOrRecurrenceHelp.svelte';
@@ -46,6 +47,10 @@
 	// and the steps at the machine of the app show only for the administrator there (PcOnly); the
 	// administrator on another device reads "nur am PC" instead, every other account "Bitte den
 	// Verwalter fragen.", and "Betrieb" and "Sicherung & Notfall" become one sentence for them.
+	// Since MO-7a the section "Ohne Verbindung" (ADR-0074) says what the outbox keeps (OF-2 to OF-4b),
+	// what goes only with a connection, the dialog "Gemerkte Änderungen", the notices that stay and
+	// the limits, in the words of OFFLINE_TEXTS. Since MO-7c1 it names the locked bulk actions of the
+	// inbox, and in the phone frame the parts about the keyboard are folded (KeyboardFold).
 
 	const mode = $derived(appContext.capabilities.mode);
 
@@ -76,11 +81,13 @@
 
 	<section id="tastaturkuerzel" aria-labelledby="tastaturkuerzel-title">
 		<h3 id="tastaturkuerzel-title">Tastaturkürzel</h3>
-		<p>
-			Mit <kbd>?</kbd> öffnest du die wichtigsten Tasten überall in der App, außer beim Tippen in einem
-			Feld.
-		</p>
-		<ShortcutList headingLevel={4} />
+		<KeyboardFold label="Tastaturkürzel anzeigen">
+			<p>
+				Mit <kbd>?</kbd> öffnest du die wichtigsten Tasten überall in der App, außer beim Tippen in einem
+				Feld.
+			</p>
+			<ShortcutList headingLevel={4} />
+		</KeyboardFold>
 	</section>
 
 	<section id="kurzsyntax" aria-labelledby="kurzsyntax-title">
@@ -177,17 +184,19 @@
 			mit der Agenda, und der Monat zeigt Punkte statt Titel.
 		</p>
 		<h4>Mit der Tastatur</h4>
-		<ul>
-			<li>
-				Im Monat und in der Woche: die Pfeiltasten von Tag zu Tag, <kbd>Pos1</kbd> und
-				<kbd>Ende</kbd>
-				zum Anfang und Ende der Woche (mit <kbd>Strg</kbd> des Monats).
-			</li>
-			<li><kbd>Bild auf</kbd> und <kbd>Bild ab</kbd>: einen Monat bzw. eine Woche weiter.</li>
-			<li><kbd>Enter</kbd> führt in die Einträge des Tages, <kbd>Esc</kbd> zurück zum Tag.</li>
-			<li><kbd>Umschalt</kbd>+<kbd>F10</kbd> öffnet das Menü eines Tickets.</li>
-			<li><kbd>m</kbd> auf einem offenen Ticket verschiebt seine Fälligkeit (siehe unten).</li>
-		</ul>
+		<KeyboardFold label="Tasten im Kalender anzeigen">
+			<ul>
+				<li>
+					Im Monat und in der Woche: die Pfeiltasten von Tag zu Tag, <kbd>Pos1</kbd> und
+					<kbd>Ende</kbd>
+					zum Anfang und Ende der Woche (mit <kbd>Strg</kbd> des Monats).
+				</li>
+				<li><kbd>Bild auf</kbd> und <kbd>Bild ab</kbd>: einen Monat bzw. eine Woche weiter.</li>
+				<li><kbd>Enter</kbd> führt in die Einträge des Tages, <kbd>Esc</kbd> zurück zum Tag.</li>
+				<li><kbd>Umschalt</kbd>+<kbd>F10</kbd> öffnet das Menü eines Tickets.</li>
+				<li><kbd>m</kbd> auf einem offenen Ticket verschiebt seine Fälligkeit (siehe unten).</li>
+			</ul>
+		</KeyboardFold>
 		<h4>Fälligkeit verschieben</h4>
 		<p>
 			Im Monat und in der Woche ziehst du ein offenes Ticket mit der Maus auf einen anderen Tag; das
@@ -336,6 +345,143 @@
 			es erneut, dann mit dem Zeitpunkt von jetzt. Was anderswo erledigt wird, erscheint oben; was
 			anderswo wieder geöffnet wird, verschwindet.
 		</p>
+	</section>
+
+	<section id="ohne-verbindung" aria-labelledby="ohne-verbindung-title">
+		<h3 id="ohne-verbindung-title">Ohne Verbindung</h3>
+		<p>
+			Reißt am Handy die Verbindung ab, etwa weil das VPN weg ist, merkt sich die App einige
+			Änderungen und überträgt sie von selbst, sobald der Server wieder erreichbar ist. Das gilt in
+			der Handy-Ansicht: Der Schalter „Handy-Ansicht (Vorschau)“ unter
+			<a href={resolve('/einstellungen/darstellung')}>Darstellung</a> ist an, und das Fenster ist schmal.
+			Antwortet der Server nicht, merkt sich die App eine Änderung nach etwa 12 Sekunden. Am PC und mit
+			ausgeschaltetem Schalter geht jede Änderung wie bisher gleich zum Server.
+		</p>
+		<h4 id="ohne-verbindung-gemerkt">Was gemerkt wird</h4>
+		<ul>
+			<li>Abhaken und den Status eines Tickets, in der Liste und im Ticket.</li>
+			<li>Die Fälligkeit im Ticket.</li>
+			<li>Haken im Tagesplan und ihr Zurücknehmen.</li>
+			<li>
+				„＋“: ein neues Ticket oder einen Eintrag für den Eingang. Bei einem neuen Ticket steht bis
+				zur Übertragung statt des Keys „Neu“; Status, Fälligkeit und Kommentare gehen daran schon,
+				alles andere erst danach. Umwandeln, Verknüpfen und Verwerfen gehen bei einem neuen Eintrag
+				erst, sobald er übertragen ist.
+			</li>
+			<li>
+				Kommentare, auch an einem neuen Ticket, das noch nicht übertragen ist. Sie stehen gleich mit
+				„Offline geschrieben um … (laut Gerät)“ in der Liste; Bearbeiten, Löschen und Anpinnen gehen
+				erst nach der Übertragung.
+			</li>
+		</ul>
+		<p>
+			Was gemerkt ist, trägt die Marke „Noch nicht übertragen“ (eine Wolke mit Pfeil), was deine
+			Entscheidung braucht, „Entscheidung nötig“. Nach der Übertragung steht im Verlauf etwa
+			„offline um 14:03 (laut Gerät), abgeglichen um 14:30“. Die Zeit ist eine Angabe des Handys.
+		</p>
+		<h4 id="ohne-verbindung-nicht">Was nur mit Verbindung geht</h4>
+		<ul>
+			<li>Die Fälligkeit im Kalender verschieben (Ziehen und „Fälligkeit verschieben …“).</li>
+			<li>
+				Neue Tags in „＋“: Die Zeile bleibt stehen, bis du sie entfernst oder vorhandene Tags
+				wählst.
+			</li>
+			<li>„Neues Ticket“ und „Erfassen“ im Eingang.</li>
+			<li>„Alle Kanäle jetzt abrufen“: ohne Verbindung gesperrt, mit „Nur mit Verbindung“.</li>
+			<li>
+				Die Sammelaktionen im Eingang, „Gesammelt umwandeln (3)“, „Mit Ticket verknüpfen … (3)“,
+				„Verwerfen (3)“ und „Wiederherstellen (3)“: ohne Verbindung gesperrt, mit „Nur mit
+				Verbindung“.
+			</li>
+			<li>
+				Alles andere, etwa Priorität, Projekt, Tags, Titel, Beschreibung und Unteraufgaben,
+				Umwandeln und Verwerfen im Eingang.
+			</li>
+		</ul>
+		<p>
+			In der Handy-Ansicht sagt eine Änderung, die nicht gemerkt wird, „Keine Verbindung. Das geht
+			nur mit Verbindung, nichts wurde gemerkt.“
+		</p>
+		<h4 id="ohne-verbindung-dialog">Gemerkte Änderungen</h4>
+		<p>
+			Ohne Verbindung steht über der Seite ein Hinweis mit „Erneut versuchen“ und „Ansehen“, in der
+			oberen Leiste ein Symbol mit der Zahl, etwa „Offline · 3“. Beides öffnet „Gemerkte
+			Änderungen“: jede Änderung mit der Zeit des Geräts und ihrem Zustand. Dort gibt es:
+		</p>
+		<ul>
+			<li>
+				„Verwerfen“: Die Änderung wird nicht übertragen. Kann sie schon angekommen sein, nimmt die
+				App sie zurück; bei etwas Neuem (Ticket, Eintrag, Kommentar) sieht sie nach und meldet sich,
+				falls es schon da ist. „Rückgängig“ in der Meldung danach holt die Änderung zurück.
+			</li>
+			<li>
+				„Trotzdem übertragen“ bei einer Änderung, die älter als 48 Stunden ist oder bei der die Zeit
+				des Geräts in der Zukunft liegt; sie geht dann ohne die Zeit des Geräts.
+			</li>
+			<li>
+				„Als Eingangseintrag sichern“ bei einem Kommentar, der nicht übertragen werden kann: Sein
+				ganzer Text kommt als Eintrag in den Eingang, der Kommentar geht.
+			</li>
+			<li>
+				„Meine Änderung übernehmen“, wenn jemand das Ticket inzwischen geändert hat; „Inzwischen: …“
+				nennt, was der Server hat. Ohne deine Entscheidung wird nichts überschrieben.
+			</li>
+			<li>
+				Lehnt der Server ein neues Ticket wegen seines Projekts oder seiner Tags ab, bietet der
+				Dialog „Ohne Projekt anlegen“ bzw. „Ohne Tags anlegen“. Ein Haken im Tagesplan eines
+				vergangenen Tags fragt bei einer Aufgabe „Der Tag ist vorbei. HAUS-12 trotzdem erledigen?“.
+			</li>
+		</ul>
+		<h4 id="ohne-verbindung-hinweise">Hinweise, die bleiben</h4>
+		<p>
+			Was die App ohne dein Zutun löscht oder nicht erreicht, steht als Hinweis über der Seite, bis
+			du „Schließen“ wählst: Änderungen, die nach 7 Tagen gelöscht wurden, eine Unteraufgabe, die
+			nicht mit erledigt wurde, ein verworfenes Ticket bzw. ein verworfener Kommentar, die doch
+			schon angekommen sind (mit „Ticket öffnen“), oder ein verworfener Eingangseintrag, der doch
+			schon im Eingang liegt (mit „Eintrag ansehen“). Die Hinweise bleiben auf diesem Gerät, in
+			jedem Tab und auch nach dem Neuladen; „Schließen“ in einem Tab schließt sie in allen.
+		</p>
+		<h4 id="ohne-verbindung-grenzen">Grenzen</h4>
+		<ul>
+			<li>
+				<strong>48 Stunden:</strong> Länger überträgt die App eine Änderung nicht von selbst; sie wartet
+				auf „Trotzdem übertragen“ oder „Verwerfen“.
+			</li>
+			<li>
+				<strong>7 Tage:</strong> Danach löscht die App sie, und ein Hinweis nennt die Tickets.
+			</li>
+			<li>
+				<strong>Nur dieses Gerät:</strong> Gemerkte Änderungen kennt nur dieses Gerät in diesem Browser.
+				Andere Geräte und der Haushalt sehen sie erst nach der Übertragung.
+			</li>
+			<li>
+				<strong>Nur in der Handy-Ansicht:</strong> Neues merkt die App nur dort, bis die Handy-Ansicht
+				mit einem Update für alle eingeschaltet wird. Schon Gemerktes überträgt sie auch, wenn du die
+				Handy-Ansicht verlässt.
+			</li>
+			<li>
+				<strong>Nur bei offener App:</strong> Übertragen wird, solange die App in einem Tab offen ist,
+				nicht im Hintergrund.
+			</li>
+			<li>
+				<strong>Neu laden:</strong> Ohne Verbindung fragt die App vorher „Ohne Verbindung neu laden?“.
+				Gemerktes bleibt dabei erhalten, ohne Verbindung lässt sich die App aber erst wieder öffnen, wenn
+				der Server erreichbar ist.
+			</li>
+			<li>
+				<strong>Nach einem Update:</strong> Drücke in jedem offenen Tab F5. Ein Tab mit der alten Fassung
+				kennt neue Arten von Änderungen nicht und überträgt sie nicht.
+			</li>
+			<li>
+				<strong>Abmelden:</strong> „Abmelden“ fragt etwa „Abmelden und 3 gemerkte Änderungen verwerfen?“
+				und löscht sie dann. Läuft nur die Sitzung ab, bleiben sie für dasselbe Konto; meldet sich ein
+				anderes Konto an, werden sie verworfen.
+			</li>
+			<li>
+				<strong>Speicher:</strong> Ohne HTTPS darf der Browser den Speicher bei Speichermangel räumen.
+				Das ist selten, aber dann sind die gemerkten Änderungen weg.
+			</li>
+		</ul>
 	</section>
 
 	<section id="zugangsdaten" aria-labelledby="zugangsdaten-title">

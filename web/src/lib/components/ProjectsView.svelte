@@ -6,12 +6,15 @@
 	import { areaMover } from '$lib/area-move-entry';
 	import type { Project } from '$lib/domain/project';
 	import {
+		PROJECT_COLUMN_LABELS,
 		PROJECT_SEARCH_MAX_LENGTH,
+		PROJECT_SORT_KEYS,
 		effectiveProjectLayout,
 		filterProjects,
 		nextProjectSort,
 		parseProjectViewQuery,
 		projectRows,
+		projectSortOrderLabel,
 		readCollapsedProjects,
 		readStoredProjectLayout,
 		writeCollapsedProjects,
@@ -26,6 +29,7 @@
 		deleteProjectText
 	} from '$lib/domain/project-tree';
 	import { PROJECT_TICKETS_FAILED, openTicketsByProject } from '$lib/domain/project-tickets';
+	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 	import type { ProjectActions } from '$lib/project-route';
 	import type { EditResult } from '$lib/stores/catalog-editor';
 	import type { CatalogStore } from '$lib/stores/catalog.svelte';
@@ -45,8 +49,11 @@
 		withShowArchived
 	} from '$lib/ticket-links';
 	import type { MenuAction } from './ActionsMenu.svelte';
+	import ChipGroup from './ChipGroup.svelte';
 	import ColumnsPopover from './ColumnsPopover.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
+	import FilterButton from './FilterButton.svelte';
+	import FilterSheet from './FilterSheet.svelte';
 	import EmptyState from './guidance/EmptyState.svelte';
 	import ConfirmDialog from './overlay/ConfirmDialog.svelte';
 	import ProblemDetails from './problems/ProblemDetails.svelte';
@@ -81,6 +88,12 @@
 	// own, live with realtime); "Alle aufklappen" and "Alle zuklappen" above the list. Which rows are
 	// open is kept on this device (ProjectTicketsDisclosure). The tiles show no list (no room; their
 	// "aktiv" already counts the open tickets, the panel lists them).
+	// Phone frame (MO-7b, ADR-0073 addendum MO-7b): the cards of ProjectTable are the default, also when
+	// the tiles were chosen (the cards show what the tiles show); the row of the view holds the search,
+	// "Filter" and "Neues Projekt". The filter sheet (FilterSheet without the order of the tickets)
+	// holds "Archivierte anzeigen" and, because the cards have no column headers, "Sortieren nach" with
+	// its "Reihenfolge", each a navigation as on the PC. "Liste | Kacheln", "Spalten" and the folds of
+	// the open tickets have no place in the frame; the open tickets stand on the page of the project.
 	let {
 		catalog,
 		tickets,
@@ -495,7 +508,126 @@
 		}
 		return entries;
 	}
+
+	/** The phone frame (MO-7b): cards, the row of the view and the filter sheet. */
+	const mobileLayout = getMobileLayoutStore();
+	const phone = $derived(mobileLayout.active);
+	let filtersOpen = $state(false);
+
+	const SORT_OPTIONS = PROJECT_SORT_KEYS.map((key) => ({
+		value: key,
+		label: PROJECT_COLUMN_LABELS[key]
+	}));
+	const directionOptions = $derived.by(() => {
+		const sort = query.sort;
+		if (sort === null) return [];
+		return (['natural', 'reversed'] as const).map((value) => ({
+			value,
+			label: projectSortOrderLabel({ key: sort.key, reversed: value === 'reversed' })
+		}));
+	});
+
+	/**
+	 * "Sortieren nach" of the sheet: a new column starts in its natural direction like the first click
+	 * on its header, the same one keeps its direction; "Standard" sorts by name. A history entry each.
+	 */
+	function chooseSortKey(key: ProjectSortKey | null) {
+		const current = parseProjectViewQuery(page.url.searchParams);
+		const sort =
+			key === null ? null : current.sort?.key === key ? current.sort : { key, reversed: false };
+		void navigate({ ...current, sort });
+	}
+
+	function chooseSortDirection(direction: 'natural' | 'reversed' | null) {
+		const current = parseProjectViewQuery(page.url.searchParams);
+		if (current.sort === null || direction === null) return;
+		void navigate({
+			...current,
+			sort: { key: current.sort.key, reversed: direction === 'reversed' }
+		});
+	}
+
+	/** "Zurücksetzen" of the sheet: the search and "Archivierte anzeigen"; the sort stays. */
+	function resetInSheet() {
+		typed = null;
+		void navigate({ ...query, search: null, showArchived: false });
+	}
 </script>
+
+<!-- The search by name or code: in the bar of the PC and in the row of the phone frame (MO-7b). -->
+{#snippet searchField()}
+	<div class="search-field">
+		<label for={ids.search}>
+			<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+				<circle cx="7" cy="7" r="4.25" />
+				<path d="M10.25 10.25L13.5 13.5" />
+			</svg>
+			<span class="visually-hidden">Projekte suchen</span>
+		</label>
+		<input
+			id={ids.search}
+			type="search"
+			enterkeyhint="search"
+			autocomplete="off"
+			spellcheck="false"
+			placeholder="Name oder Code"
+			maxlength={PROJECT_SEARCH_MAX_LENGTH}
+			value={searchValue}
+			oninput={(event) => void search(event.currentTarget.value)}
+			onkeydown={onSearchKeydown}
+			onblur={() => (typed = null)}
+		/>
+	</div>
+{/snippet}
+
+{#snippet archivedSwitch()}
+	<label class="switch">
+		<input type="checkbox" role="switch" checked={query.showArchived} onchange={toggleArchived} />
+		Archivierte anzeigen
+	</label>
+{/snippet}
+
+<!-- The row of the view in the phone frame (MO-7b): the search, "Filter" and "Neues Projekt". -->
+{#snippet phoneTools()}
+	{@render searchField()}
+	<FilterButton count={query.showArchived ? 1 : 0} onclick={() => (filtersOpen = true)} />
+	<a
+		class="button-icon new-icon"
+		id={NEW_PROJECT_LINK_ID}
+		href={newProjectHref(page.url)}
+		aria-label="Neues Projekt"
+		title="Neues Projekt"
+	>
+		<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
+			<path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" />
+		</svg>
+	</a>
+{/snippet}
+
+<!-- The filter sheet of the phone frame (MO-7b): the switch and the sort of the cards. -->
+{#snippet sheetFilters()}
+	<div class="sheet-filters">
+		{@render archivedSwitch()}
+		<ChipGroup
+			legend="Sortieren nach"
+			name={`${uid}-sort`}
+			options={SORT_OPTIONS}
+			value={query.sort?.key ?? null}
+			all="Standard"
+			onchange={chooseSortKey}
+		/>
+		{#if query.sort !== null}
+			<ChipGroup
+				legend="Reihenfolge"
+				name={`${uid}-direction`}
+				options={directionOptions}
+				value={query.sort.reversed ? 'reversed' : 'natural'}
+				all={null}
+				onchange={chooseSortDirection}
+			/>
+		{/if}
+	</div>
+{/snippet}
 
 {#snippet newProjectLink(id?: string)}
 	<a class="button-primary new" {id} href={newProjectHref(page.url)}>
@@ -537,43 +669,15 @@
 		headingId={ids.heading}
 		count={catalog.state === 'ready' ? matchCount : null}
 		{countLabel}
+		phone={phoneTools}
 		bind:heading
 	>
 		{#snippet start()}
 			<ViewSwitch current="projects" {inboxCount} projectsNewCount={tickets.newInProjects} />
 		{/snippet}
 		{#snippet end()}
-			<div class="search-field">
-				<label for={ids.search}>
-					<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-						<circle cx="7" cy="7" r="4.25" />
-						<path d="M10.25 10.25L13.5 13.5" />
-					</svg>
-					<span class="visually-hidden">Projekte suchen</span>
-				</label>
-				<input
-					id={ids.search}
-					type="search"
-					enterkeyhint="search"
-					autocomplete="off"
-					spellcheck="false"
-					placeholder="Name oder Code"
-					maxlength={PROJECT_SEARCH_MAX_LENGTH}
-					value={searchValue}
-					oninput={(event) => void search(event.currentTarget.value)}
-					onkeydown={onSearchKeydown}
-					onblur={() => (typed = null)}
-				/>
-			</div>
-			<label class="switch">
-				<input
-					type="checkbox"
-					role="switch"
-					checked={query.showArchived}
-					onchange={toggleArchived}
-				/>
-				Archivierte anzeigen
-			</label>
+			{@render searchField()}
+			{@render archivedSwitch()}
 			<div
 				class="layout-switch segmented"
 				role="group"
@@ -628,26 +732,28 @@
 		{/if}
 
 		{#if rows.length > 0}
-			{#if layout === 'liste'}
-				<div class="ticket-tools" role="group" aria-labelledby={ids.ticketTools}>
-					<span class="ticket-tools-label" id={ids.ticketTools}>Offene Tickets</span>
-					<button
-						class="button-subtle"
-						type="button"
-						aria-disabled={allOpen}
-						onclick={openAllTickets}
-					>
-						Alle aufklappen
-					</button>
-					<button
-						class="button-subtle"
-						type="button"
-						aria-disabled={noneOpen}
-						onclick={closeAllTickets}
-					>
-						Alle zuklappen
-					</button>
-				</div>
+			{#if layout === 'liste' || phone}
+				{#if !phone}
+					<div class="ticket-tools" role="group" aria-labelledby={ids.ticketTools}>
+						<span class="ticket-tools-label" id={ids.ticketTools}>Offene Tickets</span>
+						<button
+							class="button-subtle"
+							type="button"
+							aria-disabled={allOpen}
+							onclick={openAllTickets}
+						>
+							Alle aufklappen
+						</button>
+						<button
+							class="button-subtle"
+							type="button"
+							aria-disabled={noneOpen}
+							onclick={closeAllTickets}
+						>
+							Alle zuklappen
+						</button>
+					</div>
+				{/if}
 				<ProjectTable
 					{rows}
 					{activeOf}
@@ -718,6 +824,19 @@
 		{/if}
 	{/if}
 </section>
+
+<!-- The filter sheet of the phone frame (MO-7b); the modal gives the focus back to "Filter". -->
+{#if phone && filtersOpen}
+	<FilterSheet
+		count={catalog.state === 'ready' ? matchCount : null}
+		filtered={query.showArchived || query.search !== null}
+		onreset={resetInSheet}
+		onclose={() => (filtersOpen = false)}
+		filters={sheetFilters}
+		ticketOrder={false}
+		noun={{ one: 'Projekt', many: 'Projekte' }}
+	/>
+{/if}
 
 <!-- The questions of the menu of a row or tile (AM-4, AM-5), as in the panel; the view is no modal. -->
 {#if asking?.kind === 'archive'}
@@ -829,5 +948,35 @@
 
 	.failure-text {
 		flex: 1;
+	}
+
+	/*
+	 * Phone frame (MO-7b, ADR-0073 addendum MO-7b): the search takes the room of the row beside
+	 * "Filter" and "Neues Projekt"; the parts of the filter sheet below each other.
+	 */
+	@media (max-width: 39.99rem) {
+		:global(:root[data-mobile-layout='on']) .search-field {
+			flex: 1 1 auto;
+			min-width: 0;
+		}
+
+		:global(:root[data-mobile-layout='on']) .search-field input[type='search'] {
+			width: 100%;
+		}
+
+		:global(:root[data-mobile-layout='on']) .new-icon {
+			flex: none;
+		}
+
+		:global(:root[data-mobile-layout='on']) .sheet-filters {
+			display: grid;
+			gap: 1.25rem;
+		}
+
+		/* Short columns like "neu" are targets of 44 px as well. */
+		:global(:root[data-mobile-layout='on']) .sheet-filters :global(.chip) {
+			justify-content: center;
+			min-width: var(--control-height-touch);
+		}
 	}
 </style>

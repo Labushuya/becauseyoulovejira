@@ -2,6 +2,7 @@
 	import { tick } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import { isCardTap } from '$lib/card-tap';
 	import { charmOf, charmText } from '$lib/domain/charms';
 	import { colorText, ticketColorOf } from '$lib/domain/colors';
 	import {
@@ -15,6 +16,7 @@
 	import { formatBerlinDateTime } from '$lib/domain/format';
 	import { projectChoiceLabel, projectPath } from '$lib/domain/project-tree';
 	import type { TicketSummary } from '$lib/domain/ticket';
+	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 	import { rowMenus } from '$lib/overlay/context-menu';
 	import { findAssignees } from '$lib/stores/assignees.svelte';
 	import type { CatalogStore } from '$lib/stores/catalog.svelte';
@@ -55,7 +57,9 @@
 	// ticket row (TicketActions): open, "Wieder öffnen" with "Rückgängig" in its flag, "Duplizieren …"
 	// (ADR-0045), "Folge-Ticket anlegen …" (ADR-0067) and what every row has; a right click or Shift+F10 open it (rowMenus). If the entry
 	// with the focus leaves (reopened, here or elsewhere), the focus goes to the entry now at its
-	// place, else to the heading.
+	// place, else to the heading. In the phone frame (MO-7c1, ADR-0073 addendum MO-7c1) every entry is a
+	// card: the link of 44 px with the title on a line of its own, and a tap on the card beside its
+	// link and buttons opens the ticket like the other cards (isCardTap).
 	let {
 		store,
 		catalog,
@@ -172,6 +176,16 @@
 		(entries[Math.min(focusedIndex, entries.length - 1)] ?? heading)?.focus();
 	});
 
+	/** The phone frame (MO-7c1): an entry is a card, a tap on it beside its buttons opens the ticket. */
+	const mobileLayout = getMobileLayoutStore();
+	const phone = $derived(mobileLayout.active);
+
+	/** A tap on the card outside its link and buttons opens the ticket, like the link (MO-7c1). */
+	function tapEntry(event: MouseEvent, ticketId: string) {
+		if (!phone || !isCardTap(event)) return;
+		void goto(links.href(ticketId, page.url));
+	}
+
 	/** "In den Papierkorb …" of an entry: it leaves at once; its realtime event follows. */
 	async function moveToTrash(ticketId: string, sources?: DeleteSources): Promise<DeleteResult> {
 		if (rowActions === null) return { ok: false, message: null };
@@ -187,6 +201,9 @@
 	{@const color = ticketColorOf(ticket, project)}
 	{@const charm = charmOf(ticket.charm)}
 	{@const completed = completedAtOf(ticket)}
+	<!-- In the phone frame a tap on the card beside its link opens the ticket (MO-7c1); the link stays
+	     the way of keyboard and screen reader, so the item needs no role of its own. -->
+	<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
 	<li
 		class="ticket"
 		data-ticket-id={ticket.id}
@@ -194,6 +211,7 @@
 		aria-busy={store.isPending(ticket.id) || rowActions?.isPreparing(ticket.id)
 			? 'true'
 			: undefined}
+		onclick={(event) => tapEntry(event, ticket.id)}
 	>
 		<a
 			class="link"
@@ -535,5 +553,57 @@
 	.shown {
 		font-size: var(--font-size-small);
 		color: var(--color-text-muted);
+	}
+
+	/*
+	 * Phone frame (MO-7c1, ADR-0073 addendum MO-7c1): every entry is a card. The link is a target of
+	 * 44 px over the first lines: the color and the key above, the title below over the whole width of
+	 * the card (at least 60 %, smoke test) and up to three lines like the cards of "Aufgaben". Project,
+	 * time and "•••" follow in a line below, "•••" at its end. Off, or from 40rem, nothing changes.
+	 */
+	@media (max-width: 39.99rem) {
+		:global(:root[data-mobile-layout='on']) .ticket {
+			gap: 0.25rem 0.75rem;
+			padding: 0.5rem 0.75rem;
+		}
+
+		:global(:root[data-mobile-layout='on']) .link {
+			flex: 1 1 100%;
+			flex-wrap: wrap;
+			gap: 0.125rem 0.5rem;
+			align-content: center;
+			align-items: center;
+			min-height: var(--control-height-touch);
+		}
+
+		:global(:root[data-mobile-layout='on']) .key {
+			min-width: 0;
+		}
+
+		:global(:root[data-mobile-layout='on']) .title {
+			flex: 1 1 100%;
+			-webkit-line-clamp: 3;
+			line-clamp: 3;
+		}
+
+		:global(:root[data-mobile-layout='on']) .details {
+			flex: 1 1 100%;
+			margin-left: 0;
+		}
+
+		:global(:root[data-mobile-layout='on']) .project-cell {
+			flex: 0 1 auto;
+			width: auto;
+			min-width: 0;
+		}
+
+		:global(:root[data-mobile-layout='on']) .time-cell {
+			width: auto;
+			text-align: left;
+		}
+
+		:global(:root[data-mobile-layout='on']) .menu {
+			margin-left: auto;
+		}
 	}
 </style>
