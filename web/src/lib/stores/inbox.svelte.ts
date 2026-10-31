@@ -978,9 +978,10 @@ export class InboxStore {
 		const kept = (counts.skipped > 0 || counts.failed > 0) && this.#query.state === outcome.view;
 		this.#bulkResult = kept ? { verb, failures: outcome.failures, skipped: outcome.skipped } : null;
 		// The reasons stand at the selection of the view; without it the flag names the first one and
-		// offers "Details" of its request.
+		// offers "Details" of its request: of the same failure (NA-1, C3), so none for a refusal that
+		// only checked an input, rather than the request of another entry.
 		const shown = kept && bulkKindOf(outcome.view) !== null;
-		const problem = outcome.failures.find((failure) => failure.problem !== undefined)?.problem;
+		const problem = outcome.failures[0]?.problem;
 		const unseen =
 			counts.failed > 0 && !shown
 				? {

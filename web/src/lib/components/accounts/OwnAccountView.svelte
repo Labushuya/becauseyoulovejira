@@ -83,6 +83,17 @@
 		if (first !== undefined) inputs[first]?.focus();
 	}
 
+	/**
+	 * "Weiter" (Enter) in a field with another after it (NA-1, C2-2): the focus moves on instead of
+	 * sending the form with errors at the fields still empty; the last field leaves Enter to the form.
+	 */
+	function moveOn(event: KeyboardEvent, field: PasswordField) {
+		if (event.key !== 'Enter' || event.isComposing) return;
+		if (event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return;
+		event.preventDefault();
+		inputs[field]?.focus();
+	}
+
 	function clearError(field: PasswordField) {
 		if (passwordErrors[field] === undefined) return;
 		const rest = { ...passwordErrors };
@@ -168,6 +179,7 @@
 					bind:this={inputs.current}
 					bind:value={current}
 					oninput={() => clearError('current')}
+					onkeydown={(event) => moveOn(event, 'next')}
 				/>
 			{/snippet}
 		</Field>
@@ -185,6 +197,7 @@
 					bind:this={inputs.next}
 					bind:value={next}
 					oninput={() => clearError('next')}
+					onkeydown={(event) => moveOn(event, 'again')}
 				/>
 			{/snippet}
 		</Field>

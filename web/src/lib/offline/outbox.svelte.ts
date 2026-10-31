@@ -3183,10 +3183,9 @@ export class OutboxStore {
 		return !this.#loaded && this.#storage !== null && this.#user !== null;
 	}
 
-	/** The identifiers of the changes of the signed-in account on the device, without creating it. */
-	async #opsOfAccount(): Promise<string[]> {
+	/** The identifiers of the changes of `user` on the device, without creating it. */
+	async #opsOfAccount(user: string | null = this.#user): Promise<string[]> {
 		const storage = this.#storage;
-		const user = this.#user;
 		if (storage === null || user === null) return [];
 		if (this.#deps.exists !== undefined && !(await this.#deps.exists())) return [];
 		const ops: string[] = [];
@@ -3207,31 +3206,34 @@ export class OutboxStore {
 	 * this tab never read the device (G3). It runs after the steps of this tab that write the device
 	 * (round 2), so none of them writes an action back after it, and takes the actions as the device
 	 * has them, not as this tab last read them: another tab may have kept one meanwhile (round 3, R2-7).
-	 * The notices of the account go with them (OF-3c).
+	 * The notices of the account go with them (OF-3c). It holds the account it started for (NA-1, F-4):
+	 * one that signs in meanwhile keeps its notices.
 	 */
 	async clearUser(): Promise<void> {
+		const user = this.#user;
 		await this.#locked(async () => {
-			const ops = await this.#opsOfAccount();
+			const ops = await this.#opsOfAccount(user);
 			if (!this.#loaded) {
 				if (ops.length > 0) await this.#storage?.remove(ops);
 			} else {
 				const known = this.#actions.map((action) => action.op).filter((op) => !ops.includes(op));
 				await this.#forget([...ops, ...known]);
 			}
-			await this.#forgetNotices();
+			await this.#forgetNotices(user);
 		});
 	}
 
 	/**
-	 * The notices of the account go with "Abmelden und verwerfen" (OF-3c), on the device as well (the
-	 * whole entry of the account, on purpose, like `#forget`), without creating the storage; those of
-	 * other accounts stay.
+	 * The notices of `user` go with "Abmelden und verwerfen" (OF-3c), on the device as well (the whole
+	 * entry of the account, on purpose, like `#forget`), without creating the storage; those of other
+	 * accounts stay, also those this tab shows for an account that signed in meanwhile (NA-1, F-4).
 	 */
-	async #forgetNotices(): Promise<void> {
+	async #forgetNotices(user: string | null): Promise<void> {
 		const storage = this.#storage;
-		const user = this.#user;
-		this.#notices = [];
-		this.#unsaved = [];
+		if (this.#user === user) {
+			this.#notices = [];
+			this.#unsaved = [];
+		}
 		if (storage === null || user === null) return;
 		if (this.#deps.exists !== undefined && !(await this.#deps.exists())) return;
 		await storage.notices(user, (current) => (current === undefined ? null : []));
