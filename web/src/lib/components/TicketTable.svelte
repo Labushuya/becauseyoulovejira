@@ -918,7 +918,11 @@
 					>
 				</button>
 			{/if}
-			<a class="done-link" href={doneLink}>Erledigte ansehen <span aria-hidden="true">→</span></a>
+			<!-- A link to the view "Erledigte" (ADR-0066 §5) in the look of the shared small button
+			     beside it; base.css gives it the 44 px on touch. -->
+			<a class="button-secondary button-small" href={doneLink}
+				>Erledigte ansehen <span aria-hidden="true">→</span></a
+			>
 			<GroupPopover />
 			<ColumnsPopover
 				fit={columnFit}
@@ -1317,22 +1321,6 @@
 
 	.mark-read {
 		color: var(--color-brand-text);
-	}
-
-	/* A quiet link to the view "Erledigte" (ADR-0066 §5); a target of 44 px on touch (ADR-0060 §2). */
-	.done-link {
-		display: inline-flex;
-		gap: 0.25rem;
-		align-items: center;
-		min-height: var(--control-height-s);
-		font-size: var(--font-size-control);
-		color: var(--color-brand-text);
-	}
-
-	@media (pointer: coarse) {
-		.done-link {
-			min-height: var(--control-height-touch);
-		}
 	}
 
 	/* The measured frame of fitColumns (ADR-0030); the table takes its width and never more. */
