@@ -107,6 +107,10 @@ const PC_ROUTES = [
 	{ method: 'POST', path: '/api/byl/security/lan', windows: true, body: { enabled: false, addresses: [] } },
 	{ method: 'POST', path: '/api/byl/security/lan/firewall', windows: true, body: { action: 'add' } },
 	{ method: 'GET', path: '/api/byl/security/notice' },
+	// The access data of the channels (BW-3, ADR-0075).
+	{ method: 'GET', path: '/api/byl/credentials', windows: true },
+	{ method: 'POST', path: '/api/byl/credentials/set', windows: true, body: { name: 'BYL_TELEGRAM_TOKEN', value: 'x' } },
+	{ method: 'POST', path: '/api/byl/credentials/remove', windows: true, body: { name: 'BYL_TELEGRAM_TOKEN' } },
 	{ method: 'GET', path: '/api/byl/accounts' },
 	{ method: 'POST', path: '/api/byl/accounts', body: { name: 'Gast', email: 'gast@example.com' } },
 	{ method: 'POST', path: '/api/byl/accounts/abcdefghijklmno/password' },

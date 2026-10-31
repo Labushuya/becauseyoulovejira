@@ -229,14 +229,18 @@ function readStatus(e, appDir) {
   };
 }
 
-/** Values of the variables the server knows by name, removed from every log line. */
+/**
+ * Values of the variables the server knows by name, removed from every log line: the ingest token
+ * and every variable a connection reads, the allowlist of Telegram included (BW-3, ADR-0075).
+ */
 function knownSecrets(app) {
   var values = [String($os.getenv(INGEST_TOKEN) || '')];
-  var found = app.findRecordsByFilter('connections', 'secret_env != ""', '', 0, 0);
+  var connections = require(__hooks + '/lib/connection-service.js');
+  var found = app.findRecordsByFilter('connections', 'secret_env != "" || type = "telegram"', '', 0, 0);
   for (var i = 0; i < found.length; i++) {
-    var name = String(found[i].getString('secret_env'));
-    if (secrets.isValidName(name)) {
-      values.push(String($os.getenv(name) || ''));
+    var names = connections.variableNamesOf(found[i]);
+    for (var j = 0; j < names.length; j++) {
+      values.push(String($os.getenv(names[j]) || ''));
     }
   }
   return values;
@@ -280,7 +284,7 @@ function claim(store, now) {
 /** POST /api/byl/system/actions/{name}: restart, mail-restart, autostart-on, autostart-off. */
 function act(e, name) {
   var spec = rules.action(name);
-  if (spec === null || !spec.changes || spec.backup === true || spec.security === true) {
+  if (spec === null || !spec.changes || spec.backup === true || spec.security === true || spec.credentials === true) {
     return refuse(e, name, 'unknown');
   }
   var context = check(e, name, 'POST');

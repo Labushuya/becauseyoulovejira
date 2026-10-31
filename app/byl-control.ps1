@@ -5,7 +5,8 @@
 # restart -Detach, mail-restart, autostart-on and autostart-off; the page "Einstellungen →
 # Sicherung" (ADR-0046) the commands backup-* and restore -Detach; the page "Einstellungen →
 # Sicherheit" (ADR-0055) security-configure and, for the access in the home network (plan
-# heimnetz), lan-info, lan-configure and lan-firewall.
+# heimnetz), lan-info, lan-configure and lan-firewall; the page "Einstellungen → Kanäle" (BW-3,
+# ADR-0075) credential-status, credential-set and credential-remove for the access data.
 # Called by start.bat, start-hidden.vbs, stop.bat, neu-starten.bat, status.bat, autostart-an.bat,
 # autostart-aus.bat, admin-zuruecksetzen.bat and wiederherstellen.bat, always with -NoProfile
 # -ExecutionPolicy Bypass (script execution is disabled on the target machine):
@@ -57,7 +58,7 @@ $AppDir = $PSScriptRoot
 
 $BylCommands = @('start', 'stop', 'restart', 'reload', 'status', 'open', 'logs', 'doctor', 'port', 'autostart-on', 'autostart-off', 'mail-restart', 'reset-admin',
     'backup-info', 'backup-configure', 'backup-passphrase', 'backup-export', 'backup-verify', 'restore', 'security-configure', 'lan-info', 'lan-configure',
-    'lan-firewall', 'help')
+    'lan-firewall', 'credential-status', 'credential-set', 'credential-remove', 'help')
 $Title = 'becauseyoulovejira'
 $HealthTimeoutSeconds = 30
 # PocketBase ends about 1 s after the console break (1 s for open requests, then the database).
@@ -142,6 +143,9 @@ Befehle:
   lan-firewall add|remove
                   Legt die Firewall-Regel „becauseyoulovejira (Heimnetz)“ an (nur private Netzwerke, nur
                   dieser Port) oder entfernt sie; Windows fragt dafür nach Administratorrechten.
+  credential-status, credential-set, credential-remove
+                  Zugangsdaten der Kanäle (BYL_*-Variablen dieses Kontos): Zustand, Setzen, Entfernen. Nur
+                  für die App (Einstellungen → Kanäle); Name und Wert kommen als JSON auf der Standardeingabe.
   help            Diese Hilfe.
 
 Optionen:
@@ -2093,9 +2097,9 @@ $PassphraseEntropy = [System.Text.Encoding]::UTF8.GetBytes('becauseyoulovejira-s
 # A seal or open of a large backup may take long; a helper that hangs is ended after this.
 $BackupHelperSeconds = 3600
 
-function Read-InputJson {
-    # The JSON object a program gives on standard input (UTF-8, whatever the code page, at most
-    # 1 MB); $null for a call from the console or without input.
+function Read-InputText {
+    # The text a program gives on standard input (UTF-8, whatever the code page, at most 1 MB); $null
+    # for a call from the console or without input.
     if (-not [Console]::IsInputRedirected) { return $null }
     $stream = [Console]::OpenStandardInput()
     $buffer = New-Object System.IO.MemoryStream
@@ -2105,11 +2109,17 @@ function Read-InputJson {
             $buffer.Write($chunk, 0, $read)
             if ($buffer.Length -gt 1MB) { throw (New-BylProblemError -Code 'input-invalid' -Values @{ detail = 'größer als 1 MB' }) }
         }
-        $text = (New-Object System.Text.UTF8Encoding($false)).GetString($buffer.ToArray())
+        return (New-Object System.Text.UTF8Encoding($false)).GetString($buffer.ToArray())
     }
     finally {
         $buffer.Dispose()
     }
+}
+
+function Read-InputJson {
+    # The JSON object a program gives on standard input (Read-InputText); $null for a call from the
+    # console or without input.
+    $text = Read-InputText
     if ([string]::IsNullOrWhiteSpace($text)) { return $null }
     try {
         $value = $text | ConvertFrom-Json
@@ -3036,6 +3046,128 @@ function Invoke-LanFirewall {
 
 # Codes of the problems of a passphrase for the app; the entry of the catalog is passphrase-<code>.
 $PassphraseProblemCode = @{ Mismatch = 'mismatch'; TooShort = 'too-short'; TooLong = 'too-long'; Character = 'character'; Unavailable = 'unavailable' }
+
+# --- Access data of the channels from the app (BW-3, ADR-0075) -------------------------------------
+
+# Problems of credential-* for the app and their entries of the catalog; the texts of a value name
+# what is wrong with it, never a part of it.
+$CredentialProblemCode = @{
+    input   = 'credential-input'
+    name    = 'credential-name'
+    blocked = 'credential-blocked'
+    invalid = 'credential-value'
+    empty   = 'credential-value'
+    control = 'credential-value'
+    long    = 'credential-value'
+    write   = 'credential-write'
+}
+$CredentialValueText = @{
+    invalid = 'kein Text'
+    empty   = 'leer'
+    control = 'mit Steuerzeichen'
+    long    = "länger als $BylCredentialValueMax Zeichen"
+}
+
+function Read-CredentialRequest {
+    # The JSON object of the app on standard input for credential-* as a dictionary; $null for a
+    # call from the console or without input. Parsed with .NET, never with a cmdlet: no parameter of
+    # a cmdlet ever holds the value of a variable (module logging of PowerShell would write it to the
+    # event log), and a broken input names no part of itself in the error.
+    $text = Read-InputText
+    try {
+        if ([string]::IsNullOrWhiteSpace($text)) { return $null }
+        try {
+            Add-Type -AssemblyName System.Web.Extensions
+            $serializer = New-Object System.Web.Script.Serialization.JavaScriptSerializer
+            $serializer.MaxJsonLength = 2MB
+            $value = $serializer.DeserializeObject($text)
+        }
+        catch {
+            throw (New-BylProblemError -Code 'input-invalid' -Values @{ detail = 'kein gültiges JSON' })
+        }
+    }
+    finally {
+        $text = $null
+    }
+    if ($value -isnot [System.Collections.IDictionary]) { throw (New-BylProblemError -Code 'input-invalid' -Values @{ detail = 'kein JSON-Objekt' }) }
+    return , $value
+}
+
+function Get-CredentialField {
+    # The field $Name of the request, $null without it.
+    param([Parameter(Mandatory = $true)][System.Collections.IDictionary]$Request, [Parameter(Mandatory = $true)][string]$Name)
+
+    if ($Request.ContainsKey($Name)) { return $Request[$Name] }
+    return $null
+}
+
+function Write-CredentialProblem {
+    # The refusal $Problem of a credential-* command as an answer with its entry of the catalog. The
+    # variable is named only with a valid name, a value never.
+    param([Parameter(Mandatory = $true)][string]$Problem, [AllowNull()][AllowEmptyString()][string]$Name = '', [AllowEmptyString()][string]$Detail = '')
+
+    $shown = if ($Name -cmatch $BylSecretNamePattern) { $Name } else { '' }
+    $script:LogDetail = ("problem=$Problem " + $(if ($shown -ne '') { "name=$shown" } else { '' })).Trim()
+    $text = if ($CredentialValueText.ContainsKey($Problem)) { $CredentialValueText[$Problem] } else { $Detail }
+    return Write-BackupAnswer -Answer ([ordered]@{ ok = $false; problem = $Problem }) -Code $CredentialProblemCode[$Problem] `
+        -Values @{ name = $(if ($shown -ne '') { $shown } else { '(ohne gültigen Namen)' }); detail = $text }
+}
+
+function Invoke-CredentialStatus {
+    # credential-status (the page Kanäle): per name of { names } whether the user environment of this
+    # Windows account has a value (ADR-0018 §4: yes or no only; a test copy reads its process).
+    # Invalid names and those of the system are left out. Reads only, prints no value.
+    $request = Read-CredentialRequest
+    if ($null -eq $request) { return Write-CredentialProblem -Problem 'input' }
+    $names = Get-CredentialField -Request $request -Name 'names'
+    $user = (Get-BylVariableScope).User
+    $variables = New-Object System.Collections.Generic.List[object]
+    foreach ($name in @(if ($names -is [object[]]) { $names })) {
+        if ($name -isnot [string] -or $null -ne (Test-BylCredentialName -Name $name)) { continue }
+        $variables.Add([ordered]@{ name = $name; set = -not [string]::IsNullOrWhiteSpace([string]$user[$name]) })
+    }
+    $script:LogDetail = "names=$($variables.Count)"
+    return Write-BackupAnswer -Answer ([ordered]@{ ok = $true; variables = $variables.ToArray() }) -Text "$($variables.Count) Variablen geprüft."
+}
+
+function Invoke-CredentialChange {
+    # credential-set ({ name, value }) and credential-remove ({ name }) from the app on standard
+    # input (BW-3, ADR-0075): checks the name (Test-BylCredentialName) and the value
+    # (Test-BylCredentialValue, never trimmed), then writes or removes the variable of the user
+    # environment through Set-BylAccountVariable, the only place that writes access data into the
+    # account (a test copy writes only its file BYL_TEST_ACCOUNT_FILE). The value is never printed or
+    # logged; the log names only the variable. It works after the next restart (Sync-BylEnvironment).
+    param([Parameter(Mandatory = $true)][bool]$Remove)
+
+    $request = Read-CredentialRequest
+    $value = $null
+    try {
+        if ($null -eq $request) { return Write-CredentialProblem -Problem 'input' }
+        $name = Get-CredentialField -Request $request -Name 'name'
+        if ($name -isnot [string]) { return Write-CredentialProblem -Problem 'name' }
+        $problem = Test-BylCredentialName -Name $name
+        if ($null -ne $problem) { return Write-CredentialProblem -Problem $problem -Name $name }
+        if (-not $Remove) {
+            $value = Get-CredentialField -Request $request -Name 'value'
+            $problem = Test-BylCredentialValue -Value $value
+            if ($null -ne $problem) { return Write-CredentialProblem -Problem $problem -Name $name }
+        }
+        try {
+            if ($Remove) { Set-BylAccountVariable -Name $name -Value '' }
+            else { Set-BylAccountVariable -Name $name -Value $value }
+        }
+        catch {
+            return Write-CredentialProblem -Problem 'write' -Name $name -Detail $_.Exception.GetType().Name
+        }
+    }
+    finally {
+        $value = $null
+        if ($null -ne $request) { $request.Clear() }
+    }
+    $script:LogDetail = "name=$name"
+    $done = if ($Remove) { "Variable $name entfernt" } else { "Variable $name gesetzt" }
+    return Write-BackupAnswer -Answer ([ordered]@{ ok = $true; name = $name }) -Text "$done; das wirkt nach einem Neustart der App."
+}
 
 function Invoke-BackupPassphrase {
     # backup-passphrase: the passphrase twice (from the app as JSON, in the console as hidden
@@ -4150,6 +4282,9 @@ try {
                 'lan-info' { Invoke-LanInfo -Config $config }
                 'lan-configure' { Invoke-LanConfigure -Config $config }
                 'lan-firewall' { Invoke-LanFirewall -Config $config }
+                'credential-status' { Invoke-CredentialStatus }
+                'credential-set' { Invoke-CredentialChange -Remove $false }
+                'credential-remove' { Invoke-CredentialChange -Remove $true }
                 'help' {
                     Write-Host $HelpText
                     $BylExitOk
@@ -4180,7 +4315,8 @@ $exitCode = [int](@($exitCode)[-1])
 # Commands that change something go into byl-control.log, the others only after an error (status
 # and logs would flood it).
 if ($script:ProblemError -or @('start', 'stop', 'restart', 'reload', 'port', 'autostart-on', 'autostart-off', 'mail-restart', 'reset-admin',
-        'backup-configure', 'backup-passphrase', 'backup-export', 'backup-verify', 'restore', 'security-configure', 'lan-configure', 'lan-firewall') -contains $Command) {
+        'backup-configure', 'backup-passphrase', 'backup-export', 'backup-verify', 'restore', 'security-configure', 'lan-configure', 'lan-firewall',
+        'credential-set', 'credential-remove') -contains $Command) {
     Write-ControlLog -Name $Command -ExitCode $exitCode
 }
 # A run without window that went well clears the problem an earlier one kept (ADR-0048).

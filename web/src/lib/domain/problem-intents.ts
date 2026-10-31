@@ -42,6 +42,11 @@ export const BYL_ROUTE_INTENTS: Readonly<Record<string, string>> = Object.freeze
 	'POST /api/byl/connections/*/scan': 'Postfach durchsuchen',
 	// context.pb.js (ADR-0057)
 	'GET /api/byl/context': 'Kontext der App laden',
+	// credentials.pb.js (BW-3, ADR-0075)
+	'GET /api/byl/credentials': 'Zugangsdaten der Kanäle laden',
+	'POST /api/byl/credentials/set': 'Zugangsdaten setzen',
+	'POST /api/byl/credentials/remove': 'Zugangsdaten entfernen',
+	'GET /api/byl/credentials/restart-notice': 'Hinweis zum Neustart laden',
 	// day-plans.pb.js (ADR-0065)
 	'GET /api/byl/dayplan': 'Tagesplan laden',
 	'POST /api/byl/dayplan/items': 'Zum Tagesplan hinzufügen',

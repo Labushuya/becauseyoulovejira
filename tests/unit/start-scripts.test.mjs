@@ -658,7 +658,9 @@ describe('status, reload, logs and doctor (ADR-0039 sections 5 to 7, BS-2)', () 
 	it('logs changing commands and errors only, with numbers and fixed words, never the admin e-mail', () => {
 		expect(mainBlock()).toContain(
 			"if ($script:ProblemError -or @('start', 'stop', 'restart', 'reload', 'port', 'autostart-on', 'autostart-off', 'mail-restart', 'reset-admin',\r\n" +
-				"        'backup-configure', 'backup-passphrase', 'backup-export', 'backup-verify', 'restore', 'security-configure', 'lan-configure', 'lan-firewall') -contains $Command) {"
+				"        'backup-configure', 'backup-passphrase', 'backup-export', 'backup-verify', 'restore', 'security-configure', 'lan-configure', 'lan-firewall',\r\n" +
+				// BW-3 (ADR-0075): setting and removing access data, with the name of the variable only.
+				"        'credential-set', 'credential-remove') -contains $Command) {"
 		);
 		const write = functionBody(control(), 'Write-ControlLog');
 		expect(write).toContain('Invoke-LogRotation -Path $path -LimitBytes $BylControlLogLimitBytes');

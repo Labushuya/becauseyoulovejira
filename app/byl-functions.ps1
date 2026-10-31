@@ -2114,6 +2114,53 @@ function Invoke-AdminUpsert {
 # digits and "_", at most 64 characters. Same pattern as app/pb_hooks/lib/secrets.js.
 $BylSecretNamePattern = '^BYL_[A-Z0-9_]{1,60}$'
 
+# Access data set from the app (BW-3, ADR-0075): the names the system uses for its settings and its
+# behaviour and the switches of the tests are never set or removed by credential-set and
+# credential-remove (the same lists as app/pb_hooks/lib/credential-rules.js, parity test), and a
+# value has at most this many characters.
+$BylBlockedCredentialNames = @(
+    'BYL_INGEST_TOKEN'
+    'BYL_HOST_PLATFORM'
+    'BYL_MAIL_HELPER_PORT'
+    'BYL_MAIL_INTERVAL_SECONDS'
+    'BYL_MAIL_TEST_IMAP_PORT'
+    'BYL_TELEGRAM_API_BASE'
+    'BYL_APP_URL'
+    'BYL_EXIT'
+    'BYL_CODE'
+    'BYL_DIR'
+    'BYL_DIRQ'
+)
+$BylBlockedCredentialPrefixes = @('BYL_TEST_')
+$BylCredentialValueMax = 4096
+
+function Test-BylCredentialName {
+    # Why the variable $Name may not be set or removed from the app: 'name' (not the pattern of
+    # ADR-0018), 'blocked' (a name of the system or a switch of the tests); $null if it may. Which
+    # connections name it, the app checks before.
+    param([AllowNull()][AllowEmptyString()][string]$Name)
+
+    if ([string]::IsNullOrEmpty($Name) -or $Name -cnotmatch $BylSecretNamePattern) { return 'name' }
+    if ($BylBlockedCredentialNames -ccontains $Name) { return 'blocked' }
+    foreach ($prefix in $BylBlockedCredentialPrefixes) {
+        if ($Name.StartsWith($prefix, [System.StringComparison]::Ordinal)) { return 'blocked' }
+    }
+    return $null
+}
+
+function Test-BylCredentialValue {
+    # Why $Value may not be set: 'invalid' (no text), 'empty' (empty or only white space; removing is
+    # a command of its own), 'control' (control characters: C0 with tab, CR and LF, DEL, C1), 'long'
+    # (more than $BylCredentialValueMax characters); $null if it may. Never trims, never prints it.
+    param([AllowNull()][object]$Value)
+
+    if ($Value -isnot [string]) { return 'invalid' }
+    if ([string]::IsNullOrWhiteSpace($Value)) { return 'empty' }
+    if ([regex]::IsMatch($Value, '[\x00-\x1F\x7F-\x9F]')) { return 'control' }
+    if ($Value.Length -gt $BylCredentialValueMax) { return 'long' }
+    return $null
+}
+
 function Get-BylEnvironmentChange {
     # Which BYL_* variables the start hands to PocketBase (ADR-0018 section 6): every valid name of
     # the user scope (its value is read fresh from there), and the removal of valid names this
