@@ -191,6 +191,10 @@ const LOCAL_ROUTES = [
 	{ path: '/api/byl/security/lan', method: 'GET', windows: true },
 	{ path: '/api/byl/security/lan', method: 'POST', body: { enabled: false, addresses: [] }, windows: true },
 	{ path: '/api/byl/security/lan/firewall', method: 'POST', body: { action: 'add' }, windows: true },
+	// The access data of the channels (BW-3, ADR-0075).
+	{ path: '/api/byl/credentials', method: 'GET', windows: true },
+	{ path: '/api/byl/credentials/set', method: 'POST', body: { name: 'BYL_TELEGRAM_TOKEN', value: 'x' }, windows: true },
+	{ path: '/api/byl/credentials/remove', method: 'POST', body: { name: 'BYL_TELEGRAM_TOKEN' }, windows: true },
 	{ path: '/api/byl/accounts', method: 'GET' },
 	{ path: '/api/byl/accounts', method: 'POST', body: { name: 'Gast', email: 'gast@example.com' } },
 	{ path: '/api/byl/accounts/abcdefghijklmno/admin', method: 'POST', body: { admin: true } },

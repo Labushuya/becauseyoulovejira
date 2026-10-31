@@ -126,14 +126,25 @@ describe('help page (EH-9)', () => {
 		}
 	});
 
-	it('explains setx, the control panel and the restart for the access data', () => {
+	it('explains the access data in the browser first, and setx, the control panel and the restart as the emergency way', () => {
 		render(Page);
 		const section = screen.getByRole('region', { name: 'Kanäle und Zugangsdaten' });
-		expect(within(section).getByRole('heading', { level: 4 }).textContent).toBe(
-			'Zugangsdaten als Windows-Variable setzen'
-		);
+		expect(
+			within(section)
+				.getAllByRole('heading', { level: 4 })
+				.map((heading) => heading.textContent)
+		).toEqual(['Zugangsdaten im Browser setzen', 'Notfall: Zugangsdaten über Windows setzen']);
 		const content = text(section);
+		// BW-3 (ADR-0075): fields, state, the question of the restart, the lasting hint, only at the PC.
+		expect(content).toMatch(/„Setzen …“ bzw\. „Ersetzen …“ und „Entfernen …“/);
+		expect(content).toMatch(/„Jetzt neu starten“ oder „Später“/);
+		expect(content).toMatch(/Neustart nötig, damit\s+geänderte Zugangsdaten wirken/);
+		expect(content).toMatch(/„Nur am PC möglich“/);
+		expect(content).toMatch(
+			/Windows speichert ihn genau so; die Kanäle lesen ihn ohne die Leerzeichen am Rand\./
+		);
 		expect(content).toMatch(/setx BYL_TELEGRAM_TOKEN/);
+		expect(content).toMatch(/setx kürzt Werte über 1024 Zeichen/);
 		expect(content).toMatch(/Umgebungsvariablen für dieses Konto bearbeiten/);
 		expect(content).toMatch(/neu-starten\.bat im Ordner app doppelklicken/);
 		expect(within(section).getByRole('link', { name: 'Kanäle' }).getAttribute('href')).toBe(
@@ -1630,7 +1641,7 @@ describe('help page in the context of the tab (KOB-1, ADR-0057)', () => {
 		);
 		const access = screen.getByRole('region', { name: 'Kanäle und Zugangsdaten' });
 		expect(text(access)).toMatch(
-			/Zugangsdaten als Windows-Variable setzen Hinweis: Bitte den Verwalter fragen\./
+			/Notfall: Zugangsdaten über Windows setzen Hinweis: Bitte den Verwalter fragen\./
 		);
 		const inbox = screen.getByRole('region', { name: 'Eigener Eingang (API)' });
 		expect(text(inbox)).toMatch(/Bitte den Verwalter fragen\./);

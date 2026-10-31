@@ -254,15 +254,27 @@ function backupState(app) {
   };
 }
 
-/** Names of the BYL_* variables the app uses (connections, mail helper) and whether each is set. */
+/**
+ * Names of the BYL_* variables the app uses (connections with the allowlist of Telegram, BW-3; mail
+ * helper) and whether each is set.
+ */
 function secretNames(app, userId) {
-  var secrets = require(__hooks + '/lib/secrets.js');
+  var connections = require(__hooks + '/lib/connection-service.js');
   var names = [];
-  var found = app.findRecordsByFilter('connections', 'owner = {:owner} && secret_env != ""', 'secret_env', 0, 0, { owner: userId });
+  var found = app.findRecordsByFilter(
+    'connections',
+    'owner = {:owner} && (secret_env != "" || type = "telegram")',
+    'secret_env',
+    0,
+    0,
+    { owner: userId }
+  );
   for (var i = 0; i < found.length; i++) {
-    var name = String(found[i].getString('secret_env'));
-    if (secrets.isValidName(name) && names.indexOf(name) === -1) {
-      names.push(name);
+    var used = connections.variableNamesOf(found[i]);
+    for (var k = 0; k < used.length; k++) {
+      if (names.indexOf(used[k]) === -1) {
+        names.push(used[k]);
+      }
     }
   }
   if (String($os.getenv(INGEST_TOKEN) || '') !== '' && names.indexOf(INGEST_TOKEN) === -1) {

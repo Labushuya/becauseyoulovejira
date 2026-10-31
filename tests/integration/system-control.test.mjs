@@ -6,7 +6,9 @@
 // the copy sees only the invented values of this file, never access data of the account, and its
 // autostart goes into a folder of the test (BYL_TEST_STARTUP_DIR), never into the startup folder of
 // the account. app\ and the instance of the user are never started, stopped or asked. Every server
-// and helper of the copy ends in afterAll, and the copy is removed.
+// and helper of the copy ends in afterAll, and the copy is removed. Since BW-3 (ADR-0075) also the
+// access data of the page "Kanäle": the copy reads them from its own process and writes them only
+// into the file BYL_TEST_ACCOUNT_FILE of this test (Set-BylAccountVariable), never into the account.
 
 import { randomBytes } from 'node:crypto';
 import {
@@ -44,6 +46,13 @@ const COMMAND_TIMEOUT_MS = scaled(60_000);
 // Invented values: the switch for disposable copies, the ingest token of the copy (so its server has
 // the ingest route and mail-restart can start a helper) and a secret that must never leave a log.
 const LOG_SECRET = `geheim-${randomBytes(9).toString('hex')}`;
+// BW-3 (ADR-0075): a value set from the page "Kanäle" (with spaces at its ends, which stay), and an
+// invented calendar address the copy sees as set. The copy writes access data only into the file
+// BYL_TEST_ACCOUNT_FILE of this test, never into the variables of the account.
+const CREDENTIAL_MARKER = ` marker-${randomBytes(9).toString('hex')} `;
+const CALENDAR_VALUE = `https://example.com/kalender-${randomBytes(6).toString('hex')}/basic.ics`;
+// The allowlist of the bot of the tests (invented IDs), which the logs of the page System hide too.
+const ALLOWED_VALUE = `-100${randomBytes(4).readUInt32BE(0)}`;
 let CONTROL_ENV;
 
 let base;
@@ -137,6 +146,23 @@ function control(...args) {
 	return { code: result.status, output: readFileSync(file, 'latin1') };
 }
 
+/** byl-control.ps1 of the copy like control(), with `input` as JSON on standard input (as the app). */
+function controlWithInput(input, ...args) {
+	const result = spawnSyncClean(
+		POWERSHELL_EXE,
+		['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', join(copy.dir, 'byl-control.ps1'), ...args],
+		{ windowsHide: true, timeout: COMMAND_TIMEOUT_MS, input: JSON.stringify(input), encoding: 'utf8', env: CONTROL_ENV }
+	);
+	if (result.error) throw result.error;
+	return { code: result.status, output: `${result.stdout}${result.stderr}` };
+}
+
+/** The access data the copy wrote "into the account": the file BYL_TEST_ACCOUNT_FILE of this test. */
+function accountFile() {
+	const file = CONTROL_ENV.BYL_TEST_ACCOUNT_FILE;
+	return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : {};
+}
+
 /** Processes whose program lies below the temp base of this file (servers and mail helpers). */
 function processes() {
 	return runPowerShellJson(
@@ -219,8 +245,14 @@ beforeAll(async () => {
 		BYL_INGEST_TOKEN: randomBytes(24).toString('base64'),
 		// The helper of the copy listens here, never on 8091 of the user's helper.
 		BYL_MAIL_HELPER_PORT: String(helperPort),
-		BYL_TEST_LOG_SECRET: LOG_SECRET
+		BYL_TEST_LOG_SECRET: LOG_SECRET,
+		// BW-3: what credential-set and credential-remove write "into the account" lands here only.
+		BYL_TEST_ACCOUNT_FILE: join(base, 'konto.json'),
+		BYL_GOOGLE_CALENDAR_URL: CALENDAR_VALUE,
+		BYL_TELEGRAM_ALLOWED_IDS: ALLOWED_VALUE
 	};
+	expect(CONTROL_ENV.BYL_TEST_ISOLATED).toBe('1');
+	expect(CONTROL_ENV.BYL_TEST_ACCOUNT_FILE.toLowerCase().startsWith(base.toLowerCase())).toBe(true);
 	const email = `sys-${randomBytes(6).toString('hex')}@example.com`;
 	const password = randomBytes(18).toString('base64');
 	const upsert = spawnSyncClean(
@@ -407,6 +439,50 @@ describe('page System on a disposable copy (ADR-0043)', CASE_TIMEOUT, () => {
 		expect(accountStartup()).toEqual(before);
 	});
 
+	it('names the state of the only variable of the only connection (BW-3, one name for credential-status)', async () => {
+		const created = await call('POST', '/api/collections/connections/records', {
+			token: owner.token,
+			body: { owner: owner.id, type: 'calendar', label: 'Kalender des Tests', enabled: false, secret_env: 'BYL_GOOGLE_CALENDAR_URL', settings: { keywords: ['todo'] } }
+		});
+		expect(created.status, JSON.stringify(created.body)).toBe(200);
+		// The script gets exactly one name: before BW-3's fix PowerShell made it a text and answered none.
+		const answer = await app('GET', '/api/byl/credentials');
+		expect(answer.status, JSON.stringify(answer.body)).toBe(200);
+		expect(answer.body).toEqual({
+			variables: [{ name: 'BYL_GOOGLE_CALENDAR_URL', set: true, blocked: false, channels: ['Kalender des Tests'] }],
+			restartNeeded: false
+		});
+		expect(JSON.stringify(answer.body)).not.toContain(CALENDAR_VALUE);
+	});
+
+	it('hides the allowlist of Telegram in the logs of the page System like every value of a channel (BW-3, V7)', async () => {
+		const created = await call('POST', '/api/collections/connections/records', {
+			token: owner.token,
+			body: {
+				owner: owner.id,
+				type: 'telegram',
+				label: 'Bot des Tests',
+				enabled: false,
+				secret_env: 'BYL_TELEGRAM_TOKEN',
+				settings: { allowed_env: 'BYL_TELEGRAM_ALLOWED_IDS', keywords: ['todo'] }
+			}
+		});
+		expect(created.status, JSON.stringify(created.body)).toBe(200);
+		// No mail helper runs yet, so nothing else holds or writes its log.
+		const file = join(copy.dir, 'logs', 'byl-mail.log');
+		const before = readFileSync(file, 'utf8');
+		try {
+			writeFileSync(file, `Nachricht aus Chat ${ALLOWED_VALUE} erlaubt\r\n`);
+			const answer = await app('GET', '/api/byl/system/logs');
+			expect(answer.status, JSON.stringify(answer.body)).toBe(200);
+			const mail = answer.body.logs.find((set) => set.name === 'mail').files.find((entry) => entry.file === 'byl-mail.log');
+			expect(mail.lines).toEqual(['Nachricht aus Chat *** erlaubt']);
+			expect(JSON.stringify(answer.body)).not.toContain(ALLOWED_VALUE);
+		} finally {
+			writeFileSync(file, before);
+		}
+	});
+
 	it('restarts the mail helper, and says why it does not run', async () => {
 		const none = await app('POST', '/api/byl/system/actions/mail-restart');
 		expect(none.status).toBe(200);
@@ -443,6 +519,153 @@ describe('page System on a disposable copy (ADR-0043)', CASE_TIMEOUT, () => {
 		expect(helpers().map((process) => process.pid)).toEqual([second.body.status.mailHelperPid]);
 	});
 
+	it('names the state of the access data of the channels from the user environment, only as yes or no (BW-3)', async () => {
+		// The calendar and the bot of the cases before are there already, the mailbox too.
+		const answer = await app('GET', '/api/byl/credentials?names=BYL_WEBDE_PASSWORD,BYL_FOREIGN');
+		expect(answer.status, JSON.stringify(answer.body)).toBe(200);
+		expect(answer.headers['cache-control']).toBe('no-store');
+		expect(answer.body).toEqual({
+			variables: [
+				{ name: 'BYL_GOOGLE_CALENDAR_URL', set: true, blocked: false, channels: ['Kalender des Tests'] },
+				// The allowlist of Telegram counts as a variable of the channel (V7).
+				{ name: 'BYL_TELEGRAM_ALLOWED_IDS', set: true, blocked: false, channels: ['Bot des Tests'] },
+				{ name: 'BYL_TELEGRAM_TOKEN', set: false, blocked: false, channels: ['Bot des Tests'] },
+				{ name: 'BYL_TEST_MAIL_PASSWORD_NOT_SET', set: null, blocked: true, channels: ['Postfach des Tests'] },
+				{ name: 'BYL_WEBDE_PASSWORD', set: false, blocked: false, channels: [] }
+			],
+			restartNeeded: false
+		});
+		expect(JSON.stringify(answer.body)).not.toContain(CALENDAR_VALUE);
+		expect(JSON.stringify(answer.body)).not.toContain(ALLOWED_VALUE);
+		expect((await app('GET', '/api/byl/credentials/restart-notice')).body).toEqual({ needed: false });
+	});
+
+	it('sets and removes a variable through the standard input of the control script, never into the account (BW-3)', async () => {
+		const before = accountFile();
+		const set = await app('POST', '/api/byl/credentials/set', { body: { name: 'BYL_TELEGRAM_TOKEN', value: CREDENTIAL_MARKER } });
+		expect(set.status, JSON.stringify(set.body)).toBe(200);
+		expect(set.body).toEqual({ name: 'BYL_TELEGRAM_TOKEN', set: true, restartNeeded: true });
+		// The value arrived whole, with the spaces at its ends (never trimmed).
+		expect(accountFile()).toEqual({ ...before, BYL_TELEGRAM_TOKEN: CREDENTIAL_MARKER });
+		// The hint stays on the server until the next restart, for every device.
+		expect((await app('GET', '/api/byl/credentials/restart-notice')).body).toEqual({ needed: true });
+		expect((await app('GET', '/api/byl/credentials')).body.restartNeeded).toBe(true);
+
+		const refused = [
+			[{ name: 'BYL_INGEST_TOKEN', value: CREDENTIAL_MARKER }, 'blocked'],
+			[{ name: 'BYL_TEST_ISOLATED', value: CREDENTIAL_MARKER }, 'blocked'],
+			// Named by a connection, but a name of the system all the same.
+			[{ name: 'BYL_TEST_MAIL_PASSWORD_NOT_SET', value: CREDENTIAL_MARKER }, 'blocked'],
+			[{ name: 'BYL_FOREIGN', value: CREDENTIAL_MARKER }, 'unknown'],
+			[{ name: 'byl_telegram_token', value: CREDENTIAL_MARKER }, 'name'],
+			[{ name: 'BYL_TELEGRAM_TOKEN', value: `${CREDENTIAL_MARKER}\r\n` }, 'control'],
+			[{ name: 'BYL_TELEGRAM_TOKEN', value: '' }, 'empty']
+		];
+		for (const [body, problem] of refused) {
+			const answer = await app('POST', '/api/byl/credentials/set', { body });
+			expect([answer.status, answer.body.problem], body.name).toEqual([400, problem]);
+			expect(JSON.stringify(answer.body)).not.toContain(CREDENTIAL_MARKER.trim());
+		}
+		// Without the Origin of the app, nothing happens (check of the page System).
+		const foreign = await call('POST', '/api/byl/credentials/set', { token: owner.token, body: { name: 'BYL_TELEGRAM_TOKEN', value: 'anders' } });
+		expect([foreign.status, foreign.body.reason]).toEqual([403, 'origin']);
+		const stranger = await call('POST', '/api/byl/credentials/set', {
+			token: other.token,
+			origin: `http://127.0.0.1:${copy.port}`,
+			body: { name: 'BYL_TELEGRAM_TOKEN', value: 'anders' }
+		});
+		expect([stranger.status, stranger.body.reason]).toEqual([403, 'owner']);
+		expect(accountFile()).toEqual({ ...before, BYL_TELEGRAM_TOKEN: CREDENTIAL_MARKER });
+
+		const removed = await app('POST', '/api/byl/credentials/remove', { body: { name: 'BYL_TELEGRAM_TOKEN' } });
+		expect(removed.status, JSON.stringify(removed.body)).toBe(200);
+		expect(removed.body).toEqual({ name: 'BYL_TELEGRAM_TOKEN', set: false, restartNeeded: true });
+		expect(accountFile()).toEqual(before);
+		expect((await app('GET', '/api/byl/credentials/restart-notice')).body).toEqual({ needed: true });
+	});
+
+	it('takes a value only on standard input, never as an argument, and refuses names of the system itself (BW-3)', () => {
+		const before = accountFile();
+		// The second argument of the script ($Value) is never read by credential-set.
+		const argument = control('credential-set', CREDENTIAL_MARKER.trim());
+		expect(argument.code).toBe(1);
+		expect(argument.output).toContain('nimmt Name und Wert einer Variablen nur von der App');
+		expect(argument.output).not.toContain(CREDENTIAL_MARKER.trim());
+		expect(accountFile()).toEqual(before);
+
+		const blocked = controlWithInput({ name: 'BYL_INGEST_TOKEN', value: CREDENTIAL_MARKER }, 'credential-set', '-Json');
+		expect(blocked.code).toBe(1);
+		expect(JSON.parse(blocked.output.trim())).toMatchObject({ ok: false, problem: 'blocked', report: { code: 'credential-blocked' } });
+		const withControl = controlWithInput({ name: 'BYL_TELEGRAM_TOKEN', value: `a\u0000${CREDENTIAL_MARKER}` }, 'credential-set', '-Json');
+		expect(JSON.parse(withControl.output.trim())).toMatchObject({ ok: false, problem: 'control', report: { code: 'credential-value' } });
+		const broken = controlWithInput('kein Objekt', 'credential-set', '-Json');
+		expect(JSON.parse(broken.output.trim())).toMatchObject({ ok: false, code: 'input-invalid' });
+		// An array of one element stays an array: never taken as its text.
+		const valueArray = controlWithInput({ name: 'BYL_TELEGRAM_TOKEN', value: [CREDENTIAL_MARKER] }, 'credential-set', '-Json');
+		expect(valueArray.code).toBe(1);
+		expect(JSON.parse(valueArray.output.trim())).toMatchObject({ ok: false, problem: 'invalid', report: { code: 'credential-value' } });
+		const nameArray = controlWithInput({ name: ['BYL_X'], value: CREDENTIAL_MARKER }, 'credential-set', '-Json');
+		expect(nameArray.code).toBe(1);
+		expect(JSON.parse(nameArray.output.trim())).toMatchObject({ ok: false, problem: 'name', report: { code: 'credential-name' } });
+		const removeArray = controlWithInput({ name: ['BYL_TELEGRAM_TOKEN'] }, 'credential-remove', '-Json');
+		expect(JSON.parse(removeArray.output.trim())).toMatchObject({ ok: false, problem: 'name' });
+		for (const result of [blocked, withControl, broken, valueArray, nameArray, removeArray]) expect(result.output).not.toContain(CREDENTIAL_MARKER.trim());
+		expect(accountFile()).toEqual(before);
+
+		const status = controlWithInput({ names: ['BYL_GOOGLE_CALENDAR_URL', 'BYL_INGEST_TOKEN', 'PATH', 'BYL_WEBDE_PASSWORD'] }, 'credential-status', '-Json');
+		expect(status.code).toBe(0);
+		expect(JSON.parse(status.output.trim())).toEqual({
+			ok: true,
+			variables: [
+				{ name: 'BYL_GOOGLE_CALENDAR_URL', set: true },
+				{ name: 'BYL_WEBDE_PASSWORD', set: false }
+			]
+		});
+		expect(status.output).not.toContain(CALENDAR_VALUE);
+		// One name alone is a list of one, not a text; a text instead of a list names nothing.
+		const one = controlWithInput({ names: ['BYL_GOOGLE_CALENDAR_URL'] }, 'credential-status', '-Json');
+		expect(JSON.parse(one.output.trim())).toEqual({ ok: true, variables: [{ name: 'BYL_GOOGLE_CALENDAR_URL', set: true }] });
+		const text = controlWithInput({ names: 'BYL_GOOGLE_CALENDAR_URL' }, 'credential-status', '-Json');
+		expect(JSON.parse(text.output.trim())).toEqual({ ok: true, variables: [] });
+		for (const result of [one, text]) expect(result.output).not.toContain(CALENDAR_VALUE);
+	});
+
+	it('keeps every value of access data out of logs, outputs and answers (S3)', async () => {
+		const marker = CREDENTIAL_MARKER.trim();
+		const control = readFileSync(join(copy.dir, 'logs', 'byl-control.log'), 'utf8');
+		expect(control).toMatch(/ credential-set exit=0 name=BYL_TELEGRAM_TOKEN\r$/m);
+		expect(control).toMatch(/ credential-remove exit=0 name=BYL_TELEGRAM_TOKEN\r$/m);
+		expect(control).toMatch(/ credential-set exit=1 problem=blocked name=BYL_INGEST_TOKEN\r$/m);
+		for (const name of ['byl-control.log', 'pocketbase.out.log', 'pocketbase.err.log']) {
+			const path = join(copy.dir, 'logs', name);
+			if (existsSync(path)) expect(readFileSync(path, 'utf8'), name).not.toContain(marker);
+		}
+		expect(existsSync(join(copy.dir, 'run', 'hintergrund-problem.json'))).toBe(false);
+		const filter = encodeURIComponent("message ~ 'byl-credentials:'");
+		let entries = [];
+		const found = await until(async () => {
+			const answer = await call('GET', `/api/logs?filter=${filter}&perPage=500&sort=created`, { token: superuserToken });
+			entries = answer.body.items ?? [];
+			const done = entries.filter((entry) => entry.message === 'byl-credentials: Aktion ausgeführt');
+			return done.some((entry) => entry.data.action === 'credential-remove') && entries.some((entry) => entry.data.reason === 'unknown');
+		}, LOG_WRITE_MS);
+		expect(found).toBe(true);
+		expect(entries).toContainEqual(
+			expect.objectContaining({
+				message: 'byl-credentials: Aktion ausgeführt',
+				data: expect.objectContaining({ action: 'credential-set', name: 'BYL_TELEGRAM_TOKEN', user: owner.id, result: 'ok' })
+			})
+		);
+		// Every log entry of the server, not only those of the routes.
+		for (let page = 1; ; page += 1) {
+			const answer = await call('GET', `/api/logs?page=${page}&perPage=500&sort=created`, { token: superuserToken });
+			expect(answer.status).toBe(200);
+			expect(JSON.stringify(answer.body)).not.toContain(marker);
+			expect(JSON.stringify(answer.body)).not.toContain(CALENDAR_VALUE);
+			if (page >= answer.body.totalPages || answer.body.items.length === 0) break;
+		}
+	});
+
 	it('restarts through a detached process that outlives the server it was started from', async () => {
 		const [before] = servers();
 		const started = Date.now();
@@ -476,6 +699,8 @@ describe('page System on a disposable copy (ADR-0043)', CASE_TIMEOUT, () => {
 
 		const status = await app('GET', '/api/byl/system');
 		expect(status.body.status).toMatchObject({ state: 'running', pid: after.pid, verdict: 'current' });
+		// The hint of changed access data (BW-3) lived in the memory of the server before: gone.
+		expect((await app('GET', '/api/byl/credentials/restart-notice')).body).toEqual({ needed: false });
 	});
 
 	it('writes an audit entry per action and refusal: who, when, what, without values', async () => {

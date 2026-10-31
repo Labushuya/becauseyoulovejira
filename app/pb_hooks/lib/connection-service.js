@@ -193,6 +193,14 @@ function visibleConnection(e, id) {
   return e.app.canAccessRecord(record, e.requestInfo(), collection.viewRule) ? record : null;
 }
 
+/**
+ * The valid names of the variables `record` (a connection) reads: `secret_env` and, for Telegram,
+ * `settings.allowed_env` (V7 of BW-3, ADR-0075).
+ */
+function variableNamesOf(record) {
+  return rules.validVariableNames(record.getString('type'), record.getString('secret_env'), jsonOf(record, 'settings'), secrets);
+}
+
 // { secret, allowlist }: whether the variables are set in the environment of the server.
 function secretStatus(record) {
   return rules.secretStatus(
@@ -213,5 +221,6 @@ module.exports = {
   guardUpdate: guardUpdate,
   prepareSave: prepareSave,
   visibleConnection: visibleConnection,
+  variableNamesOf: variableNamesOf,
   secretStatus: secretStatus
 };

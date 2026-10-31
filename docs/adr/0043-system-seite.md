@@ -174,3 +174,9 @@ Jede Route prüft in dieser Reihenfolge; die erste Ablehnung antwortet mit `{ st
 - Die Einrichtungsassistenten der Kanäle starten die App bzw. den Mail-Helfer im Schritt selbst neu, über **dieselbe Route mit denselben Prüfungen** (`POST /api/byl/system/actions/restart` bzw. `…/mail-restart`, §4); keine neue Route, keine Änderung an den Hooks.
 - Die Warte-Schleife aus §5 („Server war weg und antwortet wieder oder antwortet mit neuer Startzeit“, jede Sekunde, 90 s) steht jetzt in `web/src/lib/stores/restart-follow.ts` und wird von dieser Seite und vom `RestartStore` der Assistenten genutzt; das Verhalten der Seite bleibt gleich.
 - Ablehnungen und unlesbare Antworten dieser Routen tragen seitdem einen Eintrag für „Details“ (FP-1) neben der Antwort (`denialProblem` in `data/system.ts`); die Form der Antworten bleibt. Die Seite selbst zeigt ihre Meldungen wie bisher.
+
+## Nachtrag (2026-10-31, [ADR-0075](0075-zugangsdaten-im-browser.md), BW-3): Zugangsdaten der Kanäle über dieselben Prüfungen
+
+- Die Whitelist kennt `credential-status`, `credential-set` und `credential-remove` (Merkmal `credentials`, feste Argumente `[<befehl>, '-Json']`, Eingabe nur auf der Standardeingabe); `POST /api/byl/system/actions/{action}` lehnt sie wie die Befehle der Sicherung ab. Ausgeführt werden sie nur von den Routen in `credentials.pb.js`, die `check` in seiner Reihenfolge nutzen und zwischen Rate-Limit und eigener Instanz die Anfrage prüfen.
+- Setzen und Entfernen zählen im eigenen Fenster `credential` des Rate-Limits (10 je Minute).
+- Ein Neustart, der läuft (`RESTART_KEY`), lässt Änderungen der Zugangsdaten mit `busy` warten.

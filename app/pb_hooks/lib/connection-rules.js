@@ -334,6 +334,23 @@ function variableNames(type, secretEnv, settings) {
 }
 
 /**
+ * The valid names of the variables a connection reads (the secret and, for Telegram, the
+ * allowlist), each once: for the values the logs lose, the list of the page "Sicherheit" and the
+ * names the page "Kanäle" may set (ADR-0075).
+ */
+function validVariableNames(type, secretEnv, settings, secrets) {
+  var names = variableNames(type, secretEnv, settings);
+  var result = [];
+  var candidates = [names.secret, names.allowlist];
+  for (var i = 0; i < candidates.length; i++) {
+    if (secrets.isValidName(candidates[i]) && result.indexOf(candidates[i]) === -1) {
+      result.push(candidates[i]);
+    }
+  }
+  return result;
+}
+
+/**
  * Only yes or no per variable, never a value (ADR-0018 section 4): { secret, allowlist } with
  * allowlist null for kinds without one.
  */
@@ -367,6 +384,7 @@ module.exports = {
   labelViolation: labelViolation,
   renameViolation: renameViolation,
   variableNames: variableNames,
+  validVariableNames: validVariableNames,
   secretStatus: secretStatus,
   keywordsOf: keywordsOf,
   isMailUser: isMailUser,

@@ -28,6 +28,9 @@ describe('whitelist', () => {
 			'backup-passphrase',
 			'backup-restore',
 			'backup-verify',
+			'credential-remove',
+			'credential-set',
+			'credential-status',
 			'doctor',
 			'lan-configure',
 			'lan-firewall',
@@ -74,7 +77,22 @@ describe('whitelist', () => {
 			input: true,
 			backup: true
 		});
+		// BW-3 (ADR-0075): the access data of the page "Kanäle", run by their own routes only; names and
+		// the value go on standard input only, never onto the command line.
+		expect(rules.ACTIONS['credential-status']).toEqual({
+			method: 'GET',
+			args: ['credential-status', '-Json'],
+			output: true,
+			changes: false,
+			input: true,
+			credentials: true
+		});
+		for (const name of ['credential-set', 'credential-remove']) {
+			expect(rules.ACTIONS[name], name).toEqual({ method: 'POST', args: [name, '-Json'], output: true, changes: true, input: true, credentials: true });
+			expect(rules.commandLine(APP, name, 'C:\\Windows').args.slice(-2), name).toEqual([name, '-Json']);
+		}
 		for (const [name, spec] of Object.entries(rules.ACTIONS)) {
+			expect(spec.credentials === true, name).toBe(name.startsWith('credential-'));
 			// Commands that start processes never have their output read (the pipe would be inherited).
 			if (['restart', 'mail-restart', 'backup-restore'].includes(name)) expect(spec.output, name).toBe(false);
 			expect(spec.method, name).toBe(spec.changes ? 'POST' : 'GET');
@@ -232,11 +250,13 @@ describe('rate limit', () => {
 		expect(rules.rateStep(full, 4000, rule).allowed).toBe(true);
 	});
 
+	// Since BW-3 (ADR-0075) the changes of access data have a window of their own.
 	it('limits reading, actions and files of watched folders (ADR-0051) per user and minute', () => {
 		expect(rules.RATE_LIMITS).toEqual({
 			read: { limit: 30, windowMs: 60_000 },
 			change: { limit: 10, windowMs: 60_000 },
-			file: { limit: 120, windowMs: 60_000 }
+			file: { limit: 120, windowMs: 60_000 },
+			credential: { limit: 10, windowMs: 60_000 }
 		});
 	});
 

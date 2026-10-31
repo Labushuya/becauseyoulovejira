@@ -13,8 +13,10 @@ import { DataError } from '$lib/data/errors';
 import type { RecordChange } from '$lib/data/realtime';
 import { TELEGRAM_REPLIES_HINT, type Connection, type SecretStatus } from '$lib/domain/connections';
 import { ConnectionsStore, type ConnectionsData } from '$lib/stores/connections.svelte';
+import type { CredentialsStore } from '$lib/stores/credentials.svelte';
 import { FlagStore } from '$lib/stores/flags.svelte';
 import ChannelsViewHarness from '$lib/test/ChannelsViewHarness.svelte';
+import { credentialsStoreOf, fakeCredentialsData, variableOf } from '$lib/test/credentials-fake';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 
 useOverlayStubs();
@@ -50,7 +52,8 @@ function bot(overrides: Partial<Connection> = {}): Connection {
 async function open(
 	item: Connection,
 	status: SecretStatus,
-	afterRun: Partial<Connection> = { lastRunAt: '2026-09-26 10:00:00.000Z', lastHint: HINT }
+	afterRun: Partial<Connection> = { lastRunAt: '2026-09-26 10:00:00.000Z', lastHint: HINT },
+	credentials: CredentialsStore | null = null
 ) {
 	const listeners: ((change: RecordChange<Connection>) => void)[] = [];
 	const data = {
@@ -98,7 +101,12 @@ async function open(
 	);
 	await store.load();
 	render(ChannelsViewHarness, {
-		props: { connections: store, setup: { kind: 'telegram', connectionId: ID }, onchange: vi.fn() }
+		props: {
+			connections: store,
+			credentials,
+			setup: { kind: 'telegram', connectionId: ID },
+			onchange: vi.fn()
+		}
 	});
 	await tick();
 	await tick();
@@ -163,6 +171,31 @@ describe('Telegram assistant (EH-6)', () => {
 			within(dialog).getByRole('region', { name: 'Befehl für mehrere IDs mit deinem Wert' })
 				.textContent
 		).toBe('setx BYL_TELEGRAM_ALLOWED_IDS "424242,-100123456"');
+	});
+
+	it('says at the field of the IDs in "Chat freigeben" that "Ersetzen" overwrites the whole list (BW-3)', async () => {
+		const credentials = credentialsStoreOf(
+			fakeCredentialsData([
+				variableOf('BYL_TELEGRAM_TOKEN'),
+				variableOf('BYL_TELEGRAM_ALLOWED_IDS', { channels: ['Telegram-Bot'] })
+			])
+		);
+		const { dialog, data } = await open(
+			bot(),
+			{ secret: true, allowlist: true },
+			undefined,
+			credentials
+		);
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Jetzt abrufen' }));
+		await vi.waitFor(() => expect(data.run).toHaveBeenCalledWith(ID));
+		const group = await vi.waitFor(() =>
+			within(dialog).getByRole('group', { name: 'BYL_TELEGRAM_ALLOWED_IDS' })
+		);
+		expect(
+			within(group).getByText(
+				'Die erkannte ID ist 424242. Ersetzen überschreibt die ganze Liste – gib alle IDs an, die erlaubt bleiben sollen (mit Komma getrennt).'
+			)
+		).toBeTruthy();
 	});
 
 	it('knows no foreign chat after the next run, through realtime', async () => {

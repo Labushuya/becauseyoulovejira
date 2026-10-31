@@ -80,6 +80,15 @@ describe('secrets.js: redact', () => {
 		expect(secrets.redact('abc', ['ab'])).toBe('abc');
 	});
 
+	it('also replaces a value without the spaces at its ends, as the channels read it (BW-3)', () => {
+		const line = 'Anmeldung mit Passwort=geheim1234; fehlgeschlagen';
+		// Windows keeps " geheim1234 "; a channel reads it trimmed, so its line holds it without.
+		expect(secrets.redact(line, [' geheim1234 '])).toBe(line);
+		expect(secrets.redact(line, secrets.withTrimmed([' geheim1234 ']))).toBe('Anmeldung mit Passwort=***; fehlgeschlagen');
+		// The trimmed variant only where it differs and is long enough to be replaced.
+		expect(secrets.withTrimmed([' geheim1234 ', 'ohne', '\tab\n', ''])).toEqual([' geheim1234 ', 'geheim1234', 'ohne', '\tab\n', '']);
+	});
+
 	it('keeps host and port of local addresses and drops user info', () => {
 		expect(secrets.redact('Get "http://user:pass@127.0.0.1:52431/secret/path?x=1#y": EOF', [])).toBe(
 			'Get "http://127.0.0.1:52431": EOF'

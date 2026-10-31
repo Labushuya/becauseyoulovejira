@@ -32,6 +32,7 @@
 		type TelegramRepliesChange
 	} from '$lib/domain/connections';
 	import { withoutCommands } from '$lib/domain/context';
+	import { CREDENTIAL_TEXTS } from '$lib/domain/credentials';
 	import { folderPlatformOf } from '$lib/domain/folders';
 	import { checkSummary } from '$lib/domain/github';
 	import { DEFAULT_HOST_PLATFORM } from '$lib/domain/host-platform';
@@ -53,6 +54,8 @@
 		runProblem as runProblemOf,
 		type ConnectionsStore
 	} from '$lib/stores/connections.svelte';
+	import { appContext } from '$lib/stores/context.svelte';
+	import type { CredentialsStore } from '$lib/stores/credentials.svelte';
 	import type { GitHubStore } from '$lib/stores/github.svelte';
 	import { findHostStore } from '$lib/stores/host.svelte';
 	import type { NotionStore } from '$lib/stores/notion.svelte';
@@ -70,6 +73,7 @@
 	import RestartAction from '../system/RestartAction.svelte';
 	import RestartEmergency from '../system/RestartEmergency.svelte';
 	import CardTargetProject from './CardTargetProject.svelte';
+	import CredentialField from './CredentialField.svelte';
 	import FolderSetupList from './FolderSetupList.svelte';
 	import GitHubSetupRepos from './GitHubSetupRepos.svelte';
 	import SecretValueField from './SecretValueField.svelte';
@@ -102,6 +106,9 @@
 	// sessionStorage (`byl-setup:<id>`, before the connection `byl-setup:neu:<art>`,
 	// domain/setup-resume.ts): a reload opens the same step again, exactly the step a restart was
 	// started from. "Später fortsetzen" keeps the entry, "Fertig" and closing otherwise drop it.
+	// Since BW-3 (ADR-0075) the steps "Variable setzen", "Token setzen" and "Chat freigeben" set the
+	// variables in the browser (CredentialField, `credentials`); setx and the control panel of Windows
+	// stand only folded under „Notfall“.
 	let {
 		kind,
 		connectionId,
@@ -109,6 +116,7 @@
 		notion,
 		github,
 		restart = null,
+		credentials = null,
 		projects = [],
 		onconnection,
 		onimport,
@@ -124,6 +132,8 @@
 		github: GitHubStore;
 		/** "Jetzt neu starten" in the steps (BW-1); without it only the emergency way stands. */
 		restart?: RestartStore | null;
+		/** Setting the variables in the browser (BW-3); without it only setx stands, not folded. */
+		credentials?: CredentialsStore | null;
 		/** Every project of the catalog, archived ones included (the step "Zielprojekt"). */
 		projects?: readonly ProjectRef[];
 		/** A connection was created; the owner writes its ID into the address. */
@@ -375,6 +385,16 @@
 		untrack(() => void store.checkStatus(id));
 	});
 
+	// The steps that set a variable read its state in the user environment (BW-3), also of the
+	// suggested name before the connection exists; only the administrator at the PC may.
+	const settingStep = $derived(stepId === 'variable' || stepId === 'token' || stepId === 'chat');
+	$effect(() => {
+		const names = kind === 'telegram' ? [variable, allowlist] : [variable];
+		if (credentials === null || !settingStep || !appContext.capabilities.scripts) return;
+		const current = credentials;
+		untrack(() => void current.load(names));
+	});
+
 	// Realtime on exactly this connection while the assistant is open (plan §3.8, no polling).
 	$effect(() => {
 		const id = watchedId;
@@ -411,6 +431,14 @@
 	function afterRestart() {
 		valuesGone = true;
 		if (connection !== null) void store.checkStatus(connection.id);
+	}
+
+	/** What the variable of a step holds, from the placeholder of its command (e.g. "Bot-Token"). */
+	function secretLabelOf(entry: SetupStep): string {
+		const command = entry.commands.find((item) => item.value !== undefined);
+		const placeholder =
+			command?.value === undefined ? undefined : command.placeholders[command.value];
+		return placeholder?.label ?? 'Wert';
 	}
 
 	/** Steps with "Wert hier einsetzen" for a secret: after a reload or a restart its value is gone. */
@@ -596,6 +624,42 @@
 	{/each}
 {/snippet}
 
+{#snippet chatCommand(id: string)}
+	<CodeBlock
+		code={CHAT_COMMAND.template}
+		label={CHAT_COMMAND.label}
+		placeholders={CHAT_COMMAND.placeholders}
+		values={{ ...fixedValues, ids: id }}
+	/>
+	<SecretValueField
+		label="Befehl für mehrere IDs"
+		template={CHAT_COMMAND.template}
+		placeholders={CHAT_COMMAND.placeholders}
+		name="ids"
+		fixed={fixedValues}
+	/>
+{/snippet}
+
+{#snippet windowsWay(entry: SetupStep)}
+	<Tabs
+		label="Weg zur Variablen"
+		tabs={[
+			{ id: 'eingabeaufforderung', label: 'Eingabeaufforderung' },
+			{ id: 'systemsteuerung', label: 'Systemsteuerung' }
+		]}
+		selected={way}
+		onselect={chooseWay}
+	>
+		{#snippet panel(id)}
+			{#if id === 'eingabeaufforderung'}
+				{@render commandBlocks(entry, true)}
+			{:else}
+				{@render controlPanel()}
+			{/if}
+		{/snippet}
+	</Tabs>
+{/snippet}
+
 {#snippet controlPanel()}
 	<ol class="actions">
 		{#each CONTROL_PANEL_STEPS as action (action)}
@@ -718,28 +782,46 @@
 		{#if valuesGone && takesSecret(entry)}
 			<SectionMessage tone="info" compact>{SECRET_NOT_KEPT}</SectionMessage>
 		{/if}
-		<Tabs
-			label="Weg zur Variablen"
-			tabs={[
-				{ id: 'eingabeaufforderung', label: 'Eingabeaufforderung' },
-				{ id: 'systemsteuerung', label: 'Systemsteuerung' }
-			]}
-			selected={way}
-			onselect={chooseWay}
-		>
-			{#snippet panel(id)}
-				{#if id === 'eingabeaufforderung'}
-					{@render commandBlocks(entry, true)}
-				{:else}
-					{@render controlPanel()}
-				{/if}
-			{/snippet}
-		</Tabs>
+		{#if credentials !== null}
+			<!-- BW-3: the variable is set here in the browser; Windows is the emergency way. -->
+			<CredentialField
+				name={variable}
+				label={secretLabelOf(entry)}
+				store={credentials}
+				{restart}
+				place={`${restartPlace(entry.id)}:${variable}`}
+				onrestart={beforeRestart}
+				onrestarted={afterRestart}
+			/>
+			{#if entry.id === 'token'}
+				<CredentialField
+					name={allowlist}
+					label="Erlaubte Chat- oder User-IDs"
+					hint="Zum Start 0 setzen; die richtige ID zeigt die App im Schritt „Chat freigeben“."
+					store={credentials}
+					{restart}
+					place={`${restartPlace(entry.id)}:${allowlist}`}
+					onrestart={beforeRestart}
+					onrestarted={afterRestart}
+				/>
+			{/if}
+			<details class="emergency">
+				<summary>{CREDENTIAL_TEXTS.setupEmergencySummary}</summary>
+				<div class="emergency-body">{@render windowsWay(entry)}</div>
+			</details>
+		{:else}
+			{@render windowsWay(entry)}
+		{/if}
 	{:else if entry.id === 'restart'}
 		{#if connection !== null && facts.secretStatus !== null && check?.tone === 'open'}
 			<SectionMessage tone="warning" compact>
-				Hast du setx schon ausgeführt? Dann starte die App jetzt neu; danach prüft dieser Schritt
-				von selbst erneut.
+				{#if credentials !== null}
+					Hast du die Variable schon gesetzt? Dann starte die App jetzt neu; danach prüft dieser
+					Schritt von selbst erneut.
+				{:else}
+					Hast du setx schon ausgeführt? Dann starte die App jetzt neu; danach prüft dieser Schritt
+					von selbst erneut.
+				{/if}
 			</SectionMessage>
 		{/if}
 		{#if statusFailure !== null}
@@ -812,23 +894,32 @@
 		{#if chatId !== null}
 			<!-- The ID goes into a variable with setx and needs a restart: at the PC only (KOB-1). -->
 			<PcOnly need="pc">
-				<SectionMessage tone="info" title={`Erkannte Chat-ID: ${chatId}`} live headingLevel={4}>
-					Gib diese ID frei: den Befehl ausführen, dann unten „Jetzt neu starten“ und danach erneut
-					„Jetzt abrufen“.
-				</SectionMessage>
-				<CodeBlock
-					code={CHAT_COMMAND.template}
-					label={CHAT_COMMAND.label}
-					placeholders={CHAT_COMMAND.placeholders}
-					values={{ ...fixedValues, ids: chatId }}
-				/>
-				<SecretValueField
-					label="Befehl für mehrere IDs"
-					template={CHAT_COMMAND.template}
-					placeholders={CHAT_COMMAND.placeholders}
-					name="ids"
-					fixed={fixedValues}
-				/>
+				{#if credentials !== null}
+					<SectionMessage tone="info" title={`Erkannte Chat-ID: ${chatId}`} live headingLevel={4}>
+						Gib diese ID frei: unten bei {allowlist} „Setzen …“ oder „Ersetzen …“ wählen, die ID eintragen,
+						dann die App neu starten und danach erneut „Jetzt abrufen“.
+					</SectionMessage>
+					<CredentialField
+						name={allowlist}
+						label="Erlaubte Chat- oder User-IDs"
+						hint={`Die erkannte ID ist ${chatId}. Ersetzen überschreibt die ganze Liste – gib alle IDs an, die erlaubt bleiben sollen (mit Komma getrennt).`}
+						store={credentials}
+						{restart}
+						place={`${restartPlace('chat')}:${allowlist}`}
+						onrestart={beforeRestart}
+						onrestarted={afterRestart}
+					/>
+					<details class="emergency">
+						<summary>{CREDENTIAL_TEXTS.setupEmergencySummary}</summary>
+						<div class="emergency-body">{@render chatCommand(chatId)}</div>
+					</details>
+				{:else}
+					<SectionMessage tone="info" title={`Erkannte Chat-ID: ${chatId}`} live headingLevel={4}>
+						Gib diese ID frei: den Befehl ausführen, dann unten „Jetzt neu starten“ und danach
+						erneut „Jetzt abrufen“.
+					</SectionMessage>
+					{@render chatCommand(chatId)}
+				{/if}
 				<RestartAction
 					store={restart}
 					place={restartPlace('chat')}
@@ -1206,6 +1297,20 @@
 		font-size: 0.875rem;
 		color: var(--color-brand-text);
 		cursor: pointer;
+	}
+
+	/* The way through Windows below the field of the browser (BW-3), like „Notfall“ of BW-1. */
+	.emergency summary {
+		font-size: var(--font-size-body);
+		color: var(--color-text-muted);
+		cursor: pointer;
+	}
+
+	.emergency-body {
+		display: grid;
+		gap: 0.5rem;
+		min-width: 0;
+		margin-top: 0.5rem;
 	}
 
 	.more ul {

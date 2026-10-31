@@ -21,9 +21,12 @@
 	import type { ProjectRef } from '$lib/domain/ticket';
 	import { textForContext } from '$lib/guidance/texts';
 	import { helpHref } from '$lib/settings-sections';
+	import type { CredentialsStore } from '$lib/stores/credentials.svelte';
+	import type { RestartStore } from '$lib/stores/restart.svelte';
 	import ChipList from '../ChipList.svelte';
 	import CardTargetProject from './CardTargetProject.svelte';
 	import ChannelCard, { type CardAction, type CardRename } from './ChannelCard.svelte';
+	import CredentialsBlock from './CredentialsBlock.svelte';
 	import TelegramReplySwitches from './TelegramReplySwitches.svelte';
 
 	// Card of a connection that fetches by itself: Google Calendar, Telegram and the mailboxes
@@ -37,7 +40,9 @@
 	// carries the anchor `#verbindung-<id>`, the target of "Zur Karte" in the flag of "Alle Kanäle
 	// jetzt abrufen". With `onrename` the menu offers "Umbenennen …" in the card (ADR-0026,
 	// addendum KK-3), with `ontarget` the details hold "Zielprojekt" and the menu "Zielprojekt …"
-	// leads there (ADR-0049).
+	// leads there (ADR-0049). With `credentials` the details hold "Zugangsdaten" with the state of the
+	// variables, "Setzen …" and "Entfernen …", and the menu "Zugangsdaten …" leads there (BW-3,
+	// ADR-0075).
 	let {
 		connection,
 		secretStatus,
@@ -57,7 +62,9 @@
 		onrename,
 		ontarget,
 		projects = [],
-		others = []
+		others = [],
+		credentials = null,
+		restart = null
 	}: {
 		connection: Connection;
 		/** State of the variables; null while unknown. */
@@ -96,10 +103,15 @@
 		projects?: readonly ProjectRef[];
 		/** Names of the other connections, for the note about a name that is taken. */
 		others?: readonly string[];
+		/** The access data of the page (BW-3); without it the card has no such block. */
+		credentials?: CredentialsStore | null;
+		/** "Jetzt neu starten" after a change of access data. */
+		restart?: RestartStore | null;
 	} = $props();
 
 	const uid = $props.id();
 	const targetId = `${uid}-target`;
+	const credentialsId = `${uid}-credentials`;
 	let card = $state<ReturnType<typeof ChannelCard>>();
 	const rename = $derived<CardRename | null>(
 		onrename === undefined ? null : { others, save: onrename }
@@ -167,6 +179,12 @@
 		});
 		if (ontarget !== undefined && connection.targetReady !== false) {
 			entries.push({ label: 'Zielprojekt …', onselect: () => void card?.showDetails(targetId) });
+		}
+		if (credentials !== null) {
+			entries.push({
+				label: 'Zugangsdaten …',
+				onselect: () => void card?.showDetails(credentialsId)
+			});
 		}
 		if (connection.enabled) entries.push({ label: 'Pausieren', onselect: () => onpause(false) });
 		if (health.pick && connection.enabled) {
@@ -271,6 +289,9 @@
 		{/if}
 		{#if connection.type === 'telegram'}
 			<TelegramReplySwitches {connection} compact onchange={onreplies} />
+		{/if}
+		{#if credentials !== null}
+			<CredentialsBlock id={credentialsId} {connection} store={credentials} {restart} />
 		{/if}
 	{/snippet}
 </ChannelCard>

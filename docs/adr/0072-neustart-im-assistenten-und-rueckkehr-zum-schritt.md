@@ -94,3 +94,7 @@ Unter jedem „Jetzt neu starten“ bzw. „Mail-Helfer neu starten“ steht ein
 - Der Schritt „Variable setzen“ verlangt weiter `setx` oder die Systemsteuerung am PC; Zugangsdaten aus dem Browser setzen ist BW-3.
 - Texte des Servers (Hooks, Mail-Helfer) mit `neu-starten.bat` bleiben, wo der Assistent sie unverändert zeigt, etwa der Hinweis eines abgelehnten Tokens; ihre Prüfung ist BW-2.
 - Ein neues Tab desselben Browsers hat seinen eigenen `sessionStorage` und beginnt bei den Daten des Servers.
+
+## Nachtrag (2026-10-31, [ADR-0075](0075-zugangsdaten-im-browser.md), BW-3): „Variable setzen“ im Browser
+
+Die Grenze „Der Schritt „Variable setzen“ verlangt weiter `setx`“ ist aufgehoben: Die Schritte „Variable setzen“, „Token setzen“ (mit den erlaubten IDs) und „Chat freigeben“ setzen die Variable im Browser (`CredentialField`), auch den vorgeschlagenen Namen vor der Verbindung; danach fragt die Stelle „Jetzt neu starten“ / „Später“ über denselben `RestartStore` und merkt den Schritt wie bei einem Neustart aus dem Schritt. `setx`, der Befehl der Chat-ID und die Systemsteuerung stehen nur noch eingeklappt unter „Notfall: Variable über Windows setzen“. Die Warnung im Schritt „Neu starten“ fragt „Hast du die Variable schon gesetzt?“.

@@ -43,7 +43,9 @@
 	import type { ProjectRef } from '$lib/domain/ticket';
 	import { textForContext } from '$lib/guidance/texts';
 	import { helpHref } from '$lib/settings-sections';
+	import type { CredentialsStore } from '$lib/stores/credentials.svelte';
 	import { GITHUB_AUTO_UNAVAILABLE_MESSAGE, type GitHubStore } from '$lib/stores/github.svelte';
+	import type { RestartStore } from '$lib/stores/restart.svelte';
 	import ChipList from '../ChipList.svelte';
 	import ErrorIcon from '../ErrorIcon.svelte';
 	import ExternalLink from '../guidance/ExternalLink.svelte';
@@ -52,6 +54,7 @@
 	import ConfirmDialog from '../overlay/ConfirmDialog.svelte';
 	import CardTargetProject from './CardTargetProject.svelte';
 	import ChannelCard, { type CardAction, type CardRename } from './ChannelCard.svelte';
+	import CredentialsBlock from './CredentialsBlock.svelte';
 	import GitHubRepoDialog from './GitHubRepoDialog.svelte';
 
 	// Card of a GitHub connection (ADR-0050 §7; a configuration of the building block ChannelCard,
@@ -66,7 +69,8 @@
 	// repository: "Einstellungen …" and removing for an entered one, "Anpassen …" and "Ausschließen
 	// …" for one of "Alle meine Repositorys". Excluded ones can come back. The details come from
 	// what the runs stored (no request to GitHub) and load again after every run; "Repository
-	// hinzufügen …" offers the repositories of the token as a list.
+	// hinzufügen …" offers the repositories of the token as a list. With `credentials` the details
+	// hold "Zugangsdaten" for the token and the menu leads there (BW-3, ADR-0075).
 	let {
 		connection,
 		secretStatus,
@@ -83,12 +87,18 @@
 		ondelete,
 		onsave,
 		onrename,
-		ontarget
+		ontarget,
+		credentials = null,
+		restart = null
 	}: {
 		connection: Connection;
 		/** State of the variable; null while unknown. */
 		secretStatus: SecretStatus | null;
 		github: GitHubStore;
+		/** The access data of the page (BW-3); without it the card has no such block. */
+		credentials?: CredentialsStore | null;
+		/** "Jetzt neu starten" after a change of access data. */
+		restart?: RestartStore | null;
 		/** "Jetzt abrufen" is running. */
 		running: boolean;
 		/** Answer of the last "Jetzt abrufen" on this page, or null. */
@@ -116,6 +126,7 @@
 
 	const uid = $props.id();
 	const targetId = `${uid}-target`;
+	const credentialsId = `${uid}-credentials`;
 	const intervalId = `${uid}-interval`;
 	const autoHintId = `${uid}-auto-hint`;
 	let card = $state<ReturnType<typeof ChannelCard>>();
@@ -314,6 +325,12 @@
 		if (ontarget !== undefined && connection.targetReady !== false) {
 			entries.push({ label: 'Zielprojekt …', onselect: () => void card?.showDetails(targetId) });
 		}
+		if (credentials !== null) {
+			entries.push({
+				label: 'Zugangsdaten …',
+				onselect: () => void card?.showDetails(credentialsId)
+			});
+		}
 		if (connection.enabled) entries.push({ label: 'Pausieren', onselect: () => onpause(false) });
 		if (rename !== null) {
 			entries.push({ label: 'Umbenennen …', onselect: () => void card?.startRename() });
@@ -390,6 +407,9 @@
 				</div>
 			{/if}
 		</dl>
+		{#if credentials !== null}
+			<CredentialsBlock id={credentialsId} {connection} store={credentials} {restart} />
+		{/if}
 		{#if loaded?.auto}
 			{@const auto = loaded.auto}
 			{@const locked = !loaded.authenticated && !settings.auto}

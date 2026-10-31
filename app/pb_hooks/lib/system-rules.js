@@ -19,6 +19,9 @@
  *             /api/byl/system/actions/{action} refuses it like an unknown name.
  *   security - a command of the page "Sicherheit" (ADR-0055 §8): run by its route in
  *             security.pb.js only, refused here like a command of the backup.
+ *   credentials - a command of the access data of the page "Kanäle" (BW-3, ADR-0075): run by its
+ *             routes in credentials.pb.js only, refused here like a command of the backup. The
+ *             value of a variable goes only on standard input, never on the command line.
  */
 var LOG_LINES = 200;
 var ACTIONS = {
@@ -44,7 +47,12 @@ var ACTIONS = {
   // Windows ask for administrator rights (UAC) on this machine; the route waits for the answer.
   'lan-info': { method: 'GET', args: ['lan-info', '-Json'], output: true, changes: false, security: true },
   'lan-configure': { method: 'POST', args: ['lan-configure', '-Json'], output: true, changes: true, input: true, security: true },
-  'lan-firewall': { method: 'POST', args: ['lan-firewall', '-Json'], output: true, changes: true, input: true, security: true }
+  'lan-firewall': { method: 'POST', args: ['lan-firewall', '-Json'], output: true, changes: true, input: true, security: true },
+  // Access data of the channels in the Windows user environment (BW-3, ADR-0075): the state of the
+  // names as { names }, a value as { name, value } and the removal as { name } on standard input.
+  'credential-status': { method: 'GET', args: ['credential-status', '-Json'], output: true, changes: false, input: true, credentials: true },
+  'credential-set': { method: 'POST', args: ['credential-set', '-Json'], output: true, changes: true, input: true, credentials: true },
+  'credential-remove': { method: 'POST', args: ['credential-remove', '-Json'], output: true, changes: true, input: true, credentials: true }
 };
 
 // Windows PowerShell 5.1 below the system folder, never a name looked up in PATH; the script is the
@@ -77,11 +85,14 @@ var REFUSALS = {
 };
 
 // Fixed windows per user: reading (status, doctor, logs) and actions; "Ansehen" of a file of a
-// watched folder (ADR-0051 §6) with a window of its own, one request to ask and one for the file.
+// watched folder (ADR-0051 §6) with a window of its own, one request to ask and one for the file;
+// setting and removing access data (BW-3, ADR-0075) as strict as actions, but in a window of their
+// own, so a few changes do not lock "Jetzt neu starten" right after them.
 var RATE_LIMITS = {
   read: { limit: 30, windowMs: 60000 },
   change: { limit: 10, windowMs: 60000 },
-  file: { limit: 120, windowMs: 60000 }
+  file: { limit: 120, windowMs: 60000 },
+  credential: { limit: 10, windowMs: 60000 }
 };
 // After a restart was started, another one waits this long (the server is gone by then).
 var RESTART_PENDING_MS = 90000;

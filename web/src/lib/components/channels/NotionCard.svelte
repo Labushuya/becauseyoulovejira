@@ -15,11 +15,14 @@
 	import { connectionAnchor } from '$lib/domain/sync-all';
 	import type { ProjectRef } from '$lib/domain/ticket';
 	import { helpHref } from '$lib/settings-sections';
+	import type { CredentialsStore } from '$lib/stores/credentials.svelte';
 	import type { NotionStore } from '$lib/stores/notion.svelte';
+	import type { RestartStore } from '$lib/stores/restart.svelte';
 	import ErrorIcon from '../ErrorIcon.svelte';
 	import ExternalLink from '../guidance/ExternalLink.svelte';
 	import CardTargetProject from './CardTargetProject.svelte';
 	import ChannelCard, { type CardAction, type CardRename } from './ChannelCard.svelte';
+	import CredentialsBlock from './CredentialsBlock.svelte';
 
 	// Card of a Notion connection (ADR-0041 §9, plan notion-import NI-2; since the plan kanal-karten
 	// KK-2 a configuration of the building block ChannelCard): Notion fetches nothing by itself, so
@@ -32,6 +35,8 @@
 	// block. No "Pausieren" and no keywords: the user chooses what comes in. With `onrename` the
 	// menu offers "Umbenennen …" in the card (ADR-0026, addendum KK-3), with `ontarget` the details
 	// hold "Zielprojekt" for the entries of the next imports and the menu leads there (ADR-0049).
+	// With `credentials` the details hold "Zugangsdaten" for the token and the menu leads there
+	// (BW-3, ADR-0075).
 	let {
 		connection,
 		secretStatus,
@@ -46,12 +51,18 @@
 		onrename,
 		ontarget,
 		projects = [],
-		others = []
+		others = [],
+		credentials = null,
+		restart = null
 	}: {
 		connection: Connection;
 		/** State of the variable; null while unknown. */
 		secretStatus: SecretStatus | null;
 		notion: NotionStore;
+		/** The access data of the page (BW-3); without it the card has no such block. */
+		credentials?: CredentialsStore | null;
+		/** "Jetzt neu starten" after a change of access data. */
+		restart?: RestartStore | null;
 		/** Error of the last action of this card (inline, ADR-0009). */
 		message?: string | null;
 		/** The failed request behind `message`, for "Details" (FP-1, ADR-0071). */
@@ -76,6 +87,7 @@
 
 	const uid = $props.id();
 	const targetId = `${uid}-target`;
+	const credentialsId = `${uid}-credentials`;
 	let card = $state<ReturnType<typeof ChannelCard>>();
 	const rename = $derived<CardRename | null>(
 		onrename === undefined ? null : { others, save: onrename }
@@ -164,6 +176,12 @@
 		if (ontarget !== undefined && connection.targetReady !== false) {
 			entries.push({ label: 'Zielprojekt …', onselect: () => void card?.showDetails(targetId) });
 		}
+		if (credentials !== null) {
+			entries.push({
+				label: 'Zugangsdaten …',
+				onselect: () => void card?.showDetails(credentialsId)
+			});
+		}
 		if (rename !== null) {
 			entries.push({ label: 'Umbenennen …', onselect: () => void card?.startRename() });
 		}
@@ -250,6 +268,9 @@
 				</ul>
 				<p class="note">„Erneut abrufen“ übernimmt nur Einträge, die noch nicht im Eingang sind.</p>
 			</section>
+		{/if}
+		{#if credentials !== null}
+			<CredentialsBlock id={credentialsId} {connection} store={credentials} {restart} />
 		{/if}
 	{/snippet}
 </ChannelCard>

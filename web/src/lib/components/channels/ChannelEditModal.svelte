@@ -8,9 +8,12 @@
 	} from '$lib/domain/connections';
 	import { MAIL_MATCH_BODY_LABEL } from '$lib/domain/keywords';
 	import type { ProblemEntry } from '$lib/domain/problems';
+	import type { CredentialsStore } from '$lib/stores/credentials.svelte';
+	import type { RestartStore } from '$lib/stores/restart.svelte';
 	import SectionMessage from '../guidance/SectionMessage.svelte';
 	import KeywordEditor from '../KeywordEditor.svelte';
 	import Modal from '../overlay/Modal.svelte';
+	import CredentialsBlock from './CredentialsBlock.svelte';
 	import TelegramReplySwitches from './TelegramReplySwitches.svelte';
 
 	// "‹Name› bearbeiten" (ADR-0026 section 3, plan EH-3): a modal of size M with the keywords of the
@@ -19,7 +22,8 @@
 	// names of its variables, read only, with the way to the setup. Every change is saved at once,
 	// so the footer says "Schließen" (ADR-0025 section 3); results go out as flags. The switches are
 	// switches after Apple HIG (ADR-0029, G-5): a single emphasised setting, a row with the name
-	// left and the switch right, drawn by base.css through role="switch".
+	// left and the switch right, drawn by base.css through role="switch". With `credentials` the
+	// names of the variables come with their state, "Setzen …" and "Entfernen …" (BW-3, ADR-0075).
 	let {
 		connection,
 		message = null,
@@ -28,9 +32,15 @@
 		onreplies,
 		onmatchbody,
 		onsetup,
-		onclose
+		onclose,
+		credentials = null,
+		restart = null
 	}: {
 		connection: Connection;
+		/** The access data of the page (BW-3); without it only the names stand. */
+		credentials?: CredentialsStore | null;
+		/** "Jetzt neu starten" after a change of access data. */
+		restart?: RestartStore | null;
 		/** Error of the last switch (inline). */
 		message?: string | null;
 		/** The failed request behind `message`, for "Details" (FP-1, ADR-0071). */
@@ -74,25 +84,39 @@
 		{#if message !== null}
 			<SectionMessage tone="error" compact live {problem}>{message}</SectionMessage>
 		{/if}
-		<section class="variables" aria-labelledby={`${uid}-variables`}>
-			<h3 id={`${uid}-variables`}>Zugangsdaten</h3>
-			<dl>
-				<div>
-					<dt>Variable</dt>
-					<dd><code>{connection.secretEnv}</code></dd>
-				</div>
-				{#if connection.type === 'telegram'}
-					<div>
-						<dt>Erlaubte IDs</dt>
-						<dd><code>{connection.allowlistEnv}</code></dd>
-					</div>
-				{/if}
-			</dl>
+		{#if credentials !== null}
+			<CredentialsBlock
+				id={`${uid}-variables`}
+				{connection}
+				store={credentials}
+				{restart}
+				notice
+				headingLevel={3}
+			/>
 			<p class="hint">
-				Die App speichert nur die Namen der Windows-Variablen, nie ihre Werte.
 				<button class="link" type="button" onclick={onsetup}>Einrichtung erneut ansehen</button>
 			</p>
-		</section>
+		{:else}
+			<section class="variables" aria-labelledby={`${uid}-variables`}>
+				<h3 id={`${uid}-variables`}>Zugangsdaten</h3>
+				<dl>
+					<div>
+						<dt>Variable</dt>
+						<dd><code>{connection.secretEnv}</code></dd>
+					</div>
+					{#if connection.type === 'telegram'}
+						<div>
+							<dt>Erlaubte IDs</dt>
+							<dd><code>{connection.allowlistEnv}</code></dd>
+						</div>
+					{/if}
+				</dl>
+				<p class="hint">
+					Die App speichert nur die Namen der Windows-Variablen, nie ihre Werte.
+					<button class="link" type="button" onclick={onsetup}>Einrichtung erneut ansehen</button>
+				</p>
+			</section>
+		{/if}
 	</div>
 
 	{#snippet footer({ close })}

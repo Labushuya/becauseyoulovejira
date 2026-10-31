@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { tick } from 'svelte';
+	import { tick, untrack } from 'svelte';
 	import {
 		settingsDraftOf,
 		telegramRepliesAnnouncement,
@@ -16,11 +16,15 @@
 		type ConnectionActionFailure,
 		type ConnectionsStore
 	} from '$lib/stores/connections.svelte';
+	import { appContext } from '$lib/stores/context.svelte';
+	import type { CredentialsStore } from '$lib/stores/credentials.svelte';
 	import type { FoldersStore } from '$lib/stores/folders.svelte';
 	import type { GitHubStore } from '$lib/stores/github.svelte';
 	import type { NotionStore } from '$lib/stores/notion.svelte';
+	import type { RestartStore } from '$lib/stores/restart.svelte';
 	import ChannelEditModal from './channels/ChannelEditModal.svelte';
 	import ConnectionCard from './channels/ConnectionCard.svelte';
+	import CredentialRestartNotice from './channels/CredentialRestartNotice.svelte';
 	import FolderCard from './channels/FolderCard.svelte';
 	import GitHubCard from './channels/GitHubCard.svelte';
 	import NotionCard from './channels/NotionCard.svelte';
@@ -40,16 +44,25 @@
 	// card has the target project of its new entries in its details (ADR-0049). A GitHub connection
 	// (ADR-0050) keeps its repositories in its card: add, change, remove, the interval. A folder
 	// connection (ADR-0051) keeps its folders the same way and takes files of before on request.
+	// Since BW-3 (ADR-0075) every card of a connection with variables holds "Zugangsdaten" (state in
+	// the user environment of the PC, "Setzen …", "Entfernen …"), and the hint "Neustart nötig, damit
+	// geänderte Zugangsdaten wirken" stands above the cards until the next restart, on every device.
 	let {
 		store,
 		notion,
 		github,
 		folders,
+		credentials = null,
+		restart = null,
 		projects = [],
 		onadd,
 		onsetup,
 		onimport
 	}: {
+		/** The access data of the page (BW-3); without it the cards have no such block. */
+		credentials?: CredentialsStore | null;
+		/** "Jetzt neu starten" after a change of access data and in the hint. */
+		restart?: RestartStore | null;
 		store: ConnectionsStore;
 		/** Notion import (ADR-0041) for the cards of Notion connections. */
 		notion: NotionStore;
@@ -129,6 +142,49 @@
 		const stops = ids.map((id) => store.watch(id));
 		return () => {
 			for (const stop of stops) stop();
+		};
+	});
+
+	// The access data (BW-3): the state of the variables only for the administrator at the PC (the
+	// route refuses everyone else), once the connections are there and again when they change; the
+	// hint of the server for the administrator on every device, again whenever the tab comes back
+	// (a restart elsewhere takes it away).
+	const mayRead = $derived(appContext.capabilities.scripts);
+	const admin = $derived(
+		appContext.capabilities.mode === 'pc' || appContext.capabilities.mode === 'remote'
+	);
+	$effect(() => {
+		void watchedIds;
+		if (credentials === null || !mayRead || store.state !== 'ready') return;
+		const current = credentials;
+		untrack(() => void current.load());
+	});
+	$effect(() => {
+		if (credentials === null || !admin) return;
+		const current = credentials;
+		untrack(() => void current.refreshNotice());
+		const again = () => {
+			if (document.visibilityState === 'visible') void current.refreshNotice();
+		};
+		document.addEventListener('visibilitychange', again);
+		return () => document.removeEventListener('visibilitychange', again);
+	});
+	// A change without an answer (the connection broke) may have arrived or not: the state is read
+	// again as soon as the browser is online again or the tab comes back (the store does nothing
+	// without such a change).
+	$effect(() => {
+		if (credentials === null || !mayRead) return;
+		const current = credentials;
+		const recover = () => {
+			if (document.visibilityState === 'visible') void current.recover();
+		};
+		window.addEventListener('online', recover);
+		window.addEventListener('focus', recover);
+		document.addEventListener('visibilitychange', recover);
+		return () => {
+			window.removeEventListener('online', recover);
+			window.removeEventListener('focus', recover);
+			document.removeEventListener('visibilitychange', recover);
 		};
 	});
 
@@ -246,6 +302,10 @@
 		{/if}
 	</div>
 
+	{#if credentials !== null}
+		<CredentialRestartNotice store={credentials} {restart} place="credentials:notice" />
+	{/if}
+
 	{#if store.state === 'loading'}
 		<p class="hint" role="status">Verbindungen werden geladen …</p>
 		<div class="grid" aria-hidden="true">
@@ -309,6 +369,8 @@
 								ontarget={(project) => store.setTarget(connection.id, project)}
 								{projects}
 								others={othersOf(connection)}
+								{credentials}
+								{restart}
 							/>
 						{:else if connection.type === 'github'}
 							<GitHubCard
@@ -332,6 +394,8 @@
 								ontarget={(project) => store.setTarget(connection.id, project)}
 								{projects}
 								others={othersOf(connection)}
+								{credentials}
+								{restart}
 							/>
 						{:else if connection.type === 'folder'}
 							<FolderCard
@@ -382,6 +446,8 @@
 								ontarget={(project) => store.setTarget(connection.id, project)}
 								{projects}
 								others={othersOf(connection)}
+								{credentials}
+								{restart}
 							/>
 						{/if}
 					</li>
@@ -395,6 +461,8 @@
 	{@const connection = editing}
 	<ChannelEditModal
 		{connection}
+		{credentials}
+		{restart}
 		message={editMessage}
 		problem={editProblem}
 		onkeywords={(next, announcement) => saveKeywords(connection, next, announcement)}
@@ -447,7 +515,8 @@
 	{:else}
 		<p>
 			Die App ruft dann nichts mehr ab. Einträge, die schon im Eingang sind, bleiben. Die
-			Windows-Variable löschst du selbst, falls du sie nicht mehr brauchst.
+			Windows-Variable bleibt; entferne sie vorher unter „Zugangsdaten“ der Karte, falls du sie
+			nicht mehr brauchst.
 		</p>
 	{/if}
 </ConfirmDialog>

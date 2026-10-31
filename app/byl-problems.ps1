@@ -718,6 +718,71 @@ $BylProblemCatalog = [ordered]@{
         Offer   = ''
     }
 
+    # --- Access data of the channels from the app (BW-3, ADR-0075) -----------------------------------
+
+    'credential-input'         = @{
+        Exit    = 1
+        Level   = 'error'
+        Faq     = ''
+        Problem = 'Dieser Befehl nimmt Name und Wert einer Variablen nur von der App.'
+        Cause   = 'credential-status, credential-set und credential-remove bekommen ihre Angaben als JSON auf der Standardeingabe; ein Wert gehört nie auf die Befehlszeile.'
+        Steps   = @(
+            'In der App unter Einstellungen → Kanäle beim Kanal „Zugangsdaten“ öffnen und die Variable dort setzen oder entfernen.'
+            'Geht das nicht: die Variable wie im Schritt „Variable setzen“ des Einrichtungsassistenten mit setx in der Eingabeaufforderung setzen und die App danach mit neu-starten.bat neu starten.'
+        )
+        Command = ''
+        Offer   = ''
+    }
+    'credential-name'          = @{
+        Exit    = 1
+        Level   = 'error'
+        Faq     = ''
+        Problem = 'Die Variable {name} hat keinen gültigen Namen.'
+        Cause   = 'Erlaubt sind nur BYL_ mit Großbuchstaben, Ziffern und _, höchstens 64 Zeichen.'
+        Steps   = @(
+            'Den Namen der Variablen beim Kanal prüfen; es wurde nichts geändert.'
+        )
+        Command = ''
+        Offer   = ''
+    }
+    'credential-blocked'       = @{
+        Exit    = 1
+        Level   = 'error'
+        Faq     = ''
+        Problem = 'Die Variable {name} steuert die App selbst; sie lässt sich so weder setzen noch entfernen.'
+        Cause   = 'Namen wie BYL_INGEST_TOKEN und die Schalter der Tests (BYL_TEST_…) verwaltet becauseyoulovejira selbst.'
+        Steps   = @(
+            'Für die Zugangsdaten eines Kanals einen eigenen Namen wählen, etwa BYL_TELEGRAM_TOKEN; es wurde nichts geändert.'
+        )
+        Command = ''
+        Offer   = ''
+    }
+    'credential-value'         = @{
+        Exit    = 1
+        Level   = 'error'
+        Faq     = ''
+        Problem = 'Der Wert für {name} ist ungültig ({detail}).'
+        Cause   = 'Ein Wert ist nicht leer, enthält keine Steuerzeichen wie Zeilenumbrüche und hat höchstens 4096 Zeichen.'
+        Steps   = @(
+            'Den Wert ohne Zeilenumbruch erneut einfügen; zum Leeren dient „Entfernen“. Es wurde nichts geändert.'
+        )
+        Command = ''
+        Offer   = ''
+    }
+    'credential-write'         = @{
+        Exit    = 1
+        Level   = 'error'
+        Faq     = ''
+        Problem = 'Windows hat die Variable {name} nicht gespeichert ({detail}).'
+        Cause   = 'Die Benutzervariablen dieses Windows-Kontos ließen sich nicht schreiben, etwa wegen einer Richtlinie; eine Testkopie schreibt nur in ihre Datei BYL_TEST_ACCOUNT_FILE.'
+        Steps   = @(
+            'Es in der App erneut versuchen.'
+            'Bleibt es dabei: die Variable in der Systemsteuerung unter „Umgebungsvariablen für dieses Konto bearbeiten“ prüfen.'
+        )
+        Command = ''
+        Offer   = ''
+    }
+
     # --- Backup (ADR-0046) ---------------------------------------------------------------------------
 
     'backup-target-format'     = @{
