@@ -120,4 +120,25 @@ describe('offline consent: store', () => {
 		store.choose('yes');
 		expect(store.consent).toBe('yes');
 	});
+
+	// Round 2 (E-5): the layout asks only where the answer can be stored; the check leaves nothing.
+	it('knows whether the storage of the browser takes the answer, without leaving anything behind', () => {
+		const store = new OfflineConsentStore(window);
+		expect(store.writable).toBe(true);
+		expect(localStorage.length).toBe(0);
+		const refusing = new OfflineConsentStore({
+			localStorage: throwing,
+			addEventListener: () => undefined,
+			removeEventListener: () => undefined
+		} as unknown as Window);
+		expect(refusing.writable).toBe(false);
+		const blocked = new OfflineConsentStore({
+			get localStorage(): Storage {
+				throw new Error('blocked');
+			},
+			addEventListener: () => undefined,
+			removeEventListener: () => undefined
+		} as unknown as Window);
+		expect(blocked.writable).toBe(false);
+	});
 });

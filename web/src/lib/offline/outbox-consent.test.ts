@@ -14,6 +14,7 @@ import { MemoryOutboxStorage, type OutboxStorage } from './outbox-storage';
 
 const NOW = Date.UTC(2026, 9, 31, 12, 30, 0);
 const USER = 'user00000000001';
+const OTHER = 'user00000000002';
 const OPS = { version: 1, kinds: ['ticket.update'] as const };
 const A = 'tick00000000001';
 const B = 'tick00000000002';
@@ -203,5 +204,108 @@ describe('outbox: the answer of this device (Einschalten)', () => {
 		// A new change of another ticket goes the way of today.
 		expect(h.outbox.routes(B)).toBe(false);
 		h.stop();
+	});
+
+	// Round 2 (E-6): "Ja, merken" taken back under "Darstellung" while a kept change is under way: it
+	// goes to its end, and so does the next one kept before; only new changes are no longer kept.
+	it('sends the kept changes to their end when "yes" is taken back while one is under way (round 2, E-6)', async () => {
+		const storage = new MemoryOutboxStorage();
+		await storage.put(stored());
+		await storage.put({ ...stored(), op: 'zzzzzzzzzzzzzzzzzzz2', seq: 2, target: B });
+		const h = harness({ storage, exists: true, consent: true });
+		const answers: (() => void)[] = [];
+		h.send.mockImplementation(
+			(action) =>
+				new Promise<Ticket>((resolve) => {
+					answers.push(() => resolve(ticket(action.target, action.payload.status)));
+				})
+		);
+		await settle();
+		expect(h.send).toHaveBeenCalledTimes(1);
+		h.outbox.setConsent(false);
+		await settle();
+		expect(h.outbox.armed).toBe(false);
+		expect(h.outbox.watching).toBe(true);
+		answers[0]?.();
+		await settle();
+		expect(h.send).toHaveBeenCalledTimes(2);
+		answers[1]?.();
+		await settle();
+		expect(h.send.mock.calls.map(([action]) => action.target)).toEqual([A, B]);
+		expect(storage.entries.size).toBe(0);
+		expect(h.outbox.count).toBe(0);
+		expect(h.outbox.watching).toBe(false);
+		h.stop();
+	});
+
+	// Round 2 (E-8): another account signs in while the browser still says whether it has the storage.
+	// The reading of the first account ends there and never deletes the changes of the new one; the new
+	// account reads the device itself (the changes of other accounts go then, decision 4).
+	it('never deletes the changes of an account that signed in while the browser answered (round 2, E-8)', async () => {
+		const answers: ((there: boolean) => void)[] = [];
+		const exists = () =>
+			new Promise<boolean>((resolve) => {
+				answers.push(resolve);
+			});
+		const storage = new MemoryOutboxStorage();
+		await storage.put(stored());
+		await storage.put({
+			...stored(),
+			op: 'zzzzzzzzzzzzzzzzzzz2',
+			user: OTHER,
+			scope: `u:${OTHER}`,
+			target: B
+		});
+		const h = harness({ storage, exists, consent: false });
+		await settle();
+		expect(answers).toHaveLength(1);
+		h.outbox.attach(OTHER);
+		await settle();
+		expect(answers).toHaveLength(2);
+		answers[0]?.(true);
+		await settle();
+		expect([...storage.entries.keys()].sort()).toEqual([
+			'zzzzzzzzzzzzzzzzzzz1',
+			'zzzzzzzzzzzzzzzzzzz2'
+		]);
+		answers[1]?.(true);
+		await settle();
+		expect(h.send.mock.calls.map(([action]) => action.op)).toEqual(['zzzzzzzzzzzzzzzzzzz2']);
+		expect(storage.entries.size).toBe(0);
+		h.stop();
+	});
+});
+
+describe('outbox: what "Darstellung" and the question need to know (round 2)', () => {
+	function outboxWith(storage: OutboxStorage | null) {
+		return new OutboxStore({
+			storage,
+			connectivity: new ConnectivityStore(async () => true),
+			send: async (action) => ticket(action.target, action.payload.status),
+			get: async (id) => ticket(id),
+			tab: 'tab-a',
+			channel: null
+		});
+	}
+
+	// E-2: "unknown" (the question runs or failed, e.g. without a connection) is not "the server cannot".
+	it('tells a question that runs or failed from an answer of the server (E-2)', () => {
+		const outbox = outboxWith(new MemoryOutboxStorage());
+		expect(outbox.supportCheck).toBe('pending');
+		outbox.setSupport(null, false);
+		expect(outbox.supportCheck).toBe('failed');
+		expect(outbox.supported).toBe(false);
+		outbox.setSupport(null);
+		expect(outbox.supportCheck).toBe('answered');
+		expect(outbox.supported).toBe(false);
+		outbox.setSupport(OPS);
+		expect(outbox.supportCheck).toBe('answered');
+		expect(outbox.supported).toBe(true);
+	});
+
+	// E-5: without IndexedDB nothing can be kept, so the layout does not ask.
+	it('knows whether the browser offers the storage of the device (E-5)', () => {
+		expect(outboxWith(null).canStore).toBe(false);
+		expect(outboxWith(new MemoryOutboxStorage()).canStore).toBe(true);
 	});
 });

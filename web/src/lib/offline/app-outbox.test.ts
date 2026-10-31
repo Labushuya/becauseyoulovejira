@@ -61,12 +61,14 @@ describe('the question about the capability (G1)', () => {
 		vi.useRealTimers();
 	});
 
+	// Changed in round 2 of "Einschalten" (E-2): the answer says whether the server answered, so
+	// "Darstellung" tells "the server cannot" from "unknown"; the timing stays.
 	it('goes again at most every 5 minutes while the server does not report the outbox', async () => {
 		mocks.fetchSupport.mockResolvedValue(null);
-		expect(await offlineSupport()).toBeNull();
+		expect(await offlineSupport()).toEqual({ ops: null, answered: true });
 		for (const minutes of [1, 2, 4]) {
 			vi.setSystemTime(NOW + minutes * 60_000);
-			expect(await offlineSupport()).toBeNull();
+			expect(await offlineSupport()).toEqual({ ops: null, answered: true });
 		}
 		expect(mocks.fetchSupport).toHaveBeenCalledTimes(1);
 		vi.setSystemTime(NOW + 5 * 60_000);
@@ -80,17 +82,19 @@ describe('the question about the capability (G1)', () => {
 		forgetOfflineSupport();
 		const ops = { version: 1, kinds: ['ticket.update'] };
 		mocks.fetchSupport.mockResolvedValue({ offlineOps: ops });
-		expect(await offlineSupport()).toEqual(ops);
+		expect(await offlineSupport()).toEqual({ ops, answered: true });
 		vi.setSystemTime(NOW + 60 * 60_000);
-		expect(await offlineSupport()).toEqual(ops);
+		expect(await offlineSupport()).toEqual({ ops, answered: true });
 		expect(mocks.fetchSupport).toHaveBeenCalledTimes(2);
 	});
 
-	it('takes a failed question like an answer without the outbox', async () => {
+	// Changed in round 2 of "Einschalten" (E-2): still without the outbox and asked again as late, but
+	// marked as not answered, so "Darstellung" says "Gerade nicht prüfbar" instead of the restart.
+	it('takes a failed question like an answer without the outbox, marked as not answered', async () => {
 		mocks.fetchSupport.mockRejectedValue(new Error('offline'));
-		expect(await offlineSupport()).toBeNull();
+		expect(await offlineSupport()).toEqual({ ops: null, answered: false });
 		vi.setSystemTime(NOW + 60_000);
-		expect(await offlineSupport()).toBeNull();
+		expect(await offlineSupport()).toEqual({ ops: null, answered: false });
 		expect(mocks.fetchSupport).toHaveBeenCalledTimes(1);
 	});
 });

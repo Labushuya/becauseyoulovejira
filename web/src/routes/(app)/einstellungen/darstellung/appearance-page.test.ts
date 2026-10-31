@@ -349,10 +349,17 @@ describe('appearance page: phone view (MO-1a, Einschalten)', () => {
 		});
 	}
 
-	/** An outbox whose server takes changes without a connection (or not), with `kept` on the device. */
-	async function outboxOf(support: OfflineOps | null, kept: readonly OutboxAction[] = []) {
-		const storage = new MemoryOutboxStorage();
-		for (const action of kept) await storage.put(action);
+	/**
+	 * An outbox whose server takes changes without a connection (or not), with `kept` on the device.
+	 * Round 2 (E-2): "pending" while the question runs, "failed" when it failed (e.g. no connection);
+	 * (E-5) `storage` null for a browser without IndexedDB.
+	 */
+	async function outboxOf(
+		support: OfflineOps | null | 'pending' | 'failed',
+		kept: readonly OutboxAction[] = [],
+		storage: MemoryOutboxStorage | null = new MemoryOutboxStorage()
+	) {
+		for (const action of kept) await storage?.put(action);
 		const outbox = new OutboxStore({
 			storage,
 			exists: async () => kept.length > 0,
@@ -367,7 +374,8 @@ describe('appearance page: phone view (MO-1a, Einschalten)', () => {
 			channel: null
 		});
 		outbox.attach(USER);
-		outbox.setSupport(support);
+		if (support === 'failed') outbox.setSupport(null, false);
+		else if (support !== 'pending') outbox.setSupport(support);
 		stops.push(
 			outbox.connect({
 				upsert: () => undefined,
@@ -384,6 +392,7 @@ describe('appearance page: phone view (MO-1a, Einschalten)', () => {
 		for (const stop of stops.splice(0)) stop();
 		getMobileLayoutStore().choose(true);
 		getOfflineConsentStore().consent = null;
+		getOfflineConsentStore().writable = true;
 		localStorage.clear();
 		document.documentElement.removeAttribute('data-mobile-layout');
 	});
@@ -405,8 +414,12 @@ describe('appearance page: phone view (MO-1a, Einschalten)', () => {
 		expect(text).toMatch(/unten eine Leiste mit Tagesplan, Aufgaben, Erfassen/);
 		expect(text).not.toMatch(/Vorschau/);
 		expect(text).toMatch(/nur in diesem Browser auf diesem Gerät/);
-		// jsdom counts as a wide window: the view of today stays, and the page says why.
-		expect(screen.getByText(/zu breit für die Handy-Ansicht/)).toBeTruthy();
+		// jsdom counts as a wide window: the view of today stays. Changed in round 2 (E-4): the page
+		// says it neutrally, since "Automatisch" is the default for every PC, not "zu breit".
+		expect(
+			screen.getByText('Die Handy-Ansicht erscheint automatisch auf schmalen Bildschirmen.')
+		).toBeTruthy();
+		expect(screen.queryByText(/zu breit/)).toBeNull();
 	});
 
 	// Changed with the package "Einschalten": "Aus" is stored as "off", "Automatisch" removes the key.
@@ -417,7 +430,8 @@ describe('appearance page: phone view (MO-1a, Einschalten)', () => {
 		expect(phoneChoice().find((radio) => radio.checked)?.value).toBe('off');
 		expect(localStorage.getItem('byl-mobile-layout')).toBe('off');
 		expect(document.documentElement.hasAttribute('data-mobile-layout')).toBe(false);
-		expect(screen.queryByText(/zu breit für die Handy-Ansicht/)).toBeNull();
+		// Round 2 (E-4): with "Aus" the phone view does not appear automatically, so no such sentence.
+		expect(screen.queryByText(/erscheint automatisch auf schmalen Bildschirmen/)).toBeNull();
 
 		await fireEvent.click(screen.getByRole('radio', { name: 'Automatisch' }));
 		expect(phoneChoice().find((radio) => radio.checked)?.value).toBe('auto');
@@ -480,5 +494,64 @@ describe('appearance page: phone view (MO-1a, Einschalten)', () => {
 		).toBeTruthy();
 		await fireEvent.click(keepSwitch());
 		expect(screen.queryByText(/trotzdem noch übertragen/)).toBeNull();
+	});
+
+	// Round 2 (E-3): with "Handy-Ansicht: Aus" the outbox keeps nothing new either, also after "Ja,
+	// merken"; what it kept before still goes, and the page says so.
+	it('says that kept changes are still sent with "Aus", also after "Ja, merken" (round 2, E-3)', async () => {
+		getOfflineConsentStore().choose('yes');
+		const createdAt = Date.now() - 60_000;
+		const outbox = await outboxOf(OPS, [stored({ createdAt })]);
+		renderWithOutbox(outbox);
+		await vi.waitFor(() => expect(outbox.count).toBe(1));
+		await tick();
+		expect(screen.queryByText(/trotzdem noch übertragen/)).toBeNull();
+
+		await fireEvent.click(screen.getByRole('radio', { name: 'Aus' }));
+		expect(
+			screen.getByText(
+				'1 gemerkte Änderung wird trotzdem noch übertragen, sobald die Verbindung zurück ist. Neue merkt die App auf diesem Gerät nicht mehr.'
+			)
+		).toBeTruthy();
+		await fireEvent.click(screen.getByRole('radio', { name: 'Automatisch' }));
+		expect(screen.queryByText(/trotzdem noch übertragen/)).toBeNull();
+	});
+
+	// Round 2 (E-2): "unknown" is not "the server cannot": while the question runs, and when it failed
+	// (e.g. without a connection), the switch is locked with its own reason, not the restart.
+	it.each([
+		[
+			'while the question to the server runs',
+			'pending' as const,
+			'Wird geprüft … Die App fragt gerade den Server, ob er Änderungen ohne Verbindung merken kann.'
+		],
+		[
+			'when the question failed, e.g. without a connection',
+			'failed' as const,
+			'Gerade nicht prüfbar – keine Verbindung zum Server. Ob er Änderungen ohne Verbindung merken kann, fragt die App später erneut.'
+		]
+	])('locks the switch with its own reason %s (round 2, E-2)', async (_name, support, reason) => {
+		renderWithOutbox(await outboxOf(support));
+		await tick();
+		expect(keepSwitch().disabled).toBe(true);
+		expect(screen.getByText(reason)).toBeTruthy();
+		expect(screen.queryByText(/nach dem nächsten Neustart verfügbar/)).toBeNull();
+	});
+
+	// Round 2 (E-5): where the answer cannot be stored or IndexedDB is missing, nothing can be kept.
+	it.each([
+		['localStorage refuses to write', true],
+		['the browser has no IndexedDB', false]
+	])('locks the switch with its reason where %s (round 2, E-5)', async (_name, refuses) => {
+		if (refuses) getOfflineConsentStore().writable = false;
+		renderWithOutbox(await outboxOf(OPS, [], refuses ? new MemoryOutboxStorage() : null));
+		await tick();
+		expect(keepSwitch().disabled).toBe(true);
+		expect(
+			screen.getByText(
+				'Dieser Browser lässt die App hier nichts dauerhaft speichern, etwa in einem privaten Fenster. Deshalb merkt sie sich ohne Verbindung nichts.'
+			)
+		).toBeTruthy();
+		expect(screen.queryByText(/nach dem nächsten Neustart verfügbar/)).toBeNull();
 	});
 });
