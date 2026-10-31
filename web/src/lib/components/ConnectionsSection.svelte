@@ -169,6 +169,24 @@
 		document.addEventListener('visibilitychange', again);
 		return () => document.removeEventListener('visibilitychange', again);
 	});
+	// A change without an answer (the connection broke) may have arrived or not: the state is read
+	// again as soon as the browser is online again or the tab comes back (the store does nothing
+	// without such a change).
+	$effect(() => {
+		if (credentials === null || !mayRead) return;
+		const current = credentials;
+		const recover = () => {
+			if (document.visibilityState === 'visible') void current.recover();
+		};
+		window.addEventListener('online', recover);
+		window.addEventListener('focus', recover);
+		document.addEventListener('visibilitychange', recover);
+		return () => {
+			window.removeEventListener('online', recover);
+			window.removeEventListener('focus', recover);
+			document.removeEventListener('visibilitychange', recover);
+		};
+	});
 
 	/** Names of the other connections, for the note about a name that is taken (KK-3). */
 	function othersOf(connection: Connection): string[] {

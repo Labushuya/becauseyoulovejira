@@ -7,6 +7,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { DataError } from '$lib/data/errors';
 import type { Connection } from '$lib/domain/connections';
 import { CREDENTIAL_TEXTS, PC_ONLY } from '$lib/domain/credentials';
 import ChannelsViewHarness from '$lib/test/ChannelsViewHarness.svelte';
@@ -123,6 +124,53 @@ describe('the lasting hint "Neustart nötig" (V3)', () => {
 		expect(
 			within(group).getByRole('button', { name: 'Setzen …' }).getAttribute('aria-disabled')
 		).toBe('true');
+	});
+});
+
+describe('a change without an answer (S6)', () => {
+	it('says that it is unclear whether it arrived and reads the state again once the connection is back', async () => {
+		const data = fakeCredentialsData([
+			variableOf('BYL_GOOGLE_CALENDAR_URL', { set: false, channels: ['Google Kalender'] })
+		]);
+		// The change reaches the server, but its answer is lost on the way back.
+		const arrives = data.set.getMockImplementation();
+		data.set.mockImplementationOnce(async (name, value) => {
+			await arrives?.(name, value);
+			throw new DataError('network', { status: 0 });
+		});
+		await renderPage([CALENDAR], data);
+		await vi.waitFor(() => expect(data.status).toHaveBeenCalled());
+		const asked = data.status.mock.calls.length;
+		// Without such a change, coming back reads nothing again.
+		window.dispatchEvent(new Event('online'));
+		await tick();
+		expect(data.status).toHaveBeenCalledTimes(asked);
+
+		await chooseFromMenu('Google Kalender', 'Zugangsdaten …');
+		const group = await vi.waitFor(() =>
+			screen.getByRole('group', { name: 'BYL_GOOGLE_CALENDAR_URL' })
+		);
+		await fireEvent.click(within(group).getByRole('button', { name: 'Setzen …' }));
+		await tick();
+		await fireEvent.input(within(group).getByLabelText('Neuer Wert für BYL_GOOGLE_CALENDAR_URL'), {
+			target: { value: 'https://example.com/kalender/basic.ics' }
+		});
+		await fireEvent.click(within(group).getByRole('button', { name: 'Speichern' }));
+		await vi.waitFor(() => expect(within(group).getByText(CREDENTIAL_TEXTS.offline)).toBeTruthy());
+		expect(CREDENTIAL_TEXTS.offline).toBe(
+			'Verbindung unterbrochen – ob die Änderung angekommen ist, ist unklar. Im Browser wurde nichts gespeichert. Der Zustand wird nach dem Wiederverbinden neu geladen.'
+		);
+		expect(within(group).getByText('fehlt')).toBeTruthy();
+
+		// Back online: the state is read again and shows that the change did arrive.
+		window.dispatchEvent(new Event('online'));
+		await vi.waitFor(() => expect(within(group).getByText('gesetzt')).toBeTruthy());
+		expect(data.status).toHaveBeenCalledTimes(asked + 1);
+		expect(data.set).toHaveBeenCalledTimes(1);
+		// Read once, a later return asks nothing more.
+		document.dispatchEvent(new Event('visibilitychange'));
+		await tick();
+		expect(data.status).toHaveBeenCalledTimes(asked + 1);
 	});
 });
 

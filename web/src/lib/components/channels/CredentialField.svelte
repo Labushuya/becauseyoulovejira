@@ -10,6 +10,7 @@
 		pcOnlyNote
 	} from '$lib/domain/credentials';
 	import type { ProblemEntry } from '$lib/domain/problems';
+	import { RESTART_TEXTS } from '$lib/domain/system';
 	import { contextNoteText } from '$lib/guidance/texts';
 	import { appContext } from '$lib/stores/context.svelte';
 	import type { CredentialOutcome, CredentialsStore } from '$lib/stores/credentials.svelte';
@@ -111,6 +112,12 @@
 	} | null>(null);
 	let asking = $state(false);
 
+	// The value lives no longer than its form: when the form goes (closed, or the tab may no longer
+	// act, e.g. the context changed), the typed value goes with it and never comes back (S7).
+	$effect(() => {
+		if (!(editing && allowed)) draft = '';
+	});
+
 	const restartHere = $derived(
 		restart !== null && (restart.runningAt(place) || restart.resultAt(place) !== null)
 	);
@@ -158,10 +165,11 @@
 
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
-		if (!allowed || anyBusy) return;
-		// The value leaves the field at once, whatever follows (S7).
+		// The value leaves the field at once, whatever follows (S7), also when nothing is sent: while
+		// a change runs, a submit sends nothing.
 		const value = draft;
 		draft = '';
+		if (!allowed || anyBusy) return;
 		fieldError = null;
 		failure = null;
 		const problem = credentialValueProblem(value);
@@ -347,6 +355,7 @@
 		oncancel={() => (asking = false)}
 	>
 		<p>{CREDENTIAL_TEXTS.restartText}</p>
+		<p>{RESTART_TEXTS.unsaved}</p>
 	</ConfirmDialog>
 
 	{#if restartHere}

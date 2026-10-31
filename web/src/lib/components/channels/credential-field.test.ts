@@ -11,8 +11,10 @@ import { join } from 'node:path';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { CredentialAnswer, CredentialChange } from '$lib/data/credentials';
 import { DataError } from '$lib/data/errors';
 import { CREDENTIAL_MESSAGES, CREDENTIAL_TEXTS, PC_ONLY } from '$lib/domain/credentials';
+import { RESTART_TEXTS } from '$lib/domain/system';
 import { connectionOf } from '$lib/test/connections-fake';
 import { MEMBER_CONTEXT, PC_CONTEXT, REMOTE_CONTEXT, useContext } from '$lib/test/context';
 import {
@@ -170,6 +172,67 @@ describe('the state and the actions at the field of a channel (V1)', () => {
 		expect(input.value).toBe('');
 		expect(document.body.textContent).not.toContain(MARKER);
 	});
+
+	it('sends nothing while a change runs and empties the field all the same (S7)', async () => {
+		const data = fakeCredentialsData([
+			variableOf('BYL_TELEGRAM_TOKEN'),
+			variableOf('BYL_TELEGRAM_ALLOWED_IDS')
+		]);
+		let answer: (value: CredentialAnswer<CredentialChange>) => void = () => undefined;
+		data.set.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					answer = resolve;
+				})
+		);
+		await renderBlock(data);
+		const input = await submit('BYL_TELEGRAM_TOKEN', MARKER);
+		const group = field('BYL_TELEGRAM_TOKEN');
+		const saving = within(group).getByRole('button', { name: CREDENTIAL_TEXTS.saving });
+		expect(saving.getAttribute('aria-disabled')).toBe('true');
+		// Typed and submitted while the first change hangs: nothing goes out, the field is empty.
+		await fireEvent.input(input, { target: { value: `${MARKER}-zwei` } });
+		await fireEvent.click(saving);
+		await tick();
+		expect(input.value).toBe('');
+		expect(data.set).toHaveBeenCalledTimes(1);
+		answer(okAnswer({ name: 'BYL_TELEGRAM_TOKEN', set: true, restartNeeded: true }));
+		await vi.waitFor(() =>
+			expect(screen.getByText(/BYL_TELEGRAM_TOKEN ist gesetzt\./)).toBeTruthy()
+		);
+		expect(data.set).toHaveBeenCalledTimes(1);
+		expect(document.body.textContent).not.toContain(MARKER);
+	});
+
+	it('forgets a typed value when the tab may no longer act, and opens empty again (S7)', async () => {
+		await renderBlock();
+		const input = await openForm('BYL_TELEGRAM_ALLOWED_IDS');
+		await fireEvent.input(input, { target: { value: MARKER } });
+		// Allowed, then not (another device), then allowed again.
+		await useContext(REMOTE_CONTEXT);
+		await tick();
+		const label = 'Neuer Wert für BYL_TELEGRAM_ALLOWED_IDS';
+		expect(within(field('BYL_TELEGRAM_ALLOWED_IDS')).queryByLabelText(label)).toBeNull();
+		await useContext(PC_CONTEXT);
+		await tick();
+		const again = within(field('BYL_TELEGRAM_ALLOWED_IDS')).getByLabelText(
+			label
+		) as HTMLInputElement;
+		expect(again.value).toBe('');
+		expect(document.body.textContent).not.toContain(MARKER);
+	});
+
+	it('names too many requests neutrally when reading the state is refused (rate)', async () => {
+		const data = fakeCredentialsData();
+		data.status.mockResolvedValueOnce({ kind: 'denied', reason: 'rate', problem: null });
+		await renderBlock(data);
+		expect(
+			screen.getByText(
+				'Zu viele Anfragen in kurzer Zeit. Warte eine Minute und versuche es dann erneut.'
+			)
+		).toBeTruthy();
+		expect(document.body.textContent).not.toMatch(/Zu viele Änderungen/);
+	});
 });
 
 describe('"Entfernen" (V2)', () => {
@@ -219,6 +282,8 @@ describe('the restart after a change (V3)', () => {
 			screen.getByRole('dialog', { name: 'Jetzt neu starten?' })
 		);
 		expect(within(question).getByRole('button', { name: 'Jetzt neu starten' })).toBeTruthy();
+		// The warning of the page System about input in other tabs, the same words.
+		expect(within(question).getByText(RESTART_TEXTS.unsaved)).toBeTruthy();
 		await fireEvent.click(within(question).getByRole('button', { name: 'Später' }));
 		await tick();
 		expect(screen.queryByRole('dialog', { name: 'Jetzt neu starten?' })).toBeNull();

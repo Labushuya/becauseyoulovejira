@@ -135,7 +135,7 @@ export const CREDENTIAL_TEXTS = {
 	valueHint:
 		'Der Wert geht nur an Windows auf dem PC. Die App speichert ihn nicht und zeigt ihn nie wieder an.',
 	outerSpace:
-		'Der Wert beginnt oder endet mit einem Leerzeichen. Die App übernimmt ihn genau so; meist ist das ein Versehen beim Kopieren.',
+		'Der Wert beginnt oder endet mit einem Leerzeichen. Windows speichert ihn genau so; die Kanäle lesen ihn ohne die Leerzeichen am Rand. Meist ist das ein Versehen beim Kopieren.',
 	removeTitle: (name: string) => `${name} entfernen?`,
 	removeUsedBy: (channels: readonly string[]) =>
 		channels.length === 1
@@ -157,9 +157,9 @@ export const CREDENTIAL_TEXTS = {
 	pendingRestartTitle: 'Neustart nötig',
 	pendingRestart: 'Neustart nötig, damit geänderte Zugangsdaten wirken.',
 	offline:
-		'Keine Verbindung zum Server: Die Zugangsdaten wurden nicht geändert. Die App merkt sich den Wert nicht und schickt ihn auch später nicht; gib ihn erneut ein, sobald die Verbindung steht.',
+		'Verbindung unterbrochen – ob die Änderung angekommen ist, ist unklar. Im Browser wurde nichts gespeichert. Der Zustand wird nach dem Wiederverbinden neu geladen.',
 	emergency:
-		'Notfall: Geht das hier nicht, setzt du die Variable am PC wie bisher mit setx in der Eingabeaufforderung (Befehl im Einrichtungsassistenten unter „Notfall“) und startest die App mit neu-starten.bat im Ordner app neu.',
+		'Notfall: Geht das hier nicht, setzt du die Variable am PC wie bisher mit setx in der Eingabeaufforderung (Befehl im Einrichtungsassistenten unter „Notfall“; setx kürzt Werte über 1024 Zeichen) und startest die App mit neu-starten.bat im Ordner app neu.',
 	setupEmergencySummary: 'Notfall: Variable über Windows setzen'
 } as const;
 
@@ -170,10 +170,12 @@ export const CREDENTIAL_DENIAL_TEXTS: Readonly<Partial<Record<SystemDenial, stri
 	owner: 'Zugangsdaten setzt nur der Verwalter der App.',
 	platform:
 		'Auf diesem Server nicht verfügbar: Zugangsdaten setzt die App nur auf einem PC mit Windows.',
-	rate: 'Zu viele Änderungen in kurzer Zeit. Warte eine Minute und versuche es dann erneut.',
+	// Reading the state and changing a value have their own windows; the text fits both.
+	rate: 'Zu viele Anfragen in kurzer Zeit. Warte eine Minute und versuche es dann erneut.',
 	unavailable:
 		'Dieser Server lässt sich nicht aus der App steuern, etwa eine Test- oder Entwicklungsinstanz.',
-	busy: 'Gerade läuft ein Neustart. Warte, bis die App wieder da ist, und versuche es dann erneut.',
+	// A restart or another action of the page System (one at a time, ADR-0075 §5).
+	busy: 'Gerade läuft ein Neustart oder eine andere Aktion der Seite „System“. Warte, bis sie fertig ist, und versuche es dann erneut.',
 	script:
 		'Das Steuerskript hat nicht wie erwartet geantwortet. Versuche es erneut; die Seite „Einstellungen → System“ zeigt den Zustand und die Logs.',
 	missing: 'Der Server kennt diese Funktion erst nach einem Neustart.',

@@ -72,6 +72,8 @@ export class CredentialsStore {
 	#failure = $state.raw<{ message: string; problem: ProblemEntry | null } | null>(null);
 	#restartNeeded = $state(false);
 	#busy = $state<string | null>(null);
+	/** A change got no answer (the connection broke): whether it arrived is unknown. */
+	#unanswered = false;
 
 	constructor(data: CredentialsData, session: SessionGuard) {
 		this.#data = data;
@@ -119,6 +121,7 @@ export class CredentialsStore {
 				this.#restartNeeded = answer.value.restartNeeded;
 				this.#failure = null;
 				this.#state = 'ready';
+				this.#unanswered = false;
 				return;
 			}
 			const message =
@@ -144,6 +147,14 @@ export class CredentialsStore {
 			if (failure.kind === 'session') this.#session.logout();
 			// Without an answer the hint stays as it was; the next visit asks again.
 		}
+	}
+
+	/**
+	 * After a change that got no answer, once the page sees the connection again (the browser is
+	 * online, the tab is back): reads the state, with the hint, from the server; nothing otherwise.
+	 */
+	async recover(): Promise<void> {
+		if (this.#unanswered) await this.load();
 	}
 
 	/** "Setzen" / "Ersetzen": hands `value` on once and keeps nothing of it. */
@@ -194,6 +205,7 @@ export class CredentialsStore {
 				this.#session.logout();
 				return null;
 			}
+			if (failure.kind === 'network') this.#unanswered = true;
 			const message = failure.kind === 'network' ? CREDENTIAL_TEXTS.offline : failure.message;
 			return { kind: 'failed', message, problem: problemOf(failure), tone: 'error' };
 		} finally {
@@ -222,5 +234,6 @@ export class CredentialsStore {
 		this.#failure = null;
 		this.#restartNeeded = false;
 		this.#busy = null;
+		this.#unanswered = false;
 	}
 }

@@ -140,7 +140,11 @@ describe('help page (EH-9)', () => {
 		expect(content).toMatch(/„Jetzt neu starten“ oder „Später“/);
 		expect(content).toMatch(/Neustart nötig, damit\s+geänderte Zugangsdaten wirken/);
 		expect(content).toMatch(/„Nur am PC möglich“/);
+		expect(content).toMatch(
+			/Windows speichert ihn genau so; die Kanäle lesen ihn ohne die Leerzeichen am Rand\./
+		);
 		expect(content).toMatch(/setx BYL_TELEGRAM_TOKEN/);
+		expect(content).toMatch(/setx kürzt Werte über 1024 Zeichen/);
 		expect(content).toMatch(/Umgebungsvariablen für dieses Konto bearbeiten/);
 		expect(content).toMatch(/neu-starten\.bat im Ordner app doppelklicken/);
 		expect(within(section).getByRole('link', { name: 'Kanäle' }).getAttribute('href')).toBe(

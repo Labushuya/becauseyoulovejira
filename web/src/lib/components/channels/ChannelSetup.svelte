@@ -902,7 +902,7 @@
 					<CredentialField
 						name={allowlist}
 						label="Erlaubte Chat- oder User-IDs"
-						hint={`Die erkannte ID ist ${chatId}; mehrere IDs trennst du mit Komma.`}
+						hint={`Die erkannte ID ist ${chatId}. Ersetzen überschreibt die ganze Liste – gib alle IDs an, die erlaubt bleiben sollen (mit Komma getrennt).`}
 						store={credentials}
 						{restart}
 						place={`${restartPlace('chat')}:${allowlist}`}

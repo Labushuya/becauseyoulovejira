@@ -540,10 +540,11 @@
 			Einrichtungsassistenten). Er nennt jede Variable mit ihrem Zustand „gesetzt“ oder „fehlt“ und
 			bietet „Setzen …“ bzw. „Ersetzen …“ und „Entfernen …“. Der Wert geht nur an Windows auf dem
 			PC: Die App speichert ihn nicht, zeigt ihn nie wieder an, schreibt ihn in kein Protokoll und
-			merkt ihn sich auch ohne Verbindung nicht. Leerzeichen am Anfang oder Ende übernimmt sie genau
-			so und warnt davor. „Entfernen …“ fragt vorher und nennt alle Kanäle, die die Variable
-			verwenden. Variablen, die die App selbst steuert (etwa der Zugang des Mail-Hilfsprozesses),
-			lassen sich so nicht setzen.
+			merkt ihn sich auch ohne Verbindung nicht. Beginnt oder endet der Wert mit einem Leerzeichen,
+			warnt das Feld: Windows speichert ihn genau so; die Kanäle lesen ihn ohne die Leerzeichen am
+			Rand. „Entfernen …“ fragt vorher und nennt alle Kanäle, die die Variable verwenden. Variablen,
+			die die App selbst steuert (etwa der Zugang des Mail-Hilfsprozesses), lassen sich so nicht
+			setzen.
 		</p>
 		<p>
 			Danach fragt die App „Jetzt neu starten“ oder „Später“, denn geänderte Zugangsdaten sieht sie
@@ -561,7 +562,8 @@
 					Dann
 					<code>setx NAME "Wert"</code> eingeben, also etwa
 					<code>setx BYL_TELEGRAM_TOKEN "123456789:AA…"</code>. Den Wert in Anführungszeichen
-					setzen. Die Meldung „Erfolgreich: Der angegebene Wert wurde gespeichert.“ bestätigt es.
+					setzen; <code>setx</code> kürzt Werte über 1024 Zeichen. Die Meldung „Erfolgreich: Der angegebene
+					Wert wurde gespeichert.“ bestätigt es.
 				</li>
 				<li>
 					<strong>Oder per Systemsteuerung:</strong> Windows-Taste, „Umgebungsvariablen“ eingeben und
