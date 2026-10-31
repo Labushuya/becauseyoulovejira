@@ -389,6 +389,18 @@ describe('ticket table', () => {
 		expect(screen.queryByRole('rowgroup', { name: /^Erledigt/ })).toBeNull();
 	});
 
+	it('shows "Erledigte ansehen" as a small secondary button like its neighbours, still a link', async () => {
+		await showTable(fakeData([ticket()]), '/?prio=high&q=Miete');
+
+		// A link to another view keeps its role; only the look is the shared button of base.css, as
+		// for "Alle als gelesen markieren" beside it (focus ring, hover, 44 px on touch from there).
+		const link = screen.getByRole('link', { name: 'Erledigte ansehen' });
+		expect(link.tagName).toBe('A');
+		expect(link.getAttribute('href')).toBe('/erledigt?q=Miete');
+		expect(link.classList.contains('button-secondary')).toBe(true);
+		expect(link.classList.contains('button-small')).toBe(true);
+	});
+
 	it('checks a ticket, removes the row and restores the previous status from the flag (UI-5)', async () => {
 		const item = ticket({ status: 'waiting' });
 		const data = fakeData([item]);
