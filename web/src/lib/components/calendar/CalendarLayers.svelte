@@ -11,16 +11,20 @@
 	// planned dates of the rules, dated entries of the inbox), each with a line on what it shows. A
 	// change applies at once and stays on this device (CalendarPrefsStore); the popover stays open,
 	// so several layers can change in one go. A status filter decides over the tickets (like the list,
-	// T-6): the hint says so where it overrides a layer.
+	// T-6): the hint says so where it overrides a layer. In the filter sheet of the phone frame
+	// (`inline`, MO-7c2) the same group stands without a popover, each choice a target of 44 px.
 	let {
 		layers,
 		statusFilter,
-		onchange
+		onchange,
+		inline = false
 	}: {
 		layers: ReadonlySet<CalendarLayer>;
 		/** The status filter of the URL; "done" shows done tickets, any other hides them. */
 		statusFilter: string | null;
 		onchange: (layer: CalendarLayer, shown: boolean) => void;
+		/** The group itself, without the popover (the filter sheet of the phone frame). */
+		inline?: boolean;
 	} = $props();
 
 	const uid = $props.id();
@@ -42,37 +46,45 @@
 	}
 </script>
 
-<div class="layers-popover">
-	<Popover kind="panel" labelledby={legendId} placement="bottom-end" buttonClass="toggle">
-		{#snippet button()}
-			<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-				<path d="M8 2.5l5.5 3L8 8.5l-5.5-3zM2.5 8L8 11l5.5-3M2.5 10.5L8 13.5l5.5-3" />
-			</svg>
-			Ebenen
-			<span class="count">({count} von {CALENDAR_LAYERS.length})</span>
-		{/snippet}
-		<fieldset>
-			<legend id={legendId}>Ebenen</legend>
-			{#each CALENDAR_LAYERS as layer (layer)}
-				{@const note = override(layer)}
-				<label class="choice">
-					<input
-						type="checkbox"
-						checked={layers.has(layer)}
-						aria-describedby={`${uid}-${layer}`}
-						onchange={(event) => onchange(layer, event.currentTarget.checked)}
-					/>
-					<span class="text">
-						<span class="label">{LAYER_LABELS[layer]}</span>
-						<span class="hint" id={`${uid}-${layer}`}
-							>{LAYER_HINTS[layer]}{note === '' ? '' : ` ${note}`}</span
-						>
-					</span>
-				</label>
-			{/each}
-		</fieldset>
-	</Popover>
-</div>
+{#snippet choices()}
+	<fieldset class:inline>
+		<legend id={legendId}>Ebenen</legend>
+		{#each CALENDAR_LAYERS as layer (layer)}
+			{@const note = override(layer)}
+			<label class="choice">
+				<input
+					type="checkbox"
+					checked={layers.has(layer)}
+					aria-describedby={`${uid}-${layer}`}
+					onchange={(event) => onchange(layer, event.currentTarget.checked)}
+				/>
+				<span class="text">
+					<span class="label">{LAYER_LABELS[layer]}</span>
+					<span class="hint" id={`${uid}-${layer}`}
+						>{LAYER_HINTS[layer]}{note === '' ? '' : ` ${note}`}</span
+					>
+				</span>
+			</label>
+		{/each}
+	</fieldset>
+{/snippet}
+
+{#if inline}
+	{@render choices()}
+{:else}
+	<div class="layers-popover">
+		<Popover kind="panel" labelledby={legendId} placement="bottom-end" buttonClass="toggle">
+			{#snippet button()}
+				<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+					<path d="M8 2.5l5.5 3L8 8.5l-5.5-3zM2.5 8L8 11l5.5-3M2.5 10.5L8 13.5l5.5-3" />
+				</svg>
+				Ebenen
+				<span class="count">({count} von {CALENDAR_LAYERS.length})</span>
+			{/snippet}
+			{@render choices()}
+		</Popover>
+	</div>
+{/if}
 
 <style>
 	.layers-popover {
@@ -115,6 +127,11 @@
 		gap: 0.125rem;
 		width: min(20rem, calc(100vw - 2rem));
 		border: none;
+	}
+
+	/* In the filter sheet the group takes the width of the sheet. */
+	fieldset.inline {
+		width: auto;
 	}
 
 	legend {

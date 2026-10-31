@@ -116,13 +116,24 @@ export const CALENDAR_VIEW_STORAGE_KEY = 'byl-calendar-view';
  */
 export const CALENDAR_NARROW_QUERY = PHONE_QUERY;
 
-/** The view shown: the one of the URL, else the remembered one, else the month (agenda if narrow). */
+/**
+ * The views of the phone frame (MO-7c2, ADR-0073 addendum MO-7c2), the agenda first: seven days
+ * side by side leave about 46 px per day at 360 px, no room for the titles of a week.
+ */
+export const PHONE_CALENDAR_VIEWS = ['agenda', 'month'] as const satisfies readonly CalendarView[];
+
+/**
+ * The view shown: the one of the URL, else the remembered one, else the month (agenda if narrow).
+ * In the phone frame (`phone`, MO-7c2) a week shows as the agenda from its day.
+ */
 export function effectiveView(
 	named: CalendarView | null,
 	stored: CalendarView | null,
-	narrow: boolean
+	narrow: boolean,
+	phone = false
 ): CalendarView {
-	return named ?? stored ?? (narrow ? 'agenda' : 'month');
+	const view = named ?? stored ?? (narrow ? 'agenda' : 'month');
+	return phone && view === 'week' ? 'agenda' : view;
 }
 
 export const CALENDAR_LAYERS = ['open', 'done', 'planned', 'inbox'] as const;
@@ -626,6 +637,14 @@ export function entryCountText(count: number): string {
 }
 
 /**
+ * Name of a day of the month in the phone frame, which opens the list of the day (MO-7c2):
+ * "2 Einträge am Freitag, 2. Oktober 2026".
+ */
+export function dayListLabel(date: CalendarDate, count: number): string {
+	return `${entryCountText(count)} am ${fullDateLabel(date)}`;
+}
+
+/**
  * Name of a day of the grid: the full date, ", heute" for today, and the number of its entries,
  * e.g. "Montag, 5. Oktober 2026, heute, 3 Einträge".
  */
@@ -658,17 +677,29 @@ export function isMovable(entry: CalendarEntry): boolean {
 
 /**
  * What to do while a due date moves, for the status line of the grid: with the keyboard (or after
- * the menu) the arrow keys or a click choose the day, with the mouse the day under it.
+ * the menu) the arrow keys or a click choose the day, with the mouse the day under it; in the phone
+ * frame (`touch`, MO-7c2) a tap, without the keys.
  */
 export function moveInstructions(
 	key: string,
-	how: 'keyboard' | 'pointer',
+	how: 'keyboard' | 'pointer' | 'touch',
 	recurring: boolean
 ): string {
 	const steps =
 		how === 'keyboard'
 			? 'Tag mit den Pfeiltasten wählen oder anklicken, Enter setzt die Fälligkeit, Esc bricht ab.'
-			: 'Auf einen Tag ziehen und loslassen, Esc bricht ab.';
+			: how === 'touch'
+				? 'Einen Tag antippen, „Abbrechen“ bricht ab.'
+				: 'Auf einen Tag ziehen und loslassen, Esc bricht ab.';
 	const series = recurring ? ' Nur dieses Ticket, die Serie verschiebt sich nicht.' : '';
 	return `Fälligkeit von ${key} verschieben: ${steps}${series}`;
 }
+
+/**
+ * Without a connection (the outbox of the phone frame, ADR-0074: moving in the calendar only with
+ * one) "Fälligkeit verschieben …" stays in the menu, locked, and says so in its name, like "Alle
+ * Kanäle jetzt abrufen" (OF-3); a tap, Enter, the key "m" or a day chosen meanwhile name why in a
+ * flag (MO-7c2).
+ */
+export const MOVE_OFFLINE_LABEL = 'Fälligkeit verschieben … (nur mit Verbindung)';
+export const MOVE_OFFLINE_TEXT = '„Fälligkeit verschieben“ geht nur mit Verbindung.';

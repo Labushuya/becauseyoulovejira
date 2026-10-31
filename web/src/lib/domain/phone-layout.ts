@@ -100,16 +100,22 @@ export interface StartAddress {
 	readonly navigation: string;
 }
 
+/** The bare start page and the bare login page, which leads there after the sign-in (guard.ts). */
+const START_PATHS: readonly string[] = ['/', '/login'];
+
 /**
  * Whether the app was opened at its start page, so the phone frame starts with the day plan
  * (decision of the user): only the bare "/" (the shortcut on the home screen, the address typed),
- * not a link with a state ("/?karte=heute", "/tickets/…"), not a page of the app that loaded "/"
- * as a new document after an update (its referrer is the app itself), and not a reload ("Aufgaben"
+ * or since MO-7c2 the bare login page, which leads to it after the sign-in; not a link with a state
+ * ("/?karte=heute", "/tickets/…", "/login?redirect=…"), not a page of the app that loaded "/" as a
+ * new document after an update (its referrer is the app itself), and not a reload ("Aufgaben"
  * pulled down to refresh stays "Aufgaben") or a way back to it. A tap on "Aufgaben" never comes
  * here: it navigates inside the open app.
  */
 export function isPhoneStart(address: StartAddress): boolean {
-	if (address.pathname !== '/' || address.search !== '' || address.hash !== '') return false;
+	if (!START_PATHS.includes(address.pathname) || address.search !== '' || address.hash !== '') {
+		return false;
+	}
 	if (address.navigation !== 'navigate' && address.navigation !== '') return false;
 	if (address.referrer === '') return true;
 	try {
@@ -117,6 +123,22 @@ export function isPhoneStart(address: StartAddress): boolean {
 	} catch {
 		return true;
 	}
+}
+
+/**
+ * Whether the app opens the day plan as it shows (MO-7c2, ADR-0073 addendum MO-7c2): the frame
+ * applies, the document opened at the start page (`start`, held before the session check, null once
+ * taken) and the app shows the bare start page now; after the sign-in that is the page the login
+ * led to. Decided once, when the app layout mounts: with a stored session that is after the first
+ * navigation, so no later navigation, a tap on "Aufgaben" included, ever comes here.
+ */
+export function opensWithDayPlan(
+	start: StartAddress | null,
+	shown: Pick<StartAddress, 'pathname' | 'search' | 'hash'>,
+	phone: boolean
+): boolean {
+	if (!phone || start === null || !isPhoneStart(start)) return false;
+	return shown.pathname === '/' && shown.search === '' && shown.hash === '';
 }
 
 /** The views in the fixed order of the navigation (ADR-0066 §1). */

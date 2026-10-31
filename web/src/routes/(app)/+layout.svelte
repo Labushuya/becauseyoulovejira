@@ -18,7 +18,8 @@
 	import PhoneTopBar from '$lib/components/phone/PhoneTopBar.svelte';
 	import QuickCapture from '$lib/components/QuickCapture.svelte';
 	import { isHelpKey, isQuickCaptureKey, isTypingTarget } from '$lib/domain/keyboard';
-	import { isPhoneStart, warnsBeforeLeaving } from '$lib/domain/phone-layout';
+	import { opensWithDayPlan, warnsBeforeLeaving } from '$lib/domain/phone-layout';
+	import { takeStart } from '$lib/app-start';
 	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 	import { pb } from '$lib/pocketbase';
 	import { setQuickCaptureOpener } from '$lib/quick-capture-context';
@@ -199,22 +200,17 @@
 	const phone = $derived(mobileLayout.active);
 	// The start view on the phone is the day plan (decision of the user): only when the app opens at
 	// its bare start page, never for a link with its own address, a reload or a tap on "Aufgaben".
-	let started = false;
-	afterNavigate(() => {
-		if (started) return;
-		started = true;
-		const kind = (performance.getEntriesByType?.('navigation')[0] as { type?: unknown } | undefined)
-			?.type;
-		const start = isPhoneStart({
-			pathname: page.url.pathname,
-			search: page.url.search,
-			hash: page.url.hash,
-			referrer: document.referrer,
-			origin: page.url.origin,
-			navigation: typeof kind === 'string' ? kind : ''
-		});
-		if (mobileLayout.active && start) void goto(dayPlanHref(), { replaceState: true });
-	});
+	// Decided once, when this layout mounts (MO-7c2), from the address the app opened with, held
+	// before the session check (lib/app-start.ts): with a stored session the root layout shows the app
+	// only after that check, when its first navigation is over, so afterNavigate would first hear a
+	// later one (the tap on "Aufgaben").
+	$effect(() =>
+		untrack(() => {
+			if (opensWithDayPlan(takeStart(), page.url, mobileLayout.active)) {
+				void goto(dayPlanHref(), { replaceState: true });
+			}
+		})
+	);
 	// Leaving the page in the phone frame (MO-1b): reloading, pulling down to refresh, closing the
 	// tab or a link out of the app asks the browser's question first while typed input is not saved
 	// (quick entry, comment, a field of the ticket, a form; lib/unsaved-input.ts). Only while the

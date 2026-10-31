@@ -10,6 +10,9 @@ import {
 	CALENDAR_PARAMS,
 	DEFAULT_LAYERS,
 	MONTH_DAY_LIMIT,
+	MOVE_OFFLINE_LABEL,
+	MOVE_OFFLINE_TEXT,
+	PHONE_CALENDAR_VIEWS,
 	SERIES_MOVE_HINT,
 	calendarDateOf,
 	calendarListQuery,
@@ -188,6 +191,18 @@ describe('state of the calendar in the URL', () => {
 		expect(viewOf(viewValue('agenda'))).toBe('agenda');
 		expect(viewOf('kalender')).toBeNull();
 		expect(viewOf(null)).toBeNull();
+	});
+
+	// MO-7c2: the phone frame knows the agenda and the month; seven days side by side have no room.
+	it('shows a week as the agenda in the phone frame, the agenda without a choice (MO-7c2)', () => {
+		expect(PHONE_CALENDAR_VIEWS).toEqual(['agenda', 'month']);
+		expect(effectiveView('week', null, true, true)).toBe('agenda');
+		expect(effectiveView(null, 'week', true, true)).toBe('agenda');
+		expect(effectiveView(null, null, true, true)).toBe('agenda');
+		expect(effectiveView('month', 'agenda', true, true)).toBe('month');
+		expect(effectiveView(null, 'month', true, true)).toBe('month');
+		// Outside the frame the week stays.
+		expect(effectiveView('week', null, true, false)).toBe('week');
 	});
 });
 
@@ -515,5 +530,17 @@ describe('moving a due date (K-2)', () => {
 		);
 		expect(SERIES_MOVE_HINT).toContain('verschiebt die Serie nicht');
 		expect(CALENDAR_MOVE_KEY).toBe('m');
+	});
+
+	// MO-7c2: in the phone frame a tap chooses the day; without a connection moving is locked.
+	it('says how to move with a tap in the phone frame, and why it is locked without a connection', () => {
+		expect(moveInstructions('HAUS-12', 'touch', false)).toBe(
+			'Fälligkeit von HAUS-12 verschieben: Einen Tag antippen, „Abbrechen“ bricht ab.'
+		);
+		expect(moveInstructions('HAUS-12', 'touch', true)).toBe(
+			'Fälligkeit von HAUS-12 verschieben: Einen Tag antippen, „Abbrechen“ bricht ab. Nur dieses Ticket, die Serie verschiebt sich nicht.'
+		);
+		expect(MOVE_OFFLINE_LABEL).toBe('Fälligkeit verschieben … (nur mit Verbindung)');
+		expect(MOVE_OFFLINE_TEXT).toBe('„Fälligkeit verschieben“ geht nur mit Verbindung.');
 	});
 });

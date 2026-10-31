@@ -141,7 +141,10 @@ describe('breakpoints (MO-1a, ADR-0073)', () => {
 		// "Aufgaben"; since MO-7b "Projekte", "Wiederholungen" and "Papierkorb" (their cards, the row of
 		// the view, the filter sheet, the pages of a project and a rule with their targets) and the bar
 		// of the selection at the bottom; since MO-7c1 "Erledigte" (the entries as cards, the filters of
-		// 44 px) and the folded parts about the keyboard in the help.
+		// 44 px) and the folded parts about the keyboard in the help; since MO-7c2 the calendar (the
+		// month of marks with its days as targets, the rows of the agenda, the line of a move above the
+		// bottom bar) and the settings (their navigation and the links of a section message as targets
+		// of 44 px).
 		expect([...new Set(places)].sort()).toEqual([
 			'lib/components/Breadcrumbs.svelte',
 			'lib/components/CharmPicker.svelte',
@@ -163,6 +166,7 @@ describe('breakpoints (MO-1a, ADR-0073)', () => {
 			'lib/components/RecurrenceTable.svelte',
 			'lib/components/SectionBar.svelte',
 			'lib/components/SelectionBar.svelte',
+			'lib/components/SettingsNav.svelte',
 			'lib/components/SortChoice.svelte',
 			'lib/components/SuggestionList.svelte',
 			'lib/components/TagPicker.svelte',
@@ -176,6 +180,9 @@ describe('breakpoints (MO-1a, ADR-0073)', () => {
 			'lib/components/TrashTable.svelte',
 			'lib/components/TrashView.svelte',
 			'lib/components/ViewWithPanel.svelte',
+			'lib/components/calendar/CalendarEntry.svelte',
+			'lib/components/calendar/CalendarGrid.svelte',
+			'lib/components/calendar/CalendarMore.svelte',
 			'lib/components/day-plan/DayPlanList.svelte',
 			'lib/components/day-plan/DayPlanPool.svelte',
 			'lib/components/day-plan/DayPlanSort.svelte',
@@ -184,6 +191,7 @@ describe('breakpoints (MO-1a, ADR-0073)', () => {
 			'lib/components/done/DoneFilterBar.svelte',
 			'lib/components/done/DoneView.svelte',
 			'lib/components/editor/EditorToolbar.svelte',
+			'lib/components/guidance/SectionMessage.svelte',
 			'lib/components/help/KeyboardFold.svelte',
 			'lib/components/overlay/Drawer.svelte',
 			'lib/components/overlay/FlagGroup.svelte',

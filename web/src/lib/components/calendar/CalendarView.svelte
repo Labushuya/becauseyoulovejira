@@ -6,7 +6,10 @@
 	import {
 		CALENDAR_VIEWS,
 		CALENDAR_VIEW_LABELS,
+		MOVE_OFFLINE_TEXT,
 		PERIOD_STEP_LABELS,
+		PHONE_CALENDAR_VIEWS,
+		calendarListQuery,
 		effectiveView,
 		entriesByDay,
 		entryCountText,
@@ -23,10 +26,17 @@
 		type CalendarView as View
 	} from '$lib/domain/calendar';
 	import { plannedOccurrences } from '$lib/domain/calendar-plan';
-	import { parseListQuery } from '$lib/domain/list-query';
+	import {
+		activeFilterCount,
+		hasFilters,
+		parseListQuery,
+		resetFilters
+	} from '$lib/domain/list-query';
+	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 	import type { CalendarDoneStore } from '$lib/stores/calendar.svelte';
 	import type { CalendarPrefsStore } from '$lib/stores/calendar-prefs.svelte';
 	import type { CatalogStore } from '$lib/stores/catalog.svelte';
+	import { findFlagStore, type FlagSink } from '$lib/stores/flags.svelte';
 	import type { InboxStore } from '$lib/stores/inbox.svelte';
 	import { findTicketOpenMode } from '$lib/stores/open-mode.svelte';
 	import type { RecurrenceStore } from '$lib/stores/recurrence.svelte';
@@ -39,11 +49,14 @@
 		calendarItemHref,
 		calendarRuleHref,
 		calendarTicketHref,
-		withCalendarQuery
+		withCalendarQuery,
+		withListQuery
 	} from '$lib/ticket-links';
 	import ErrorIcon from '../ErrorIcon.svelte';
 	import ProblemDetails from '../problems/ProblemDetails.svelte';
 	import FilterBar from '../FilterBar.svelte';
+	import FilterButton from '../FilterButton.svelte';
+	import FilterSheet from '../FilterSheet.svelte';
 	import SectionMessage from '../guidance/SectionMessage.svelte';
 	import SectionBar from '../SectionBar.svelte';
 	import ViewSwitch from '../ViewSwitch.svelte';
@@ -66,6 +79,12 @@
 	// with `expected_updated` and shows the flag with "Rückgängig". A planned date opens its rule and
 	// a date of the inbox its entry next to the calendar too (ADR-0054 §8), marked like a ticket, and
 	// closing those panels returns the focus to their entry.
+	// Phone frame (MO-7c2, ADR-0073 addendum MO-7c2): the row of the view holds "Agenda | Monat" and
+	// "Filter"; the agenda is the start, a week shows as the agenda (no room for seven days with
+	// titles). The filter sheet (FilterSheet without the order of the tickets) holds the filters of the
+	// bar of the PC and the layers; "Zurücksetzen" keeps view and day. The month shows marks, a day
+	// opens its list (CalendarGrid). Without a connection (`offline`, the outbox of the frame, ADR-0074)
+	// moving a due date is locked and a flag names why. "So funktioniert’s" is under "Mehr → Hilfe".
 	let {
 		tickets,
 		catalog,
@@ -78,7 +97,9 @@
 		activeId = null,
 		activeRuleId = null,
 		activeItemId = null,
-		inboxCount = null
+		inboxCount = null,
+		offline = false,
+		flags = findFlagStore()
 	}: {
 		tickets: TicketListStore;
 		catalog: CatalogStore;
@@ -98,6 +119,10 @@
 		activeItemId?: string | null;
 		/** New inbox entries for the switch. */
 		inboxCount?: number | null;
+		/** Without a connection (the outbox of the phone frame): moving a due date is locked (MO-7c2). */
+		offline?: boolean;
+		/** Where the reason of a locked move goes; the flags of the app layout by default. */
+		flags?: FlagSink | null;
 	} = $props();
 
 	const uid = $props.id();
@@ -112,10 +137,12 @@
 			: calendarTicketHref(ticketId, page.url);
 	}
 
+	const mobileLayout = getMobileLayoutStore();
+	const phone = $derived(mobileLayout.active);
 	const query = $derived(parseListQuery(page.url.searchParams));
 	const named = $derived(parseCalendarQuery(page.url.searchParams));
 	const today = $derived(tickets.today);
-	const view = $derived(effectiveView(named.view, prefs.view, prefs.narrow));
+	const view = $derived(effectiveView(named.view, prefs.view, prefs.narrow, phone));
 	const period = $derived(periodOf(view, named.date ?? today));
 	const filter = $derived<CalendarFilter>({
 		query,
@@ -177,6 +204,20 @@
 
 	function setLayer(layer: CalendarLayer, shown: boolean) {
 		prefs.setLayer(layer, shown);
+	}
+
+	/** The filter sheet of the phone frame and the filters the calendar applies (MO-7c2). */
+	let filtersOpen = $state(false);
+	const calendarQuery = $derived(calendarListQuery(query));
+
+	/** "Zurücksetzen" of the sheet: the filters, like the bar of the PC; view, day and layers stay. */
+	function resetInSheet() {
+		void goto(withListQuery(page.url, resetFilters(query)), { keepFocus: true, noScroll: true });
+	}
+
+	/** Moving a due date without a connection: only the reason (ADR-0074, MO-7c2). */
+	function explainOfflineMove() {
+		flags?.show({ tone: 'info', title: MOVE_OFFLINE_TEXT });
 	}
 
 	let heading = $state<HTMLElement>();
@@ -247,6 +288,7 @@
 		dueLabel={place.dueLabel ?? false}
 		move={pending ? null : (place.move ?? null)}
 		moving={place.moving ?? false}
+		moveLocked={place.moveLocked ?? false}
 		{pending}
 		active={entry.kind === 'ticket'
 			? entry.ticket.id === activeId
@@ -256,31 +298,51 @@
 	/>
 {/snippet}
 
+<!-- The choice of the view: all of them on the PC, the agenda and the month in the phone frame. -->
+{#snippet viewChoice(views: readonly View[])}
+	<div class="view-choice segmented" role="group" aria-label="Ansicht des Kalenders">
+		{#each views as choice (choice)}
+			<button type="button" aria-pressed={view === choice} onclick={() => chooseView(choice)}>
+				{CALENDAR_VIEW_LABELS[choice]}
+			</button>
+		{/each}
+	</div>
+{/snippet}
+
+<!-- The row of the view in the phone frame (MO-7c2): "Agenda | Monat" and "Filter". -->
+{#snippet phoneTools()}
+	{@render viewChoice(PHONE_CALENDAR_VIEWS)}
+	<FilterButton count={activeFilterCount(calendarQuery)} onclick={() => (filtersOpen = true)} />
+{/snippet}
+
+<!-- The filter sheet of the phone frame (MO-7c2): the filters of the bar of the PC, then the layers. -->
+{#snippet sheetFilters()}
+	<FilterBar {catalog} calendar part="filters" />
+	<CalendarLayers layers={prefs.layers} statusFilter={query.status} onchange={setLayer} inline />
+{/snippet}
+
 <section class="calendar" aria-labelledby={headingId}>
 	<SectionBar
 		title="Kalender"
 		{headingId}
 		count={tickets.openState === 'ready' ? total : null}
 		countLabel={`${entryCountText(total)} im Zeitraum`}
+		phone={phoneTools}
 		bind:heading
 	>
 		{#snippet start()}
 			<ViewSwitch current="calendar" {inboxCount} projectsNewCount={tickets.newInProjects} />
 		{/snippet}
 		{#snippet end()}
-			<div class="view-choice segmented" role="group" aria-label="Ansicht des Kalenders">
-				{#each CALENDAR_VIEWS as choice (choice)}
-					<button type="button" aria-pressed={view === choice} onclick={() => chooseView(choice)}>
-						{CALENDAR_VIEW_LABELS[choice]}
-					</button>
-				{/each}
-			</div>
+			{@render viewChoice(CALENDAR_VIEWS)}
 			<CalendarLayers layers={prefs.layers} statusFilter={query.status} onchange={setLayer} />
 			<a class="button-subtle" href={helpHref('kalender')}>So funktioniert’s</a>
 		{/snippet}
 	</SectionBar>
 
-	<FilterBar {catalog} calendar />
+	{#if !phone}
+		<FilterBar {catalog} calendar />
+	{/if}
 
 	<div class="period">
 		<div class="steps">
@@ -358,9 +420,25 @@
 			entry={entryItem}
 			onoutside={(date) => void navigate({ date })}
 			onmove={(ticketId, date) => tickets.moveDue(ticketId, date)}
+			{phone}
+			{offline}
+			onofflinemove={explainOfflineMove}
 		/>
 	{/if}
 </section>
+
+<!-- The filter sheet of the phone frame (MO-7c2); the modal gives the focus back to "Filter". -->
+{#if phone && filtersOpen}
+	<FilterSheet
+		count={tickets.openState === 'ready' ? total : null}
+		filtered={hasFilters(calendarQuery)}
+		onreset={resetInSheet}
+		onclose={() => (filtersOpen = false)}
+		filters={sheetFilters}
+		ticketOrder={false}
+		noun={{ one: 'Eintrag', many: 'Einträge' }}
+	/>
+{/if}
 
 <style>
 	.calendar {

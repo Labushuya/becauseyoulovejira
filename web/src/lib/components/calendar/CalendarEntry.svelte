@@ -1,9 +1,10 @@
 <script lang="ts" module>
 	/**
 	 * "dot" a mark only (narrow months), "line" one line (month), "block" key and title (week), "row"
-	 * key, title, project, status and priority (agenda and the list of a day).
+	 * key, title, project, status and priority (agenda and the list of a day), "mark" only the mark,
+	 * no link (the month of the phone frame, whose day is the target, MO-7c2).
 	 */
-	export type EntryLook = 'dot' | 'line' | 'block' | 'row';
+	export type EntryLook = 'dot' | 'line' | 'block' | 'row' | 'mark';
 
 	/** Where an entry stands, as the grid or the agenda render it (the snippet `entry`). */
 	export interface EntryPlace {
@@ -16,6 +17,8 @@
 		move?: (() => void) | null;
 		/** The due date of this ticket is moving: the entry is marked as the one that moves. */
 		moving?: boolean;
+		/** Moving is locked without a connection; `move` then names why (MO-7c2). */
+		moveLocked?: boolean;
 	}
 </script>
 
@@ -59,6 +62,10 @@
 	// ticket of the grid may move to another day (`move`, K-2): its link carries `data-movable` for the
 	// mouse and the key "m" of the grid, the native dragging of the link is off, and the menu has
 	// "Fälligkeit verschieben …". While its due date is saved the entry is busy (`pending`).
+	// Phone frame (MO-7c2, ADR-0073 addendum MO-7c2): in the month an entry is only its mark ("mark",
+	// hidden from screen readers; the day names its entries and opens their list), in the agenda and
+	// the list of a day a row with targets of 44 px and the title on its own line before the details.
+	// Without a connection "Fälligkeit verschieben …" stays locked in the menu (`moveLocked`).
 	let {
 		entry,
 		today,
@@ -75,6 +82,7 @@
 		dueLabel = false,
 		move = null,
 		moving = false,
+		moveLocked = false,
 		pending = false
 	}: {
 		entry: CalendarEntry;
@@ -104,6 +112,8 @@
 		move?: (() => void) | null;
 		/** The due date of this ticket is moving. */
 		moving?: boolean;
+		/** Moving is locked without a connection (MO-7c2). */
+		moveLocked?: boolean;
 		/** Its new due date is being saved. */
 		pending?: boolean;
 	} = $props();
@@ -163,8 +173,12 @@
 
 {#snippet mark()}
 	{#if color}
-		<ColorMark shown={color} kind={look === 'dot' ? 'dot' : 'stripe'} named={false} />
-	{:else if look === 'dot'}
+		<ColorMark
+			shown={color}
+			kind={look === 'dot' || look === 'mark' ? 'dot' : 'stripe'}
+			named={false}
+		/>
+	{:else if look === 'dot' || look === 'mark'}
 		<span class="plain-dot" aria-hidden="true"></span>
 	{/if}
 {/snippet}
@@ -176,7 +190,17 @@
 	{/if}
 {/snippet}
 
-{#if entry.kind === 'ticket'}
+{#if look === 'mark'}
+	<!-- Only the mark (MO-7c2): the day of the month is the target and names its entries. -->
+	<li
+		class="entry mark {entry.kind}"
+		class:done={entry.kind === 'ticket' && entry.done}
+		class:overdue={entry.kind === 'ticket' && entry.overdue}
+		aria-hidden="true"
+	>
+		{@render mark()}
+	</li>
+{:else if entry.kind === 'ticket'}
 	{@const ticket = entry.ticket}
 	<li
 		class="entry ticket {look}"
@@ -247,6 +271,7 @@
 					buttonClass="button-icon row-menu"
 					buttonTabindex={tabbable ? undefined : -1}
 					onmovedue={move}
+					moveDueLocked={move !== null && moveLocked}
 					onduplicate={duplicates ? () => void actions.choose('duplicate', ticket) : null}
 					onfollowup={followUps !== null ? () => void actions.choose('followup', ticket) : null}
 					ondelete={() => void actions.choose('delete', ticket)}
@@ -536,6 +561,40 @@
 	@media (hover: none) {
 		.block .menu {
 			opacity: 1;
+		}
+	}
+
+	/*
+	 * Phone frame (MO-7c2, ADR-0073 addendum MO-7c2). A row of the agenda or of the list of a day: the
+	 * link of 44 px with the key above the title and "•••" on the first line, the details below, so the
+	 * title keeps most of the width. A mark of the month: the dot only, no target of its own.
+	 */
+	@media (max-width: 39.99rem) {
+		:global(:root[data-mobile-layout='on']) .row .link {
+			order: 0;
+			min-height: var(--control-height-touch);
+		}
+
+		:global(:root[data-mobile-layout='on']) .row .text {
+			flex-direction: column;
+			gap: 0;
+			align-items: flex-start;
+		}
+
+		:global(:root[data-mobile-layout='on']) .row .menu {
+			order: 1;
+		}
+
+		:global(:root[data-mobile-layout='on']) .row .extras {
+			order: 2;
+			flex-basis: 100%;
+			margin-left: 0;
+			padding: 0 0.25rem 0.25rem;
+		}
+
+		:global(:root[data-mobile-layout='on']) .mark {
+			display: inline-flex;
+			pointer-events: none;
 		}
 	}
 </style>

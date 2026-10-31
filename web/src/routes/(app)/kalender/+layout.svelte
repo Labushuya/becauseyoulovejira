@@ -7,6 +7,7 @@
 	import TicketRowDialogs from '$lib/components/TicketRowDialogs.svelte';
 	import ViewWithPanel from '$lib/components/ViewWithPanel.svelte';
 	import { parentOf } from '$lib/domain/subtasks';
+	import { findOutbox } from '$lib/offline/outbox.svelte';
 	import { pb } from '$lib/pocketbase';
 	import { CalendarDoneStore, calendarDoneData } from '$lib/stores/calendar.svelte';
 	import { CalendarPrefsStore } from '$lib/stores/calendar-prefs.svelte';
@@ -51,6 +52,9 @@
 	const links = ticketLinks();
 	const done = new CalendarDoneStore(calendarDoneData(pb), auth);
 	const prefs = new CalendarPrefsStore(window);
+	// Without a connection, as the outbox of the phone frame knows it (ADR-0074: moving in the calendar
+	// only with one), moving a due date is locked and says why (MO-7c2); elsewhere it never is.
+	const outbox = findOutbox();
 
 	/** The shown ticket, rule or entry; each marks its own entries only. */
 	const shownId = (routeId: string) =>
@@ -96,6 +100,7 @@
 			{activeRuleId}
 			{activeItemId}
 			inboxCount={inbox.newCount}
+			offline={outbox?.offline === true}
 		/>
 	{/snippet}
 	{@render children()}

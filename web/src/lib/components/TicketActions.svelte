@@ -2,6 +2,7 @@
 	import type { ResolvedPathname } from '$app/types';
 	import { areaMover } from '$lib/area-move-entry';
 	import { copyTicketLink } from '$lib/copy-link';
+	import { MOVE_OFFLINE_LABEL } from '$lib/domain/calendar';
 	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 	import { findDayPlanEntryStore } from '$lib/stores/day-plan.svelte';
 	import type { FlagSink } from '$lib/stores/flags.svelte';
@@ -28,13 +29,16 @@
 	// QT-1 (ADR-0067) "Folge-Ticket anlegen …" follows "Duplizieren …" (only with its store), for open
 	// and done tickets alike. In the phone frame (MO-4, ADR-0073 addendum MO-4) a row or card leaves
 	// out "In Vollansicht öffnen": the panel is a page there, the full view would show the same parts
-	// once more and close back into the panel.
+	// once more and close back into the panel. Since MO-7c2 (ADR-0074, moving in the calendar only with
+	// a connection) "Fälligkeit verschieben …" stays without a connection, locked with the reason in
+	// its name (`moveDueLocked`); a tap or Enter still calls `onmovedue`, which names why.
 	let {
 		ticket,
 		flags,
 		inline = false,
 		open = null,
 		onmovedue = null,
+		moveDueLocked = false,
 		onreopen = null,
 		reopenBusy = false,
 		onduplicate = null,
@@ -59,6 +63,8 @@
 		open?: { panel: ResolvedPathname; full: ResolvedPathname } | null;
 		/** "Fälligkeit verschieben …" (calendar); null leaves the entry out. */
 		onmovedue?: (() => void) | null;
+		/** "Fälligkeit verschieben …" is locked without a connection (MO-7c2). */
+		moveDueLocked?: boolean;
 		/** "Wieder öffnen" of a done ticket ("Erledigte"); null leaves the entry out. */
 		onreopen?: (() => void) | null;
 		/** The reopening runs: the entry waits. */
@@ -111,7 +117,15 @@
 				]),
 		...(onmovedue === null
 			? []
-			: [{ label: 'Fälligkeit verschieben …', separated: open !== null, onselect: onmovedue }]),
+			: [
+					{
+						label: moveDueLocked ? MOVE_OFFLINE_LABEL : 'Fälligkeit verschieben …',
+						separated: open !== null,
+						locked: moveDueLocked,
+						onselect: onmovedue,
+						onlocked: onmovedue
+					}
+				]),
 		...(planEntry === null
 			? []
 			: [{ ...planEntry, separated: open !== null && onmovedue === null }]),

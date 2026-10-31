@@ -79,6 +79,8 @@
 						{...field}
 						type="text"
 						autocomplete="off"
+						autocapitalize="words"
+						enterkeyhint="done"
 						maxlength="100"
 						bind:this={nameInput}
 						bind:value={name}
@@ -115,6 +117,7 @@
 						type="text"
 						autocomplete="off"
 						autocapitalize="characters"
+						enterkeyhint="done"
 						spellcheck="false"
 						placeholder="ABCD-EFGH"
 						bind:this={codeInput}

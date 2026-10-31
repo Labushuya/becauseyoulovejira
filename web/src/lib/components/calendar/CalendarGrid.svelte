@@ -43,6 +43,14 @@
 	// Enter or a click on a day sets it, Escape or "Abbrechen" cancel. The status line below says how
 	// and notes that a ticket of a series moves alone. `onmove` saves; afterwards the focus is on the
 	// entry at its new day (keyboard), or where it was (mouse).
+	//
+	// Phone frame (`phone`, MO-7c2, ADR-0073 addendum MO-7c2): the month shows marks without the column
+	// of the week numbers (they stay for screen readers), and each day with entries is one target
+	// that opens the list of the day as a sheet (CalendarMore with `cover`), whose menus "•••" hold
+	// "Fälligkeit verschieben …"; a tap on a day then sets it, the line above the bottom bar says so
+	// without keys. Without a connection (`offline`, ADR-0074: moving only with one) nothing moves:
+	// the menu entry stays locked, and the menu, the key "m" and a day chosen meanwhile call
+	// `onofflinemove`, which names why; the mouse does not drag.
 	let {
 		view,
 		period,
@@ -51,7 +59,10 @@
 		titleId,
 		entry,
 		onoutside,
-		onmove = null
+		onmove = null,
+		phone = false,
+		offline = false,
+		onofflinemove = null
 	}: {
 		view: GridView;
 		period: CalendarPeriod;
@@ -65,6 +76,12 @@
 		onoutside: (date: CalendarDate) => void;
 		/** Saves the new due date of a ticket, true when saved; null: nothing moves. */
 		onmove?: ((ticketId: string, date: CalendarDate) => Promise<boolean>) | null;
+		/** The phone frame: a month of marks whose days open their list (MO-7c2). */
+		phone?: boolean;
+		/** Without a connection: moving is locked (MO-7c2). */
+		offline?: boolean;
+		/** Names why moving is locked without a connection. */
+		onofflinemove?: (() => void) | null;
 	} = $props();
 
 	/** Narrower days than this show marks instead of titles (a narrow month, ADR-0053 §7). */
@@ -80,7 +97,11 @@
 			(width - WEEK_COLUMN_REM * remPx()) / 7 < COMPACT_DAY_REM * remPx()
 	);
 	const limit = $derived(view === 'month' ? MONTH_DAY_LIMIT : WEEK_DAY_LIMIT);
-	const look = $derived<EntryLook>(view === 'week' ? 'block' : compact ? 'dot' : 'line');
+	/** The month of the phone frame: marks, the day is the target (MO-7c2). */
+	const marks = $derived(phone && view === 'month');
+	const look = $derived<EntryLook>(
+		view === 'week' ? 'block' : marks ? 'mark' : compact ? 'dot' : 'line'
+	);
 
 	$effect(() => {
 		const element = grid;
@@ -175,7 +196,8 @@
 			look: itemLook,
 			tabbable,
 			move: movable ? () => startMove(ticketId, date) : null,
-			moving: ticketId !== null && moving?.id === ticketId
+			moving: ticketId !== null && moving?.id === ticketId,
+			moveLocked: offline
 		};
 	}
 
@@ -192,6 +214,10 @@
 	/** Keyboard or menu: the day of the ticket gets the focus, the keys of the grid choose another. */
 	function startMove(ticketId: string, from: CalendarDate) {
 		if (onmove === null) return;
+		if (offline) {
+			onofflinemove?.();
+			return;
+		}
 		const move = moveOf(ticketId, from, false);
 		if (move === null) return;
 		moving = move;
@@ -210,7 +236,9 @@
 		if (move === null) return;
 		let saved = false;
 		if (date !== null && date !== move.from && onmove !== null) {
-			saved = await onmove(move.id, date);
+			// The connection went away meanwhile: nothing is sent, the flag says why.
+			if (offline) onofflinemove?.();
+			else saved = await onmove(move.id, date);
 		}
 		if (move.pointer) return;
 		const day = saved && date !== null ? date : move.from;
@@ -342,7 +370,7 @@
 	$effect(() => () => endPress());
 
 	function onpointerdown(event: PointerEvent) {
-		if (onmove === null || moving !== null || press !== null) return;
+		if (onmove === null || offline || moving !== null || press !== null) return;
 		// Only the mouse drags: touch and pen scroll the page (ADR-0053 §12).
 		if (event.pointerType !== 'mouse' || event.button !== 0) return;
 		if (event.ctrlKey || event.shiftKey || event.altKey || event.metaKey) return;
@@ -425,6 +453,7 @@
 <div
 	class="grid {view}"
 	class:compact
+	class:phone={marks}
 	class:dragging={moving?.pointer === true}
 	role="grid"
 	aria-labelledby={titleId}
@@ -467,14 +496,17 @@
 				>
 					<span class="number" aria-hidden="true">{Number(date.slice(8, 10))}</span>
 					{#if slice.shown.length > 0}
-						<ul class="entries">
+						<ul class="entries" aria-hidden={marks ? 'true' : undefined}>
 							{#each slice.shown as item (item.key)}
 								{@render entry(item, placeOf(item, date, look, false))}
 							{/each}
 						</ul>
 					{/if}
-					{#if slice.more > 0}
-						<CalendarMore {date} more={slice.more} total={list.length}>
+					{#if marks && slice.more > 0}
+						<span class="more-marks" aria-hidden="true">+{slice.more}</span>
+					{/if}
+					{#if marks ? list.length > 0 : slice.more > 0}
+						<CalendarMore {date} more={slice.more} total={list.length} cover={marks}>
 							{#snippet entries()}
 								{#each list as item (item.key)}
 									{@render entry(item, placeOf(item, date, 'row', true))}
@@ -492,7 +524,11 @@
 	<p class="move-text" role="status">
 		{moving === null
 			? ''
-			: moveInstructions(moving.key, moving.pointer ? 'pointer' : 'keyboard', moving.recurring)}
+			: moveInstructions(
+					moving.key,
+					moving.pointer ? 'pointer' : phone ? 'touch' : 'keyboard',
+					moving.recurring
+				)}
 	</p>
 	{#if moving !== null && !moving.pointer}
 		<button class="button-secondary" type="button" onclick={() => void finishMove(null)}>
@@ -652,5 +688,62 @@
 		flex: 1 1 16rem;
 		margin: 0;
 		font-size: var(--font-size-control);
+	}
+
+	/*
+	 * Phone frame (MO-7c2, ADR-0073 addendum MO-7c2). The month: seven days over the full width (the
+	 * week numbers only for screen readers), each day with its marks and one target over all of it (the
+	 * button of CalendarMore). The line of a move stands above the bottom bar.
+	 */
+	@media (max-width: 39.99rem) {
+		:global(:root[data-mobile-layout='on']) .phone .row {
+			grid-template-columns: repeat(7, minmax(0, 1fr));
+		}
+
+		:global(:root[data-mobile-layout='on']) .phone :is(.week-head, .week-number) {
+			position: absolute;
+			width: 1px;
+			height: 1px;
+			overflow: hidden;
+			clip-path: inset(50%);
+			white-space: nowrap;
+		}
+
+		:global(:root[data-mobile-layout='on']) .phone .weekday {
+			padding: 0.375rem 0;
+			text-align: center;
+		}
+
+		:global(:root[data-mobile-layout='on']) .phone .day {
+			position: relative;
+			align-items: center;
+			min-height: 3.5rem;
+			padding: 0.125rem;
+		}
+
+		:global(:root[data-mobile-layout='on']) .phone .row .day:first-of-type {
+			border-left: none;
+		}
+
+		:global(:root[data-mobile-layout='on']) .phone .number {
+			align-self: center;
+		}
+
+		:global(:root[data-mobile-layout='on']) .phone .entries {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 0.125rem;
+			justify-content: center;
+		}
+
+		:global(:root[data-mobile-layout='on']) .more-marks {
+			font-size: var(--font-size-caption);
+			line-height: 1;
+			color: var(--color-text-muted);
+		}
+
+		:global(:root[data-mobile-layout='on']) .move-line.shown {
+			bottom: calc(var(--bottom-bar-height) + var(--safe-bottom) + 0.75rem);
+		}
 	}
 </style>

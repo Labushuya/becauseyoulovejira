@@ -95,6 +95,8 @@ interface Setup {
 	withMenu?: boolean;
 	/** The server holds a newer version of every ticket (changed in another tab). */
 	changedElsewhere?: boolean;
+	/** Without a connection, as the outbox of the phone frame says (MO-7c2). */
+	offline?: boolean;
 }
 
 async function show(path = '/kalender', setup: Setup = {}) {
@@ -163,7 +165,9 @@ async function show(path = '/kalender', setup: Setup = {}) {
 			prefs: new CalendarPrefsStore(window),
 			rowActions: setup.withMenu
 				? new TicketRowActionsStore(rowData, SESSION, tickets, null, new FlagStore())
-				: null
+				: null,
+			offline: setup.offline ?? false,
+			flags
 		}
 	});
 	await vi.waitFor(() => expect(tickets.openState).toBe('ready'));
@@ -454,6 +458,55 @@ describe('series, conflicts and the agenda', () => {
 		);
 		expect(within(day(TODAY)).getByRole('link')).toBeTruthy();
 		expect(within(day('2026-10-07')).queryByRole('link')).toBeNull();
+	});
+
+	// MO-7c2 (ADR-0074: moving in the calendar only with a connection): without one every way to move
+	// stays visible but locked, and a tap or Enter names why in a flag.
+	it('locks "Fälligkeit verschieben …" without a connection and names why on a tap (MO-7c2)', async () => {
+		const wash = ticket(TODAY, { title: 'Wäsche' });
+		const { flags, update } = await show('/kalender', {
+			open: [wash],
+			withMenu: true,
+			offline: true
+		});
+		const link = linkIn(TODAY);
+
+		await fireEvent.contextMenu(link, { clientX: 40, clientY: 50 });
+		const button = within(link.closest('li')!).getByRole('button', {
+			hidden: true,
+			name: `Weitere Aktionen für ${wash.key}`
+		});
+		const entry = within(popoverOf(button)).getByRole('menuitem', {
+			hidden: true,
+			name: 'Fälligkeit verschieben … (nur mit Verbindung)'
+		});
+		expect(entry.getAttribute('aria-disabled')).toBe('true');
+		await fireEvent.click(entry);
+		await tick();
+
+		expect(moveStatus()).toBe('');
+		expect(flags.flags.map((flag) => [flag.tone, flag.title])).toEqual([
+			['info', '„Fälligkeit verschieben“ geht nur mit Verbindung.']
+		]);
+		expect(update).not.toHaveBeenCalled();
+	});
+
+	it('starts no move with "m" and drags nothing without a connection (MO-7c2)', async () => {
+		const wash = ticket(TODAY, { title: 'Wäsche' });
+		const { flags, update } = await show('/kalender', { open: [wash], offline: true });
+		linkIn(TODAY).focus();
+
+		await fireEvent.keyDown(linkIn(TODAY), { key: 'm' });
+		await tick();
+		expect(moveStatus()).toBe('');
+		expect(flags.flags.map((flag) => flag.title)).toEqual([
+			'„Fälligkeit verschieben“ geht nur mit Verbindung.'
+		]);
+
+		await drag(linkIn(TODAY), day('2026-10-07'));
+		await tick();
+		expect(update).not.toHaveBeenCalled();
+		expect(within(day(TODAY)).getByRole('link')).toBeTruthy();
 	});
 
 	it('moves nothing in the agenda: no mark, no key, no menu entry', async () => {

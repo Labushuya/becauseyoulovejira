@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { flushSync, type Snippet } from 'svelte';
 	import type { CalendarDate } from '$lib/domain/berlin-date';
-	import { entryCountText, fullDateLabel, moreLabel } from '$lib/domain/calendar';
+	import { dayListLabel, entryCountText, fullDateLabel, moreLabel } from '$lib/domain/calendar';
 	import Popover from '../overlay/Popover.svelte';
 
 	// "+N weitere" of a full day (ADR-0053 §3): a popover of the kind "panel" with every entry of the
@@ -10,11 +10,15 @@
 	// popover knows its size. In the cell the button is no stop of Tab (the arrow keys of the grid
 	// reach it); in the popover the entries are, and each ticket shows its menu "•••" (in a popover
 	// the browser keeps its own context menu, lib/overlay/context-menu.ts).
+	// In the month of the phone frame (`cover`, MO-7c2) the button covers the whole day, which shows
+	// only marks: a tap on the day opens the same list, a sheet there (MO-1b), named "2 Einträge am
+	// Freitag, 2. Oktober 2026".
 	let {
 		date,
 		more,
 		total,
-		entries
+		entries,
+		cover = false
 	}: {
 		date: CalendarDate;
 		/** Entries the cell does not show. */
@@ -23,6 +27,8 @@
 		total: number;
 		/** The list of all entries; rendered once the popover opened. */
 		entries: Snippet;
+		/** The button covers the day (the month of the phone frame). */
+		cover?: boolean;
 	} = $props();
 
 	const uid = $props.id();
@@ -33,12 +39,15 @@
 <Popover
 	kind="panel"
 	labelledby={headingId}
-	buttonClass="calendar-more"
+	buttonClass={cover ? 'calendar-more calendar-day-open' : 'calendar-more'}
+	buttonLabel={cover ? dayListLabel(date, total) : undefined}
 	buttonTabindex={-1}
 	onopen={() => flushSync(() => (opened = true))}
 >
 	{#snippet button()}
-		{moreLabel(more)}<span class="visually-hidden">: {fullDateLabel(date)}</span>
+		{#if !cover}
+			{moreLabel(more)}<span class="visually-hidden">: {fullDateLabel(date)}</span>
+		{/if}
 	{/snippet}
 	<div class="day">
 		<h4 id={headingId} class="heading">{fullDateLabel(date)}</h4>
@@ -92,5 +101,26 @@
 	:global(.calendar-more:hover) {
 		color: var(--color-text);
 		background: var(--fill-control-hover);
+	}
+
+	/*
+	 * Phone frame (MO-7c2): the button lies over the whole day, which is its target; the list stands as
+	 * a sheet over the full width.
+	 */
+	@media (max-width: 39.99rem) {
+		/* A button does not stretch between its offsets alone: the size comes with it. */
+		:global(:root[data-mobile-layout='on'] .calendar-day-open) {
+			position: absolute;
+			top: 0;
+			left: 0;
+			width: 100%;
+			height: 100%;
+			padding: 0;
+			border-radius: 0;
+		}
+
+		:global(:root[data-mobile-layout='on']) .day {
+			width: auto;
+		}
 	}
 </style>

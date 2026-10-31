@@ -220,6 +220,17 @@ describe('page "Haushalt" without a household', () => {
 		await vi.waitFor(() => expect(screen.getByText(/Zu viele Versuche/)).toBeTruthy());
 	});
 
+	// MO-7c2: the key of the on-screen keyboard (ADR-0073 addendum MO-1b §3), the name with capitals.
+	it('names the key of the on-screen keyboard at both fields, the name with capitals (MO-7c2)', async () => {
+		await show(null);
+		const name = screen.getByLabelText('Name des Haushalts');
+		expect(name.getAttribute('enterkeyhint')).toBe('done');
+		expect(name.getAttribute('autocapitalize')).toBe('words');
+		const code = screen.getByLabelText('Einladungscode');
+		expect(code.getAttribute('enterkeyhint')).toBe('done');
+		expect(code.getAttribute('autocapitalize')).toBe('characters');
+	});
+
 	it('says that the page comes with the next restart before the migration', async () => {
 		await show(null, { fetch: vi.fn(async () => ({ kind: 'missing' as const })) });
 		expect(screen.getByText(/Der Haushalt ist nach dem nächsten Neustart verfügbar/)).toBeTruthy();
@@ -299,6 +310,9 @@ describe('page "Haushalt" for the owner', () => {
 		await fireEvent.click(screen.getByRole('button', { name: 'Umbenennen …' }));
 		const name = screen.getByLabelText('Neuer Name') as HTMLInputElement;
 		expect(name.value).toBe('Haus Beispiel');
+		// MO-7c2: the key of the on-screen keyboard, the name with capitals.
+		expect(name.getAttribute('enterkeyhint')).toBe('done');
+		expect(name.getAttribute('autocapitalize')).toBe('words');
 		await fireEvent.input(name, { target: { value: 'Neues Haus' } });
 		await fireEvent.click(screen.getByRole('button', { name: 'Speichern' }));
 		await vi.waitFor(() =>

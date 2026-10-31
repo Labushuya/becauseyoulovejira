@@ -179,6 +179,7 @@
 								id={`${uid}-${tag.id}`}
 								type="text"
 								autocomplete="off"
+								enterkeyhint="done"
 								bind:value={typed}
 								bind:this={input}
 								aria-invalid={renameError ? 'true' : undefined}

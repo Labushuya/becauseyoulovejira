@@ -181,7 +181,9 @@
 			Monat höchstens vier Einträge; „+N weitere“ öffnet die Liste des Tages. Ein Klick auf ein
 			Ticket öffnet es neben dem Kalender, so wie du Tickets zuletzt geöffnet hast (Seitenpanel oder
 			Vollansicht); ein Rechtsklick öffnet sein Menü. In einem schmalen Fenster startet der Kalender
-			mit der Agenda, und der Monat zeigt Punkte statt Titel.
+			mit der Agenda, und der Monat zeigt Punkte statt Titel. In der Handy-Ansicht stehen oben
+			„Agenda“, „Monat“ und „Filter“: „Filter“ öffnet die Filter und die Ebenen, eine Woche
+			erscheint als Agenda, und ein Tipp auf einen Tag im Monat öffnet seine Liste.
 		</p>
 		<h4>Mit der Tastatur</h4>
 		<KeyboardFold label="Tasten im Kalender anzeigen">
@@ -381,7 +383,10 @@
 		</p>
 		<h4 id="ohne-verbindung-nicht">Was nur mit Verbindung geht</h4>
 		<ul>
-			<li>Die Fälligkeit im Kalender verschieben (Ziehen und „Fälligkeit verschieben …“).</li>
+			<li>
+				Die Fälligkeit im Kalender verschieben (Ziehen und „Fälligkeit verschieben …“): in der
+				Handy-Ansicht ohne Verbindung gesperrt, mit „(nur mit Verbindung)“.
+			</li>
 			<li>
 				Neue Tags in „＋“: Die Zeile bleibt stehen, bis du sie entfernst oder vorhandene Tags
 				wählst.

@@ -52,6 +52,14 @@
 // seeds share one sign-in through the API and create at once what does not depend on each other, the
 // overlays appear without movement except in the case of the overlays, and the flags close in one step
 // inside the page (Q-5 of the review of MO-7b).
+// Since MO-7c2 (manifest BYL-E6-2249 ff.) without a case of its own: the start view in the case of
+// "Aufgaben" (the start page from outside with a stored session opens the day plan, the first tap on
+// "Aufgaben" stays there); in the case of "Mehr" the calendar (the agenda first, "Agenda | Monat" and
+// "Filter", the filter sheet with the layers, the month of marks whose day opens its list, "Fälligkeit
+// verschieben …" with the line of the move above the bottom bar) and the settings (every page of the
+// account without sideways scrolling and with targets of 44 px, a page of the administrator only with
+// its hint), each at 360 and 412 px; in the case of the conflict without a connection "Fälligkeit
+// verschieben …" locked with its reason.
 //
 // The phone stands for another device in the home network (header X-Byl-Test-Remote-Address of the
 // test hooks, only in instances of the harness), so the pages of the administrator are "nur am PC".
@@ -117,15 +125,17 @@ function account() {
  * first page, so the app checks it like a stored session. The page loads as a page of the app loaded
  * anew (referrer of the app), so the start view of MO-1a stays out of it: the case of the start signs
  * in through the login page and checks it. The token stays in memory and in the browser of the test,
- * never on disk or in the output.
+ * never on disk or in the output. Since MO-7c2 `fromOutside` opens the page without a referrer, like
+ * the shortcut on the home screen with a stored session: the case of "Aufgaben" checks the start
+ * view that way.
  */
-async function openSignedIn(page, path) {
+async function openSignedIn(page, path, { fromOutside = false } = {}) {
 	const { url } = mobileInstance();
 	const { token, record } = await account();
 	await page.addInitScript((stored) => {
 		if (localStorage.getItem('pocketbase_auth') === null) localStorage.setItem('pocketbase_auth', stored);
 	}, JSON.stringify({ token, record }));
-	await page.goto(`${url}${path}`, { referer: `${url}/` });
+	await page.goto(`${url}${path}`, fromOutside ? {} : { referer: `${url}/` });
 	return url;
 }
 
@@ -405,7 +415,8 @@ function letters(count) {
  * sub project, a rule with a title of one long word, and two tickets in the trash, one with a title
  * of one long word. `trashCount` is the number of the trash as the server lists it afterwards: the two
  * and whatever another case put there before (round 2 of MO-7b, P-6). Since MO-7c1 also `done`, a
- * done ticket with a title of one long word for "Erledigte".
+ * done ticket with a title of one long word for "Erledigte"; since MO-7c2 `dated`, an open ticket due
+ * today with a title of one long word for the calendar.
  */
 async function seedLists() {
 	const { token, record } = await account();
@@ -415,13 +426,16 @@ async function seedLists() {
 	const ruleTitle = `Monatliche_Abrechnung_der_Nebenkosten_mit_allen_Belegen_${mark}`;
 	const trashed = [`Altes_Regal_im_Keller_abbauen_und_zum_Wertstoffhof_bringen_${mark}`, `Kaputte Lampe ${mark}`];
 	const done = `Garage_ausräumen_und_alles_zum_Recyclinghof_bringen_lassen_${mark}`;
-	// The project with its sub project, the rule, each ticket for the trash and a done ticket with a
-	// title of one long word for "Erledigte" (MO-7c1) at once.
+	// Sorted by title it stands first, outside the range the case of "Aufgaben" chooses.
+	const dated = `Abgabefrist_des_Einspruchs_gegen_den_Steuerbescheid_prüfen_${mark}`;
+	// The project with its sub project, the rule, each ticket for the trash, a done ticket with a
+	// title of one long word for "Erledigte" (MO-7c1) and one due today for the calendar at once.
 	await Promise.all([
 		(async () => {
 			const ticket = await api('POST', '/api/collections/tickets/records', { owner: record.id, title: done }, token);
 			await api('PATCH', `/api/collections/tickets/records/${ticket.id}`, { status: 'done' }, token);
 		})(),
+		api('POST', '/api/collections/tickets/records', { owner: record.id, title: dated, due: `${berlinToday()} 00:00:00.000Z` }, token),
 		(async () => {
 			const project = await api('POST', '/api/collections/projects/records', { owner: record.id, name: projectName, code: letters(5) }, token);
 			await api('POST', '/api/collections/projects/records', { owner: record.id, name: subName, code: letters(5), parent: project.id }, token);
@@ -438,7 +452,7 @@ async function seedLists() {
 		})
 	]);
 	const { items } = await api('GET', '/api/byl/trash', undefined, token);
-	return { project: projectName, sub: subName, rule: ruleTitle, trashed, trashCount: items.length, done };
+	return { project: projectName, sub: subName, rule: ruleTitle, trashed, trashCount: items.length, done, dated };
 }
 
 test.describe('phone with the switch on', () => {
@@ -573,6 +587,50 @@ test.describe('phone with the switch on', () => {
 			expect(await historyLength()).toBe(start + 1);
 		}
 
+		// MO-7c2 "Kalender" on a small phone: the agenda first, "Agenda | Monat" and "Filter" in the row of
+		// the view, the rows with targets of 44 px and the title in at least 60 % of the row; the filter
+		// sheet with the layers; the month of marks, whose day opens its list as a sheet, and "Fälligkeit
+		// verschieben …" there with the line of the move above the bottom bar; nothing scrolls sideways.
+		const calendarTools = page.locator('.phone-tools');
+		await expect(calendarTools.getByRole('group', { name: 'Ansicht des Kalenders' }).getByRole('button')).toHaveText(['Agenda', 'Monat']);
+		await expect(calendarTools.getByRole('button', { name: 'Agenda' })).toHaveAttribute('aria-pressed', 'true');
+		const agendaRow = page.locator('.agenda li.entry.row').filter({ hasText: lists.dated });
+		await expect(agendaRow).toBeVisible();
+		expect(await scrollsSideways(page)).toBe(false);
+		expect(await smallTargets(page.locator('section.calendar'))).toEqual([]);
+		expect(await cardTitleShare(agendaRow, '.title')).toBeGreaterThanOrEqual(0.6);
+		await calendarTools.getByRole('button', { name: 'Filter', exact: true }).tap();
+		const calendarFilters = page.getByRole('dialog', { name: 'Filter' });
+		await expectSheet(calendarFilters.locator('.frame'), small);
+		await expect(calendarFilters.getByRole('group', { name: 'Ebenen' })).toBeVisible();
+		expect(await smallTargets(calendarFilters)).toEqual([]);
+		await calendarFilters.getByRole('button', { name: /(Eintrag|Einträge) anzeigen$/ }).tap();
+		await expect(calendarFilters).toHaveCount(0);
+		await calendarTools.getByRole('button', { name: 'Monat' }).tap();
+		const month = page.getByRole('grid');
+		await expect(month).toBeVisible();
+		expect(await scrollsSideways(page)).toBe(false);
+		expect(await smallTargets(month)).toEqual([]);
+		const todayCell = month.locator(`[role="gridcell"][data-date="${berlinToday()}"]`);
+		const dayButton = todayCell.locator('button.calendar-day-open');
+		await expectTarget(dayButton);
+		await dayButton.tap();
+		const dayList = todayCell.locator('[popover][role="dialog"]');
+		await expectSheet(dayList, small);
+		const dayRow = dayList.locator('li.entry.row').filter({ hasText: lists.dated });
+		expect(await smallTargets(dayList)).toEqual([]);
+		expect(await cardTitleShare(dayRow, '.title')).toBeGreaterThanOrEqual(0.6);
+		await dayRow.getByRole('button', { name: /^Weitere Aktionen für / }).tap();
+		await page.getByRole('menu', { name: /^Weitere Aktionen für / }).getByRole('menuitem', { name: 'Fälligkeit verschieben …' }).tap();
+		const moveLine = page.locator('.move-line.shown');
+		await expect(moveLine).toContainText('Einen Tag antippen, „Abbrechen“ bricht ab.');
+		const cancelMove = moveLine.getByRole('button', { name: 'Abbrechen' });
+		await expectTarget(cancelMove);
+		const moveBox = await expectUncovered(cancelMove, small);
+		expect(moveBox.y + moveBox.height).toBeLessThanOrEqual((await bar.boundingBox()).y);
+		await cancelMove.tap();
+		await expect(moveLine).toHaveCount(0);
+
 		await openUnderMore('Projekte');
 		await expect(page).toHaveURL(`${url}/projekte`);
 		const projectCard = (name) => page.locator('li[data-project-row]').filter({ has: page.getByRole('link', { name, exact: true }) });
@@ -665,8 +723,43 @@ test.describe('phone with the switch on', () => {
 			'„Gesammelt umwandeln (3)“, „Mit Ticket verknüpfen … (3)“, „Verwerfen (3)“ und „Wiederherstellen (3)“: ohne Verbindung gesperrt'
 		);
 
-		// A large phone: the lists keep to their width, the titles their share; the help too.
+		// MO-7c2 the settings under "Mehr": every page of every account without sideways scrolling and
+		// with targets of 44 px (the navigation, the fields, the buttons), the fields with the key of the
+		// keyboard; a page of the administrator shows only its hint. "Kanäle" stays for KA-1.
+		const settingsPages = [
+			['Darstellung', 'Darstellung'],
+			['Tags', 'Tags'],
+			['Tickets', 'Tickets'],
+			['Haushalt', 'Haushalt'],
+			['Datei-Importe', 'Datei-Importe'],
+			['Sicherheit nur am PC', 'Sicherheit'],
+			['Mein Konto', 'Mein Konto']
+		];
+		/** A page of the settings under "Mehr": two taps. */
+		async function openSetting(link, heading) {
+			await bar.getByRole('button', { name: /^Mehr/ }).tap();
+			await page.getByRole('dialog', { name: 'Mehr' }).getByRole('navigation', { name: 'Einstellungen' }).getByRole('link', { name: link, exact: true }).tap();
+			await expect(page.getByRole('heading', { level: 2, name: heading, exact: true })).toBeVisible();
+		}
+		for (const [link, heading] of settingsPages) {
+			await openSetting(link, heading);
+			expect(await scrollsSideways(page), heading).toBe(false);
+			expect(await smallTargets(page.locator('.settings')), heading).toEqual([]);
+			if (heading === 'Sicherheit') await expect(page.locator('.settings .page')).toContainText('Nur direkt am PC verfügbar');
+		}
+		await expect(page.getByLabel('Name', { exact: true })).toHaveAttribute('enterkeyhint', 'done');
+		await expect(page.getByLabel('Name', { exact: true })).toHaveAttribute('autocapitalize', 'words');
+		await expect(page.getByLabel('Neues Passwort wiederholen')).toHaveAttribute('enterkeyhint', 'done');
+
+		// A large phone: the lists keep to their width, the titles their share; the help, the settings
+		// and the calendar too.
 		await page.setViewportSize(large);
+		expect(await scrollsSideways(page)).toBe(false);
+		for (const [link, heading] of settingsPages) {
+			await openSetting(link, heading);
+			expect(await scrollsSideways(page), heading).toBe(false);
+		}
+		await openHelp();
 		await expect(page.locator('section#tastaturkuerzel')).toBeVisible();
 		expect(await scrollsSideways(page)).toBe(false);
 		for (const [name, card, title] of [
@@ -681,6 +774,13 @@ test.describe('phone with the switch on', () => {
 			expect(await cardTitleShare(card, title)).toBeGreaterThanOrEqual(0.6);
 		}
 		expect(await smallTargets(page.locator('.done-view'))).toEqual([]);
+		await openUnderMore('Kalender');
+		await expect(page.getByRole('grid')).toBeVisible();
+		expect(await scrollsSideways(page)).toBe(false);
+		await page.locator('.phone-tools').getByRole('button', { name: 'Agenda' }).tap();
+		await expect(agendaRow).toBeVisible();
+		expect(await scrollsSideways(page)).toBe(false);
+		expect(await cardTitleShare(agendaRow, '.title')).toBeGreaterThanOrEqual(0.6);
 		await page.setViewportSize(PHONE.viewport);
 
 		// A tap on "Aufgaben" leads there: the day plan only opens first at the start of the app.
@@ -946,10 +1046,17 @@ test.describe('small phone with the switch on: "Aufgaben" (MO-3)', () => {
 			{ title: 'Pflanzen umtopfen' }
 		]);
 		await switchOn(page);
-		const url = await openSignedIn(page, '/tagesplan');
+		// MO-7c2: the start page from outside with a stored session, like the shortcut on the home
+		// screen, opens the day plan, though the session is checked after the first navigation; the
+		// first tap on "Aufgaben" afterwards stays at "Aufgaben".
+		const url = await openSignedIn(page, '/', { fromOutside: true });
 		await expect(page).toHaveURL(`${url}/tagesplan`);
-		await page.getByRole('navigation', { name: 'Hauptnavigation' }).getByRole('link', { name: 'Aufgaben' }).click();
+		await expect(viewHeading(page, 'Tagesplan')).toBeAttached();
+		const tabBar = page.getByRole('navigation', { name: 'Hauptnavigation' });
+		await tabBar.getByRole('link', { name: 'Aufgaben' }).tap();
 		await expect(viewHeading(page, 'Aufgaben')).toBeAttached();
+		await expect(page).toHaveURL(`${url}/`);
+		await expect(tabBar.getByRole('link', { name: 'Aufgaben' })).toHaveAttribute('aria-current', 'page');
 		const cardOf = (title) => page.locator('li[data-ticket-id]').filter({ hasText: title });
 
 		// Cards instead of the table; at 360 × 780 the first one starts in the first screen, above 400 px.
@@ -1017,7 +1124,6 @@ test.describe('small phone with the switch on: "Aufgaben" (MO-3)', () => {
 		await expect(choosing).toBeVisible();
 		// MO-7b: the bar of the selection stands from the start, flat and fixed at the bottom right above
 		// the bottom bar, "Aktionen" locked while nothing is chosen.
-		const tabBar = page.getByRole('navigation', { name: 'Hauptnavigation' });
 		const chosen = page.locator('[data-selection-bar]');
 		await expect(chosen).toHaveAccessibleName('0 Tickets ausgewählt');
 		await expectUncovered(chosen.locator('.phone-row'), viewport);
@@ -1661,8 +1767,10 @@ test.describe('small phone with the switch on: changes without a connection (OF-
 	});
 
 	test('shows a conflict with another device in the dialog instead of overwriting, and "Meine Änderung übernehmen" sends it', async ({ page, context }) => {
-		const { token, tickets } = await seedOpen(['Strom ablesen']);
-		const [meter] = tickets;
+		const { token, tickets } = await seedOpen(['Strom ablesen', 'Heizung entlüften']);
+		const [meter, heating] = tickets;
+		// MO-7c2: a ticket due today for the calendar at the end of the case.
+		await api('PATCH', `/api/collections/tickets/records/${heating.id}`, { due: `${berlinToday()} 00:00:00.000Z` }, token);
 		await openTasks(page);
 		const card = page.locator(`li[data-ticket-id="${meter.id}"]`);
 		await expect(card).toBeVisible();
@@ -1687,6 +1795,33 @@ test.describe('small phone with the switch on: changes without a connection (OF-
 		await mine.click();
 		await expect(dialog).toContainText('Keine gemerkten Änderungen.');
 		expect((await api('GET', `/api/collections/tickets/records/${meter.id}`, undefined, token)).status).toBe('done');
+
+		// MO-7c2 (ADR-0074: moving in the calendar only with a connection): without one "Fälligkeit
+		// verschieben …" stays in the menu of the list of a day, locked with the reason in its name, and a
+		// tap names why in a flag; nothing moves.
+		await page.keyboard.press('Escape');
+		await expect(dialog).toHaveCount(0);
+		// The flags of the conflict stand above the bottom bar, over the last week of the month.
+		await closeFlags(page);
+		const tabBar = page.getByRole('navigation', { name: 'Hauptnavigation' });
+		await tabBar.getByRole('button', { name: /^Mehr/ }).tap();
+		await page.getByRole('dialog', { name: 'Mehr' }).getByRole('navigation', { name: 'Ansichten' }).getByRole('link', { name: 'Kalender' }).tap();
+		await page.locator('.phone-tools').getByRole('button', { name: 'Monat' }).tap();
+		const todayCell = page.getByRole('grid').locator(`[role="gridcell"][data-date="${berlinToday()}"]`);
+		await expect(todayCell.locator('button.calendar-day-open')).toBeVisible();
+		await context.setOffline(true);
+		await expect(page.getByRole('button', { name: /^Offline/ })).toBeVisible();
+		await todayCell.locator('button.calendar-day-open').tap();
+		await todayCell.locator('[popover][role="dialog"]').getByRole('button', { name: `Weitere Aktionen für ${heating.key}` }).tap();
+		const locked = page.getByRole('menu', { name: `Weitere Aktionen für ${heating.key}` }).getByRole('menuitem', { name: 'Fälligkeit verschieben … (nur mit Verbindung)' });
+		await expect(locked).toHaveAttribute('aria-disabled', 'true');
+		// Playwright taps nothing aria-disabled; Enter is the same way into the entry (the tap: BYL-E6-2254).
+		await locked.focus();
+		await page.keyboard.press('Enter');
+		await expect(page.getByRole('region', { name: 'Benachrichtigungen' }).getByRole('listitem').filter({ hasText: '„Fälligkeit verschieben“ geht nur mit Verbindung.' })).toBeVisible();
+		await expect(page.locator('.move-line.shown')).toHaveCount(0);
+		await context.setOffline(false);
+		expect((await api('GET', `/api/collections/tickets/records/${heating.id}`, undefined, token)).due).toBe(`${berlinToday()} 00:00:00.000Z`);
 	});
 });
 

@@ -228,6 +228,8 @@
 								{...field}
 								type="text"
 								autocomplete="off"
+								autocapitalize="words"
+								enterkeyhint="done"
 								maxlength="100"
 								bind:this={nameInput}
 								bind:value={draft}
