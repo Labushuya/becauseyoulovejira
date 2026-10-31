@@ -10,10 +10,19 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getAccentStore } from '$lib/accent.svelte';
 import { getNotifyStore } from '$lib/attention-notify.svelte';
 import ThemeMenu from '$lib/components/ThemeMenu.svelte';
+import { DataError } from '$lib/data/errors';
+import type { OfflineOps, OutboxAction } from '$lib/domain/offline';
 import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
+import { ConnectivityStore } from '$lib/offline/connectivity.svelte';
+import { OutboxStore } from '$lib/offline/outbox.svelte';
+import { MemoryOutboxStorage } from '$lib/offline/outbox-storage';
+import { getOfflineConsentStore } from '$lib/offline-consent.svelte';
 import { SETTINGS_SECTIONS } from '$lib/settings-sections';
+import OutboxHostHarness from '$lib/test/OutboxHostHarness.svelte';
+import { B, NEXT_OP, OPS, USER, stored } from '$lib/test/outbox-fake';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import { getThemeStore } from '$lib/theme.svelte';
+import { LIST_HOST } from '$lib/ticket-host';
 import { getTransparencyStore, REDUCED_TRANSPARENCY_QUERY } from '$lib/transparency.svelte';
 import Page from './+page.svelte';
 
@@ -315,47 +324,161 @@ describe('appearance page: Windows notification (ADR-0035, SF-6)', () => {
 	});
 });
 
-// MO-1a (ADR-0073): the switch of the phone frame among the settings of this device, off by default.
-// The page is reachable in the view of today on the phone (the gear of the header) and in the frame
-// under "Mehr" (phone-frame.test.ts).
-describe('appearance page: phone view (MO-1a)', () => {
-	function phoneSwitch(): HTMLInputElement {
+// MO-1a (ADR-0073): the phone frame among the settings of this device. Since the package
+// "Einschalten" the choice "Handy-Ansicht: Automatisch / Aus" with "Automatisch" by default (before: the
+// switch "Handy-Ansicht (Vorschau)", off by default) and the switch "Ohne Verbindung merken (dieses
+// Gerät)" (ADR-0074 addendum "Zustimmung je Gerät"). The page is reachable in the frame under "Mehr"
+// (phone-frame.test.ts) and on the PC in the navigation of the settings.
+describe('appearance page: phone view (MO-1a, Einschalten)', () => {
+	function phoneChoice(): HTMLInputElement[] {
+		const group = screen.getByRole('group', { name: 'Handy-Ansicht' });
+		return within(group).getAllByRole('radio') as HTMLInputElement[];
+	}
+
+	function keepSwitch(): HTMLInputElement {
 		const group = screen.getByRole('group', { name: 'Handy' });
 		return within(group).getByRole('switch', {
-			name: 'Handy-Ansicht (Vorschau)'
+			name: 'Ohne Verbindung merken (dieses Gerät)'
 		}) as HTMLInputElement;
 	}
 
+	/** The page below the outbox of the (app) layout, as in the app. */
+	function renderWithOutbox(outbox: OutboxStore) {
+		return render(OutboxHostHarness, {
+			props: { outbox, host: LIST_HOST, component: Page as never, props: {} }
+		});
+	}
+
+	/** An outbox whose server takes changes without a connection (or not), with `kept` on the device. */
+	async function outboxOf(support: OfflineOps | null, kept: readonly OutboxAction[] = []) {
+		const storage = new MemoryOutboxStorage();
+		for (const action of kept) await storage.put(action);
+		const outbox = new OutboxStore({
+			storage,
+			exists: async () => kept.length > 0,
+			connectivity: new ConnectivityStore(async () => true),
+			send: async () => {
+				throw new DataError('network');
+			},
+			get: async () => {
+				throw new DataError('network');
+			},
+			tab: 'tab-a',
+			channel: null
+		});
+		outbox.attach(USER);
+		outbox.setSupport(support);
+		stops.push(
+			outbox.connect({
+				upsert: () => undefined,
+				flags: { show: () => 'flag', dismiss: () => undefined },
+				sessionEnded: () => undefined
+			})
+		);
+		return outbox;
+	}
+
+	const stops: (() => void)[] = [];
+
 	afterEach(() => {
-		getMobileLayoutStore().choose(false);
+		for (const stop of stops.splice(0)) stop();
+		getMobileLayoutStore().choose(true);
+		getOfflineConsentStore().consent = null;
+		localStorage.clear();
 		document.documentElement.removeAttribute('data-mobile-layout');
 	});
 
-	it('is off by default and says what it does and where it applies', () => {
+	// Changed with the package "Einschalten" (decision of the user 3): two radios instead of the
+	// switch, "Automatisch" by default, no "Vorschau" any more.
+	it('offers "Automatisch" and "Aus", "Automatisch" by default, and says what it does and where it applies', () => {
 		render(Page);
-		const control = phoneSwitch();
-		expect(control.checked).toBe(false);
-		const note = document.getElementById(control.getAttribute('aria-describedby') ?? '');
+		expect(phoneChoice().map((radio) => [radio.value, radio.checked])).toEqual([
+			['auto', true],
+			['off', false]
+		]);
+		expect(screen.getByRole('radio', { name: 'Automatisch' }).getAttribute('value')).toBe('auto');
+		expect(screen.getByRole('radio', { name: 'Aus' }).getAttribute('value')).toBe('off');
+		expect(screen.queryByRole('switch', { name: /Handy-Ansicht/ })).toBeNull();
+		const group = screen.getByRole('group', { name: 'Handy-Ansicht' });
+		const note = document.getElementById(group.getAttribute('aria-describedby') ?? '');
 		const text = note?.textContent?.replace(/\s+/g, ' ');
 		expect(text).toMatch(/unten eine Leiste mit Tagesplan, Aufgaben, Erfassen/);
-		expect(text).toMatch(/Noch eine Vorschau/);
+		expect(text).not.toMatch(/Vorschau/);
 		expect(text).toMatch(/nur in diesem Browser auf diesem Gerät/);
-		expect(screen.queryByText(/zu breit für die Handy-Ansicht/)).toBeNull();
-	});
-
-	it('turns on and off at once, stores only "on" and says so in a wide window', async () => {
-		render(Page);
-
-		await fireEvent.click(phoneSwitch());
-		expect(phoneSwitch().checked).toBe(true);
-		expect(localStorage.getItem('byl-mobile-layout')).toBe('on');
-		expect(document.documentElement.getAttribute('data-mobile-layout')).toBe('on');
 		// jsdom counts as a wide window: the view of today stays, and the page says why.
 		expect(screen.getByText(/zu breit für die Handy-Ansicht/)).toBeTruthy();
+	});
 
-		await fireEvent.click(phoneSwitch());
-		expect(phoneSwitch().checked).toBe(false);
-		expect(localStorage.getItem('byl-mobile-layout')).toBeNull();
+	// Changed with the package "Einschalten": "Aus" is stored as "off", "Automatisch" removes the key.
+	it('turns "Aus" and back at once and stores only "off"', async () => {
+		render(Page);
+
+		await fireEvent.click(screen.getByRole('radio', { name: 'Aus' }));
+		expect(phoneChoice().find((radio) => radio.checked)?.value).toBe('off');
+		expect(localStorage.getItem('byl-mobile-layout')).toBe('off');
 		expect(document.documentElement.hasAttribute('data-mobile-layout')).toBe(false);
+		expect(screen.queryByText(/zu breit für die Handy-Ansicht/)).toBeNull();
+
+		await fireEvent.click(screen.getByRole('radio', { name: 'Automatisch' }));
+		expect(phoneChoice().find((radio) => radio.checked)?.value).toBe('auto');
+		expect(localStorage.getItem('byl-mobile-layout')).toBeNull();
+		expect(document.documentElement.getAttribute('data-mobile-layout')).toBe('on');
+	});
+
+	it('locks "Ohne Verbindung merken (dieses Gerät)" with its reason while the server cannot keep changes', async () => {
+		const first = renderWithOutbox(await outboxOf(null));
+		await tick();
+		const control = keepSwitch();
+		expect(control.disabled).toBe(true);
+		expect(control.checked).toBe(false);
+		expect(
+			screen.getByText(/Das Merken ohne Verbindung ist nach dem nächsten Neustart verfügbar/)
+		).toBeTruthy();
+		// Outside of the (app) layout (no outbox) the same.
+		first.unmount();
+		render(Page);
+		expect(keepSwitch().disabled).toBe(true);
+	});
+
+	it('turns keeping on and off with the capability of the server and stores "yes" and "no"', async () => {
+		renderWithOutbox(await outboxOf(OPS));
+		await tick();
+		const control = keepSwitch();
+		expect(control.disabled).toBe(false);
+		expect(control.checked).toBe(false);
+		const note = document.getElementById(control.getAttribute('aria-describedby') ?? '');
+		expect(note?.textContent?.replace(/\s+/g, ' ')).toMatch(
+			/nur in diesem Browser auf diesem Gerät/
+		);
+		expect(screen.queryByText(/nach dem nächsten Neustart verfügbar/)).toBeNull();
+
+		await fireEvent.click(control);
+		expect(keepSwitch().checked).toBe(true);
+		expect(localStorage.getItem('byl-offline-consent')).toBe('yes');
+		expect(getOfflineConsentStore().consent).toBe('yes');
+
+		await fireEvent.click(keepSwitch());
+		expect(keepSwitch().checked).toBe(false);
+		expect(localStorage.getItem('byl-offline-consent')).toBe('no');
+	});
+
+	it('says that kept changes are still sent once keeping is off', async () => {
+		getOfflineConsentStore().choose('no');
+		// Kept a minute ago: older than 7 days the start of the outbox would delete them.
+		const createdAt = Date.now() - 60_000;
+		const outbox = await outboxOf(OPS, [
+			stored({ createdAt }),
+			stored({ op: NEXT_OP, seq: 2, target: B, createdAt })
+		]);
+		renderWithOutbox(outbox);
+		await vi.waitFor(() => expect(outbox.count).toBe(2));
+		await tick();
+		expect(
+			screen.getByText(
+				'2 gemerkte Änderungen werden trotzdem noch übertragen, sobald die Verbindung zurück ist. Neue merkt die App auf diesem Gerät nicht mehr.'
+			)
+		).toBeTruthy();
+		await fireEvent.click(keepSwitch());
+		expect(screen.queryByText(/trotzdem noch übertragen/)).toBeNull();
 	});
 });

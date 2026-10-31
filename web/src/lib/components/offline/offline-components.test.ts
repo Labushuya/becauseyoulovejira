@@ -143,6 +143,8 @@ async function outboxWith(actions: KeptAction[], reachable = false, notices: unk
 	const outbox = new OutboxStore({ storage, connectivity, send: refuse, get: refuse, tab: 'a' });
 	outbox.attach(USER);
 	outbox.setSupport({ version: 1, kinds: ['ticket.update'] });
+	// Since the package "Einschalten" the device has to agree as well.
+	outbox.setConsent(true);
 	outbox.setFrame(true);
 	const flags = { show: vi.fn(() => ''), dismiss: vi.fn() };
 	outbox.connect({ upsert: vi.fn(), flags, sessionEnded: vi.fn() });

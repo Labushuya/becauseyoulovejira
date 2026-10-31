@@ -34,6 +34,8 @@ describe('the outbox of the app without the capability (G1)', () => {
 		const outbox = getOutbox();
 		outbox.attach(USER);
 		outbox.setSupport(null);
+		// Since the package "Einschalten" with the answer "yes", so only the missing capability decides.
+		outbox.setConsent(true);
 		outbox.setFrame(true);
 		const flags = { show: vi.fn(() => ''), dismiss: vi.fn() };
 		const stop = outbox.connect({ upsert: vi.fn(), flags, sessionEnded: vi.fn() });

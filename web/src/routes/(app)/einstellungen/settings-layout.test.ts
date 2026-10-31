@@ -220,13 +220,14 @@ describe('settings layout', () => {
 	});
 
 	// MO-7c2 (concept MO-0 §3.4): the pages of the administrator are not made for the phone; in the
-	// frame they show only a hint, also to the administrator at the machine of the app.
+	// frame they show only a hint, also to the administrator at the machine of the app. Changed with
+	// the package "Einschalten": the hint names "Handy-Ansicht: Aus" instead of the former switch.
 	it.each([
 		[
 			'the administrator at the machine of the app',
 			PC_CONTEXT,
 			'In der Handy-Ansicht nicht angepasst',
-			'Diese Seite der Verwaltung ist für die Handy-Ansicht nicht angepasst. In einem breiteren Fenster oder mit ausgeschalteter „Handy-Ansicht (Vorschau)“ unter „Darstellung“ erscheint sie wie gewohnt.'
+			'Diese Seite der Verwaltung ist für die Handy-Ansicht nicht angepasst. In einem breiteren Fenster oder mit „Handy-Ansicht: Aus“ unter „Darstellung“ erscheint sie wie gewohnt.'
 		],
 		[
 			'the administrator on another device',

@@ -18,6 +18,7 @@ import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 import { ConnectivityStore } from '$lib/offline/connectivity.svelte';
 import { OutboxStore } from '$lib/offline/outbox.svelte';
 import { MemoryOutboxStorage } from '$lib/offline/outbox-storage';
+import { getOfflineConsentStore } from '$lib/offline-consent.svelte';
 import { pb } from '$lib/pocketbase';
 import { appContext } from '$lib/stores/context.svelte';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
@@ -82,6 +83,8 @@ const mocks = vi.hoisted(() => {
 			route: { id: '/(app)/(tickets)' as string | null },
 			params: {} as Record<string, string>
 		},
+		// No navigation runs (`navigating` of $app/state), unless a test says so (Einschalten).
+		navigating: { type: null as string | null },
 		auth: {
 			email: 'anna@example.com',
 			// Without an account ID the area store has no area (ADR-0059): every request as before.
@@ -105,9 +108,15 @@ vi.mock('$app/navigation', () => ({
 		mocks.afterNavigate.push(callback);
 	},
 	// The hint after a new build (ADR-0040) is covered in app-update-notice.test.ts.
-	onNavigate: () => undefined
+	onNavigate: () => undefined,
+	// The armed outbox loads the modules of the views ahead (OF-2, preload.ts); covered elsewhere.
+	preloadCode: async () => undefined
 }));
-vi.mock('$app/state', () => ({ page: mocks.page, updated: { current: false } }));
+vi.mock('$app/state', () => ({
+	page: mocks.page,
+	updated: { current: false },
+	navigating: mocks.navigating
+}));
 vi.mock('$lib/auth.svelte', () => ({ auth: mocks.auth }));
 // The tour itself is covered in lib/tour/tour.test.ts; here only how the layout starts it (EH-13).
 const tourMocks = vi.hoisted(() => ({
@@ -1421,5 +1430,158 @@ describe('app layout: the outbox (OF-2b, ADR-0074 addendum OF-2b)', () => {
 		await fireEvent.click(within(question).getByRole('button', { name: 'Abmelden und verwerfen' }));
 		await vi.waitFor(() => expect(mocks.auth.logout).toHaveBeenCalledOnce());
 		expect([...storage.entries.keys()]).toEqual(['zzzzzzzzzzzzzzzzzzz3']);
+	});
+});
+
+// Package "Einschalten" (ADR-0073 addendum "Einschalten", ADR-0074 addendum "Zustimmung je Gerät"):
+// at the first start of the phone view the layout asks once whether this device keeps changes without
+// a connection; the outbox takes new changes only after "Ja, merken" and creates nothing before. On
+// the PC, in a wide window and with an answer no question.
+describe('app layout: the question at the first start of the phone view (Einschalten)', () => {
+	useOverlayStubs();
+	const USER = 'user00000000001';
+	const QUESTION = 'Änderungen ohne Verbindung auf diesem Gerät merken?';
+	const OPS = { version: 1, kinds: ['ticket.update'] } as const;
+
+	function windowOf(narrow: boolean) {
+		vi.stubGlobal('matchMedia', (media: string) => ({
+			matches: media === PHONE_QUERY ? narrow : false,
+			media,
+			addEventListener: () => undefined,
+			removeEventListener: () => undefined
+		}));
+	}
+
+	/**
+	 * The outbox of the tab with a storage that writes down every call (none: the database of the
+	 * browser was never opened, so never created), and a server that takes changes without a connection.
+	 */
+	function signedInWithOutbox(exists = false) {
+		const inner = new MemoryOutboxStorage();
+		const calls: string[] = [];
+		const storage = new Proxy(inner, {
+			get(target, name, receiver) {
+				const value: unknown = Reflect.get(target, name, receiver);
+				if (typeof value !== 'function') return value;
+				return (...args: unknown[]) => {
+					calls.push(String(name));
+					return (value as (...rest: unknown[]) => unknown).apply(target, args);
+				};
+			}
+		});
+		const refuse = async (): Promise<never> => {
+			throw new Error('not in this test');
+		};
+		const outbox = new OutboxStore({
+			storage,
+			exists: async () => exists,
+			connectivity: new ConnectivityStore(async () => true),
+			send: refuse,
+			get: refuse,
+			tab: 'tab-a'
+		});
+		outboxMocks.outbox = outbox;
+		outboxMocks.fetchSupport.mockImplementation(async () => ({ offlineOps: OPS }) as never);
+		mocks.session.valid = true;
+		mocks.auth.userId = USER;
+		return { outbox, calls };
+	}
+
+	beforeEach(() => {
+		const consent = getOfflineConsentStore();
+		consent.consent = null;
+		consent.dismissed = false;
+	});
+
+	afterEach(() => {
+		getMobileLayoutStore().choose(true);
+		outboxMocks.outbox = null;
+		outboxMocks.fetchSupport.mockImplementation(outboxMocks.realFetchSupport as never);
+		vi.unstubAllGlobals();
+		localStorage.clear();
+	});
+
+	it('asks once on a phone without an answer; "Ja, merken" stores "yes" and arms the outbox', async () => {
+		windowOf(true);
+		getMobileLayoutStore().choose(true);
+		const { outbox, calls } = signedInWithOutbox();
+		await renderLayout('/');
+
+		const dialog = await vi.waitFor(() => screen.getByRole('dialog', { name: QUESTION }));
+		expect(dialog.textContent).toContain('Die Handy-Ansicht ist jetzt eingeschaltet');
+		expect(screen.getAllByRole('dialog', { name: QUESTION })).toHaveLength(1);
+		// Before the answer nothing touched the storage of the device.
+		expect(calls).toEqual([]);
+		expect(outbox.armed).toBe(false);
+
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Ja, merken' }));
+		expect(localStorage.getItem('byl-offline-consent')).toBe('yes');
+		await vi.waitFor(() => expect(outbox.armed).toBe(true));
+		expect(calls).toContain('list');
+		expect(screen.queryByRole('dialog', { name: QUESTION })).toBeNull();
+	});
+
+	it('keeps the outbox off after "Nein" and never creates the storage of the device', async () => {
+		windowOf(true);
+		getMobileLayoutStore().choose(true);
+		const { outbox, calls } = signedInWithOutbox();
+		await renderLayout('/');
+
+		const dialog = await vi.waitFor(() => screen.getByRole('dialog', { name: QUESTION }));
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Nein' }));
+		expect(localStorage.getItem('byl-offline-consent')).toBe('no');
+		await tick();
+		expect(screen.queryByRole('dialog', { name: QUESTION })).toBeNull();
+		expect(outbox.supported).toBe(true);
+		expect(outbox.armed).toBe(false);
+		expect(outbox.watching).toBe(false);
+		expect(calls).toEqual([]);
+	});
+
+	it('leaves it without an answer on Escape: not again in this document, stored nothing', async () => {
+		windowOf(true);
+		getMobileLayoutStore().choose(true);
+		const { outbox } = signedInWithOutbox();
+		const { unmount } = await renderLayout('/');
+
+		const dialog = await vi.waitFor(() => screen.getByRole('dialog', { name: QUESTION }));
+		await fireEvent.keyDown(dialog, { key: 'Escape' });
+		await tick();
+		expect(screen.queryByRole('dialog', { name: QUESTION })).toBeNull();
+		expect(localStorage.getItem('byl-offline-consent')).toBeNull();
+		expect(getOfflineConsentStore().dismissed).toBe(true);
+		expect(outbox.armed).toBe(false);
+
+		// The layout again in the same document (another sign-in): no second question.
+		unmount();
+		const again = signedInWithOutbox();
+		await renderLayout('/');
+		await vi.waitFor(() => expect(again.outbox.supported).toBe(true));
+		await tick();
+		expect(screen.queryByRole('dialog', { name: QUESTION })).toBeNull();
+	});
+
+	it('asks nothing on the PC with "Automatisch", where the outbox stays off', async () => {
+		windowOf(false);
+		getMobileLayoutStore().choose(true);
+		const { outbox, calls } = signedInWithOutbox();
+		await renderLayout('/');
+
+		await vi.waitFor(() => expect(outbox.supported).toBe(true));
+		await tick();
+		expect(screen.queryByRole('dialog', { name: QUESTION })).toBeNull();
+		expect(outbox.armed).toBe(false);
+		expect(calls).toEqual([]);
+	});
+
+	it('asks nothing on a phone that answered before and arms the outbox after "yes"', async () => {
+		windowOf(true);
+		getMobileLayoutStore().choose(true);
+		getOfflineConsentStore().choose('yes');
+		const { outbox } = signedInWithOutbox();
+		await renderLayout('/');
+
+		await vi.waitFor(() => expect(outbox.armed).toBe(true));
+		expect(screen.queryByRole('dialog', { name: QUESTION })).toBeNull();
 	});
 });

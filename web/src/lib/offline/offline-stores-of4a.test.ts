@@ -110,6 +110,8 @@ function setup() {
 	const inbox = new InboxStore(inboxData, session, flags, () => [], outbox);
 	outbox.attach(USER);
 	outbox.setSupport(ALL_OPS);
+	// Since the package "Einschalten" the device has to agree as well.
+	outbox.setConsent(true);
 	outbox.setFrame(true);
 	outbox.connect({
 		upsert: (entry: TicketSummary) => {

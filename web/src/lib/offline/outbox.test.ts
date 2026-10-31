@@ -136,6 +136,8 @@ function harness(options: Options = {}) {
 	const sink = { upsert: vi.fn(), flags, sessionEnded: vi.fn(), childrenOf: vi.fn(() => [B]) };
 	outbox.attach(options.user === undefined ? USER : options.user);
 	outbox.setSupport(options.support === undefined ? OPS : options.support);
+	// Since the package "Einschalten" the device has to agree as well (outbox-consent.test.ts).
+	outbox.setConsent(true);
 	outbox.setFrame(options.frame ?? true);
 	const stop = outbox.connect(sink);
 	return { outbox, storage, connectivity, server, send, get, sink, flags, stop };
