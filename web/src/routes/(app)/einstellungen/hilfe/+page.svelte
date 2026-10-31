@@ -533,8 +533,28 @@
 			Projekt wird nicht vorbelegt. Im Eingang filterst und gruppierst du nach Zielprojekt.
 		</p>
 		<HostPlatformNote headingLevel={4} />
-		<h4>Zugangsdaten als Windows-Variable setzen</h4>
+		<h4>Zugangsdaten im Browser setzen</h4>
+		<p>
+			Jede Karte einer Verbindung mit Zugangsdaten hat unter „Details“ den Abschnitt „Zugangsdaten“
+			(im Menü „•••“ unter „Zugangsdaten …“, dazu in „Stichwörter und Einstellungen …“ und im
+			Einrichtungsassistenten). Er nennt jede Variable mit ihrem Zustand „gesetzt“ oder „fehlt“ und
+			bietet „Setzen …“ bzw. „Ersetzen …“ und „Entfernen …“. Der Wert geht nur an Windows auf dem
+			PC: Die App speichert ihn nicht, zeigt ihn nie wieder an, schreibt ihn in kein Protokoll und
+			merkt ihn sich auch ohne Verbindung nicht. Leerzeichen am Anfang oder Ende übernimmt sie genau
+			so und warnt davor. „Entfernen …“ fragt vorher und nennt alle Kanäle, die die Variable
+			verwenden. Variablen, die die App selbst steuert (etwa der Zugang des Mail-Hilfsprozesses),
+			lassen sich so nicht setzen.
+		</p>
+		<p>
+			Danach fragt die App „Jetzt neu starten“ oder „Später“, denn geänderte Zugangsdaten sieht sie
+			erst nach einem Neustart. Mit „Später“ steht auf der Seite Kanäle der Hinweis „Neustart nötig,
+			damit geänderte Zugangsdaten wirken“, auf jedem Gerät, bis die App neu gestartet ist. Setzen
+			und Entfernen geht nur im Browser auf dem PC, auf dem becauseyoulovejira läuft; auf dem Handy
+			und anderen Geräten steht dort „Nur am PC möglich“.
+		</p>
+		<h4>Notfall: Zugangsdaten über Windows setzen</h4>
 		<PcOnly>
+			<p>Nur wenn das Setzen im Browser nicht geht, bleibt der Weg über Windows:</p>
 			<ol>
 				<li>
 					<strong>Per Eingabeaufforderung:</strong> Windows-Taste, „cmd“ eingeben, Eingabetaste.

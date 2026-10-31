@@ -11,6 +11,7 @@
 	import { findAreaStore } from '$lib/stores/area.svelte';
 	import { getCatalogStore } from '$lib/stores/catalog.svelte';
 	import { ConnectionsStore, connectionsData } from '$lib/stores/connections.svelte';
+	import { CredentialsStore, credentialsData } from '$lib/stores/credentials.svelte';
 	import { findFirstStepsStore } from '$lib/stores/first-steps.svelte';
 	import { getFlagStore } from '$lib/stores/flags.svelte';
 	import { FoldersStore, foldersData } from '$lib/stores/folders.svelte';
@@ -46,6 +47,9 @@
 	// "Jetzt neu starten" and "Mail-Helfer neu starten" in the assistant (BW-1, ADR-0072): the route
 	// and the checks of the page System.
 	const restart = new RestartStore(systemData(pb), auth);
+	// The access data of the channels in the browser (BW-3, ADR-0075): state, "Setzen", "Entfernen"
+	// and the hint until the next restart; values only on their way to the server, never kept.
+	const credentials = new CredentialsStore(credentialsData(pb), auth);
 	// Target projects of the cards without a connection (ADR-0049); the projects of the catalog name
 	// the targets of every card.
 	const inboxTargets = new InboxTargetsStore(inboxTargetsData(pb), auth, flags);
@@ -85,6 +89,7 @@
 			github.reset();
 			folders.reset();
 			restart.reset();
+			credentials.reset();
 		};
 	});
 
@@ -107,6 +112,7 @@
 	{github}
 	{folders}
 	{restart}
+	{credentials}
 	{importKeywords}
 	{inboxKeys}
 	{inboxTargets}

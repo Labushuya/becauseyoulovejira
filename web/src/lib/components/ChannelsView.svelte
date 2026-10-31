@@ -4,6 +4,7 @@
 	import type { Connection } from '$lib/domain/connections';
 	import type { ProjectRef } from '$lib/domain/ticket';
 	import type { ConnectionsStore } from '$lib/stores/connections.svelte';
+	import type { CredentialsStore } from '$lib/stores/credentials.svelte';
 	import type { FoldersStore } from '$lib/stores/folders.svelte';
 	import type { GitHubStore } from '$lib/stores/github.svelte';
 	import type { ImportKeywordsStore } from '$lib/stores/import-keywords.svelte';
@@ -44,7 +45,9 @@
 	// before (`folders`). In the household area (E7-3, ADR-0059 §5) connections, the own inbox and
 	// WhatsApp Web stay private: their cards and assistants are not offered, the catalog says
 	// "Nur im privaten Bereich"; the bookmarklet, the clipboard and the files work there. Since BW-1
-	// (ADR-0072) the assistant restarts the app and the mail helper in place (`restart`).
+	// (ADR-0072) the assistant restarts the app and the mail helper in place (`restart`). Since BW-3
+	// (ADR-0075) the cards, the edit modal and the assistant set the access data in the browser
+	// (`credentials`).
 	let {
 		captureUrl,
 		connections,
@@ -52,6 +55,7 @@
 		github,
 		folders,
 		restart = null,
+		credentials = null,
 		importKeywords = null,
 		inboxKeys = null,
 		inboxTargets = null,
@@ -73,6 +77,8 @@
 		folders: FoldersStore;
 		/** "Jetzt neu starten" in the assistant (BW-1); without it only the emergency way stands. */
 		restart?: RestartStore | null;
+		/** The access data of the channels (BW-3); without it only the names and setx stand. */
+		credentials?: CredentialsStore | null;
 		/**
 		 * Keywords of the file imports, for the numbers on the files card, and of the channels of the
 		 * own inbox (ADR-0038).
@@ -146,6 +152,8 @@
 			{notion}
 			{github}
 			{folders}
+			{credentials}
+			{restart}
 			{projects}
 			onadd={focusCatalog}
 			onsetup={showSetup}
@@ -206,6 +214,7 @@
 				{notion}
 				{github}
 				{restart}
+				{credentials}
 				{projects}
 				onconnection={(id) => onsetupchange({ kind: setup?.kind ?? 'kalender', connectionId: id })}
 				onimport={(connection) => {
