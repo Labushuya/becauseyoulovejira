@@ -567,7 +567,7 @@ Weiter 13 Fälle (Konzept: höchstens 15), keine Prüfung entfällt. Die Maßnah
 
 - **Q-1, auf jedem Gerät:** „Ergebnis schließen“ nimmt seinen Knopf mit. Der Fokus geht an den ersten Knopf der Leiste, solange sie steht (am Handy in „Auswählen“ also „Aktionen“), sonst an die Überschrift der Liste („Aufgaben“, „Papierkorb“, „Eingang“), nie an die Seite. Gemeinsam in `lib/selection-focus.ts` (`keepFocusAtBar`); `BulkActionBar` bekommt die Überschrift von `TicketTable`. `BulkActionBar.run` nutzt dieselbe Regel: Ist die Leiste nach der Aktion weg, geht der Fokus an die Überschrift, wenn er verloren war.
 - **Q-2, auf jedem Gerät:** „Wiederherstellen“ der gewählten Tickets im Papierkorb gibt den Fokus zurück wie die Sammelaktionen in „Aufgaben“: an den ersten Knopf der Leiste (das Ergebnis steht vorn, also „Ergebnis schließen“), sonst an „Papierkorb“.
-- **Q-3:** `hint` der `SelectionBar` ist Pflicht (kein Vorgabewert); alle drei Aufrufer übergeben ihn schon. Ein Typtest mit `@ts-expect-error` scheitert in `npm run check`, sobald er wieder optional ist.
+- **Q-3:** `hint` der `SelectionBar` ist Pflicht (kein Vorgabewert); alle drei Aufrufer übergeben ihn schon. Ein Typtest mit `@ts-expect-error` scheitert in `npm run check`, sobald er wieder optional ist. (Seit NA-1 auch nicht leer, und der Fokus nur bei verlorenem Fokus zurück; Nachtrag NA-1 §2.)
 - **Q-4:** §8 des Nachtrags MO-7b nannte den Stand `456f503` (vor dem Rebase); berichtigt auf `86195d2`, den Stand des PR #328 danach.
 - **Q-5:** §1.
 
@@ -624,7 +624,7 @@ Nur Oberfläche, Tests und Doku, keine Hooks und keine Migration: nach dem Build
 - **Zeilen:** In Agenda und Liste eines Tages ist der Link 44 px hoch, der Key steht über dem Titel, „•••“ in der ersten Zeile, Projekt, Status und Priorität darunter; der Titel nimmt so den größten Teil der Zeile ein (Smoke: mindestens 60 %).
 - **Verschieben:** Wie bisher über „•••“ → „Fälligkeit verschieben …“ in der Liste eines Tages und dann einen Tag antippen; die Zeile sagt ohne Tasten „… Einen Tag antippen, „Abbrechen“ bricht ab.“ und steht über der unteren Leiste. **Ohne Verbindung** (der Postausgang des Rahmens, ADR-0074, Ergänzung MO-7c2) bleibt der Eintrag im Menü gesperrt statt weg: „Fälligkeit verschieben … (nur mit Verbindung)“ mit `aria-disabled`, gedämpft (MO-7a); ein Tipp oder Enter zeigt das Info-Flag „„Fälligkeit verschieben“ geht nur mit Verbindung.“ und lässt das Menü offen (`MenuAction.onlocked`, neu in `ActionsMenu`). Die Taste „m“ zeigt dasselbe Flag, die Maus zieht nichts, ein schon begonnenes Verschieben endet mit dem Flag, ohne zu senden.
 - **Zurück:** Sheet und Liste des Tages sind Modal bzw. Popover; die Zurück-Geste schließt sie (Close Watcher, manuell BYL-E6-2259).
-- **Hilfe:** Der Abschnitt „Kalender“ nennt die Zeile der Ansicht im Rahmen, „Was nur mit Verbindung geht“ die Sperre („… in der Handy-Ansicht ohne Verbindung gesperrt, mit „(nur mit Verbindung)“.“).
+- **Hilfe:** Der Abschnitt „Kalender“ nennt die Zeile der Ansicht im Rahmen, „Was nur mit Verbindung geht“ die Sperre („… in der Handy-Ansicht ohne Verbindung gesperrt, mit „(nur mit Verbindung)“.“; seit NA-1, C2-1, auch im breiten Fenster, solange gemerkte Änderungen warten, Nachtrag NA-1 §3).
 
 ### 3. Einstellungen
 
@@ -654,6 +654,7 @@ Weiter 13 Fälle, keine neuen, keine festen Wartezeiten; lokal 22,6 s am Stand `
 - Im Monat sind die Einträge nur über die Liste des Tages einzeln erreichbar; der Tag nennt ihre Zahl.
 - Ohne Verbindung verschiebt der Kalender nichts (ADR-0074); ein Ticket ohne Verbindung umzuplanen geht über sein Feld „Fällig“ (Postausgang, OF-3).
 - Am PC des Verwalters zeigt der Rahmen dessen Seiten nicht (§3); im breiten Fenster wie bisher.
+- Verkleinert der Verwalter das Fenster unter 40rem, während eine seiner Seiten offen ist, hängt der Rahmen sie aus (§3); ungespeicherte Eingaben dort gehen verloren (ergänzt mit NA-1, C2-3).
 - Keine Startseite der Einstellungen (§3).
 - Zurück-Geste, Tastatur und Lesbarkeit prüft nur das Gerät (BYL-E6-2259).
 
@@ -705,3 +706,34 @@ Eine Durchsicht fand acht Punkte (E-1 bis E-8). Entscheidung durch den Nutzer (b
 - **E-7, Wortlaut:** Kommentare und Regeln nennen statt des Schalters „Handy-Ansicht (Vorschau)“ die Wahl „Handy-Ansicht: Automatisch“ bzw. „Aus“ (`tokens.css`, `base.css`, die fünf Tabellen, `ViewSwitch`, zwei Kommentare von Tests, `eingang-und-quellen.md`, `tagesplan.md`, `sicherheit.md`, `ansichten.md`, `einstellungen-system.md`). Rückblicke („früher“, „vorher“) und der Titel dieses ADR bleiben. Die CLAUDE.md beschreibt die Handy-Ansicht als für alle an (eigener Commit, vom Nutzer freigegeben).
 - **Tests:** Vitest, am Stand `7b6ef10` rot (22 Fälle): die neuen Fälle von E-1, E-2, E-3, E-4, E-5 und E-8 in `domain/offline-consent.test.ts`, `offline-consent.test.ts`, `offline/outbox-consent.test.ts`, `routes/(app)/app-layout.test.ts` und `appearance-page.test.ts`. Dort schon grün (Abdeckung, E-6): Navigation, ohne `offline_ops`, „Aus“, Widerruf. Nach der Umsetzung geschrieben und nicht rot gelaufen: `overlay/open-dialogs.test.ts` und der Fall der Markierung (Modul und Export fehlten am Stand). **Angepasst mit Grund:** `appearance-page.test.ts` (Wortlaut von E-4) und `app-outbox.test.ts` (die Antwort nennt seit E-2 `answered`; ein Fall heißt jetzt „…, marked as not answered“).
 - Manifest: BYL-E6-2274 bis BYL-E6-2282; berichtigt BYL-E6-2075, BYL-E6-2261, BYL-E6-2267 und BYL-E6-2273.
+- **Seit NA-1:** Auch ein offenes Popover hält die Frage zurück (Nachtrag NA-1 §1, F-1).
+
+## Nachtrag (2026-10-31, NA-1): Nacharbeit aus den Durchsichten von „Einschalten“, MO-7c1 und MO-7c2
+
+Nur Oberfläche, Tests und Doku, keine Hooks und keine Migration: nach dem Build F5, kein Neustart. Entscheidung durch den Advisor (Auftrag NA-1: die kleinen Punkte der drei Durchsichten, je mit Test, Verhalten von C2-1 beibehalten) und den Executor (Umsetzung, Wortlaute, Tests). Jeder Punkt hat einen Test, der am Stand `0044e13` rot war (Ausnahmen in §4).
+
+### 1. Aus der Durchsicht von „Einschalten“ (Runde 2)
+
+- **F-1, Popover:** Die Frage beim ersten Start wartet auch, solange ein Popover offen ist (`:popover-open`, wie bei den globalen Tasten in `domain/keyboard.ts`). Menüs, Auswahlen und die Sheets des Rahmens sind Popover (`Popover.svelte`); `showModal` der Frage hätte sie geschlossen. `OpenDialogs` zählt sie mit und hört dafür `toggle` am Dokument (Capture, das Ereignis steigt nicht auf), denn ein Popover ändert beim Öffnen kein Attribut, das der `MutationObserver` sähe. Ein Seitenpanel zählt weiter nicht.
+- **F-2 bis F-5:** [ADR-0074](0074-postausgang-fuer-aenderungen-ohne-verbindung.md) Nachtrag „Zustimmung je Gerät“ §9.
+
+### 2. Aus der Durchsicht von MO-7c1
+
+- **C3:** [ADR-0014](0014-datenmodell-eingang.md) Nachtrag EG-1 (NA-1).
+- **C4, auf jedem Gerät:** `keepFocusAtBar` holt den Fokus nur noch zurück, wenn er mit der Aktion verloren ging (auf der Seite, `body`): an den ersten Knopf der Leiste, solange sie steht, sonst an die Überschrift. Ein Element, das der Nutzer während eines langen Laufs wählt, behält den Fokus; vorher holte ihn die Leiste zurück (Nachtrag MO-7c1 §2). Jeder Aufrufer ist eine Aktion der Leiste oder ein Dialog aus ihr, ein verlorener Fokus stand also dort. Eine eigene Prüfung „vor dem Lauf in der Leiste“ hätte die Dialoge ausgeschlossen, deren Fokus vor dem Lauf außerhalb der Leiste steht.
+- **C5:** „Verwerfen (n)“ und „Wiederherstellen (n)“ des Eingangs nutzen dieselbe Regel statt einer eigenen, die nur im Rahmen galt und keine Überschrift kannte: Ist die Leiste weg, geht ein verlorener Fokus an „Eingang“.
+- **C6:** `hint` der `SelectionBar` darf nicht leer sein. In der Entwicklung und in den Tests wirft die Leiste ohne Grund oder mit leerem Grund sofort (`import.meta.env.DEV`, der Build lässt die Prüfung weg); die Zweige für `''` sind weg. Ein Typ kann eine leere Zeichenkette nicht von einer anderen unterscheiden; der Typtest von Q-3 bleibt.
+
+### 3. Aus der Durchsicht von MO-7c2
+
+- **C2-1:** Das Verschieben im Kalender ist ohne Verbindung gesperrt, solange der Postausgang die Verbindung beobachtet: im Rahmen nach „Ja, merken“ und auch im breiten Fenster, solange gemerkte Änderungen warten. Das Verhalten bleibt; Kommentar (`kalender/+layout.svelte`), Hilfe und ADR-0074 (Ergänzung MO-7c2) sagen es jetzt so. Die Hilfe: „… ohne Verbindung gesperrt, mit „(nur mit Verbindung)“, in der Handy-Ansicht und, solange gemerkte Änderungen warten, auch im breiten Fenster.“ Ersetzt in Nachtrag MO-7c2 §2 („Hilfe“) den Wortlaut „… in der Handy-Ansicht ohne Verbindung gesperrt …“.
+- **C2-2, auf jedem Gerät:** „Weiter“ (Enter) in „Bisheriges Passwort“ und „Neues Passwort“ setzt den Fokus ins nächste Feld, statt das Formular (`novalidate`) mit Fehlern an den noch leeren Feldern abzusenden; im letzten Feld sendet Enter wie bisher. Nur ohne Umschalt-, Strg-, Alt- und Befehlstaste und nicht während einer Eingabe mit Zusammensetzung (IME).
+- **C2-3, nur Doku:** Nachtrag MO-7c2 §6 nennt jetzt die Grenze: Verkleinert der Verwalter am PC mit „Automatisch“ das Fenster unter 40rem, während eine seiner Seiten offen ist, hängt der Rahmen die Seite aus und zeigt den Hinweis; ungespeicherte Eingaben dort gehen verloren. Selten, nicht geändert.
+- **C2-4, rein formal:** `fieldset.inline { width: auto; }` von `CalendarLayers` steht jetzt im Block des Rahmens (`@media (max-width: 39.99rem)` und `:root[data-mobile-layout='on']`, §3); nur das Filter-Sheet des Rahmens zeigt die Gruppe so. Am PC keine Wirkung, vorher wie nachher.
+
+### 4. Tests
+
+- Vitest, am Stand `0044e13` rot (20 Fälle, neue und angepasste): `overlay/open-dialogs.test.ts` und `app-layout.test.ts` (F-1), `appearance-page.test.ts` (F-2, F-3), `domain/offline-consent.test.ts` (F-3), `help-page.test.ts` (F-3, C2-1), `outbox-of3c.test.ts` (F-4), `own-account-view.test.ts` (C2-2), `breakpoints.test.ts` (C2-4), `inbox-store.test.ts` (C3), neu `selection-focus.test.ts` (C4), `inbox-table-phone.test.ts` (C5), `selection-bar-phone.test.ts` (C6). Dort schon grün (Abdeckung): F-5 in `outbox-consent.test.ts`, das Verhalten von C2-1 in `outbox.test.ts` und die übrigen Fälle von `selection-focus.test.ts`.
+- **Angepasst mit Grund:** `appearance-page.test.ts` (Wortlaute von E-2 und E-5 nach F-3; die Fälle „… once keeping is off“ und E-3 setzen das schmale Fenster, weil „Ja, merken“ nur dort Neues merkt und im breiten Fenster von jsdom der Hinweis seit F-2 stehen bleibt, keine Erwartung geändert), `domain/offline-consent.test.ts` (Wortlaute, F-3), `help-page.test.ts` (Wortlaut des Kalenders, C2-1), `selection-bar-phone.test.ts` („takes no bar without its hint“ erwartet jetzt den Fehler der Prüfung statt der Leiste, C6; die Direktive des Typtests bleibt), `breakpoints.test.ts` (nennt `CalendarLayers`, C2-4; die Liste der Breiten bleibt), `ticket-table-phone.test.ts` (der Fall von Q-1 setzt den Fokus vor dem Klick auf „Ergebnis schließen“, wie ein Klick in Chrome oder die Tastatur; `fireEvent.click` von jsdom fokussiert nichts, und seit C4 kehrt nur ein verlorener Fokus zurück; Erwartungen unverändert). Neuer Helfer `HeldListStorage` in `lib/test/outbox-fake.ts` (ein Lesen des Geräts, das auf Zuruf antwortet).
+- Smoke-Test unverändert: 13 Fälle, lokal 25,3 s nachher (ein Lauf, Zeit von Playwright).
+- Manifest: BYL-E6-2283 bis BYL-E6-2296 (manuell BYL-E6-2296, „Weiter“ der Tastatur am Handy); berichtigt BYL-E6-2242, BYL-E6-2243, BYL-E6-2254, BYL-E6-2267, BYL-E6-2274, BYL-E6-2277, BYL-E6-2278 und BYL-E6-2280.

@@ -8,6 +8,7 @@ import type { OutboxAction } from '$lib/domain/offline';
 import type { Status } from '$lib/domain/status';
 import type { Ticket } from '$lib/domain/ticket';
 import type { FlagInput } from '$lib/stores/flags.svelte';
+import { HeldListStorage } from '$lib/test/outbox-fake';
 import { ConnectivityStore } from './connectivity.svelte';
 import { OutboxStore, type OutboxDeps } from './outbox.svelte';
 import { MemoryOutboxStorage, type OutboxStorage } from './outbox-storage';
@@ -269,6 +270,42 @@ describe('outbox: the answer of this device (Einschalten)', () => {
 			'zzzzzzzzzzzzzzzzzzz2'
 		]);
 		answers[1]?.(true);
+		await settle();
+		expect(h.send.mock.calls.map(([action]) => action.op)).toEqual(['zzzzzzzzzzzzzzzzzzz2']);
+		expect(storage.entries.size).toBe(0);
+		h.stop();
+	});
+
+	// NA-1 (F-5 of the review of round 2): the same while the device lists its entries (`list()` in
+	// `#read`), after the browser said it has the storage. The reading of the first account ends after
+	// the answer without deleting anything; the second account reads the device itself.
+	it('never deletes the changes of an account that signed in while the device listed its entries (NA-1, F-5)', async () => {
+		const storage = new HeldListStorage();
+		await storage.put(stored());
+		await storage.put({
+			...stored(),
+			op: 'zzzzzzzzzzzzzzzzzzz2',
+			user: OTHER,
+			scope: `u:${OTHER}`,
+			target: B
+		});
+		storage.holding = true;
+		const h = harness({ storage, exists: true, consent: false });
+		await settle();
+		expect(storage.held).toBe(1);
+		h.outbox.attach(OTHER);
+		await settle();
+		expect(storage.held).toBe(2);
+		// The reading of the first account gets the entries of both accounts.
+		storage.answer();
+		await settle();
+		expect([...storage.entries.keys()].sort()).toEqual([
+			'zzzzzzzzzzzzzzzzzzz1',
+			'zzzzzzzzzzzzzzzzzzz2'
+		]);
+		expect(h.send).not.toHaveBeenCalled();
+		storage.holding = false;
+		storage.answer();
 		await settle();
 		expect(h.send.mock.calls.map(([action]) => action.op)).toEqual(['zzzzzzzzzzzzzzzzzzz2']);
 		expect(storage.entries.size).toBe(0);

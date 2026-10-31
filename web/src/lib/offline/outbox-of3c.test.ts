@@ -17,6 +17,8 @@
 // Round 3 (after the review of 6fc51a5), cover code that was right already, so green against 6fc51a5:
 // - C2-2: a later completion that completes the sub-task takes the notice along at its first attempt;
 // - C2-3: where reading the sub-task again fails or times out, the notice stands again.
+// NA-1 (after the review of round 2 of "Einschalten"), red against 0044e13:
+// - F-4: "Abmelden und verwerfen" deletes only the notices of the account it started for.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DataError } from '$lib/data/errors';
@@ -33,6 +35,7 @@ import {
 	A,
 	ALL_OPS,
 	FailingStorage,
+	HeldListStorage,
 	NOW,
 	OTHER,
 	SAVED_AT,
@@ -193,6 +196,43 @@ describe('notices that stay on the device until they are closed (R3-1)', () => {
 		const again = await ready(h.storage);
 		expect(noticesOf(again)).toEqual([]);
 		expect(await h.storage.notices(OTHER)).toEqual([foreign]);
+	});
+
+	// NA-1 (F-4 of the review of round 2 of "Einschalten"): "Abmelden und verwerfen" holds the account it
+	// started for. Another account that signs in meanwhile (another tab) keeps its notices, on the
+	// device and on the screen; those of the account that signed out go.
+	it('deletes only the notices of the account that signed out, also when another one signed in meanwhile (NA-1, F-4)', async () => {
+		const storage = new HeldListStorage();
+		const h = await ready(storage);
+		await dropOne(h);
+		const foreign = {
+			v: 1,
+			id: 'child-other',
+			kind: 'childNotDone',
+			at: NOW,
+			key: 'HAUS-07',
+			parent: 'HAUS-06',
+			child: 'tick00000000007',
+			after: 1
+		};
+		await storage.notices(OTHER, () => [foreign]);
+		storage.holding = true;
+		const clear = h.outbox.clearUser();
+		await settle();
+		expect(storage.held).toBe(1);
+		storage.holding = false;
+		h.outbox.attach(OTHER);
+		await settle();
+		expect(noticesOf(h)).toHaveLength(1);
+		expect(noticesOf(h)[0]).toMatch(/HAUS-07/);
+
+		storage.answer();
+		await clear;
+		await settle();
+		expect(noticesOf(h)).toHaveLength(1);
+		expect(noticesOf(h)[0]).toMatch(/HAUS-07/);
+		expect(await storage.notices(OTHER)).toEqual([foreign]);
+		expect(await storage.notices(USER)).toBeUndefined();
 	});
 
 	it('closes a notice only as it was shown: one that changed meanwhile stays with what is new (I5)', async () => {

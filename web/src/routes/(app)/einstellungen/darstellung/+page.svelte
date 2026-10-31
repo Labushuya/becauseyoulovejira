@@ -42,7 +42,8 @@
 	// (dieses Gerät)" (ADR-0074 addendum "Zustimmung je Gerät"), locked with its reason: the browser
 	// cannot store (localStorage refuses to write, no IndexedDB), the question to the server runs or
 	// failed (unknown, round 2 E-2), or the server cannot keep changes. Turned off, or with
-	// "Handy-Ansicht: Aus", while changes are kept, the page says they still go (round 2, E-3).
+	// "Handy-Ansicht: Aus" or in a wide window (NA-1, F-2), while changes are kept, the page says they
+	// still go (round 2, E-3).
 	const mobileLayout = getMobileLayoutStore();
 	const MOBILE_CHOICES = [
 		{
@@ -60,8 +61,11 @@
 	const supportCheck = $derived(outbox?.supportCheck ?? 'answered');
 	const storable = $derived(offlineConsent.writable && (outbox?.canStore ?? true));
 	const keptCount = $derived(outbox?.count ?? 0);
-	/** New changes are not kept (no "Ja, merken", or "Aus"), so the kept ones only still go. */
-	const keepsNothingNew = $derived(offlineConsent.consent !== 'yes' || !mobileLayout.enabled);
+	/**
+	 * New changes are not kept (no "Ja, merken", or the frame does not apply: "Aus", or since NA-1, F-2,
+	 * a wide window), so the kept ones only still go.
+	 */
+	const keepsNothingNew = $derived(offlineConsent.consent !== 'yes' || !mobileLayout.active);
 	// start.bat is named only to the administrator on the machine of the app (KOB-1, ADR-0057).
 	const scripts = $derived(appContext.capabilities.scripts);
 	const uid = $props.id();

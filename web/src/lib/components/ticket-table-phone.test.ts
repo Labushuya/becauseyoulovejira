@@ -627,7 +627,10 @@ describe('the focus after "Ergebnis schließen" (MO-7c1)', () => {
 		await fireEvent.click(card('TASK-2').querySelector('.meta') as HTMLElement);
 
 		// Still choosing: the bar stays, the focus goes to its first button, "Aktionen".
+		// The focus on the button, as a click (Chrome) or the keyboard puts it there: since NA-1 (C4) only a
+		// focus lost with the button comes back, and fireEvent.click of jsdom focuses nothing.
 		let bar = await skipOne();
+		within(bar()).getByRole('button', { name: 'Ergebnis schließen' }).focus();
 		await fireEvent.click(within(bar()).getByRole('button', { name: 'Ergebnis schließen' }));
 		await tick();
 		await vi.waitFor(() =>
@@ -639,6 +642,7 @@ describe('the focus after "Ergebnis schließen" (MO-7c1)', () => {
 		await fireEvent.click(within(bar()).getByRole('button', { name: 'Fertig' }));
 		await tick();
 		const left = screen.getByRole('region', { name: '0 Tickets ausgewählt' });
+		within(left).getByRole('button', { name: 'Ergebnis schließen' }).focus();
 		await fireEvent.click(within(left).getByRole('button', { name: 'Ergebnis schließen' }));
 		await tick();
 		expect(screen.queryByRole('region', { name: /ausgewählt/ })).toBeNull();

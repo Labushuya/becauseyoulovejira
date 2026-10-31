@@ -392,7 +392,9 @@
 	 * "Verwerfen (n)" or "Wiederherstellen (n)" of the chosen entries (EG-1); while a run goes on or
 	 * without a connection it only names why. Entries the run changed leave the selection (they left
 	 * the view), a failed one stays chosen for another try. The focus stays on the button; in the
-	 * phone frame, where the actions close, it goes back into the bar (as in BulkActionBar).
+	 * phone frame, where the actions close, a focus lost with them goes back into the bar, or to the
+	 * heading once the bar is gone, and an element the user chose meanwhile keeps it (keepFocusAtBar,
+	 * like every bar of the selection since NA-1, C5).
 	 */
 	async function runBulk(kind: InboxBulkKind, label: string) {
 		if (chosen.length === 0 || lockedByRun(label)) return;
@@ -400,13 +402,12 @@
 			flags.show({ tone: 'info', title: bulkOfflineText(label) });
 			return;
 		}
+		const away = heading;
 		const entries = chosen.map(({ id, title }) => ({ id, title }));
 		if (kind === 'discard') await store.discardMany(entries);
 		else await store.restoreMany(entries);
 		await tick();
-		if (phone && bulkBar && !bulkBar.contains(document.activeElement)) {
-			bulkBar.querySelector<HTMLElement>('button:not([disabled]), [tabindex]')?.focus();
-		}
+		keepFocusAtBar(bulkBar, away);
 	}
 
 	/**

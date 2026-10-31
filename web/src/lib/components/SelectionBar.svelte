@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { tick, type Snippet } from 'svelte';
+	import { tick, untrack, type Snippet } from 'svelte';
 	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 	import { findFlagStore } from '$lib/stores/flags.svelte';
 
@@ -47,6 +47,7 @@
 		/**
 		 * Why "Aktionen" is locked in the phone frame while nothing is chosen, e.g. "Erst Tickets
 		 * auswählen.". Required since MO-7c1 (Q-3): without it a locked "Aktionen" would say nothing.
+		 * Never empty (NA-1, C6): development and the tests check it, the type cannot.
 		 */
 		hint: string;
 		/** "Auswahl aufheben"; in the phone frame "Fertig". */
@@ -65,6 +66,15 @@
 		/** Result of the last action (failures, notes); shown below, pass it only with content. */
 		result?: Snippet;
 	} = $props();
+
+	// A bar without its reason is a mistake of the code (NA-1, C6): in development and in the tests it
+	// throws at once, so no locked "Aktionen" stays silent; the build of the app leaves the check out.
+	if (import.meta.env.DEV) {
+		const given: unknown = untrack(() => hint);
+		if (typeof given !== 'string' || given.trim() === '') {
+			throw new Error('SelectionBar: `hint` must say why "Aktionen" is locked (MO-7c1, NA-1).');
+		}
+	}
 
 	const uid = $props.id();
 	const ids = { actions: `${uid}-actions`, hint: `${uid}-hint` };
@@ -90,7 +100,7 @@
 	/** "Aktionen": opens or closes the actions; locked, it names why in a flag. */
 	async function toggleActions() {
 		if (!actionsShown) {
-			if (hint !== '') flags?.show({ tone: 'info', title: hint });
+			flags?.show({ tone: 'info', title: hint });
 			return;
 		}
 		opened = !opened;
@@ -149,13 +159,13 @@
 					aria-expanded={actionsOpen}
 					aria-controls={actionsOpen ? ids.actions : undefined}
 					aria-disabled={actionsShown ? undefined : 'true'}
-					aria-describedby={!actionsShown && hint !== '' ? ids.hint : undefined}
-					title={!actionsShown && hint !== '' ? hint : undefined}
+					aria-describedby={actionsShown ? undefined : ids.hint}
+					title={actionsShown ? undefined : hint}
 					onclick={() => void toggleActions()}
 				>
 					Aktionen
 				</button>
-				{#if !actionsShown && hint !== ''}
+				{#if !actionsShown}
 					<span class="visually-hidden" id={ids.hint}>{hint}</span>
 				{/if}
 				<button class="button-secondary" type="button" onclick={onclear}>Fertig</button>

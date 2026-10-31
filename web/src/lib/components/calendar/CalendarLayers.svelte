@@ -129,11 +129,6 @@
 		border: none;
 	}
 
-	/* In the filter sheet the group takes the width of the sheet. */
-	fieldset.inline {
-		width: auto;
-	}
-
 	legend {
 		padding: 0 0.375rem 0.25rem;
 		font-size: var(--font-size-small);
@@ -170,5 +165,15 @@
 	.hint {
 		font-size: var(--font-size-small);
 		color: var(--color-text-muted);
+	}
+
+	/*
+	 * Phone frame (MO-7c2; since NA-1, C2-4, in this block like every rule of the frame): in the filter
+	 * sheet, the only place that renders the group inline, it takes the width of the sheet.
+	 */
+	@media (max-width: 39.99rem) {
+		:global(:root[data-mobile-layout='on']) fieldset.inline {
+			width: auto;
+		}
 	}
 </style>

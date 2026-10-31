@@ -235,15 +235,34 @@ describe('the bar of the selection in the phone frame after the review (MO-7b ro
 
 // MO-7c1 (Q-3 of the review of MO-7b): the reason of a locked "Aktionen" is part of the type. Without
 // it a locked "Aktionen" would say nothing on a tap; svelte-check (npm run check) proves the type, the
-// directive below fails there as soon as `hint` is optional again.
+// directive below fails there as soon as `hint` is optional again. Since NA-1 (C6 of the review of
+// MO-7c1) the bar also checks it while it runs in development and in the tests: a missing or empty
+// reason is a mistake of the code and throws (before, the bar took it and said nothing). The type
+// cannot tell an empty string from another one.
 describe('the reason of a locked "Aktionen" is required (MO-7c1)', () => {
 	it('takes no bar without its hint', () => {
 		useWindow(true, true);
-		render(SelectionBar, {
-			// @ts-expect-error `hint` is required since MO-7c1 (Q-3).
-			props: { countText: '0 Tickets ausgewählt', onclear: vi.fn(), actions, actionsShown: false }
-		});
-		expect(screen.getByRole('region', { name: '0 Tickets ausgewählt' })).toBeTruthy();
+		expect(() =>
+			render(SelectionBar, {
+				// @ts-expect-error `hint` is required since MO-7c1 (Q-3).
+				props: { countText: '0 Tickets ausgewählt', onclear: vi.fn(), actions, actionsShown: false }
+			})
+		).toThrow(/hint/);
+	});
+
+	it.each(['', '   '])('takes no bar with an empty hint %j (NA-1, C6)', (hint) => {
+		useWindow(true, true);
+		expect(() =>
+			render(SelectionBar, {
+				props: {
+					countText: '0 Tickets ausgewählt',
+					onclear: vi.fn(),
+					actions,
+					actionsShown: false,
+					hint
+				}
+			})
+		).toThrow(/hint/);
 	});
 });
 

@@ -388,8 +388,9 @@
 		<h4 id="ohne-verbindung-nicht">Was nur mit Verbindung geht</h4>
 		<ul>
 			<li>
-				Die Fälligkeit im Kalender verschieben (Ziehen und „Fälligkeit verschieben …“): in der
-				Handy-Ansicht ohne Verbindung gesperrt, mit „(nur mit Verbindung)“.
+				Die Fälligkeit im Kalender verschieben (Ziehen und „Fälligkeit verschieben …“): ohne
+				Verbindung gesperrt, mit „(nur mit Verbindung)“, in der Handy-Ansicht und, solange gemerkte
+				Änderungen warten, auch im breiten Fenster.
 			</li>
 			<li>
 				Neue Tags in „＋“: Die Zeile bleibt stehen, bis du sie entfernst oder vorhandene Tags
@@ -462,7 +463,8 @@
 			</li>
 			<li>
 				<strong>Nur dieses Gerät:</strong> Gemerkte Änderungen kennt nur dieses Gerät in diesem Browser.
-				Andere Geräte und der Haushalt sehen sie erst nach der Übertragung.
+				Andere Geräte und der Haushalt sehen sie erst nach der Übertragung. In einem privaten Fenster
+				geht Gemerktes beim Schließen des Fensters verloren.
 			</li>
 			<li>
 				<strong>Nur in der Handy-Ansicht:</strong> Neues merkt die App nur dort und nur nach „Ja, merken“.

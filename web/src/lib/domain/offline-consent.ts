@@ -65,7 +65,8 @@ export interface ConsentMoment {
 	readonly navigating: boolean;
 	/**
 	 * Another dialog or sheet is open or about to open: a modal of the layout, or any open <dialog>
-	 * of the document except the question itself (marked with OFFLINE_CONSENT_MARK).
+	 * or (since NA-1, F-1) popover of the document except the question itself (marked with
+	 * OFFLINE_CONSENT_MARK).
 	 */
 	readonly covered: boolean;
 }
@@ -98,12 +99,18 @@ export const OFFLINE_CONSENT_TEXTS = {
 	/** Locked while the question about `offline_ops` runs (round 2, E-2). */
 	checking:
 		'Wird geprüft … Die App fragt gerade den Server, ob er Änderungen ohne Verbindung merken kann.',
-	/** Locked when that question failed, e.g. without a connection (round 2, E-2). */
+	/**
+	 * Locked when that question failed (round 2, E-2): without a connection or with an error of the
+	 * server, so it names no missing connection (NA-1, F-3).
+	 */
 	unchecked:
-		'Gerade nicht prüfbar – keine Verbindung zum Server. Ob er Änderungen ohne Verbindung merken kann, fragt die App später erneut.',
-	/** Locked where localStorage refuses to write or IndexedDB is missing (round 2, E-5). */
+		'Gerade nicht prüfbar – der Server ist nicht erreichbar. Ob er Änderungen ohne Verbindung merken kann, fragt die App später erneut.',
+	/**
+	 * Locked where localStorage refuses to write or IndexedDB is missing (round 2, E-5). No "privates
+	 * Fenster" (NA-1, F-3): most of them store for the session, the help says what is lost there.
+	 */
 	noStorage:
-		'Dieser Browser lässt die App hier nichts dauerhaft speichern, etwa in einem privaten Fenster. Deshalb merkt sie sich ohne Verbindung nichts.',
+		'Dieser Browser kann hier gerade nichts dauerhaft speichern. Deshalb merkt sich die App ohne Verbindung nichts.',
 	/** Keeping is off while the device still holds kept changes. */
 	stillSent: (count: number): string =>
 		count === 1

@@ -52,8 +52,10 @@
 	const links = ticketLinks();
 	const done = new CalendarDoneStore(calendarDoneData(pb), auth);
 	const prefs = new CalendarPrefsStore(window);
-	// Without a connection, as the outbox of the phone frame knows it (ADR-0074: moving in the calendar
-	// only with one), moving a due date is locked and says why (MO-7c2); elsewhere it never is.
+	// Without a connection, as the outbox knows it (ADR-0074: moving in the calendar only with one),
+	// moving a due date is locked and says why (MO-7c2). The outbox knows it while it watches: in the
+	// phone frame after "Ja, merken", and also in a wide window while kept changes wait (NA-1, C2-1);
+	// otherwise it is never locked.
 	const outbox = findOutbox();
 
 	/** The shown ticket, rule or entry; each marks its own entries only. */

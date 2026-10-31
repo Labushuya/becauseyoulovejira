@@ -89,6 +89,33 @@ describe('fields on the phone (MO-7c2)', () => {
 			'done'
 		);
 	});
+
+	// NA-1 (C2-2 of the review of MO-7c2): "Weiter" (Enter) in a field with another after it moves on,
+	// instead of sending the form with errors at the fields still empty; in the last field Enter sends,
+	// as the browser does.
+	it('moves on with "Weiter" (Enter) from the old and the new password, and sends from the last field (NA-1, C2-2)', async () => {
+		const { data } = show();
+		const current = screen.getByLabelText('Bisheriges Passwort');
+		const next = screen.getByLabelText('Neues Passwort');
+		const again = screen.getByLabelText('Neues Passwort wiederholen');
+
+		current.focus();
+		expect(await fireEvent.keyDown(current, { key: 'Enter' })).toBe(false);
+		expect(document.activeElement).toBe(next);
+		expect(await fireEvent.keyDown(next, { key: 'Enter' })).toBe(false);
+		expect(document.activeElement).toBe(again);
+		// No error at a field, nothing sent.
+		expect(screen.queryByText('Bitte das bisherige Passwort eingeben.')).toBeNull();
+		expect(current.getAttribute('aria-invalid')).not.toBe('true');
+		expect(data.changePassword).not.toHaveBeenCalled();
+
+		// The last field leaves Enter to the browser, which sends the form.
+		expect(await fireEvent.keyDown(again, { key: 'Enter' })).toBe(true);
+		// While typing a character with the composition of an input method, Enter is no "Weiter".
+		current.focus();
+		expect(await fireEvent.keyDown(current, { key: 'Enter', isComposing: true })).toBe(true);
+		expect(document.activeElement).toBe(current);
+	});
 });
 
 describe('password', () => {

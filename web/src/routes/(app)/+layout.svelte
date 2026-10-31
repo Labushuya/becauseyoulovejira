@@ -952,10 +952,11 @@
 	// When the question of the first start shows (round 2 of "Einschalten", E-1): never over another
 	// dialog or sheet, neither one of this layout (quick entry, outbox, "Tastaturkürzel", the questions
 	// before reloading and signing out, moving between the areas), nor any other open <dialog> of the
-	// document (a sheet, a modal of a view); it waits until they are closed. Not while a navigation runs
-	// (the start view, MO-7c2): SvelteKit gives the focus back to the page at its end, so the question
-	// would lose it. The document is watched only while the question is due; its own dialog carries
-	// OFFLINE_CONSENT_MARK and does not count.
+	// document (a sheet, a modal of a view), nor, since NA-1 (F-1), an open popover (a menu, a picker, a
+	// sheet of the phone frame, which showModal would close); it waits until they are closed. Not while
+	// a navigation runs (the start view, MO-7c2): SvelteKit gives the focus back to the page at its
+	// end, so the question would lose it. The document is watched only while the question is due; its
+	// own dialog carries OFFLINE_CONSENT_MARK and does not count.
 	const otherDialogs = new OpenDialogs(document, OFFLINE_CONSENT_MARK);
 	$effect(() => {
 		if (!consentDue) return;

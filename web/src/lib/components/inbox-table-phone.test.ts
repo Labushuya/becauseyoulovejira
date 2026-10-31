@@ -623,6 +623,42 @@ describe('several entries at once in the phone frame (EG-1)', () => {
 		);
 	});
 
+	// NA-1 (C5 of the review of MO-7c1): "Verwerfen (n)" keeps the focus like every bar of the selection
+	// (keepFocusAtBar): an element the user chose during the run keeps it; before, the bar took it back.
+	it('leaves the focus on an element the user chose while "Verwerfen (n)" ran (NA-1, C5)', async () => {
+		useWindow(true, true);
+		const { data } = await setup();
+		let answer: () => void = () => undefined;
+		data.discard.mockImplementationOnce(
+			(id) =>
+				new Promise((resolve) => {
+					answer = () =>
+						resolve({
+							...C,
+							id,
+							state: 'discarded',
+							handledAt: '2026-09-25 09:00:00.000Z',
+							updated: '2026-09-25 09:00:00.000Z'
+						});
+				})
+		);
+		await choose('Artikel');
+		const actions = await actionsOf(screen.getByRole('region', { name: '1 Eintrag ausgewählt' }));
+		await fireEvent.click(within(actions).getByRole('button', { name: 'Verwerfen (1)' }));
+		await vi.waitFor(() => expect(data.discard).toHaveBeenCalledWith(C.id));
+		// Meanwhile the user goes to another card.
+		const other = within(card('Rechnung September')).getByRole('link', {
+			name: 'Rechnung September'
+		});
+		other.focus();
+		answer();
+		await vi.waitFor(() => expect(card('Artikel')).toBeUndefined());
+		// The end of the run, its tick and its focus included.
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		await tick();
+		expect(document.activeElement).toBe(other);
+	});
+
 	it('restores the chosen entries with "Wiederherstellen (n)" in the view "Verworfen"', async () => {
 		useWindow(true, true);
 		mocks.page.url = new URL('http://localhost:3000/eingang?zustand=verworfen');
