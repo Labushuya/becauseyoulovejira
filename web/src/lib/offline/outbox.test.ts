@@ -209,6 +209,32 @@ describe('when the outbox works (ADR-0074 §7, addendum OF-2)', () => {
 		expect(list).not.toHaveBeenCalled();
 		expect(h.outbox.watching).toBe(false);
 	});
+
+	// NA-1 (C2-1 of the review of MO-7c2): outside of the frame (a PC, a wide window) the outbox watches
+	// only while kept changes wait, and only then does it say "offline"; the calendar locks moving a due
+	// date by it (kalender/+layout.svelte). Without kept changes it never says so there.
+	it('says "offline" outside of the frame only while kept changes wait (NA-1, C2-1)', async () => {
+		const storage = new MemoryOutboxStorage();
+		await storage.put(stored());
+		const h = harness({ storage, frame: false });
+		h.server.reachable = false;
+		h.send.mockRejectedValue(new DataError('network'));
+		await settle();
+		await h.connectivity.check();
+		expect(h.outbox.armed).toBe(false);
+		expect(h.outbox.count).toBe(1);
+		expect(h.outbox.watching).toBe(true);
+		expect(h.outbox.offline).toBe(true);
+
+		const empty = harness({ frame: false });
+		empty.server.reachable = false;
+		await settle();
+		await empty.connectivity.check();
+		expect(empty.outbox.watching).toBe(false);
+		expect(empty.outbox.offline).toBe(false);
+		h.stop();
+		empty.stop();
+	});
 });
 
 describe('a change with a connection', () => {

@@ -734,6 +734,31 @@ export class HeldStorage extends MemoryOutboxStorage {
 }
 
 /**
+ * A storage of the device whose readings of the actions wait while `holding` (NA-1): each takes what
+ * the device holds when it is called and answers with it once `answer` lets it, the oldest first.
+ */
+export class HeldListStorage extends MemoryOutboxStorage {
+	holding = false;
+	readonly #waiting: (() => void)[] = [];
+
+	/** How many readings wait. */
+	get held(): number {
+		return this.#waiting.length;
+	}
+
+	async list(): Promise<unknown[]> {
+		const entries = await super.list();
+		if (this.holding) await new Promise<void>((resolve) => this.#waiting.push(resolve));
+		return entries;
+	}
+
+	/** Lets the oldest reading that waits answer. */
+	answer(): void {
+		this.#waiting.shift()?.();
+	}
+}
+
+/**
  * A storage of the device that fails on every write once `failing` is set; `noticesFailing` lets only
  * the writes of the notices on their own fail (OF-3c round 2), the actions are kept.
  */

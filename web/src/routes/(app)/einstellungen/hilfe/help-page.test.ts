@@ -1756,16 +1756,30 @@ describe('the parts about the keyboard in the phone frame (MO-7c1)', () => {
 		);
 	});
 
+	// Changed with NA-1 (C2-1 of the review of MO-7c2): the lock also holds in a wide window while kept
+	// changes wait (the outbox watches then), so the help no longer says "in der Handy-Ansicht" alone.
 	it('names the locked move of the calendar and the calendar in the phone frame (MO-7c2)', () => {
 		const { container } = render(Page);
 		const offline = container.querySelector<HTMLElement>('section#ohne-verbindung')!;
 		const items = [...offline.querySelectorAll('li')].map((item) => text(item).trim());
 		expect(items).toContain(
-			'Die Fälligkeit im Kalender verschieben (Ziehen und „Fälligkeit verschieben …“): in der Handy-Ansicht ohne Verbindung gesperrt, mit „(nur mit Verbindung)“.'
+			'Die Fälligkeit im Kalender verschieben (Ziehen und „Fälligkeit verschieben …“): ohne Verbindung gesperrt, mit „(nur mit Verbindung)“, in der Handy-Ansicht und, solange gemerkte Änderungen warten, auch im breiten Fenster.'
 		);
 		const calendar = text(container.querySelector<HTMLElement>('section#kalender')!);
 		expect(calendar).toContain(
 			'In der Handy-Ansicht stehen oben „Agenda“, „Monat“ und „Filter“: „Filter“ öffnet die Filter und die Ebenen, eine Woche erscheint als Agenda, und ein Tipp auf einen Tag im Monat öffnet seine Liste.'
+		);
+	});
+
+	// NA-1 (F-3 of the review of round 2 of "Einschalten"): a private window mostly stores for the
+	// session, so the switch is not locked there; what is kept goes when the window closes.
+	it('says that a private window loses what is kept when it closes (NA-1, F-3)', () => {
+		const { container } = render(Page);
+		const offline = container.querySelector<HTMLElement>('section#ohne-verbindung')!;
+		const items = [...offline.querySelectorAll('li')].map((item) => text(item).trim());
+		const device = items.find((item) => item.startsWith('Nur dieses Gerät:'));
+		expect(device).toMatch(
+			/In einem privaten Fenster geht Gemerktes beim Schließen des Fensters verloren\./
 		);
 	});
 });

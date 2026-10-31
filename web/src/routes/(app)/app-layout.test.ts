@@ -1655,6 +1655,33 @@ describe('app layout: the question at the first start of the phone view (Einscha
 		}
 	});
 
+	// NA-1 (F-1): a popover (a menu, a picker, a sheet of the phone frame) holds it back as well; showModal
+	// of the question would close it.
+	it('waits while a popover of the document is open and asks once it closed (NA-1, F-1)', async () => {
+		windowOf(true);
+		getMobileLayoutStore().choose(true);
+		const { outbox } = signedInWithOutbox();
+		const sheet = document.createElement('div');
+		sheet.setAttribute('popover', 'auto');
+		document.body.append(sheet);
+		sheet.showPopover();
+		const shown = vi.spyOn(HTMLDialogElement.prototype, 'showModal');
+		try {
+			await renderLayout('/');
+			await vi.waitFor(() => expect(outbox.supported).toBe(true));
+			await tick();
+			expect(question()).toBeNull();
+			expect(shown).not.toHaveBeenCalled();
+
+			sheet.hidePopover();
+			await vi.waitFor(() => expect(question()).not.toBeNull());
+			expect(shown).toHaveBeenCalledOnce();
+		} finally {
+			shown.mockRestore();
+			sheet.remove();
+		}
+	});
+
 	// Round 2 (E-6): the lock while a navigation runs, with the reactive `navigating` of the mock.
 	it('waits while a navigation runs and asks once it is over (round 2, E-6)', async () => {
 		windowOf(true);

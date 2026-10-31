@@ -111,16 +111,20 @@ describe('offline consent: the question at the first start of the phone view', (
 		);
 	});
 
-	// Round 2 (E-2, E-5): the reasons of the locked switch under "Darstellung" (wording = code).
+	// Round 2 (E-2, E-5): the reasons of the locked switch under "Darstellung" (wording = code). Changed
+	// with NA-1 (F-3): a failed question may also be an error of the server, not only a missing
+	// connection; and a private window often stores for the session after all, so neither names it.
 	it('names why the switch is locked: a check that runs, one that failed, a browser without storage', () => {
 		expect(OFFLINE_CONSENT_TEXTS.checking).toBe(
 			'Wird geprüft … Die App fragt gerade den Server, ob er Änderungen ohne Verbindung merken kann.'
 		);
 		expect(OFFLINE_CONSENT_TEXTS.unchecked).toBe(
-			'Gerade nicht prüfbar – keine Verbindung zum Server. Ob er Änderungen ohne Verbindung merken kann, fragt die App später erneut.'
+			'Gerade nicht prüfbar – der Server ist nicht erreichbar. Ob er Änderungen ohne Verbindung merken kann, fragt die App später erneut.'
 		);
 		expect(OFFLINE_CONSENT_TEXTS.noStorage).toBe(
-			'Dieser Browser lässt die App hier nichts dauerhaft speichern, etwa in einem privaten Fenster. Deshalb merkt sie sich ohne Verbindung nichts.'
+			'Dieser Browser kann hier gerade nichts dauerhaft speichern. Deshalb merkt sich die App ohne Verbindung nichts.'
 		);
+		expect(OFFLINE_CONSENT_TEXTS.unchecked).not.toMatch(/keine Verbindung/);
+		expect(OFFLINE_CONSENT_TEXTS.noStorage).not.toMatch(/privat/);
 	});
 });

@@ -391,6 +391,7 @@ describe('appearance page: phone view (MO-1a, Einschalten)', () => {
 	afterEach(() => {
 		for (const stop of stops.splice(0)) stop();
 		getMobileLayoutStore().choose(true);
+		getMobileLayoutStore().narrow = false;
 		getOfflineConsentStore().consent = null;
 		getOfflineConsentStore().writable = true;
 		localStorage.clear();
@@ -476,7 +477,10 @@ describe('appearance page: phone view (MO-1a, Einschalten)', () => {
 		expect(localStorage.getItem('byl-offline-consent')).toBe('no');
 	});
 
+	// Since NA-1 (F-2) a narrow window: only there does "Ja, merken" keep new changes (in the wide window
+	// of jsdom the hint stays, see the case of F-2 below).
 	it('says that kept changes are still sent once keeping is off', async () => {
+		getMobileLayoutStore().narrow = true;
 		getOfflineConsentStore().choose('no');
 		// Kept a minute ago: older than 7 days the start of the outbox would delete them.
 		const createdAt = Date.now() - 60_000;
@@ -497,8 +501,10 @@ describe('appearance page: phone view (MO-1a, Einschalten)', () => {
 	});
 
 	// Round 2 (E-3): with "Handy-Ansicht: Aus" the outbox keeps nothing new either, also after "Ja,
-	// merken"; what it kept before still goes, and the page says so.
+	// merken"; what it kept before still goes, and the page says so. Since NA-1 (F-2) in a narrow window,
+	// where "Automatisch" keeps new changes.
 	it('says that kept changes are still sent with "Aus", also after "Ja, merken" (round 2, E-3)', async () => {
+		getMobileLayoutStore().narrow = true;
 		getOfflineConsentStore().choose('yes');
 		const createdAt = Date.now() - 60_000;
 		const outbox = await outboxOf(OPS, [stored({ createdAt })]);
@@ -517,8 +523,32 @@ describe('appearance page: phone view (MO-1a, Einschalten)', () => {
 		expect(screen.queryByText(/trotzdem noch übertragen/)).toBeNull();
 	});
 
+	// NA-1 (F-2 of the review of round 2): in a wide window the frame does not apply, so the outbox keeps
+	// nothing new, also with "Automatisch" and "Ja, merken"; the kept changes still go, and the page
+	// says so.
+	it('says that kept changes are still sent in a wide window, also with "Automatisch" and "Ja, merken" (NA-1, F-2)', async () => {
+		getOfflineConsentStore().choose('yes');
+		const createdAt = Date.now() - 60_000;
+		const outbox = await outboxOf(OPS, [stored({ createdAt })]);
+		renderWithOutbox(outbox);
+		await vi.waitFor(() => expect(outbox.count).toBe(1));
+		await tick();
+		expect(getMobileLayoutStore().enabled).toBe(true);
+		expect(getMobileLayoutStore().active).toBe(false);
+		expect(
+			screen.getByText(
+				'1 gemerkte Änderung wird trotzdem noch übertragen, sobald die Verbindung zurück ist. Neue merkt die App auf diesem Gerät nicht mehr.'
+			)
+		).toBeTruthy();
+		getMobileLayoutStore().narrow = true;
+		await tick();
+		expect(screen.queryByText(/trotzdem noch übertragen/)).toBeNull();
+	});
+
 	// Round 2 (E-2): "unknown" is not "the server cannot": while the question runs, and when it failed
-	// (e.g. without a connection), the switch is locked with its own reason, not the restart.
+	// (e.g. without a connection), the switch is locked with its own reason, not the restart. Changed
+	// with NA-1 (F-3): an error of the server fails the question as well, so the reason names no
+	// missing connection.
 	it.each([
 		[
 			'while the question to the server runs',
@@ -526,9 +556,9 @@ describe('appearance page: phone view (MO-1a, Einschalten)', () => {
 			'Wird geprüft … Die App fragt gerade den Server, ob er Änderungen ohne Verbindung merken kann.'
 		],
 		[
-			'when the question failed, e.g. without a connection',
+			'when the question failed, without a connection or with an error of the server',
 			'failed' as const,
-			'Gerade nicht prüfbar – keine Verbindung zum Server. Ob er Änderungen ohne Verbindung merken kann, fragt die App später erneut.'
+			'Gerade nicht prüfbar – der Server ist nicht erreichbar. Ob er Änderungen ohne Verbindung merken kann, fragt die App später erneut.'
 		]
 	])('locks the switch with its own reason %s (round 2, E-2)', async (_name, support, reason) => {
 		renderWithOutbox(await outboxOf(support));
@@ -539,6 +569,7 @@ describe('appearance page: phone view (MO-1a, Einschalten)', () => {
 	});
 
 	// Round 2 (E-5): where the answer cannot be stored or IndexedDB is missing, nothing can be kept.
+	// Changed with NA-1 (F-3): no "etwa in einem privaten Fenster", which mostly stores for the session.
 	it.each([
 		['localStorage refuses to write', true],
 		['the browser has no IndexedDB', false]
@@ -549,7 +580,7 @@ describe('appearance page: phone view (MO-1a, Einschalten)', () => {
 		expect(keepSwitch().disabled).toBe(true);
 		expect(
 			screen.getByText(
-				'Dieser Browser lässt die App hier nichts dauerhaft speichern, etwa in einem privaten Fenster. Deshalb merkt sie sich ohne Verbindung nichts.'
+				'Dieser Browser kann hier gerade nichts dauerhaft speichern. Deshalb merkt sich die App ohne Verbindung nichts.'
 			)
 		).toBeTruthy();
 		expect(screen.queryByText(/nach dem nächsten Neustart verfügbar/)).toBeNull();

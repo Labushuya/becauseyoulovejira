@@ -681,6 +681,33 @@ describe('several entries at once (EG-1)', () => {
 		expect(flags.flags[0]?.problem).toEqual(expect.objectContaining({ source: 'client' }));
 	});
 
+	// NA-1 (C3 of the review of MO-7c1): the reason and "Details" of the flag belong to the same failure,
+	// the first one. A refusal that only checks an input has no request for "Details"; the flag then
+	// offers none, rather than the request of another entry.
+	it('takes the reason and "Details" of the flag from the same failure (NA-1, C3)', async () => {
+		const { store, data, flags } = setup();
+		store.activate({ source: null, state: 'new' });
+		await vi.waitFor(() => expect(store.state).toBe('ready'));
+		const first = deferred<InboxItemSummary>();
+		data.discard.mockReturnValueOnce(first.promise);
+		data.discard.mockRejectedValueOnce(new DataError('server'));
+		const run = store.discardMany([entry(A), entry(B)]);
+		store.activate({ source: null, state: 'converted' });
+		first.reject(
+			new DataError('validation', {
+				status: 400,
+				fields: { title: { code: 'validation_required', message: 'Bitte einen Titel angeben.' } }
+			})
+		);
+		await run;
+		expect(data.discard).toHaveBeenCalledTimes(2);
+		expect(flags.flags.map((flag) => [flag.tone, flag.description])).toEqual([
+			['error', `„${A.title}“: Bitte einen Titel angeben. Dazu 1 weiterer Fehler.`]
+		]);
+		// The flag keeps no request: no "Details".
+		expect(flags.flags[0]?.problem).toBeNull();
+	});
+
 	it('keeps the flag of success where the result stands at the selection (F-1, counter-check)', async () => {
 		const { store, data, flags } = setup();
 		await store.load();

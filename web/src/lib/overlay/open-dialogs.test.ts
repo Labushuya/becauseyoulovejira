@@ -2,9 +2,10 @@
 // question of the first start of the phone view waits for it. An open <dialog> and an element with
 // role "dialog" and aria-modal count, one holding the given mark (the question) does not; unwatched
 // the store reads the document at once, watched it follows opening, closing and removing, and stops
-// with its cleanup.
+// with its cleanup. Since NA-1 (F-1) an open popover counts as well, followed by its toggle event.
 
 import { afterEach, describe, expect, it } from 'vitest';
+import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import { OpenDialogs, dialogOpen } from './open-dialogs.svelte';
 
 /** The records of the MutationObserver arrive as a microtask. */
@@ -100,5 +101,59 @@ describe('open dialogs of the document (Einschalten round 2, E-1)', () => {
 		const stop = dialogs.watch();
 		expect(dialogs.open).toBe(true);
 		stop();
+	});
+});
+
+// NA-1 (F-1 of the review of round 2): a menu, a picker or a sheet of the phone frame is a popover
+// (Popover.svelte), and showModal of the question would close it. It counts as open like for the global
+// keys (domain/keyboard.ts, `:popover-open`). Opening and closing it changes no attribute, so the watch
+// follows its toggle event.
+describe('open popovers of the document (NA-1, F-1)', () => {
+	useOverlayStubs();
+
+	/** A closed popover in the body. */
+	function popover(): HTMLElement {
+		const element = document.createElement('div');
+		element.setAttribute('popover', 'auto');
+		document.body.append(element);
+		return element;
+	}
+
+	it('counts an open popover, not a closed one', () => {
+		const element = popover();
+		expect(dialogOpen(document)).toBe(false);
+		element.showPopover();
+		expect(dialogOpen(document)).toBe(true);
+		element.hidePopover();
+		expect(dialogOpen(document)).toBe(false);
+	});
+
+	it('follows a popover that opens and closes while watched, by its toggle event', async () => {
+		const element = popover();
+		const dialogs = new OpenDialogs(document);
+		const stop = dialogs.watch();
+		expect(dialogs.open).toBe(false);
+		element.showPopover();
+		await observed();
+		expect(dialogs.open).toBe(true);
+		element.hidePopover();
+		await observed();
+		expect(dialogs.open).toBe(false);
+		stop();
+		// Unwatched again: read at once.
+		element.showPopover();
+		expect(dialogs.open).toBe(true);
+		element.hidePopover();
+	});
+
+	it('leaves out a popover that holds the mark it is told', () => {
+		const element = popover();
+		const text = document.createElement('div');
+		text.setAttribute('data-offline-consent', '');
+		element.append(text);
+		element.showPopover();
+		expect(dialogOpen(document, 'data-offline-consent')).toBe(false);
+		expect(dialogOpen(document)).toBe(true);
+		element.hidePopover();
 	});
 });
