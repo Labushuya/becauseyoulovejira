@@ -35,6 +35,12 @@ export interface ConsentState {
 	readonly phone: boolean;
 	/** The server takes changes without a connection (`offline_ops`, OutboxStore.supported). */
 	readonly supported: boolean;
+	/**
+	 * The device can hold the answer and the changes (round 2, E-5): localStorage takes a write
+	 * (OfflineConsentStore.writable) and the browser has IndexedDB (OutboxStore.canStore). Without it
+	 * the question would come at every start, and nothing could be kept.
+	 */
+	readonly storable: boolean;
 	readonly consent: OfflineConsent | null;
 	/** Closed without an answer (Escape, ×) in this document: the next start asks again. */
 	readonly dismissed: boolean;
@@ -42,11 +48,41 @@ export interface ConsentState {
 
 /**
  * Whether the layout asks: once at the start of the phone view, when the server can take changes
- * without a connection and the device has no answer. Never on the PC or in a wide window.
+ * without a connection, the device can store them and has no answer. Never on the PC or in a wide
+ * window.
  */
 export function asksConsent(state: ConsentState): boolean {
-	return state.phone && state.supported && state.consent === null && !state.dismissed;
+	return (
+		state.phone && state.supported && state.storable && state.consent === null && !state.dismissed
+	);
 }
+
+/** What decides the moment of the question once it is due (round 2, E-1). */
+export interface ConsentMoment {
+	/** asksConsent holds. */
+	readonly asks: boolean;
+	/** A navigation runs: SvelteKit gives the focus back to the page at its end. */
+	readonly navigating: boolean;
+	/**
+	 * Another dialog or sheet is open or about to open: a modal of the layout, or any open <dialog>
+	 * of the document except the question itself (marked with OFFLINE_CONSENT_MARK).
+	 */
+	readonly covered: boolean;
+}
+
+/**
+ * Whether the question shows now: due, no navigation runs, and nothing else is open, so it never
+ * takes the place or the focus of another dialog or sheet; it waits until they are closed.
+ */
+export function showsConsent(moment: ConsentMoment): boolean {
+	return moment.asks && !moment.navigating && !moment.covered;
+}
+
+/**
+ * Attribute inside the question (OfflineConsentDialog): the watch of the open dialogs leaves its own
+ * <dialog> out, so the open question does not count as another dialog.
+ */
+export const OFFLINE_CONSENT_MARK = 'data-offline-consent';
 
 /** The words of the question and of the setting under "Darstellung" (wording = code). */
 export const OFFLINE_CONSENT_TEXTS = {
@@ -59,6 +95,15 @@ export const OFFLINE_CONSENT_TEXTS = {
 	no: 'Nein',
 	/** The switch under "Darstellung". */
 	setting: 'Ohne Verbindung merken (dieses Gerät)',
+	/** Locked while the question about `offline_ops` runs (round 2, E-2). */
+	checking:
+		'Wird geprüft … Die App fragt gerade den Server, ob er Änderungen ohne Verbindung merken kann.',
+	/** Locked when that question failed, e.g. without a connection (round 2, E-2). */
+	unchecked:
+		'Gerade nicht prüfbar – keine Verbindung zum Server. Ob er Änderungen ohne Verbindung merken kann, fragt die App später erneut.',
+	/** Locked where localStorage refuses to write or IndexedDB is missing (round 2, E-5). */
+	noStorage:
+		'Dieser Browser lässt die App hier nichts dauerhaft speichern, etwa in einem privaten Fenster. Deshalb merkt sie sich ohne Verbindung nichts.',
 	/** Keeping is off while the device still holds kept changes. */
 	stillSent: (count: number): string =>
 		count === 1

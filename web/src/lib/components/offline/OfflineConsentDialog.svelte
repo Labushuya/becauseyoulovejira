@@ -1,5 +1,9 @@
 <script lang="ts">
-	import { OFFLINE_CONSENT_TEXTS, type OfflineConsent } from '$lib/domain/offline-consent';
+	import {
+		OFFLINE_CONSENT_MARK,
+		OFFLINE_CONSENT_TEXTS,
+		type OfflineConsent
+	} from '$lib/domain/offline-consent';
 	import Modal from '../overlay/Modal.svelte';
 
 	// The question at the first start of the phone view (package "Einschalten", ADR-0074 addendum
@@ -7,7 +11,10 @@
 	// base.css) with the question as title, the announcement that the phone view is on and what the
 	// answer means as its description. "Nein" and "Ja, merken" answer; the focus starts on "Nein", the
 	// answer that keeps everything as before, like "Abbrechen" of a confirmation (ADR-0025 §4). Escape,
-	// × and a click on the veil close it without an answer: the next start asks again.
+	// × and a click on the veil close it without an answer: the next start asks again. Its text carries
+	// OFFLINE_CONSENT_MARK, so the layout, which waits for every other open dialog (round 2, E-1), does
+	// not count this one.
+	const mark = { [OFFLINE_CONSENT_MARK]: '' };
 	let {
 		onanswer,
 		ondismiss
@@ -45,7 +52,7 @@
 	onclose={ondismiss}
 	footer={buttons}
 >
-	<div class="text" id={textId}>
+	<div class="text" id={textId} {...mark}>
 		<p>{OFFLINE_CONSENT_TEXTS.announcement}</p>
 		<p>{OFFLINE_CONSENT_TEXTS.explanation}</p>
 	</div>

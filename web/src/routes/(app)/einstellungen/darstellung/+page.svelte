@@ -39,8 +39,10 @@
 	// Automatisch / Aus", "Automatisch" by default; the frame applies only below 40rem. Reachable in
 	// the frame under "Mehr" and with "Aus" in the view of today (the gear, then "Darstellung"). The
 	// (app) layout follows the width. Since "Einschalten" also the switch "Ohne Verbindung merken
-	// (dieses Gerät)" (ADR-0074 addendum "Zustimmung je Gerät"), locked with its reason while the server
-	// cannot keep changes; turned off while changes are kept, the page says they still go.
+	// (dieses Gerät)" (ADR-0074 addendum "Zustimmung je Gerät"), locked with its reason: the browser
+	// cannot store (localStorage refuses to write, no IndexedDB), the question to the server runs or
+	// failed (unknown, round 2 E-2), or the server cannot keep changes. Turned off, or with
+	// "Handy-Ansicht: Aus", while changes are kept, the page says they still go (round 2, E-3).
 	const mobileLayout = getMobileLayoutStore();
 	const MOBILE_CHOICES = [
 		{
@@ -54,7 +56,12 @@
 	/** The outbox of the (app) layout; null outside of it (a test of the page alone). */
 	const outbox = findOutbox();
 	const canKeep = $derived(outbox?.supported ?? false);
+	/** Outside of the (app) layout nothing asks the server: the page says what it said before. */
+	const supportCheck = $derived(outbox?.supportCheck ?? 'answered');
+	const storable = $derived(offlineConsent.writable && (outbox?.canStore ?? true));
 	const keptCount = $derived(outbox?.count ?? 0);
+	/** New changes are not kept (no "Ja, merken", or "Aus"), so the kept ones only still go. */
+	const keepsNothingNew = $derived(offlineConsent.consent !== 'yes' || !mobileLayout.enabled);
 	// start.bat is named only to the administrator on the machine of the app (KOB-1, ADR-0057).
 	const scripts = $derived(appContext.capabilities.scripts);
 	const uid = $props.id();
@@ -200,10 +207,10 @@
 		Tagesplan. Auf breiteren Bildschirmen bleibt alles, wie es ist. Gilt nur in diesem Browser auf
 		diesem Gerät.
 	</p>
+	<!-- Round 2 (E-4): neutral, since "Automatisch" is the default of every PC as well. -->
 	{#if mobileLayout.enabled && !mobileLayout.narrow}
 		<SectionMessage tone="info" compact>
-			Dieses Fenster ist zu breit für die Handy-Ansicht. Hier bleibt die gewohnte Ansicht; die
-			Handy-Ansicht erscheint, sobald das Fenster schmaler als etwa 640 Pixel ist.
+			Die Handy-Ansicht erscheint automatisch auf schmalen Bildschirmen.
 		</SectionMessage>
 	{/if}
 	<label class="setting">
@@ -212,7 +219,7 @@
 			type="checkbox"
 			role="switch"
 			checked={offlineConsent.consent === 'yes'}
-			disabled={!canKeep}
+			disabled={!canKeep || !storable}
 			aria-describedby={`${uid}-offline-note`}
 			onchange={(event) => offlineConsent.choose(event.currentTarget.checked ? 'yes' : 'no')}
 		/>
@@ -223,11 +230,17 @@
 		sagt die Hilfe unter „Ohne Verbindung“. Aus: Die App merkt sich nichts, eine Änderung ohne
 		Verbindung scheitert wie bisher mit einer Meldung. Gilt nur in diesem Browser auf diesem Gerät.
 	</p>
-	{#if !canKeep}
+	{#if !storable}
+		<SectionMessage tone="info" compact>{OFFLINE_CONSENT_TEXTS.noStorage}</SectionMessage>
+	{:else if !canKeep && supportCheck === 'pending'}
+		<SectionMessage tone="info" compact>{OFFLINE_CONSENT_TEXTS.checking}</SectionMessage>
+	{:else if !canKeep && supportCheck === 'failed'}
+		<SectionMessage tone="info" compact>{OFFLINE_CONSENT_TEXTS.unchecked}</SectionMessage>
+	{:else if !canKeep}
 		<SectionMessage tone="info" compact>
 			{restartNeeded('Das Merken ohne Verbindung ist')}
 		</SectionMessage>
-	{:else if offlineConsent.consent !== 'yes' && keptCount > 0}
+	{:else if keepsNothingNew && keptCount > 0}
 		<SectionMessage tone="info" compact>
 			{OFFLINE_CONSENT_TEXTS.stillSent(keptCount)}
 		</SectionMessage>

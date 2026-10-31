@@ -58,6 +58,21 @@ function storageOf(win: Window): Storage | null {
 	}
 }
 
+/** Key of the check whether the storage takes a write; removed again at once. */
+const PROBE_KEY = `${OFFLINE_CONSENT_STORAGE_KEY}-probe`;
+
+/** Whether the storage takes a write (round 2, E-5); a private window or a full storage may refuse. */
+function takesWrites(storage: Storage | null): boolean {
+	if (storage === null) return false;
+	try {
+		storage.setItem(PROBE_KEY, '1');
+		storage.removeItem(PROBE_KEY);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 export class OfflineConsentStore {
 	/** "yes" after "Ja, merken", "no" after "Nein", null without an answer. */
 	consent = $state<OfflineConsent | null>(null);
@@ -65,11 +80,18 @@ export class OfflineConsentStore {
 	/** Closed without an answer in this document (Escape, ×): the question waits for the next start. */
 	dismissed = $state(false);
 
+	/**
+	 * The storage of the browser takes the answer (round 2, E-5): where it refuses, the layout does not
+	 * ask (the question would come at every start) and "Darstellung" locks the switch with the reason.
+	 */
+	writable = $state(true);
+
 	readonly #win: Window;
 
 	constructor(win: Window) {
 		this.#win = win;
 		const storage = storageOf(win);
+		this.writable = takesWrites(storage);
 		this.consent = readOfflineConsent(storage);
 		// The former switch "on" counts as "yes" (migration); stored once under the own key.
 		if (this.consent !== null && !storedOwn(storage)) writeOfflineConsent(storage, this.consent);

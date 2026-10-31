@@ -19,7 +19,7 @@
 	import PhoneTopBar from '$lib/components/phone/PhoneTopBar.svelte';
 	import QuickCapture from '$lib/components/QuickCapture.svelte';
 	import { isHelpKey, isQuickCaptureKey, isTypingTarget } from '$lib/domain/keyboard';
-	import { asksConsent } from '$lib/domain/offline-consent';
+	import { OFFLINE_CONSENT_MARK, asksConsent, showsConsent } from '$lib/domain/offline-consent';
 	import { opensWithDayPlan, warnsBeforeLeaving } from '$lib/domain/phone-layout';
 	import { takeStart } from '$lib/app-start';
 	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
@@ -95,6 +95,7 @@
 	import { InboxStore, inboxData, setInboxStore } from '$lib/stores/inbox.svelte';
 	import { LastViewStore, sessionStore, setLastViewStore } from '$lib/stores/last-view.svelte';
 	import { liveSource } from '$lib/stores/realtime';
+	import { OpenDialogs } from '$lib/overlay/open-dialogs.svelte';
 	import { PanelShell, setPanelShell } from '$lib/overlay/panel-host.svelte';
 	import {
 		RecurrenceStore,
@@ -238,9 +239,9 @@
 	const outbox = getOutbox();
 	setOutboxContext(outbox);
 	// The answer of this device (ADR-0074 addendum "Zustimmung je Gerät"): asked once at the first start
-	// of the phone view, when the server can keep changes; Escape or × leave it for the next start. On
-	// the PC and in a wide window no question. Not while a navigation runs (the start view, MO-7c2):
-	// SvelteKit gives the focus back to the page at its end, so the question would lose it.
+	// of the phone view, when the server can keep changes and the device can store the answer and the
+	// changes (round 2, E-5); Escape or × leave it for the next start. On the PC and in a wide window no
+	// question. When it shows, below at `asksOfflineConsent`.
 	const offlineConsent = getOfflineConsentStore();
 	$effect(() => untrack(() => offlineConsent.connect()));
 	$effect(() => {
@@ -251,14 +252,14 @@
 		const active = phone;
 		untrack(() => outbox.setFrame(active));
 	});
-	const asksOfflineConsent = $derived(
-		navigating.type === null &&
-			asksConsent({
-				phone,
-				supported: outbox.supported,
-				consent: offlineConsent.consent,
-				dismissed: offlineConsent.dismissed
-			})
+	const consentDue = $derived(
+		asksConsent({
+			phone,
+			supported: outbox.supported,
+			storable: offlineConsent.writable && outbox.canStore,
+			consent: offlineConsent.consent,
+			dismissed: offlineConsent.dismissed
+		})
 	);
 	$effect(() => {
 		const user = auth.userId ?? null;
@@ -271,7 +272,7 @@
 		if (!auth.userId) return;
 		const ask = () => {
 			if (!auth.ensureValid()) return;
-			void offlineSupport().then((ops) => outbox.setSupport(ops));
+			void offlineSupport().then((answer) => outbox.setSupport(answer.ops, answer.answered));
 		};
 		untrack(ask);
 		const onvisible = () => {
@@ -947,6 +948,33 @@
 		if (quick) quickOpen = true;
 		else shortcutsOpen = true;
 	}
+
+	// When the question of the first start shows (round 2 of "Einschalten", E-1): never over another
+	// dialog or sheet, neither one of this layout (quick entry, outbox, "Tastaturkürzel", the questions
+	// before reloading and signing out, moving between the areas), nor any other open <dialog> of the
+	// document (a sheet, a modal of a view); it waits until they are closed. Not while a navigation runs
+	// (the start view, MO-7c2): SvelteKit gives the focus back to the page at its end, so the question
+	// would lose it. The document is watched only while the question is due; its own dialog carries
+	// OFFLINE_CONSENT_MARK and does not count.
+	const otherDialogs = new OpenDialogs(document, OFFLINE_CONSENT_MARK);
+	$effect(() => {
+		if (!consentDue) return;
+		return untrack(() => otherDialogs.watch());
+	});
+	const asksOfflineConsent = $derived(
+		showsConsent({
+			asks: consentDue,
+			navigating: navigating.type !== null,
+			covered:
+				quickOpen ||
+				shortcutsOpen ||
+				outboxOpen ||
+				reloadQuestion !== null ||
+				logoutQuestion !== null ||
+				areaMove.request !== null ||
+				otherDialogs.open
+		})
+	);
 </script>
 
 <svelte:window {onkeydown} />
