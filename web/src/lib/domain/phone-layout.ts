@@ -1,10 +1,11 @@
-// Phone layout (MO-1a, ADR-0073): the rules of the preview "Handy-Ansicht (Vorschau)". The same
-// components become responsive; the phone frame (compact top bar, bottom bar, "Mehr" as a sheet,
-// the day plan as the start view) applies only while the switch of this device is on **and** the
-// window is narrow. Off, or from 40rem on, everything stays as it was. Pure: no SvelteKit, no DOM;
-// the store in lib/mobile-layout.svelte.ts reads the storage and the media query and applies the
-// viewport and the root attribute. Since MO-1b also where a modal stands in the frame and when
-// leaving the page asks first.
+// Phone layout (MO-1a, ADR-0073): the rules of the "Handy-Ansicht". The same components become
+// responsive; the phone frame (compact top bar, bottom bar, "Mehr" as a sheet, the day plan as the
+// start view) applies only while the choice of this device is "Automatisch" **and** the window is
+// narrow. Since the package "Einschalten" (ADR-0073 addendum) "Automatisch" is the default; with "Aus",
+// or from 40rem on, everything stays as it was. Pure: no SvelteKit, no DOM; the store in
+// lib/mobile-layout.svelte.ts reads the storage and the media query and applies the viewport and the
+// root attribute. Since MO-1b also where a modal stands in the frame and when leaving the page asks
+// first.
 
 import type { AreaView } from './area';
 
@@ -16,21 +17,34 @@ import type { AreaView } from './area';
  */
 export const PHONE_QUERY = '(max-width: 39.99rem)';
 
-/** Key of the switch in localStorage; only "on" is stored, "off" removes the key. */
+/**
+ * Key of the choice in localStorage (package "Einschalten"): only "off" is stored; "Automatisch"
+ * removes the key. No key and the value "on" of the former switch "Handy-Ansicht (Vorschau)" mean
+ * "Automatisch".
+ */
 export const MOBILE_LAYOUT_STORAGE_KEY = 'byl-mobile-layout';
 
-/** The stored value and the value of data-mobile-layout on the root element while the switch is on. */
+/** The stored value of "Aus". */
+export const MOBILE_LAYOUT_OFF = 'off';
+
+/**
+ * The value of data-mobile-layout on the root element while the choice is "Automatisch", and the
+ * value the former switch stored when it was on.
+ */
 export const MOBILE_LAYOUT_ON = 'on';
 
 /** Attribute on the root element; tokens.css and the phone rules of the CSS read it. */
 export const MOBILE_LAYOUT_ATTRIBUTE = 'data-mobile-layout';
 
-/** Only "on" switches the preview on; missing, "off" and anything else leave it off (the default). */
+/**
+ * Only "off" turns the phone view off; missing, the former "on" and anything else mean "Automatisch"
+ * (the default since the package "Einschalten").
+ */
 export function parseMobileLayout(value: string | null | undefined): boolean {
-	return value === MOBILE_LAYOUT_ON;
+	return value !== MOBILE_LAYOUT_OFF;
 }
 
-/** The decision: the phone frame applies only with the switch on and a narrow window. */
+/** The decision: the phone frame applies only with "Automatisch" and a narrow window. */
 export function isPhoneLayout(enabled: boolean, narrow: boolean): boolean {
 	return enabled && narrow;
 }

@@ -2,13 +2,14 @@
 	import { untrack } from 'svelte';
 	import { afterNavigate, goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { page } from '$app/state';
+	import { navigating, page } from '$app/state';
 	import { auth } from '$lib/auth.svelte';
 	import AppHeader from '$lib/components/AppHeader.svelte';
 	import AppUpdateNotice from '$lib/components/AppUpdateNotice.svelte';
 	import AreaMoveDialog from '$lib/components/AreaMoveDialog.svelte';
 	import LiveUpdateNotice from '$lib/components/LiveUpdateNotice.svelte';
 	import ShortcutsModal from '$lib/components/help/ShortcutsModal.svelte';
+	import OfflineConsentDialog from '$lib/components/offline/OfflineConsentDialog.svelte';
 	import OfflineNotice from '$lib/components/offline/OfflineNotice.svelte';
 	import OutboxButton from '$lib/components/offline/OutboxButton.svelte';
 	import OutboxDialog from '$lib/components/offline/OutboxDialog.svelte';
@@ -18,9 +19,11 @@
 	import PhoneTopBar from '$lib/components/phone/PhoneTopBar.svelte';
 	import QuickCapture from '$lib/components/QuickCapture.svelte';
 	import { isHelpKey, isQuickCaptureKey, isTypingTarget } from '$lib/domain/keyboard';
+	import { asksConsent } from '$lib/domain/offline-consent';
 	import { opensWithDayPlan, warnsBeforeLeaving } from '$lib/domain/phone-layout';
 	import { takeStart } from '$lib/app-start';
 	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
+	import { getOfflineConsentStore } from '$lib/offline-consent.svelte';
 	import { pb } from '$lib/pocketbase';
 	import { setQuickCaptureOpener } from '$lib/quick-capture-context';
 	import { securityLoginsHref } from '$lib/settings-sections';
@@ -191,10 +194,11 @@
 	// session; the login page stays outside this group.
 	let { children } = $props();
 
-	// Phone frame (MO-1a, ADR-0073): with the switch "Handy-Ansicht (Vorschau)" of this device on and
-	// below 40rem the compact top bar and the bottom bar take the place of the header, and the app
-	// starts with the day plan. The switch is off by default; off, or wider, nothing changes. The
-	// store follows the width and other tabs and keeps the meta viewport in line while shown.
+	// Phone frame (MO-1a, ADR-0073): with the choice "Handy-Ansicht" of this device on "Automatisch"
+	// and below 40rem the compact top bar and the bottom bar take the place of the header, and the app
+	// starts with the day plan. Since the package "Einschalten" "Automatisch" is the default; with
+	// "Aus", or wider, nothing changes. The store follows the width and other tabs and keeps the meta
+	// viewport in line while shown.
 	const mobileLayout = getMobileLayoutStore();
 	$effect(() => untrack(() => mobileLayout.connect()));
 	const phone = $derived(mobileLayout.active);
@@ -224,18 +228,38 @@
 		return () => window.removeEventListener('beforeunload', onbeforeunload);
 	});
 
-	// The outbox (OF-2, ADR-0074 addenda OF-2 and OF-3): while the server reports `offline_ops` and the
-	// phone frame applies, a check mark, a status, a due date or a check mark of the day plan that does
-	// not reach the server is kept on this device and sent later over the normal way (the day plan
-	// binds its shell in its own layout). Without either, every change goes as before. It belongs to
-	// the signed-in account; the layout tells it the account, the frame and the answer of the server,
+	// The outbox (OF-2, ADR-0074 addenda OF-2 and OF-3): while the server reports `offline_ops`, the
+	// phone frame applies and, since the package "Einschalten", this device answered "Ja, merken", a
+	// check mark, a status, a due date or a check mark of the day plan that does not reach the server is
+	// kept on this device and sent later over the normal way (the day plan binds its shell in its own
+	// layout). Without any of them, every change goes as before. It belongs to the signed-in account; the
+	// layout tells it the account, the frame, the answer of the device and the answer of the server,
 	// and shows its hints, its symbol, its dialog and its questions.
 	const outbox = getOutbox();
 	setOutboxContext(outbox);
+	// The answer of this device (ADR-0074 addendum "Zustimmung je Gerät"): asked once at the first start
+	// of the phone view, when the server can keep changes; Escape or × leave it for the next start. On
+	// the PC and in a wide window no question. Not while a navigation runs (the start view, MO-7c2):
+	// SvelteKit gives the focus back to the page at its end, so the question would lose it.
+	const offlineConsent = getOfflineConsentStore();
+	$effect(() => untrack(() => offlineConsent.connect()));
+	$effect(() => {
+		const agreed = offlineConsent.consent === 'yes';
+		untrack(() => outbox.setConsent(agreed));
+	});
 	$effect(() => {
 		const active = phone;
 		untrack(() => outbox.setFrame(active));
 	});
+	const asksOfflineConsent = $derived(
+		navigating.type === null &&
+			asksConsent({
+				phone,
+				supported: outbox.supported,
+				consent: offlineConsent.consent,
+				dismissed: offlineConsent.dismissed
+			})
+	);
 	$effect(() => {
 		const user = auth.userId ?? null;
 		untrack(() => outbox.attach(user));
@@ -1008,6 +1032,15 @@
 		ticketHref={(id) => ticketHrefIn(id, page.route.id, page.url, openMode.effective)}
 		itemHref={(id) => inboxItemHref(id)}
 		{changedBy}
+	/>
+{/if}
+
+<!-- The question at the first start of the phone view (package "Einschalten"): "Nein" has the first
+     focus; Escape and × leave it without an answer for the next start. -->
+{#if asksOfflineConsent}
+	<OfflineConsentDialog
+		onanswer={(answer) => offlineConsent.choose(answer)}
+		ondismiss={() => offlineConsent.dismiss()}
 	/>
 {/if}
 
