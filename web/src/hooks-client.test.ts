@@ -1,8 +1,10 @@
 // The client hooks (FP-1, ADR-0071 §4): from the start of the app on, every error nobody caught
 // lands in the list "Fehler dieser Sitzung" of the tab, an event "error" of the window as well as an
-// unhandled rejection. The list itself is covered in src/lib/stores/problem-log.test.ts.
+// unhandled rejection. The list itself is covered in src/lib/stores/problem-log.test.ts. Since MO-7c2
+// the start also holds the address the app opened, before the session check (ADR-0073 addendum).
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { takeStart } from '$lib/app-start';
 import { PROBLEM_LOG_KEY } from '$lib/domain/problems';
 import { problemLog } from '$lib/stores/problem-log.svelte';
 import { handleError, init } from './hooks.client';
@@ -34,5 +36,28 @@ describe('init of the client hooks', () => {
 				message: 'Internal Error'
 			})
 		).toEqual({ message: 'Ein unerwarteter Fehler ist aufgetreten.' });
+	});
+
+	it('holds the address the app opened before the session check, for one taker only (MO-7c2)', async () => {
+		window.history.replaceState(null, '', '/?karte=heute#oben');
+		const entries = vi
+			.spyOn(performance, 'getEntriesByType')
+			.mockReturnValue([{ type: 'navigate' } as unknown as PerformanceEntry]);
+		try {
+			await init();
+			expect(takeStart()).toEqual({
+				pathname: '/',
+				search: '?karte=heute',
+				hash: '#oben',
+				referrer: '',
+				origin: window.location.origin,
+				navigation: 'navigate'
+			});
+			// The app layout takes it when it shows; a second sign-in in the same tab finds none.
+			expect(takeStart()).toBeNull();
+		} finally {
+			entries.mockRestore();
+			window.history.replaceState(null, '', '/');
+		}
 	});
 });

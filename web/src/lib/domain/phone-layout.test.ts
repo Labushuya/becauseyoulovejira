@@ -19,6 +19,7 @@ import {
 	isPhoneStart,
 	modalPlacement,
 	opensKeyboard,
+	opensWithDayPlan,
 	parseMobileLayout,
 	phoneBarTarget,
 	viewportContent,
@@ -110,6 +111,45 @@ describe('phone layout: the day plan as the start view', () => {
 
 	it('takes a referrer it cannot read for one from outside', () => {
 		expect(isPhoneStart(start({ referrer: 'kein Link' }))).toBe(true);
+	});
+
+	// MO-7c2: the bare login page leads to the bare start page after the sign-in (guard.ts).
+	it('counts the bare login page as the start page, not one that leads elsewhere', () => {
+		expect(isPhoneStart(start({ pathname: '/login' }))).toBe(true);
+		expect(isPhoneStart(start({ pathname: '/login', search: '?redirect=%2Ftickets' }))).toBe(false);
+		expect(isPhoneStart(start({ pathname: '/login', navigation: 'reload' }))).toBe(false);
+	});
+});
+
+// MO-7c2: decided once, when the app shows, from the address held before the session check.
+describe('phone layout: the start decided when the app shows (MO-7c2)', () => {
+	const BARE = { pathname: '/', search: '', hash: '' };
+
+	it('opens the day plan in the frame when the app opened at its start page and shows it now', () => {
+		expect(opensWithDayPlan(start(), BARE, true)).toBe(true);
+		// After the sign-in at the bare login page the app shows the bare start page.
+		expect(opensWithDayPlan(start({ pathname: '/login' }), BARE, true)).toBe(true);
+	});
+
+	it.each([
+		['outside the frame (the PC, the switch off)', start(), BARE, false],
+		['without an address of the start (a second sign-in in the same tab)', null, BARE, true],
+		['for an app opened at another address', start({ pathname: '/tagesplan' }), BARE, true],
+		['for an app reloaded at "Aufgaben"', start({ navigation: 'reload' }), BARE, true],
+		[
+			'when the app shows another page than the start page',
+			start(),
+			{ ...BARE, pathname: '/tickets/abc123def456ghi' },
+			true
+		],
+		[
+			'when the app shows the start page with a state',
+			start(),
+			{ ...BARE, search: '?sort=titel' },
+			true
+		]
+	])('keeps the page %s', (_name, address, shown, phone) => {
+		expect(opensWithDayPlan(address, shown, phone)).toBe(false);
 	});
 });
 

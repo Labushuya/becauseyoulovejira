@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { createRawSnippet, tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { holdStart, takeStart } from '$lib/app-start';
 import AppHeader from '$lib/components/AppHeader.svelte';
 import { EMPTY_LIST_QUERY, type ListQuery } from '$lib/domain/list-query';
 import type { OutboxAction } from '$lib/domain/offline';
@@ -1079,9 +1080,22 @@ describe('app layout: phone frame (MO-1a, ADR-0073)', () => {
 		return meta;
 	}
 
-	/** Shows the layout and runs the callbacks of the first navigation, as SvelteKit does. */
+	/**
+	 * The start of the app as hooks.client.ts holds it before the session check (MO-7c2): the address
+	 * of the document, its referrer and how it came.
+	 */
+	function holdStartAt(path: string) {
+		window.history.replaceState(null, '', path);
+		holdStart(window);
+	}
+
+	/**
+	 * Holds the start, shows the layout and runs the callbacks of the navigation that showed it: the
+	 * order after the sign-in. With a stored session SvelteKit calls none of them (MO-7c2 below).
+	 */
 	async function enter(path: string, routeId: string) {
 		mocks.page.route.id = routeId;
+		holdStartAt(path);
 		const result = await renderLayout(path);
 		await tick();
 		for (const callback of mocks.afterNavigate) callback({ to: { url: mocks.page.url } });
@@ -1096,6 +1110,8 @@ describe('app layout: phone frame (MO-1a, ADR-0073)', () => {
 		vi.unstubAllGlobals();
 		localStorage.clear();
 		document.head.querySelectorAll('meta[name="viewport"]').forEach((meta) => meta.remove());
+		takeStart();
+		window.history.replaceState(null, '', '/');
 	});
 
 	it('takes the compact top bar and the bottom bar instead of the header on a phone with the switch on', async () => {
@@ -1140,6 +1156,36 @@ describe('app layout: phone frame (MO-1a, ADR-0073)', () => {
 		// Only at the start: the next navigation to "Aufgaben" stays there.
 		mocks.goto.mockClear();
 		for (const callback of mocks.afterNavigate) callback({ to: { url: mocks.page.url } });
+		expect(mocks.goto).not.toHaveBeenCalled();
+	});
+
+	// MO-7c2, in the order of a stored session: the root layout shows the app only after the session
+	// check, so the first navigation is over when this layout mounts and SvelteKit calls none of its
+	// callbacks of afterNavigate for it.
+	it('starts with the day plan when the stored session was checked after the first navigation (MO-7c2)', async () => {
+		windowOf(true);
+		getMobileLayoutStore().choose(true);
+		mocks.page.route.id = '/(app)/(tickets)';
+		holdStartAt('/');
+		await renderLayout('/');
+		await tick();
+		expect(mocks.goto).toHaveBeenCalledWith('/tagesplan', { replaceState: true });
+	});
+
+	it('leaves the first navigation the layout sees at "Aufgaben", the tap on it in the bottom bar (MO-7c2)', async () => {
+		windowOf(true);
+		getMobileLayoutStore().choose(true);
+		mocks.page.route.id = '/(app)/tagesplan';
+		holdStartAt('/tagesplan');
+		await renderLayout('/tagesplan');
+		await tick();
+		expect(mocks.goto).not.toHaveBeenCalled();
+
+		// The tap on "Aufgaben": the bare start page, as a navigation inside the open app.
+		mocks.page.url = new URL('/', 'http://localhost:3000');
+		mocks.page.route.id = '/(app)/(tickets)';
+		for (const callback of mocks.afterNavigate) callback({ to: { url: mocks.page.url } });
+		await tick();
 		expect(mocks.goto).not.toHaveBeenCalled();
 	});
 
