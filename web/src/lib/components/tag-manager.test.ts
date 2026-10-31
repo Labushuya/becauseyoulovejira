@@ -93,6 +93,15 @@ describe('tag manager', () => {
 		expect(onannounce).toHaveBeenCalledWith('Tag heißt jetzt „Hof“.');
 	});
 
+	// MO-7c2: the key of the on-screen keyboard (ADR-0073 addendum MO-1b §3).
+	it('names the key of the on-screen keyboard while renaming (MO-7c2)', async () => {
+		show();
+		await fireEvent.click(screen.getByRole('button', { name: 'Tag „Garten“ umbenennen' }));
+		await tick();
+		const field = screen.getByRole('textbox', { name: 'Neuer Name für den Tag „Garten“' });
+		expect(field.getAttribute('enterkeyhint')).toBe('done');
+	});
+
 	it('cancels renaming with Escape without a request', async () => {
 		const { editor } = show();
 

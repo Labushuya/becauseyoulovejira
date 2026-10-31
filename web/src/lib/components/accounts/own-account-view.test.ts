@@ -75,6 +75,22 @@ describe('display name', () => {
 	});
 });
 
+// MO-7c2: the key of the on-screen keyboard on every field (ADR-0073 addendum MO-1b §3), a capital
+// letter at the start of each word of the name.
+describe('fields on the phone (MO-7c2)', () => {
+	it('names the key of the on-screen keyboard and starts the words of the name with a capital', () => {
+		show();
+		const name = screen.getByLabelText('Name');
+		expect(name.getAttribute('enterkeyhint')).toBe('done');
+		expect(name.getAttribute('autocapitalize')).toBe('words');
+		expect(screen.getByLabelText('Bisheriges Passwort').getAttribute('enterkeyhint')).toBe('next');
+		expect(screen.getByLabelText('Neues Passwort').getAttribute('enterkeyhint')).toBe('next');
+		expect(screen.getByLabelText('Neues Passwort wiederholen').getAttribute('enterkeyhint')).toBe(
+			'done'
+		);
+	});
+});
+
 describe('password', () => {
 	it('checks the old one, the minimum and the repetition before sending', async () => {
 		const { data } = show();

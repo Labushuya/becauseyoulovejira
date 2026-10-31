@@ -126,6 +126,8 @@
 						{...field}
 						type="text"
 						autocomplete="name"
+						autocapitalize="words"
+						enterkeyhint="done"
 						maxlength={NAME_MAX}
 						bind:this={nameInput}
 						bind:value={draft}
@@ -162,6 +164,7 @@
 					{...field}
 					type="password"
 					autocomplete="current-password"
+					enterkeyhint="next"
 					bind:this={inputs.current}
 					bind:value={current}
 					oninput={() => clearError('current')}
@@ -178,6 +181,7 @@
 					{...field}
 					type="password"
 					autocomplete="new-password"
+					enterkeyhint="next"
 					bind:this={inputs.next}
 					bind:value={next}
 					oninput={() => clearError('next')}
@@ -190,6 +194,7 @@
 					{...field}
 					type="password"
 					autocomplete="new-password"
+					enterkeyhint="done"
 					bind:this={inputs.again}
 					bind:value={again}
 					oninput={() => clearError('again')}

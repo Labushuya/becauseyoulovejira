@@ -21,6 +21,11 @@
 		busy?: boolean;
 		/** Not possible now (aria-disabled). */
 		locked?: boolean;
+		/**
+		 * Runs instead on a locked entry, to name why (e.g. a flag, MO-7c2); the menu stays open. Without
+		 * it a locked entry does nothing.
+		 */
+		onlocked?: () => void;
 		/** A line before the entry, e.g. before "Löschen …". */
 		separated?: boolean;
 	}
@@ -85,7 +90,11 @@
 	);
 
 	function run(item: MenuAction, close: () => void) {
-		if (item.busy || item.locked) return;
+		if (item.busy) return;
+		if (item.locked) {
+			item.onlocked?.();
+			return;
+		}
 		close();
 		item.onselect?.();
 	}

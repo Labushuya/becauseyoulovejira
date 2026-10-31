@@ -1746,6 +1746,19 @@ describe('the parts about the keyboard in the phone frame (MO-7c1)', () => {
 			'Die Sammelaktionen im Eingang, „Gesammelt umwandeln (3)“, „Mit Ticket verknüpfen … (3)“, „Verwerfen (3)“ und „Wiederherstellen (3)“: ohne Verbindung gesperrt, mit „Nur mit Verbindung“.'
 		);
 	});
+
+	it('names the locked move of the calendar and the calendar in the phone frame (MO-7c2)', () => {
+		const { container } = render(Page);
+		const offline = container.querySelector<HTMLElement>('section#ohne-verbindung')!;
+		const items = [...offline.querySelectorAll('li')].map((item) => text(item).trim());
+		expect(items).toContain(
+			'Die Fälligkeit im Kalender verschieben (Ziehen und „Fälligkeit verschieben …“): in der Handy-Ansicht ohne Verbindung gesperrt, mit „(nur mit Verbindung)“.'
+		);
+		const calendar = text(container.querySelector<HTMLElement>('section#kalender')!);
+		expect(calendar).toContain(
+			'In der Handy-Ansicht stehen oben „Agenda“, „Monat“ und „Filter“: „Filter“ öffnet die Filter und die Ebenen, eine Woche erscheint als Agenda, und ein Tipp auf einen Tag im Monat öffnet seine Liste.'
+		);
+	});
 });
 
 describe('errors of this session (FP-1)', () => {

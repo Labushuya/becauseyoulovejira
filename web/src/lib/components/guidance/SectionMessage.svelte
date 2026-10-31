@@ -162,4 +162,13 @@
 	.compact.warning > :global(svg) {
 		color: var(--color-text-muted);
 	}
+
+	/* Phone frame (MO-7c2): a link of the actions is a target of 44 px, like the buttons there. */
+	@media (max-width: 39.99rem) {
+		:global(:root[data-mobile-layout='on']) .actions :global(a) {
+			display: inline-flex;
+			align-items: center;
+			min-height: var(--control-height-touch);
+		}
+	}
 </style>

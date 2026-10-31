@@ -202,4 +202,12 @@
 			border-bottom-color: var(--color-brand-text);
 		}
 	}
+
+	/* Phone frame (MO-7c2): the way back and every page are targets of 44 px. */
+	@media (max-width: 39.99rem) {
+		:global(:root[data-mobile-layout='on']) .back,
+		:global(:root[data-mobile-layout='on']) ul a {
+			min-height: var(--control-height-touch);
+		}
+	}
 </style>

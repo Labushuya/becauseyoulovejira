@@ -27,7 +27,8 @@
 	// the left and the page on the right, with breadcrumbs and its heading. Same width and margins
 	// as the views (user decision): no maximum width, not pushed to the left. After a change of the
 	// page the focus goes to the heading, like the section bar of the views. In the phone frame
-	// (MO-1a, ADR-0073) the bottom bar and "Mehr" lead to the views, so the switch is not there.
+	// (MO-1a, ADR-0073) the bottom bar and "Mehr" lead to the views, so the switch is not there; since
+	// MO-7c2 the pages of the administrator show only their hint there.
 	let { children } = $props();
 
 	const mobileLayout = getMobileLayoutStore();
@@ -56,8 +57,12 @@
 	const section = $derived(
 		subpage === null ? settingsSectionOf(page.url.pathname) : settingsSectionById(subpage.parent)
 	);
+	// In the phone frame (MO-7c2, concept MO-0 §3.4) a page of the administrator shows only the hint,
+	// also at the machine of the app: its tables, scripts and assistants are not made for the phone.
 	const blocked = $derived(
-		section !== null && isAdminSection(section.id) && capabilities.adminPages !== 'full'
+		section !== null &&
+			isAdminSection(section.id) &&
+			(capabilities.adminPages !== 'full' || mobileLayout.active)
 	);
 	const title = $derived(subpage?.label ?? section?.label ?? 'Einstellungen');
 	const crumbs = $derived([
@@ -100,7 +105,7 @@
 		<Breadcrumbs items={crumbs} />
 		<h2 id={headingId} tabindex="-1" data-view-heading bind:this={heading}>{title}</h2>
 		{#if blocked}
-			<AdminPageNotice {capabilities} />
+			<AdminPageNotice {capabilities} frame={mobileLayout.active} />
 		{:else}
 			{@render children()}
 		{/if}

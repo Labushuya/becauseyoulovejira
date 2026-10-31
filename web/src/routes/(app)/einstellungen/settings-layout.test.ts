@@ -219,6 +219,48 @@ describe('settings layout', () => {
 		expect(document.body.textContent).not.toMatch(/\.bat|\.ps1/);
 	});
 
+	// MO-7c2 (concept MO-0 §3.4): the pages of the administrator are not made for the phone; in the
+	// frame they show only a hint, also to the administrator at the machine of the app.
+	it.each([
+		[
+			'the administrator at the machine of the app',
+			PC_CONTEXT,
+			'In der Handy-Ansicht nicht angepasst',
+			'Diese Seite der Verwaltung ist für die Handy-Ansicht nicht angepasst. In einem breiteren Fenster oder mit ausgeschalteter „Handy-Ansicht (Vorschau)“ unter „Darstellung“ erscheint sie wie gewohnt.'
+		],
+		[
+			'the administrator on another device',
+			REMOTE_CONTEXT,
+			'Nur direkt am PC',
+			'Nur direkt am PC verfügbar, auf dem becauseyoulovejira läuft (dort über http://127.0.0.1:8090 öffnen).'
+		]
+	])(
+		'shows only the hint on a page of the administrator in the phone frame for %s (MO-7c2)',
+		async (_who, context, title, text) => {
+			await useContext(context);
+			vi.stubGlobal('matchMedia', (media: string) => ({
+				matches: media === PHONE_QUERY,
+				media,
+				addEventListener: () => undefined,
+				removeEventListener: () => undefined
+			}));
+			const stop = getMobileLayoutStore().connect();
+			getMobileLayoutStore().choose(true);
+			try {
+				await renderSettings('/einstellungen/sicherheit');
+				expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Sicherheit');
+				expect(screen.getByText(title)).toBeTruthy();
+				expect(screen.getByText(text)).toBeTruthy();
+				expect(screen.queryByText(CONTENT)).toBeNull();
+			} finally {
+				getMobileLayoutStore().choose(false);
+				stop();
+				vi.unstubAllGlobals();
+				localStorage.clear();
+			}
+		}
+	);
+
 	it('says "Nur für den Verwalter" for a page of the administrator opened by another account (KOB-1)', async () => {
 		await useContext(MEMBER_CONTEXT);
 		await renderSettings('/einstellungen/konten');
