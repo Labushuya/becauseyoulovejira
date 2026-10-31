@@ -186,7 +186,17 @@ export async function keptOnDevice(): Promise<number> {
 /** An answer without `offline_ops` is asked again at most this often (OF-2b). */
 export const SUPPORT_RETRY_MS = 5 * 60 * 1000;
 
-let support: Promise<OfflineOps | null> | null = null;
+/**
+ * What the server said about `offline_ops` (null without it); `answered` false when the question
+ * failed (e.g. without a connection), so the capability is unknown rather than missing (round 2 of
+ * "Einschalten", E-2).
+ */
+export interface OfflineSupportAnswer {
+	readonly ops: OfflineOps | null;
+	readonly answered: boolean;
+}
+
+let support: Promise<OfflineSupportAnswer> | null = null;
 /** When the last question went out that did not bring the capability; null once known or forgotten. */
 let missingSince: number | null = null;
 
@@ -196,7 +206,7 @@ let missingSince: number | null = null;
  * (OF-2b: the tab asks again when it becomes visible), so a restart of the server shows up without a
  * reload. Once known, the history asks for the mark of the outbox too.
  */
-export function offlineSupport(): Promise<OfflineOps | null> {
+export function offlineSupport(): Promise<OfflineSupportAnswer> {
 	const now = Date.now();
 	if (support !== null && (missingSince === null || now - missingSince < SUPPORT_RETRY_MS)) {
 		return support;
@@ -208,11 +218,11 @@ export function offlineSupport(): Promise<OfflineOps | null> {
 			const known = supportsKind(ops, 'ticket.update');
 			askOfflineMarks(known);
 			if (!known) missingSince = now;
-			return ops;
+			return { ops, answered: true };
 		},
 		() => {
 			missingSince = now;
-			return null;
+			return { ops: null, answered: false };
 		}
 	);
 	return support;

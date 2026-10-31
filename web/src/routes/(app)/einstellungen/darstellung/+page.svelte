@@ -14,7 +14,11 @@
 		type ThemePreference
 	} from '$lib/theme.svelte';
 	import { getNotifyStore } from '$lib/attention-notify.svelte';
+	import { OFFLINE_CONSENT_TEXTS } from '$lib/domain/offline-consent';
+	import { restartNeeded } from '$lib/guidance/texts';
 	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
+	import { findOutbox } from '$lib/offline/outbox.svelte';
+	import { getOfflineConsentStore } from '$lib/offline-consent.svelte';
 	import { appContext } from '$lib/stores/context.svelte';
 	import { getTransparencyStore } from '$lib/transparency.svelte';
 
@@ -31,10 +35,33 @@
 	// Group "Hinweise" (ADR-0035 section 5, SF-6): the Windows notification is an opt-in; the
 	// browser asks for the permission only when the switch is turned on.
 	const notifyStore = getNotifyStore();
-	// Group "Handy" (MO-1a, ADR-0073): the preview of the phone frame, off by default; it applies
-	// only below 40rem. Reachable in the view of today on the phone (the gear, then "Darstellung")
-	// and in the frame under "Mehr". The (app) layout follows the width.
+	// Group "Handy" (MO-1a, ADR-0073 and its addendum "Einschalten"): the choice "Handy-Ansicht:
+	// Automatisch / Aus", "Automatisch" by default; the frame applies only below 40rem. Reachable in
+	// the frame under "Mehr" and with "Aus" in the view of today (the gear, then "Darstellung"). The
+	// (app) layout follows the width. Since "Einschalten" also the switch "Ohne Verbindung merken
+	// (dieses Gerät)" (ADR-0074 addendum "Zustimmung je Gerät"), locked with its reason: the browser
+	// cannot store (localStorage refuses to write, no IndexedDB), the question to the server runs or
+	// failed (unknown, round 2 E-2), or the server cannot keep changes. Turned off, or with
+	// "Handy-Ansicht: Aus", while changes are kept, the page says they still go (round 2, E-3).
 	const mobileLayout = getMobileLayoutStore();
+	const MOBILE_CHOICES = [
+		{
+			value: 'auto',
+			label: 'Automatisch',
+			description: 'Auf schmalen Bildschirmen die Handy-Ansicht, sonst die gewohnte Ansicht.'
+		},
+		{ value: 'off', label: 'Aus', description: 'Überall die gewohnte Ansicht, auch am Handy.' }
+	] as const;
+	const offlineConsent = getOfflineConsentStore();
+	/** The outbox of the (app) layout; null outside of it (a test of the page alone). */
+	const outbox = findOutbox();
+	const canKeep = $derived(outbox?.supported ?? false);
+	/** Outside of the (app) layout nothing asks the server: the page says what it said before. */
+	const supportCheck = $derived(outbox?.supportCheck ?? 'answered');
+	const storable = $derived(offlineConsent.writable && (outbox?.canStore ?? true));
+	const keptCount = $derived(outbox?.count ?? 0);
+	/** New changes are not kept (no "Ja, merken", or "Aus"), so the kept ones only still go. */
+	const keepsNothingNew = $derived(offlineConsent.consent !== 'yes' || !mobileLayout.enabled);
 	// start.bat is named only to the administrator on the machine of the app (KOB-1, ADR-0057).
 	const scripts = $derived(appContext.capabilities.scripts);
 	const uid = $props.id();
@@ -58,6 +85,7 @@
 	$effect(() => accentStore.connect());
 	$effect(() => transparencyStore.connect());
 	$effect(() => notifyStore.connect());
+	$effect(() => offlineConsent.connect());
 </script>
 
 <svelte:head>
@@ -150,27 +178,71 @@
 
 <fieldset class="themes">
 	<legend>Handy</legend>
+	<fieldset class="choice" aria-describedby={`${uid}-mobile-note`}>
+		<legend class="setting-name">Handy-Ansicht</legend>
+		<div class="tiles">
+			{#each MOBILE_CHOICES as choice (choice.value)}
+				<label class="tile">
+					<input
+						type="radio"
+						name={`${uid}-mobile`}
+						value={choice.value}
+						checked={mobileLayout.enabled === (choice.value === 'auto')}
+						aria-labelledby={`${uid}-mobile-${choice.value}-label`}
+						aria-describedby={`${uid}-mobile-${choice.value}`}
+						onchange={() => mobileLayout.choose(choice.value === 'auto')}
+					/>
+					<span class="label" id={`${uid}-mobile-${choice.value}-label`}>{choice.label}</span>
+					<span class="description" id={`${uid}-mobile-${choice.value}`}>
+						{choice.description}
+					</span>
+				</label>
+			{/each}
+		</div>
+	</fieldset>
+	<p class="note" id={`${uid}-mobile-note`}>
+		Die Handy-Ansicht gilt auf schmalen Bildschirmen unter etwa 640 Pixel Breite, etwa einem Handy
+		hochkant: oben eine Leiste mit dem Namen der Ansicht, unten eine Leiste mit Tagesplan, Aufgaben,
+		Erfassen, Eingang und „Mehr“ für alles Weitere. Beim Öffnen der App steht dort zuerst der
+		Tagesplan. Auf breiteren Bildschirmen bleibt alles, wie es ist. Gilt nur in diesem Browser auf
+		diesem Gerät.
+	</p>
+	<!-- Round 2 (E-4): neutral, since "Automatisch" is the default of every PC as well. -->
+	{#if mobileLayout.enabled && !mobileLayout.narrow}
+		<SectionMessage tone="info" compact>
+			Die Handy-Ansicht erscheint automatisch auf schmalen Bildschirmen.
+		</SectionMessage>
+	{/if}
 	<label class="setting">
-		<span class="setting-name">Handy-Ansicht (Vorschau)</span>
+		<span class="setting-name">{OFFLINE_CONSENT_TEXTS.setting}</span>
 		<input
 			type="checkbox"
 			role="switch"
-			checked={mobileLayout.enabled}
-			aria-describedby={`${uid}-mobile-note`}
-			onchange={(event) => mobileLayout.choose(event.currentTarget.checked)}
+			checked={offlineConsent.consent === 'yes'}
+			disabled={!canKeep || !storable}
+			aria-describedby={`${uid}-offline-note`}
+			onchange={(event) => offlineConsent.choose(event.currentTarget.checked ? 'yes' : 'no')}
 		/>
 	</label>
-	<p class="note" id={`${uid}-mobile-note`}>
-		Für schmale Bildschirme unter etwa 640 Pixel Breite, etwa ein Handy hochkant: oben eine Leiste
-		mit dem Namen der Ansicht, unten eine Leiste mit Tagesplan, Aufgaben, Erfassen, Eingang und
-		„Mehr“ für alles Weitere. Beim Öffnen der App steht dort zuerst der Tagesplan. Noch eine
-		Vorschau: Die einzelnen Ansichten werden nach und nach für das Handy angepasst. Gilt nur in
-		diesem Browser auf diesem Gerät; auf breiteren Bildschirmen bleibt alles, wie es ist.
+	<p class="note" id={`${uid}-offline-note`}>
+		Reißt die Verbindung ab, merkt sich die App in der Handy-Ansicht einige Änderungen auf diesem
+		Gerät und überträgt sie von selbst, sobald der Server wieder erreichbar ist; was gemerkt wird,
+		sagt die Hilfe unter „Ohne Verbindung“. Aus: Die App merkt sich nichts, eine Änderung ohne
+		Verbindung scheitert wie bisher mit einer Meldung. Gilt nur in diesem Browser auf diesem Gerät.
 	</p>
-	{#if mobileLayout.enabled && !mobileLayout.narrow}
+	{#if !storable}
+		<SectionMessage tone="info" compact>{OFFLINE_CONSENT_TEXTS.noStorage}</SectionMessage>
+	{:else if !canKeep && supportCheck === 'pending'}
+		<SectionMessage tone="info" compact>{OFFLINE_CONSENT_TEXTS.checking}</SectionMessage>
+	{:else if !canKeep && supportCheck === 'failed'}
+		<SectionMessage tone="info" compact>{OFFLINE_CONSENT_TEXTS.unchecked}</SectionMessage>
+	{:else if !canKeep}
 		<SectionMessage tone="info" compact>
-			Dieses Fenster ist zu breit für die Handy-Ansicht. Hier bleibt die gewohnte Ansicht; die
-			Handy-Ansicht erscheint, sobald das Fenster schmaler als etwa 640 Pixel ist.
+			{restartNeeded('Das Merken ohne Verbindung ist')}
+		</SectionMessage>
+	{:else if keepsNothingNew && keptCount > 0}
+		<SectionMessage tone="info" compact>
+			{OFFLINE_CONSENT_TEXTS.stillSent(keptCount)}
 		</SectionMessage>
 	{/if}
 </fieldset>
@@ -226,6 +298,17 @@
 
 	.themes + .themes {
 		margin-top: 1.5rem;
+	}
+
+	/* The choice "Handy-Ansicht" (package "Einschalten"): its name above its two tiles. */
+	.choice {
+		min-width: 0;
+		padding: 0;
+		border: none;
+	}
+
+	.choice legend {
+		margin-bottom: 0.5rem;
 	}
 
 	legend {

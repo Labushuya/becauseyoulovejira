@@ -820,8 +820,15 @@ describe('help page (EH-9)', () => {
 			'/einstellungen/darstellung'
 		);
 		const content = text(section);
-		// Only in the phone view, after about 12 seconds without an answer.
-		expect(content).toMatch(/„Handy-Ansicht \(Vorschau\)“/);
+		// Only in the phone view, after about 12 seconds without an answer. Changed with the package
+		// "Einschalten": no switch "Handy-Ansicht (Vorschau)" any more; the question of the first start
+		// and the switch under "Darstellung" decide per device.
+		expect(content).not.toMatch(/Vorschau/);
+		expect(content).toContain('„Änderungen ohne Verbindung auf diesem Gerät merken?“');
+		expect(content).toContain('„Ja, merken“');
+		expect(content).toContain('„Ohne Verbindung merken (dieses Gerät)“');
+		expect(content).toMatch(/Am PC, mit „Aus“ und ohne „Ja, merken“ geht jede Änderung/);
+		expect(content).toMatch(/Ohne „Ja, merken“ kommt wie bisher „Server nicht erreichbar\.“/);
 		expect(content).toMatch(/nach etwa 12 Sekunden/);
 		// Kept: check mark and status, due date, the day plan, "＋", comments.
 		for (const kept of [
@@ -872,7 +879,9 @@ describe('help page (EH-9)', () => {
 			/7 Tage/,
 			/Nur dieses Gerät/,
 			/Nur in der Handy-Ansicht/,
-			/mit einem Update für alle eingeschaltet/,
+			// Changed with the package "Einschalten": the phone view is on for everyone now.
+			/nur dort und nur nach „Ja, merken“/,
+			/oder das Merken unter „Darstellung“ ausschaltest/,
 			/Nur bei offener App/,
 			/„Ohne Verbindung neu laden\?“/,
 			/in jedem offenen Tab F5/,

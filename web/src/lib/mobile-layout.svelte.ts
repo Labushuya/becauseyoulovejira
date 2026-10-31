@@ -1,15 +1,18 @@
-// Switch "Handy-Ansicht (Vorschau)" (MO-1a, ADR-0073; docs/regeln/einstellungen-system.md): the phone
-// frame applies only while the switch of this device is on and the window is narrow (PHONE_QUERY).
-// It is off by default, so the app looks as before on every device until the user turns it on
-// under "Einstellungen → Darstellung". The choice lives in localStorage under
-// MOBILE_LAYOUT_STORAGE_KEY, only on this device; only "on" is stored. The store sets
-// data-mobile-layout="on" on the root element while the switch is on (tokens.css and the phone
-// rules of the CSS add their own media query), and while connected it gives the meta viewport the
-// keys of the phone frame only while the frame applies. Without matchMedia (jsdom) the window counts
-// as wide, so every component test stays a desktop test.
+// Choice "Handy-Ansicht: Automatisch / Aus" (MO-1a, ADR-0073 and its addendum "Einschalten";
+// docs/regeln/einstellungen-system.md): the phone frame applies only while the choice of this device is
+// "Automatisch" and the window is narrow (PHONE_QUERY). Since the package "Einschalten" "Automatisch" is
+// the default, so a phone and a narrow window show the frame without a setting; "Aus" under
+// "Einstellungen → Darstellung" keeps the view of the PC. The choice lives in localStorage under
+// MOBILE_LAYOUT_STORAGE_KEY, only on this device; only "off" is stored, and the value "on" of the former
+// switch "Handy-Ansicht (Vorschau)" counts as "Automatisch". The store sets data-mobile-layout="on" on
+// the root element while the choice is "Automatisch" (tokens.css and the phone rules of the CSS add
+// their own media query), and while connected it gives the meta viewport the keys of the phone frame
+// only while the frame applies. Without matchMedia (jsdom) the window counts as wide, so every
+// component test stays a desktop test.
 
 import {
 	MOBILE_LAYOUT_ATTRIBUTE,
+	MOBILE_LAYOUT_OFF,
 	MOBILE_LAYOUT_ON,
 	MOBILE_LAYOUT_STORAGE_KEY,
 	PHONE_QUERY,
@@ -18,24 +21,27 @@ import {
 	viewportContent
 } from '$lib/domain/phone-layout';
 
-/** The stored switch; a storage that throws (blocked, private mode) means "off". */
+/** The stored choice; a storage that throws (blocked, private mode) means the default "Automatisch". */
 export function readMobileLayout(storage: Pick<Storage, 'getItem'> | null): boolean {
 	try {
 		return parseMobileLayout(storage?.getItem(MOBILE_LAYOUT_STORAGE_KEY));
 	} catch {
-		return false;
+		return true;
 	}
 }
 
-/** Stores the switch; false if the storage refused it (the choice then lasts for this page). */
+/**
+ * Stores the choice ("Aus" as "off", "Automatisch" without a key); false if the storage refused it
+ * (the choice then lasts for this page).
+ */
 export function writeMobileLayout(
 	storage: Pick<Storage, 'setItem' | 'removeItem'> | null,
 	enabled: boolean
 ): boolean {
 	if (storage === null) return false;
 	try {
-		if (enabled) storage.setItem(MOBILE_LAYOUT_STORAGE_KEY, MOBILE_LAYOUT_ON);
-		else storage.removeItem(MOBILE_LAYOUT_STORAGE_KEY);
+		if (enabled) storage.removeItem(MOBILE_LAYOUT_STORAGE_KEY);
+		else storage.setItem(MOBILE_LAYOUT_STORAGE_KEY, MOBILE_LAYOUT_OFF);
 		return true;
 	} catch {
 		return false;
@@ -69,13 +75,13 @@ function phoneQuery(win: Window): MediaQueryList | null {
 }
 
 /**
- * The switch of this device and the width of the window; `active` is the one decision every part
+ * The choice of this device and the width of the window; `active` is the one decision every part
  * of the phone frame asks. `connect` follows other tabs, the width (turning the phone, a narrower
  * window) and keeps the meta viewport in line.
  */
 export class MobileLayoutStore {
-	/** The switch "Handy-Ansicht (Vorschau)" of this device. */
-	enabled = $state(false);
+	/** The choice "Handy-Ansicht" of this device: true for "Automatisch" (the default), false for "Aus". */
+	enabled = $state(true);
 
 	/** The window is narrower than 40rem (PHONE_QUERY); false without matchMedia. */
 	narrow = $state(false);
@@ -90,7 +96,7 @@ export class MobileLayoutStore {
 		applyMobileLayout(win.document.documentElement, this.enabled);
 	}
 
-	/** Whether the phone frame applies now: the switch on and a narrow window. */
+	/** Whether the phone frame applies now: "Automatisch" and a narrow window. */
 	get active(): boolean {
 		return isPhoneLayout(this.enabled, this.narrow);
 	}
@@ -126,7 +132,7 @@ export class MobileLayoutStore {
 			this.#viewport();
 		};
 		const onstorage = (event: StorageEvent) => {
-			// key null: the other tab cleared the whole storage.
+			// key null: the other tab cleared the whole storage, which means "Automatisch".
 			if (event.key !== null && event.key !== MOBILE_LAYOUT_STORAGE_KEY) return;
 			this.enabled = parseMobileLayout(event.key === null ? null : event.newValue);
 			applyMobileLayout(win.document.documentElement, this.enabled);

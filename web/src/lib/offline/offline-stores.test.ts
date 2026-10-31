@@ -106,6 +106,8 @@ function setup() {
 	);
 	outbox.attach(USER);
 	outbox.setSupport({ version: 1, kinds: ['ticket.update'] });
+	// Since the package "Einschalten" the device has to agree as well.
+	outbox.setConsent(true);
 	outbox.setFrame(true);
 	outbox.connect({
 		upsert: (entry: TicketSummary) => {

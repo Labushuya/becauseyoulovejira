@@ -354,10 +354,14 @@
 		<p>
 			Reißt am Handy die Verbindung ab, etwa weil das VPN weg ist, merkt sich die App einige
 			Änderungen und überträgt sie von selbst, sobald der Server wieder erreichbar ist. Das gilt in
-			der Handy-Ansicht: Der Schalter „Handy-Ansicht (Vorschau)“ unter
-			<a href={resolve('/einstellungen/darstellung')}>Darstellung</a> ist an, und das Fenster ist schmal.
-			Antwortet der Server nicht, merkt sich die App eine Änderung nach etwa 12 Sekunden. Am PC und mit
-			ausgeschaltetem Schalter geht jede Änderung wie bisher gleich zum Server.
+			der Handy-Ansicht auf einem Gerät, das zugestimmt hat: Beim ersten Start der Handy-Ansicht
+			fragt die App einmal „Änderungen ohne Verbindung auf diesem Gerät merken?“; „Ja, merken“
+			schaltet es ein, „Nein“ lässt es aus. Ändern lässt es sich jederzeit mit „Ohne Verbindung
+			merken (dieses Gerät)“ unter
+			<a href={resolve('/einstellungen/darstellung')}>Darstellung</a>, wo auch die Handy-Ansicht
+			selbst steht („Automatisch“ oder „Aus“). Antwortet der Server nicht, merkt sich die App eine
+			Änderung nach etwa 12 Sekunden. Am PC, mit „Aus“ und ohne „Ja, merken“ geht jede Änderung wie
+			bisher gleich zum Server.
 		</p>
 		<h4 id="ohne-verbindung-gemerkt">Was gemerkt wird</h4>
 		<ul>
@@ -404,8 +408,9 @@
 			</li>
 		</ul>
 		<p>
-			In der Handy-Ansicht sagt eine Änderung, die nicht gemerkt wird, „Keine Verbindung. Das geht
-			nur mit Verbindung, nichts wurde gemerkt.“
+			Merkt die App auf diesem Gerät, sagt eine Änderung, die nicht gemerkt wird, „Keine Verbindung.
+			Das geht nur mit Verbindung, nichts wurde gemerkt.“ Ohne „Ja, merken“ kommt wie bisher „Server
+			nicht erreichbar.“
 		</p>
 		<h4 id="ohne-verbindung-dialog">Gemerkte Änderungen</h4>
 		<p>
@@ -460,9 +465,9 @@
 				Andere Geräte und der Haushalt sehen sie erst nach der Übertragung.
 			</li>
 			<li>
-				<strong>Nur in der Handy-Ansicht:</strong> Neues merkt die App nur dort, bis die Handy-Ansicht
-				mit einem Update für alle eingeschaltet wird. Schon Gemerktes überträgt sie auch, wenn du die
-				Handy-Ansicht verlässt.
+				<strong>Nur in der Handy-Ansicht:</strong> Neues merkt die App nur dort und nur nach „Ja, merken“.
+				Schon Gemerktes überträgt sie auch, wenn du die Handy-Ansicht verlässt oder das Merken unter „Darstellung“
+				ausschaltest.
 			</li>
 			<li>
 				<strong>Nur bei offener App:</strong> Übertragen wird, solange die App in einem Tab offen ist,

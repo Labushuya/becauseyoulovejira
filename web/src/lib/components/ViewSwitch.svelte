@@ -10,8 +10,8 @@
 	// decision of the user): Aufgaben, Tagesplan, Projekte, Eingang, Wiederholungen, Kalender,
 	// Erledigte, Papierkorb. The same order holds in every context of the tab (KOB-1, ADR-0057): no
 	// entry depends on the device or the account. On a narrow window the segments wrap in this order
-	// (.segmented of base.css); there is no folded variant. In the phone frame (switch "Handy-Ansicht
-	// (Vorschau)" on and below 40rem, MO-1a, ADR-0073 and addendum to ADR-0066 §1) the bottom bar and
+	// (.segmented of base.css); there is no folded variant. In the phone frame (choice "Handy-Ansicht:
+	// Automatisch" and below 40rem, MO-1a, ADR-0073 and addendum to ADR-0066 §1) the bottom bar and
 	// "Mehr" take its place with the same views, names and links (lib/views.ts), so it is not shown
 	// there. The current one carries aria-current="page" and is the thumb of the segmented control
 	// (ADR-0029 section 9): weight, frame and shadow besides its colour. A view keeps its state while

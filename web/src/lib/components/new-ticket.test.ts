@@ -1614,7 +1614,7 @@ describe('new ticket: leaving with typed input (MO-6c)', () => {
 	};
 	let stop: (() => void) | null = null;
 
-	/** The window of the test: narrow or not, and the switch "Handy-Ansicht (Vorschau)". */
+	/** The window of the test: narrow or not, and the choice "Handy-Ansicht: Automatisch" or "Aus". */
 	function inWindow(narrow: boolean, enabled: boolean) {
 		vi.stubGlobal('matchMedia', (media: string) => ({
 			matches: media === PHONE_QUERY ? narrow : false,

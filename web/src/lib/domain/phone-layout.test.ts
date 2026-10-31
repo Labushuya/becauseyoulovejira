@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { CALENDAR_NARROW_QUERY } from './calendar';
 import {
 	MOBILE_LAYOUT_ATTRIBUTE,
+	MOBILE_LAYOUT_OFF,
 	MOBILE_LAYOUT_ON,
 	MOBILE_LAYOUT_STORAGE_KEY,
 	PHONE_BAR_VIEWS,
@@ -48,22 +49,27 @@ describe('phone layout: breakpoint and switch', () => {
 		expect(CALENDAR_NARROW_QUERY).toBe(PHONE_QUERY);
 	});
 
-	it('stores only "on" under its own key and names the root attribute', () => {
+	// Changed with the package "Einschalten": "off" is the stored value now, "on" stays the value of
+	// the root attribute (and the old stored value).
+	it('stores only "off" under its own key and names the root attribute', () => {
 		expect(MOBILE_LAYOUT_STORAGE_KEY).toBe('byl-mobile-layout');
+		expect(MOBILE_LAYOUT_OFF).toBe('off');
 		expect(MOBILE_LAYOUT_ON).toBe('on');
 		expect(MOBILE_LAYOUT_ATTRIBUTE).toBe('data-mobile-layout');
 	});
 
+	// Changed with the package "Einschalten" (decision of the user 1): only "off" turns the phone view
+	// off; no key, the old "on" and anything else mean "Automatisch".
 	it.each([
 		['on', true],
 		['off', false],
-		['ON', false],
-		['1', false],
-		['true', false],
-		['', false],
-		[null, false],
-		[undefined, false]
-	])('reads %j as %s (off by default)', (value, enabled) => {
+		['ON', true],
+		['1', true],
+		['true', true],
+		['', true],
+		[null, true],
+		[undefined, true]
+	])('reads %j as %s ("Automatisch" by default)', (value, enabled) => {
 		expect(parseMobileLayout(value)).toBe(enabled);
 	});
 

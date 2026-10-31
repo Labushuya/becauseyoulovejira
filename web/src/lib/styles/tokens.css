@@ -694,10 +694,10 @@
 }
 
 /*
- * Phone layout (MO-1a, ADR-0073): with the switch "Handy-Ansicht (Vorschau)" on (data-mobile-layout,
- * set by lib/mobile-layout.svelte.ts) and below the one breakpoint of PHONE_QUERY, the pages keep a
- * margin of 16 px, the window margin of compact layouts in Material. Off, or from 40rem, nothing
- * changes.
+ * Phone layout (MO-1a, ADR-0073): with the choice "Handy-Ansicht: Automatisch", the default since the
+ * package "Einschalten" (data-mobile-layout, set by lib/mobile-layout.svelte.ts), and below the one
+ * breakpoint of PHONE_QUERY, the pages keep a margin of 16 px, the window margin of compact layouts in
+ * Material. With "Aus", or from 40rem, nothing changes.
  */
 @media (max-width: 39.99rem) {
 	:root[data-mobile-layout='on'] {

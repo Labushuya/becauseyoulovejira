@@ -65,6 +65,8 @@ describe('section bar in the phone frame (MO-1a)', () => {
 			removeEventListener: () => undefined
 		}));
 		const stop = getMobileLayoutStore().connect();
+		// Package "Einschalten": from "Aus", since "Automatisch" is the default now.
+		getMobileLayoutStore().choose(false);
 		render(SectionBar, { props: { title: 'Aufgaben', headingId: 'h1', count: 12 } });
 		const heading = screen.getByRole('heading', { level: 2, name: 'Aufgaben' });
 		expect(heading.classList.contains('visually-hidden')).toBe(false);

@@ -1,5 +1,6 @@
-// Switch "Handy-Ansicht (Vorschau)" (MO-1a, ADR-0073): off by default, only "on" stored, the root
-// attribute for the CSS, the decision of the switch and the width, following other tabs and the
+// Choice "Handy-Ansicht: Automatisch / Aus" (MO-1a, ADR-0073; since the package "Einschalten"
+// "Automatisch" by default): only "off" stored, the old value "on" and no key mean "Automatisch", the
+// root attribute for the CSS, the decision of the choice and the width, following other tabs and the
 // width, and the meta viewport of the frame only while it applies and the app layout is connected.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -72,22 +73,29 @@ afterEach(() => {
 });
 
 describe('mobile layout: storage', () => {
-	it('is off by default and with a blocked storage', () => {
-		expect(readMobileLayout(localStorage)).toBe(false);
-		expect(readMobileLayout(null)).toBe(false);
-		expect(readMobileLayout(throwing)).toBe(false);
+	// Changed with the package "Einschalten": the default is "Automatisch" (decision of the user 1).
+	it('is "Automatisch" by default, with the old value "on" and with a blocked storage; only "off" turns it off', () => {
+		expect(readMobileLayout(localStorage)).toBe(true);
+		expect(readMobileLayout(null)).toBe(true);
+		expect(readMobileLayout(throwing)).toBe(true);
+		localStorage.setItem('byl-mobile-layout', 'on');
+		expect(readMobileLayout(localStorage)).toBe(true);
 		localStorage.setItem('byl-mobile-layout', 'yes');
+		expect(readMobileLayout(localStorage)).toBe(true);
+		localStorage.setItem('byl-mobile-layout', 'off');
 		expect(readMobileLayout(localStorage)).toBe(false);
 	});
 
-	it('stores only "on" and removes the key for "off"', () => {
-		expect(writeMobileLayout(localStorage, true)).toBe(true);
-		expect(localStorage.getItem('byl-mobile-layout')).toBe('on');
-		expect(readMobileLayout(localStorage)).toBe(true);
+	// Changed with the package "Einschalten": "Aus" is stored now, "Automatisch" removes the key.
+	it('stores only "off" and removes the key for "Automatisch"', () => {
 		expect(writeMobileLayout(localStorage, false)).toBe(true);
+		expect(localStorage.getItem('byl-mobile-layout')).toBe('off');
+		expect(readMobileLayout(localStorage)).toBe(false);
+		expect(writeMobileLayout(localStorage, true)).toBe(true);
 		expect(localStorage.getItem('byl-mobile-layout')).toBeNull();
-		expect(writeMobileLayout(throwing, true)).toBe(false);
-		expect(writeMobileLayout(null, true)).toBe(false);
+		expect(readMobileLayout(localStorage)).toBe(true);
+		expect(writeMobileLayout(throwing, false)).toBe(false);
+		expect(writeMobileLayout(null, false)).toBe(false);
 	});
 
 	it('marks the root element only while the switch is on', () => {
@@ -108,7 +116,6 @@ describe('mobile layout: storage', () => {
 
 describe('mobile layout: store', () => {
 	it('counts as wide without matchMedia, so every component test stays a desktop test', () => {
-		localStorage.setItem('byl-mobile-layout', 'on');
 		const store = new MobileLayoutStore(window);
 		expect(store.enabled).toBe(true);
 		expect(store.narrow).toBe(false);
@@ -116,7 +123,24 @@ describe('mobile layout: store', () => {
 		expect(document.documentElement.getAttribute('data-mobile-layout')).toBe('on');
 	});
 
-	it('applies the frame only with the switch on and a narrow window', () => {
+	// Package "Einschalten": a phone without a stored choice shows the frame at once; "Aus" stays.
+	it('applies the frame by default on a narrow window, also with the old value "on", and never with "off"', () => {
+		const query = fakeQuery(true);
+		query.stub();
+		expect(new MobileLayoutStore(window).active).toBe(true);
+		localStorage.setItem('byl-mobile-layout', 'on');
+		expect(new MobileLayoutStore(window).active).toBe(true);
+		localStorage.setItem('byl-mobile-layout', 'off');
+		const off = new MobileLayoutStore(window);
+		expect(off.enabled).toBe(false);
+		expect(off.active).toBe(false);
+		expect(document.documentElement.hasAttribute('data-mobile-layout')).toBe(false);
+	});
+
+	// Changed with the package "Einschalten": it starts from a stored "off"; "Automatisch" removes the
+	// key instead of storing "on", "Aus" stores "off".
+	it('applies the frame only with "Automatisch" and a narrow window', () => {
+		localStorage.setItem('byl-mobile-layout', 'off');
 		const query = fakeQuery(true);
 		query.stub();
 		const store = new MobileLayoutStore(window);
@@ -124,11 +148,11 @@ describe('mobile layout: store', () => {
 		expect(store.active).toBe(false);
 		store.choose(true);
 		expect(store.active).toBe(true);
-		expect(localStorage.getItem('byl-mobile-layout')).toBe('on');
+		expect(localStorage.getItem('byl-mobile-layout')).toBeNull();
 		expect(document.documentElement.getAttribute('data-mobile-layout')).toBe('on');
 		store.choose(false);
 		expect(store.active).toBe(false);
-		expect(localStorage.getItem('byl-mobile-layout')).toBeNull();
+		expect(localStorage.getItem('byl-mobile-layout')).toBe('off');
 		expect(document.documentElement.hasAttribute('data-mobile-layout')).toBe(false);
 	});
 
@@ -161,13 +185,17 @@ describe('mobile layout: store', () => {
 		expect(viewport().content).toBe(VIEWPORT_BASE);
 	});
 
-	it('follows the switch of another tab', () => {
+	// Changed with the package "Einschalten": the other tab removes the key for "Automatisch" and
+	// stores "off" for "Aus"; a cleared storage means "Automatisch".
+	it('follows the choice of another tab', () => {
+		localStorage.setItem('byl-mobile-layout', 'off');
 		const query = fakeQuery(true);
 		query.stub();
 		const store = new MobileLayoutStore(window);
 		const stop = store.connect();
+		expect(store.active).toBe(false);
 
-		window.dispatchEvent(new StorageEvent('storage', { key: 'byl-mobile-layout', newValue: 'on' }));
+		window.dispatchEvent(new StorageEvent('storage', { key: 'byl-mobile-layout', newValue: null }));
 		expect(store.active).toBe(true);
 		expect(document.documentElement.getAttribute('data-mobile-layout')).toBe('on');
 		expect(viewport().content).toBe(VIEWPORT_PHONE);
@@ -175,15 +203,24 @@ describe('mobile layout: store', () => {
 		window.dispatchEvent(new StorageEvent('storage', { key: 'byl-theme', newValue: 'dark' }));
 		expect(store.enabled).toBe(true);
 
-		// The other tab cleared the whole storage.
-		window.dispatchEvent(new StorageEvent('storage', { key: null }));
+		window.dispatchEvent(
+			new StorageEvent('storage', { key: 'byl-mobile-layout', newValue: 'off' })
+		);
 		expect(store.enabled).toBe(false);
 		expect(document.documentElement.hasAttribute('data-mobile-layout')).toBe(false);
 		expect(viewport().content).toBe(VIEWPORT_BASE);
+
+		// The other tab cleared the whole storage.
+		window.dispatchEvent(new StorageEvent('storage', { key: null }));
+		expect(store.enabled).toBe(true);
+		expect(document.documentElement.getAttribute('data-mobile-layout')).toBe('on');
+		expect(viewport().content).toBe(VIEWPORT_PHONE);
 		stop();
 	});
 
 	it('keeps the focus in the field on a press of a button that saves, only in the frame (MO-5, MO-6)', () => {
+		// Package "Einschalten": from a stored "Aus", since "Automatisch" is the default.
+		localStorage.setItem('byl-mobile-layout', 'off');
 		const query = fakeQuery(true);
 		query.stub();
 		const store = new MobileLayoutStore(window);

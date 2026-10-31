@@ -6,11 +6,13 @@
 // the outbox lays its waiting actions over it (`apply`, `checkRow`) and marks tickets and entries
 // (`markOf`).
 //
-// - It works only while the server reports `offline_ops` and the phone frame applies (switch
-//   "Handy-Ansicht (Vorschau)" on and a narrow window, `setFrame`). Otherwise every change goes the
-//   way of today, without identifier, time limit or notice. Actions kept in the frame are still sent
-//   and shown when the frame no longer applies (the phone turned), so nothing hangs; outside of the
-//   frame a change of a ticket goes through the outbox only behind one that waits to be sent.
+// - It works only while the server reports `offline_ops`, the phone frame applies ("Handy-Ansicht"
+//   on "Automatisch" and a narrow window, `setFrame`) and, since the package "Einschalten", this
+//   device answered "Ja, merken" (`setConsent`, ADR-0074 addendum "Zustimmung je Gerät"). Otherwise
+//   every change goes the way of today, without identifier, time limit or notice, and the storage of
+//   the device is never created. Actions kept before are still sent and shown when the frame no longer
+//   applies (the phone turned) or the device said "Nein" since, so nothing hangs; outside of that a
+//   change of a ticket goes through the outbox only behind one that waits to be sent.
 // - A change with a connection is sent at once, with its identifier only (the result and the
 //   messages stay the ones of today); only when the answer does not come (no connection, 12 s
 //   limit) it stays in the outbox, and the store gets the value as a provisional answer. An action
@@ -536,6 +538,9 @@ function withTicketKey(
 	);
 }
 
+/** Where the question about `offline_ops` stands (OutboxStore.supportCheck). */
+export type SupportCheck = 'pending' | 'failed' | 'answered';
+
 export class OutboxStore {
 	readonly #storage: OutboxStorage | null;
 	readonly #deps: OutboxDeps;
@@ -547,7 +552,11 @@ export class OutboxStore {
 
 	#user = $state<string | null>(null);
 	#support = $state.raw<OfflineOps | null>(null);
+	/** Whether the server answered about `offline_ops` (round 2 of "Einschalten", E-2). */
+	#supportCheck = $state<SupportCheck>('pending');
 	#frame = $state(false);
+	/** This device answered "Ja, merken" (package "Einschalten"); without it nothing new is kept. */
+	#consent = $state(false);
 	#actions = $state.raw<readonly KeptAction[]>([]);
 	#loaded = $state(false);
 	#watching = $state(false);
@@ -692,12 +701,18 @@ export class OutboxStore {
 		return true;
 	}
 
+	/** The outbox may keep new changes: the phone frame applies and this device said "Ja, merken". */
+	get #keeps(): boolean {
+		return this.#frame && this.#consent;
+	}
+
 	/**
-	 * New changes go through the outbox: it can send, the device storage is read and the phone frame
-	 * applies. A storage that fails keeps it off, so every change goes the way of today.
+	 * New changes go through the outbox: it can send, the device storage is read, the phone frame
+	 * applies and the device agreed. A storage that fails keeps it off, so every change goes the way of
+	 * today.
 	 */
 	get armed(): boolean {
-		return this.#canSend && this.#loaded && this.#frame;
+		return this.#canSend && this.#loaded && this.#keeps;
 	}
 
 	/** The outbox watches the connection: armed, or actions of the account wait on the device. */
@@ -713,6 +728,20 @@ export class OutboxStore {
 	/** The server reports the outbox for the change of the status (`offline_ops`). */
 	get supported(): boolean {
 		return supportsKind(this.#support, 'ticket.update');
+	}
+
+	/**
+	 * Where the question about `offline_ops` stands: "pending" before its first answer, "failed" when
+	 * it failed (e.g. without a connection), "answered" once the server said it, with or without the
+	 * capability. "Darstellung" tells "unknown" from "the server cannot" by it (round 2, E-2).
+	 */
+	get supportCheck(): SupportCheck {
+		return this.#supportCheck;
+	}
+
+	/** The browser offers the storage of the device (IndexedDB); without it nothing can be kept (E-5). */
+	get canStore(): boolean {
+		return this.#storage !== null;
 	}
 
 	/** The connection is missing (only while the outbox watches; otherwise false). */
@@ -1200,15 +1229,28 @@ export class OutboxStore {
 
 	// ----- wiring -----
 
-	/** The answer of the server about `offline_ops` (null without it). */
-	setSupport(ops: OfflineOps | null): void {
+	/**
+	 * The answer of the server about `offline_ops` (null without it); `answered` false when the question
+	 * failed, so the capability is unknown rather than missing (round 2, E-2).
+	 */
+	setSupport(ops: OfflineOps | null, answered = true): void {
 		this.#support = ops;
+		this.#supportCheck = answered ? 'answered' : 'failed';
 		this.#update();
 	}
 
 	/** Whether the phone frame applies now (MobileLayoutStore.active). */
 	setFrame(active: boolean): void {
 		this.#frame = active;
+		this.#update();
+	}
+
+	/**
+	 * Whether this device answered "Ja, merken" (OfflineConsentStore, package "Einschalten"); false
+	 * until it did, also after "Nein". Changes kept before are sent either way.
+	 */
+	setConsent(agreed: boolean): void {
+		this.#consent = agreed;
 		this.#update();
 	}
 
@@ -1266,7 +1308,7 @@ export class OutboxStore {
 	#update(): void {
 		if (this.#sink === null) return;
 		if (this.#canSend && !this.#loaded) void this.#load();
-		const watch = this.#canSend && this.#loaded && (this.#frame || this.#actions.length > 0);
+		const watch = this.#canSend && this.#loaded && (this.#keeps || this.#actions.length > 0);
 		if (watch && this.#stopWatching === null) this.#watch();
 		else if (!watch && this.#stopWatching !== null) {
 			this.#halt();
@@ -1279,7 +1321,10 @@ export class OutboxStore {
 		}
 	}
 
-	/** Reads the device once per account, in the frame always, else only when it has the storage. */
+	/**
+	 * Reads the device once per account: in the frame after "Ja, merken" always, else only when it has
+	 * the storage, so it is never created before the device agreed.
+	 */
 	async #load(): Promise<void> {
 		const user = this.#user;
 		const storage = this.#storage;
@@ -1287,10 +1332,17 @@ export class OutboxStore {
 		this.#loadingFor = user;
 		const exists = this.#deps.exists;
 		const run = withIntent(OFFLINE_INTENTS.read, async () => {
-			// A browser that cannot say whether it has the storage counts as one without it.
-			if (!this.#frame && exists !== undefined && !(await exists().catch(() => false))) {
-				this.#loadingFor = null;
-				return;
+			// A browser that cannot say whether it has the storage counts as one without it. The answer
+			// "Ja, merken" (or the frame) may come while the browser answers: then the device is read.
+			if (!this.#keeps && exists !== undefined) {
+				const there = await exists().catch(() => false);
+				// Another account signed in meanwhile (round 2 of "Einschalten", E-8): its own reading
+				// runs; this one ends without touching the device, which would delete its changes.
+				if (this.#user !== user) return;
+				if (!there && !this.#keeps) {
+					this.#loadingFor = null;
+					return;
+				}
 			}
 			await this.#read(storage, user, true);
 			if (this.#user !== user) return;
@@ -1316,6 +1368,9 @@ export class OutboxStore {
 	 */
 	async #read(storage: OutboxStorage, user: string, start: boolean): Promise<void> {
 		const raw = await storage.list();
+		// Another account signed in while the device answered (E-8): it reads the device itself, and
+		// this reading deletes nothing, least of all the changes of that account.
+		if (this.#user !== user) return;
 		const mine: KeptAction[] = [];
 		const gone: string[] = [];
 		for (const entry of raw) {

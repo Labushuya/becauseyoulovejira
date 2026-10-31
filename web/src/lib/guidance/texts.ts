@@ -29,11 +29,12 @@ export const CONTEXT_TEXTS = {
 	loading: 'Wird geladen …',
 	/**
 	 * A page of the administrator in the phone frame at the machine of the app (MO-7c2, concept MO-0
-	 * §3.4): the pages are not made for the phone, the hint says how they come back.
+	 * §3.4): the pages are not made for the phone, the hint says how they come back (since the package
+	 * "Einschalten" with the choice "Handy-Ansicht: Aus" instead of the switch "(Vorschau)").
 	 */
 	frameOnlyTitle: 'In der Handy-Ansicht nicht angepasst',
 	frameOnly:
-		'Diese Seite der Verwaltung ist für die Handy-Ansicht nicht angepasst. In einem breiteren Fenster oder mit ausgeschalteter „Handy-Ansicht (Vorschau)“ unter „Darstellung“ erscheint sie wie gewohnt.'
+		'Diese Seite der Verwaltung ist für die Handy-Ansicht nicht angepasst. In einem breiteren Fenster oder mit „Handy-Ansicht: Aus“ unter „Darstellung“ erscheint sie wie gewohnt.'
 } as const;
 
 /** The hint for the administrator on another device, with the address of the app on its machine. */

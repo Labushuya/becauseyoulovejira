@@ -153,6 +153,8 @@ async function outboxWith(actions: KeptAction[], notices: unknown[] = []) {
 		version: 1,
 		kinds: ['ticket.update', 'ticket.create', 'inbox.create', 'comment.create']
 	});
+	// Since the package "Einschalten" the device has to agree as well.
+	outbox.setConsent(true);
 	outbox.setFrame(true);
 	outbox.connect({
 		upsert: vi.fn(),

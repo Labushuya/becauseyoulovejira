@@ -101,7 +101,7 @@
 	// (a group of rows per project with its path as heading, "Ohne Zielprojekt" last) and the column
 	// "Zielprojekt" in the menu "Spalten", off by default and the first to give way (ADR-0030). All
 	// three wait until the server knows the field (`store.targetsReady`).
-	// Phone frame (MO-6, ADR-0073 addendum MO-6): with the switch "Handy-Ansicht (Vorschau)" on and
+	// Phone frame (MO-6, ADR-0073 addendum MO-6): with the choice "Handy-Ansicht: Automatisch" and
 	// below 40rem the same component shows cards instead of the table, from the same store, groups,
 	// menus and links. A card holds the title (up to three lines, the link to the entry), the hint on a
 	// possible duplicate, a muted line with kind, source with its connection, the date the list is

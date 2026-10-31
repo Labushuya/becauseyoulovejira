@@ -1,6 +1,6 @@
 // Smoke test of the phone frame (MO-1a, ADR-0073; manifest BYL-E6-1907 ff.) in the installed Chrome
-// against the disposable instance of the global setup. On a phone (390 × 844, touch) with the switch
-// "Handy-Ansicht (Vorschau)" on: the bottom bar at the bottom with targets of at least 44 px, no
+// against the disposable instance of the global setup. On a phone (390 × 844, touch) with the phone
+// view on: the bottom bar at the bottom with targets of at least 44 px, no
 // horizontal scrolling, "Mehr" as a sheet with every other view and the pages "nur am PC", the start
 // at the day plan. With the switch off the view of today; on a PC no element of the frame.
 // Since MO-1b (manifest BYL-E6-1950 ff.) on a small phone (360 × 800): a dialog, a menu and a picker
@@ -60,6 +60,12 @@
 // account without sideways scrolling and with targets of 44 px, a page of the administrator only with
 // its hint), each at 360 and 412 px; in the case of the conflict without a connection "Fälligkeit
 // verschieben …" locked with its reason.
+// Since the package "Einschalten" (manifest BYL-E6-2260 ff.) "Handy-Ansicht: Automatisch / Aus" with
+// "Automatisch" by default instead of the switch "Handy-Ansicht (Vorschau)": the case of the start
+// stores nothing before, answers the question of the first start with "Ja, merken" (a sheet with the
+// focus on "Nein", no database of the outbox before the answer) and sees it no more in a new document;
+// `switchOn` stores only the answer "yes" ahead; the case of the phone with the view of today stores
+// "off" and chooses "Automatisch"; the PC stores nothing and gets no question and no database.
 //
 // The phone stands for another device in the home network (header X-Byl-Test-Remote-Address of the
 // test hooks, only in instances of the harness), so the pages of the administrator are "nur am PC".
@@ -91,9 +97,30 @@ const TARGET_MIN_PX = TARGET_PX - 0.01;
 const VIEWPORT_BASE = 'width=device-width, initial-scale=1';
 const VIEWPORT_PHONE = `${VIEWPORT_BASE}, viewport-fit=cover, interactive-widget=resizes-content`;
 
-/** The switch of this device before the first page, as the page "Darstellung" stores it. */
+/** The question at the first start of the phone view (package "Einschalten"). */
+const CONSENT_QUESTION = 'Änderungen ohne Verbindung auf diesem Gerät merken?';
+
+/**
+ * The phone view of this device before the first page (package "Einschalten"): "Automatisch" is the
+ * default and needs no stored value; the answer "Ja, merken" is stored ahead, as "Darstellung" stores
+ * it, so the question of the first start does not stand in front of the case. The case of the start
+ * answers the question itself.
+ */
 async function switchOn(page) {
-	await page.addInitScript(() => localStorage.setItem('byl-mobile-layout', 'on'));
+	await page.addInitScript(() => localStorage.setItem('byl-offline-consent', 'yes'));
+}
+
+/** "Handy-Ansicht: Aus" before the first page, as "Darstellung" stores it, with the answer ahead. */
+async function switchOff(page) {
+	await page.addInitScript(() => {
+		localStorage.setItem('byl-mobile-layout', 'off');
+		localStorage.setItem('byl-offline-consent', 'yes');
+	});
+}
+
+/** Whether the browser has the database of the outbox (created only after "Ja, merken"). */
+function hasOutboxDatabase(page) {
+	return page.evaluate(async () => (await indexedDB.databases()).some((database) => database.name === 'byl-offline'));
 }
 
 /** Signs in on the login page that is open; the app then opens its start page. */
@@ -455,14 +482,15 @@ async function seedLists() {
 	return { project: projectName, sub: subName, rule: ruleTitle, trashed, trashCount: items.length, done, dated };
 }
 
-test.describe('phone with the switch on', () => {
+test.describe('phone with the default "Automatisch"', () => {
 	test.use({ ...PHONE, extraHTTPHeaders: ANOTHER_DEVICE });
 
 	// MO-7a: the start and "Mehr" in one case (before two, each with its own sign-in). MO-7b: the views
-	// under "Mehr" with lists ("Projekte", "Wiederholungen", "Papierkorb") in the same case.
+	// under "Mehr" with lists ("Projekte", "Wiederholungen", "Papierkorb") in the same case. Package
+	// "Einschalten": nothing stored before, so the phone view comes by default and asks once whether the
+	// device keeps changes without a connection; "Ja, merken" here, "Nein" in the component tests.
 	test('starts at the day plan with the bottom bar at the bottom, opens "Mehr" as a sheet with every other view and the pages "nur am PC", shows projects, rules and the trash as cards with their pages and the bar of the selection, and keeps "Aufgaben" a tap away', async ({ page }) => {
 		const lists = await seedLists();
-		await switchOn(page);
 		const { url } = mobileInstance();
 		const large = { width: 412, height: 915 };
 		// MO-7c1: the login page on a small and a large phone before the sign-in, without sideways
@@ -483,6 +511,20 @@ test.describe('phone with the switch on', () => {
 		await submitLogin(page);
 		await expect(page).toHaveURL(`${url}/tagesplan`);
 		await expect(viewHeading(page, 'Tagesplan')).toBeAttached();
+
+		// Package "Einschalten": the question of the first start, a sheet with the announcement, the focus
+		// on "Nein", both answers of 44 px; before the answer the browser has no database of the outbox.
+		const question = page.getByRole('dialog', { name: CONSENT_QUESTION });
+		await expectSheet(question.locator('.frame'), PHONE.viewport);
+		await expect(question).toContainText('Die Handy-Ansicht ist jetzt eingeschaltet');
+		await expect(question.getByRole('button', { name: 'Nein' })).toBeFocused();
+		await expectTarget(question.getByRole('button', { name: 'Nein' }));
+		await expectTarget(question.getByRole('button', { name: 'Ja, merken' }));
+		expect(await hasOutboxDatabase(page)).toBe(false);
+		await question.getByRole('button', { name: 'Ja, merken' }).tap();
+		await expect(question).toHaveCount(0);
+		expect(await page.evaluate(() => localStorage.getItem('byl-offline-consent'))).toBe('yes');
+		await expect.poll(() => hasOutboxDatabase(page)).toBe(true);
 
 		const bar = page.getByRole('navigation', { name: 'Hauptnavigation' });
 		await expect(bar).toBeVisible();
@@ -746,6 +788,11 @@ test.describe('phone with the switch on', () => {
 			expect(await scrollsSideways(page), heading).toBe(false);
 			expect(await smallTargets(page.locator('.settings')), heading).toEqual([]);
 			if (heading === 'Sicherheit') await expect(page.locator('.settings .page')).toContainText('Nur direkt am PC verfügbar');
+			// Package "Einschalten": "Automatisch" by default, and the answer of the start as the switch.
+			if (heading === 'Darstellung') {
+				await expect(page.getByRole('radio', { name: 'Automatisch' })).toBeChecked();
+				await expect(page.getByRole('switch', { name: 'Ohne Verbindung merken (dieses Gerät)' })).toBeChecked();
+			}
 		}
 		await expect(page.getByLabel('Name', { exact: true })).toHaveAttribute('enterkeyhint', 'done');
 		await expect(page.getByLabel('Name', { exact: true })).toHaveAttribute('autocapitalize', 'words');
@@ -805,9 +852,16 @@ test.describe('phone with the switch on', () => {
 			expect(await smallTargets(missing)).toEqual([]);
 			await expectUncovered(missing.getByRole('link', { name: 'Zur Übersicht' }), size);
 		}
+		// The app in a new document (from the error page): the server answered, and the question of the
+		// first start does not come again.
+		const asked = page.waitForResponse((response) => response.url().endsWith('/api/byl/tickets/create') && response.request().method() === 'GET');
 		await missing.getByRole('link', { name: 'Zur Übersicht' }).tap();
 		await expect(bar).toBeVisible();
 		await expect(viewHeading(page, 'Aufgaben')).toBeAttached();
+		await asked;
+		await bar.getByRole('button', { name: 'Erfassen' }).tap();
+		await expect(page.getByRole('dialog', { name: 'Schnellerfassung' })).toBeVisible();
+		await expect(page.getByRole('dialog', { name: CONSENT_QUESTION })).toHaveCount(0);
 	});
 });
 
@@ -1829,8 +1883,10 @@ test.describe('phone with the switch off', () => {
 	test.use({ ...PHONE, extraHTTPHeaders: ANOTHER_DEVICE });
 
 	// MO-7a: the view of today and the overlays of today (MO-1b, before a case of its own on a small
-	// phone) in one case; the overlays on the small phone, the switch again on the phone.
+	// phone) in one case; the overlays on the small phone, the switch again on the phone. Package
+	// "Einschalten": "Aus" is stored ("off"), since "Automatisch" is the default.
 	test('shows the view of today with the switch reachable, a dialog in the middle and a picker at its button, without "Schließen"', async ({ page }) => {
+		await switchOff(page);
 		const url = await openSignedIn(page, '/');
 		await expect(page).toHaveURL(`${url}/`);
 		await expect(viewHeading(page, 'Aufgaben')).toBeVisible();
@@ -1866,25 +1922,29 @@ test.describe('phone with the switch off', () => {
 		await expect(picker).toBeHidden();
 		await page.setViewportSize(PHONE.viewport);
 
-		// The gear of the header, then "Darstellung": the switch turns the frame on at once.
+		// The gear of the header, then "Darstellung": "Automatisch" turns the frame on at once (package
+		// "Einschalten": a choice of two instead of the switch "Handy-Ansicht (Vorschau)").
 		await page.getByRole('banner').getByRole('link', { name: 'Einstellungen' }).click();
 		await page.getByRole('navigation', { name: 'Einstellungen' }).getByRole('link', { name: 'Darstellung' }).click();
-		const control = page.getByRole('switch', { name: 'Handy-Ansicht (Vorschau)' });
+		await expect(page.getByRole('radio', { name: 'Aus' })).toBeChecked();
+		const control = page.getByRole('radio', { name: 'Automatisch' });
 		await expect(control).not.toBeChecked();
 		await control.check();
 		await expect(page.getByRole('navigation', { name: 'Hauptnavigation' })).toBeVisible();
 		expect(await viewportContent(page)).toBe(VIEWPORT_PHONE);
+		expect(await page.evaluate(() => localStorage.getItem('byl-mobile-layout'))).toBeNull();
 	});
 });
 
-test.describe('PC with the switch on', () => {
+test.describe('PC with the default "Automatisch"', () => {
 	test.use(DESKTOP);
 
 	// MO-7a: the start, "Aufgaben", the quick entry and the side panel of the PC in one case (before
-	// four, each with its own sign-in); the day plan and the inbox in the next.
+	// four, each with its own sign-in); the day plan and the inbox in the next. Package "Einschalten":
+	// nothing stored, as on every PC after the update; no question and no database of the outbox.
 	test('shows no element of the phone frame and keeps "Aufgaben", its table, the quick entry and the side panel of the PC (MO-1a, MO-3, MO-4, MO-5)', async ({ page }) => {
 		const [open, cellar] = await seed([{ title: 'Garage aufräumen' }, { title: 'Keller entrümpeln' }]);
-		await switchOn(page);
+		const asked = page.waitForResponse((response) => response.url().endsWith('/api/byl/tickets/create') && response.request().method() === 'GET');
 		const url = await openSignedIn(page, '/');
 		await expect(page).toHaveURL(`${url}/`);
 		await expect(viewHeading(page, 'Aufgaben')).toBeVisible();
@@ -1952,12 +2012,18 @@ test.describe('PC with the switch on', () => {
 		expect(priority.x).toBeGreaterThan(label.x + label.width);
 		await expect(panel.getByLabel('Status')).toBeVisible();
 		expect(await scrollsSideways(page)).toBe(false);
+
+		// Package "Einschalten": the server answered long ago; on the PC no question of the phone view,
+		// and the outbox created nothing in the browser.
+		await asked;
+		await expect(page.getByRole('dialog', { name: CONSENT_QUESTION })).toHaveCount(0);
+		expect(await hasOutboxDatabase(page)).toBe(false);
+		expect(await page.evaluate(() => localStorage.getItem('byl-offline-consent'))).toBeNull();
 	});
 
 	// MO-7a: the day plan (MO-2) and the inbox (MO-6) of the PC in one case (before two).
 	test('keeps the day plan and the inbox of the PC: arrows and handle, suggestions before the plan, the pool beside it; table, chips, bulk actions and the panel with ×; projects, rules and the trash as tables (MO-2, MO-6, MO-7b)', async ({ page }) => {
 		const [[planned], { mail }] = await Promise.all([seed([{ title: 'Rechnung bezahlen', planned: true }]), seedInbox(), seedLists()]);
-		await switchOn(page);
 		await openSignedIn(page, '/');
 		await expect(viewHeading(page, 'Aufgaben')).toBeVisible();
 		await page.getByRole('navigation', { name: 'Ansicht' }).getByRole('link', { name: 'Tagesplan' }).click();
