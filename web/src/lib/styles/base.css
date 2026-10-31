@@ -714,12 +714,13 @@ a.button-subtle {
 }
 
 /*
- * Phone frame (MO-1b, ADR-0073 addendum): with the switch "Handy-Ansicht (Vorschau)" on and below
- * the one breakpoint, every shared target has at least 44 px, whatever the pointer: buttons with
- * text, icon buttons (also the ×, the menus "•••" and the actions of list rows), segments, the
- * labels of checkboxes and radios (chips too) and fields, which keep 16 px against the zoom of the
- * browser. Not inside the cells of the tables: their columns still count with the sizes of the PC
- * (ADR-0030), until the views show cards instead (MO-3 ff.). Off, or from 40rem, nothing changes.
+ * Phone frame (MO-1b, ADR-0073 addendum): with the choice "Handy-Ansicht: Automatisch" (the default
+ * since "Einschalten") and below the one breakpoint, every shared target has at least 44 px, whatever
+ * the pointer: buttons with text, icon buttons (also the ×, the menus "•••" and the actions of list
+ * rows), segments, the labels of checkboxes and radios (chips too) and fields, which keep 16 px
+ * against the zoom of the browser. Not inside the cells of the tables: their columns still count with
+ * the sizes of the PC (ADR-0030), until the views show cards instead (MO-3 ff.). With "Aus", or from
+ * 40rem, nothing changes.
  */
 @media (max-width: 39.99rem) {
 	/* Specificity 0 like the rule of touch screens, so components still place a field. */

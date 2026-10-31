@@ -47,7 +47,7 @@
 	// open rows render their list. The focus stays on the button (APG "Disclosure"); the list follows
 	// it in the reading order. The color of a project (ADR-0052: its own, else of its parent) is a dot
 	// before the name, named for screen readers after it.
-	// Phone frame (MO-7b, ADR-0073 addendum MO-7b): with the switch "Handy-Ansicht (Vorschau)" on and
+	// Phone frame (MO-7b, ADR-0073 addendum MO-7b): with the choice "Handy-Ansicht: Automatisch" and
 	// below 40rem the same component shows cards instead of the table, like the inbox (MO-6): the name
 	// with its colour (up to three lines, the link to the project), a muted line with the code, the
 	// numbers ("inkl. Unterprojekte" for a parent) and "Archiviert", "•••" with the menu of the row. A

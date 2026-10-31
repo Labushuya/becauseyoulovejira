@@ -140,7 +140,7 @@
 	// like a group, kept on this device. Every row has the pin toggle at the end of its title.
 	// Ongoing projects (VH-1, ADR-0065 addendum VH-1): the check mark and "Erledigt" of the status cell
 	// ask "Vorhaben abschließen?" first, the question of the day plan; "Abbrechen" changes nothing.
-	// Phone frame (MO-3, ADR-0073 addendum MO-3): with the switch "Handy-Ansicht (Vorschau)" on and
+	// Phone frame (MO-3, ADR-0073 addendum MO-3): with the choice "Handy-Ansicht: Automatisch" and
 	// below 40rem the same component shows cards (TicketCard) instead of the table, from the same
 	// store, sections, groups and links: "Angeheftet", the groups with their heads and the indented
 	// sub-tasks stay. The bar of the view is one row with the search (`search`), "Filter (n)" and a

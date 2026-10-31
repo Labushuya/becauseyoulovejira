@@ -45,7 +45,7 @@
 	// this order; title, state and action stay, and the caption then names the panel, where the
 	// rest stands. The title takes at most two lines; the view shares the column state with its
 	// menu "Spalten".
-	// Phone frame (MO-7b, ADR-0073 addendum MO-7b): with the switch "Handy-Ansicht (Vorschau)" on and
+	// Phone frame (MO-7b, ADR-0073 addendum MO-7b): with the choice "Handy-Ansicht: Automatisch" and
 	// below 40rem the same component shows cards instead of the table, like the inbox (MO-6): the title
 	// with its charm (up to three lines, the link to the rule), a muted line with the state, the
 	// rhythm, the next ticket, the keys of the open tickets (links in the line) and the project, "•••"

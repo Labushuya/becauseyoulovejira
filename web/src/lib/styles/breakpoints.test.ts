@@ -1,8 +1,8 @@
 // Breakpoints (MO-1a, ADR-0073 §1): one breakpoint for the phone layout, PHONE_QUERY, and a closed
 // list of the widths every media query of the styles may use, so a new width needs a decision
 // instead of creeping in (no container queries, ADR-0030). The phone rules of the CSS stand only
-// below that one breakpoint and only with the switch "Handy-Ansicht (Vorschau)" on, so from 40rem
-// and with the switch off nothing changes; in scripts the widths come only from their constants.
+// below that one breakpoint and only with the choice "Handy-Ansicht: Automatisch", so from 40rem
+// and with "Aus" nothing changes; in scripts the widths come only from their constants.
 
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';

@@ -40,7 +40,7 @@
 	// way in this order. A ticket with dependencies (ADR-0047) shows "Blockiert (N)" next to its
 	// status, waits for a decision instead of the retention, and its menu leads to the decision
 	// help of the preview instead of "Endgültig löschen …".
-	// Phone frame (MO-7b, ADR-0073 addendum MO-7b): with the switch "Handy-Ansicht (Vorschau)" on and
+	// Phone frame (MO-7b, ADR-0073 addendum MO-7b): with the choice "Handy-Ansicht: Automatisch" and
 	// below 40rem the same component shows cards instead of the table, like the inbox (MO-6): the title
 	// (up to three lines, the link to the preview), a muted line with key, status, "Blockiert (N)",
 	// project, date, person, the days and the sub-tasks, "Wiederherstellen" with 44 px and "•••" with
