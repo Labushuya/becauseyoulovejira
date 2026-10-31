@@ -199,6 +199,32 @@ describe('requests and answers carry no value (S1)', () => {
 	});
 });
 
+describe('the value never passes a module of PowerShell (S3)', () => {
+	// Module logging records the parameter binding of the commands of a module only; the value
+	// passes functions of byl-control.ps1 and of the dot-sourced byl-functions.ps1.
+	const code = (text) =>
+		text
+			.split(/\r?\n/)
+			.filter((line) => !/^\s*#/.test(line))
+			.join('\n');
+
+	it('keeps the functions that see a value in the script and its dot-sourced functions, never in a module', () => {
+		const control = read(join(ROOT_DIR, 'app', 'byl-control.ps1'));
+		const functions = read(join(ROOT_DIR, 'app', 'byl-functions.ps1'));
+		for (const name of ['Read-CredentialRequest', 'Get-CredentialField', 'Invoke-CredentialChange', 'Set-BylAccountVariable']) {
+			expect(control, name).toMatch(new RegExp(`^function ${name} \\{`, 'm'));
+		}
+		for (const name of ['Test-BylCredentialName', 'Test-BylCredentialValue']) {
+			expect(functions, name).toMatch(new RegExp(`^function ${name} \\{`, 'm'));
+		}
+		expect(control).toMatch(/^\. \(\[System\.IO\.Path\]::Combine\(\$PSScriptRoot, 'byl-functions\.ps1'\)\)\r?$/m);
+		for (const text of [control, functions]) {
+			expect(code(text)).not.toMatch(/\b(?:Import-Module|New-Module|Export-ModuleMember)\b|\.psm1\b/i);
+		}
+		expect(files('app', (name) => name.toLowerCase().endsWith('.psm1'), false)).toEqual([]);
+	});
+});
+
 describe('names of a connection (V7, connection-rules.validVariableNames)', () => {
 	it('names the secret and the allowlist of Telegram, each valid name once', () => {
 		expect(connectionRules.validVariableNames('telegram', 'BYL_BOT', { allowed_env: 'BYL_IDS' }, secrets)).toEqual(['BYL_BOT', 'BYL_IDS']);

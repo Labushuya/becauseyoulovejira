@@ -2133,6 +2133,10 @@ $BylBlockedCredentialNames = @(
 )
 $BylBlockedCredentialPrefixes = @('BYL_TEST_')
 $BylCredentialValueMax = 4096
+# A character outside the white space of JavaScript's \s (tab, VT, FF, every space separator, LF,
+# CR, U+2028, U+2029 and U+FEFF), the class credential-rules.js trims with. IsNullOrWhiteSpace of
+# .NET differs: it counts U+0085 and not U+FEFF.
+$BylCredentialNotSpace = '[^\t\n\v\f\r \u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF]'
 
 function Test-BylCredentialName {
     # Why the variable $Name may not be set or removed from the app: 'name' (not the pattern of
@@ -2155,7 +2159,7 @@ function Test-BylCredentialValue {
     param([AllowNull()][object]$Value)
 
     if ($Value -isnot [string]) { return 'invalid' }
-    if ([string]::IsNullOrWhiteSpace($Value)) { return 'empty' }
+    if (-not [regex]::IsMatch($Value, $BylCredentialNotSpace)) { return 'empty' }
     if ([regex]::IsMatch($Value, '[\x00-\x1F\x7F-\x9F]')) { return 'control' }
     if ($Value.Length -gt $BylCredentialValueMax) { return 'long' }
     return $null

@@ -40,6 +40,25 @@ function read(name, getenv) {
   return text(getenv(name)).replace(/^\s+|\s+$/g, '');
 }
 
+/**
+ * `values` for redact, each followed by its trimmed variant where that differs and is long enough
+ * to be replaced: Windows keeps a value with the spaces at its ends, but the channels read it
+ * trimmed (read), so their lines hold it without them.
+ */
+function withTrimmed(values) {
+  var list = [];
+  var given = values || [];
+  for (var i = 0; i < given.length; i++) {
+    var value = text(given[i]);
+    var trimmed = value.replace(/^\s+|\s+$/g, '');
+    list.push(value);
+    if (trimmed !== value && trimmed.length >= MIN_SECRET_LENGTH) {
+      list.push(trimmed);
+    }
+  }
+  return list;
+}
+
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\\/]/g, '\\$&');
 }
@@ -80,5 +99,6 @@ module.exports = {
   NAME: NAME,
   isValidName: isValidName,
   read: read,
-  redact: redact
+  redact: redact,
+  withTrimmed: withTrimmed
 };

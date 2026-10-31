@@ -21,7 +21,7 @@ describe('web/src/lib/domain/credentials.ts mirrors app/pb_hooks/lib/credential-
 	});
 
 	it('refuses the same values', () => {
-		const samples = ['x', ' x ', '', '   ', '\t', 'a\u0000b', 'a\nb', 'a\u007f', 'a\u0085', 'a b', 'ä€🔑', 'a'.repeat(4096), 'a'.repeat(4097)];
+		const samples = ['x', ' x ', '', '   ', '\t', 'a\u0000b', 'a\nb', 'a\u007f', 'a\u0085', 'a\u00A0b', 'ä€🔑', 'a'.repeat(4096), 'a'.repeat(4097), '\uFEFF', '\u3000\u00A0\u2028', '\u0085', 'x\uFEFF'];
 		for (const value of samples) {
 			expect(credentialValueProblem(value) ?? '', JSON.stringify(value).slice(0, 20)).toBe(rules.valueProblem(value));
 		}

@@ -3094,10 +3094,12 @@ function Read-CredentialRequest {
 }
 
 function Get-CredentialField {
-    # The field $Name of the request, $null without it.
+    # The field $Name of the request as it came, $null without it. An array stays an array, also
+    # with one element (the comma keeps PowerShell from unrolling it): `names` needs it, and `name`
+    # or `value` as ['x'] must be refused, not taken as the text x.
     param([Parameter(Mandatory = $true)][System.Collections.IDictionary]$Request, [Parameter(Mandatory = $true)][string]$Name)
 
-    if ($Request.ContainsKey($Name)) { return $Request[$Name] }
+    if ($Request.ContainsKey($Name)) { return , $Request[$Name] }
     return $null
 }
 
@@ -3148,6 +3150,12 @@ function Invoke-CredentialChange {
         $problem = Test-BylCredentialName -Name $name
         if ($null -ne $problem) { return Write-CredentialProblem -Problem $problem -Name $name }
         if (-not $Remove) {
+            # The value passes through the parameter binding of functions of this script and of
+            # byl-functions.ps1 (dot-sourced) and through .NET, never through a cmdlet. Module logging
+            # of PowerShell records the binding of commands of a module only, and neither file is
+            # one: these functions must never move into a module (.psm1, Import-Module,
+            # New-Module), or the value would stand in the event log (S3, ADR-0075). Only an isolated
+            # test copy writes its file BYL_TEST_ACCOUNT_FILE with ConvertTo-Json (invented values).
             $value = Get-CredentialField -Request $request -Name 'value'
             $problem = Test-BylCredentialValue -Value $value
             if ($null -ne $problem) { return Write-CredentialProblem -Problem $problem -Name $name }

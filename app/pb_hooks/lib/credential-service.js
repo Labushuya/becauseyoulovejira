@@ -107,7 +107,8 @@ function status(e) {
 
 /**
  * POST /api/byl/credentials/set ({ name, value }) and /remove ({ name }): checks, request, the own
- * instance, no restart running; then the command, the mark for the restart and an audit entry.
+ * instance, no other command of the page System and no restart running; then the command, the mark
+ * for the restart and an audit entry.
  */
 function change(e, action) {
   var context = system.check(e, action, 'POST', { local: true, kind: 'credential' });
@@ -127,14 +128,29 @@ function change(e, action) {
   }
   var store = e.app.store();
   var now = Date.now();
-  // A restart that was started already reads the environment before this change would be there,
-  // and its end would take the mark along: the change waits until the server is back.
-  if (systemRules.restartPending(store.get(systemRules.RESTART_KEY), now)) {
+  // One command at a time, like the actions of the page System: a restart being started holds the
+  // claim until its mark RESTART_KEY stands, so the change cannot slip in between.
+  if (!system.claim(store, now)) {
     return system.refuse(e, action, 'busy', 0, AREA);
   }
   var name = input.name;
-  var answer = rules.scriptAnswer(runCommand(appDir, action, action === 'credential-set' ? { name: name, value: input.value } : { name: name }));
-  input = null;
+  var answer;
+  try {
+    // A restart that was started already reads the environment before this change would be there,
+    // and its end would take the mark along: the change waits until the server is back.
+    if (systemRules.restartPending(store.get(systemRules.RESTART_KEY), now)) {
+      return system.refuse(e, action, 'busy', 0, AREA);
+    }
+    answer = rules.scriptAnswer(runCommand(appDir, action, action === 'credential-set' ? { name: name, value: input.value } : { name: name }));
+    // Without a readable answer the variable may have changed all the same (the script wrote it and
+    // then failed): the mark stands then too, as after a change.
+    if (answer === null || answer.ok) {
+      store.set(rules.RESTART_NOTICE_KEY, now);
+    }
+  } finally {
+    input = null;
+    store.remove(systemRules.RUNNING_KEY);
+  }
   if (answer === null) {
     e.app.logger().info(AREA + ': Aktion ausgeführt', 'action', action, 'name', name, 'user', system.userOf(e), 'result', 'script');
     return system.refuse(e, action, 'script', 0, AREA);
@@ -143,7 +159,6 @@ function change(e, action) {
   if (!answer.ok) {
     return e.json(400, rules.problemView(answer.problem, name));
   }
-  store.set(rules.RESTART_NOTICE_KEY, now);
   return e.json(200, { name: name, set: action === 'credential-set', restartNeeded: true });
 }
 

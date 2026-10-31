@@ -196,7 +196,9 @@ describe.skipIf(!WINDOWS)('routes of the page System on a server under Windows: 
 	});
 
 	it('run nothing outside the whitelist', async () => {
-		for (const name of ['stop', 'start', 'reset-admin', 'port', 'reload', 'status', 'logs', 'constructor', '__proto__', 'restart%20-Force']) {
+		// The commands of the access data (BW-3, ADR-0075) run only through their own routes.
+		const credentials = ['credential-status', 'credential-set', 'credential-remove'];
+		for (const name of ['stop', 'start', 'reset-admin', 'port', 'reload', 'status', 'logs', 'constructor', '__proto__', 'restart%20-Force', ...credentials]) {
 			const answer = await app(windows, accounts.owner, 'POST', `/api/byl/system/actions/${name}`);
 			expect([answer.status, answer.body.reason], name).toEqual([404, 'unknown']);
 		}

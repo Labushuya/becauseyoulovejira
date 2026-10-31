@@ -231,7 +231,8 @@ function readStatus(e, appDir) {
 
 /**
  * Values of the variables the server knows by name, removed from every log line: the ingest token
- * and every variable a connection reads, the allowlist of Telegram included (BW-3, ADR-0075).
+ * and every variable a connection reads, the allowlist of Telegram included (BW-3, ADR-0075), each
+ * also without the spaces at its ends, as the channels read it.
  */
 function knownSecrets(app) {
   var values = [String($os.getenv(INGEST_TOKEN) || '')];
@@ -243,7 +244,7 @@ function knownSecrets(app) {
       values.push(String($os.getenv(names[j]) || ''));
     }
   }
-  return values;
+  return secrets.withTrimmed(values);
 }
 
 /** GET /api/byl/system, /doctor and /logs. */
@@ -347,8 +348,10 @@ module.exports = {
   isLocalRequest: isLocalRequest,
   isAdminRequest: isAdminRequest,
   // Shared with the page "Sicherung" (lib/backup-service.js, ADR-0046): the same checks, refusals,
-  // owner and commands of the control script.
+  // owner and commands of the control script; `claim` also with the access data (BW-3, ADR-0075),
+  // whose changes run one at a time with the actions here (released with RUNNING_KEY).
   check: check,
+  claim: claim,
   refuse: refuse,
   ownAppDir: ownAppDir,
   run: run,

@@ -51,6 +51,8 @@ const LOG_SECRET = `geheim-${randomBytes(9).toString('hex')}`;
 // BYL_TEST_ACCOUNT_FILE of this test, never into the variables of the account.
 const CREDENTIAL_MARKER = ` marker-${randomBytes(9).toString('hex')} `;
 const CALENDAR_VALUE = `https://example.com/kalender-${randomBytes(6).toString('hex')}/basic.ics`;
+// The allowlist of the bot of the tests (invented IDs), which the logs of the page System hide too.
+const ALLOWED_VALUE = `-100${randomBytes(4).readUInt32BE(0)}`;
 let CONTROL_ENV;
 
 let base;
@@ -246,7 +248,8 @@ beforeAll(async () => {
 		BYL_TEST_LOG_SECRET: LOG_SECRET,
 		// BW-3: what credential-set and credential-remove write "into the account" lands here only.
 		BYL_TEST_ACCOUNT_FILE: join(base, 'konto.json'),
-		BYL_GOOGLE_CALENDAR_URL: CALENDAR_VALUE
+		BYL_GOOGLE_CALENDAR_URL: CALENDAR_VALUE,
+		BYL_TELEGRAM_ALLOWED_IDS: ALLOWED_VALUE
 	};
 	expect(CONTROL_ENV.BYL_TEST_ISOLATED).toBe('1');
 	expect(CONTROL_ENV.BYL_TEST_ACCOUNT_FILE.toLowerCase().startsWith(base.toLowerCase())).toBe(true);
@@ -436,6 +439,50 @@ describe('page System on a disposable copy (ADR-0043)', CASE_TIMEOUT, () => {
 		expect(accountStartup()).toEqual(before);
 	});
 
+	it('names the state of the only variable of the only connection (BW-3, one name for credential-status)', async () => {
+		const created = await call('POST', '/api/collections/connections/records', {
+			token: owner.token,
+			body: { owner: owner.id, type: 'calendar', label: 'Kalender des Tests', enabled: false, secret_env: 'BYL_GOOGLE_CALENDAR_URL', settings: { keywords: ['todo'] } }
+		});
+		expect(created.status, JSON.stringify(created.body)).toBe(200);
+		// The script gets exactly one name: before BW-3's fix PowerShell made it a text and answered none.
+		const answer = await app('GET', '/api/byl/credentials');
+		expect(answer.status, JSON.stringify(answer.body)).toBe(200);
+		expect(answer.body).toEqual({
+			variables: [{ name: 'BYL_GOOGLE_CALENDAR_URL', set: true, blocked: false, channels: ['Kalender des Tests'] }],
+			restartNeeded: false
+		});
+		expect(JSON.stringify(answer.body)).not.toContain(CALENDAR_VALUE);
+	});
+
+	it('hides the allowlist of Telegram in the logs of the page System like every value of a channel (BW-3, V7)', async () => {
+		const created = await call('POST', '/api/collections/connections/records', {
+			token: owner.token,
+			body: {
+				owner: owner.id,
+				type: 'telegram',
+				label: 'Bot des Tests',
+				enabled: false,
+				secret_env: 'BYL_TELEGRAM_TOKEN',
+				settings: { allowed_env: 'BYL_TELEGRAM_ALLOWED_IDS', keywords: ['todo'] }
+			}
+		});
+		expect(created.status, JSON.stringify(created.body)).toBe(200);
+		// No mail helper runs yet, so nothing else holds or writes its log.
+		const file = join(copy.dir, 'logs', 'byl-mail.log');
+		const before = readFileSync(file, 'utf8');
+		try {
+			writeFileSync(file, `Nachricht aus Chat ${ALLOWED_VALUE} erlaubt\r\n`);
+			const answer = await app('GET', '/api/byl/system/logs');
+			expect(answer.status, JSON.stringify(answer.body)).toBe(200);
+			const mail = answer.body.logs.find((set) => set.name === 'mail').files.find((entry) => entry.file === 'byl-mail.log');
+			expect(mail.lines).toEqual(['Nachricht aus Chat *** erlaubt']);
+			expect(JSON.stringify(answer.body)).not.toContain(ALLOWED_VALUE);
+		} finally {
+			writeFileSync(file, before);
+		}
+	});
+
 	it('restarts the mail helper, and says why it does not run', async () => {
 		const none = await app('POST', '/api/byl/system/actions/mail-restart');
 		expect(none.status).toBe(200);
@@ -473,20 +520,7 @@ describe('page System on a disposable copy (ADR-0043)', CASE_TIMEOUT, () => {
 	});
 
 	it('names the state of the access data of the channels from the user environment, only as yes or no (BW-3)', async () => {
-		for (const body of [
-			{ owner: owner.id, type: 'calendar', label: 'Kalender des Tests', enabled: false, secret_env: 'BYL_GOOGLE_CALENDAR_URL', settings: { keywords: ['todo'] } },
-			{
-				owner: owner.id,
-				type: 'telegram',
-				label: 'Bot des Tests',
-				enabled: false,
-				secret_env: 'BYL_TELEGRAM_TOKEN',
-				settings: { allowed_env: 'BYL_TELEGRAM_ALLOWED_IDS', keywords: ['todo'] }
-			}
-		]) {
-			const created = await call('POST', '/api/collections/connections/records', { token: owner.token, body });
-			expect(created.status, JSON.stringify(created.body)).toBe(200);
-		}
+		// The calendar and the bot of the cases before are there already, the mailbox too.
 		const answer = await app('GET', '/api/byl/credentials?names=BYL_WEBDE_PASSWORD,BYL_FOREIGN');
 		expect(answer.status, JSON.stringify(answer.body)).toBe(200);
 		expect(answer.headers['cache-control']).toBe('no-store');
@@ -494,7 +528,7 @@ describe('page System on a disposable copy (ADR-0043)', CASE_TIMEOUT, () => {
 			variables: [
 				{ name: 'BYL_GOOGLE_CALENDAR_URL', set: true, blocked: false, channels: ['Kalender des Tests'] },
 				// The allowlist of Telegram counts as a variable of the channel (V7).
-				{ name: 'BYL_TELEGRAM_ALLOWED_IDS', set: false, blocked: false, channels: ['Bot des Tests'] },
+				{ name: 'BYL_TELEGRAM_ALLOWED_IDS', set: true, blocked: false, channels: ['Bot des Tests'] },
 				{ name: 'BYL_TELEGRAM_TOKEN', set: false, blocked: false, channels: ['Bot des Tests'] },
 				{ name: 'BYL_TEST_MAIL_PASSWORD_NOT_SET', set: null, blocked: true, channels: ['Postfach des Tests'] },
 				{ name: 'BYL_WEBDE_PASSWORD', set: false, blocked: false, channels: [] }
@@ -502,6 +536,7 @@ describe('page System on a disposable copy (ADR-0043)', CASE_TIMEOUT, () => {
 			restartNeeded: false
 		});
 		expect(JSON.stringify(answer.body)).not.toContain(CALENDAR_VALUE);
+		expect(JSON.stringify(answer.body)).not.toContain(ALLOWED_VALUE);
 		expect((await app('GET', '/api/byl/credentials/restart-notice')).body).toEqual({ needed: false });
 	});
 
@@ -565,7 +600,16 @@ describe('page System on a disposable copy (ADR-0043)', CASE_TIMEOUT, () => {
 		expect(JSON.parse(withControl.output.trim())).toMatchObject({ ok: false, problem: 'control', report: { code: 'credential-value' } });
 		const broken = controlWithInput('kein Objekt', 'credential-set', '-Json');
 		expect(JSON.parse(broken.output.trim())).toMatchObject({ ok: false, code: 'input-invalid' });
-		for (const result of [blocked, withControl, broken]) expect(result.output).not.toContain(CREDENTIAL_MARKER.trim());
+		// An array of one element stays an array: never taken as its text.
+		const valueArray = controlWithInput({ name: 'BYL_TELEGRAM_TOKEN', value: [CREDENTIAL_MARKER] }, 'credential-set', '-Json');
+		expect(valueArray.code).toBe(1);
+		expect(JSON.parse(valueArray.output.trim())).toMatchObject({ ok: false, problem: 'invalid', report: { code: 'credential-value' } });
+		const nameArray = controlWithInput({ name: ['BYL_X'], value: CREDENTIAL_MARKER }, 'credential-set', '-Json');
+		expect(nameArray.code).toBe(1);
+		expect(JSON.parse(nameArray.output.trim())).toMatchObject({ ok: false, problem: 'name', report: { code: 'credential-name' } });
+		const removeArray = controlWithInput({ name: ['BYL_TELEGRAM_TOKEN'] }, 'credential-remove', '-Json');
+		expect(JSON.parse(removeArray.output.trim())).toMatchObject({ ok: false, problem: 'name' });
+		for (const result of [blocked, withControl, broken, valueArray, nameArray, removeArray]) expect(result.output).not.toContain(CREDENTIAL_MARKER.trim());
 		expect(accountFile()).toEqual(before);
 
 		const status = controlWithInput({ names: ['BYL_GOOGLE_CALENDAR_URL', 'BYL_INGEST_TOKEN', 'PATH', 'BYL_WEBDE_PASSWORD'] }, 'credential-status', '-Json');
@@ -578,6 +622,12 @@ describe('page System on a disposable copy (ADR-0043)', CASE_TIMEOUT, () => {
 			]
 		});
 		expect(status.output).not.toContain(CALENDAR_VALUE);
+		// One name alone is a list of one, not a text; a text instead of a list names nothing.
+		const one = controlWithInput({ names: ['BYL_GOOGLE_CALENDAR_URL'] }, 'credential-status', '-Json');
+		expect(JSON.parse(one.output.trim())).toEqual({ ok: true, variables: [{ name: 'BYL_GOOGLE_CALENDAR_URL', set: true }] });
+		const text = controlWithInput({ names: 'BYL_GOOGLE_CALENDAR_URL' }, 'credential-status', '-Json');
+		expect(JSON.parse(text.output.trim())).toEqual({ ok: true, variables: [] });
+		for (const result of [one, text]) expect(result.output).not.toContain(CALENDAR_VALUE);
 	});
 
 	it('keeps every value of access data out of logs, outputs and answers (S3)', async () => {

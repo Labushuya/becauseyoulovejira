@@ -26,7 +26,26 @@ const NAMES = [
 	`BYL_${'A'.repeat(61)}`,
 	''
 ];
-const VALUES = [' geheim ', 'äöü € 🔑', 'a'.repeat(4096), '', '   ', 'a\nb', 'a\r\nb', '\tx', 'x\u0000', 'x\u007f', 'x\u0085', 'a'.repeat(4097)];
+// The white space of JavaScript's \s, U+FEFF included and U+0085 (a control character) not, as in
+// the hook.
+const VALUES = [
+	' geheim ',
+	'äöü € 🔑',
+	'a'.repeat(4096),
+	'',
+	'   ',
+	'a\nb',
+	'a\r\nb',
+	'\tx',
+	'x\u0000',
+	'x\u007f',
+	'x\u0085',
+	'a'.repeat(4097),
+	'\uFEFF',
+	'\u3000\u00A0\u2028',
+	'\u0085',
+	'x\uFEFF'
+];
 
 const SCRIPT = String.raw`
 . $env:BYL_FUNCTIONS
@@ -61,7 +80,24 @@ describe('credential-set checks again what the server checked (S4, S8)', () => {
 
 	it('refuses empty values, control characters and more than 4096 characters like the server, never trimmed', () => {
 		expect(result.values).toEqual(VALUES.map((value) => rules.valueProblem(value)));
-		expect(result.values).toEqual(['', '', '', 'empty', 'empty', 'control', 'control', 'control', 'control', 'control', 'control', 'long']);
+		expect(result.values).toEqual([
+			'',
+			'',
+			'',
+			'empty',
+			'empty',
+			'control',
+			'control',
+			'control',
+			'control',
+			'control',
+			'control',
+			'long',
+			'empty',
+			'empty',
+			'control',
+			''
+		]);
 		expect(result.nullValue).toBe('invalid');
 		expect(result.numberValue).toBe('invalid');
 	});
