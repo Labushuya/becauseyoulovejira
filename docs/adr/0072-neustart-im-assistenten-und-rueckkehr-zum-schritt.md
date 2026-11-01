@@ -98,3 +98,9 @@ Unter jedem „Jetzt neu starten“ bzw. „Mail-Helfer neu starten“ steht ein
 ## Nachtrag (2026-10-31, [ADR-0075](0075-zugangsdaten-im-browser.md), BW-3): „Variable setzen“ im Browser
 
 Die Grenze „Der Schritt „Variable setzen“ verlangt weiter `setx`“ ist aufgehoben: Die Schritte „Variable setzen“, „Token setzen“ (mit den erlaubten IDs) und „Chat freigeben“ setzen die Variable im Browser (`CredentialField`), auch den vorgeschlagenen Namen vor der Verbindung; danach fragt die Stelle „Jetzt neu starten“ / „Später“ über denselben `RestartStore` und merkt den Schritt wie bei einem Neustart aus dem Schritt. `setx`, der Befehl der Chat-ID und die Systemsteuerung stehen nur noch eingeklappt unter „Notfall: Variable über Windows setzen“. Die Warnung im Schritt „Neu starten“ fragt „Hast du die Variable schon gesetzt?“.
+
+## Nachtrag (2026-11-01, [ADR-0076](0076-offene-einrichtungen-sichtbar.md), KE-1): Begonnen ohne Verbindung
+
+- **§4 wird gelesen, nicht erweitert:** Die Seite „Kanäle“ liest beim Öffnen und nach jedem Schließen eines Assistenten die Einträge `byl-setup:neu:<art>` dieses Tabs (`begunSetups` in `domain/setup-resume.ts`). Eine Kachel des Katalogs mit gültigem Eintrag sagt „Begonnen“ und „Fortsetzen“ (dieselbe Adresse; der Assistent öffnet beim gemerkten Schritt). Dabei gehen wie beim Öffnen eines Assistenten nur verfallene und beschädigte Einträge.
+- Speicher, Form, Verfall und Aufräumen bleiben wie in §4: nur `sessionStorage` des Tabs, zwei Stunden, kein `localStorage`. Übersicht, Marke und Hinweis auf offene Einrichtungen (ADR-0076) zählen nur Einrichtungen mit Verbindung.
+- Der Startschritt (`setupProgress`) ist seit KE-1 der erste offene Pflichtschritt (ADR-0026, Nachtrag KE-1); „Später“ des Neustarts und das Setzen einer Variablen im Schritt halten den Schritt fest.
