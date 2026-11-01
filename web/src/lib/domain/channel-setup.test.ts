@@ -181,15 +181,51 @@ describe('step data', () => {
 
 describe('progress from the facts of the server', () => {
 	// The optional "Zielprojekt" (index 1) is done once the connection exists, so the assistant
-	// opens behind it.
+	// opens behind it. Since KE-1 (ADR-0076 §1) the keywords never hold the setup open either: with
+	// the variable seen it opens at the open mandatory step "Erster Abruf", the keywords warn there.
 	it.each([
 		['without a connection', NONE, 0],
 		['with a connection whose variable the app does not see', CREATED, 2],
-		['once the app sees the variable', VISIBLE, 5],
+		['once the app sees the variable', VISIBLE, 6],
 		['with keywords', WITH_KEYWORDS, 6],
 		['after a good run (all done: the last step)', RUN, 6]
 	])('%s', (_name, facts, step) => {
 		expect(setupProgress('kalender', facts)).toBe(step);
+	});
+
+	it('opens at the keywords once every mandatory step is done (KE-1)', () => {
+		const ran: SetupFacts = {
+			...VISIBLE,
+			connection: connection({
+				lastRunAt: '2026-09-26 10:00:00.000Z',
+				lastOkAt: '2026-09-26 10:00:00.000Z'
+			})
+		};
+		expect(setupComplete('kalender', ran)).toBe(true);
+		expect(setupProgress('kalender', ran)).toBe(5);
+	});
+
+	it('leaves only "Neu starten" open when the PC has the variable the server does not see (KE-1, M1)', () => {
+		const waiting: SetupFacts = { ...CREATED, stored: { secret: true, allowlist: null } };
+		expect(setupProgress('kalender', waiting)).toBe(4);
+		expect(stepStates('kalender', waiting, 4).slice(0, 4)).toEqual([
+			'done',
+			'done',
+			'done',
+			'done'
+		]);
+		const missing: SetupFacts = { ...CREATED, stored: { secret: false, allowlist: null } };
+		expect(setupProgress('kalender', missing)).toBe(2);
+		// A mailbox: the variable is the open step when the PC does not have it either.
+		const mail = connection({ label: 'Web.de', secretEnv: 'BYL_WEBDE_PASSWORD' });
+		const unseen = { connection: mail, secretStatus: { secret: false, allowlist: null } };
+		expect(setupProgress('webde', unseen)).toBe(5);
+		expect(setupProgress('webde', { ...unseen, stored: { secret: false, allowlist: null } })).toBe(
+			2
+		);
+		expect(setupProgress('webde', { ...unseen, stored: { secret: true, allowlist: null } })).toBe(
+			5
+		);
 	});
 
 	it('is complete only after a good run without error', () => {
@@ -461,7 +497,7 @@ describe('Telegram (plan EH-6)', () => {
 		expect(setupProgress('telegram', allowed)).toBe(6);
 	});
 
-	it('is done after a good run with a keyword', () => {
+	it('is done after a good run; without a keyword the step warns, but holds nothing open (KE-1)', () => {
 		const run = {
 			lastRunAt: '2026-09-26 11:00:00.000Z',
 			lastOkAt: '2026-09-26 11:00:00.000Z'
@@ -470,7 +506,8 @@ describe('Telegram (plan EH-6)', () => {
 			tone: 'warning',
 			text: NO_KEYWORDS_WARNING
 		});
-		expect(setupComplete('telegram', bot(run))).toBe(false);
+		expect(stepStates('telegram', bot(run), 5)[6]).toBe('open');
+		expect(setupComplete('telegram', bot(run))).toBe(true);
 		expect(setupComplete('telegram', bot({ ...run, keywords: ['todo'] }))).toBe(true);
 	});
 });

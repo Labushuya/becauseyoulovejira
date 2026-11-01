@@ -16,6 +16,7 @@
 	import type { ResolvedPathname } from '$app/types';
 	import { AREA_TEXTS } from '$lib/domain/area';
 	import type { Connection } from '$lib/domain/connections';
+	import { OPEN_SETUP_TEXTS } from '$lib/domain/open-setups';
 	import { helpHref } from '$lib/settings-sections';
 	import Lozenge from '../guidance/Lozenge.svelte';
 	import SectionMessage from '../guidance/SectionMessage.svelte';
@@ -34,13 +35,16 @@
 	// another account the catalog says so and keeps the two tiles it can use (Proton per file,
 	// WhatsApp Web with its own key). In the household area (E7-3, ADR-0059 §5) no connection is set
 	// up: every service and WhatsApp Web (its key belongs to the account, its entries are private)
-	// says "Nur im privaten Bereich" instead of "Einrichten"; Proton per file stays.
+	// says "Nur im privaten Bereich" instead of "Einrichten"; Proton per file stays. Since KE-1
+	// (ADR-0076 §5) a tile whose assistant was begun in this tab before its connection existed says
+	// "Begonnen" and offers "Fortsetzen" (the same address; the assistant opens at its step).
 	let {
 		connections,
 		heading = $bindable(),
 		hrefOf,
 		admin = true,
-		household = false
+		household = false,
+		begun = []
 	}: {
 		connections: readonly Connection[];
 		/** The heading "Kanal hinzufügen"; the empty state moves the focus to it. */
@@ -51,6 +55,8 @@
 		admin?: boolean;
 		/** The tab shows the household area: no connection is offered. */
 		household?: boolean;
+		/** Assistants begun in this tab before their connection (setup-resume.ts, two hours). */
+		begun?: readonly CatalogEntry[];
 	} = $props();
 
 	const uid = $props.id();
@@ -136,6 +142,7 @@
 	<ul class="tiles">
 		{#each admin ? ENTRIES : [] as entry (entry.id)}
 			{@const exists = connections.some(entry.exists)}
+			{@const started = begun.includes(entry.id)}
 			<li class="tile">
 				<div class="head">
 					<ChannelIcon kind={entry.icon} />
@@ -146,7 +153,9 @@
 					{#if household}
 						<Lozenge label={AREA_TEXTS.privateOnly} icon="info" tone="muted" />
 					{:else}
-						{#if !exists}
+						{#if started}
+							<Lozenge label={OPEN_SETUP_TEXTS.begun} icon="pending" />
+						{:else if !exists}
 							<Lozenge label="Nicht eingerichtet" icon="pending" />
 						{/if}
 						<a
@@ -156,9 +165,11 @@
 							data-sveltekit-noscroll
 							data-sveltekit-replacestate
 						>
-							{exists ? 'Weitere einrichten' : 'Einrichten'}<span class="visually-hidden"
-								>: {entry.name}</span
-							>
+							{started
+								? OPEN_SETUP_TEXTS.resume
+								: exists
+									? 'Weitere einrichten'
+									: 'Einrichten'}<span class="visually-hidden">: {entry.name}</span>
 						</a>
 					{/if}
 				</div>
@@ -194,7 +205,11 @@
 					{#if household}
 						<Lozenge label={AREA_TEXTS.privateOnly} icon="info" tone="muted" />
 					{:else}
-						<Lozenge label="Import" icon="inbox" tone="muted" />
+						{#if begun.includes('notion')}
+							<Lozenge label={OPEN_SETUP_TEXTS.begun} icon="pending" />
+						{:else}
+							<Lozenge label="Import" icon="inbox" tone="muted" />
+						{/if}
 						<a
 							class="button-secondary setup"
 							href={hrefOf('notion')}
@@ -202,9 +217,11 @@
 							data-sveltekit-noscroll
 							data-sveltekit-replacestate
 						>
-							{connections.some((connection) => connection.type === 'notion')
-								? 'Weitere einrichten'
-								: 'Einrichten'}<span class="visually-hidden">: Notion</span>
+							{begun.includes('notion')
+								? OPEN_SETUP_TEXTS.resume
+								: connections.some((connection) => connection.type === 'notion')
+									? 'Weitere einrichten'
+									: 'Einrichten'}<span class="visually-hidden">: Notion</span>
 						</a>
 					{/if}
 				</div>

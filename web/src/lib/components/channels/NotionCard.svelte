@@ -15,6 +15,7 @@
 	import { connectionAnchor } from '$lib/domain/sync-all';
 	import type { ProjectRef } from '$lib/domain/ticket';
 	import { helpHref } from '$lib/settings-sections';
+	import { appContext } from '$lib/stores/context.svelte';
 	import type { CredentialsStore } from '$lib/stores/credentials.svelte';
 	import type { NotionStore } from '$lib/stores/notion.svelte';
 	import type { RestartStore } from '$lib/stores/restart.svelte';
@@ -107,7 +108,12 @@
 	const progress = $derived(notion.refetchProgress(connection.id));
 	const stopping = $derived(notion.isStopping(connection.id));
 	const busy = $derived(checking || refetching !== null);
-	const health = $derived(channelHealth(connection, secretStatus, busy));
+	const health = $derived(
+		channelHealth(connection, secretStatus, busy, null, {
+			stored: credentials?.storedOf(connection) ?? null,
+			remote: appContext.capabilities.mode === 'remote'
+		})
+	);
 	const imports = $derived(notion.imports(connection.id));
 	const info = $derived(
 		progress === null
@@ -186,7 +192,10 @@
 			entries.push({ label: 'Umbenennen …', onselect: () => void card?.startRename() });
 		}
 		if (health.action !== 'setup') {
-			entries.push({ label: 'Einrichtung ansehen', onselect: () => onsetup() });
+			entries.push({
+				label: health.state === 'open' ? 'Einrichtung fortsetzen' : 'Einrichtung ansehen',
+				onselect: () => onsetup()
+			});
 		}
 		entries.push({ label: 'Hilfe', href: helpHref('notion') });
 		entries.push({ label: 'Löschen …', dialog: true, separated: true, onselect: () => ondelete() });

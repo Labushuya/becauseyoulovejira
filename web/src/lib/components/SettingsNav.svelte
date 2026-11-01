@@ -10,18 +10,23 @@
 	// (ADR-0029, G-6). The small title "Einstellungen" is hidden from screen readers, because the
 	// navigation has that name already. The pages of the administrator on another device are marked
 	// "nur am PC" once at the heading of their group (KOB-1, ADR-0057); each link keeps the mark in
-	// its name for screen readers, which read a link on its own.
+	// its name for screen readers, which read a link on its own. Since KE-1 (ADR-0076) a page can
+	// carry a mark with a number, e.g. the open setups at "Kanäle": the number visible, its meaning
+	// in the name of the link.
 	let {
 		sections,
 		current,
 		backHref,
-		backLabel
+		backLabel,
+		marks = {}
 	}: {
 		sections: readonly VisibleSettingsSection[];
 		/** ID of the current page; null for none. */
 		current: string | null;
 		backHref: string;
 		backLabel: string;
+		/** Marks per page ID: the number and the text for screen readers, e.g. "2 Einrichtungen offen". */
+		marks?: Readonly<Record<string, { count: number; text: string }>>;
 	} = $props();
 
 	const uid = $props.id();
@@ -49,11 +54,19 @@
 			{/if}
 			<ul aria-labelledby={group.label === null ? undefined : `${uid}-${group.id}`}>
 				{#each group.sections as section (section.id)}
+					{@const mark = marks[section.id]}
 					<li>
 						<a href={section.href} aria-current={section.id === current ? 'page' : undefined}>
 							{section.label}
 							{#if section.pcOnly}
 								<span class="visually-hidden">{CONTEXT_TEXTS.pcOnlyMark}</span>
+							{/if}
+							{#if mark !== undefined && mark.count > 0}
+								<span class="mark-count"
+									><span aria-hidden="true">{mark.count}</span><span class="visually-hidden"
+										>({mark.text})</span
+									></span
+								>
 							{/if}
 						</a>
 					</li>
@@ -138,6 +151,22 @@
 		margin-left: 0.5rem;
 		font-weight: 400;
 		color: var(--color-text-muted);
+	}
+
+	/* A number at a page (KE-1: open setups at "Kanäle"), like the counts of "Mehr". */
+	.mark-count {
+		min-width: 1.25rem;
+		margin-left: 0.5rem;
+		padding: 0 0.3125rem;
+		font-size: var(--font-size-caption);
+		font-weight: 600;
+		line-height: 1.125rem;
+		text-align: center;
+		font-variant-numeric: tabular-nums;
+		color: var(--color-brand-soft-text);
+		background: var(--color-brand-soft-bg);
+		border: 1px solid var(--color-brand);
+		border-radius: var(--radius-pill);
 	}
 
 	/* The current page: accent surface and weight, never colour alone (ADR-0010 section 3). */

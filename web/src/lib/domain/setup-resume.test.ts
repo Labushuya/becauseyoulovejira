@@ -10,6 +10,7 @@ import { emptyRepoDraft } from './github';
 import {
 	SETUP_RESUME_PREFIX,
 	SETUP_RESUME_TTL_MS,
+	begunSetups,
 	connectInputsOf,
 	isStaleSetupResume,
 	looksLikeSecret,
@@ -207,5 +208,43 @@ describe('no secret in an entry', () => {
 			repo: null,
 			folder: null
 		});
+	});
+});
+
+describe('setups begun before their connection (KE-1, ADR-0076 §5)', () => {
+	const entry = (step: number, savedAt: number) =>
+		serializeSetupResume({ step, savedAt, restart: false, connect: null });
+
+	it('names the kinds with a valid entry and the keys of broken or expired entries', () => {
+		const result = begunSetups(
+			[
+				[setupResumeKey('telegram', null), entry(1, NOW)],
+				[setupResumeKey('kalender', null), entry(0, NOW - 60_000)],
+				[setupResumeKey('gmail', null), '{kaputt'],
+				[setupResumeKey('webde', null), entry(2, NOW - SETUP_RESUME_TTL_MS - 1)],
+				[setupResumeKey('kalender', ID), entry(4, NOW)],
+				[`${SETUP_RESUME_PREFIX}neu:unbekannt`, entry(0, NOW)],
+				['byl-first-steps', '{kaputt']
+			],
+			NOW
+		);
+		// In the order of the catalog; an entry of a connection is no setup before its connection.
+		expect(result.kinds).toEqual(['kalender', 'telegram']);
+		expect(result.stale.sort()).toEqual(
+			[setupResumeKey('gmail', null), setupResumeKey('webde', null)].sort()
+		);
+	});
+
+	it('leaves the form before BW-1 and the guides without steps out', () => {
+		expect(
+			begunSetups(
+				[
+					[setupResumeKey('notion', null), '3'],
+					[setupResumeKey('proton', null), entry(0, NOW)],
+					[setupResumeKey('whatsapp-web', null), entry(0, NOW)]
+				],
+				NOW
+			)
+		).toEqual({ kinds: ['notion'], stale: [] });
 	});
 });

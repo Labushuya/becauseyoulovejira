@@ -43,6 +43,7 @@
 	import type { ProjectRef } from '$lib/domain/ticket';
 	import { textForContext } from '$lib/guidance/texts';
 	import { helpHref } from '$lib/settings-sections';
+	import { appContext } from '$lib/stores/context.svelte';
 	import type { CredentialsStore } from '$lib/stores/credentials.svelte';
 	import { GITHUB_AUTO_UNAVAILABLE_MESSAGE, type GitHubStore } from '$lib/stores/github.svelte';
 	import type { RestartStore } from '$lib/stores/restart.svelte';
@@ -138,7 +139,12 @@
 	const settings = $derived(connection.github ?? EMPTY_GITHUB_SETTINGS);
 	const repos = $derived(settings.repos);
 	const checking = $derived(github.isChecking(connection.id));
-	const health = $derived(channelHealth(connection, secretStatus, running || checking));
+	const health = $derived(
+		channelHealth(connection, secretStatus, running || checking, null, {
+			stored: credentials?.storedOf(connection) ?? null,
+			remote: appContext.capabilities.mode === 'remote'
+		})
+	);
 	const detailsState = $derived(github.details(connection.id));
 	const loaded = $derived(detailsState?.kind === 'ready' ? detailsState.details : null);
 	const info = $derived(
@@ -336,7 +342,10 @@
 			entries.push({ label: 'Umbenennen …', onselect: () => void card?.startRename() });
 		}
 		if (health.action !== 'setup') {
-			entries.push({ label: 'Einrichtung ansehen', onselect: () => onsetup() });
+			entries.push({
+				label: health.state === 'open' ? 'Einrichtung fortsetzen' : 'Einrichtung ansehen',
+				onselect: () => onsetup()
+			});
 		}
 		entries.push({ label: 'Hilfe', href: helpHref('github') });
 		entries.push({ label: 'Löschen …', dialog: true, separated: true, onselect: () => ondelete() });

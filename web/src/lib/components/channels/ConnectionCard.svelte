@@ -21,6 +21,7 @@
 	import type { ProjectRef } from '$lib/domain/ticket';
 	import { textForContext } from '$lib/guidance/texts';
 	import { helpHref } from '$lib/settings-sections';
+	import { appContext } from '$lib/stores/context.svelte';
 	import type { CredentialsStore } from '$lib/stores/credentials.svelte';
 	import type { RestartStore } from '$lib/stores/restart.svelte';
 	import ChipList from '../ChipList.svelte';
@@ -120,7 +121,14 @@
 	const mail = $derived(connection.type === 'mail');
 	const scan = $derived(mail ? (connection.scan ?? null) : null);
 	const scanning = $derived(scan?.state === 'running');
-	const health = $derived(channelHealth(connection, secretStatus, running, mail ? helper : null));
+	// Since KE-1 (ADR-0076) with the user environment of the PC where the page reads it, so a variable
+	// that only waits for the restart is not called missing, and "am PC" on another device.
+	const health = $derived(
+		channelHealth(connection, secretStatus, running, mail ? helper : null, {
+			stored: credentials?.storedOf(connection) ?? null,
+			remote: appContext.capabilities.mode === 'remote'
+		})
+	);
 
 	const kindLine = $derived(
 		[
@@ -194,7 +202,10 @@
 			entries.push({ label: 'Umbenennen …', onselect: () => void card?.startRename() });
 		}
 		if (health.action !== 'setup') {
-			entries.push({ label: 'Einrichtung ansehen', onselect: () => onsetup() });
+			entries.push({
+				label: health.state === 'open' ? 'Einrichtung fortsetzen' : 'Einrichtung ansehen',
+				onselect: () => onsetup()
+			});
 		}
 		entries.push({ label: 'Hilfe', href: helpHref('zugangsdaten') });
 		entries.push({ label: 'Löschen …', dialog: true, separated: true, onselect: () => ondelete() });

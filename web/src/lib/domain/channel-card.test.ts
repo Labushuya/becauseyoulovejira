@@ -190,12 +190,14 @@ describe('info lines of the cards', () => {
 });
 
 describe('states of the cards without a connection', () => {
-	it('knows the own inbox: restart, error, open until a program used a key, connected', () => {
+	// Since KE-1 (ADR-0076 §1) "Einrichtung offen" means begun: before the first key the cards say
+	// "Nicht eingerichtet", like the tiles of the catalog.
+	it('knows the own inbox: restart, error, not set up, open until a program used a key, connected', () => {
 		expect(inboxKeysStatus('unavailable', [])).toBe(CARD_STATUS.restart);
 		expect(inboxKeysStatus('error', [])).toBe(CARD_STATUS.error);
 		expect(inboxKeysStatus('loading', [])).toBeNull();
 		expect(inboxKeysStatus('idle', [])).toBeNull();
-		expect(inboxKeysStatus('ready', [])).toBe(CARD_STATUS.setup);
+		expect(inboxKeysStatus('ready', [])).toBe(CARD_STATUS.notSetUp);
 		expect(inboxKeysStatus('ready', [{ lastUsedAt: null }])).toBe(CARD_STATUS.setup);
 		expect(inboxKeysStatus('ready', [{ lastUsedAt: '2026-09-30 09:55:00.000Z' }])).toBe(
 			CARD_STATUS.connected
@@ -205,8 +207,10 @@ describe('states of the cards without a connection', () => {
 	it('says of WhatsApp Web only what the app can know, never "Verbunden" (ADR-0038 §4)', () => {
 		expect(whatsAppWebStatus('unavailable', 0, null)).toBe(CARD_STATUS.restart);
 		expect(whatsAppWebStatus('ready', 1, false)).toBe(CARD_STATUS.setup);
-		expect(whatsAppWebStatus('ready', 0, true)).toBe(CARD_STATUS.setup);
+		expect(whatsAppWebStatus('ready', 0, true)).toBe(CARD_STATUS.notSetUp);
+		expect(whatsAppWebStatus('ready', 0, false)).toBe(CARD_STATUS.notSetUp);
 		expect(whatsAppWebStatus('ready', 1, true)).toBeNull();
+		expect(whatsAppWebStatus('ready', 1, null)).toBeNull();
 		expect(whatsAppWebStatus('loading', 0, null)).toBeNull();
 		expect(whatsAppWebStatus(null, 0, null)).toBeNull();
 	});
@@ -217,7 +221,8 @@ describe('states of the cards without a connection', () => {
 			'Pausiert',
 			'Fehler',
 			'Einrichtung offen',
-			'Neustart nötig'
+			'Neustart nötig',
+			'Nicht eingerichtet'
 		]);
 		expect(
 			Object.values(CARD_STATUS)

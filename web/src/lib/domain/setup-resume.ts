@@ -2,14 +2,14 @@
 // in sessionStorage, so after a restart of the app, a reload of the page or the next opening in the
 // same tab it stands at the same step, with the inputs of the step "Verbinden" from before the
 // connection existed. Pure: the keys, the form of an entry, reading with expiry and the check of the
-// form, and writing.
+// form, and writing; since KE-1 (ADR-0076) which setups of the tab are begun before a connection.
 // Never a secret: an entry holds the step, the time, the mark of a restart started from the step
 // and only the fields of SetupConnectInputs, none of which takes the value of a variable. Even
 // there, a text that looks like an access token is left out, and the names of the variables are
 // kept only in their own form (BYL_…). What is typed into "Wert hier einsetzen" never reaches this
 // module (SecretValueField keeps it in its own state).
 
-import { setupStepKey, type SetupKind } from './channel-setup';
+import { GUIDE_KINDS, SETUP_KINDS, setupStepKey, type SetupKind } from './channel-setup';
 import {
 	LABEL_MAX_LENGTH,
 	MAIL_USER_MAX_LENGTH,
@@ -242,6 +242,36 @@ export function serializeSetupResume(entry: SetupResume): string {
  */
 export function isStaleSetupResume(stored: string | null, now: number): boolean {
 	return stored !== null && parseSetupResume(stored, now) === null;
+}
+
+/** Prefix of the entries of an assistant before its connection exists. */
+const BEGUN_PREFIX = `${SETUP_RESUME_PREFIX}neu:`;
+
+/**
+ * The setups of this tab begun before their connection existed (KE-1, ADR-0076 §5): every valid
+ * entry `byl-setup:neu:<art>` of an assistant with steps (not Proton or WhatsApp Web), read from
+ * the pairs of key and value of sessionStorage, in the order of SETUP_KINDS; and the keys of broken
+ * or expired entries of every assistant, which the reader removes as opening an assistant does.
+ * The model of BW-1 stays (sessionStorage, two hours, ADR-0072 §4): nothing new is stored.
+ */
+export function begunSetups(
+	entries: Iterable<readonly [string, string | null]>,
+	now: number
+): { kinds: SetupKind[]; stale: string[] } {
+	const begun = new Set<string>();
+	const stale: string[] = [];
+	for (const [key, value] of entries) {
+		if (!key.startsWith(SETUP_RESUME_PREFIX)) continue;
+		if (isStaleSetupResume(value, now)) {
+			stale.push(key);
+			continue;
+		}
+		if (key.startsWith(BEGUN_PREFIX) && parseSetupResume(value, now) !== null) {
+			begun.add(key.slice(BEGUN_PREFIX.length));
+		}
+	}
+	const kinds = SETUP_KINDS.filter((kind) => begun.has(kind) && !GUIDE_KINDS.includes(kind));
+	return { kinds, stale };
 }
 
 /** Text of a step with "Wert hier einsetzen" after a reload or a restart (BW-1). */
