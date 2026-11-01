@@ -324,7 +324,13 @@ describe('connections section', () => {
 		expect(telegram.getByText('Einrichtung offen')).toBeTruthy();
 		expect(telegram.getByText('Noch nie abgerufen')).toBeTruthy();
 		expect(telegram.getByText('noch nie')).toBeTruthy();
-		expect(telegram.getByText(/Variable BYL_TELEGRAM_TOKEN anlegen/)).toBeTruthy();
+		// Without the state of the user environment of the PC (no access data on this page) the card
+		// does not claim the variable is missing (KE-1, M1).
+		expect(
+			telegram.getByText(
+				'Zugangsdaten fehlen oder warten auf Neustart: Die App sieht BYL_TELEGRAM_TOKEN noch nicht.'
+			)
+		).toBeTruthy();
 		// One hint per card: the missing variable wins over the hint of the last run.
 		expect(telegram.queryByText(/Chat-ID 424242/)).toBeNull();
 		expect(
@@ -446,8 +452,10 @@ describe('connections section', () => {
 		const headings = screen
 			.getAllByRole('heading', { level: 3 })
 			.map((heading) => heading.textContent?.replace(/\s+/g, ' ').trim());
-		// Since EH-5 to EH-7 every service opens in the app: no section "Anleitungen" any more.
+		// Since EH-5 to EH-7 every service opens in the app: no section "Anleitungen" any more. Since
+		// KE-1 (ADR-0076) the overview of the open setups stands first (the bot has not run yet).
 		expect(headings).toEqual([
+			'Hinweis: 1 Einrichtung offen',
 			'Deine Verbindungen 2(2 Verbindungen)',
 			'Selbst hereinbringen',
 			'Kanal hinzufügen'
@@ -1418,7 +1426,9 @@ describe('renaming in the card (ADR-0026, addendum KK-3)', () => {
 				.getAllByRole('menuitem', { hidden: true })
 				.map((item) => item.textContent?.trim());
 			expect(items).toContain('Umbenennen …');
-			expect(items.indexOf('Umbenennen …')).toBe(items.indexOf('Einrichtung ansehen') - 1);
+			// The bot has an open step (it never ran): the entry says "fortsetzen" (KE-1).
+			const setupEntry = name === 'Telegram-Bot' ? 'Einrichtung fortsetzen' : 'Einrichtung ansehen';
+			expect(items.indexOf('Umbenennen …')).toBe(items.indexOf(setupEntry) - 1);
 			// Inline in the card, no dialog.
 			expect(
 				menu

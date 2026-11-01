@@ -156,9 +156,12 @@
 				) ?? null)
 	);
 	const missing = $derived(connectionId !== null && store.state === 'ready' && connection === null);
+	// Since KE-1 (ADR-0076) with the user environment of the PC where the page reads it: a variable
+	// set there that the server does not see yet leaves only "Neu starten" open.
 	const facts = $derived<SetupFacts>({
 		connection,
-		secretStatus: connection === null ? null : store.status(connection.id)
+		secretStatus: connection === null ? null : store.status(connection.id),
+		stored: connection === null ? null : (credentials?.storedOf(connection) ?? null)
 	});
 	/** The failed question for the variables, with "Details" (FP-1, since BW-1). */
 	const statusFailure = $derived(connection === null ? null : store.statusFailure(connection.id));
@@ -373,6 +376,12 @@
 	function hold() {
 		chosen = current;
 	}
+
+	// Setting a variable here changes the facts since KE-1 (the user environment of the PC): the
+	// step stays while the question "Jetzt neu starten" / "Später" follows.
+	$effect(() => {
+		if ((credentials?.busy ?? null) !== null) untrack(hold);
+	});
 
 	/** ID of the found connection; a primitive, so updates of the record do not rerun effects. */
 	const watchedId = $derived(connection?.id ?? null);

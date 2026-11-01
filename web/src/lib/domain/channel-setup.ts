@@ -5,7 +5,9 @@
 // run. So after a restart the assistant opens at the right step, also in a new tab. Which step was
 // looked at last is only a hint of the session (the component keeps it, domain/setup-resume.ts).
 // The step "Neu starten" offers "Jetzt neu starten" (BW-1, ADR-0072); its command, the file
-// neu-starten.bat, is the emergency way and stands folded under „Notfall“.
+// neu-starten.bat, is the emergency way and stands folded under „Notfall“. Since KE-1 (ADR-0076)
+// one rule says which mandatory step is open (`requiredOpenStep`); where the tab knows the user
+// environment of the PC (BW-3), it tells a variable that waits for the restart from a missing one.
 // Stand der Klickwege: 2026-09.
 
 import type { Connection, SecretStatus } from './connections';
@@ -958,6 +960,19 @@ export const CONTROL_PANEL_STEPS: readonly string[] = [
 	'Als Name den Variablennamen eintragen, als Wert den Wert einfügen, dann zweimal „OK“.'
 ];
 
+/**
+ * The access data of a connection in the Windows user environment of the PC (BW-3, ADR-0075), as
+ * far as the tab knows it: only the administrator at the PC reads it (`CredentialsStore`). Unlike
+ * `SecretStatus` (the environment of the running server) a value here may still wait for the next
+ * restart (KE-1, ADR-0076). null where it is not known.
+ */
+export interface StoredSecrets {
+	/** The variable of the secret has a value there; null while unknown. */
+	secret: boolean | null;
+	/** Telegram: the variable of the allowed IDs; null for other kinds and while unknown. */
+	allowlist: boolean | null;
+}
+
 /** What the app knows about a setup; everything comes from the server. */
 export interface SetupFacts {
 	connection: Pick<
@@ -974,10 +989,48 @@ export interface SetupFacts {
 		| 'folders'
 	> | null;
 	secretStatus: SecretStatus | null;
+	/** The user environment of the PC (KE-1); absent or null where the tab cannot read it. */
+	stored?: StoredSecrets | null;
 }
 
-/** Whether the fact of a checked step holds. */
-function checkHolds(kind: SetupKind, id: SetupStepId, facts: SetupFacts): boolean {
+/** The steps that set the access data of a connection (BW-3: in the browser, else with setx). */
+const SECRET_STEPS: readonly SetupStepId[] = ['variable', 'token'];
+
+/** The steps of the optional token of GitHub (ADR-0050 §1). */
+const TOKEN_STEPS: readonly SetupStepId[] = ['pat', 'variable', 'restart'];
+
+/**
+ * Steps that never hold a setup open (ADR-0076 §1): the optional target project (ADR-0049), the
+ * keywords, whose warning stays a hint (ADR-0020 §4), and once its connection exists the token of
+ * GitHub, which reads public repositories without one.
+ */
+function isOptionalStep(kind: SetupKind, step: SetupStep, facts: SetupFacts): boolean {
+	if (step.id === 'target' || step.id === 'keywords') return true;
+	return kind === 'github' && facts.connection !== null && TOKEN_STEPS.includes(step.id);
+}
+
+/**
+ * What the user environment of the PC says about the access data of a connection (KE-1, ADR-0076):
+ * "set" (every variable has a value there), "missing" (one has none) or null (unknown, also before
+ * the connection, for GitHub, whose token is optional, and for folders without access data).
+ */
+export function storedState(kind: SetupKind, facts: SetupFacts): 'set' | 'missing' | null {
+	const stored = facts.stored ?? null;
+	if (stored === null || facts.connection === null || kind === 'github' || kind === 'ordner') {
+		return null;
+	}
+	const telegram = kind === 'telegram';
+	if (stored.secret === false || (telegram && stored.allowlist === false)) return 'missing';
+	if (stored.secret === true && (!telegram || stored.allowlist === true)) return 'set';
+	return null;
+}
+
+/**
+ * Whether the fact of a checked step holds. `strict` is the reading of the stepper and its check
+ * lines; without it the keyword of a Telegram bot and a hint of GitHub (e.g. its rate limit) do not
+ * hold a setup open (ADR-0076 §1), as the warnings of the card do not either.
+ */
+function checkHolds(kind: SetupKind, id: SetupStepId, facts: SetupFacts, strict = true): boolean {
 	const { connection, secretStatus } = facts;
 	if (connection === null) return false;
 	switch (id) {
@@ -989,9 +1042,10 @@ function checkHolds(kind: SetupKind, id: SetupStepId, facts: SetupFacts): boolea
 			}
 			return kind !== 'ordner' || (connection.folders?.folders.length ?? 0) > 0;
 		case 'restart':
-			// Telegram needs both variables: the token and the allowed IDs.
+			// Telegram needs both variables: the token and the allowed IDs. The same reading as
+			// secretStatusText of the card (KE-1): only a variable the server reports as missing counts.
 			return (
-				secretStatus?.secret === true && (kind !== 'telegram' || secretStatus.allowlist === true)
+				secretStatus?.secret === true && (kind !== 'telegram' || secretStatus.allowlist !== false)
 			);
 		case 'keywords':
 			return connection.keywords.length > 0;
@@ -1007,12 +1061,15 @@ function checkHolds(kind: SetupKind, id: SetupStepId, facts: SetupFacts): boolea
 			// calendar and bot need a good run, the bot also a keyword.
 			if (connection.lastError !== '') return false;
 			if (isMailKind(kind)) return connection.lastRunAt !== null;
-			if (kind === 'telegram' && connection.keywords.length === 0) return false;
+			if (strict && kind === 'telegram' && connection.keywords.length === 0) return false;
 			return connection.lastOkAt !== null;
 		case 'check':
-			// Notion answered with the token, and the integration sees something (no hint).
+			// Notion answered with the token, and the integration sees something (no hint). A hint of
+			// GitHub is information of its last run (rate limit and the like), no open step.
 			return (
-				connection.lastOkAt !== null && connection.lastError === '' && connection.lastHint === ''
+				connection.lastOkAt !== null &&
+				connection.lastError === '' &&
+				(connection.lastHint === '' || (!strict && kind === 'github'))
 			);
 		default:
 			return false;
@@ -1036,34 +1093,57 @@ function isMailKind(kind: SetupKind): boolean {
 /**
  * Whether step `index` is done. A checked step by its fact; a step the app cannot see (open a page
  * of the provider, set a variable) once the next checked step is done, e.g. "Variable setzen" once
- * the server sees the variable, "Abruf erlauben" once the mailbox is connected.
+ * the server sees the variable, "Abruf erlauben" once the mailbox is connected. While the server
+ * does not see the access data, the user environment of the PC decides where it knows (KE-1,
+ * ADR-0076 §4): set there, every step before "Neu starten" is done (only the restart is open);
+ * missing there, the step that sets them is open.
  */
-function satisfied(kind: SetupKind, index: number, facts: SetupFacts): boolean {
+function satisfied(kind: SetupKind, index: number, facts: SetupFacts, strict = true): boolean {
 	const steps = setupSteps(kind);
 	const step = steps[index];
 	if (step === undefined) return false;
 	// The optional "Zielprojekt" never holds the assistant up (ADR-0049).
 	if (step.id === 'target') return facts.connection !== null;
-	if (step.checked) return checkHolds(kind, step.id, facts);
+	if (step.checked) return checkHolds(kind, step.id, facts, strict);
+	const stored = storedState(kind, facts);
+	const restart = steps.findIndex((entry) => entry.id === 'restart');
+	if (stored !== null && index < restart && !checkHolds(kind, 'restart', facts, strict)) {
+		if (stored === 'set') return true;
+		if (SECRET_STEPS.includes(step.id)) return false;
+	}
 	const next = steps.findIndex((entry, at) => at > index && entry.checked);
 	const checked = steps[next];
-	return checked !== undefined && checkHolds(kind, checked.id, facts);
+	return checked !== undefined && checkHolds(kind, checked.id, facts, strict);
 }
 
 /**
- * Index of the first step that is not done yet, from the facts; the last step when all are done.
- * Without steps (a kind without assistant) 0.
+ * Index of the first mandatory step that is not done, -1 when none is open (ADR-0076 §1): the one
+ * rule behind the assistant (`setupProgress`, `setupComplete`), the cards (`channelHealth`) and
+ * the overview of the open setups (`openSetupOf` in domain/open-setups.ts). The optional target
+ * project and the keywords never count.
+ */
+export function requiredOpenStep(kind: SetupKind, facts: SetupFacts): number {
+	return setupSteps(kind).findIndex(
+		(step, index) => !isOptionalStep(kind, step, facts) && !satisfied(kind, index, facts, false)
+	);
+}
+
+/**
+ * Index of the step the assistant opens at, from the facts: the first open mandatory step (the one
+ * "Fortsetzen" leads to, ADR-0076); with every mandatory step done the first step that is not done
+ * yet (keywords), else the last step. Without steps (a kind without assistant) 0.
  */
 export function setupProgress(kind: SetupKind, facts: SetupFacts): number {
+	const required = requiredOpenStep(kind, facts);
+	if (required !== -1) return required;
 	const steps = setupSteps(kind);
 	const open = steps.findIndex((_step, index) => !satisfied(kind, index, facts));
 	return open === -1 ? Math.max(steps.length - 1, 0) : open;
 }
 
-/** Whether every step is done. */
+/** Whether every mandatory step is done (ADR-0076 §1); the keywords and the target may still be open. */
 export function setupComplete(kind: SetupKind, facts: SetupFacts): boolean {
-	const steps = setupSteps(kind);
-	return steps.length > 0 && steps.every((_step, index) => satisfied(kind, index, facts));
+	return setupSteps(kind).length > 0 && requiredOpenStep(kind, facts) === -1;
 }
 
 export type StepState = 'current' | 'done' | 'open' | 'warning';
@@ -1158,7 +1238,7 @@ export function stepCheck(kind: SetupKind, id: SetupStepId, facts: SetupFacts): 
 				].filter((name): name is string => name !== null);
 				const missing = [
 					secretStatus.secret ? null : connection.secretEnv,
-					secretStatus.allowlist === true ? null : connection.allowlistEnv
+					secretStatus.allowlist === false ? connection.allowlistEnv : null
 				].filter((name): name is string => name !== null);
 				if (missing.length === 0) {
 					return { tone: 'done', text: `Die App sieht ${seen.join(' und ')}.` };

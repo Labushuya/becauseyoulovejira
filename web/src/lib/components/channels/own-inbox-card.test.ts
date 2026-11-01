@@ -182,7 +182,8 @@ describe('OwnInboxCard', () => {
 		await keywords.load();
 		render(OwnInboxCard, { props: { store, importKeywords: keywords } });
 		const { card, details } = await openCard();
-		expect(card.getByText('Einrichtung offen')).toBeTruthy();
+		// Before the first key nothing is begun (KE-1, ADR-0076 §1).
+		expect(card.getByText('Nicht eingerichtet')).toBeTruthy();
 		expect(card.getByText('Noch kein Zugangsschlüssel')).toBeTruthy();
 		expect(details.getByText(/für jedes Programm, das Einträge bringen soll/)).toBeTruthy();
 

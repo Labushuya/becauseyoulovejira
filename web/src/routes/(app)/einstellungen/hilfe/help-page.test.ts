@@ -175,6 +175,19 @@ describe('help page (EH-9)', () => {
 		);
 	});
 
+	it('explains the open setups: the overview, the mark, the hint, "Wartet auf Neustart" and "Begonnen" (KE-1)', () => {
+		render(Page);
+		const content = text(screen.getByRole('region', { name: 'Kanäle und Zugangsdaten' }));
+		expect(content).toMatch(/„Einrichtung offen“ heißt: begonnen, aber noch nicht fertig/);
+		expect(content).toMatch(/„N Einrichtungen offen“ mit „Fortsetzen“/);
+		expect(content).toMatch(/am Handy unter „Mehr“/);
+		expect(content).toMatch(/erscheint einmal ein Hinweis, wieder erst, wenn sich etwas\s+ändert/);
+		expect(content).toMatch(/Stichwörter und Zielprojekt halten nichts offen/);
+		expect(content).toMatch(/„Wartet auf Neustart“/);
+		expect(content).toMatch(/„Zugangsdaten fehlen oder warten auf Neustart – am PC prüfen“/);
+		expect(content).toMatch(/als „Begonnen“ mit\s+„Fortsetzen“/);
+	});
+
 	it('explains the target project of a card: where it is set, only new entries, prefill (ADR-0049)', () => {
 		render(Page);
 		const content = text(screen.getByRole('region', { name: 'Kanäle und Zugangsdaten' }));

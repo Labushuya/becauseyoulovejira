@@ -516,6 +516,20 @@
 			Stichwörtern zeigen dort zuerst 8 und „+ N weitere“, ab 21 Stichwörtern mit einem Filterfeld.
 		</p>
 		<p>
+			„Einrichtung offen“ heißt: begonnen, aber noch nicht fertig, etwa weil der erste Abruf fehlt,
+			ein Chat noch nicht freigegeben ist oder die App eine Variable noch nicht sieht. Die Karte
+			nennt dann den offenen Schritt, über den Karten steht „N Einrichtungen offen“ mit „Fortsetzen“
+			zu diesem Schritt im Assistenten, „Kanäle“ trägt in den Einstellungen (am Handy unter „Mehr“)
+			eine Zahl, und beim Öffnen der App erscheint einmal ein Hinweis, wieder erst, wenn sich etwas
+			ändert. Stichwörter und Zielprojekt halten nichts offen, ein pausierter Kanal und ein Fehler
+			nach einem früheren erfolgreichen Abruf auch nicht. Hast du eine Variable am PC gesetzt, aber
+			die App noch nicht neu gestartet, sagt die Karte „Wartet auf Neustart“; am Handy sieht die App
+			das nicht und sagt „Zugangsdaten fehlen oder warten auf Neustart – am PC prüfen“. Ein
+			Assistent, den du vor dem Anlegen der Verbindung mit „Später fortsetzen“ verlassen hast, steht
+			in diesem Tab bis zu zwei Stunden an seiner Kachel unter „Kanal hinzufügen“ als „Begonnen“ mit
+			„Fortsetzen“.
+		</p>
+		<p>
 			„Umbenennen …“ macht den Namen oben in der Karte zum Textfeld: <kbd>Enter</kbd> oder
 			„Speichern“ übernimmt ihn, <kbd>Esc</kbd> oder „Abbrechen“ lässt ihn, wie er war. Er darf nicht
 			leer sein und höchstens 100 Zeichen haben; heißt schon eine andere Verbindung so, sagt die Karte

@@ -242,12 +242,17 @@ describe('setup assistant: progress from the server', () => {
 		expect(link.getAttribute('rel')).toBe('noopener noreferrer');
 	});
 
-	it('opens at "Stichwörter" once the app sees the variable (after the restart)', async () => {
+	// Since KE-1 (ADR-0076 §1) the keywords never hold the setup open: the assistant opens at the
+	// open mandatory step, and the missing keywords stand as the open check of an earlier step.
+	it('opens at "Erster Abruf" once the app sees the variable, the missing keywords named there (KE-1)', async () => {
 		await open(
 			[calendar()],
 			{ kind: 'kalender', connectionId: ID },
 			{ secret: true, allowlist: null }
 		);
+		expect(stepHeading().textContent?.trim()).toBe('Schritt 7 von 7: Ersten Abruf starten');
+		expect(dialog().getByText(/Keine Stichwörter: Diese Verbindung übernimmt nichts/)).toBeTruthy();
+		await fireEvent.click(dialog().getByRole('button', { name: 'Zurück' }));
 		expect(stepHeading().textContent?.trim()).toBe('Schritt 6 von 7: Stichwörter festlegen');
 	});
 
@@ -332,6 +337,8 @@ describe('setup assistant: steps', () => {
 			{ kind: 'kalender', connectionId: ID },
 			{ secret: true, allowlist: null }
 		);
+		// The assistant opens at "Erster Abruf" (KE-1); the keywords are one step back.
+		await fireEvent.click(dialog().getByRole('button', { name: 'Zurück' }));
 		const field = dialog().getByRole('textbox', { name: 'Neues Stichwort' });
 		await fireEvent.input(field, { target: { value: 'todo' } });
 		await fireEvent.click(dialog().getByRole('button', { name: 'Hinzufügen' }));

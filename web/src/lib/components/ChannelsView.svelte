@@ -1,9 +1,21 @@
 <script lang="ts">
+	import { tick, untrack } from 'svelte';
+	import type { ResolvedPathname } from '$app/types';
 	import type { ExtensionInfo } from '$lib/data/extension';
-	import { setupKindOf, type SetupTarget } from '$lib/domain/channel-setup';
-	import type { Connection } from '$lib/domain/connections';
+	import { setupKindOf, type SetupKind, type SetupTarget } from '$lib/domain/channel-setup';
+	import { usesSecret, type Connection } from '$lib/domain/connections';
+	import {
+		OWN_INBOX_ANCHOR,
+		anySetupDone,
+		openSetupsOf,
+		type OpenSetupEntry
+	} from '$lib/domain/open-setups';
+	import { begunSetups } from '$lib/domain/setup-resume';
 	import type { ProjectRef } from '$lib/domain/ticket';
 	import type { ConnectionsStore } from '$lib/stores/connections.svelte';
+	import { appContext } from '$lib/stores/context.svelte';
+	import { findFirstStepsStore } from '$lib/stores/first-steps.svelte';
+	import { findOpenSetupsStore } from '$lib/stores/open-setups.svelte';
 	import type { CredentialsStore } from '$lib/stores/credentials.svelte';
 	import type { FoldersStore } from '$lib/stores/folders.svelte';
 	import type { GitHubStore } from '$lib/stores/github.svelte';
@@ -19,6 +31,7 @@
 	import ChannelsIntro from './channels/ChannelsIntro.svelte';
 	import FilesCard from './channels/FilesCard.svelte';
 	import NotionImportDialog from './channels/NotionImportDialog.svelte';
+	import OpenSetupsOverview from './channels/OpenSetupsOverview.svelte';
 	import OwnInboxCard from './channels/OwnInboxCard.svelte';
 	import ProtonGuide from './channels/ProtonGuide.svelte';
 	import WhatsAppWebCard from './channels/WhatsAppWebCard.svelte';
@@ -47,7 +60,10 @@
 	// "Nur im privaten Bereich"; the bookmarklet, the clipboard and the files work there. Since BW-1
 	// (ADR-0072) the assistant restarts the app and the mail helper in place (`restart`). Since BW-3
 	// (ADR-0075) the cards, the edit modal and the assistant set the access data in the browser
-	// (`credentials`).
+	// (`credentials`). Since KE-1 (ADR-0076) the overview "N Einrichtungen offen" stands above the
+	// cards, from the stores of this page and the same rule as the cards (`openSetupsOf`); the page
+	// hands it to the store of the layout for the mark at "Kanäle". A tile of the catalog says
+	// "Begonnen · Fortsetzen" for an assistant this tab began before its connection existed.
 	let {
 		captureUrl,
 		connections,
@@ -132,6 +148,96 @@
 		onsetupchange({ kind: setupKindOf(connection), connectionId: connection.id });
 	}
 
+	// The open setups (KE-1, ADR-0076 §2), once the page knows enough not to change its mind: the
+	// list, the state of every variable (or why it could not be read) and the keys of the own inbox.
+	const known = $derived(
+		connections.state === 'ready' &&
+			connections.connections.every(
+				(connection) =>
+					!usesSecret(connection.type) ||
+					connections.status(connection.id) !== null ||
+					connections.statusFailure(connection.id) !== null
+			) &&
+			(inboxKeys === null ||
+				inboxKeys.state === 'ready' ||
+				inboxKeys.state === 'unavailable' ||
+				inboxKeys.state === 'error')
+	);
+	const openSetups = $derived<readonly OpenSetupEntry[]>(
+		household || !known
+			? []
+			: openSetupsOf({
+					connections: connections.connections,
+					status: (id) => connections.status(id),
+					stored: (connection) => credentials?.storedOf(connection) ?? null,
+					keys: inboxKeys?.state === 'ready' ? inboxKeys.keys : null,
+					extensionBuilt: extension === null ? null : extension.built
+				})
+	);
+	// The mark at "Kanäle" follows what this page sees (the store of the layout).
+	const layoutSetups = findOpenSetupsStore();
+	$effect(() => {
+		if (household || !known) return;
+		const entries = openSetups;
+		untrack(() => layoutSetups?.adopt(entries));
+	});
+	// "Erste Schritte" (plan EH-12): "Einen Kanal einrichten" is done once a setup is done, not when
+	// a connection merely exists (KE-1, ADR-0076 §6).
+	const firstSteps = findFirstStepsStore();
+	const setupDone = $derived(
+		!household &&
+			anySetupDone({
+				connections: connections.connections,
+				status: (id) => connections.status(id),
+				stored: (connection) => credentials?.storedOf(connection) ?? null,
+				keys: inboxKeys?.state === 'ready' ? inboxKeys.keys : null
+			})
+	);
+	$effect(() => {
+		if (setupDone) untrack(() => firstSteps?.reach('channel'));
+	});
+	const remote = $derived(appContext.capabilities.mode === 'remote');
+
+	function setupHrefOf(entry: OpenSetupEntry): ResolvedPathname {
+		return entry.target === 'own-inbox'
+			? (`${channelSetupHref(null)}#${OWN_INBOX_ANCHOR}` as ResolvedPathname)
+			: channelSetupHref(entry.target);
+	}
+
+	/** "Zur Karte" of the own inbox: the card takes the focus (it allows it by script only). */
+	async function followSetup(entry: OpenSetupEntry) {
+		if (entry.target !== 'own-inbox') return;
+		await tick();
+		document.getElementById(OWN_INBOX_ANCHOR)?.focus();
+	}
+
+	// Assistants this tab began before their connection existed (KE-1, ADR-0076 §5): read from
+	// sessionStorage when the page opens and after every assistant closes; broken and expired entries
+	// go, as when an assistant opens. Nothing else is stored.
+	let begun = $state<readonly SetupKind[]>([]);
+	$effect(() => {
+		if (shownSetup !== null) return;
+		begun = untrack(readBegun);
+	});
+
+	function readBegun(): SetupKind[] {
+		try {
+			const storage = window.sessionStorage;
+			const keys = Array.from({ length: storage.length }, (_, index) => storage.key(index)).filter(
+				(key): key is string => key !== null
+			);
+			const { kinds, stale } = begunSetups(
+				keys.map((key) => [key, storage.getItem(key)] as const),
+				Date.now()
+			);
+			for (const key of stale) storage.removeItem(key);
+			return kinds;
+		} catch {
+			// A blocked storage only hides the mark of the tiles.
+			return [];
+		}
+	}
+
 	/** The Notion connection whose import dialog is open, null while it is closed. */
 	let importing = $state<Connection | null>(null);
 
@@ -147,6 +253,12 @@
 	<ChannelsIntro />
 
 	{#if !household}
+		<OpenSetupsOverview
+			entries={openSetups}
+			{remote}
+			hrefOf={setupHrefOf}
+			onfollow={(entry) => void followSetup(entry)}
+		/>
 		<ConnectionsSection
 			store={connections}
 			{notion}
@@ -187,6 +299,7 @@
 		hrefOf={(entry) => channelSetupHref({ kind: entry, connectionId: null })}
 		{admin}
 		{household}
+		{begun}
 	/>
 </div>
 
