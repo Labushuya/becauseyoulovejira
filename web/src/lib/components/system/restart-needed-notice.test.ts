@@ -117,6 +117,37 @@ describe('RestartNeededNotice: the administrator at the PC (BW-2)', () => {
 		expect(onrestarted).toHaveBeenCalledTimes(1);
 	});
 
+	// BYL-E6-2358
+	it('calls no `onrestarted` of a hint that is gone before the server is back', async () => {
+		const data = fakeRestartData();
+		let release: () => void = () => undefined;
+		data.act.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					release = () => resolve(ok('restarting' as const));
+				})
+		);
+		const layout = restartStoreOf(data);
+		const onrestarted = vi.fn();
+		const { unmount } = render(RestartNoticeHarness, {
+			props: { layout, props: { place: 'notice:test', onrestarted } }
+		});
+		await fireEvent.click(screen.getByRole('button', { name: 'Jetzt neu starten' }));
+		await fireEvent.click(
+			within(
+				screen.getByRole('dialog', { name: 'becauseyoulovejira jetzt neu starten?' })
+			).getByRole('button', { name: 'Neu starten' })
+		);
+		await vi.waitFor(() => expect(data.act).toHaveBeenCalledWith('restart', expect.anything()));
+		// The view goes while the server restarts; the store of the layout keeps its run.
+		unmount();
+		release();
+		await vi.waitFor(() => expect(layout.resultAt('notice:test')?.kind).toBe('restarted'));
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(data.health).toHaveBeenCalled();
+		expect(onrestarted).not.toHaveBeenCalled();
+	});
+
 	// BYL-E6-2342
 	it('shows a refusal of the script as an error with „Details“ in the list of the session', async () => {
 		const restart = new RestartStore(
@@ -208,7 +239,7 @@ describe('RestartNeededNotice: without the right (BW-2)', () => {
 		[
 			'another account',
 			MEMBER_CONTEXT,
-			'Neu starten kann nur der Verwalter unter Einstellungen → System. Bitte den Verwalter fragen.'
+			'Neu starten kann nur der Verwalter, direkt am PC unter Einstellungen → System. Bitte den Verwalter fragen.'
 		]
 	])('gives %s no button, only who restarts where', async (_who, context, way) => {
 		await useContext(context);

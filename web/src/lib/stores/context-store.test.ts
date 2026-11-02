@@ -230,7 +230,7 @@ describe('texts outside components follow the context of the tab', () => {
 		void appContext.refresh();
 		await fake.answer({ kind: 'ready', context: MEMBER });
 		expect(RESTART_NEEDED.text).toBe(
-			'Die App hat ein Update bekommen, das erst nach einem Neustart wirkt. Neu starten kann nur der Verwalter unter Einstellungen → System. Bitte den Verwalter fragen.'
+			'Die App hat ein Update bekommen, das erst nach einem Neustart wirkt. Neu starten kann nur der Verwalter, direkt am PC unter Einstellungen → System. Bitte den Verwalter fragen.'
 		);
 		expect(APP_STOPPED.description).not.toMatch(/\.bat/);
 		expect(serverUnreachable()).toMatch(/Verwalter/);

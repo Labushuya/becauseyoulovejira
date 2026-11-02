@@ -1132,8 +1132,9 @@
 				<p>
 					{RESTART_NEEDED.text}
 					<PcOnly need="script" inline quiet>
-						Den Knopf „Jetzt neu starten“ bietet der Hinweis auch selbst an. Lädt die Weboberfläche
-						nicht, steht der Weg über den Ordner <code>app</code> unter
+						Steht der Hinweis als eigener Block in einer Ansicht, bietet er den Knopf „Jetzt neu
+						starten“ selbst an; in Dialogen, Formularen und Karten steht der Weg als Text. Lädt die
+						Weboberfläche nicht, steht der Weg über den Ordner <code>app</code> unter
 						<a href="#betrieb-notfall">Betrieb</a>.
 					</PcOnly>
 				</p>
@@ -1846,9 +1847,10 @@
 					Ordner <code>app</code> um:
 					<CodeBlock code={PORT_COMMAND} label="Port umstellen (PowerShell)" />
 					Danach die App neu starten (Einstellungen → System → „Jetzt neu starten“) und die neue Adresse
-					öffnen; unter der alten erreicht dieser Tab sie nicht mehr. Lesezeichen, die installierte App
-					und die Browser-Erweiterung für WhatsApp Web brauchen dann die neue Adresse; anmelden musst
-					du dich dort einmal neu.
+					öffnen; unter der alten erreicht dieser Tab sie nicht mehr. Nach etwa 90 Sekunden meldet er
+					deshalb, dass der Server nicht antwortet. Das ist erwartet: Öffne danach die neue Adresse. Lesezeichen,
+					die installierte App und die Browser-Erweiterung für WhatsApp Web brauchen dann die neue Adresse;
+					anmelden musst du dich dort einmal neu.
 				</dd>
 			</div>
 			<div class="row">

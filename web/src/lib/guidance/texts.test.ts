@@ -45,7 +45,7 @@ describe('restart hint', () => {
 		// Every other account: only the administrator restarts.
 		await useContext(MEMBER_CONTEXT);
 		expect(RESTART_NEEDED.text).toBe(
-			'Die App hat ein Update bekommen, das erst nach einem Neustart wirkt. Neu starten kann nur der Verwalter unter Einstellungen → System. Bitte den Verwalter fragen.'
+			'Die App hat ein Update bekommen, das erst nach einem Neustart wirkt. Neu starten kann nur der Verwalter, direkt am PC unter Einstellungen → System. Bitte den Verwalter fragen.'
 		);
 		expect(restartNeeded('Der Eingang ist')).toMatch(/Bitte den Verwalter fragen\.$/);
 		await useContext('pending');

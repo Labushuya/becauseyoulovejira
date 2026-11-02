@@ -37,7 +37,9 @@ describe('hostGuideNote', () => {
 	it('tells a Linux server where the variables go and to restart it', () => {
 		const note = hostGuideNote('linux');
 		expect(note?.title).toBe('Dein Server läuft unter Linux');
-		expect(note?.text).toContain('setx, start.bat, neu-starten.bat');
+		// BW-2: no single file named, only what the guides use.
+		expect(note?.text).toContain('(setx und die .bat-Dateien im Ordner app)');
+		expect(note?.text).not.toMatch(/neu-starten\.bat/);
 		expect(note?.text).toContain('Umgebung des PocketBase-Prozesses');
 		expect(note?.text).toContain('startest den Server danach neu');
 	});
@@ -45,6 +47,8 @@ describe('hostGuideNote', () => {
 	it('tells a container to take the environment file and to be created again', () => {
 		const note = hostGuideNote('container');
 		expect(note?.title).toBe('Dein Server läuft in einem Container');
+		expect(note?.text).toContain('(setx und die .bat-Dateien im Ordner app)');
+		expect(note?.text).not.toMatch(/neu-starten\.bat/);
 		expect(note?.text).toContain('Umgebungsdatei des Containers');
 		expect(note?.text).toContain('docker compose up -d');
 		expect(note?.text).toContain('ein bloßer Neustart liest die Datei nicht neu');

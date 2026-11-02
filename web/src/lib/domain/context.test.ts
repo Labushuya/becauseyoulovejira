@@ -208,6 +208,11 @@ describe('withoutCommands', () => {
 		[
 			'Der Mail-Hilfsprozess kennt den Zugang der App nicht (BYL_INGEST_TOKEN). Bitte die App neu starten (Einstellungen → System → „Jetzt neu starten“).',
 			'Der Mail-Hilfsprozess kennt den Zugang der App nicht (BYL_INGEST_TOKEN). Bitte die App neu starten.'
+		],
+		// The hint of a chat that is not allowed keeps the way at the card, only the restart goes.
+		[
+			'Nachricht aus einem nicht freigegebenen Chat (Chat-ID 42), nicht gespeichert. Zum Freigeben die ID an der Karte der Verbindung unter „Zugangsdaten“ in BYL_TELEGRAM_ALLOWED_IDS aufnehmen (die ganze Liste, mit Komma getrennt), dann die App neu starten (Einstellungen → System → „Jetzt neu starten“).',
+			'Nachricht aus einem nicht freigegebenen Chat (Chat-ID 42), nicht gespeichert. Zum Freigeben die ID an der Karte der Verbindung unter „Zugangsdaten“ in BYL_TELEGRAM_ALLOWED_IDS aufnehmen (die ganze Liste, mit Komma getrennt), dann die App neu starten.'
 		]
 	])('removes the command of %j', (text, expected) => {
 		expect(withoutCommands(text)).toEqual({ text: expected, removed: true });

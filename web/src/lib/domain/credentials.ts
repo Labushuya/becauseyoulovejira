@@ -6,7 +6,7 @@
 // tests/unit/web-credentials.test.mjs) and the texts. A value is never part of an answer, a state
 // or a text here; only the component of the field holds it while it is typed.
 
-import type { SystemDenial } from './system';
+import { RESTART_WAY, type SystemDenial } from './system';
 
 /** One variable of the state: set in the user environment (null while unknown), and who uses it. */
 export interface CredentialVariable {
@@ -158,8 +158,8 @@ export const CREDENTIAL_TEXTS = {
 	pendingRestart: 'Neustart nötig, damit geänderte Zugangsdaten wirken.',
 	offline:
 		'Verbindung unterbrochen – ob die Änderung angekommen ist, ist unklar. Im Browser wurde nichts gespeichert. Der Zustand wird nach dem Wiederverbinden neu geladen.',
-	emergency:
-		'Notfall: Geht das hier nicht, setzt du die Variable am PC wie bisher mit setx in der Eingabeaufforderung (Befehl im Einrichtungsassistenten unter „Notfall“; setx kürzt Werte über 1024 Zeichen) und startest die App mit neu-starten.bat im Ordner app neu.',
+	// Folded under setupEmergencySummary (BW-2): the way through Windows, the restart from the browser.
+	emergency: `Geht das hier nicht, setzt du die Variable am PC wie bisher mit setx in der Eingabeaufforderung (Befehl im Einrichtungsassistenten unter „Notfall“; setx kürzt Werte über 1024 Zeichen) und startest die App danach neu: ${RESTART_WAY}.`,
 	setupEmergencySummary: 'Notfall: Variable über Windows setzen'
 } as const;
 

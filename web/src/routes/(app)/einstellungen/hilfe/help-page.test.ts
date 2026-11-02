@@ -313,6 +313,10 @@ describe('help page (EH-9)', () => {
 		expect(text(section)).toContain('„Neueste zuerst“ (Standard) oder „Älteste zuerst“');
 		expect(text(section)).toContain('höchstens einen angepinnten Kommentar');
 		expect(text(section)).toContain('„Weiterlesen“');
+		// BW-2: the button stands at a hint as a block; dialogs, forms and cards name the way as text.
+		expect(text(section)).toContain(
+			'Steht der Hinweis als eigener Block in einer Ansicht, bietet er den Knopf „Jetzt neu starten“ selbst an; in Dialogen, Formularen und Karten steht der Weg als Text.'
+		);
 		expect(section.querySelectorAll('details[open]')).toHaveLength(0);
 		// "Neues Ticket" with everything at once (ADR-0069): main fields, "Weitere Optionen", one step.
 		expect(text(section)).toContain('„Weitere Optionen (2 gesetzt)“');
@@ -440,8 +444,27 @@ describe('help page (EH-9)', () => {
 		expect(content).toMatch(
 			/neu-starten\.bat im Ordner app doppelklicken\. Es startet nur neu, wenn es nötig ist/
 		);
+		// BW-2: the rendered help names the file only in that emergency section and in the catalog of
+		// the scripts right after it („Probleme mit den Skripten“, #betrieb-probleme).
+		const emergency = section.querySelector('#betrieb-notfall') as HTMLElement;
+		const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+		const mentions: Node[] = [];
+		for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+			if (/neu-starten\.bat/i.test(node.textContent ?? '')) mentions.push(node);
+		}
+		expect(mentions.length).toBeGreaterThan(1);
+		for (const node of mentions) {
+			expect(section.contains(node)).toBe(true);
+			expect(emergency.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(
+				0
+			);
+		}
 		expect(content).toMatch(
 			/Danach die App neu starten \(Einstellungen → System → „Jetzt neu starten“\) und die neue Adresse öffnen/
+		);
+		// BW-2: after a change of the port the old tab cannot follow the restart; that is expected.
+		expect(content).toContain(
+			'Nach etwa 90 Sekunden meldet er deshalb, dass der Server nicht antwortet. Das ist erwartet: Öffne danach die neue Adresse.'
 		);
 		expect(content).toMatch(
 			/stop\.bat beendet geordnet erst den Mail-Hilfsprozess, dann den Server/

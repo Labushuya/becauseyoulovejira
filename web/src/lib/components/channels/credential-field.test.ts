@@ -9,12 +9,12 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
-import { tick } from 'svelte';
+import { tick, type Component } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CredentialAnswer, CredentialChange } from '$lib/data/credentials';
 import { DataError } from '$lib/data/errors';
 import { CREDENTIAL_MESSAGES, CREDENTIAL_TEXTS, PC_ONLY } from '$lib/domain/credentials';
-import { RESTART_TEXTS } from '$lib/domain/system';
+import { RESTART_TEXTS, RESTART_WAY } from '$lib/domain/system';
 import { connectionOf } from '$lib/test/connections-fake';
 import { MEMBER_CONTEXT, PC_CONTEXT, REMOTE_CONTEXT, useContext } from '$lib/test/context';
 import {
@@ -24,9 +24,12 @@ import {
 	variableOf,
 	type FakeCredentialsData
 } from '$lib/test/credentials-fake';
+import type { OutboxStore } from '$lib/offline/outbox.svelte';
+import OutboxHostHarness from '$lib/test/OutboxHostHarness.svelte';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import { fakeRestartData, restartStoreOf } from '$lib/test/restart-fake';
 import type { RestartStore } from '$lib/stores/restart.svelte';
+import type { TicketHost } from '$lib/ticket-host';
 import CredentialRestartNotice from './CredentialRestartNotice.svelte';
 import CredentialsBlock from './CredentialsBlock.svelte';
 
@@ -96,8 +99,15 @@ describe('the state and the actions at the field of a channel (V1)', () => {
 		expect(within(ids).getByText('fehlt')).toBeTruthy();
 		expect(within(ids).getByRole('button', { name: 'Setzen …' })).toBeTruthy();
 		expect(within(ids).queryByRole('button', { name: 'Entfernen …' })).toBeNull();
-		// The emergency way names the real files, only for the administrator at the PC (V6).
-		expect(screen.getByText(/Notfall: .*setx.*neu-starten\.bat im Ordner app/)).toBeTruthy();
+		// The emergency way stands only folded, only for the administrator at the PC (V6), and
+		// restarts through the page System, not through a file (BW-2).
+		const summary = screen.getByText(CREDENTIAL_TEXTS.setupEmergencySummary);
+		const emergency = summary.parentElement as HTMLDetailsElement;
+		expect(emergency.tagName).toBe('DETAILS');
+		expect(emergency.open).toBe(false);
+		expect(emergency.textContent).toMatch(/setx in der Eingabeaufforderung/);
+		expect(emergency.textContent).toContain(`und startest die App danach neu: ${RESTART_WAY}.`);
+		expect(document.body.textContent).not.toMatch(/\.bat\b/);
 	});
 
 	it('sets a value through a password field that is never filled in and empty after the submit', async () => {
@@ -325,6 +335,47 @@ describe('the restart after a change (V3)', () => {
 			expect(screen.getByText(/^becauseyoulovejira wurde neu gestartet\./)).toBeTruthy()
 		);
 		await vi.waitFor(() => expect(data.notice).toHaveBeenCalled());
+	});
+
+	// BYL-E6-2359
+	it('starts no restart without a connection: the question says why, the locked button stays (BW-2)', async () => {
+		const data = fakeCredentialsData([
+			variableOf('BYL_TELEGRAM_TOKEN'),
+			variableOf('BYL_TELEGRAM_ALLOWED_IDS', { set: false })
+		]);
+		const restartData = fakeRestartData();
+		const store = credentialsStoreOf(data);
+		await store.load();
+		// The outbox of the (app) layout misses the connection (OF-2).
+		const outbox = { offline: true } as unknown as OutboxStore;
+		render(OutboxHostHarness, {
+			props: {
+				outbox,
+				host: {} as unknown as TicketHost,
+				component: CredentialsBlock as unknown as Component<never>,
+				props: { id: 'zugang', connection: BOT, store, restart: restartStoreOf(restartData) }
+			}
+		});
+		await tick();
+		await submit('BYL_TELEGRAM_ALLOWED_IDS', '0');
+		const question = await vi.waitFor(() =>
+			screen.getByRole('dialog', { name: 'Jetzt neu starten?' })
+		);
+		expect(within(question).getByText(RESTART_TEXTS.offline)).toBeTruthy();
+		await fireEvent.click(within(question).getByRole('button', { name: 'Jetzt neu starten' }));
+		await tick();
+		expect(screen.queryByRole('dialog', { name: 'Jetzt neu starten?' })).toBeNull();
+		expect(restartData.status).not.toHaveBeenCalled();
+		expect(restartData.act).not.toHaveBeenCalled();
+		// The locked button of RestartAction stays at the field, with the reason next to it.
+		const ids = within(field('BYL_TELEGRAM_ALLOWED_IDS'));
+		const button = ids.getByRole('button', { name: 'Jetzt neu starten' });
+		expect(button.getAttribute('aria-disabled')).toBe('true');
+		const [first] = (button.getAttribute('aria-describedby') ?? '').split(' ');
+		expect(document.getElementById(first ?? '')?.textContent).toBe(RESTART_TEXTS.offline);
+		await fireEvent.click(button);
+		expect(screen.queryByRole('dialog')).toBeNull();
+		expect(restartData.act).not.toHaveBeenCalled();
 	});
 });
 

@@ -438,6 +438,11 @@ describe('Telegram (plan EH-6)', () => {
 	it.each([
 		[HINT, '424242'],
 		['Nachricht aus einem nicht freigegebenen Chat (Chat-ID -1001234567890).', '-1001234567890'],
+		// The full hint of the server since BW-2, with the way at the card.
+		[
+			'Nachricht aus einem nicht freigegebenen Chat (Chat-ID 424242 („Anna“), User-ID 7), nicht gespeichert. Zum Freigeben die ID an der Karte der Verbindung unter „Zugangsdaten“ in BYL_TELEGRAM_ALLOWED_IDS aufnehmen (die ganze Liste, mit Komma getrennt), dann die App neu starten (Einstellungen → System → „Jetzt neu starten“).',
+			'424242'
+		],
 		['Chat-ID 12345678901234567890', '12345678901234567890'],
 		['Chat-ID 123456789012345678901', null],
 		['Chat-ID abc', null],

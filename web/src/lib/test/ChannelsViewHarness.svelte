@@ -12,7 +12,7 @@
 	import type { InboxKeysStore } from '$lib/stores/inbox-keys.svelte';
 	import type { NotionStore } from '$lib/stores/notion.svelte';
 	import { setOpenSetupsStore, type OpenSetupsStore } from '$lib/stores/open-setups.svelte';
-	import type { RestartStore } from '$lib/stores/restart.svelte';
+	import { setRestartStore, type RestartStore } from '$lib/stores/restart.svelte';
 	import { foldersStoreOf } from './folders-fake';
 	import { githubStoreOf } from './github-fake';
 	import { notionStoreOf } from './notion-fake';
@@ -25,13 +25,15 @@
 	// ADR-0051, BW-1); `projects` are those of the catalog (the step "Zielprojekt", ADR-0049). The
 	// access data of BW-3 (ADR-0075) only with a store of the test, as before them without one. The
 	// keys of the own inbox, the extension and, as the (app) layout provides them, the store of the
-	// open setups and "Erste Schritte" only with those of a test (KE-1, ADR-0076).
+	// open setups and "Erste Schritte" only with those of a test (KE-1, ADR-0076). `layoutRestart` is
+	// the RestartStore of the (app) layout, for a test that the page uses its own one (BW-2).
 	let {
 		connections,
 		notion = notionStoreOf(),
 		github = githubStoreOf(),
 		folders = foldersStoreOf(),
 		restart = restartStoreOf(),
+		layoutRestart = null,
 		credentials = null,
 		inboxKeys = null,
 		extension = null,
@@ -46,6 +48,7 @@
 		github?: GitHubStore;
 		folders?: FoldersStore;
 		restart?: RestartStore;
+		layoutRestart?: RestartStore | null;
 		credentials?: CredentialsStore | null;
 		inboxKeys?: InboxKeysStore | null;
 		extension?: ExtensionInfo | null;
@@ -57,6 +60,7 @@
 	} = $props();
 
 	untrack(() => {
+		if (layoutRestart !== null) setRestartStore(layoutRestart);
 		if (openSetups !== null) setOpenSetupsStore(openSetups);
 		if (firstSteps !== null) setFirstStepsStore(firstSteps);
 	});

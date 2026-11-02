@@ -104,7 +104,7 @@ export const RESTART_NEEDED = {
 		if (capabilities.mode === 'remote')
 			return `${RESTART_BASE}. ${pcOnlyText(capabilities.localUrl)} Dort: ${RESTART_WAY}.`;
 		if (capabilities.mode === 'member')
-			return `${RESTART_BASE}. Neu starten kann nur der Verwalter unter Einstellungen → System. ${CONTEXT_TEXTS.askAdmin}`;
+			return `${RESTART_BASE}. Neu starten kann nur der Verwalter, direkt am PC unter Einstellungen → System. ${CONTEXT_TEXTS.askAdmin}`;
 		return `${RESTART_BASE}.`;
 	}
 } as const;
@@ -120,11 +120,12 @@ export function restartNeeded(subject: string): string {
 
 /**
  * The page System before the restart after an update (BW-2): its "Jetzt neu starten" comes with the
- * same update, so until then only the emergency way of the folder app restarts (help "Betrieb"),
- * named here without the file.
+ * same update, so until then only the emergency way of the folder app restarts the app (help
+ * "Betrieb", section „Notfall“), named here without the file. A plain text like every notice of
+ * the page (SystemNotice), so the way to the help stands in words, not as a link.
  */
 export function systemPageRestartNeeded(): string {
-	return `Die Seite System ist nach dem nächsten Neustart verfügbar. ${RESTART_BASE}; bis dahin startet sie nur der Notfall-Weg über den Ordner app neu (Hilfe unter „Betrieb“).`;
+	return `Die Seite System ist nach dem nächsten Neustart verfügbar. ${RESTART_BASE}; bis dahin startet die App nur über den Notfall-Weg im Ordner app neu (Hilfe → Betrieb → „Notfall“).`;
 }
 
 /** What the tab restarts outside the page System (BW-1, ADR-0072). */

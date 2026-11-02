@@ -101,7 +101,7 @@ describe('SystemStore: status', () => {
 		// Its "Jetzt neu starten" comes with the same update: only the emergency way, without the
 		// file (BW-2).
 		expect(store.message?.text).toBe(
-			'Die Seite System ist nach dem nächsten Neustart verfügbar. Die App hat ein Update bekommen, das erst nach einem Neustart wirkt; bis dahin startet sie nur der Notfall-Weg über den Ordner app neu (Hilfe unter „Betrieb“).'
+			'Die Seite System ist nach dem nächsten Neustart verfügbar. Die App hat ein Update bekommen, das erst nach einem Neustart wirkt; bis dahin startet die App nur über den Notfall-Weg im Ordner app neu (Hilfe → Betrieb → „Notfall“).'
 		);
 	});
 
