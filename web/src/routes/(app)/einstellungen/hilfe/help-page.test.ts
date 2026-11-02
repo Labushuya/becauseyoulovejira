@@ -166,7 +166,14 @@ describe('help page (EH-9)', () => {
 			/zuerst 8 und „\+ N weitere“,\s*ab 21 Stichwörtern mit einem Filterfeld/
 		);
 		expect(content).toMatch(/steht nicht mehr auf „Einrichtung offen“/);
-		expect(content).not.toMatch(/Nicht eingerichtet/);
+		// The states of the cards of the connections: no „Nicht eingerichtet“ (KK-2); only the own
+		// inbox and WhatsApp Web say so before their first key (KE-1).
+		const states = Array.from(
+			screen.getByRole('region', { name: 'Kanäle und Zugangsdaten' }).querySelectorAll('p')
+		).find((paragraph) => text(paragraph).includes('Jeder Kanal hat dort eine Karte'));
+		if (states === undefined) throw new Error('paragraph of the card states');
+		expect(text(states)).toMatch(/„Einrichtung offen“ oder „Neustart nötig“/);
+		expect(text(states)).not.toMatch(/Nicht eingerichtet/);
 		// Renaming in the card (ADR-0026, addendum KK-3).
 		expect(content).toMatch(/„Umbenennen …“ macht den Namen oben in der Karte zum Textfeld/);
 		expect(content).toMatch(/ändert nur den Namen, nie Abruf, Zugangsdaten oder Stichwörter/);
@@ -183,6 +190,9 @@ describe('help page (EH-9)', () => {
 		expect(content).toMatch(/am Handy unter „Mehr“/);
 		expect(content).toMatch(/erscheint einmal ein Hinweis, wieder erst, wenn sich etwas\s+ändert/);
 		expect(content).toMatch(/Stichwörter und Zielprojekt halten nichts offen/);
+		expect(content).toMatch(
+			/Vor dem ersten Zugangsschlüssel heißen die Karten „Eigener Eingang \(API\)“ und „WhatsApp Web“ „Nicht eingerichtet“/
+		);
 		expect(content).toMatch(/„Wartet auf Neustart“/);
 		expect(content).toMatch(/„Zugangsdaten fehlen oder warten auf Neustart – am PC prüfen“/);
 		expect(content).toMatch(/als „Begonnen“ mit\s+„Fortsetzen“/);
