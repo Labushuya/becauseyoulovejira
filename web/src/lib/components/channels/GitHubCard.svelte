@@ -419,7 +419,8 @@
 						<ServerProblemLink
 							connection={connection.id}
 							name={connection.label}
-							seen={`${connection.lastRunAt} ${connection.lastError}`}
+							lastError={connection.lastError}
+							lastRunAt={connection.lastRunAt}
 						/>
 					</dd>
 				</div>

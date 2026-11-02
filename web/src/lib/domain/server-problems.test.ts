@@ -1,6 +1,6 @@
 // The error log of the server in the SPA (FP-2, ADR-0077): an entry of the record API as an entry of
-// the dialog, its facts with area, last occurrence and Server-ID, the report, and the address
-// `?fehler=<id>`.
+// the dialog, its facts with area, last occurrence and Server-ID, the report, the address
+// `?fehler=<id>` and the entry behind "Details" of a channel card (only for the error shown).
 
 import { describe, expect, it } from 'vitest';
 import {
@@ -11,8 +11,13 @@ import {
 	type ProblemEntry
 } from './problems';
 import {
+	CHANNEL_PROBLEM_TOLERANCE_MS,
 	SERVER_PROBLEM_PARAM,
+	channelProblemKey,
+	channelProblemsSince,
 	isServerProblemId,
+	matchChannelProblems,
+	parseChannelProblemHit,
 	parseServerProblem,
 	serverProblemEntry,
 	serverProblemIdOf
@@ -181,5 +186,81 @@ describe('server-problems: the address of an entry', () => {
 		}
 		expect(isServerProblemId(ID)).toBe(true);
 		expect(isServerProblemId(null)).toBe(false);
+	});
+});
+
+describe('server-problems: the entry behind "Details" of a channel card', () => {
+	const CONNECTION = 'conn00000000001';
+	const RUN = '2026-11-02 09:30:00.000Z';
+	const runMs = Date.UTC(2026, 10, 2, 9, 30, 0);
+	const card = (overrides: Record<string, unknown> = {}) => ({
+		connection: CONNECTION,
+		lastError: 'Telegram antwortet mit HTTP 401.',
+		lastRunAt: RUN,
+		...overrides
+	});
+	const hit = (id: string, lastAt: number, connection = CONNECTION) => ({ id, connection, lastAt });
+
+	it('takes the newest entry of the connection that is not older than the run of the card', () => {
+		const found = matchChannelProblems(
+			[card(), card({ connection: 'conn00000000002', lastError: 'Ordner fehlt.' })],
+			[
+				hit('older000000001a', runMs - 60_000),
+				hit('newer000000001a', runMs + 5),
+				hit('other000000001a', runMs + 9, 'conn00000000002')
+			]
+		);
+		expect(found.get(channelProblemKey(card()))).toBe('newer000000001a');
+		expect(
+			found.get(channelProblemKey({ connection: 'conn00000000002', lastError: 'Ordner fehlt.' }))
+		).toBe('other000000001a');
+	});
+
+	it('names no older, other error: only within the tolerance of a second before the run', () => {
+		expect(CHANNEL_PROBLEM_TOLERANCE_MS).toBe(1000);
+		const key = channelProblemKey(card());
+		expect(
+			matchChannelProblems([card()], [hit('older000000001a', runMs - 1001)]).get(key)
+		).toBeUndefined();
+		expect(matchChannelProblems([card()], [hit('clock000000001a', runMs - 1000)]).get(key)).toBe(
+			'clock000000001a'
+		);
+		expect(
+			matchChannelProblems([card({ lastRunAt: null })], [hit('newer000000001a', runMs)]).size
+		).toBe(0);
+		expect(matchChannelProblems([card()], []).size).toBe(0);
+	});
+
+	it('keys a card by connection and error, and asks from the earliest run on', () => {
+		expect(channelProblemKey(card())).not.toBe(channelProblemKey(card({ lastError: 'Anders.' })));
+		expect(channelProblemKey(card())).toBe(
+			channelProblemKey(card({ lastRunAt: '2026-11-02 10:30:00.000Z' }))
+		);
+		expect(
+			channelProblemsSince([
+				card(),
+				card({ lastRunAt: '2026-11-02 08:00:00.000Z' }),
+				card({ lastRunAt: null })
+			])
+		).toBe(Date.UTC(2026, 10, 2, 8, 0, 0) - CHANNEL_PROBLEM_TOLERANCE_MS);
+		expect(channelProblemsSince([card({ lastRunAt: null })])).toBeNull();
+	});
+
+	it('reads a hit of the query only with IDs and a time of the right form', () => {
+		expect(
+			parseChannelProblemHit({
+				id: ID,
+				context: { connection: CONNECTION, channel: 'telegram' },
+				last_at: RUN
+			})
+		).toEqual({ id: ID, connection: CONNECTION, lastAt: runMs });
+		for (const broken of [
+			{ id: ID, context: {}, last_at: RUN },
+			{ id: 'kurz', context: { connection: CONNECTION }, last_at: RUN },
+			{ id: ID, context: { connection: CONNECTION }, last_at: '' },
+			null
+		]) {
+			expect(parseChannelProblemHit(broken)).toBeNull();
+		}
 	});
 });

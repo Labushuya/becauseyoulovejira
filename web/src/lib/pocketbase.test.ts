@@ -82,7 +82,7 @@ describe('pb', () => {
 		});
 	});
 
-	it('takes the entry of the log of the server an unexpected 5xx names as Server-ID (FP-2)', async () => {
+	it('takes the entry of the log of the server an unexpected failure names as Server-ID (FP-2)', async () => {
 		const answer = (status: number, id: string) =>
 			vi.fn<typeof fetch>(async () =>
 				Response.json(
@@ -98,9 +98,20 @@ describe('pb', () => {
 		expect(problem).toMatchObject({ serverId: 'abc123def456ghi', outcome: { status: 500 } });
 		expect(problemReport(problem)).toContain('Server-ID: abc123def456ghi');
 
-		// Only a 5xx and only an ID of the right form; the body stays as PocketBase sent it.
+		// A 400 the server keeps as a failure of the app names its entry as well.
+		vi.stubGlobal('fetch', answer(400, 'abc123def456ghj'));
+		const unexpected = await pb
+			.send('/api/byl/tickets/abc123def456789/duplicate', { method: 'POST', body: {} })
+			.catch((caught: unknown) => caught);
+		expect(problemOf(toDataError(unexpected))).toMatchObject({
+			serverId: 'abc123def456ghj',
+			outcome: { status: 400 }
+		});
+
+		// Only a 5xx or a 400 and only an ID of the right form; the body stays as PocketBase sent it.
 		for (const [status, id] of [
 			[409, 'abc123def456ghi'],
+			[404, 'abc123def456ghi'],
 			[500, 'kein-gueltiger-wert']
 		] as const) {
 			vi.stubGlobal('fetch', answer(status, id));

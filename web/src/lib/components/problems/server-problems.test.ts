@@ -9,6 +9,10 @@ import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { clientProblem } from '$lib/domain/problems';
 import { problemLog } from '$lib/stores/problem-log.svelte';
+import {
+	ChannelProblemsStore,
+	type ChannelProblemsFinder
+} from '$lib/stores/server-problems.svelte';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import ServerProblemLink from './ServerProblemLink.svelte';
 import ServerProblemsEntry from './ServerProblemsEntry.svelte';
@@ -212,47 +216,88 @@ describe('dialog of the errors with the log of the server (FP-2)', () => {
 });
 
 describe('"Details" at the last error of a channel card (FP-2)', () => {
-	it('links to the newest entry of the connection on the current page', async () => {
-		const find = vi.fn(async () => NEWER.id);
-		render(ServerProblemLink, {
-			props: { connection: 'conn00000000001', name: 'Mein Bot', seen: '2026-11-02 x', find }
-		});
+	const RUN = '2026-11-02 09:30:00.000Z';
+	const card = (index: number, overrides: Record<string, unknown> = {}) => ({
+		connection: `conn0000000000${index}`,
+		name: `Karte ${index}`,
+		lastError: `Fehler ${index}`,
+		lastRunAt: RUN,
+		...overrides
+	});
+	/** The finder of the page with an entry of every asked connection at `lastAt`. */
+	const finder = (lastAt = Date.UTC(2026, 10, 2, 9, 30, 0, 5)) =>
+		vi.fn<ChannelProblemsFinder>(async (connections) =>
+			connections.map((connection) => ({
+				id: `${connection}`.replace('conn', 'prob'),
+				connection,
+				lastAt
+			}))
+		);
+
+	it('links to the entry of its error on the current page', async () => {
+		const watch = vi.fn(() => () => undefined);
+		const problems = { watch, idOf: vi.fn(() => NEWER.id) };
+		render(ServerProblemLink, { props: { ...card(1, { name: 'Mein Bot' }), problems } });
 		const link = await screen.findByRole('link', { name: 'Details: Mein Bot im Fehlerprotokoll' });
 		expect(link.getAttribute('href')).toBe(
 			`/einstellungen/kanaele?einrichten=telegram&fehler=${NEWER.id}`
 		);
 		expect(link.classList.contains('button-subtle')).toBe(true);
 		expect(link.hasAttribute('data-sveltekit-replacestate')).toBe(true);
-		expect(find).toHaveBeenCalledWith('conn00000000001', expect.any(AbortSignal));
+		expect(watch).toHaveBeenCalledWith({
+			connection: 'conn00000000001',
+			lastError: 'Fehler 1',
+			lastRunAt: RUN
+		});
 	});
 
-	it('asks again for a new state of the card', async () => {
-		const find = vi.fn(async () => NEWER.id);
-		const { rerender } = render(ServerProblemLink, {
-			props: { connection: 'conn00000000001', name: 'Mein Bot', seen: 'eins', find }
+	it('asks one query for the cards of the page and once more for a new error', async () => {
+		const find = finder();
+		const problems = new ChannelProblemsStore(find, 0);
+		const views = [1, 2, 3, 4, 5].map((index) =>
+			render(ServerProblemLink, { props: { ...card(index), problems } })
+		);
+		await waitFor(() => expect(screen.getAllByRole('link')).toHaveLength(5));
+		expect(find).toHaveBeenCalledTimes(1);
+		expect(find.mock.calls[0]?.[0]).toEqual(
+			[1, 2, 3, 4, 5].map((index) => `conn0000000000${index}`)
+		);
+
+		await views[1]?.rerender({
+			...card(2, { lastError: 'Neuer Fehler', lastRunAt: '2026-11-02 09:32:00.000Z' }),
+			problems
 		});
-		await screen.findByRole('link');
-		await rerender({ connection: 'conn00000000001', name: 'Mein Bot', seen: 'zwei', find });
 		await waitFor(() => expect(find).toHaveBeenCalledTimes(2));
+		problems.stop();
+	});
+
+	it('shows no link for an entry older than the run of the card: it belongs to another error', async () => {
+		// One query: an entry of 09:30 for both cards; the second card ran at 10:00 with another error.
+		const problems = new ChannelProblemsStore(finder(), 0);
+		render(ServerProblemLink, { props: { ...card(1), problems } });
+		render(ServerProblemLink, {
+			props: { ...card(2, { name: 'Später', lastRunAt: '2026-11-02 10:00:00.000Z' }), problems }
+		});
+		expect(
+			await screen.findByRole('link', { name: 'Details: Karte 1 im Fehlerprotokoll' })
+		).toBeTruthy();
+		expect(screen.queryByRole('link', { name: 'Details: Später im Fehlerprotokoll' })).toBeNull();
+		problems.stop();
 	});
 
 	it('shows nothing without an entry, when the question fails and outside of the page "Kanäle"', async () => {
 		render(ServerProblemLink, {
-			props: { connection: 'conn00000000001', name: 'A', seen: 'x', find: async () => null }
+			props: { ...card(1), problems: new ChannelProblemsStore(async () => [], 0) }
+		});
+		const failing = vi.fn<ChannelProblemsFinder>(async () => {
+			throw new TypeError('Failed to fetch');
 		});
 		render(ServerProblemLink, {
-			props: {
-				connection: 'conn00000000002',
-				name: 'B',
-				seen: 'x',
-				find: async () => {
-					throw new TypeError('Failed to fetch');
-				}
-			}
+			props: { ...card(2), problems: new ChannelProblemsStore(failing, 0) }
 		});
 		const fetchMock = serve();
-		render(ServerProblemLink, { props: { connection: 'conn00000000003', name: 'C', seen: 'x' } });
-		await tick();
+		render(ServerProblemLink, { props: card(3) });
+		await waitFor(() => expect(failing).toHaveBeenCalledTimes(1));
 		await tick();
 		expect(screen.queryByRole('link')).toBeNull();
 		expect(fetchMock).not.toHaveBeenCalled();

@@ -36,8 +36,9 @@ function statusOf(error: unknown): number | null {
  * answer and never the method, and for a missing connection nothing at all. Only the path is
  * kept (the data layer strips the query); body, headers and the token stay out. While the outbox
  * can work, the monitor of the connection hears whether the server answered (OF-2). An answer with
- * an unexpected 5xx names its entry of the log of the server in X-Byl-Problem (FP-2, ADR-0077);
- * `afterSend` notes only that ID beside the body, for the Server-ID of the details.
+ * an unexpected failure (5xx, or 400 of a failure of the app) names its entry of the log of the server
+ * in X-Byl-Problem (FP-2, ADR-0077); `afterSend` notes only that ID beside the body, for the Server-ID
+ * of the details.
  */
 class AppPocketBase extends PocketBase {
 	constructor(baseUrl: string) {

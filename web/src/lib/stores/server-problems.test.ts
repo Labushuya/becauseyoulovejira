@@ -1,15 +1,22 @@
 // The store of the error log of the server (FP-2, ADR-0077) on a fake source: the list newest first,
 // the entry of the address first and only once, a gone entry as "missing", no connection as
 // "offline" without breaking anything, any other failure as "failed" with its details, and a newer
-// load that replaces a running one.
+// load that replaces a running one. The store of "Details" at the channel cards: one query for all
+// cards, none for a new run with the same error, a failed query without a link.
 
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DataError } from '$lib/data/errors';
 import type { RunResult } from '$lib/domain/connections';
 import { problemReport } from '$lib/domain/problems';
-import type { ServerProblemRecord } from '$lib/domain/server-problems';
+import type { ChannelProblemCard, ServerProblemRecord } from '$lib/domain/server-problems';
 import { runProblem } from './connections.svelte';
-import { ServerProblemsStore, type ServerProblemsSource } from './server-problems.svelte';
+import {
+	CHANNEL_PROBLEMS_SETTLE_MS,
+	ChannelProblemsStore,
+	ServerProblemsStore,
+	type ChannelProblemsFinder,
+	type ServerProblemsSource
+} from './server-problems.svelte';
 
 function record(id: string, overrides: Partial<ServerProblemRecord> = {}): ServerProblemRecord {
 	return {
@@ -137,6 +144,93 @@ describe('ServerProblemsStore', () => {
 		void store.load();
 		store.stop();
 		expect(signals[2]?.aborted).toBe(true);
+	});
+});
+
+describe('ChannelProblemsStore: "Details" of the channel cards in one query (FP-2)', () => {
+	const RUN = '2026-11-02 09:30:00.000Z';
+	const card = (
+		index: number,
+		overrides: Partial<ChannelProblemCard> = {}
+	): ChannelProblemCard => ({
+		connection: `conn0000000000${index}`,
+		lastError: `Fehler ${index}`,
+		lastRunAt: RUN,
+		...overrides
+	});
+	const idOf = (index: number) => `prob0000000000${index}`;
+	/** An entry of every asked connection, a little after the run of 09:30. */
+	const finder = () =>
+		vi.fn<ChannelProblemsFinder>(async (connections) =>
+			connections.map((connection) => ({
+				id: connection.replace('conn', 'prob'),
+				connection,
+				lastAt: Date.UTC(2026, 10, 2, 9, 30, 0, 5)
+			}))
+		);
+
+	beforeEach(() => vi.useFakeTimers());
+	afterEach(() => vi.useRealTimers());
+
+	it('waits for the cards to settle and asks one query for all of them', async () => {
+		const find = finder();
+		const store = new ChannelProblemsStore(find);
+		for (const index of [1, 2, 3, 4, 5]) store.watch(card(index));
+		await vi.advanceTimersByTimeAsync(CHANNEL_PROBLEMS_SETTLE_MS - 1);
+		expect(find).not.toHaveBeenCalled();
+		await vi.advanceTimersByTimeAsync(1);
+		expect(find).toHaveBeenCalledTimes(1);
+		expect(find.mock.calls[0]?.[1]).toBe(Date.UTC(2026, 10, 2, 9, 30, 0) - 1000);
+		await vi.waitFor(() => expect(store.idOf(card(5))).toBe(idOf(5)));
+		expect([1, 2, 3, 4].map((index) => store.idOf(card(index)))).toEqual([1, 2, 3, 4].map(idOf));
+	});
+
+	it('asks nothing for a new run with the same error, once more for a new error', async () => {
+		const find = finder();
+		const store = new ChannelProblemsStore(find);
+		const ends = [1, 2].map((index) => store.watch(card(index)));
+		await vi.advanceTimersByTimeAsync(CHANNEL_PROBLEMS_SETTLE_MS);
+		await vi.waitFor(() => expect(store.idOf(card(1))).toBe(idOf(1)));
+
+		ends[0]?.();
+		store.watch(card(1, { lastRunAt: '2026-11-02 09:31:00.000Z' }));
+		await vi.advanceTimersByTimeAsync(CHANNEL_PROBLEMS_SETTLE_MS);
+		expect(find).toHaveBeenCalledTimes(1);
+		expect(store.idOf(card(1))).toBe(idOf(1));
+
+		ends[1]?.();
+		store.watch(card(2, { lastError: 'Neuer Fehler' }));
+		await vi.advanceTimersByTimeAsync(CHANNEL_PROBLEMS_SETTLE_MS);
+		expect(find).toHaveBeenCalledTimes(2);
+		// The old error of card 2 has no entry any more; the new one has.
+		await vi.waitFor(() =>
+			expect(store.idOf(card(2, { lastError: 'Neuer Fehler' }))).toBe(idOf(2))
+		);
+		expect(store.idOf(card(2))).toBeNull();
+	});
+
+	it('shows no link after a failed query and asks again with the next change; stop forgets', async () => {
+		const find = vi.fn<ChannelProblemsFinder>(async () => {
+			throw new DataError('network');
+		});
+		const store = new ChannelProblemsStore(find);
+		const end = store.watch(card(1));
+		await vi.advanceTimersByTimeAsync(CHANNEL_PROBLEMS_SETTLE_MS);
+		expect(store.idOf(card(1))).toBeNull();
+		end();
+		store.watch(card(1, { lastRunAt: '2026-11-02 09:31:00.000Z' }));
+		await vi.advanceTimersByTimeAsync(CHANNEL_PROBLEMS_SETTLE_MS);
+		expect(find).toHaveBeenCalledTimes(2);
+
+		// A card without a run asks nothing; stop ends a waiting query.
+		const quiet = finder();
+		const other = new ChannelProblemsStore(quiet);
+		other.watch(card(1, { lastRunAt: null }));
+		await vi.advanceTimersByTimeAsync(CHANNEL_PROBLEMS_SETTLE_MS);
+		other.watch(card(2));
+		other.stop();
+		await vi.advanceTimersByTimeAsync(CHANNEL_PROBLEMS_SETTLE_MS);
+		expect(quiet).not.toHaveBeenCalled();
 	});
 });
 

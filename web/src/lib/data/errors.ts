@@ -5,8 +5,8 @@
 // "Details" of a message (`problemOf`): the client of the app notes method and path of every
 // failed request (`noteRequest`, lib/pocketbase.ts), an action may name its intent
 // (`withIntent`), otherwise the catalog of domain/problem-intents.ts names it. Since FP-2
-// (ADR-0077) an answer with an unexpected 5xx names its entry of the log of the server
-// (`noteServerProblem`), and the entry carries it as Server-ID.
+// (ADR-0077) an answer with an unexpected failure (5xx, or 400 of a failure of the app) names its
+// entry of the log of the server (`noteServerProblem`), and the entry carries it as Server-ID.
 
 import { ACCOUNT_MESSAGES } from '../domain/accounts';
 import { SCOPE_FIELD_MESSAGES, SCOPE_MESSAGE } from '../domain/area';
@@ -342,11 +342,13 @@ export function noteRequest(error: unknown, method: string, path: string): void 
 /**
  * Notes the entry of the log of the server that an answer names (header X-Byl-Problem, FP-2,
  * ADR-0077) beside the body of that answer, which the error of the SDK keeps as its `response`: the
- * details then name it as Server-ID. Only for a 5xx and only an ID of the right form; nothing else of
- * the answer is kept.
+ * details then name it as Server-ID. Only for a 5xx or a 400 (there the server names only a failure
+ * of the app, `http_400_unexpected`, never a refusal) and only an ID of the right form; nothing else
+ * of the answer is kept.
  */
 export function noteServerProblem(body: unknown, status: number, id: string | null): void {
-	if (status >= 500 && status <= 599 && isRecord(body) && isServerProblemId(id)) {
+	const named = status === 400 || (status >= 500 && status <= 599);
+	if (named && isRecord(body) && isServerProblemId(id)) {
 		serverIds.set(body, id);
 	}
 }

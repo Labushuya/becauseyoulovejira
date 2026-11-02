@@ -35,7 +35,10 @@ export interface ServerProblemRecord {
 	readonly lastAt: number;
 }
 
-/** The header of an answer with an unexpected 5xx that names its entry (the Server-ID). */
+/**
+ * The header of an answer with an unexpected failure that names its entry (the Server-ID): a 5xx, or
+ * a 400 the server keeps as `http_400_unexpected` (a failure of the app, not a refusal).
+ */
 export const SERVER_PROBLEM_HEADER = 'X-Byl-Problem';
 /** The parameter of the address that opens an entry of the log: `?fehler=<id>`. */
 export const SERVER_PROBLEM_PARAM = 'fehler';
@@ -112,6 +115,86 @@ function contextOf(value: unknown): ServerProblemContext {
 			? { status: value.status }
 			: {})
 	};
+}
+
+/** A card with the last error of a run in the background, as "Details" asks for its entry. */
+export interface ChannelProblemCard {
+	readonly connection: string;
+	readonly lastError: string;
+	/** Time of the last run (form of PocketBase), the run that failed with `lastError`. */
+	readonly lastRunAt: string | null;
+}
+
+/** An entry of a failed run of a connection, as the query of the page "Kanäle" finds it. */
+export interface ChannelProblemHit {
+	readonly id: string;
+	readonly connection: string;
+	/** Last occurrence, ms since the epoch. */
+	readonly lastAt: number;
+}
+
+/**
+ * How far the last occurrence of an entry may lie before the run of the card and still be its error.
+ * The server writes both, the entry right after the card (`last_run_at`, then the entry, milliseconds
+ * apart), so `last_at` is never older; the second only covers a correction of the clock of the server
+ * between the two writes. A failure of a run before lies further back (a run takes longer than that),
+ * so "Details" never names an older, other error.
+ */
+export const CHANNEL_PROBLEM_TOLERANCE_MS = 1000;
+/** Connections one query of the page asks for at most; a card beyond them shows no link. */
+export const CHANNEL_PROBLEM_CONNECTIONS_MAX = 40;
+/** Entries one query of the page reads at most, newest first. */
+export const CHANNEL_PROBLEM_HITS_MAX = 200;
+
+/**
+ * The key of the error of a card: the same text of the same connection is the same entry (the server
+ * counts the same failure on its entry), so a new run with it asks nothing new.
+ */
+export function channelProblemKey(
+	card: Pick<ChannelProblemCard, 'connection' | 'lastError'>
+): string {
+	return `${card.connection}\n${card.lastError}`;
+}
+
+/** The earliest time an entry of these cards may have (ms), or null when no card has a run. */
+export function channelProblemsSince(cards: readonly ChannelProblemCard[]): number | null {
+	const times = cards.map((card) => msOf(card.lastRunAt)).filter((ms) => !Number.isNaN(ms));
+	return times.length === 0 ? null : Math.min(...times) - CHANNEL_PROBLEM_TOLERANCE_MS;
+}
+
+/** A hit of the query (`id`, `context.connection`, `last_at` of the record API), or null. */
+export function parseChannelProblemHit(raw: unknown): ChannelProblemHit | null {
+	if (!isRecord(raw) || !isServerProblemId(raw.id) || !isRecord(raw.context)) return null;
+	const connection = raw.context.connection;
+	const lastAt = msOf(raw.last_at);
+	if (!isServerProblemId(connection) || Number.isNaN(lastAt)) return null;
+	return { id: raw.id, connection, lastAt };
+}
+
+/**
+ * The entry behind "Details" of every card (by channelProblemKey): the newest hit of its connection,
+ * only if its last occurrence is not older than the run of the card (CHANNEL_PROBLEM_TOLERANCE_MS).
+ * A card without a run, or whose error has no entry yet, gets none.
+ */
+export function matchChannelProblems(
+	cards: readonly ChannelProblemCard[],
+	hits: readonly ChannelProblemHit[]
+): Map<string, string> {
+	const found = new Map<string, string>();
+	for (const card of cards) {
+		const runAt = msOf(card.lastRunAt);
+		if (Number.isNaN(runAt)) continue;
+		const newest = hits
+			.filter((hit) => hit.connection === card.connection)
+			.reduce<ChannelProblemHit | null>(
+				(best, hit) => (best === null || hit.lastAt > best.lastAt ? hit : best),
+				null
+			);
+		if (newest !== null && newest.lastAt >= runAt - CHANNEL_PROBLEM_TOLERANCE_MS) {
+			found.set(channelProblemKey(card), newest.id);
+		}
+	}
+	return found;
 }
 
 /** An entry from the record API, or null when it is none (an older or a broken form). */
