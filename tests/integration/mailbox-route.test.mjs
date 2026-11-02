@@ -285,7 +285,10 @@ describe('"Jetzt abrufen" of a mailbox and the probe of the helper (package A, i
 		try {
 			const answer = await runConnection(owner.pb, mailbox.id);
 			expect(answer.status).toBe('unavailable');
-			expect(answer.error).toMatch(/^Der Mail-Hilfsprozess läuft nicht .*neu-starten\.bat/);
+			expect(answer.error).toMatch(
+				/^Der Mail-Hilfsprozess läuft nicht .*\(Einstellungen → System → „Jetzt neu starten“\)\.$/
+			);
+			expect(answer.error).not.toMatch(/\.bat\b/);
 			expect(await getMailHelperStatus(owner.pb)).toMatchObject({ state: 'stopped', version: '' });
 			await startHelper('ein-anderer-token');
 			expect(await getMailHelperStatus(owner.pb)).toMatchObject({ state: 'refused' });

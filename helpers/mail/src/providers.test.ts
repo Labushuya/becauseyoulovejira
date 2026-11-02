@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { runInThisContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
+import { RESTART_WAY } from './config';
 import { PROVIDERS, providerOf } from './providers';
 
 function connectionRules(): { MAIL_PROVIDERS: string[] } {
@@ -33,7 +34,10 @@ describe('providers', () => {
 		const hint = providerOf('gmail')?.loginHint ?? '';
 		expect(hint.startsWith('App-Passwort nötig (Bestätigung in zwei Schritten)')).toBe(true);
 		expect(hint).toContain('myaccount.google.com/apppasswords');
-		expect(hint).toMatch(/setx/);
+		// Since BW-2 the way in the browser: the access data of the card and "Jetzt neu starten".
+		expect(hint).toContain('an der Karte der Verbindung unter „Zugangsdaten“ setzen');
+		expect(hint).toContain(`(danach die App neu starten: ${RESTART_WAY})`);
+		expect(hint).not.toMatch(/setx|\.bat\b/);
 		expect(hint.length).toBeLessThanOrEqual(1000);
 		expect(providerOf('proton')).toBeNull();
 	});

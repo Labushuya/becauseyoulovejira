@@ -36,7 +36,7 @@ import {
 	MAIL_PARSER_OPTIONS,
 	type ParsedMail
 } from '../../../web/src/lib/domain/inbox-mail';
-import { readSecret, type ImapEndpoint } from './config';
+import { RESTART_WAY, readSecret, type ImapEndpoint } from './config';
 import type { IngestApi, MailConnection } from './ingest-client';
 import {
 	isAuthenticationFailure,
@@ -216,7 +216,7 @@ async function openConnection(
 	if (password === '' || connection.user === '') {
 		throw new HttpError(
 			502,
-			`Zugangsdaten fehlen: Variable ${connection.secretEnv} anlegen, dann die App neu starten (neu-starten.bat).`
+			`Zugangsdaten fehlen: Variable ${connection.secretEnv} anlegen, dann die App neu starten (${RESTART_WAY}).`
 		);
 	}
 	const secrets = [password, deps.token];

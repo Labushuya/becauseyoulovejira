@@ -19,14 +19,22 @@ var HEALTH_TIMEOUT_SECONDS = 3;
 var RUN_TIMED_OUT =
   'Der Abruf dauert länger als 90 Sekunden. Er läuft im Mail-Hilfsprozess weiter; das Ergebnis steht danach an der Karte („Aktualisieren“).';
 // A helper before 0.5.0 answers the new paths with 404 "Nicht gefunden." (unknown path).
+// The way of a restart in the texts of the server (BW-2): the button of the page System, in
+// parentheses, so a tab without the right drops it (RESTART_WAY of web/src/lib/domain/system.ts).
+var RESTART_WAY = '(Einstellungen → System → „Jetzt neu starten“)';
 var OUTDATED =
-  'Der laufende Mail-Hilfsprozess ist älter als diese App und kann noch nicht sofort abrufen. Bitte neu-starten.bat ausführen; bis dahin ruft er weiter alle 5 Minuten ab.';
+  'Der laufende Mail-Hilfsprozess ist älter als diese App und kann noch nicht sofort abrufen. Bitte die App neu starten ' +
+  RESTART_WAY +
+  '; bis dahin ruft er weiter alle 5 Minuten ab.';
 var UNKNOWN_PATH = 'Nicht gefunden.';
 
 var NOT_RUNNING = 'Der Mail-Hilfsprozess läuft nicht (byl-mail.exe fehlt oder ist beendet).';
 var NOT_RUNNING_HINT =
-  'Mit einer eingeschalteten Postfach-Verbindung startet start.bat bzw. neu-starten.bat ihn mit.';
-var TOKEN_REFUSED = 'Der Mail-Hilfsprozess kennt den Zugang der App nicht (BYL_INGEST_TOKEN). Bitte neu-starten.bat ausführen.';
+  'Mit einer eingeschalteten Postfach-Verbindung startet die App ihn mit; sonst hilft ein Neustart ' + RESTART_WAY + '.';
+var TOKEN_REFUSED =
+  'Der Mail-Hilfsprozess kennt den Zugang der App nicht (BYL_INGEST_TOKEN). Bitte die App neu starten ' +
+  RESTART_WAY +
+  '.';
 var DISABLED = 'Die Verbindung ist ausgeschaltet.';
 
 var TEXT_MAX = 2000;
@@ -268,7 +276,9 @@ var SCAN_TIMEOUT_SECONDS = 10;
 var SCAN_ACTIONS = ['start', 'cancel'];
 var SCAN_RUNNING = 'Der Hilfsprozess ruft gerade ab. Bitte gleich noch einmal versuchen.';
 var SCAN_OUTDATED =
-  'Der laufende Mail-Hilfsprozess ist älter als diese App und kann den Posteingang noch nicht neu durchsuchen. Bitte neu-starten.bat ausführen.';
+  'Der laufende Mail-Hilfsprozess ist älter als diese App und kann den Posteingang noch nicht neu durchsuchen. Bitte die App neu starten ' +
+  RESTART_WAY +
+  '.';
 
 /** The action of a scan request: { action } or { error }. */
 function parseScanAction(value) {

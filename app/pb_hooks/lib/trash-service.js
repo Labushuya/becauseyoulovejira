@@ -85,7 +85,7 @@ function trashReady(app) {
 /** Routes of the trash: 503 with the restart hint before the migration. */
 function assertReady(app) {
   if (!trashReady(app)) {
-    throw new ApiError(503, 'Der Papierkorb steht nach dem nächsten Neustart der App bereit (neu-starten.bat).');
+    throw new ApiError(503, 'Der Papierkorb steht nach dem nächsten Neustart der App bereit (Einstellungen → System → „Jetzt neu starten“).');
   }
 }
 

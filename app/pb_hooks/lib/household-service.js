@@ -26,7 +26,7 @@ var AREA = 'byl-household';
 // Transient key of the account behind a membership that ends (the same as in lib/ticket-service.js);
 // the hook of assignees.pb.js names it in the history of the tickets it clears (ADR-0068 §6).
 var ACTOR_KEY = '@actor';
-var UNAVAILABLE = 'Der Haushalt steht nach dem nächsten Neustart der App bereit (neu-starten.bat).';
+var UNAVAILABLE = 'Der Haushalt steht nach dem nächsten Neustart der App bereit (Einstellungen → System → „Jetzt neu starten“).';
 // Attempts at a fresh code whose hash is taken (31^8 codes: practically never more than one).
 var CODE_ATTEMPTS = 5;
 

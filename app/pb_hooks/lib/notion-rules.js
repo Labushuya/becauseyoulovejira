@@ -163,7 +163,10 @@ function failureOf(status, code, context, variable) {
   }
   if (status === 401) {
     return {
-      message: 'Notion lehnt den Token ab (401). Stimmt der Wert von ' + text(variable) + '? Neuen Token setzen, dann neu-starten.bat.',
+      message:
+        'Notion lehnt den Token ab (401). Stimmt der Wert von ' +
+        text(variable) +
+        '? Neuen Token setzen, dann die App neu starten (Einstellungen → System → „Jetzt neu starten“).',
       connection: true
     };
   }

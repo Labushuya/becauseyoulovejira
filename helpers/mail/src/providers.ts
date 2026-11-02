@@ -2,7 +2,7 @@
 // the connection stores only its key. The keys mirror MAIL_PROVIDERS of
 // app/pb_hooks/lib/connection-rules.js (providers.test.ts compares both).
 
-import type { ImapEndpoint } from './config';
+import { RESTART_WAY, type ImapEndpoint } from './config';
 
 export interface MailProvider extends ImapEndpoint {
 	label: string;
@@ -27,7 +27,7 @@ export const PROVIDERS: Readonly<Record<string, MailProvider>> = Object.freeze({
 		port: 993,
 		secure: true,
 		loginHint:
-			'App-Passwort nötig (Bestätigung in zwei Schritten): Gmail nimmt das normale Kontopasswort nicht an. Unter myaccount.google.com → Sicherheit die Bestätigung in zwei Schritten einschalten, dann unter myaccount.google.com/apppasswords ein App-Passwort anlegen und per setx in die Variable der Verbindung schreiben (danach neu-starten.bat). Mit „Erweitertem Schutz“ gibt es keine App-Passwörter; dann bleibt der Weg über .eml-Dateien.'
+			`App-Passwort nötig (Bestätigung in zwei Schritten): Gmail nimmt das normale Kontopasswort nicht an. Unter myaccount.google.com → Sicherheit die Bestätigung in zwei Schritten einschalten, dann unter myaccount.google.com/apppasswords ein App-Passwort anlegen und an der Karte der Verbindung unter „Zugangsdaten“ setzen (danach die App neu starten: ${RESTART_WAY}). Mit „Erweitertem Schutz“ gibt es keine App-Passwörter; dann bleibt der Weg über .eml-Dateien.`
 	}
 });
 

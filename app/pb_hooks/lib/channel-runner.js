@@ -180,7 +180,7 @@ function runConnection(app, record, options) {
       app,
       'byl-missing:' + record.id + ':' + access.missing.join(','),
       'byl-' + type + ': Verbindung ' + label(record) + ' ruft nichts ab, solange ' + access.missing.join(' und ') +
-        ' fehlt (Variable anlegen, dann neu-starten.bat).'
+        ' fehlt (Variable anlegen, dann Einstellungen → System → „Jetzt neu starten“).'
     );
     return result;
   }

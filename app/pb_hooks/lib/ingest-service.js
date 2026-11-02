@@ -13,7 +13,7 @@ var rules = require(__hooks + '/lib/ingest-rules.js');
 var inbox = require(__hooks + '/lib/inbox-service.js');
 
 var COLLECTION = 'connections';
-var UNAVAILABLE = 'Die Verbindungen stehen nach dem nächsten Neustart der App bereit (neu-starten.bat).';
+var UNAVAILABLE = 'Die Verbindungen stehen nach dem nächsten Neustart der App bereit (Einstellungen → System → „Jetzt neu starten“).';
 
 function getenv(name) {
   return $os.getenv(name);

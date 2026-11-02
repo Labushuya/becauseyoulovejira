@@ -58,7 +58,10 @@ function prepare(e, withToken) {
       answer: answer(200, {
         status: 'missing',
         missing: [variable],
-        message: 'Zugangsdaten fehlen: Variable ' + variable + ' anlegen, dann die App neu starten (neu-starten.bat).'
+        message:
+          'Zugangsdaten fehlen: Variable ' +
+          variable +
+          ' anlegen, dann die App neu starten (Einstellungen → System → „Jetzt neu starten“).'
       })
     };
   }

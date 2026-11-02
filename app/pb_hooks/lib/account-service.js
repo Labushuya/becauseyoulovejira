@@ -19,7 +19,7 @@ var errors = require(__hooks + '/lib/errors.js');
 
 var USERS = 'users';
 var AREA = 'byl-accounts';
-var UNAVAILABLE = 'Die Konten stehen nach dem nächsten Neustart der App bereit (neu-starten.bat).';
+var UNAVAILABLE = 'Die Konten stehen nach dem nächsten Neustart der App bereit (Einstellungen → System → „Jetzt neu starten“).';
 var READ = { local: true, anyPlatform: true, kind: 'read' };
 var CHANGE = { local: true, anyPlatform: true, kind: 'change' };
 

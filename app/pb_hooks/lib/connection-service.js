@@ -11,7 +11,7 @@ var targets = require(__hooks + '/lib/target-project-service.js');
 var github = require(__hooks + '/lib/github-rules.js');
 
 var COLLECTION = 'connections';
-var UNAVAILABLE = 'Die Verbindungen stehen nach dem nächsten Neustart der App bereit (neu-starten.bat).';
+var UNAVAILABLE = 'Die Verbindungen stehen nach dem nächsten Neustart der App bereit (Einstellungen → System → „Jetzt neu starten“).';
 
 function jsonOf(record, field) {
   var raw = record.getString(field);
