@@ -379,7 +379,8 @@ describe('mail helper stopped, restarted or with another token', () => {
 		expect(await listMailbox(owner.pb, mailbox.id, 50)).toEqual({
 			kind: 'unavailable',
 			message: 'Der Mail-Hilfsprozess läuft nicht (byl-mail.exe fehlt oder ist beendet).',
-			hint: expect.stringMatching(/start\.bat/)
+			// Since BW-2 the way in the browser, never a file of the folder app.
+			hint: expect.stringMatching(/sonst hilft ein Neustart \(Einstellungen → System → „Jetzt neu starten“\)\.$/)
 		});
 		expect((await importFromMailbox(owner.pb, mailbox.id, [1])).kind).toBe('unavailable');
 		await startHelper();
