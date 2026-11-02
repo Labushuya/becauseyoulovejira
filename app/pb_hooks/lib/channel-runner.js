@@ -140,6 +140,16 @@ function label(record) {
   return '"' + record.getString('label') + '" (' + record.id + ')';
 }
 
+// The error log of the server (FP-2, ADR-0077): the entry behind "Details" of the last error of the
+// card, its ID or ''. Never disturbs the run.
+function logProblem(app, record, error) {
+  try {
+    return require(__hooks + '/lib/problem-service.js').recordChannel(app, record, error);
+  } catch (err) {
+    return '';
+  }
+}
+
 /**
  * Runs one connection. Returns { status, created, duplicates, updated, skipped, failed, unmatched,
  * error, missing }; `unmatched` counts what no keyword matched and what was therefore not saved
@@ -148,7 +158,8 @@ function label(record) {
  * "disabled", "unsupported" or, for GitHub, "limited" (a rate limit holds; with `until` and
  * `hint`). `error` is cleaned; `missing` lists names of variables only. GitHub counts in `updated`
  * the entries whose status followed their source (ADR-0050 §5). `options` go to the channel (the
- * cron of GitHub passes its clock as `now`).
+ * cron of GitHub passes its clock as `now`). A failed run names its entry of the error log of the
+ * server in `problem` (FP-2, ADR-0077), only when there is one.
  */
 function runConnection(app, record, options) {
   var result = {
@@ -204,6 +215,10 @@ function runConnection(app, record, options) {
   }
   if (error !== '') {
     app.logger().warn('byl-' + type + ': Verbindung ' + label(record) + ': ' + error);
+    var problem = logProblem(app, record, error);
+    if (problem !== '') {
+      result.problem = problem;
+    }
   }
   result.status = error === '' ? 'ok' : 'error';
   result.error = error;

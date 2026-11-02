@@ -199,7 +199,20 @@ function reportStatus(e, id) {
     connection.set('scan', rules.mergeScan(jsonOf(connection, 'scan'), status.scan));
   }
   e.app.save(connection);
+  if (error !== '') {
+    logProblem(e.app, connection, error);
+  }
   return e.json(200, { status: 'ok' });
+}
+
+// The error log of the server (FP-2, ADR-0077): a failed run of the mail helper, like a channel of the
+// server; the entry is behind "Details" of the card. Never disturbs the answer to the helper.
+function logProblem(app, connection, error) {
+  try {
+    require(__hooks + '/lib/problem-service.js').recordChannel(app, connection, error);
+  } catch (err) {
+    // The answer stays "ok": the status is stored.
+  }
 }
 
 /** Whether the collection of `record` has the field `name` (fields added by later migrations). */

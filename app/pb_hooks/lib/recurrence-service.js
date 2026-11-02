@@ -733,6 +733,19 @@ function recordFailure(app, ruleId, err) {
   } catch (hintErr) {
     app.logger().warn('Wiederholung: Hinweis nicht gespeichert', 'rule', ruleId, 'error', errorText(hintErr));
   }
+  problemLog(function (problems) {
+    problems.recordRule(app, ruleId, err);
+  });
+}
+
+// The error log of the server (FP-2, ADR-0077): `fn` gets lib/problem-service.js; a failure of the log
+// never disturbs the generation or the start.
+function problemLog(fn) {
+  try {
+    fn(require(__hooks + '/lib/problem-service.js'));
+  } catch (ignored) {
+    // The log of PocketBase has the failure already.
+  }
 }
 
 /**
@@ -872,17 +885,26 @@ function runStartup(app, nowMs) {
     runDue(app, nowMs);
   } catch (err) {
     app.logger().error('Wiederholungen: Nachholen beim Start gescheitert', 'error', errorText(err));
+    problemLog(function (problems) {
+      problems.recordJob(app, 'startup-recurrence', err);
+    });
   }
   try {
     require(__hooks + '/lib/inbox-cleanup-service.js').run(app, nowMs);
   } catch (err) {
     app.logger().error('Eingang: Bereinigung beim Start gescheitert', 'error', errorText(err));
+    problemLog(function (problems) {
+      problems.recordJob(app, 'startup-inbox', err);
+    });
   }
   // The trash as well (ADR-0037 §8): tickets whose retention ran out while the app was off.
   try {
     require(__hooks + '/lib/trash-service.js').purgeDue(app, nowMs);
   } catch (err) {
     app.logger().error('Papierkorb: Aufräumen beim Start gescheitert', 'error', errorText(err));
+    problemLog(function (problems) {
+      problems.recordJob(app, 'startup-trash', err);
+    });
   }
 }
 
