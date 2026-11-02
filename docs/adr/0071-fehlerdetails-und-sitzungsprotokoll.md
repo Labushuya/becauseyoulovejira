@@ -99,3 +99,12 @@ Neue Aktionen geben ihre Absicht mit und reichen den Eintrag an ihre Meldung (Re
 - Nur die SPA ändert sich, keine Hooks und keine Migration: Nach dem Build genügt F5, kein Neustart.
 - Eine neue Route unter `/api/byl/` ohne Eintrag im Katalog lässt den Konsistenztest scheitern; eine neue Collection der SPA ebenso.
 - Die Liste endet mit dem Tab. Wer einen Fehler melden will, kopiert den Bericht vorher.
+
+## Nachtrag FP-2 (2026-11-02): Server-ID und Protokoll des Servers
+
+Das Protokoll des Servers ist umgesetzt ([ADR-0077](0077-fehlerprotokoll-des-servers.md)). Für diese ADR heißt das:
+
+- **§7 Andockpunkte:** `serverId` ist gesetzt, wenn eine Antwort mit unerwartetem 5xx ihren Eintrag im Header `X-Byl-Problem` nennt (gelesen in `afterSend` des Clients, gemerkt neben dem Body wie die Anfrage) und wenn „Jetzt abrufen“ einen gescheiterten Lauf mit `problem` beantwortet. Die Fakten enden dann mit „Server-ID“, der Bericht nennt sie genau einmal. `correlation` bleibt `null`: Es gibt keine Kennung je Anfrage. Ein Eintrag des Servers ist ein `ProblemEntry` mit `source: 'server'` und `area`; seine Fakten nennen „Zuletzt“ und „Bereich“ statt „App-Stand“, „3×“ ohne Uhrzeit.
+- **§5 Dialog:** Der Dialog „Fehler dieser Sitzung“ hat über der Liste den Schalter „Diese Sitzung (n)“ und „Server“; der Titel nennt die gezeigte Liste. Er öffnet auch über die Adresse `?fehler=<id>` (Root-Layout) und aus dem neuen Abschnitt „Fehlerprotokoll des Servers“ der Hilfe. Ohne Sitzung zeigt er nur die Liste des Tabs.
+- **§6 Inventur:** Der Hinweis einer Kanal-Karte auf den letzten Lauf im Hintergrund (`lastError`) hat in den Details den Link „Details“ zum Eintrag des Servers.
+- **Katalog der Absichten:** Die Record-API von `problem_events` (nur lesend genutzt) steht in `COLLECTION_INTENTS`; damit 17 Collections.
