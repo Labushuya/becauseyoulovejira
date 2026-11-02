@@ -13,8 +13,10 @@
 		settingsSubpageOf,
 		visibleSettingsSections
 	} from '$lib/settings-sections';
+	import { OPEN_SETUP_TEXTS } from '$lib/domain/open-setups';
 	import { appContext } from '$lib/stores/context.svelte';
 	import { findHostStore } from '$lib/stores/host.svelte';
+	import { findOpenSetupsStore } from '$lib/stores/open-setups.svelte';
 	import { findTrashStore } from '$lib/stores/trash.svelte';
 	import { findSignOut } from '$lib/sign-out';
 	import { newTicketHref } from '$lib/ticket-links';
@@ -28,7 +30,8 @@
 	// every field; the pages of the settings in the groups and with the marks of their navigation
 	// (the pages of the administrator "nur am PC" on another device, ADR-0057), so "Darstellung" and
 	// "Hilfe" are here as well; the session. A link closes the sheet and leads there; ×, Esc and the
-	// blanket close it, and the focus goes back to "Mehr".
+	// blanket close it, and the focus goes back to "Mehr". "Kanäle" carries the number of the open
+	// setups like the navigation of the settings (KE-1, ADR-0076).
 	let {
 		current,
 		projectsNewCount = 0,
@@ -44,6 +47,8 @@
 	const uid = $props.id();
 	const trash = findTrashStore();
 	const trashCount = $derived(trash?.count ?? null);
+	const openSetups = findOpenSetupsStore();
+	const openSetupCount = $derived(openSetups?.count ?? 0);
 	const host = findHostStore();
 	const groups = $derived(
 		groupSettingsSections(
@@ -141,6 +146,13 @@
 							<span class="name">{section.label}</span>
 							{#if section.pcOnly}
 								<span class="visually-hidden">{CONTEXT_TEXTS.pcOnlyMark}</span>
+							{/if}
+							{#if section.id === 'kanaele' && openSetupCount > 0}
+								<span class="count"
+									><span aria-hidden="true">{openSetupCount}</span><span class="visually-hidden"
+										>({OPEN_SETUP_TEXTS.count(openSetupCount)})</span
+									></span
+								>
 							{/if}
 						</a>
 					</li>

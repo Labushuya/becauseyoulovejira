@@ -20,7 +20,9 @@
 	import { findHostStore } from '$lib/stores/host.svelte';
 	import { getInboxStore } from '$lib/stores/inbox.svelte';
 	import { getLastViewStore, lastViewLabel } from '$lib/stores/last-view.svelte';
+	import { findOpenSetupsStore } from '$lib/stores/open-setups.svelte';
 	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
+	import { OPEN_SETUP_TEXTS } from '$lib/domain/open-setups';
 
 	// Settings area (ADR-0026 section 1, plan EH-1): the switch "Aufgaben | Projekte | Eingang" at
 	// its place below the header, with no entry current; then the navigation with the way back on
@@ -72,6 +74,18 @@
 	]);
 	const backHref = $derived(lastView.href);
 	const backLabel = $derived(lastViewLabel(backHref, (id) => tickets.find(id)?.key ?? null));
+	// The open setups of the account as a mark at "Kanäle" (KE-1, ADR-0076 §2).
+	const openSetups = findOpenSetupsStore();
+	const marks = $derived<Record<string, { count: number; text: string }>>(
+		openSetups === null || openSetups.count === 0
+			? {}
+			: {
+					kanaele: {
+						count: openSetups.count,
+						text: OPEN_SETUP_TEXTS.count(openSetups.count)
+					}
+				}
+	);
 
 	let heading = $state<HTMLElement>();
 
@@ -99,7 +113,7 @@
 
 <div class="settings">
 	<div class="nav-column">
-		<SettingsNav {sections} current={section?.id ?? null} {backHref} {backLabel} />
+		<SettingsNav {sections} current={section?.id ?? null} {backHref} {backLabel} {marks} />
 	</div>
 	<div class="page">
 		<Breadcrumbs items={crumbs} />

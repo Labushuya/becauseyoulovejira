@@ -4,9 +4,10 @@
 // "Im Eingang gespeichert", messages without keyword get "Kein Stichwort erkannt – nicht
 // gespeichert"; each answer can be switched off per connection (settings reply_saved and
 // reply_no_match, both on by default, ADR-0016, addendum of 2026-10-01), and the offset moves
-// only after saving (lib/channel-telegram.js). Called by channel-runner.js, which holds the lock
-// and cleans errors (the bot token is part of every request URL). CommonJS module, ES5 only, Goja
-// runtime only.
+// only after saving (lib/channel-telegram.js). The hint about a chat that is not allowed goes once
+// its chat ID is allowed or an allowed chat wrote (KE-1, ADR-0076). Called by channel-runner.js,
+// which holds the lock and cleans errors (the bot token is part of every request URL). CommonJS
+// module, ES5 only, Goja runtime only.
 'use strict';
 
 var berlin = require(__hooks + '/lib/berlin-time.js');
@@ -82,6 +83,8 @@ function run(app, record, values) {
   var outcome = telegram.processUpdates(updates, cursor, {
     allowed: telegram.parseAllowlist(values.allowlist),
     allowlistName: names.allowlist,
+    // A hint about a chat that is now allowed goes (KE-1, ADR-0076); only its chat ID is read.
+    hint: record.getString('last_hint'),
     berlin: berlin,
     match: function (body) {
       return keywords.matchKeyword(list, [body]);

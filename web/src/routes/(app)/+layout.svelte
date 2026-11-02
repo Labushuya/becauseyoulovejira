@@ -90,7 +90,13 @@
 	import { AttentionStore, attentionSource } from '$lib/stores/attention.svelte';
 	import { BackupAttention } from '$lib/stores/backup-attention';
 	import { SecurityAttention } from '$lib/stores/security-attention';
-	import { FlagStore, setFlagStore } from '$lib/stores/flags.svelte';
+	import { OpenSetupsAttention } from '$lib/stores/open-setups-attention';
+	import {
+		OpenSetupsStore,
+		openSetupsData,
+		setOpenSetupsStore
+	} from '$lib/stores/open-setups.svelte';
+	import { FlagStore, MAX_FLAGS, setFlagStore } from '$lib/stores/flags.svelte';
 	import { getTabContext } from '$lib/tab-presence';
 	import { InboxStore, inboxData, setInboxStore } from '$lib/stores/inbox.svelte';
 	import { LastViewStore, sessionStore, setLastViewStore } from '$lib/stores/last-view.svelte';
@@ -685,6 +691,7 @@
 		transferOffers.reset();
 		inbox.rescope();
 		trash.rescope();
+		openSetups.rescope();
 		if (cause === 'link') {
 			flags.show({ tone: 'info', title: AREA_TEXTS.switched(area.name) });
 			return;
@@ -804,6 +811,34 @@
 		flags,
 		open: () => void goto(securityLoginsHref())
 	});
+	// Open setups of the account (KE-1, ADR-0076): the mark at "Kanäle" in the settings and in
+	// "Mehr", and the same quiet flag, once per device and state of the open setups; never without a
+	// connection and never in place of another flag (the hints of the outbox, ADR-0074). Every
+	// account and device: the own inbox belongs to every account. The page "Kanäle" hands its own
+	// result over; the tab coming back reads it again (at most once a minute), no polling.
+	const openSetups = setOpenSetupsStore(
+		new OpenSetupsStore(openSetupsData(pb), auth, () => area.active === 'household')
+	);
+	const openSetupsAttention = new OpenSetupsAttention({
+		load: () => openSetups.load(),
+		account: () => auth.userId ?? null,
+		flags,
+		open: () => void goto(resolve('/einstellungen/kanaele')),
+		offline: () => outbox.offline || navigator.onLine === false,
+		room: () => flags.flags.length < MAX_FLAGS
+	});
+	$effect(() => {
+		if (!auth.userId) return;
+		untrack(() => void openSetupsAttention.announce());
+		const again = () => {
+			if (document.visibilityState === 'visible') void openSetups.refresh();
+		};
+		document.addEventListener('visibilitychange', again);
+		return () => {
+			document.removeEventListener('visibilitychange', again);
+			openSetups.reset();
+		};
+	});
 	// Context of the tab (KOB-1, ADR-0057): who uses it from where. Loaded after the sign-in, every
 	// refresh of the session and every reconnection (the restart after an update), back to the most
 	// restrictive view when the layout goes.
@@ -843,6 +878,7 @@
 			rules.announceWaiting(openWaiting);
 			adminNotices();
 			void trashAttention.announce();
+			void openSetupsAttention.announce();
 		}
 	});
 	$effect(() => untrack(() => notifyStore.connect()));

@@ -17,6 +17,8 @@ import {
 } from '$lib/data/credentials';
 import { problemOf, toDataError, withIntent } from '$lib/data/errors';
 import type { RequestOptions } from '$lib/data/options';
+import type { StoredSecrets } from '$lib/domain/channel-setup';
+import type { Connection } from '$lib/domain/connections';
 import {
 	CREDENTIAL_MESSAGES,
 	CREDENTIAL_TEXTS,
@@ -102,6 +104,23 @@ export class CredentialsStore {
 	/** The state of `name`, null before it is known. */
 	variable(name: string): CredentialVariable | null {
 		return this.#variables.get(name) ?? null;
+	}
+
+	/**
+	 * The variables of a connection in the user environment of the PC (KE-1, ADR-0076 §4), for the
+	 * question whether a variable the server does not see waits for the restart; null until read.
+	 */
+	storedOf(
+		connection: Pick<Connection, 'type' | 'secretEnv' | 'allowlistEnv'>
+	): StoredSecrets | null {
+		if (this.#state !== 'ready') return null;
+		const known = (name: string) => {
+			const variable = this.#variables.get(name);
+			return variable === undefined || variable.blocked ? null : variable.set;
+		};
+		const secret = known(connection.secretEnv);
+		const allowlist = connection.type === 'telegram' ? known(connection.allowlistEnv) : null;
+		return secret === null && allowlist === null ? null : { secret, allowlist };
 	}
 
 	/**

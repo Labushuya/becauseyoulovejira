@@ -147,3 +147,9 @@
 - **Neu daneben:** Seit [ADR-0074](0074-postausgang-fuer-aenderungen-ohne-verbindung.md) gibt es einen Postausgang. Er merkt bei fehlender Verbindung einzelne Aktionen in IndexedDB und spielt sie später über die normalen Wege ein. Er braucht keinen Service Worker und gilt für einen geöffneten Tab, auch über `http` im Heimnetz, wo es keinen Service Worker gibt.
 - **Präzisierung:** „kein Offline-Modus (CLAUDE.md §10)“ in §8 heißt seither „kein Offline-Modus mit Datenkopie oder Kaltstart“. Weiterhin zeigt die App nie veraltete Daten als aktuell.
 - **Später:** Eine App-Shell im Service Worker (Kaltstart und Neuladen offline) und ein Abgleich im Hintergrund brauchen HTTPS und eine eigene Entscheidung (MO-8). Erst sie ändern §8.
+
+## Nachtrag (2026-11-01, [ADR-0076](0076-offene-einrichtungen-sichtbar.md), KE-1): Hinweis auf offene Einrichtungen
+
+- Nachtrag WK-2 bekommt einen weiteren Hinweis: Nach der Anmeldung und bei `AttentionDeps.opened` fragt das `(app)`-Layout die offenen Einrichtungen des Kontos (`OpenSetupsStore`) und zeigt das Info-Flag „N Einrichtungen sind offen.“ mit den Namen und „Ansehen“ (Seite „Kanäle“, `stores/open-setups-attention.ts`), für jedes Konto auf jedem Gerät.
+- **Einmal je Gerät und Stand:** gemerkt wird der Fingerabdruck der offenen Einrichtungen (Konto, je Einrichtung ihre ID und die Art des offenen Schritts) in `localStorage` `byl-open-setups-seen`; ein neuer Stand zeigt das Flag wieder.
+- Kein Flag nach einem Fehler oder einer Ablehnung (auch 403), ohne Verbindung, ohne offene Einrichtung. Es verdrängt kein anderes Flag: Stehen schon so viele wie `MAX_FLAGS` (etwa Hinweise des Postausgangs, ADR-0074), wartet es auf den nächsten Anlass.

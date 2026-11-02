@@ -12,7 +12,6 @@
 	import { getCatalogStore } from '$lib/stores/catalog.svelte';
 	import { ConnectionsStore, connectionsData } from '$lib/stores/connections.svelte';
 	import { CredentialsStore, credentialsData } from '$lib/stores/credentials.svelte';
-	import { findFirstStepsStore } from '$lib/stores/first-steps.svelte';
 	import { getFlagStore } from '$lib/stores/flags.svelte';
 	import { FoldersStore, foldersData } from '$lib/stores/folders.svelte';
 	import { GitHubStore, githubData } from '$lib/stores/github.svelte';
@@ -93,12 +92,8 @@
 		};
 	});
 
-	// "Erste Schritte" (plan EH-12): a connection on this page marks the step "Einen Kanal
-	// einrichten".
-	const firstSteps = findFirstStepsStore();
-	$effect(() => {
-		if (connections.connections.length > 0) untrack(() => firstSteps?.reach('channel'));
-	});
+	// "Erste Schritte" (plan EH-12): the view marks the step "Einen Kanal einrichten" once a setup is
+	// done (KE-1, ADR-0076 §6).
 </script>
 
 <svelte:head>

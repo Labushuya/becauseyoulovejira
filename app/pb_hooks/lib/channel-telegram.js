@@ -11,6 +11,9 @@ var CONFIRMATION = 'Im Eingang gespeichert';
 var NO_MATCH = 'Kein Stichwort erkannt – nicht gespeichert';
 var TITLE_MAX_LENGTH = 200;
 var ID = /^-?\d{1,20}$/;
+// The chat ID in a stored hint of unknownChatHint; the same reading as chatIdFromHint in
+// web/src/lib/domain/channel-setup.ts.
+var HINT_CHAT_ID = /Chat-ID (-?\d{1,20})(?!\d)/;
 
 function text(value) {
   return value === undefined || value === null ? '' : String(value);
@@ -114,6 +117,27 @@ function unknownChatHint(message, allowlistName) {
   );
 }
 
+/** The chat ID of a stored hint of unknownChatHint, or '' (another hint, or none). */
+function hintChatId(hint) {
+  var match = HINT_CHAT_ID.exec(text(hint));
+  return match ? match[1] : '';
+}
+
+/**
+ * Whether the stored hint about a chat that is not allowed is out of date (KE-1, ADR-0076): its chat
+ * ID is on the allowlist now (after the new value and the restart, also for a hint of an older
+ * version, without a new message), or this run handled a message of an allowed chat. A run without
+ * any message keeps a hint whose ID is not allowed: the cron runs every minute, and the user still
+ * needs the ID.
+ */
+function staleHint(hint, allowed, handledAllowed) {
+  if (text(hint) === '') {
+    return false;
+  }
+  var chat = hintChatId(hint);
+  return handledAllowed || (chat !== '' && allowed.indexOf(chat) !== -1);
+}
+
 /**
  * Processes the updates of getUpdates in the order of their update_id. ctx:
  *   allowed        IDs of the allowlist
@@ -125,13 +149,15 @@ function unknownChatHint(message, allowlistName) {
  *   replyNoMatch   whether a message without keyword gets the answer NO_MATCH
  *   decline(chatId, messageId)  sends NO_MATCH; throws on failure
  *   berlin         berlin-time.js
+ *   hint           the stored hint of the connection (last_hint), '' or absent without one
  * A duplicate and a message of a chat that is not allowed never get an answer, whatever the
  * switches say. The offset (`cursor`, the last handled update_id) moves past an update only when
  * it is done: saved, a duplicate, not allowed, without text or without keyword (not saved at all,
  * ADR-0020). A failed save stops the run and leaves the offset before that update, so Telegram
  * offers it again. A failed confirmation or answer keeps the offset and is reported. Returns
- * { cursor, created, duplicates, skipped, unmatched, hint, error }; `hint` is undefined if no
- * unknown chat wrote.
+ * { cursor, created, duplicates, skipped, unmatched, hint, error }; `hint` is the hint of the last
+ * unknown chat that wrote, '' to clear a stored hint that is out of date (staleHint), else
+ * undefined (the stored hint stays).
  */
 function processUpdates(updates, cursor, ctx) {
   var result = { cursor: cursor, created: 0, duplicates: 0, skipped: 0, unmatched: 0, hint: undefined, error: '' };
@@ -140,6 +166,8 @@ function processUpdates(updates, cursor, ctx) {
   });
   var confirmErrors = [];
   var declineErrors = [];
+  // A message of an allowed chat was handled (the offset moved past it).
+  var handledAllowed = false;
   for (var i = 0; i < list.length; i++) {
     var update = list[i];
     var id = update && typeof update.update_id === 'number' ? update.update_id : NaN;
@@ -161,6 +189,7 @@ function processUpdates(updates, cursor, ctx) {
     if (messageText(message) === '') {
       result.skipped++;
       result.cursor = id;
+      handledAllowed = true;
       continue;
     }
     var keyword = ctx.match(messageText(message));
@@ -174,6 +203,7 @@ function processUpdates(updates, cursor, ctx) {
         }
       }
       result.cursor = id;
+      handledAllowed = true;
       continue;
     }
     var saved;
@@ -196,6 +226,10 @@ function processUpdates(updates, cursor, ctx) {
       result.duplicates++;
     }
     result.cursor = id;
+    handledAllowed = true;
+  }
+  if (result.hint === undefined && staleHint(ctx.hint, ctx.allowed, handledAllowed)) {
+    result.hint = '';
   }
   if (result.error === '') {
     var problems = [];
@@ -221,5 +255,6 @@ module.exports = {
   chatName: chatName,
   toDraft: toDraft,
   unknownChatHint: unknownChatHint,
+  hintChatId: hintChatId,
   processUpdates: processUpdates
 };

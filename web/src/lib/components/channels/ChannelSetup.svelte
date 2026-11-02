@@ -37,6 +37,7 @@
 	import { checkSummary } from '$lib/domain/github';
 	import { DEFAULT_HOST_PLATFORM } from '$lib/domain/host-platform';
 	import { checkText } from '$lib/domain/notion';
+	import { withAssumedStatus } from '$lib/domain/open-setups';
 	import type { ProblemEntry } from '$lib/domain/problems';
 	import {
 		SECRET_NOT_KEPT,
@@ -156,12 +157,21 @@
 				) ?? null)
 	);
 	const missing = $derived(connectionId !== null && store.state === 'ready' && connection === null);
+	// Since KE-1 (ADR-0076) with the user environment of the PC where the page reads it: a variable
+	// set there that the server does not see yet leaves only "Neu starten" open.
 	const facts = $derived<SetupFacts>({
 		connection,
-		secretStatus: connection === null ? null : store.status(connection.id)
+		secretStatus: connection === null ? null : store.status(connection.id),
+		stored: connection === null ? null : (credentials?.storedOf(connection) ?? null)
 	});
 	/** The failed question for the variables, with "Details" (FP-1, since BW-1). */
 	const statusFailure = $derived(connection === null ? null : store.statusFailure(connection.id));
+	/**
+	 * The facts the first step comes from: after a failed question for the variables the same
+	 * assumption as the overview and the card (seen, ADR-0076 §1), so "Fortsetzen" and the assistant
+	 * agree; the stepper and the check lines keep the unknown state.
+	 */
+	const progressFacts = $derived(statusFailure === null ? facts : withAssumedStatus(kind, facts));
 	/**
 	 * Before the connection exists, a name no connection uses yet, so `setx` for a second one does
 	 * not overwrite the secret of the first (ADR-0041, addendum of 2026-10-01).
@@ -323,7 +333,7 @@
 		Math.min(
 			resumed?.restart === true
 				? resumed.step
-				: Math.max(setupProgress(kind, facts), resumed?.step ?? 0),
+				: Math.max(setupProgress(kind, progressFacts), resumed?.step ?? 0),
 			Math.max(total - 1, 0)
 		)
 	);
@@ -373,6 +383,12 @@
 	function hold() {
 		chosen = current;
 	}
+
+	// Setting a variable here changes the facts since KE-1 (the user environment of the PC): the
+	// step stays while the question "Jetzt neu starten" / "Später" follows.
+	$effect(() => {
+		if ((credentials?.busy ?? null) !== null) untrack(hold);
+	});
 
 	/** ID of the found connection; a primitive, so updates of the record do not rerun effects. */
 	const watchedId = $derived(connection?.id ?? null);

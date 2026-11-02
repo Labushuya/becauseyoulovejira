@@ -250,3 +250,70 @@ describe('channel-telegram.js: processing', () => {
 		expect(telegram.processUpdates(null, 10, ctx)).toMatchObject({ cursor: 10 });
 	});
 });
+
+// KE-1 (ADR-0076): with the provisional IDs "0" of the setup the own chat is a chat that is not
+// allowed at first; its hint goes once the ID is allowed or an allowed chat wrote, never in a run
+// without messages while the ID is not allowed (the cron runs every minute).
+describe('channel-telegram.js: the stored hint of a chat that is not allowed (KE-1)', () => {
+	const OWN_HINT = telegram.unknownChatHint(update(1, PRIVATE).message, 'BYL_TELEGRAM_ALLOWED_IDS');
+	const STRANGER_HINT = telegram.unknownChatHint(update(1, STRANGER).message, 'BYL_TELEGRAM_ALLOWED_IDS');
+
+	it('reads the chat ID of a stored hint like the web (chatIdFromHint)', () => {
+		expect(telegram.hintChatId(OWN_HINT)).toBe('424242');
+		expect(telegram.hintChatId(telegram.unknownChatHint(update(1, FAMILY, { from: STRANGER }).message, 'X'))).toBe(
+			'-100123'
+		);
+		expect(telegram.hintChatId('Chat-ID 123456789012345678901')).toBe('');
+		expect(telegram.hintChatId('')).toBe('');
+		expect(telegram.hintChatId(undefined)).toBe('');
+	});
+
+	it('clears a hint whose chat ID is allowed now, also in a run without messages', () => {
+		const { ctx } = context({ hint: OWN_HINT });
+		expect(telegram.processUpdates([], 10, ctx)).toMatchObject({ cursor: 10, created: 0, hint: '' });
+		expect(telegram.processUpdates(null, 10, ctx).hint).toBe('');
+	});
+
+	it('clears a hint once a message of an allowed chat was handled and no unknown chat wrote', () => {
+		for (const message of [{}, { text: 'Hallo' }, { text: undefined, photo: [{}] }]) {
+			const { ctx } = context({ hint: STRANGER_HINT });
+			const result = telegram.processUpdates([update(11, PRIVATE, message)], 10, ctx);
+			expect(result.cursor).toBe(11);
+			expect(result.hint).toBe('');
+		}
+		const duplicate = context({ hint: STRANGER_HINT, save: () => 'duplicate' });
+		expect(telegram.processUpdates([update(11, FAMILY)], 10, duplicate.ctx).hint).toBe('');
+	});
+
+	it('keeps a hint whose chat ID is not allowed in a run without messages', () => {
+		const { ctx } = context({ hint: STRANGER_HINT });
+		expect(telegram.processUpdates([], 10, ctx).hint).toBeUndefined();
+		expect(telegram.processUpdates([{ update_id: 11, edited_message: {} }], 10, ctx).hint).toBeUndefined();
+		// Without a stored hint there is nothing to clear.
+		expect(telegram.processUpdates([update(11, PRIVATE)], 10, context({ hint: '' }).ctx).hint).toBeUndefined();
+	});
+
+	it('keeps the hint when the allowed message could not be saved', () => {
+		const { ctx } = context({
+			hint: STRANGER_HINT,
+			save: () => {
+				throw new Error('database is locked');
+			}
+		});
+		expect(telegram.processUpdates([update(11, PRIVATE)], 10, ctx)).toMatchObject({ cursor: 10, hint: undefined });
+	});
+
+	it('sets the hint of a chat that is not allowed as before, also after an allowed message', () => {
+		const { ctx } = context({ hint: OWN_HINT });
+		const result = telegram.processUpdates([update(11, PRIVATE), update(12, STRANGER)], 10, ctx);
+		expect(result.hint).toBe(STRANGER_HINT);
+	});
+
+	it('writes only the IDs of the message into the hint, never the allowlist', () => {
+		const { ctx } = context({ allowed: ['424242', '9081726354'] });
+		const result = telegram.processUpdates([update(11, STRANGER)], 10, ctx);
+		expect(result.hint).toMatch(/Chat-ID 999/);
+		expect(result.hint).not.toContain('9081726354');
+		expect(result.hint).not.toContain('424242');
+	});
+});

@@ -3,6 +3,7 @@
 	import { inboxKeysInfo, inboxKeysStatus } from '$lib/domain/channel-card';
 	import { formatBerlinDateTime } from '$lib/domain/format';
 	import type { InboxKey } from '$lib/domain/inbox-keys';
+	import { OWN_INBOX_ANCHOR } from '$lib/domain/open-setups';
 	import type { ProjectRef } from '$lib/domain/ticket';
 	import { RESTART_NEEDED } from '$lib/guidance/texts';
 	import { helpHref } from '$lib/settings-sections';
@@ -132,6 +133,7 @@
 	busy={loading}
 	{primary}
 	{menu}
+	anchor={OWN_INBOX_ANCHOR}
 >
 	{#snippet details()}
 		<p>

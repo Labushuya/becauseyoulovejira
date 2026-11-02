@@ -10,6 +10,7 @@ import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PC_CONTEXT, useContext } from '$lib/test/context';
+import { DataError } from '$lib/data/errors';
 import type { RecordChange } from '$lib/data/realtime';
 import { SETX_WAY_KEY, setupStepKey, type SetupTarget } from '$lib/domain/channel-setup';
 import { parseSetupResume } from '$lib/domain/setup-resume';
@@ -242,13 +243,38 @@ describe('setup assistant: progress from the server', () => {
 		expect(link.getAttribute('rel')).toBe('noopener noreferrer');
 	});
 
-	it('opens at "Stichwörter" once the app sees the variable (after the restart)', async () => {
+	// Since KE-1 (ADR-0076 §1) the keywords never hold the setup open: the assistant opens at the
+	// open mandatory step, and the missing keywords stand as the open check of an earlier step.
+	it('opens at "Erster Abruf" once the app sees the variable, the missing keywords named there (KE-1)', async () => {
 		await open(
 			[calendar()],
 			{ kind: 'kalender', connectionId: ID },
 			{ secret: true, allowlist: null }
 		);
+		expect(stepHeading().textContent?.trim()).toBe('Schritt 7 von 7: Ersten Abruf starten');
+		expect(dialog().getByText(/Keine Stichwörter: Diese Verbindung übernimmt nichts/)).toBeTruthy();
+		await fireEvent.click(dialog().getByRole('button', { name: 'Zurück' }));
 		expect(stepHeading().textContent?.trim()).toBe('Schritt 6 von 7: Stichwörter festlegen');
+	});
+
+	// KE-1 (K-8): after a failed question for the variables the assistant reads them as seen, like
+	// the overview and the card, and opens where "Fortsetzen" leads.
+	it('opens at the step of the overview when the question for the variables failed (KE-1)', async () => {
+		const context = fakes([calendar({ keywords: ['todo'] })]);
+		context.data.secretStatus.mockRejectedValue(new DataError('server', { status: 500 }));
+		await context.store.load();
+		render(ChannelsViewHarness, {
+			props: {
+				connections: context.store,
+				projects: PROJECTS,
+				setup: { kind: 'kalender', connectionId: ID },
+				onchange: vi.fn()
+			}
+		});
+		await tick();
+		await tick();
+		expect(context.store.statusFailure(ID)).not.toBeNull();
+		expect(stepHeading().textContent?.trim()).toBe('Schritt 7 von 7: Ersten Abruf starten');
 	});
 
 	it('opens at a later step looked at in this tab, but never before the facts', async () => {
@@ -332,6 +358,8 @@ describe('setup assistant: steps', () => {
 			{ kind: 'kalender', connectionId: ID },
 			{ secret: true, allowlist: null }
 		);
+		// The assistant opens at "Erster Abruf" (KE-1); the keywords are one step back.
+		await fireEvent.click(dialog().getByRole('button', { name: 'Zurück' }));
 		const field = dialog().getByRole('textbox', { name: 'Neues Stichwort' });
 		await fireEvent.input(field, { target: { value: 'todo' } });
 		await fireEvent.click(dialog().getByRole('button', { name: 'Hinzufügen' }));

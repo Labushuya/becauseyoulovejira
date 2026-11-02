@@ -148,8 +148,8 @@ describe('WhatsAppWebCard', () => {
 				setupHref
 			}
 		});
-		// No key yet: the extension cannot bring anything.
-		expect(screen.getByText('Einrichtung offen')).toBeTruthy();
+		// No key yet: the extension cannot bring anything, nothing is begun (KE-1, ADR-0076 §1).
+		expect(screen.getByText('Nicht eingerichtet')).toBeTruthy();
 		first.unmount();
 
 		const withKey = stores([

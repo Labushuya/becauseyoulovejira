@@ -7,6 +7,7 @@ import { lastResultText, mailScanText, type Connection, type RunResult } from '.
 import { berlinDateOf, formatBerlinDateTime } from './format';
 import type { InboxKey } from './inbox-keys';
 import { importedSummary, type NotionImportedSource } from './notion';
+import { ownInboxOpen, whatsAppWebOpen } from './open-setups';
 
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
@@ -18,13 +19,18 @@ export interface CardStatus {
 	icon: 'refresh' | 'pause' | 'pending' | 'error' | 'check' | 'warning';
 }
 
-/** The states the user approved for every card (spec of 2026-09-30), besides a running request. */
+/**
+ * The states the user approved for every card (spec of 2026-09-30), besides a running request.
+ * Since KE-1 (ADR-0076) "Einrichtung offen" means begun and not done; the own inbox and WhatsApp
+ * Web say "Nicht eingerichtet" before their first key, like the tiles of the catalog.
+ */
 export const CARD_STATUS = Object.freeze({
 	connected: { label: 'Verbunden', tone: 'brand', icon: 'check' },
 	paused: { label: 'Pausiert', tone: 'muted', icon: 'pause' },
 	error: { label: 'Fehler', tone: 'danger', icon: 'error' },
 	setup: { label: 'Einrichtung offen', tone: 'neutral', icon: 'pending' },
-	restart: { label: 'Neustart nötig', tone: 'neutral', icon: 'warning' }
+	restart: { label: 'Neustart nötig', tone: 'neutral', icon: 'warning' },
+	notSetUp: { label: 'Nicht eingerichtet', tone: 'neutral', icon: 'pending' }
 } satisfies Record<string, CardStatus>);
 
 /**
@@ -137,8 +143,9 @@ export function inboxKeysInfo(keys: readonly Pick<InboxKey, 'lastUsedAt'>[], now
 }
 
 /**
- * State of the own inbox: before the migration a restart, a failed load an error, without a
- * key or before any program used one the setup is open, else connected. null while loading.
+ * State of the own inbox: before the migration a restart, a failed load an error, without a key
+ * "Nicht eingerichtet", with keys of which no program used one the setup is open (KE-1,
+ * `ownInboxOpen`), else connected. null while loading.
  */
 export function inboxKeysStatus(
 	state: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable',
@@ -147,14 +154,16 @@ export function inboxKeysStatus(
 	if (state === 'unavailable') return CARD_STATUS.restart;
 	if (state === 'error') return CARD_STATUS.error;
 	if (state !== 'ready') return null;
-	return keys.some((key) => key.lastUsedAt !== null) ? CARD_STATUS.connected : CARD_STATUS.setup;
+	if (keys.length === 0) return CARD_STATUS.notSetUp;
+	return ownInboxOpen(keys) === null ? CARD_STATUS.connected : CARD_STATUS.setup;
 }
 
 /**
  * State of WhatsApp Web, as far as the app can see it (ADR-0038 §4): the app does not see the
- * extension in the browser. It knows a restart is due before the migration of the own inbox,
- * and that the setup is open without a key or without a built extension. Otherwise it says
- * nothing (null) rather than claim a connection.
+ * extension in the browser. It knows a restart is due before the migration of the own inbox, that
+ * nothing is set up without a key, and that the setup is open with a key but without a built
+ * extension (KE-1, `whatsAppWebOpen`). Otherwise it says nothing (null) rather than claim a
+ * connection.
  */
 export function whatsAppWebStatus(
 	state: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable' | null,
@@ -162,7 +171,7 @@ export function whatsAppWebStatus(
 	built: boolean | null
 ): CardStatus | null {
 	if (state === 'unavailable') return CARD_STATUS.restart;
-	if (built === false) return CARD_STATUS.setup;
-	if (state === 'ready' && keyCount === 0) return CARD_STATUS.setup;
-	return null;
+	if (state !== 'ready') return null;
+	if (keyCount === 0) return CARD_STATUS.notSetUp;
+	return whatsAppWebOpen(keyCount, built) === null ? null : CARD_STATUS.setup;
 }
