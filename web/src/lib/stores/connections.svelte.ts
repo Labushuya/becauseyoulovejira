@@ -157,7 +157,9 @@ export function runProblem(id: string, result: RunResult): ProblemEntry | null {
 		method: 'POST',
 		path: `/api/byl/connections/${encodeURIComponent(id)}/run`,
 		code: result.status,
-		message: result.error
+		message: result.error,
+		// The entry of the log of the server, the Server-ID of the report (FP-2, ADR-0077).
+		serverId: result.problem ?? null
 	});
 	runProblems.set(result, problem);
 	return problem;

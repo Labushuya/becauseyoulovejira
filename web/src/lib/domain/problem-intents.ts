@@ -201,7 +201,9 @@ export const COLLECTION_INTENTS: Readonly<Record<string, CollectionIntents>> = O
 	inbox_keys: crud('Zugangsschlüssel', 'Zugangsschlüssel'),
 	day_plans: crud('Tagesplan', 'Tagespläne'),
 	day_plan_items: crud('Eintrag des Tagesplans', 'Einträge des Tagesplans'),
-	day_plan_settings: crud('Einstellungen des Tagesplans', 'Einstellungen des Tagesplans')
+	day_plan_settings: crud('Einstellungen des Tagesplans', 'Einstellungen des Tagesplans'),
+	// The error log of the server (FP-2, ADR-0077): the SPA only reads it.
+	problem_events: crud('Eintrag des Fehlerprotokolls', 'Fehlerprotokoll')
 });
 
 /** Requests of the SDK outside the record API. */

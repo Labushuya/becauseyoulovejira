@@ -4,7 +4,9 @@
 // Since FP-1 (ADR-0071) this is also the one place that turns a failure into the entry behind
 // "Details" of a message (`problemOf`): the client of the app notes method and path of every
 // failed request (`noteRequest`, lib/pocketbase.ts), an action may name its intent
-// (`withIntent`), otherwise the catalog of domain/problem-intents.ts names it.
+// (`withIntent`), otherwise the catalog of domain/problem-intents.ts names it. Since FP-2
+// (ADR-0077) an answer with an unexpected 5xx names its entry of the log of the server
+// (`noteServerProblem`), and the entry carries it as Server-ID.
 
 import { ACCOUNT_MESSAGES } from '../domain/accounts';
 import { SCOPE_FIELD_MESSAGES, SCOPE_MESSAGE } from '../domain/area';
@@ -32,6 +34,7 @@ import { TICKET_SOURCE_MESSAGES, cycleMessage, cyclePathOf } from '../domain/tic
 import { unreachableHint } from '../domain/context';
 import { TRASH_MESSAGES } from '../domain/trash';
 import { UNKNOWN_INTENT, intentOf } from '../domain/problem-intents';
+import { isServerProblemId } from '../domain/server-problems';
 import {
 	UNEXPECTED_INTENT,
 	clientProblem,
@@ -317,6 +320,7 @@ export async function withDataErrors<T>(
 const requests = new WeakMap<object, ProblemRequest>();
 const intents = new WeakMap<object, string>();
 const problems = new WeakMap<object, ProblemEntry | null>();
+const serverIds = new WeakMap<object, string>();
 let problemCount = 0;
 let appVersion: string | null = null;
 
@@ -332,6 +336,18 @@ export function provideAppVersion(version: string | null): void {
 export function noteRequest(error: unknown, method: string, path: string): void {
 	if (isRecord(error) && !requests.has(error)) {
 		requests.set(error, { method: method.toUpperCase(), path: requestPathOf(path) });
+	}
+}
+
+/**
+ * Notes the entry of the log of the server that an answer names (header X-Byl-Problem, FP-2,
+ * ADR-0077) beside the body of that answer, which the error of the SDK keeps as its `response`: the
+ * details then name it as Server-ID. Only for a 5xx and only an ID of the right form; nothing else of
+ * the answer is kept.
+ */
+export function noteServerProblem(body: unknown, status: number, id: string | null): void {
+	if (status >= 500 && status <= 599 && isRecord(body) && isServerProblemId(id)) {
+		serverIds.set(body, id);
 	}
 }
 
@@ -420,6 +436,7 @@ function buildProblem(error: Record<string, unknown>): ProblemEntry | null {
 	const explicit = chain.map((part) => intents.get(part)).find((intent) => intent !== undefined);
 	const known = request === null ? null : intentOf(request.method, request.path);
 	const at = failure?.occurredAt ?? Date.now();
+	const answer = isSdkLike(raw) && isRecord(raw.response) ? raw.response : null;
 	return clientProblem({
 		id: nextProblemId(at),
 		intent: explicit ?? known ?? UNKNOWN_INTENT,
@@ -427,7 +444,8 @@ function buildProblem(error: Record<string, unknown>): ProblemEntry | null {
 		outcome,
 		request,
 		app: appVersion,
-		exception: outcome.result === 'exception' ? exceptionOf(raw ?? error) : null
+		exception: outcome.result === 'exception' ? exceptionOf(raw ?? error) : null,
+		serverId: answer === null ? null : (serverIds.get(answer) ?? null)
 	});
 }
 
@@ -455,6 +473,8 @@ export function reportedProblem(input: {
 	path: string;
 	code: string | null;
 	message: string | null;
+	/** The entry of the log of the server the answer names (FP-2, e.g. a failed run of a channel). */
+	serverId?: string | null;
 }): ProblemEntry {
 	const at = Date.now();
 	const message = input.message === null ? null : sanitizeProblemText(input.message);
@@ -470,7 +490,8 @@ export function reportedProblem(input: {
 		},
 		request: { method: input.method.toUpperCase(), path: requestPathOf(input.path) },
 		app: appVersion,
-		exception: null
+		exception: null,
+		serverId: isServerProblemId(input.serverId) ? input.serverId : null
 	});
 }
 

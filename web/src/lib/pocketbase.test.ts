@@ -81,4 +81,38 @@ describe('pb', () => {
 			request: { method: 'POST', path: '/api/byl/tickets/abc123def456789/subtasks/transfer' }
 		});
 	});
+
+	it('takes the entry of the log of the server an unexpected 5xx names as Server-ID (FP-2)', async () => {
+		const answer = (status: number, id: string) =>
+			vi.fn<typeof fetch>(async () =>
+				Response.json(
+					{ status, message: 'Something went wrong while processing your request.', data: {} },
+					{ status, headers: { 'X-Byl-Problem': id } }
+				)
+			);
+		vi.stubGlobal('fetch', answer(500, 'abc123def456ghi'));
+		const failed = await pb
+			.send('/api/byl/tickets/abc123def456789/duplicate', { method: 'POST', body: {} })
+			.catch((caught: unknown) => caught);
+		const problem = problemOf(toDataError(failed)) as ProblemEntry;
+		expect(problem).toMatchObject({ serverId: 'abc123def456ghi', outcome: { status: 500 } });
+		expect(problemReport(problem)).toContain('Server-ID: abc123def456ghi');
+
+		// Only a 5xx and only an ID of the right form; the body stays as PocketBase sent it.
+		for (const [status, id] of [
+			[409, 'abc123def456ghi'],
+			[500, 'kein-gueltiger-wert']
+		] as const) {
+			vi.stubGlobal('fetch', answer(status, id));
+			const other = await pb
+				.send('/api/byl/tickets/abc123def456789/duplicate', { method: 'POST', body: {} })
+				.catch((caught: unknown) => caught);
+			expect(problemOf(toDataError(other))?.serverId, `${status} ${id}`).toBeNull();
+			expect(Object.keys((other as { response: object }).response).sort()).toEqual([
+				'data',
+				'message',
+				'status'
+			]);
+		}
+	});
 });

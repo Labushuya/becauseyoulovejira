@@ -6,8 +6,10 @@
 	import { auth } from '$lib/auth.svelte';
 	import ChannelsView from '$lib/components/ChannelsView.svelte';
 	import { fetchExtensionInfo, type ExtensionInfo } from '$lib/data/extension';
+	import { latestChannelProblem } from '$lib/data/server-problems';
 	import { setupTargetOf, type SetupTarget } from '$lib/domain/channel-setup';
 	import { pb } from '$lib/pocketbase';
+	import { provideChannelProblems } from '$lib/problem-link';
 	import { findAreaStore } from '$lib/stores/area.svelte';
 	import { getCatalogStore } from '$lib/stores/catalog.svelte';
 	import { ConnectionsStore, connectionsData } from '$lib/stores/connections.svelte';
@@ -49,6 +51,9 @@
 	// The access data of the channels in the browser (BW-3, ADR-0075): state, "Setzen", "Entfernen"
 	// and the hint until the next restart; values only on their way to the server, never kept.
 	const credentials = new CredentialsStore(credentialsData(pb), auth);
+	// "Details" at the last error of a card finds its entry of the error log of the server (FP-2,
+	// ADR-0077).
+	provideChannelProblems((id, signal) => latestChannelProblem(pb, id, { signal }));
 	// Target projects of the cards without a connection (ADR-0049); the projects of the catalog name
 	// the targets of every card.
 	const inboxTargets = new InboxTargetsStore(inboxTargetsData(pb), auth, flags);

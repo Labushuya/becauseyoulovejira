@@ -1,5 +1,6 @@
 import PocketBase, { type SendOptions } from 'pocketbase';
-import { noteRequest } from './data/errors';
+import { noteRequest, noteServerProblem } from './data/errors';
+import { SERVER_PROBLEM_HEADER } from './domain/server-problems';
 
 /**
  * What a request tells the monitor of the connection (OF-2, ADR-0074 §9): an answer of the server
@@ -34,9 +35,19 @@ function statusOf(error: unknown): number | null {
  * "Details" of the message (FP-1, ADR-0071): an error of the SDK carries the address only for an
  * answer and never the method, and for a missing connection nothing at all. Only the path is
  * kept (the data layer strips the query); body, headers and the token stay out. While the outbox
- * can work, the monitor of the connection hears whether the server answered (OF-2).
+ * can work, the monitor of the connection hears whether the server answered (OF-2). An answer with
+ * an unexpected 5xx names its entry of the log of the server in X-Byl-Problem (FP-2, ADR-0077);
+ * `afterSend` notes only that ID beside the body, for the Server-ID of the details.
  */
 class AppPocketBase extends PocketBase {
+	constructor(baseUrl: string) {
+		super(baseUrl);
+		this.afterSend = (response: Response, data: unknown) => {
+			noteServerProblem(data, response.status, response.headers.get(SERVER_PROBLEM_HEADER));
+			return data;
+		};
+	}
+
 	override async send<T>(path: string, options: SendOptions): Promise<T> {
 		try {
 			const result = await super.send<T>(path, options);

@@ -25,6 +25,7 @@
 	import type { CredentialsStore } from '$lib/stores/credentials.svelte';
 	import type { RestartStore } from '$lib/stores/restart.svelte';
 	import ChipList from '../ChipList.svelte';
+	import ServerProblemLink from '../problems/ServerProblemLink.svelte';
 	import CardTargetProject from './CardTargetProject.svelte';
 	import ChannelCard, { type CardAction, type CardRename } from './ChannelCard.svelte';
 	import CredentialsBlock from './CredentialsBlock.svelte';
@@ -284,7 +285,14 @@
 			{#if connection.lastError !== ''}
 				<div>
 					<dt>Letzter Fehler</dt>
-					<dd>{textForContext(connection.lastError)}</dd>
+					<dd>
+						{textForContext(connection.lastError)}
+						<ServerProblemLink
+							connection={connection.id}
+							name={connection.label}
+							seen={`${connection.lastRunAt} ${connection.lastError}`}
+						/>
+					</dd>
 				</div>
 			{/if}
 		</dl>
