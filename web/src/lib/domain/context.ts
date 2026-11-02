@@ -155,8 +155,10 @@ export function isContextRefusal(reason: unknown): boolean {
 }
 
 // A command, a script or a file of the folder app in a text of the server (hints of a channel):
-// names such as neu-starten.bat or byl-control.ps1, and setx.
-const COMMAND = /(?:[\w-]+\.(?:bat|ps1|vbs)\b|\bsetx\b)/i;
+// names such as start.bat or byl-control.ps1, and setx. Since BW-2 also the way of a restart
+// (RESTART_WAY of domain/system.ts): only the administrator at the PC under Windows restarts there.
+const COMMAND =
+	/(?:[\w-]+\.(?:bat|ps1|vbs)\b|\bsetx\b|Einstellungen → System → „Jetzt neu starten“)/i;
 const PARENTHESIS = /\s*\([^()]*\)/g;
 // The end of a sentence: a full stop, "!" or "?" before a space (not the dot of start.bat).
 const SENTENCE_END = /(?<=[.!?])\s+/;

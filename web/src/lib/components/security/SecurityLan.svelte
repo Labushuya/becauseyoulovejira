@@ -17,18 +17,32 @@
 		type FirewallAction
 	} from '$lib/domain/lan';
 	import type { SecurityOverview } from '$lib/domain/security';
-	import { RESTART_NEEDED, restartNeeded } from '$lib/guidance/texts';
+	import { restartNeeded } from '$lib/guidance/texts';
 	import type { SecurityLanStore } from '$lib/stores/security-lan.svelte';
+	import RestartNeededNotice from '../system/RestartNeededNotice.svelte';
 
 	// Access in the home network on the page "Sicherheit" (plan heimnetz, ADR-0055 addendum): the
 	// warning that it goes unencrypted over HTTP, the address for other devices with "Kopieren", the
-	// switch with the addresses of this computer (after a restart, which the page "System" offers),
-	// the firewall rule (Windows asks for administrator rights after a confirmation here), the network
-	// category of each address and how to keep the address in the FRITZ!Box. Off by default; only the
-	// own instance under Windows can change it. Checks speak at the field (ADR-0009), nothing is red
-	// but a real failure.
-	let { overview, store }: { overview: SecurityOverview; store: SecurityLanStore | null } =
-		$props();
+	// switch with the addresses of this computer (after a restart, which the hint offers in place like
+	// the page "System", RestartNeededNotice since BW-2), the firewall rule (Windows asks for
+	// administrator rights after a confirmation here), the network category of each address and how to
+	// keep the address in the FRITZ!Box. Off by default; only the own instance under Windows can
+	// change it. Checks speak at the field (ADR-0009), nothing is red but a real failure.
+	let {
+		overview,
+		store,
+		onrestarted
+	}: {
+		overview: SecurityOverview;
+		store: SecurityLanStore | null;
+		/** The server is back after "Jetzt neu starten" here: the page loads its overview again. */
+		onrestarted?: () => void;
+	} = $props();
+
+	function restarted() {
+		onrestarted?.();
+		void store?.load();
+	}
 
 	const uid = $props.id();
 	const ids = {
@@ -139,9 +153,11 @@
 {/if}
 
 {#if !lan.ready}
-	<SectionMessage tone="info" title={RESTART_NEEDED.title}>
-		{restartNeeded('Der Zugriff im Heimnetz ist')}
-	</SectionMessage>
+	<RestartNeededNotice
+		text={restartNeeded('Der Zugriff im Heimnetz ist')}
+		place="notice:security:lan-ready"
+		onrestarted={restarted}
+	/>
 {:else if !lan.editable || store === null}
 	<p class="note">
 		Den Zugriff im Heimnetz stellt nur die App unter Windows aus ihrem Ordner app ein. Von Hand
@@ -232,12 +248,17 @@
 	</div>
 
 	{#if restart}
-		<SectionMessage tone="info" title={LAN_TEXTS.restartTitle} live>
-			{LAN_TEXTS.restart}
+		<RestartNeededNotice
+			title={LAN_TEXTS.restartTitle}
+			text={LAN_TEXTS.restart}
+			place="notice:security:lan"
+			live
+			onrestarted={restarted}
+		>
 			{#snippet actions()}
 				<a href={resolve('/einstellungen/system')}>Zur Seite System</a>
 			{/snippet}
-		</SectionMessage>
+		</RestartNeededNotice>
 	{/if}
 
 	<h4>Windows-Firewall</h4>

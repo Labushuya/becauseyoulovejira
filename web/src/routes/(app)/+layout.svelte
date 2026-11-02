@@ -83,6 +83,8 @@
 	import { fetchHostPlatform } from '$lib/data/host';
 	import { appContext } from '$lib/stores/context.svelte';
 	import { HostStore, setHostStore } from '$lib/stores/host.svelte';
+	import { RestartStore, setRestartStore } from '$lib/stores/restart.svelte';
+	import { systemData } from '$lib/stores/system.svelte';
 	import { getNotifyStore } from '$lib/attention-notify.svelte';
 	import { ackAttention } from '$lib/data/attention';
 	import { fetchBackupAttention } from '$lib/data/backup';
@@ -936,6 +938,11 @@
 		untrack(() => void host.load(controller.signal));
 		return () => controller.abort();
 	});
+
+	// "Jetzt neu starten" in the hints "restart needed" of every view (BW-2, ADR-0072 addendum): the
+	// route and the checks of the page System; it asks nothing until a button starts a run.
+	const restart = setRestartStore(new RestartStore(systemData(pb), auth));
+	$effect(() => () => restart.reset());
 
 	// Guided tour (plan EH-13, ADR-0026 section 8): only on a click in the help menu or in "Erste
 	// Schritte", never on its own. It closes open popovers first, returns the focus to the element

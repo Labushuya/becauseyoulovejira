@@ -1,6 +1,6 @@
 <script lang="ts">
-	import SectionMessage from '$lib/components/guidance/SectionMessage.svelte';
 	import RetentionChoice from '$lib/components/RetentionChoice.svelte';
+	import RestartNeededNotice from '$lib/components/system/RestartNeededNotice.svelte';
 	import { retentionText } from '$lib/domain/trash';
 	import { restartNeeded } from '$lib/guidance/texts';
 	import { getTrashStore } from '$lib/stores/trash.svelte';
@@ -20,7 +20,12 @@
 </svelte:head>
 
 {#if store.state === 'unavailable'}
-	<SectionMessage tone="info">{restartNeeded('Der Papierkorb ist')}</SectionMessage>
+	<RestartNeededNotice
+		title=""
+		text={restartNeeded('Der Papierkorb ist')}
+		place="notice:settings-tickets"
+		onrestarted={() => void store.reload()}
+	/>
 {:else}
 	<RetentionChoice
 		legend="Papierkorb"

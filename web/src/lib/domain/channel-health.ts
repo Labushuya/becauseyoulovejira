@@ -164,7 +164,7 @@ function baseHealth(
 		};
 	}
 	// A mailbox needs the mail helper (ADR-0016 §4): if it does not run or runs with another token
-	// or an old version, a restart of the app starts the right one (neu-starten.bat).
+	// or an old version, a restart of the app starts the right one ("Jetzt neu starten", BW-2).
 	if (connection.type === 'mail' && helper !== null && helper.state !== 'running') {
 		return {
 			state: 'restart',

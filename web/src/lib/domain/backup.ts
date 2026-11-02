@@ -4,7 +4,7 @@
 // app/pb_hooks/lib/backup-rules.js and byl-functions.ps1 (parity test). Pure module: no requests,
 // no runes.
 
-import { formatPointInTime, sizeText } from './system';
+import { RESTART_WAY, formatPointInTime, sizeText } from './system';
 
 export interface KeepLimit {
 	readonly fallback: number;
@@ -595,8 +595,8 @@ export const EMERGENCY_STEPS: readonly EmergencyStep[] = [
 		text: 'Die Liste nennt die Namen der BYL_*-Variablen in der Sicherung; „f“ schreibt die fehlenden in die Windows-Umgebungsvariablen deines Kontos. Dann WIEDERHERSTELLEN eintippen: Die App startet mit dem Stand der Sicherung, in einem neuen Ordner ohne byl-config.json auch mit ihren Einstellungen (Port, Zielverzeichnis, Aufbewahrung). Auf Wunsch die Passphrase für künftige Sicherungen speichern.'
 	},
 	{
-		title: 'neu-starten.bat',
-		text: 'Setzt du Zugangsdaten später von Hand (setx) oder änderst sie, danach neu-starten.bat doppelklicken.'
+		title: 'Neu starten',
+		text: `Setzt oder änderst du Zugangsdaten später, danach die App neu starten: ${RESTART_WAY}. Nach „Setzen …“ an einer Karte unter Kanäle fragt die App das von selbst.`
 	},
 	{
 		title: 'Autostart',

@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { CHANNEL_KIND_LABELS, CHANNEL_SEARCH_TEXT, type ChannelKind } from '$lib/domain/keywords';
 	import type { ImportKeywordsStore } from '$lib/stores/import-keywords.svelte';
-	import { RESTART_NEEDED } from '$lib/guidance/texts';
 	import SectionMessage from '../guidance/SectionMessage.svelte';
 	import KeywordEditor from '../KeywordEditor.svelte';
 	import Modal from '../overlay/Modal.svelte';
+	import RestartNeededNotice from '../system/RestartNeededNotice.svelte';
 
 	// "Stichwörter: ‹Kanal›" of a channel of the own inbox (ADR-0038; the same editor as every channel,
 	// ADR-0020): an entry of the mode "auto" is taken only with one of these keywords. Every change
@@ -33,9 +33,11 @@
 				store.save(kind, { keywords: next, matchBody: false }, `${label}: ${announcement}`)}
 		/>
 	{:else if store.state === 'unavailable'}
-		<SectionMessage tone="info" title={RESTART_NEEDED.title} headingLevel={4}>
-			{RESTART_NEEDED.text}
-		</SectionMessage>
+		<RestartNeededNotice
+			place={`notice:keywords:${kind}`}
+			headingLevel={4}
+			onrestarted={() => void store.load()}
+		/>
 	{:else if store.state === 'error'}
 		<SectionMessage tone="error" live>
 			{store.error}

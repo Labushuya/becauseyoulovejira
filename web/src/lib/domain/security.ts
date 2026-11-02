@@ -4,7 +4,7 @@
 // (app/pb_hooks/lib/security-service.js), the SPA only words it.
 
 import { lanUrl, parseLanOverview, type LanOverview } from './lan';
-import { formatPointInTime, type SystemDenial } from './system';
+import { RESTART_WAY, formatPointInTime, type SystemDenial } from './system';
 
 export type SecurityLevel = 'normal' | 'strict' | 'custom' | 'off';
 /** The levels the page offers; "custom" and "off" come only from the admin UI. */
@@ -310,7 +310,7 @@ export function statusLines(overview: SecurityOverview): StatusLine[] {
 		state: overview.cors.restricted ? 'Aktiv' : 'Neustart nötig',
 		text: overview.cors.restricted
 			? 'Antworten der App darf nur die App selbst lesen.'
-			: 'Die App wurde ohne diese Einschränkung gestartet; neu-starten.bat im Ordner app schaltet sie ein.',
+			: `Die App wurde ohne diese Einschränkung gestartet; ein Neustart schaltet sie ein (${RESTART_WAY}).`,
 		meaning:
 			'Jede Webseite in deinem Browser kann Anfragen an diesen Rechner schicken. Ihre Antworten lesen darf aber nur die App unter ihrer eigenen Adresse. Die Browser-Erweiterung, Skripte und der Mail-Helfer brauchen das nicht.'
 	});

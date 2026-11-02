@@ -4,6 +4,7 @@
 	import ConfirmDialog from '$lib/components/overlay/ConfirmDialog.svelte';
 	import { RESTART_TEXTS, mailText, stateText } from '$lib/domain/system';
 	import { restartElsewhere, type RestartTask } from '$lib/guidance/texts';
+	import { findOutbox } from '$lib/offline/outbox.svelte';
 	import type { RestartStore } from '$lib/stores/restart.svelte';
 	import RestartEmergency from './RestartEmergency.svelte';
 
@@ -16,6 +17,8 @@
 	// (the user's rule: everything from the browser). A tab that may not restart (another device,
 	// another account, a server that is not Windows) gets who does what where instead of the button,
 	// never a script. Without a store (a view that cannot restart) only the emergency way stands.
+	// Without a connection (the outbox, OF-2) the button stays visible but locked and says why next
+	// to it (BW-2, like "Alle Kanäle jetzt abrufen").
 	let {
 		store,
 		task = 'restart',
@@ -41,10 +44,14 @@
 
 	const uid = $props.id();
 	const hintId = `${uid}-hint`;
+	const offlineId = `${uid}-offline`;
+	const outbox = findOutbox();
 	let confirming = $state(false);
 
 	const elsewhere = $derived(restartElsewhere(task));
 	const busy = $derived((store?.running ?? null) !== null);
+	// A run that is going on keeps its button: the server is gone on purpose then.
+	const offline = $derived(outbox?.offline === true && !busy);
 	const here = $derived(store?.runningAt(place) ?? false);
 	const phase = $derived(store?.phaseAt(place) ?? null);
 	const result = $derived(store?.resultAt(place) ?? null);
@@ -81,7 +88,7 @@
 	}
 
 	function ask() {
-		if (busy) return;
+		if (busy || offline) return;
 		if (task === 'restart') confirming = true;
 		else void start();
 	}
@@ -106,12 +113,15 @@
 					class="button-secondary"
 					type="button"
 					aria-busy={here ? 'true' : undefined}
-					aria-disabled={busy ? 'true' : undefined}
-					aria-describedby={hintId}
+					aria-disabled={busy || offline ? 'true' : undefined}
+					aria-describedby={offline ? `${offlineId} ${hintId}` : hintId}
 					onclick={ask}
 				>
 					{label}
 				</button>
+				{#if offline}
+					<p class="hint" id={offlineId}>{RESTART_TEXTS.offline}</p>
+				{/if}
 				<p class="hint" id={hintId}>{hint}</p>
 			</div>
 

@@ -265,7 +265,8 @@ describe('OwnInboxCard', () => {
 		const { unmount } = render(OwnInboxCard, { props: { store: before.store } });
 		expect(screen.getByText('Neustart nötig')).toBeTruthy();
 		expect(screen.getByText('Nach dem nächsten Neustart verfügbar')).toBeTruthy();
-		expect(screen.getByText(/neu-starten\.bat im Ordner app/)).toBeTruthy();
+		// Since BW-2 the way in the browser, never a script.
+		expect(screen.getByText(/Einstellungen → System → „Jetzt neu starten“/)).toBeTruthy();
 		expect(
 			screen
 				.getByRole('button', { name: `Zugangsschlüssel erzeugen …: ${NAME}` })

@@ -12,10 +12,11 @@
 		statusLines,
 		type LevelChoice
 	} from '$lib/domain/security';
-	import { RESTART_NEEDED, restartNeeded } from '$lib/guidance/texts';
+	import { restartNeeded } from '$lib/guidance/texts';
 	import { helpHref } from '$lib/settings-sections';
 	import type { SecurityLanStore } from '$lib/stores/security-lan.svelte';
 	import type { SecurityStore } from '$lib/stores/security.svelte';
+	import RestartNeededNotice from '../system/RestartNeededNotice.svelte';
 	import SecurityHosts from './SecurityHosts.svelte';
 	import SecurityLan from './SecurityLan.svelte';
 
@@ -176,15 +177,17 @@
 
 	<section class="part" id="heimnetz" aria-labelledby={`${uid}-lan`}>
 		<h3 id={`${uid}-lan`}>Zugriff im Heimnetz</h3>
-		<SecurityLan {overview} store={lan} />
+		<SecurityLan {overview} store={lan} onrestarted={() => void store.load()} />
 	</section>
 
 	<section class="part" id="anmeldungen" aria-labelledby={`${uid}-logins`}>
 		<h3 id={`${uid}-logins`}>Fehlgeschlagene Anmeldungen</h3>
 		{#if overview.logins === null}
-			<SectionMessage tone="info" title={RESTART_NEEDED.title}>
-				{restartNeeded('Das Protokoll fehlgeschlagener Anmeldungen ist')}
-			</SectionMessage>
+			<RestartNeededNotice
+				text={restartNeeded('Das Protokoll fehlgeschlagener Anmeldungen ist')}
+				place="notice:security:logins"
+				onrestarted={() => void store.load()}
+			/>
 		{:else if overview.logins.groups.length === 0}
 			<EmptyState
 				size="compact"

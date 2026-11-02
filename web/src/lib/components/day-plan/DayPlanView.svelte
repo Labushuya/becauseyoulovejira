@@ -14,6 +14,7 @@
 	import SectionMessage from '../guidance/SectionMessage.svelte';
 	import ProblemDetails from '../problems/ProblemDetails.svelte';
 	import SectionBar from '../SectionBar.svelte';
+	import RestartNeededNotice from '../system/RestartNeededNotice.svelte';
 	import ViewSwitch from '../ViewSwitch.svelte';
 	import DayPlanList from './DayPlanList.svelte';
 	import DayPlanPool from './DayPlanPool.svelte';
@@ -171,9 +172,12 @@
 	</header>
 
 	{#if store.state === 'missing'}
-		<SectionMessage tone="info" title="Tagesplan">
-			{restartNeeded('Der Tagesplan ist')}
-		</SectionMessage>
+		<RestartNeededNotice
+			title="Tagesplan"
+			text={restartNeeded('Der Tagesplan ist')}
+			place="notice:day-plan"
+			onrestarted={() => void store.reload()}
+		/>
 	{:else if store.state === 'error'}
 		<p class="alert-error" role="alert">
 			<ErrorIcon /><span>Der Tagesplan konnte nicht geladen werden. {store.error}</span>
