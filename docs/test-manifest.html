@@ -341,7 +341,7 @@
   "meta": {
     "projekt": "becauseyoulovejira",
     "stand": "2026-11-02",
-    "commit": "29cf2be"
+    "commit": "7865d42"
   },
   "bereiche": [
     { "id": "betrieb", "titel": "Betrieb: Start, Stopp, Skripte und Daten" },
@@ -709,6 +709,8 @@
       "vermerk": "Neue Hooks (credentials.pb.js) und Befehle des Steuerskripts: nach dem Deploy ein Neustart nötig. Werte nur in den Benutzervariablen von Windows, Tests nur gegen Wegwerf-Kopien mit BYL_TEST_ACCOUNT_FILE. Drei manuelle Fälle (BYL-E6-2317 bis 2319) am PC und am Handy." },
     { "id": "KE-1", "vorhaben": "Kanäle", "titel": "Offene Einrichtungen sichtbar: jeder offene Pflichtschritt, nie „Verbunden“ solange offen, Übersicht mit „Fortsetzen“, Marke an „Kanäle“, Hinweis einmal je Gerät und Stand, „Wartet auf Neustart“, „Begonnen · Fortsetzen“, „Erste Schritte“ erst nach einer Einrichtung", "bereich": "eingang", "quelle": "Nutzerentscheidung", "datum": "2026-11-01", "adr": ["0076-offene-einrichtungen-sichtbar.md", "0026-einstellungsbereich-und-hinweis-bausteine.md, Nachtrag KE-1", "0035-start-einstieg-und-offene-tabs.md, Nachtrag KE-1", "0072-neustart-im-assistenten-und-rueckkehr-zum-schritt.md, Nachtrag KE-1"], "faelle": ["BYL-E6-2320..BYL-E6-2335"],
       "vermerk": "Oberfläche, Tests und Doku, dazu ein kleiner Server-Fix des Telegram-Hinweises (lib/channel-telegram.js): nach dem Deploy Neustart nötig; keine Migration, keine neue Route. Zwei manuelle Fälle (BYL-E6-2333 am PC, BYL-E6-2334 am Handy)." },
+    { "id": "BW-2a", "vorhaben": "Bedienung aus dem Browser", "titel": "Hilfsprogramme nur bei geändertem Inhalt ersetzen: ein Build ohne Änderung lässt byl-mail.exe und byl-backup.exe samt Änderungszeit stehen, die Seite „System“ meldet danach keinen neuen Mail-Hilfsprozess", "bereich": "betrieb", "quelle": "Fehlerbericht", "datum": "2026-11-02", "adr": ["0039-betriebsskripte.md, Nachtrag BW-2a"], "faelle": ["BYL-E6-2336..BYL-E6-2339"],
+      "vermerk": "Nur scripts/, Tests und Doku: kein Neustart, kein F5. Zwei Builds ohne Änderung sind bytegleich; verglichen wird der SHA-256 der gebauten und der installierten Datei." },
     { "id": "querschnitt", "vorhaben": "Querschnitt", "titel": "Testumgebung, Regeln der Datenschicht, Hook-Module und dieses Manifest", "bereich": "entwicklung", "faelle": ["BYL-X-001..BYL-X-004"] }
   ],
   "zurueckgestellt": [
@@ -9857,6 +9859,27 @@
           "pre": "processUpdates mit gespeichertem Hinweis; eine Wegwerf-Instanz mit einem zweiten Bot gegen den Fake der Bot API, eigenes Konto.", "steps": ["npm test"],
           "expect": "Schreibt ein fremder Chat, steht seine Chat-ID im Hinweis, nur mit dem Namen der Variablen, ohne Token und ohne Wert der Liste. Ein Lauf ohne Nachrichten lässt ihn stehen, solange die ID nicht erlaubt ist. Er geht, sobald ein Lauf eine Nachricht eines erlaubten Chats verarbeitet hat und kein fremder schrieb, oder sobald die Chat-ID des Hinweises erlaubt ist (auch ohne Nachricht, auch ein Hinweis eines älteren Stands). Weder Token noch Liste stehen im Log oder in der Konsole.",
           "tests": ["tests/unit/channel-telegram.test.mjs::channel-telegram.js: the stored hint of a chat that is not allowed (KE-1)", "tests/integration/channel-telegram.test.mjs::Telegram: the hint of a chat that is not allowed (KE-1)", "tests/integration/channel-telegram.test.mjs::never writes the token to the log or the console"] }
+      ]
+    },
+    {
+      "tag": "E6", "name": "Bedienung aus dem Browser: Hilfsprogramme nur bei geändertem Inhalt ersetzen (BW-2a)", "desc": "Paket BW-2a (ADR-0039, Nachtrag BW-2a): scripts\\build-mail-helper.ps1 und build-backup-helper.ps1 bauen und prüfen bei jedem Lauf, legen das Ergebnis über Install-BylHelper aber nur nach app\\, wenn es fehlt oder sein SHA-256 abweicht. Ein Build ohne Änderung lässt die Datei samt Änderungszeit stehen, und der Stempel mailHelper des Fingerabdrucks meldet keinen Neustart. IDs BYL-E6-2336 bis BYL-E6-2339.",
+      "items": [
+        { "id": "BYL-E6-2336", "title": "Beide Helfer-Builds legen ihre Datei nur über Install-BylHelper ab, nach dem Vergleich (BW-2a)", "art": ["unit"], "status": "bestanden",
+          "pre": "Die Quellen von scripts/build-mail-helper.ps1, build-backup-helper.ps1 und build-functions.ps1.", "steps": ["npm run test:unit"],
+          "expect": "Jedes Skript ruft Install-BylHelper genau einmal, nach der Prüfung ohne Node und dem Entfernen der Altdateien, und meldet einen Fehler als helper-install; keines löscht, benennt oder kopiert app\\<Name> selbst. Install-BylHelper vergleicht den SHA-256, bevor es etwas löscht, umbenennt oder kopiert.",
+          "tests": ["tests/unit/build-helper-install.test.mjs::both helper builds put their file into place only through Install-BylHelper, an error as helper-install", "tests/unit/build-helper-install.test.mjs::compares the SHA-256 before it removes, renames or copies anything"] },
+        { "id": "BYL-E6-2337", "title": "Gleicher Inhalt: Datei samt Änderungszeit und Stempel des Fingerabdrucks unberührt (BW-2a)", "art": ["unit"], "status": "bestanden",
+          "pre": "Windows PowerShell; je ein Ordner des Tests im Temp-Ordner mit gebauter und installierter Datei gleichen Inhalts (byl-mail.exe und byl-backup.exe), Änderungszeit weit zurück.", "steps": ["npm run test:unit"],
+          "expect": "Ergebnis „Unchanged“, Ausgabe „app\\byl-mail.exe unchanged (same SHA-256 as the new build), not replaced.“ (ebenso byl-backup.exe), Inhalt, Änderungszeit und Get-FileStamp (Teil mailHelper des Fingerabdrucks) gleich, keine Datei .old-*.",
+          "tests": ["tests/unit/build-helper-install.test.mjs::leaves a helper with the same content untouched, its last write time and the stamp of the fingerprint included"] },
+        { "id": "BYL-E6-2338", "title": "Anderer Inhalt wird ersetzt, auch bei gleicher Länge; eine fehlende Datei angelegt (BW-2a)", "art": ["unit"], "status": "bestanden",
+          "pre": "Windows PowerShell; Ordner des Tests mit anderem Inhalt gleicher Länge bzw. ohne installierte Datei.", "steps": ["npm run test:unit"],
+          "expect": "Anderer Inhalt: „Replaced“, Ausgabe „Replaced app\\byl-mail.exe (0 MB).“, neuer Inhalt, neuer Stempel, keine Datei .old-*. Ohne Datei: „Installed“, Ausgabe „Installed app\\byl-backup.exe (0 MB).“.",
+          "tests": ["tests/unit/build-helper-install.test.mjs::replaces a changed helper, also one of the same length, and installs a missing one"] },
+        { "id": "BYL-E6-2339", "title": "Gesperrte Datei wie bisher: ein laufendes Hilfsprogramm nur bei Änderung umbenannt, eine gehaltene Datei scheitert (BW-2a)", "art": ["unit"], "status": "bestanden",
+          "pre": "Windows PowerShell; eine Kopie von Node als app\\byl-mail.exe eines Ordners des Tests läuft; ein zweiter Ordner mit einer Datei, die ohne Freigabe zum Löschen offen ist.", "steps": ["npm run test:unit"],
+          "expect": "Gleiche Bytes bei laufendem Programm: „Unchanged“, nichts umbenannt, Stempel gleich. Anderer Inhalt: die laufende Datei heißt danach byl-mail.exe.old-<14 Ziffern>, die gelbe Zeile nennt sie samt „The new version runs after neu-starten.bat.“, dann „Replaced …“ mit dem neuen Inhalt. Gehaltene Datei: Fehler an den Aufrufer (helper-install), keine Ausgabe, Datei und Stempel unverändert, keine Datei .old-*.",
+          "tests": ["tests/unit/build-helper-install.test.mjs::keeps the way of a locked file: a running helper is renamed only when it changed, a held file fails as before"] }
       ]
     },
     {
