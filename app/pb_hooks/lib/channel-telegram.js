@@ -112,8 +112,9 @@ function unknownChatHint(message, allowlistName) {
     ids += ', User-ID ' + sender;
   }
   return (
-    'Nachricht aus einem nicht freigegebenen Chat (' + ids + '), nicht gespeichert. Zum Freigeben die ID in ' +
-    allowlistName + ' aufnehmen (setx), dann neu-starten.bat.'
+    'Nachricht aus einem nicht freigegebenen Chat (' + ids + '), nicht gespeichert. Zum Freigeben die ID an der ' +
+    'Karte der Verbindung unter „Zugangsdaten“ in ' + allowlistName + ' aufnehmen (die ganze Liste, mit Komma ' +
+    'getrennt), dann die App neu starten (Einstellungen → System → „Jetzt neu starten“).'
   );
 }
 

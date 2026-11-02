@@ -148,7 +148,17 @@ describe('help page (EH-9)', () => {
 		expect(content).toMatch(/setx BYL_TELEGRAM_TOKEN/);
 		expect(content).toMatch(/setx kürzt Werte über 1024 Zeichen/);
 		expect(content).toMatch(/Umgebungsvariablen für dieses Konto bearbeiten/);
-		expect(content).toMatch(/neu-starten\.bat im Ordner app doppelklicken/);
+		// BW-2: the restart through the page System, even in the emergency way of the variables; the
+		// card leaves „Wartet auf Neustart“, and „Einrichtung offen“ only once every step is done.
+		expect(content).toMatch(
+			/Danach die App neu starten: unter Einstellungen → System „Jetzt neu starten“/
+		);
+		expect(content).toMatch(/geht der Hinweis „Wartet auf\s+Neustart“/);
+		expect(content).toMatch(/etwa der erste Abruf, bleibt die Karte auf\s+„Einrichtung offen“/);
+		expect(content).not.toMatch(/neu-starten\.bat/);
+		expect(within(section).getByRole('link', { name: 'Betrieb' }).getAttribute('href')).toBe(
+			'#betrieb-notfall'
+		);
 		expect(within(section).getByRole('link', { name: 'Kanäle' }).getAttribute('href')).toBe(
 			'/einstellungen/kanaele'
 		);
@@ -167,7 +177,9 @@ describe('help page (EH-9)', () => {
 		expect(content).toMatch(
 			/zuerst 8 und „\+ N weitere“,\s*ab 21 Stichwörtern mit einem Filterfeld/
 		);
-		expect(content).toMatch(/steht nicht mehr auf „Einrichtung offen“/);
+		// Since BW-2 after KE-1: the restart takes „Wartet auf Neustart“ away; „Einrichtung offen“ stays
+		// while another step (e.g. the first run) is open.
+		expect(content).toMatch(/bleibt die Karte auf\s+„Einrichtung offen“, bis er erledigt ist/);
 		// The states of the cards of the connections: no „Nicht eingerichtet“ (KK-2); only the own
 		// inbox and WhatsApp Web say so before their first key (KE-1).
 		const states = Array.from(
@@ -303,6 +315,10 @@ describe('help page (EH-9)', () => {
 		expect(text(section)).toContain('„Neueste zuerst“ (Standard) oder „Älteste zuerst“');
 		expect(text(section)).toContain('höchstens einen angepinnten Kommentar');
 		expect(text(section)).toContain('„Weiterlesen“');
+		// BW-2: the button stands at a hint as a block; dialogs, forms and cards name the way as text.
+		expect(text(section)).toContain(
+			'Steht der Hinweis als eigener Block in einer Ansicht, bietet er den Knopf „Jetzt neu starten“ selbst an; in Dialogen, Formularen und Karten steht der Weg als Text.'
+		);
 		expect(section.querySelectorAll('details[open]')).toHaveLength(0);
 		// "Neues Ticket" with everything at once (ADR-0069): main fields, "Weitere Optionen", one step.
 		expect(text(section)).toContain('„Weitere Optionen (2 gesetzt)“');
@@ -416,8 +432,41 @@ describe('help page (EH-9)', () => {
 		expect(content).toMatch(
 			/start\.bat im Ordner app\. Läuft die App schon, startet es nichts doppelt/
 		);
+		// BW-2: "Neu starten" through the page System; the file only under "Notfall".
+		expect(content).toMatch(/Neu starten\s*„Jetzt neu starten“ unter Einstellungen → System/);
+		expect(
+			within(section).getByRole('heading', {
+				level: 4,
+				name: 'Notfall: wenn die Weboberfläche nicht erreichbar ist'
+			}).id
+		).toBe('betrieb-notfall');
 		expect(content).toMatch(
-			/neu-starten\.bat im Ordner app\. Es startet nur neu, wenn es nötig ist/
+			/Nur wenn die Seiten der App nicht laden oder „Jetzt neu starten“ nicht geht/
+		);
+		expect(content).toMatch(
+			/neu-starten\.bat im Ordner app doppelklicken\. Es startet nur neu, wenn es nötig ist/
+		);
+		// BW-2: the rendered help names the file only in that emergency section and in the catalog of
+		// the scripts right after it („Probleme mit den Skripten“, #betrieb-probleme).
+		const emergency = section.querySelector('#betrieb-notfall') as HTMLElement;
+		const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+		const mentions: Node[] = [];
+		for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+			if (/neu-starten\.bat/i.test(node.textContent ?? '')) mentions.push(node);
+		}
+		expect(mentions.length).toBeGreaterThan(1);
+		for (const node of mentions) {
+			expect(section.contains(node)).toBe(true);
+			expect(emergency.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(
+				0
+			);
+		}
+		expect(content).toMatch(
+			/Danach die App neu starten \(Einstellungen → System → „Jetzt neu starten“\) und die neue Adresse öffnen/
+		);
+		// BW-2: after a change of the port the old tab cannot follow the restart; that is expected.
+		expect(content).toContain(
+			'Nach etwa 90 Sekunden meldet er deshalb, dass der Server nicht antwortet. Das ist erwartet: Öffne danach die neue Adresse.'
 		);
 		expect(content).toMatch(
 			/stop\.bat beendet geordnet erst den Mail-Hilfsprozess, dann den Server/
@@ -1169,7 +1218,8 @@ describe('help page (EH-9)', () => {
 			'ruft nie von selbst ab',
 			'nur „Read content“',
 			'BYL_NOTION_TOKEN',
-			'neu-starten.bat',
+			// BW-2: the restart in the assistant, as on the page System.
+			'dann dort „Jetzt neu starten“',
 			'„Verbindungen“ → „Verbindung hinzufügen“',
 			'Seiteninhalt als Kopie mitnehmen',
 			'500 Blöcke und 50.000 Zeichen',
@@ -1211,7 +1261,9 @@ describe('help page (EH-9)', () => {
 			'„Metadata“ steht von selbst auf „Read-only“',
 			'github_pat_',
 			'BYL_GITHUB_TOKEN',
-			'neu-starten.bat',
+			// BW-2: the restart in the assistant, as on the page System.
+			'dann dort „Jetzt neu starten“',
+			'„Entfernen …“ löschen und die App neu starten (Einstellungen → System → „Jetzt neu starten“)',
 			'60 Anfragen je Stunde',
 			'ROADMAP*',
 			'docs/**/roadmap*',
@@ -1419,7 +1471,9 @@ describe('help page (EH-9)', () => {
 		expect(steps[0]).toContain('Netzwerkprofil „Privat“');
 		expect(steps[1]).toContain('„Einstellung speichern“');
 		expect(steps[2]).toContain('„Firewall-Regel anlegen …“');
-		expect(steps[3]).toContain('neu-starten.bat');
+		// BW-2: the restart through the page System, the hint of the page offers the same button.
+		expect(steps[3]).toContain('Einstellungen → System „Jetzt neu starten“');
+		expect(steps[3]).not.toContain('.bat');
 		expect(steps[4]).toContain('„Adresse für andere Geräte“');
 		expect(steps[5]).toContain('Diesem Netzwerkgerät immer die gleiche IPv4-Adresse zuweisen');
 		expect(

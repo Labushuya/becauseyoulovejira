@@ -15,6 +15,8 @@ import { runSystemAction } from '$lib/data/system';
 import type { AppContext } from '$lib/domain/context';
 import type { Connection, SecretStatus } from '$lib/domain/connections';
 import { parseSetupResume, setupResumeKey } from '$lib/domain/setup-resume';
+import { FlagStore } from '$lib/stores/flags.svelte';
+import { InboxKeysStore, type InboxKeysData } from '$lib/stores/inbox-keys.svelte';
 import { problemLog } from '$lib/stores/problem-log.svelte';
 import { RestartStore } from '$lib/stores/restart.svelte';
 import ChannelsViewHarness from '$lib/test/ChannelsViewHarness.svelte';
@@ -351,6 +353,74 @@ describe('restart of the mail helper at „Hilfsprozess prüfen“', () => {
 				within(dialog).getByRole('button', { name: 'Details: Einstellungen des Kanals speichern' })
 			).toBeTruthy()
 		);
+	});
+});
+
+describe('one RestartStore for the whole page „Kanäle“ (BW-2)', () => {
+	/** The keys of the own inbox before their migration: the assistant of WhatsApp Web waits for it. */
+	async function keysBeforeMigration(): Promise<InboxKeysStore> {
+		const inboxKeys = new InboxKeysStore(
+			{
+				list: vi.fn<InboxKeysData['list']>(async () => null),
+				create: vi.fn<InboxKeysData['create']>(),
+				revoke: vi.fn<InboxKeysData['revoke']>(async () => undefined)
+			},
+			{ ensureValid: () => true, logout: vi.fn() },
+			new FlagStore()
+		);
+		await inboxKeys.load();
+		return inboxKeys;
+	}
+
+	/** The page with its own store and one of the (app) layout, the assistant of WhatsApp Web open. */
+	async function openWhatsApp(restart: RestartStore, layoutRestart: RestartStore) {
+		const connections = await connectionsStoreOf(
+			fakeConnectionsData([], { secret: true, allowlist: null }).data
+		);
+		render(ChannelsViewHarness, {
+			props: {
+				connections,
+				restart,
+				layoutRestart,
+				inboxKeys: await keysBeforeMigration(),
+				setup: { kind: 'whatsapp-web', connectionId: null },
+				onchange: vi.fn()
+			}
+		});
+		await tick();
+		return screen.getByRole('dialog', { name: 'WhatsApp Web einrichten' });
+	}
+
+	// BYL-E6-2355
+	it('gives the hints of the page the store of the page, not the one of the layout', async () => {
+		const page = fakeRestartData();
+		const layout = fakeRestartData();
+		const dialog = await openWhatsApp(restartStoreOf(page), restartStoreOf(layout));
+		expect(within(dialog).getByText(/Nach dem nächsten Neustart verfügbar/)).toBeTruthy();
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Jetzt neu starten' }));
+		const question = within(dialog).getByRole('group', {
+			name: 'becauseyoulovejira jetzt neu starten?'
+		});
+		await fireEvent.click(within(question).getByRole('button', { name: 'Neu starten' }));
+		await vi.waitFor(() => expect(page.act).toHaveBeenCalledWith('restart', expect.anything()));
+		expect(layout.status).not.toHaveBeenCalled();
+		expect(layout.act).not.toHaveBeenCalled();
+	});
+
+	// BYL-E6-2356
+	it('locks the button of a hint while another run of the page goes on', async () => {
+		const page = fakeRestartData();
+		page.act.mockImplementationOnce(() => new Promise(() => undefined));
+		const restart = restartStoreOf(page);
+		const dialog = await openWhatsApp(restart, restartStoreOf());
+		// A run started at another place of the page, e.g. at a field of the access data.
+		void restart.restart('credentials:conn00000000002:BYL_TELEGRAM_TOKEN');
+		await vi.waitFor(() => expect(page.act).toHaveBeenCalledTimes(1));
+		const button = within(dialog).getByRole('button', { name: 'Jetzt neu starten' });
+		expect(button.getAttribute('aria-disabled')).toBe('true');
+		await fireEvent.click(button);
+		expect(within(dialog).queryByRole('group', { name: /jetzt neu starten\?/ })).toBeNull();
+		expect(page.act).toHaveBeenCalledTimes(1);
 	});
 });
 

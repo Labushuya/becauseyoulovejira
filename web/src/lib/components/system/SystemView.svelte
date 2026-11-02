@@ -17,6 +17,7 @@
 		testInstancesText,
 		verdictText
 	} from '$lib/domain/system';
+	import { helpHref } from '$lib/settings-sections';
 	import type { SystemStore } from '$lib/stores/system.svelte';
 	import ScriptProblemDetails from './ScriptProblemDetails.svelte';
 	import SystemDoctor from './SystemDoctor.svelte';
@@ -53,7 +54,7 @@
 			const reasons = status.restartReasons.map((reason) => RESTART_REASON_LABELS[reason]);
 			return reasons.length === 0 ? 'Nötig.' : `Nötig: ${reasons.join(', ')}.`;
 		}
-		return 'Zurzeit nicht nötig. Anders als neu-starten.bat startet dieser Knopf immer neu.';
+		return 'Zurzeit nicht nötig. Der Knopf startet trotzdem immer neu.';
 	});
 
 	function run(action: () => Promise<void>) {
@@ -98,7 +99,8 @@
 {:else}
 	<p class="intro">
 		Hier bedienst du becauseyoulovejira auf diesem Rechner. Die Dateien im Ordner <code>app</code>
-		(start.bat, neu-starten.bat, status.bat …) funktionieren weiter wie bisher.
+		funktionieren weiter; wann sie helfen, steht in der Hilfe unter
+		<a href={helpHref('betrieb')}>Betrieb</a> im Abschnitt „Notfall“.
 	</p>
 
 	<div class="live" role="status">

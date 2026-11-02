@@ -7,8 +7,11 @@
 // it was started at (`place`), so only that place shows its progress and result, also after the
 // view there was closed and opened again. A failure carries its entry for "Details" (FP-1,
 // ADR-0071) with the intent of the action; a refusal of the route is a warning like on the page
-// System, only "script" is an error.
+// System, only "script" is an error. Since BW-2 the (app) layout holds one store for the hints
+// "restart needed" of every view (findRestartStore); a page with its own store (Kanäle) puts that
+// one into the context of its subtree, so one store and one run at a time hold for the whole page.
 
+import { createContext } from 'svelte';
 import {
 	problemOf,
 	reportedProblem,
@@ -245,3 +248,15 @@ export class RestartStore {
 		this.#result = null;
 	}
 }
+
+const [getRestartStore, setRestartStore, hasRestartStore] = createContext<RestartStore>();
+
+/**
+ * The store for the hints "restart needed" (BW-2): the one of the (app) layout, below the page
+ * "Kanäle" the one of the page; null outside of both.
+ */
+export function findRestartStore(): RestartStore | null {
+	return hasRestartStore() ? getRestartStore() : null;
+}
+
+export { setRestartStore };

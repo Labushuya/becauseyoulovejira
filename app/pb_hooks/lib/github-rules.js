@@ -610,7 +610,7 @@ function failureOf(status, code, variable) {
       message:
         'GitHub lehnt den Token ab (401). Stimmt der Wert von ' +
         text(variable) +
-        ', oder ist er abgelaufen? Neuen Token setzen, dann neu-starten.bat.',
+        ', oder ist er abgelaufen? Neuen Token setzen, dann die App neu starten (Einstellungen → System → „Jetzt neu starten“).',
       connection: true
     };
   }

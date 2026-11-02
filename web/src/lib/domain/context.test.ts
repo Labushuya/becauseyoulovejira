@@ -16,6 +16,7 @@ import {
 	type ContextState
 } from './context';
 import { HOST_PLATFORMS } from './host-platform';
+import { RESTART_WAY } from './system';
 
 const ready = (context: Partial<AppContext>): ContextState => ({
 	kind: 'ready',
@@ -193,8 +194,35 @@ describe('withoutCommands', () => {
 			'Chat 42 ist nicht freigegeben. Die ID in BYL_TELEGRAM_ALLOWED aufnehmen (setx), dann neu-starten.bat.',
 			'Chat 42 ist nicht freigegeben.'
 		],
-		['Bitte byl-control.ps1 doctor ausführen.', '']
+		['Bitte byl-control.ps1 doctor ausführen.', ''],
+		// Since BW-2 the texts of the server name the page System; only the administrator at the PC
+		// restarts there, so every other tab drops it like a script (texts of an older server above).
+		[
+			'Zugangsdaten fehlen: Variable BYL_X anlegen, dann die App neu starten (Einstellungen → System → „Jetzt neu starten“).',
+			'Zugangsdaten fehlen: Variable BYL_X anlegen, dann die App neu starten.'
+		],
+		[
+			'Variable BYL_X fehlt (Variable anlegen, dann Einstellungen → System → „Jetzt neu starten“).',
+			'Variable BYL_X fehlt.'
+		],
+		[
+			'Der Mail-Hilfsprozess kennt den Zugang der App nicht (BYL_INGEST_TOKEN). Bitte die App neu starten (Einstellungen → System → „Jetzt neu starten“).',
+			'Der Mail-Hilfsprozess kennt den Zugang der App nicht (BYL_INGEST_TOKEN). Bitte die App neu starten.'
+		],
+		// The hint of a chat that is not allowed keeps the way at the card, only the restart goes.
+		[
+			'Nachricht aus einem nicht freigegebenen Chat (Chat-ID 42), nicht gespeichert. Zum Freigeben die ID an der Karte der Verbindung unter „Zugangsdaten“ in BYL_TELEGRAM_ALLOWED_IDS aufnehmen (die ganze Liste, mit Komma getrennt), dann die App neu starten (Einstellungen → System → „Jetzt neu starten“).',
+			'Nachricht aus einem nicht freigegebenen Chat (Chat-ID 42), nicht gespeichert. Zum Freigeben die ID an der Karte der Verbindung unter „Zugangsdaten“ in BYL_TELEGRAM_ALLOWED_IDS aufnehmen (die ganze Liste, mit Komma getrennt), dann die App neu starten.'
+		]
 	])('removes the command of %j', (text, expected) => {
 		expect(withoutCommands(text)).toEqual({ text: expected, removed: true });
+	});
+
+	// BYL-E6-2348
+	it('keeps "Jetzt neu starten" of a step, which names the button and not the page (BW-2)', () => {
+		const step =
+			'Die App sieht neue Variablen erst nach einem Neustart. „Jetzt neu starten“ startet sie geordnet neu.';
+		expect(withoutCommands(step)).toEqual({ text: step, removed: false });
+		expect(withoutCommands(`Neu starten: ${RESTART_WAY}.`)).toEqual({ text: '', removed: true });
 	});
 });

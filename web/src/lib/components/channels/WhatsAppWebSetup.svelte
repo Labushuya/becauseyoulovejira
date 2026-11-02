@@ -19,7 +19,6 @@
 		type Browser
 	} from '$lib/domain/whatsapp-web';
 	import type { ProjectRef } from '$lib/domain/ticket';
-	import { RESTART_NEEDED } from '$lib/guidance/texts';
 	import { helpHref } from '$lib/settings-sections';
 	import type { ImportKeywordsStore } from '$lib/stores/import-keywords.svelte';
 	import type { InboxKeysStore } from '$lib/stores/inbox-keys.svelte';
@@ -31,6 +30,7 @@
 	import Tabs from '../guidance/Tabs.svelte';
 	import KeywordEditor from '../KeywordEditor.svelte';
 	import Modal from '../overlay/Modal.svelte';
+	import RestartNeededNotice from '../system/RestartNeededNotice.svelte';
 	import CardTargetProject from './CardTargetProject.svelte';
 	import InboxKeyCreateForm from './InboxKeyCreateForm.svelte';
 	import SetupCheck from './SetupCheck.svelte';
@@ -164,9 +164,11 @@
 					Einträge in deinen Eingang legen, und du kannst ihn jederzeit widerrufen.
 				</p>
 				{#if inboxKeys.state === 'unavailable'}
-					<SectionMessage tone="info" title={RESTART_NEEDED.title} headingLevel={4}>
-						{RESTART_NEEDED.text}
-					</SectionMessage>
+					<RestartNeededNotice
+						place="notice:whatsapp-web:key"
+						headingLevel={4}
+						onrestarted={() => void inboxKeys.load()}
+					/>
 				{:else}
 					{#if created === null && inboxKeys.keys.length > 0}
 						<p class="hint">
@@ -292,9 +294,11 @@
 							)}
 					/>
 				{:else if importKeywords?.state === 'unavailable'}
-					<SectionMessage tone="info" title={RESTART_NEEDED.title} headingLevel={4}>
-						{RESTART_NEEDED.text}
-					</SectionMessage>
+					<RestartNeededNotice
+						place="notice:whatsapp-web:keywords"
+						headingLevel={4}
+						onrestarted={() => void importKeywords?.load()}
+					/>
 				{/if}
 				<SectionMessage tone="info" compact>
 					Inoffiziell: Die Erweiterung liest nur, was du im offenen Tab siehst, und nur solange er

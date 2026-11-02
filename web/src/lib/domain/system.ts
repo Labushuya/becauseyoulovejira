@@ -269,8 +269,20 @@ export const RESTART_TEXTS = {
 	mailRunningTitle: 'Mail-Helfer neu starten …',
 	mailRunning: 'Der Mail-Hilfsprozess wird geordnet beendet und wieder gestartet.',
 	mailDone: 'Mail-Helfer neu gestartet.',
-	mailRefusedTitle: 'Mail-Helfer nicht neu gestartet'
+	mailRefusedTitle: 'Mail-Helfer nicht neu gestartet',
+	// Without a connection (the outbox, OF-2) the button stays visible but locked (BW-2).
+	offline:
+		'Nur mit Verbindung. Sobald die Verbindung zurück ist, geht es hier oder auf der Seite „Einstellungen → System“.',
+	// Below the button of a hint "restart needed" (RestartNeededNotice, BW-2).
+	noticeHint: 'Startet becauseyoulovejira geordnet neu, wie auf der Seite „System“.'
 } as const;
+
+/**
+ * The way of a restart in a text (BW-2, ADR-0072 addendum): the button of the page System, never a
+ * script. The texts of the server (app/pb_hooks) and of the mail helper use the same words, in
+ * parentheses where a tab without the right drops them (withoutCommands of domain/context.ts).
+ */
+export const RESTART_WAY = 'Einstellungen → System → „Jetzt neu starten“';
 
 /**
  * Refusals of "Jetzt neu starten" outside the page System whose text there names a script (BW-1,

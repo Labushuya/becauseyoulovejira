@@ -11,8 +11,9 @@
 	// "Zugangsdaten" of a connection (BW-3, ADR-0075): one CredentialField per variable it names
 	// (the secret and, for Telegram, the allowed IDs), in the details of its card and in "‹Name›
 	// bearbeiten". With `notice` also the lasting hint "Neustart nötig …" (inside a modal, where the
-	// hint of the page is covered). The way through Windows stands only as one line "Notfall" for the
-	// administrator on the PC under Windows (the user's rule: everything from the browser; V6).
+	// hint of the page is covered). The way through Windows stands only folded under „Notfall: …“ for
+	// the administrator on the PC under Windows, with the restart from the browser (the user's rule:
+	// everything from the browser; V6, BW-2).
 	let {
 		id,
 		connection,
@@ -96,7 +97,10 @@
 		{/each}
 		<p class="hint">Die App speichert nur die Namen der Windows-Variablen, nie ihre Werte.</p>
 		{#if appContext.capabilities.scripts}
-			<p class="hint">{CREDENTIAL_TEXTS.emergency}</p>
+			<details class="emergency">
+				<summary>{CREDENTIAL_TEXTS.setupEmergencySummary}</summary>
+				<p class="hint emergency-body">{CREDENTIAL_TEXTS.emergency}</p>
+			</details>
 		{/if}
 	</section>
 {/if}
@@ -127,5 +131,15 @@
 	.hint {
 		font-size: var(--font-size-control);
 		color: var(--color-text-muted);
+	}
+
+	.emergency summary {
+		font-size: var(--font-size-control);
+		color: var(--color-text-muted);
+		cursor: pointer;
+	}
+
+	.emergency-body {
+		margin-top: 0.5rem;
 	}
 </style>

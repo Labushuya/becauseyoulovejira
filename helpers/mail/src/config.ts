@@ -14,6 +14,13 @@ export const TEST_IMAP_PORT_ENV = 'BYL_MAIL_TEST_IMAP_PORT';
 export const DEFAULT_APP_URL = 'http://127.0.0.1:8090';
 export const POLL_INTERVAL_MS = 5 * 60 * 1000;
 
+/**
+ * The way of a restart in the texts of the helper (BW-2): the button of the page System, never a
+ * script; the same words as RESTART_WAY of web/src/lib/domain/system.ts
+ * (tests/unit/restart-hints-guard.test.mjs).
+ */
+export const RESTART_WAY = 'Einstellungen → System → „Jetzt neu starten“';
+
 export interface ImapEndpoint {
 	host: string;
 	port: number;
@@ -43,7 +50,7 @@ export const USAGE = [
 	'  byl-mail.exe --version                           Version ausgeben',
 	'  byl-mail.exe --self-test                         Selbsttest ohne Netzwerk',
 	'',
-	'Gestartet und beendet wird der Prozess von start.bat, neu-starten.bat und stop.bat.'
+	'Gestartet und beendet wird der Prozess mit der App; neu starten unter Einstellungen → System („Mail-Helfer neu starten“).'
 ].join('\n');
 
 /** http://127.0.0.1:<port> without path; null for anything else. */
@@ -88,7 +95,7 @@ export function readConfig(appUrl: string, env: NodeJS.ProcessEnv): HelperConfig
 	const token = readSecret(TOKEN_ENV, env);
 	if (token === '') {
 		return {
-			error: `${TOKEN_ENV} fehlt. start.bat legt die Variable an, sobald byl-mail.exe im Ordner app liegt.`
+			error: `${TOKEN_ENV} fehlt. Die App legt die Variable beim nächsten Start an, sobald byl-mail.exe im Ordner app liegt (${RESTART_WAY}).`
 		};
 	}
 	let intervalMs = POLL_INTERVAL_MS;

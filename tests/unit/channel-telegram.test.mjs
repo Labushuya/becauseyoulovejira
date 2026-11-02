@@ -107,7 +107,7 @@ describe('channel-telegram.js: processing', () => {
 		]);
 		expect(result).toMatchObject({ cursor: 14, created: 2, duplicates: 0, skipped: 2, error: '' });
 		expect(result.hint).toBe(
-			'Nachricht aus einem nicht freigegebenen Chat (Chat-ID 999 („Fremd“)), nicht gespeichert. Zum Freigeben die ID in BYL_TELEGRAM_ALLOWED_IDS aufnehmen (setx), dann neu-starten.bat.'
+			'Nachricht aus einem nicht freigegebenen Chat (Chat-ID 999 („Fremd“)), nicht gespeichert. Zum Freigeben die ID an der Karte der Verbindung unter „Zugangsdaten“ in BYL_TELEGRAM_ALLOWED_IDS aufnehmen (die ganze Liste, mit Komma getrennt), dann die App neu starten (Einstellungen → System → „Jetzt neu starten“).'
 		);
 		expect(result.hint).not.toContain('Nachricht 13');
 	});

@@ -422,13 +422,13 @@ describe('channel card', () => {
 			],
 			[
 				{ state: 'stopped', version: '', message: '' },
-				/^läuft nicht\. .*neu-starten\.bat/,
+				/^läuft nicht\. .*\(Einstellungen → System → „Jetzt neu starten“\)\.$/,
 				'Neustart nötig'
 			],
 			[{ state: 'refused', version: '', message: '' }, /BYL_INGEST_TOKEN/, 'Neustart nötig'],
 			[
 				{ state: 'outdated', version: '', message: '' },
-				/älteren Version.*neu-starten\.bat/,
+				/älteren Version.*\(Einstellungen → System → „Jetzt neu starten“\)\.$/,
 				'Neustart nötig'
 			]
 		];
@@ -467,7 +467,8 @@ describe('channel card', () => {
 			type: 'mail',
 			label: 'Web.de',
 			mailProvider: 'webde',
-			lastError: 'Variable BYL_WEBDE_PASSWORD fehlt (Variable anlegen, dann neu-starten.bat).'
+			lastError:
+				'Variable BYL_WEBDE_PASSWORD fehlt (Variable anlegen, dann Einstellungen → System → „Jetzt neu starten“).'
 		});
 		const spies = callbacks();
 		render(ConnectionCard, {
@@ -482,14 +483,15 @@ describe('channel card', () => {
 		const article = screen.getByRole('article', { name: 'Web.de' });
 		const details = await openDetails(article, 'Web.de');
 		const helper = details.getByText('Hilfsprozess').closest('div') as HTMLElement;
+		// Since BW-2 the way of the restart is the page System, which only the PC offers (BW-2).
 		expect(within(helper).getByRole('definition').textContent?.trim()).toBe(
-			'läuft nicht. Nur direkt am PC verfügbar, auf dem becauseyoulovejira läuft (dort über http://127.0.0.1:8090 öffnen).'
+			'läuft nicht. Mit einer eingeschalteten Postfach-Verbindung startet die App ihn mit; sonst hilft ein Neustart. Nur direkt am PC verfügbar, auf dem becauseyoulovejira läuft (dort über http://127.0.0.1:8090 öffnen).'
 		);
 		const error = details.getByText('Letzter Fehler').closest('div') as HTMLElement;
 		expect(within(error).getByRole('definition').textContent?.trim()).toMatch(
 			/^Variable BYL_WEBDE_PASSWORD fehlt\. Nur direkt am PC verfügbar/
 		);
-		expect(article.textContent).not.toMatch(/\.bat\b|\bsetx\b/);
+		expect(article.textContent).not.toMatch(/\.bat\b|\bsetx\b|„Jetzt neu starten“/);
 	});
 
 	it('shows the result of the last run: counts on this page, else with or without error (package A)', async () => {

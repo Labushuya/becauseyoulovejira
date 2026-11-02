@@ -37,6 +37,8 @@ import { foldersStoreOf } from '$lib/test/folders-fake';
 import { githubStoreOf } from '$lib/test/github-fake';
 import { notionStoreOf } from '$lib/test/notion-fake';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
+import { restartStoreOf } from '$lib/test/restart-fake';
+import type { RestartStore } from '$lib/stores/restart.svelte';
 import ChannelsView from './ChannelsView.svelte';
 import ConnectionsSection from './ConnectionsSection.svelte';
 
@@ -200,7 +202,7 @@ describe('connections domain', () => {
 			text: 'Zugangsdaten gesetzt.'
 		});
 		expect(secretStatusText(BOT, { secret: false, allowlist: false })?.text).toBe(
-			'Zugangsdaten fehlen: Variablen BYL_TELEGRAM_TOKEN und BYL_TELEGRAM_ALLOWED_IDS anlegen, dann die App neu starten (neu-starten.bat).'
+			'Zugangsdaten fehlen: Variablen BYL_TELEGRAM_TOKEN und BYL_TELEGRAM_ALLOWED_IDS anlegen, dann die App neu starten (Einstellungen → System → „Jetzt neu starten“).'
 		);
 		expect(secretStatusText(CAL, { secret: false, allowlist: null })?.text).toMatch(
 			/^Zugangsdaten fehlen: Variable BYL_GOOGLE_CALENDAR_URL anlegen/
@@ -243,7 +245,7 @@ describe('connections store', () => {
 });
 
 /** The section with fake callbacks for the catalog and the setup (EH-3). */
-function renderCards(store: ConnectionsStore) {
+function renderCards(store: ConnectionsStore, restart: RestartStore | null = null) {
 	const onadd = vi.fn();
 	const onsetup = vi.fn();
 	render(ConnectionsSection, {
@@ -252,6 +254,7 @@ function renderCards(store: ConnectionsStore) {
 			notion: notionStoreOf(),
 			github: githubStoreOf(),
 			folders: foldersStoreOf(),
+			restart,
 			onadd,
 			onsetup,
 			onimport: vi.fn()
@@ -425,12 +428,18 @@ describe('connections section', () => {
 		const { store, data } = setup();
 		data.list.mockRejectedValueOnce(new DataError('not_found', { status: 404 }));
 		await store.load();
-		renderCards(store);
-		// Since EH-2 a section message with title (RESTART_NEEDED), announced as status.
-		const status = screen.getByRole('status');
-		expect(status.textContent).toMatch(/Hinweis:\s*Nach dem nächsten Neustart verfügbar/);
-		expect(status.textContent).toMatch(/neu-starten\.bat im Ordner app/);
-		expect(status.getAttribute('data-tone')).toBe('info');
+		renderCards(store, restartStoreOf());
+		// Since EH-2 a section message with title (RESTART_NEEDED), announced as status; since BW-2
+		// with the way in the browser and "Jetzt neu starten" next to it (RestartNeededNotice; the
+		// run has its own status region).
+		const status = screen
+			.getAllByRole('status')
+			.find((element) => /Nach dem nächsten Neustart verfügbar/.test(element.textContent ?? ''));
+		expect(status?.textContent).toMatch(/Hinweis:\s*Nach dem nächsten Neustart verfügbar/);
+		expect(status?.textContent).toMatch(/Einstellungen → System → „Jetzt neu starten“/);
+		expect(status?.textContent).not.toMatch(/\.bat\b/);
+		expect(status?.getAttribute('data-tone')).toBe('info');
+		expect(screen.getByRole('button', { name: 'Jetzt neu starten' })).toBeTruthy();
 		expect(screen.queryByRole('alert')).toBeNull();
 	});
 
@@ -1206,7 +1215,7 @@ describe('Jetzt abrufen at a mailbox (package A, item 4)', () => {
 		keywords: ['europa-go']
 	});
 	const NOT_RUNNING =
-		'Der Mail-Hilfsprozess läuft nicht (byl-mail.exe fehlt oder ist beendet). Mit einer eingeschalteten Postfach-Verbindung startet start.bat bzw. neu-starten.bat ihn mit.';
+		'Der Mail-Hilfsprozess läuft nicht (byl-mail.exe fehlt oder ist beendet). Mit einer eingeschalteten Postfach-Verbindung startet die App ihn mit; sonst hilft ein Neustart (Einstellungen → System → „Jetzt neu starten“).';
 
 	it('probes the helper only with a mailbox in the list', async () => {
 		const without = setup([CAL]);

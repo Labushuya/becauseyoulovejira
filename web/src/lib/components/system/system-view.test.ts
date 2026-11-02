@@ -219,7 +219,17 @@ describe('page System', () => {
 		await show();
 		const quiet = screen.getByRole('button', { name: 'Jetzt neu starten' });
 		expect(quiet.className).toBe('button-secondary');
-		expect(screen.getByText(/Zurzeit nicht nötig\. Anders als neu-starten\.bat/)).toBeTruthy();
+		expect(
+			screen.getByText('Zurzeit nicht nötig. Der Knopf startet trotzdem immer neu.')
+		).toBeTruthy();
+		// BW-2: the page names no script; when the files of the folder app help, the help says
+		// under "Betrieb" (its section „Notfall“).
+		const intro = screen.getByText(/Hier bedienst du becauseyoulovejira auf diesem Rechner\./);
+		expect(intro.textContent).toMatch(/Die Dateien im Ordner app\s+funktionieren weiter/);
+		expect(within(intro).getByRole('link', { name: 'Betrieb' }).getAttribute('href')).toBe(
+			'/einstellungen/hilfe#betrieb'
+		);
+		expect(document.body.textContent).not.toMatch(/neu-starten\.bat/);
 		document.body.innerHTML = '';
 		await show({
 			status: vi.fn(async () =>

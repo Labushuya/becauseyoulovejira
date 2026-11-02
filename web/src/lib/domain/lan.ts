@@ -4,7 +4,7 @@
 // app/byl-functions.ps1, parity tests) and the words of the page "Sicherheit". Pure module; the
 // server decides, the page only words it.
 
-import { parseProblemReport, type ScriptProblemReport } from './system';
+import { RESTART_WAY, parseProblemReport, type ScriptProblemReport } from './system';
 
 /** At most this many addresses (LAN_MAX of lan-rules.js). */
 export const LAN_MAX = 5;
@@ -310,8 +310,7 @@ export const LAN_TEXTS = {
 	fritzHint:
 		'So bleibt die Adresse für andere Geräte gleich. Der Name in der FRITZ!Box (…fritz.box) funktioniert auch nach einem Wechsel der Adresse.',
 	restartTitle: 'Neustart nötig',
-	restart:
-		'Der Zugriff im Heimnetz ändert sich erst nach einem Neustart der App. Auf der Seite „System“ startest du sie mit „Jetzt neu starten“ neu, oder mit neu-starten.bat im Ordner app.'
+	restart: `Der Zugriff im Heimnetz ändert sich erst nach einem Neustart der App: ${RESTART_WAY}.`
 } as const;
 
 /** The flag after a saved setting. */

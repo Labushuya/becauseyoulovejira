@@ -148,7 +148,7 @@ describe('ContextStore', () => {
 		'asks again once the server is back after a restart, with the session from the storage: %s',
 		async (_case, first, before) => {
 			// The tab opened with the stored session (no sign-in, no refresh of the session) while the
-			// server still ran the build before the update; neu-starten.bat brings it back.
+			// server still ran the build before the update; a restart brings it back.
 			const store = new ContextStore();
 			const fake = source();
 			const live = connection();
@@ -220,8 +220,9 @@ describe('texts outside components follow the context of the tab', () => {
 		expect(serverUnreachable()).not.toMatch(/\.bat/);
 
 		await fake.answer({ kind: 'ready', context: ADMIN });
+		// Since BW-2 the restart goes through the page System, also for the administrator at the PC.
 		expect(RESTART_NEEDED.text).toBe(
-			'Die App hat ein Update bekommen, das erst nach einem Neustart wirkt: neu-starten.bat im Ordner app doppelklicken.'
+			'Die App hat ein Update bekommen, das erst nach einem Neustart wirkt: Einstellungen → System → „Jetzt neu starten“.'
 		);
 		expect(APP_STOPPED.description).toMatch(/^Zum Weiterarbeiten start\.bat ausführen\./);
 		expect(serverUnreachable()).toMatch(/\(start\.bat\)/);
@@ -229,7 +230,7 @@ describe('texts outside components follow the context of the tab', () => {
 		void appContext.refresh();
 		await fake.answer({ kind: 'ready', context: MEMBER });
 		expect(RESTART_NEEDED.text).toBe(
-			'Die App hat ein Update bekommen, das erst nach einem Neustart wirkt. Bitte den Verwalter fragen.'
+			'Die App hat ein Update bekommen, das erst nach einem Neustart wirkt. Neu starten kann nur der Verwalter, direkt am PC unter Einstellungen → System. Bitte den Verwalter fragen.'
 		);
 		expect(APP_STOPPED.description).not.toMatch(/\.bat/);
 		expect(serverUnreachable()).toMatch(/Verwalter/);
@@ -237,7 +238,7 @@ describe('texts outside components follow the context of the tab', () => {
 		void appContext.refresh();
 		await fake.answer({ kind: 'ready', context: REMOTE });
 		expect(RESTART_NEEDED.text).toMatch(
-			/Nur direkt am PC verfügbar, auf dem becauseyoulovejira läuft \(dort über http:\/\/127\.0\.0\.1:8090 öffnen\)\.$/
+			/Nur direkt am PC verfügbar, auf dem becauseyoulovejira läuft \(dort über http:\/\/127\.0\.0\.1:8090 öffnen\)\. Dort: Einstellungen → System → „Jetzt neu starten“\.$/
 		);
 		expect(serverUnreachable()).not.toMatch(/\.bat/);
 	});

@@ -7,6 +7,7 @@
 
 import type { FolderConfig, FolderSettings } from './folders';
 import { GITHUB_SECRET_NAME, type GitHubRepoSettings, type GitHubSettings } from './github';
+import { RESTART_WAY } from './system';
 
 export const CONNECTION_TYPES = [
 	'calendar',
@@ -518,7 +519,7 @@ export function secretStatusText(
 	const variable = missing.length === 1 ? 'Variable' : 'Variablen';
 	return {
 		ok: false,
-		text: `Zugangsdaten fehlen: ${variable} ${names} anlegen, dann die App neu starten (neu-starten.bat).`
+		text: `Zugangsdaten fehlen: ${variable} ${names} anlegen, dann die App neu starten (${RESTART_WAY}).`
 	};
 }
 
@@ -626,17 +627,20 @@ export interface MailHelperStatus {
 	message: string;
 }
 
-/** Line "Hilfsprozess" of the card of a mailbox; null while the probe runs. */
+/**
+ * Line "Hilfsprozess" of the card of a mailbox; null while the probe runs. A restart of the app
+ * starts the right helper (BW-2: the way in the browser, never a script).
+ */
 export function mailHelperText(status: MailHelperStatus | null): string {
 	if (status === null) return 'wird geprüft …';
 	switch (status.state) {
 		case 'running':
 			return status.version === '' ? 'läuft' : `läuft (byl-mail ${status.version})`;
 		case 'stopped':
-			return 'läuft nicht. Mit einer eingeschalteten Postfach-Verbindung startet start.bat bzw. neu-starten.bat ihn mit.';
+			return `läuft nicht. Mit einer eingeschalteten Postfach-Verbindung startet die App ihn mit; sonst hilft ein Neustart (${RESTART_WAY}).`;
 		case 'refused':
-			return 'läuft, kennt aber den Zugang der App nicht (BYL_INGEST_TOKEN). Bitte neu-starten.bat.';
+			return `läuft, kennt aber den Zugang der App nicht (BYL_INGEST_TOKEN). Bitte die App neu starten (${RESTART_WAY}).`;
 		case 'outdated':
-			return 'läuft in einer älteren Version ohne „Jetzt abrufen“. Bitte neu-starten.bat.';
+			return `läuft in einer älteren Version ohne „Jetzt abrufen“. Bitte die App neu starten (${RESTART_WAY}).`;
 	}
 }

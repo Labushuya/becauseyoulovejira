@@ -18,6 +18,7 @@
 	import SectionMessage from '../guidance/SectionMessage.svelte';
 	import ConfirmDialog from '../overlay/ConfirmDialog.svelte';
 	import RestartAction from '../system/RestartAction.svelte';
+	import { findRestartLock } from '../system/restart-lock';
 
 	// One field of a channel that names a Windows variable (BW-3, ADR-0075 V1): the name, its state
 	// in the user environment of the PC ("gesetzt" or "fehlt"), "Setzen …" or "Ersetzen …" and
@@ -31,7 +32,9 @@
 	// that uses the variable (V2). After a change the question "Jetzt neu starten" / "Später" follows
 	// (V3; inside a modal inline, ADR-0025 addendum 16): "Jetzt neu starten" runs the restart of the
 	// page System through the RestartStore and shows it here; "Später" leaves the hint of the
-	// server, which stands until the next restart.
+	// server, which stands until the next restart. Without a connection the lock of RestartAction
+	// holds (findRestartLock, BW-2): the question says why, "Jetzt neu starten" starts nothing and
+	// leaves the locked button of RestartAction here, which works once the connection is back.
 	let {
 		name,
 		label,
@@ -111,6 +114,16 @@
 		tone: 'warning' | 'error';
 	} | null>(null);
 	let asking = $state(false);
+	/** "Jetzt neu starten" was chosen without a connection: the locked button stays here. */
+	let deferred = $state(false);
+	const locked = findRestartLock();
+	// A run that is going on keeps its way: the server is gone on purpose then.
+	const offline = $derived(locked() && (restart?.running ?? null) === null);
+	/** False once the field is destroyed: no `onrestarted` of a view that is gone (BW-2). */
+	let alive = true;
+	$effect(() => () => {
+		alive = false;
+	});
 
 	// The value lives no longer than its form: when the form goes (closed, or the tab may no longer
 	// act, e.g. the context changed), the typed value goes with it and never comes back (S7).
@@ -119,7 +132,7 @@
 	});
 
 	const restartHere = $derived(
-		restart !== null && (restart.runningAt(place) || restart.resultAt(place) !== null)
+		restart !== null && (deferred || restart.runningAt(place) || restart.resultAt(place) !== null)
 	);
 	const describedBy = $derived(
 		[ids.help, hasOuterSpace(draft) ? ids.space : null, fieldError !== null ? ids.error : null]
@@ -215,11 +228,15 @@
 	async function restartNow() {
 		asking = false;
 		if (restart === null) return;
+		if (offline) {
+			deferred = true;
+			return;
+		}
 		onrestart?.();
 		const result = await restart.restart(place);
 		if (result?.kind === 'restarted') {
 			await Promise.all([store.refreshNotice(), store.load()]);
-			onrestarted?.();
+			if (alive) onrestarted?.();
 		}
 	}
 </script>
@@ -356,6 +373,9 @@
 	>
 		<p>{CREDENTIAL_TEXTS.restartText}</p>
 		<p>{RESTART_TEXTS.unsaved}</p>
+		{#if offline}
+			<p>{RESTART_TEXTS.offline}</p>
+		{/if}
 	</ConfirmDialog>
 
 	{#if restartHere}

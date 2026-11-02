@@ -10,7 +10,6 @@
 	import type { ProblemEntry } from '$lib/domain/problems';
 	import { cardAnchorOf } from '$lib/domain/sync-all';
 	import type { ProjectRef } from '$lib/domain/ticket';
-	import { RESTART_NEEDED } from '$lib/guidance/texts';
 	import {
 		CONNECTIONS_UNAVAILABLE_MESSAGE,
 		type ConnectionActionFailure,
@@ -32,6 +31,7 @@
 	import SectionMessage from './guidance/SectionMessage.svelte';
 	import MailboxPicker from './MailboxPicker.svelte';
 	import ConfirmDialog from './overlay/ConfirmDialog.svelte';
+	import RestartNeededNotice from './system/RestartNeededNotice.svelte';
 
 	// "Deine Verbindungen" on the page "Kanäle" (E4 plan, packages 10, 15, 20, 22 and 23; ADR-0026
 	// section 3, plan EH-3; since the plan kanal-karten KK-2 on the building block ChannelCard): a
@@ -314,9 +314,13 @@
 			<div class="placeholder"></div>
 		</div>
 	{:else if store.state === 'error' && store.error === CONNECTIONS_UNAVAILABLE_MESSAGE}
-		<SectionMessage tone="info" title={RESTART_NEEDED.title} live headingLevel={4}>
-			{RESTART_NEEDED.text}
-		</SectionMessage>
+		<RestartNeededNotice
+			restart={restart ?? undefined}
+			place="notice:connections"
+			live
+			headingLevel={4}
+			onrestarted={() => void store.load()}
+		/>
 	{:else if store.state === 'error'}
 		<SectionMessage tone="error" live problem={store.errorProblem}>
 			{store.error}
