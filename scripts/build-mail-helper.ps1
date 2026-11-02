@@ -4,10 +4,11 @@ $ErrorActionPreference = 'Stop'
 # Builds the mail helper app\byl-mail.exe (E4 plan package 11, ADR-0016 section 5): a single
 # executable application of Node 24 with the bundled helpers\mail. The executable is checked
 # without Node (PATH only with the Windows folders): "--version" and a self-test without network.
-# app\byl-mail.exe is gitignored like pocketbase.exe. If it is running (the app of the user runs
-# from the same folder), the old file is renamed and removed at a later build or the next start of
-# the app (AR-4); the running helper keeps working and the next start uses the new file. Problems are
-# entries of the catalog app\byl-problems.ps1 (ADR-0048).
+# app\byl-mail.exe is gitignored like pocketbase.exe and replaced only if its content changed (same
+# SHA-256: the file and its time stay; ADR-0039, addendum BW-2a). If it is running (the app of the
+# user runs from the same folder), the old file is renamed and removed at a later build or the next
+# start of the app (AR-4); the running helper keeps working and the next start uses the new file.
+# Problems are entries of the catalog app\byl-problems.ps1 (ADR-0048).
 #
 # Call: powershell -NoProfile -ExecutionPolicy Bypass -File scripts\build-mail-helper.ps1
 
@@ -91,25 +92,14 @@ try {
     # Leftovers of earlier builds that replaced a running helper (exact names, each removal printed).
     Remove-BylHelperLeftover -AppDir $appDir -Helper $BylMailHelperName
 
+    # Only a changed helper replaces the installed one (scripts\build-functions.ps1): an unchanged
+    # build keeps the file and its time, so the page "System" asks for no restart.
     try {
-        if (Test-Path -LiteralPath $target -PathType Leaf) {
-            try {
-                Remove-Item -LiteralPath $target -Force
-            }
-            catch {
-                # A running helper locks its file; Windows still allows renaming it.
-                $old = 'byl-mail.exe.old-' + [DateTime]::UtcNow.ToString('yyyyMMddHHmmss')
-                Rename-Item -LiteralPath $target -NewName $old
-                Write-Host "app\byl-mail.exe is running; the old file is now app\$old. The new version runs after neu-starten.bat." -ForegroundColor Yellow
-            }
-        }
-        Copy-Item -LiteralPath $built -Destination $target
+        [void](Install-BylHelper -Built $built -Target $target -RunningHint 'The new version runs after neu-starten.bat.')
     }
     catch {
         exit (Write-BylBuildProblem -Code 'helper-install' -Values ($problemValues + @{ detail = $_.Exception.Message }))
     }
-    $megabytes = [Math]::Round((Get-Item -LiteralPath $target).Length / 1MB, 1)
-    Write-Host "Installed app\byl-mail.exe ($megabytes MB)."
     exit 0
 }
 catch {

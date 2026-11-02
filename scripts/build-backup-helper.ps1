@@ -5,9 +5,11 @@ $ErrorActionPreference = 'Stop'
 # of Node 24 with the bundled helpers\backup, like the mail helper (scripts\build-mail-helper.ps1).
 # The executable is checked without Node (PATH only with the Windows folders): "--version" and a
 # self-test that seals and opens an invented backup in a temporary folder. app\byl-backup.exe is
-# gitignored like pocketbase.exe. The helper runs only for a moment (one command per call); should
-# it run while the build replaces it, the old file is renamed and removed at a later build or the
-# next start of the app (AR-4). Problems are entries of the catalog app\byl-problems.ps1 (ADR-0048).
+# gitignored like pocketbase.exe and replaced only if its content changed (same SHA-256: the file
+# and its time stay; ADR-0039, addendum BW-2a). The helper runs only for a moment (one command per
+# call); should it run while the build replaces it, the old file is renamed and removed at a later
+# build or the next start of the app (AR-4). Problems are entries of the catalog
+# app\byl-problems.ps1 (ADR-0048).
 #
 # Call: powershell -NoProfile -ExecutionPolicy Bypass -File scripts\build-backup-helper.ps1
 
@@ -93,25 +95,14 @@ try {
     # Leftovers of earlier builds that replaced a running helper (exact names, each removal printed).
     Remove-BylHelperLeftover -AppDir $appDir -Helper $BylBackupHelperName
 
+    # Only a changed helper replaces the installed one (scripts\build-functions.ps1), as for
+    # byl-mail.exe.
     try {
-        if (Test-Path -LiteralPath $target -PathType Leaf) {
-            try {
-                Remove-Item -LiteralPath $target -Force
-            }
-            catch {
-                # A running helper locks its file; Windows still allows renaming it.
-                $old = 'byl-backup.exe.old-' + [DateTime]::UtcNow.ToString('yyyyMMddHHmmss')
-                Rename-Item -LiteralPath $target -NewName $old
-                Write-Host "app\byl-backup.exe is running; the old file is now app\$old." -ForegroundColor Yellow
-            }
-        }
-        Copy-Item -LiteralPath $built -Destination $target
+        [void](Install-BylHelper -Built $built -Target $target)
     }
     catch {
         exit (Write-BylBuildProblem -Code 'helper-install' -Values ($problemValues + @{ detail = $_.Exception.Message }))
     }
-    $megabytes = [Math]::Round((Get-Item -LiteralPath $target).Length / 1MB, 1)
-    Write-Host "Installed app\byl-backup.exe ($megabytes MB)."
     exit 0
 }
 catch {

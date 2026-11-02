@@ -1,7 +1,7 @@
 # Helpers of the build scripts (scripts\build.ps1, build-mail-helper.ps1, build-backup-helper.ps1,
 # fetch-pocketbase.ps1; ADR-0040, addendum "Build und Abhaengigkeiten"). Plain ASCII, dot-sourced;
 # only Update-BylDependency (its progress and the output of npm), Remove-BylHelperLeftover (each
-# removed file) and the problems print.
+# removed file), Install-BylHelper (what it did with the helper) and the problems print.
 #
 # Problems (ADR-0048): the entries of the catalog app\byl-problems.ps1, printed by
 # Write-BylBuildProblem with the paths of this repository. No log file: the output above a problem
@@ -248,4 +248,52 @@ function Remove-BylHelperLeftover {
     foreach ($leftover in @(Remove-BylOldHelperFile -AppDir $AppDir -Helper $Helper)) {
         if ($leftover.Result -eq 'Removed') { Write-Host "Removed app\$($leftover.Name), left by an earlier build." }
     }
+}
+
+function Install-BylHelper {
+    # Puts the built helper $Built into place as $Target (app\byl-mail.exe, app\byl-backup.exe), but
+    # only if its content changed (ADR-0039, addendum BW-2a), and prints what it did. Two builds of
+    # the same sources with the same Node give the same bytes, so a target with the SHA-256 of the
+    # build stays untouched, its last write time included: the start fingerprint (length and last
+    # write time of byl-mail.exe, ADR-0039 section 5) sees no new helper, and the page "System" asks
+    # for no restart after a build that changed nothing. A target that cannot be read counts as
+    # changed. A missing target is copied, a changed one replaced; one its running helper holds
+    # cannot be removed, only renamed (Windows allows that), so it becomes <name>.old-<UTC time>
+    # (AR-4) and the yellow line about it ends with $RunningHint. Returns 'Unchanged', 'Installed' or
+    # 'Replaced'; an error of the rename or the copy goes to the caller (entry helper-install).
+    param(
+        [Parameter(Mandatory = $true)][string]$Built,
+        [Parameter(Mandatory = $true)][string]$Target,
+        [AllowEmptyString()][string]$RunningHint = ''
+    )
+
+    $name = [System.IO.Path]::GetFileName($Target)
+    $result = 'Installed'
+    if (Test-Path -LiteralPath $Target -PathType Leaf) {
+        $same = $false
+        try {
+            $same = (Get-FileHash -LiteralPath $Built -Algorithm SHA256 -ErrorAction Stop).Hash -eq (Get-FileHash -LiteralPath $Target -Algorithm SHA256 -ErrorAction Stop).Hash
+        }
+        catch {
+            $same = $false
+        }
+        if ($same) {
+            Write-Host "app\$name unchanged (same SHA-256 as the new build), not replaced."
+            return 'Unchanged'
+        }
+        try {
+            Remove-Item -LiteralPath $Target -Force -ErrorAction Stop
+        }
+        catch {
+            # A running helper locks its file; Windows still allows renaming it.
+            $old = $name + '.old-' + [DateTime]::UtcNow.ToString('yyyyMMddHHmmss')
+            Rename-Item -LiteralPath $Target -NewName $old -ErrorAction Stop
+            Write-Host ("app\$name is running; the old file is now app\$old. $RunningHint").TrimEnd() -ForegroundColor Yellow
+        }
+        $result = 'Replaced'
+    }
+    Copy-Item -LiteralPath $Built -Destination $Target -ErrorAction Stop
+    $megabytes = [Math]::Round((Get-Item -LiteralPath $Target).Length / 1MB, 1)
+    Write-Host "$result app\$name ($megabytes MB)."
+    return $result
 }
