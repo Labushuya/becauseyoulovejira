@@ -3,7 +3,8 @@
 // chat and their switches. The bot of the tests has the keywords KEYWORDS; "mull"
 // and "uber" also check that umlauts do not count. An own disposable instance gets an invented token, the allowlist
 // and the address of the fake server (BYL_TELEGRAM_API_BASE) as variables. The token may appear
-// nowhere: not in responses, not in last_error, not in the server log and not in the console.
+// nowhere: not in responses, not in last_error, not in the server log and not in the console; the
+// allowlist neither (only the name of its variable stands in the hint of an unknown chat, KE-1).
 // The cron job runs every minute in the instance as well; the tests therefore check the state
 // after a run (entries, confirmations, offset) instead of the counts of one particular run.
 
@@ -17,14 +18,21 @@ import { scaled } from '../support/timing.mjs';
 
 const TOKEN = `7${randomBytes(4).readUInt32BE()}:AA${randomBytes(18).toString('hex')}`;
 const BROKEN_TOKEN = `8${randomBytes(4).readUInt32BE()}:AA${randomBytes(18).toString('hex')}`;
+// A second bot for the hint of a chat that is not allowed (KE-1): its runs, also those of the cron,
+// touch neither the updates, the answers nor the offsets of the bot above.
+const HINT_TOKEN = `6${randomBytes(4).readUInt32BE()}:AA${randomBytes(18).toString('hex')}`;
 const OWN_ID = 424242;
 const GROUP_ID = -100123;
+// A value of the allowlist of the second bot that no message carries: it may appear nowhere.
+const HINT_ALLOWED_EXTRA = '9081726354';
 const KEYWORDS = ['milch', 'rechnung', 'mull', 'zahnarzt', 'uber'];
 
 /** Updates the fake server offers, in the order Telegram would. */
 const updates = [];
 const confirmations = [];
 const offsets = [];
+const hintUpdates = [];
+const hintReplies = [];
 let failConfirmations = false;
 let nextUpdate = 1000;
 let nextMessage = 1;
@@ -51,6 +59,16 @@ const fake = createServer(async (request, response) => {
 		request.socket.destroy();
 		return;
 	}
+	if (token === HINT_TOKEN) {
+		if (method === 'getUpdates') {
+			return reply(response, 200, { ok: true, result: hintUpdates.filter((item) => item.update_id >= (body.offset ?? 0)) });
+		}
+		if (method === 'sendMessage') {
+			hintReplies.push(body);
+			return reply(response, 200, { ok: true, result: { message_id: 1 } });
+		}
+		return reply(response, 404, { ok: false, description: 'Not Found' });
+	}
 	if (token !== TOKEN) return reply(response, 401, { ok: false, error_code: 401, description: 'Unauthorized' });
 	if (method === 'getUpdates') {
 		offsets.push(body.offset);
@@ -66,7 +84,7 @@ const fake = createServer(async (request, response) => {
 	return reply(response, 404, { ok: false, description: 'Not Found' });
 });
 
-function send(chat, message) {
+function send(chat, message, list = updates) {
 	const update = {
 		update_id: nextUpdate++,
 		message: {
@@ -77,7 +95,7 @@ function send(chat, message) {
 			...message
 		}
 	};
-	updates.push(update);
+	list.push(update);
 	return update;
 }
 
@@ -150,7 +168,9 @@ beforeAll(async () => {
 			BYL_TEST_TG_TOKEN: TOKEN,
 			BYL_TEST_TG_BROKEN: BROKEN_TOKEN,
 			BYL_TEST_TG_WRONG: '9999:AAwrongwrongwrongwrongwrongwrongwrong',
-			BYL_TEST_TG_ALLOWED: `${OWN_ID}, 777`
+			BYL_TEST_TG_ALLOWED: `${OWN_ID}, 777`,
+			BYL_TEST_TG_HINT_TOKEN: HINT_TOKEN,
+			BYL_TEST_TG_HINT_ALLOWED: `${OWN_ID}, ${HINT_ALLOWED_EXTRA}`
 		}
 	});
 	superuser = client();
@@ -305,6 +325,61 @@ describe('Telegram: messages into the inbox', () => {
 	});
 });
 
+// KE-1 (ADR-0076): the setup sets the allowed IDs to "0" at first, so the first message of the own
+// chat leaves its ID in last_hint. The hint goes once an allowed chat wrote or its ID is on the
+// allowlist, never in a run without messages while the ID is not allowed (the cron runs every
+// minute, and the user still needs the ID). A connection of its own user on the second bot.
+describe('Telegram: the hint of a chat that is not allowed (KE-1)', () => {
+	let who;
+	let hintBot;
+	const hintOf = async () => (await who.pb.collection('connections').getOne(hintBot.id)).last_hint;
+
+	beforeAll(async () => {
+		who = await user();
+		hintBot = await connection(who, 'BYL_TEST_TG_HINT_TOKEN', {
+			settings: { allowed_env: 'BYL_TEST_TG_HINT_ALLOWED', keywords: KEYWORDS }
+		});
+	});
+
+	it('names a chat that is not allowed by its ID only, and keeps it in a run without messages', async () => {
+		send(STRANGER, { text: 'Milch vom Fremden' }, hintUpdates);
+		expect(await runNow(who, hintBot.id)).toMatchObject({ status: 'ok' });
+		const hint = await hintOf();
+		expect(hint).toMatch(/Chat-ID 555001/);
+		expect(hint).toMatch(/BYL_TEST_TG_HINT_ALLOWED/);
+		// The name of the variable, never its value or the token.
+		expect(hint).not.toContain(HINT_TOKEN);
+		expect(hint).not.toContain(HINT_ALLOWED_EXTRA);
+		expect(hint).not.toContain(String(OWN_ID));
+		expect(hint).not.toContain('Milch vom Fremden');
+		// A run without messages, like the cron, keeps the hint.
+		expect(await runNow(who, hintBot.id)).toMatchObject({ status: 'ok', created: 0 });
+		expect(await hintOf()).toBe(hint);
+		expect(await telegramItems(who)).toHaveLength(0);
+	});
+
+	it('clears it once a run handled a message of an allowed chat and no other chat wrote', async () => {
+		send(PRIVATE, { text: 'Milch kaufen' }, hintUpdates);
+		await runNow(who, hintBot.id);
+		// The run of "Jetzt abrufen" or one of the cron before it.
+		await expect.poll(hintOf).toBe('');
+		expect((await telegramItems(who)).map((item) => item.title)).toEqual(['Milch kaufen']);
+		expect(hintReplies.map((item) => [item.chat_id, item.text])).toEqual([[OWN_ID, 'Im Eingang gespeichert']]);
+	});
+
+	it('clears a hint whose chat ID is on the allowlist now in a run without messages', async () => {
+		// The hint the first message of the own chat left while the IDs were "0" (also one of an
+		// older version). The allowlist of this instance holds the ID, as it does after the new value
+		// and the restart; the variables of a running server do not change, so the superuser writes
+		// the hint of before.
+		const stale = `Nachricht aus einem nicht freigegebenen Chat (Chat-ID ${OWN_ID} („Anna“)), nicht gespeichert. Zum Freigeben die ID in BYL_TEST_TG_HINT_ALLOWED aufnehmen (setx), dann neu-starten.bat.`;
+		await superuser.collection('connections').update(hintBot.id, { last_hint: stale });
+		expect(await runNow(who, hintBot.id)).toMatchObject({ status: 'ok', created: 0 });
+		await expect.poll(hintOf).toBe('');
+		expect(await telegramItems(who)).toHaveLength(1);
+	});
+});
+
 describe('Telegram: errors without the token', () => {
 	it('stores a refused token and a broken connection cleaned, and keeps the offset', async () => {
 		const who = await user();
@@ -333,10 +408,11 @@ describe('Telegram: errors without the token', () => {
 
 	it('never writes the token to the log or the console', async () => {
 		// PocketBase writes its log in batches: everything up to now, with the warnings of the failed
-		// runs, and all entries, not only the first page.
+		// runs, and all entries, not only the first page. The allowlist of the second bot neither
+		// (KE-1): only the name of its variable stands in a hint.
 		const logs = JSON.stringify(await writtenLogs(superuser));
 		expect(logs).toContain('byl-telegram');
-		for (const secret of [TOKEN, BROKEN_TOKEN]) {
+		for (const secret of [TOKEN, BROKEN_TOKEN, HINT_TOKEN, HINT_ALLOWED_EXTRA]) {
 			expect(logs).not.toContain(secret);
 			expect(instance.output()).not.toContain(secret);
 			expect(JSON.stringify(await superuser.collection('connections').getFullList())).not.toContain(secret);
