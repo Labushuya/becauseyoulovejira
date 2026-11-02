@@ -7,6 +7,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { channelHealth, keywordSummary } from './channel-health';
+import { setupComplete } from './channel-setup';
 import { NO_KEYWORDS_WARNING, type Connection } from './connections';
 import { EMPTY_GITHUB_SETTINGS, NO_TOKEN_HINT } from './github';
 import { OPEN_SETUP_TEXTS } from './open-setups';
@@ -114,6 +115,47 @@ describe('channelHealth', () => {
 		);
 	});
 
+	it('never asks to create a variable the PC knows as set, in every mix of the two of Telegram (KE-1, M1)', () => {
+		const bot = {
+			...BASE,
+			type: 'telegram' as const,
+			secretEnv: 'BYL_TELEGRAM_TOKEN',
+			allowlistEnv: 'BYL_TELEGRAM_ALLOWED_IDS'
+		};
+		const unseen = { secret: false, allowlist: false };
+		const token = channelHealth(bot, unseen, false, null, {
+			stored: { secret: true, allowlist: false }
+		});
+		expect(token).toMatchObject({ state: 'unset', label: 'Einrichtung offen', action: 'setup' });
+		expect(token.hint).toEqual({
+			tone: 'warning',
+			text: 'Zugangsdaten fehlen: Variable BYL_TELEGRAM_ALLOWED_IDS anlegen, dann die App neu starten (neu-starten.bat). BYL_TELEGRAM_TOKEN ist schon gesetzt und wirkt erst nach dem Neustart.'
+		});
+		expect(token.hint?.text).not.toMatch(/BYL_TELEGRAM_TOKEN[^.]*anlegen/);
+		const ids = channelHealth(bot, unseen, false, null, {
+			stored: { secret: false, allowlist: true }
+		});
+		expect(ids.hint?.text).toBe(
+			'Zugangsdaten fehlen: Variable BYL_TELEGRAM_TOKEN anlegen, dann die App neu starten (neu-starten.bat). BYL_TELEGRAM_ALLOWED_IDS ist schon gesetzt und wirkt erst nach dem Neustart.'
+		);
+		expect(ids.hint?.text).not.toMatch(/BYL_TELEGRAM_ALLOWED_IDS[^.]*anlegen/);
+		// The server sees one already: nothing about its restart.
+		expect(
+			channelHealth(bot, { secret: true, allowlist: false }, false, null, {
+				stored: { secret: true, allowlist: false }
+			}).hint?.text
+		).toBe(
+			'Zugangsdaten fehlen: Variable BYL_TELEGRAM_ALLOWED_IDS anlegen, dann die App neu starten (neu-starten.bat).'
+		);
+		// Both missing on the PC: both, as before.
+		expect(
+			channelHealth(bot, unseen, false, null, { stored: { secret: false, allowlist: false } }).hint
+				?.text
+		).toBe(
+			'Zugangsdaten fehlen: Variablen BYL_TELEGRAM_TOKEN und BYL_TELEGRAM_ALLOWED_IDS anlegen, dann die App neu starten (neu-starten.bat).'
+		);
+	});
+
 	it('says both where the state on the PC is unknown, "am PC prüfen" on another device (KE-1, M1)', () => {
 		const pc = channelHealth(BASE, UNSET, false);
 		expect(pc.hint).toEqual({
@@ -206,6 +248,36 @@ describe('channelHealth', () => {
 		expect(channelHealth(mail, SET, false)).toMatchObject({ state: 'open', pick: true });
 	});
 
+	it('says "Verbunden" once the server cleared the hint of the allowed chat after a good run (KE-1)', () => {
+		const seen = { secret: true, allowlist: true };
+		const bot = {
+			...BASE,
+			type: 'telegram' as const,
+			secretEnv: 'BYL_TELEGRAM_TOKEN',
+			allowlistEnv: 'BYL_TELEGRAM_ALLOWED_IDS',
+			lastHint: 'Nachricht aus einem nicht freigegebenen Chat (Chat-ID 424242).'
+		};
+		expect(channelHealth(bot, seen, false)).toMatchObject({ state: 'open', setupOpen: true });
+		const cleared = { ...bot, lastHint: '' };
+		expect(channelHealth(cleared, seen, false)).toMatchObject({
+			state: 'ok',
+			label: 'Verbunden',
+			hint: null,
+			setupOpen: false
+		});
+		expect(setupComplete('telegram', { connection: cleared, secretStatus: seen })).toBe(true);
+	});
+
+	it('keeps "Einrichtung fortsetzen" in the menu at "Fehler" of a first run that never went well (KE-1)', () => {
+		const failed = channelHealth({ ...BASE, lastOkAt: null, lastError: 'HTTP 404' }, SET, false);
+		expect(failed).toMatchObject({ state: 'error', setupOpen: true });
+		const later = channelHealth({ ...BASE, lastError: 'HTTP 404' }, SET, false);
+		expect(later).toMatchObject({ state: 'error', setupOpen: false });
+		expect(channelHealth({ ...BASE, enabled: false, lastRunAt: null }, SET, false).setupOpen).toBe(
+			false
+		);
+	});
+
 	it('says "Neustart nötig" at a mailbox whose mail helper does not run as it should (KK-2)', () => {
 		const mail = { ...BASE, type: 'mail' as const };
 		for (const state of ['stopped', 'refused', 'outdated'] as const) {
@@ -257,6 +329,22 @@ describe('channelHealth', () => {
 			tone: 'info',
 			text: chat
 		});
+		// So does the chat ID of Telegram, which holds the setup open at "Chat freigeben".
+		const bot = {
+			...BASE,
+			type: 'telegram' as const,
+			secretEnv: 'BYL_TELEGRAM_TOKEN',
+			allowlistEnv: 'BYL_TELEGRAM_ALLOWED_IDS',
+			keywords: [],
+			lastHint: chat
+		};
+		const held = channelHealth(bot, { secret: true, allowlist: true }, false);
+		expect(held).toMatchObject({ state: 'open', label: 'Einrichtung offen', setupOpen: true });
+		expect(held.hint).toEqual({
+			tone: 'info',
+			text: 'Offener Schritt „Chat freigeben“: Nachricht aus einem Chat, der noch nicht freigegeben ist (Chat-ID 424242).'
+		});
+		expect(held.hint?.text).not.toBe(NO_KEYWORDS_WARNING);
 		expect(channelHealth({ ...BASE, type: 'mail' }, SET, false)).toMatchObject({
 			action: 'run',
 			pick: true

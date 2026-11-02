@@ -10,6 +10,7 @@ import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PC_CONTEXT, useContext } from '$lib/test/context';
+import { DataError } from '$lib/data/errors';
 import type { RecordChange } from '$lib/data/realtime';
 import { SETX_WAY_KEY, setupStepKey, type SetupTarget } from '$lib/domain/channel-setup';
 import { parseSetupResume } from '$lib/domain/setup-resume';
@@ -254,6 +255,26 @@ describe('setup assistant: progress from the server', () => {
 		expect(dialog().getByText(/Keine Stichwörter: Diese Verbindung übernimmt nichts/)).toBeTruthy();
 		await fireEvent.click(dialog().getByRole('button', { name: 'Zurück' }));
 		expect(stepHeading().textContent?.trim()).toBe('Schritt 6 von 7: Stichwörter festlegen');
+	});
+
+	// KE-1 (K-8): after a failed question for the variables the assistant reads them as seen, like
+	// the overview and the card, and opens where "Fortsetzen" leads.
+	it('opens at the step of the overview when the question for the variables failed (KE-1)', async () => {
+		const context = fakes([calendar({ keywords: ['todo'] })]);
+		context.data.secretStatus.mockRejectedValue(new DataError('server', { status: 500 }));
+		await context.store.load();
+		render(ChannelsViewHarness, {
+			props: {
+				connections: context.store,
+				projects: PROJECTS,
+				setup: { kind: 'kalender', connectionId: ID },
+				onchange: vi.fn()
+			}
+		});
+		await tick();
+		await tick();
+		expect(context.store.statusFailure(ID)).not.toBeNull();
+		expect(stepHeading().textContent?.trim()).toBe('Schritt 7 von 7: Ersten Abruf starten');
 	});
 
 	it('opens at a later step looked at in this tab, but never before the facts', async () => {

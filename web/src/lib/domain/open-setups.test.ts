@@ -20,6 +20,7 @@ import {
 	openSetupsOf,
 	ownInboxOpen,
 	whatsAppWebOpen,
+	withAssumedStatus,
 	type OpenSetupReason
 } from './open-setups';
 
@@ -152,7 +153,8 @@ const CASES: Case[] = [
 		const fresh = { ...DONE[kind], lastRunAt: null, lastOkAt: null };
 		const expected: Record<keyof typeof DONE, OpenSetupReason> = {
 			kalender: 'first-run',
-			telegram: 'chat',
+			// No run yet, so no chat to allow (K-7): write to the bot, then "Jetzt abrufen".
+			telegram: 'no-run',
 			webde: 'first-run',
 			gmail: 'first-run',
 			notion: 'check',
@@ -194,12 +196,45 @@ const CASES: Case[] = [
 			expected: 'secret-unknown'
 		}
 	]),
+	// The first run after the provisional IDs "0": the own chat wrote, the server keeps its ID in the
+	// hint while it is not on the allowlist. The server clears the hint once the ID is allowed or an
+	// allowed chat wrote (K-1), so a hint with a chat ID means the chat is not allowed yet.
 	{
-		name: 'telegram: chat not allowed yet',
+		name: 'telegram: a run reported a chat that is not allowed yet (its ID in the hint)',
 		kind: 'telegram',
-		connection: { ...DONE.telegram, lastHint: CHAT },
+		connection: { ...DONE.telegram, lastRunAt: OK, lastOkAt: OK, keywords: [], lastHint: CHAT },
 		status: seen('telegram'),
 		expected: 'chat'
+	},
+	{
+		name: 'telegram: the server cleared the hint after the chat was allowed, a good run: done',
+		kind: 'telegram',
+		connection: { ...DONE.telegram, lastHint: '' },
+		status: seen('telegram'),
+		expected: null
+	},
+	{
+		name: 'telegram: the first run failed, no chat reported',
+		kind: 'telegram',
+		connection: { ...DONE.telegram, lastOkAt: null, lastError: 'Telegram antwortet mit HTTP 401' },
+		status: seen('telegram'),
+		expected: 'first-run-failed'
+	},
+	// An unknown state of the variables (the request failed) counts as seen (K-8): the assistant
+	// opens where the overview says.
+	{
+		name: 'kalender: state of the variable unknown, no run yet',
+		kind: 'kalender',
+		connection: { ...DONE.kalender, lastRunAt: null, lastOkAt: null },
+		status: null,
+		expected: 'first-run'
+	},
+	{
+		name: 'telegram: state of the variables unknown, done',
+		kind: 'telegram',
+		connection: DONE.telegram,
+		status: null,
+		expected: null
 	},
 	{
 		name: 'telegram: run without keyword holds nothing open',
@@ -337,25 +372,73 @@ describe('open setups: kind × facts (KE-1, E1)', () => {
 			})?.pcOnly
 		).toBe(true);
 	});
+
+	it('says "Noch kein Abruf" for a bot without any run, without the PC; "Chat" only with its ID (K-7)', () => {
+		const fresh = openSetupOf('telegram', {
+			connection: { ...DONE.telegram, lastRunAt: null, lastOkAt: null },
+			secretStatus: seen('telegram')
+		});
+		expect(fresh).toEqual({
+			reason: 'no-run',
+			step: { index: 5, total: 7, id: 'chat', label: 'Chat freigeben' },
+			pcOnly: false,
+			check: {
+				tone: 'open',
+				text: 'Noch kein Abruf: erst dem Bot schreiben, dann „Jetzt abrufen“.'
+			}
+		});
+		if (fresh === null) throw new Error('open');
+		expect(openSetupLine({ kind: 'telegram', open: fresh })).toBe(
+			'Schritt 6 von 7: Noch kein Abruf – dem Bot schreiben, dann „Jetzt abrufen“'
+		);
+		expect(continuesAtPc(fresh, true)).toBe(false);
+		const chat = openSetupOf('telegram', {
+			connection: { ...DONE.telegram, lastHint: CHAT },
+			secretStatus: seen('telegram')
+		});
+		if (chat === null) throw new Error('open');
+		expect(openSetupLine({ kind: 'telegram', open: chat })).toBe(
+			'Schritt 6 von 7: Chat noch nicht freigegeben'
+		);
+		expect(continuesAtPc(chat, true)).toBe(true);
+		// The fingerprint tells both apart: allowing the chat is another state than the first run.
+		const entry = (open: typeof chat) => ({
+			key: DONE.telegram.id,
+			name: 'Bot',
+			kind: 'telegram' as const,
+			open,
+			target: { kind: 'telegram' as const, connectionId: DONE.telegram.id }
+		});
+		expect(openSetupsFingerprint('u0000000000000a', [entry(fresh)])).toBe(
+			'u0000000000000a|conn0000000tel1:no-run'
+		);
+		expect(openSetupsFingerprint('u0000000000000a', [entry(chat)])).toBe(
+			'u0000000000000a|conn0000000tel1:chat'
+		);
+	});
 });
 
 describe('agreement of assistant, card and overview (KE-1, M2)', () => {
 	it.each(CASES)('$name', ({ kind, connection: facts, status, stored }) => {
 		const setupFacts = { connection: facts, secretStatus: status, stored: stored ?? null };
+		// The assistant after a failed question for the variables (status null) reads them as seen,
+		// like the overview and the card (K-8).
+		const assistantFacts = status === null ? withAssumedStatus(kind, setupFacts) : setupFacts;
 		const open = openSetupOf(kind, setupFacts);
 		const health = channelHealth(facts, status, false, null, { stored: stored ?? null });
+		expect(health.setupOpen).toBe(open !== null);
 		if (open !== null) {
 			// Open: never "Verbunden", the assistant is not complete and opens at that very step.
 			expect(health.state).not.toBe('ok');
 			expect(health.label).not.toBe('Verbunden');
-			expect(setupComplete(kind, setupFacts)).toBe(false);
-			expect(setupProgress(kind, setupFacts)).toBe(open.step?.index);
+			expect(setupComplete(kind, assistantFacts)).toBe(false);
+			expect(setupProgress(kind, assistantFacts)).toBe(open.step?.index);
 		} else {
 			expect(health.state).not.toBe('open');
 			expect(health.state).not.toBe('unset');
 		}
 		if (open === null && facts.enabled && facts.lastError === '') {
-			expect(setupComplete(kind, setupFacts)).toBe(true);
+			expect(setupComplete(kind, assistantFacts)).toBe(true);
 		}
 	});
 });

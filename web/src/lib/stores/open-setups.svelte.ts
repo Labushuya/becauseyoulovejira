@@ -126,6 +126,8 @@ export class OpenSetupsStore {
 			}
 			this.#state = 'error';
 			this.#entries = [];
+			// A failure counts for the gap too: the tab coming back asks at most once a minute.
+			this.#loadedAt = this.#now();
 			return null;
 		}
 	}
@@ -142,7 +144,7 @@ export class OpenSetupsStore {
 		return entries;
 	}
 
-	/** The tab came back: loads again unless a load finished within REFRESH_GAP_MS. */
+	/** The tab came back: loads again unless a load finished (also failed) within REFRESH_GAP_MS. */
 	async refresh(): Promise<void> {
 		if (this.#controller !== null || this.#now() - this.#loadedAt < REFRESH_GAP_MS) return;
 		await this.load();

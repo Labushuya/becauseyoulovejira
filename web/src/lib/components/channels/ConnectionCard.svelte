@@ -203,7 +203,8 @@
 		}
 		if (health.action !== 'setup') {
 			entries.push({
-				label: health.state === 'open' ? 'Einrichtung fortsetzen' : 'Einrichtung ansehen',
+				// Also at "Fehler" of a first run that never went well (KE-1).
+				label: health.setupOpen ? 'Einrichtung fortsetzen' : 'Einrichtung ansehen',
 				onselect: () => onsetup()
 			});
 		}

@@ -415,6 +415,15 @@ describe('Notion card', () => {
 		expect(card.queryByRole('button', { name: /Listen übernehmen/ })).toBeNull();
 		expect(notionMenu(card).items()).not.toContain('Verbindung prüfen');
 	});
+
+	it('says "Einrichtung fortsetzen" in the menu at "Fehler" of a first check that never went well (KE-1)', async () => {
+		const { card } = await open(
+			notionConnection({ lastOkAt: null, lastError: 'Notion lehnt den Token ab (401).' })
+		);
+		expect(card.getByText('Fehler')).toBeTruthy();
+		expect(notionMenu(card).items()).toContain('Einrichtung fortsetzen');
+		expect(notionMenu(card).items()).not.toContain('Einrichtung ansehen');
+	});
 });
 
 describe('Notion import dialog', () => {

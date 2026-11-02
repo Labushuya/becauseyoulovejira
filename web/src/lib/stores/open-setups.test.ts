@@ -144,6 +144,22 @@ describe('OpenSetupsStore', () => {
 		expect(data.list).toHaveBeenCalledTimes(2);
 	});
 
+	it('waits a minute after a failed load as well', async () => {
+		let now = 1_000_000;
+		const data = fakeData();
+		data.list.mockRejectedValueOnce(new DataError('server', { status: 500 }));
+		const { store } = storeOf(data, { now: () => now });
+		expect(await store.load()).toBeNull();
+		expect(store.state).toBe('error');
+		now += REFRESH_GAP_MS - 1;
+		await store.refresh();
+		expect(data.list).toHaveBeenCalledTimes(1);
+		now += 1;
+		await store.refresh();
+		expect(data.list).toHaveBeenCalledTimes(2);
+		expect(store.state).toBe('ready');
+	});
+
 	it('takes what the page "Kanäle" computed and loads again for another area', async () => {
 		const data = fakeData();
 		const { store } = storeOf(data);

@@ -25,7 +25,8 @@ import {
 	isSecretReason,
 	openSetupHint,
 	openSetupOf,
-	openStepPrefix
+	openStepPrefix,
+	type OpenSetup
 } from './open-setups';
 
 export type ChannelHealthState =
@@ -48,6 +49,11 @@ export interface ChannelHealth {
 	action: 'run' | 'resume' | 'setup' | 'none';
 	/** A mailbox that is set up also offers "Aus dem Postfach wählen". */
 	pick: boolean;
+	/**
+	 * A mandatory step of the setup is open (`openSetupOf`), whatever state the card shows first,
+	 * e.g. "Fehler" of a first run that never went well: the menu says „Einrichtung fortsetzen“.
+	 */
+	setupOpen: boolean;
 }
 
 type ConnectionFacts = Pick<
@@ -82,7 +88,9 @@ export function channelHealth(
 	helper: MailHelperStatus | null = null,
 	context: ChannelHealthContext = {}
 ): ChannelHealth {
-	const health = baseHealth(connection, secretStatus, running, helper, context);
+	const stored = context.stored ?? null;
+	const open = openSetupOf(setupKindOf(connection), { connection, secretStatus, stored });
+	const health = baseHealth(connection, secretStatus, running, helper, context, open);
 	return {
 		...health,
 		pick:
@@ -91,7 +99,8 @@ export function channelHealth(
 				health.state === 'open' ||
 				health.state === 'error' ||
 				health.state === 'restart' ||
-				health.state === 'running')
+				health.state === 'running'),
+		setupOpen: open !== null
 	};
 }
 
@@ -100,8 +109,9 @@ function baseHealth(
 	secretStatus: SecretStatus | null,
 	running: boolean,
 	helper: MailHelperStatus | null,
-	context: ChannelHealthContext
-): Omit<ChannelHealth, 'pick'> {
+	context: ChannelHealthContext,
+	open: OpenSetup | null
+): Omit<ChannelHealth, 'pick' | 'setupOpen'> {
 	const regular: ChannelHealth['action'] = 'run';
 	if (running) {
 		return {
@@ -129,14 +139,13 @@ function baseHealth(
 	}
 	const stored = context.stored ?? null;
 	const remote = context.remote === true;
-	const open = openSetupOf(setupKindOf(connection), { connection, secretStatus, stored });
 	// Missing access data first, before the last error (GitHub reads public repositories without
 	// its token, ADR-0050 §1: no open setup, only a hint below).
 	if (open !== null && isSecretReason(open.reason)) {
 		return {
 			state: 'unset',
 			...CARD_STATUS.setup,
-			hint: openSetupHint(open, connection, secretStatus, remote),
+			hint: openSetupHint(open, connection, secretStatus, remote, stored),
 			action: 'setup'
 		};
 	}
@@ -170,7 +179,7 @@ function baseHealth(
 		return {
 			state: 'open',
 			...CARD_STATUS.setup,
-			hint: openSetupHint(open, connection, secretStatus, remote),
+			hint: openSetupHint(open, connection, secretStatus, remote, stored),
 			action: regular
 		};
 	}

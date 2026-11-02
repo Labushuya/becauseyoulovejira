@@ -13,6 +13,7 @@
 // by the running server "waits for the restart"; where it is not known, the texts say both.
 
 import {
+	chatIdFromHint,
 	requiredOpenStep,
 	setupComplete,
 	setupKindOf,
@@ -42,8 +43,10 @@ export type OpenSetupReason =
 	| 'repository'
 	/** A folder connection without a folder. */
 	| 'folder'
-	/** Telegram: no run yet, or a run reported a chat that is not allowed. */
+	/** Telegram: a run reported a chat that is not allowed (its ID stands in the hint). */
 	| 'chat'
+	/** Telegram: no run yet, so no chat to allow; writing to the bot and "Jetzt abrufen" work anywhere. */
+	| 'no-run'
 	| 'first-run'
 	/** The first run failed, and no run went well before. */
 	| 'first-run-failed'
@@ -69,7 +72,7 @@ export interface OpenSetup {
 	reason: OpenSetupReason;
 	/** The open step of the assistant; null for the own inbox, which has no assistant. */
 	step: OpenSetupStep | null;
-	/** The step needs the PC (a variable, a token, a restart, the chat, the extension). */
+	/** The step needs the PC (a variable, a token, a restart, a chat to allow, the extension). */
 	pcOnly: boolean;
 	/** The check line of the assistant at that step (the same words); null for the access data. */
 	check: StepCheck | null;
@@ -87,11 +90,32 @@ export interface OpenSetupFacts {
 	stored?: StoredSecrets | null;
 }
 
-/** Steps that need the machine of the app (M3 of KE-1): the texts at other devices say so. */
-const PC_STEPS: readonly string[] = ['variable', 'token', 'restart', 'chat'];
+/**
+ * Steps that need the machine of the app (M3 of KE-1): the texts at other devices say so. The step
+ * "Chat freigeben" of Telegram only with a chat to allow (reason "chat"): before the first run it
+ * asks to write to the bot and fetch, which works on the phone too.
+ */
+const PC_STEPS: readonly string[] = ['variable', 'token', 'restart'];
 
 export function isSecretReason(reason: OpenSetupReason): boolean {
 	return reason === 'secret-missing' || reason === 'secret-restart' || reason === 'secret-unknown';
+}
+
+/**
+ * The state of the variables assumed while it is unknown (the request failed): seen, as the card
+ * skips its check (ADR-0076 §1). Folders have no variables.
+ */
+function assumedStatus(kind: SetupKind): SecretStatus | null {
+	return kind === 'ordner' ? null : { secret: true, allowlist: kind === 'telegram' ? true : null };
+}
+
+/**
+ * The facts as the overview, the card and the assistant read them (M2): an unknown state of the
+ * variables as seen. The assistant uses it after a failed question for the variables, so it opens
+ * at the step "Fortsetzen" names.
+ */
+export function withAssumedStatus(kind: SetupKind, facts: SetupFacts): SetupFacts {
+	return facts.secretStatus !== null ? facts : { ...facts, secretStatus: assumedStatus(kind) };
 }
 
 /** The checked step whose fact decides step `index`: itself, or the next checked one. */
@@ -119,7 +143,9 @@ function reasonOf(kind: SetupKind, index: number, facts: SetupFacts): OpenSetupR
 			// With a connection "Verbinden" holds for every kind but GitHub and folders.
 			return kind === 'github' ? 'repository' : 'folder';
 		case 'chat':
-			return 'chat';
+			// A chat to allow only with its ID in the hint; else no run yet, or a first run that failed.
+			if (connection !== null && chatIdFromHint(connection.lastHint) !== null) return 'chat';
+			return failed ? 'first-run-failed' : 'no-run';
 		case 'check':
 			if (failed) return 'check-failed';
 			return kind === 'notion' &&
@@ -141,13 +167,11 @@ function reasonOf(kind: SetupKind, index: number, facts: SetupFacts): OpenSetupR
 export function openSetupOf(kind: SetupKind, facts: OpenSetupFacts): OpenSetup | null {
 	const { connection } = facts;
 	if (!connection.enabled) return null;
-	const assumed: SecretStatus | null =
-		kind === 'ordner' ? null : { secret: true, allowlist: kind === 'telegram' ? true : null };
-	const known: SetupFacts = {
+	const known = withAssumedStatus(kind, {
 		connection,
-		secretStatus: facts.secretStatus ?? assumed,
+		secretStatus: facts.secretStatus,
 		stored: facts.stored ?? null
-	};
+	});
 	const index = requiredOpenStep(kind, known);
 	const steps = setupSteps(kind);
 	const step = steps[index];
@@ -159,7 +183,7 @@ export function openSetupOf(kind: SetupKind, facts: OpenSetupFacts): OpenSetup |
 	return {
 		reason,
 		step: { index, total: steps.length, id: step.id, label: step.label },
-		pcOnly: secret || PC_STEPS.includes(step.id),
+		pcOnly: secret || reason === 'chat' || PC_STEPS.includes(step.id),
 		check: secret || deciding === null ? null : stepCheck(kind, deciding, known)
 	};
 }
@@ -345,6 +369,8 @@ export function openSetupSummary(kind: SetupKind | null, open: OpenSetup): strin
 			return 'Noch kein Ordner';
 		case 'chat':
 			return 'Chat noch nicht freigegeben';
+		case 'no-run':
+			return 'Noch kein Abruf – dem Bot schreiben, dann „Jetzt abrufen“';
 		case 'first-run':
 			if (kind === 'ordner') return 'Erste Prüfung steht aus';
 			return kind === 'webde' || kind === 'gmail'
@@ -378,15 +404,51 @@ export function continuesAtPc(open: OpenSetup, remote: boolean): boolean {
 }
 
 /**
+ * The text of missing access data as far as the PC knows them (M1): "anlegen" only for a variable
+ * that is missing there, or that the server does not see while the PC does not know it; one that
+ * is set there only waits for the restart the text asks for. True in every combination of the two
+ * variables of Telegram, e.g. „Zugangsdaten fehlen: Variable BYL_TELEGRAM_ALLOWED_IDS anlegen, dann
+ * die App neu starten (neu-starten.bat). BYL_TELEGRAM_TOKEN ist schon gesetzt und wirkt erst nach
+ * dem Neustart.“
+ */
+function missingText(
+	connection: Pick<Connection, 'secretEnv' | 'allowlistEnv'>,
+	status: SecretStatus,
+	stored: StoredSecrets | null
+): string | null {
+	const secretSeen = status.secret;
+	const allowlistSeen = status.allowlist !== false;
+	const create = (seen: boolean, known: boolean | null | undefined) =>
+		known === false || (!seen && known !== true);
+	const filtered: SecretStatus = {
+		secret: !create(secretSeen, stored?.secret),
+		allowlist: status.allowlist === null ? null : !create(allowlistSeen, stored?.allowlist)
+	};
+	const text = secretStatusText(connection, filtered);
+	if (text === null || text.ok) return null;
+	const waiting = [
+		!secretSeen && stored?.secret === true ? connection.secretEnv : null,
+		!allowlistSeen && stored?.allowlist === true ? connection.allowlistEnv : null
+	].filter((name): name is string => name !== null && name !== '');
+	if (waiting.length === 0) return text.text;
+	const names = waiting.join(' und ');
+	return waiting.length > 1
+		? `${text.text} ${names} sind schon gesetzt und wirken erst nach dem Neustart.`
+		: `${text.text} ${names} ist schon gesetzt und wirkt erst nach dem Neustart.`;
+}
+
+/**
  * The hint of the card of an open setup (ADR-0076 §2): the access data in the words of M1 (missing
- * as before, waiting for the restart, or both where it is not known), every other step as „Offener
- * Schritt „‹Label›“: …“ with the check line of the assistant.
+ * as before, waiting for the restart, or both where it is not known; `stored` is the user
+ * environment of the PC where the tab reads it), every other step as „Offener Schritt „‹Label›“: …“
+ * with the check line of the assistant.
  */
 export function openSetupHint(
 	open: OpenSetup,
 	connection: Pick<Connection, 'secretEnv' | 'allowlistEnv'>,
 	status: SecretStatus | null,
-	remote: boolean
+	remote: boolean,
+	stored: StoredSecrets | null = null
 ): { tone: 'info' | 'warning' | 'error'; text: string } {
 	const names = unseenNames(connection, status);
 	const listed = names.join(' und ');
@@ -394,7 +456,9 @@ export function openSetupHint(
 		case 'secret-missing':
 			return {
 				tone: 'warning',
-				text: secretStatusText(connection, status)?.text ?? `Zugangsdaten fehlen: ${listed}.`
+				text:
+					(status === null ? null : missingText(connection, status, stored)) ??
+					`Zugangsdaten fehlen: ${listed}.`
 			};
 		case 'secret-restart':
 			return {

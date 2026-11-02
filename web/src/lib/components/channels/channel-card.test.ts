@@ -595,6 +595,24 @@ describe('channel card', () => {
 		expect(primaryOf(article).textContent).toBe('Einrichtung fortsetzen: Kalender');
 		expect(menuOf(article, 'Kalender').items()).not.toContain('Einrichtung ansehen');
 	});
+
+	// KE-1: the label follows the open setup, not the lozenge; "Fehler" of a first run that never
+	// went well still has a setup to continue, an error after a good run does not.
+	it('says "Einrichtung fortsetzen" in the menu at "Fehler" of a first run that never went well', async () => {
+		const { article, card, onsetup } = renderCard(
+			connection({ lastOkAt: null, lastError: 'HTTP 404' })
+		);
+		expect(card.getByText('Fehler')).toBeTruthy();
+		const { items } = menuOf(article, 'Kalender');
+		expect(items()).toContain('Einrichtung fortsetzen');
+		expect(items()).not.toContain('Einrichtung ansehen');
+		await choose(article, 'Kalender', 'Einrichtung fortsetzen');
+		expect(onsetup).toHaveBeenCalledOnce();
+		const later = renderCard(
+			connection({ id: 'conn00000000002', label: 'Später', lastError: 'HTTP 404' })
+		);
+		expect(menuOf(later.article, 'Später').items()).toContain('Einrichtung ansehen');
+	});
 });
 
 describe('full scan of an inbox on the card (ADR-0020, addendum 3)', () => {

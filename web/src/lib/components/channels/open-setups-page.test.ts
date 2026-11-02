@@ -193,6 +193,50 @@ describe('overview of the open setups (KE-1, E2a)', () => {
 		expect(screen.queryByRole('heading', { name: /Einrichtung(en)? offen/ })).toBeNull();
 		expect(document.querySelector('[data-open-setups]')).toBeNull();
 	});
+
+	// KE-1 (K-9): at the PC the overview waits for the user environment as well; before it the
+	// line would say "fehlen oder warten" at the step of "unbekannt" and then jump.
+	it('waits at the PC while the user environment loads, so its step does not jump', async () => {
+		const { data } = fakeConnectionsData([BOT], { secret: false, allowlist: false });
+		const connections = await connectionsStoreOf(data);
+		const environment = fakeCredentialsData([
+			variableOf('BYL_TELEGRAM_TOKEN', { set: false }),
+			variableOf('BYL_TELEGRAM_ALLOWED_IDS', { set: false })
+		]);
+		const answer = environment.status.getMockImplementation();
+		let release: () => void = () => undefined;
+		environment.status.mockImplementationOnce(
+			(names, options) =>
+				new Promise((resolve) => {
+					release = () => resolve(answer!(names, options));
+				})
+		);
+		const credentials = credentialsStoreOf(environment);
+		const openSetups = new OpenSetupsStore(
+			{ list: vi.fn(), secretStatus: vi.fn(), inboxKeys: vi.fn(), extensionBuilt: vi.fn() },
+			{ ensureValid: () => true, logout: vi.fn() }
+		);
+		render(ChannelsViewHarness, {
+			props: { connections, credentials, openSetups, onchange: vi.fn() }
+		});
+		await vi.waitFor(() => expect(credentials.state).toBe('loading'));
+		await tick();
+		expect(document.querySelector('[data-open-setups]')).toBeNull();
+		expect(screen.queryByRole('list', { name: /Einrichtung(en)? offen/ })).toBeNull();
+		expect(document.body.textContent).not.toMatch(/Schritt 5 von 7/);
+		expect(openSetups.entries).toEqual([]);
+		release();
+		await vi.waitFor(() => expect(credentials.state).toBe('ready'));
+		await vi.waitFor(() =>
+			expect(
+				overview()
+					.getAllByRole('listitem')
+					.map((item) => item.textContent?.replace(/\s+/g, ' ').trim())
+			).toEqual(['Bot: Schritt 2 von 7: Zugangsdaten fehlen Fortsetzen: Bot'])
+		);
+		expect(overview().queryByText(/fehlen oder warten/)).toBeNull();
+		expect(openSetups.entries.map((entry) => entry.open.reason)).toEqual(['secret-missing']);
+	});
 });
 
 describe('the mark at "Kanäle" and "Erste Schritte" (KE-1, E2b, E4)', () => {

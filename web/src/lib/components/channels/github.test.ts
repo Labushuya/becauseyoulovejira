@@ -284,6 +284,15 @@ describe('GitHub card', () => {
 		expect(remove.className).toMatch(/button-icon/);
 	});
 
+	it('says "Einrichtung fortsetzen" in the menu at "Fehler" of a first check that never went well (KE-1)', async () => {
+		const { card } = await open(
+			githubConnection({ lastOkAt: null, lastError: 'GitHub antwortet mit HTTP 500.' })
+		);
+		expect(card.getByText('Fehler')).toBeTruthy();
+		expect(cardMenu(card).items()).toContain('Einrichtung fortsetzen');
+		expect(cardMenu(card).items()).not.toContain('Einrichtung ansehen');
+	});
+
 	it('reads public repositories without a token: a neutral hint, no open setup', async () => {
 		const { card } = await open(githubConnection(), {
 			status: { secret: false, allowlist: null },

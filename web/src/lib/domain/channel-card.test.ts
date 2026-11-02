@@ -215,6 +215,18 @@ describe('states of the cards without a connection', () => {
 		expect(whatsAppWebStatus(null, 0, null)).toBeNull();
 	});
 
+	// Since KE-1 (ADR-0076 §9) only keys that loaded say something: while they load, after a failed
+	// load or without them the card has no lozenge, even with the extension not built (before KE-1
+	// "Einrichtung offen").
+	it('says nothing of WhatsApp Web while the keys load, after a failed load or without them (KE-1)', () => {
+		expect(whatsAppWebStatus('error', 0, false)).toBeNull();
+		expect(whatsAppWebStatus('error', 1, false)).toBeNull();
+		expect(whatsAppWebStatus('loading', 1, false)).toBeNull();
+		expect(whatsAppWebStatus('idle', 1, false)).toBeNull();
+		expect(whatsAppWebStatus(null, 1, false)).toBeNull();
+		expect(whatsAppWebStatus(null, 0, false)).toBeNull();
+	});
+
 	it('uses the approved states and red only for an error (ADR-0009)', () => {
 		expect(Object.values(CARD_STATUS).map((status) => status.label)).toEqual([
 			'Verbunden',

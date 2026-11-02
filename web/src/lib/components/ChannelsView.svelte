@@ -149,7 +149,9 @@
 	}
 
 	// The open setups (KE-1, ADR-0076 §2), once the page knows enough not to change its mind: the
-	// list, the state of every variable (or why it could not be read) and the keys of the own inbox.
+	// list, the state of every variable (or why it could not be read), at the PC the user environment
+	// while it loads (else "fehlen oder warten" would turn into "Wartet auf Neustart" or another
+	// step), and the keys of the own inbox.
 	const known = $derived(
 		connections.state === 'ready' &&
 			connections.connections.every(
@@ -158,6 +160,7 @@
 					connections.status(connection.id) !== null ||
 					connections.statusFailure(connection.id) !== null
 			) &&
+			!(appContext.capabilities.scripts && credentials?.state === 'loading') &&
 			(inboxKeys === null ||
 				inboxKeys.state === 'ready' ||
 				inboxKeys.state === 'unavailable' ||
