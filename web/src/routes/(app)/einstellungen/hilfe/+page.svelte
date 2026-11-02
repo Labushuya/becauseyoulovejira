@@ -50,7 +50,10 @@
 	// Since MO-7a the section "Ohne Verbindung" (ADR-0074) says what the outbox keeps (OF-2 to OF-4b),
 	// what goes only with a connection, the dialog "Gemerkte Änderungen", the notices that stay and
 	// the limits, in the words of OFFLINE_TEXTS. Since MO-7c1 it names the locked bulk actions of the
-	// inbox, and in the phone frame the parts about the keyboard are folded (KeyboardFold).
+	// inbox, and in the phone frame the parts about the keyboard are folded (KeyboardFold). Since BW-2
+	// (ADR-0072 addendum) every restart goes through „Jetzt neu starten“ in the browser; the file of
+	// the folder app for it stands only in "Notfall: wenn die Weboberfläche nicht erreichbar ist"
+	// under "Betrieb" (#betrieb-notfall, guarded by tests/unit/restart-hints-guard.test.mjs).
 
 	const mode = $derived(appContext.capabilities.mode);
 
@@ -587,9 +590,11 @@
 					Name und Wert eintragen, mit „OK“ bestätigen.
 				</li>
 				<li>
-					Danach die App neu starten: <code>neu-starten.bat</code> im Ordner <code>app</code>
-					doppelklicken. Es erkennt die neue oder geänderte Variable und startet neu. Erst dann sieht
-					die App die Variable, und die Karte der Verbindung steht nicht mehr auf „Einrichtung offen“.
+					Danach die App neu starten: unter Einstellungen → System „Jetzt neu starten“. Erst dann
+					sieht die App die Variable, und an der Karte der Verbindung geht der Hinweis „Wartet auf
+					Neustart“. Fehlt danach noch ein Schritt, etwa der erste Abruf, bleibt die Karte auf
+					„Einrichtung offen“, bis er erledigt ist. Lädt die Weboberfläche nicht, steht der Weg über
+					den Ordner <code>app</code> unter <a href="#betrieb-notfall">Betrieb</a>.
 				</li>
 			</ol>
 			<p class="note">
@@ -777,9 +782,9 @@
 			</li>
 			<li>
 				<PcOnly inline>
-					Das Token (beginnt mit <code>ntn_</code>) als Windows-Variable setzen, Vorschlag
-					<code>BYL_NOTION_TOKEN</code>, dann <code>neu-starten.bat</code> im Ordner
-					<code>app</code> doppelklicken. Für einen weiteren Arbeitsbereich legst du eine weitere
+					Das Token (beginnt mit <code>ntn_</code>) im Assistenten als Windows-Variable setzen,
+					Vorschlag <code>BYL_NOTION_TOKEN</code>, dann dort „Jetzt neu starten“ (wie unter
+					Einstellungen → System). Für einen weiteren Arbeitsbereich legst du eine weitere
 					Verbindung an; der Assistent schlägt dann einen freien Namen vor (etwa
 					<code>BYL_NOTION_TOKEN_2</code>), damit das erste Token bleibt.
 				</PcOnly>
@@ -900,8 +905,9 @@
 			</li>
 			<li>
 				<PcOnly inline>
-					Das Token als Windows-Variable setzen, Vorschlag <code>BYL_GITHUB_TOKEN</code>, und
-					<code>neu-starten.bat</code> im Ordner <code>app</code> doppelklicken.
+					Das Token im Assistenten als Windows-Variable setzen, Vorschlag
+					<code>BYL_GITHUB_TOKEN</code>, dann dort „Jetzt neu starten“ (wie unter Einstellungen →
+					System).
 				</PcOnly>
 			</li>
 		</ol>
@@ -972,8 +978,9 @@
 			</li>
 			<li>
 				Das Token bleibt in der Variablen auf diesem Rechner; die App schickt es nur an GitHub und
-				zeigt es nirgends. Widerrufen: unter „Fine-grained tokens“ beim Token „Revoke“, dann die
-				Variable löschen und die App neu starten.
+				zeigt es nirgends. Widerrufen: unter „Fine-grained tokens“ beim Token „Revoke“, dann an der
+				Karte unter „Zugangsdaten“ die Variable mit „Entfernen …“ löschen und die App neu starten
+				(Einstellungen → System → „Jetzt neu starten“).
 			</li>
 		</ul>
 	</section>
@@ -1080,8 +1087,8 @@
 					<li>
 						Postfächer ruft der Hilfsprozess alle 5 Minuten ab.
 						<PcOnly need="script" inline>
-							Er heißt <code>byl-mail.exe</code> und startet mit <code>start.bat</code>, sobald eine
-							eingeschaltete Postfach-Verbindung besteht; sein Protokoll steht in
+							Er heißt <code>byl-mail.exe</code> und startet mit der App, sobald eine eingeschaltete
+							Postfach-Verbindung besteht; sein Protokoll steht in
 							<code>app\logs\byl-mail.log</code>.
 						</PcOnly>
 					</li>
@@ -1125,8 +1132,9 @@
 				<p>
 					{RESTART_NEEDED.text}
 					<PcOnly need="script" inline quiet>
-						Läuft die App, öffnet <code>start.bat</code> allein nur den Browser;
-						<code>neu-starten.bat</code> startet den Server neu, wenn ein Update es braucht.
+						Den Knopf „Jetzt neu starten“ bietet der Hinweis auch selbst an. Lädt die Weboberfläche
+						nicht, steht der Weg über den Ordner <code>app</code> unter
+						<a href="#betrieb-notfall">Betrieb</a>.
 					</PcOnly>
 				</p>
 			</details>
@@ -1148,8 +1156,9 @@
 					<li><strong>Gmail:</strong> das App-Passwort unter „App-Passwörter“ entfernen.</li>
 				</ul>
 				<p>
-					Danach die Variable entfernen und die App neu starten, oder die Verbindung unter „Kanäle“
-					im Menü „•••“ ihrer Karte pausieren bzw. löschen.
+					Danach an der Karte unter „Zugangsdaten“ die Variable mit „Entfernen …“ löschen und die
+					App neu starten (Einstellungen → System → „Jetzt neu starten“), oder die Verbindung unter
+					„Kanäle“ im Menü „•••“ ihrer Karte pausieren bzw. löschen.
 				</p>
 			</details>
 			<details>
@@ -1798,10 +1807,10 @@
 			<div class="row">
 				<dt>Neu starten</dt>
 				<dd>
-					<code>neu-starten.bat</code> im Ordner <code>app</code>. Es startet nur neu, wenn es nötig
-					ist: nach einem Update mit neuer Migration oder Server-Logik, nach einer neuen oder
-					geänderten <code>BYL_</code>-Variable oder einem neuen Mail-Hilfsprozess. Ist nur die
-					Oberfläche neu gebaut, sagt es „F5 im offenen Tab genügt“.
+					„Jetzt neu starten“ unter Einstellungen → System (siehe „Aus dem Dashboard“). Braucht eine
+					Ansicht nach einem Update den Neustart, bietet ihr Hinweis denselben Knopf an Ort und
+					Stelle; ebenso die Einrichtungsassistenten und das Setzen von Zugangsdaten. Lädt die
+					Weboberfläche nicht, siehe <a href="#betrieb-notfall">Notfall</a> unten.
 				</dd>
 			</div>
 			<div class="row">
@@ -1834,10 +1843,12 @@
 				<dt>Adresse und Port</dt>
 				<dd>
 					Diese App läuft unter <code>{page.url.origin}</code>. Den Port stellst du in PowerShell im
-					Ordner <code>app</code> um, danach <code>neu-starten.bat</code>:
+					Ordner <code>app</code> um:
 					<CodeBlock code={PORT_COMMAND} label="Port umstellen (PowerShell)" />
-					Lesezeichen, die installierte App und die Browser-Erweiterung für WhatsApp Web brauchen dann
-					die neue Adresse; anmelden musst du dich dort einmal neu.
+					Danach die App neu starten (Einstellungen → System → „Jetzt neu starten“) und die neue Adresse
+					öffnen; unter der alten erreicht dieser Tab sie nicht mehr. Lesezeichen, die installierte App
+					und die Browser-Erweiterung für WhatsApp Web brauchen dann die neue Adresse; anmelden musst
+					du dich dort einmal neu.
 				</dd>
 			</div>
 			<div class="row">
@@ -1901,6 +1912,23 @@
 				</dd>
 			</div>
 		</dl>
+		<h4 id="betrieb-notfall">Notfall: wenn die Weboberfläche nicht erreichbar ist</h4>
+		<p>
+			Nur wenn die Seiten der App nicht laden oder „Jetzt neu starten“ nicht geht, hilft der Ordner
+			<code>app</code>:
+		</p>
+		<ul>
+			<li>
+				<code>neu-starten.bat</code> im Ordner <code>app</code> doppelklicken. Es startet nur neu,
+				wenn es nötig ist: nach einem Update mit neuer Migration oder Server-Logik, nach einer neuen
+				oder geänderten <code>BYL_</code>-Variable oder einem neuen Mail-Hilfsprozess. Ist nur die
+				Oberfläche neu gebaut, sagt es „F5 im offenen Tab genügt“.
+			</li>
+			<li>
+				Antwortet die App danach gar nicht mehr, startet <code>start.bat</code> sie wieder. Was
+				passiert ist, steht in <code>app\logs\byl-control.log</code>.
+			</li>
+		</ul>
 		<h4 id="betrieb-probleme">Probleme mit den Skripten</h4>
 		<ScriptProblemsHelp origin={page.url.origin} port={page.url.port || '8090'} />
 	{/snippet}
@@ -2079,10 +2107,8 @@
 				Die App neu starten: unter <a href={resolve('/einstellungen/system')}
 					>Einstellungen → System</a
 				>
-				„Jetzt neu starten“<PcOnly need="script" inline quiet>
-					oder <code>neu-starten.bat</code></PcOnly
-				>. Erscheint danach die Windows-Sicherheitswarnung für pocketbase.exe, nur „Private
-				Netzwerke“ anhaken.
+				„Jetzt neu starten“ (der Hinweis „Neustart nötig“ der Seite Sicherheit bietet denselben Knopf).
+				Erscheint danach die Windows-Sicherheitswarnung für pocketbase.exe, nur „Private Netzwerke“ anhaken.
 			</li>
 			<li>
 				Auf dem anderen Gerät im selben WLAN die „Adresse für andere Geräte“ der Seite Sicherheit im

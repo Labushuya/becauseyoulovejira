@@ -433,7 +433,7 @@ Für den Fall, dass der Rechner der App ausfällt ([ADR-0046](docs/adr/0046-sich
 3. **`app\wiederherstellen.bat`** doppelklicken und den vollen Pfad dieser Datei eingeben (im Explorer: Umschalt + Rechtsklick → „Als Pfad kopieren“). Es braucht keinen Ordner `pb_data`.
 4. **Passphrase** aus deinem Passwort-Manager eingeben. Die Prüfung meldet danach Tickets und Originaldateien.
 5. **Zugangsdaten zurückschreiben:** Die Liste nennt die Namen der `BYL_*`-Variablen in der Sicherung; `f` schreibt die fehlenden in die Windows-Umgebungsvariablen deines Kontos. Dann `WIEDERHERSTELLEN` eintippen: Die App startet mit dem Stand der Sicherung, in einem neuen Ordner ohne `byl-config.json` auch mit ihren Einstellungen (Port, Zielverzeichnis, Aufbewahrung). Auf Wunsch die Passphrase für künftige Sicherungen speichern.
-6. **`neu-starten.bat`**, wenn du Zugangsdaten später von Hand setzt (`setx`) oder änderst.
+6. **Neu starten:** Setzt oder änderst du Zugangsdaten später, danach die App neu starten: Einstellungen → System → „Jetzt neu starten“. Nach „Setzen …“ an einer Karte unter Kanäle fragt die App das von selbst.
 7. **Autostart:** `autostart-an.bat` doppelklicken, wenn die App bei der Anmeldung starten soll.
 8. **Web-App:** die App im Browser öffnen, anmelden und in Chrome oder Edge wieder als App installieren (siehe [Als App installieren](#als-app-installieren)).
 9. **Erweiterung für WhatsApp Web:** aus `app\erweiterung-whatsapp-web` neu laden, unter **Kanäle → Eigener Eingang** einen neuen Zugangsschlüssel erzeugen und eintragen, den alten widerrufen. Die App kennt Schlüssel nur als Prüfwert.
