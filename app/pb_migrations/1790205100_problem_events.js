@@ -3,7 +3,7 @@
 // row of another collection changes.
 //
 // - problem_events: one row per failure, the same failure again counts on it (count, last_at). source
-//   (`request` an unexpected 5xx of a request, `channel` a failed run of a channel, `job` another job),
+//   (`request` an unexpected failure of a request, `channel` a failed run of a channel, `job` another job),
 //   area (`private` only the owner, `household` the members of the household, `system` the
 //   administrator of the app), owner (only in the private area) and household (only in its area),
 //   both with cascade, code, message (cleaned, at most 300 characters), context (JSON with the keys of

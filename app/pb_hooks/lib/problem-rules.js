@@ -18,8 +18,12 @@ var CODE_MAX = 60;
 var ROUTE_MAX = 200;
 var DAY_MS = 24 * 60 * 60 * 1000;
 
-// The header of an answer with an unexpected 5xx that names its entry (the SPA takes it as Server-ID).
+// The header of an answer with an unexpected failure that names its entry (the SPA takes it as
+// Server-ID).
 var HEADER = 'X-Byl-Problem';
+// The code of a failure of the app that PocketBase answers with 400 (ADR-0077 §2); only it keeps the
+// status 400 in its context.
+var UNEXPECTED_400 = 'http_400_unexpected';
 
 /** Where a failure came from: a request (API and hooks), a channel in the background, another job. */
 var SOURCES = ['request', 'channel', 'job'];
@@ -62,14 +66,23 @@ var TELEGRAM_TOKEN = /\b\d{5,}:[A-Za-z0-9_-]{30,}/g;
 var NOTION_TOKEN = /\b(?:ntn|secret)_[A-Za-z0-9]{30,}/g;
 var GITHUB_TOKEN = /\b(?:github_pat_[A-Za-z0-9_]{20,}|gh[pousr]_[A-Za-z0-9]{20,})/g;
 var INBOX_KEY = /\bbyl_[A-Za-z0-9]{20,}/g;
-// Anything else that looks like a key: 40 and more characters of letters, digits, _, + and -.
+// Anything else that looks like a key: 40 and more characters of letters, digits, _, + and -, or 32
+// and more of them with letters and digits mixed (a hex or Base64 key; an ID of PocketBase has 15, a
+// word no digit).
 var LONG_TOKEN = /\b[A-Za-z0-9_+-]{40,}={0,2}/g;
+var MIXED_TOKEN = /\b(?=[A-Za-z0-9_+-]*[0-9])(?=[A-Za-z0-9_+-]*[A-Za-z])[A-Za-z0-9_+-]{32,}={0,2}/g;
 // Paths of this computer: only the name of the file stays (no user name of Windows).
 var WINDOWS_PATH = /(?:\b[A-Za-z]:|\\\\[^\\\s"'<>]+)[\\\/][^\s"'<>]*/g;
 var UNIX_HOME_PATH = /(?:^|[\s(])\/(?:home|Users|root|tmp|private|var|mnt|media|opt|srv)\/[^\s"'<>)]*/g;
-// Quoted parts often hold content (a title, a line of a calendar): they become "…" and „…“.
+// Quoted parts often hold content (a title, a line of a calendar): they become "…" and „…“, and the
+// same for single quotes (only after the start, white space or an opening sign, so the apostrophe of
+// "geht's" stays, and one before a letter belongs to the word inside), guillemets (\u00BB…\u00AB)
+// and low single quotes (\u201A…\u2018).
 var DOUBLE_QUOTED = /"[^"\n]*"/g;
 var GERMAN_QUOTED = /„[^“\n]*“/g;
+var SINGLE_QUOTED = /(^|[\s(\[{:=,;])'(?:[^'\n]|'(?=[A-Za-z\u00C0-\u024F])){1,300}'/g;
+var GUILLEMETS = /\u00BB[^\u00AB\n]*\u00AB/g;
+var LOW_SINGLE_QUOTED = /\u201A[^\u2018\n]*\u2018/g;
 
 function text(value) {
   return value === undefined || value === null ? '' : String(value);
@@ -114,6 +127,7 @@ function cleanMessage(value, max) {
     .replace(GITHUB_TOKEN, REDACTED)
     .replace(INBOX_KEY, REDACTED)
     .replace(LONG_TOKEN, REDACTED)
+    .replace(MIXED_TOKEN, REDACTED)
     .replace(WINDOWS_PATH, function (path) {
       return '…\\' + lastSegment(path);
     })
@@ -123,6 +137,9 @@ function cleanMessage(value, max) {
     })
     .replace(DOUBLE_QUOTED, '"…"')
     .replace(GERMAN_QUOTED, '„…“')
+    .replace(SINGLE_QUOTED, "$1'…'")
+    .replace(GUILLEMETS, '\u00BB…\u00AB')
+    .replace(LOW_SINGLE_QUOTED, '\u201A…\u2018')
     .replace(/[\u0000-\u001f\u007f]/g, ' ')
     .replace(/\s+/g, ' ')
     .replace(/^\s+|\s+$/g, '');
@@ -136,7 +153,13 @@ function cleanCode(value) {
 
 // --- Routes and the context ----------------------------------------------------------------------
 
-/** Path of a request without origin, query and hash, at most ROUTE_MAX characters. */
+// A file of a record: /api/files/<collection>/<record>/<file name>; the name is content.
+var FILES_ROUTE = /^\/api\/files\/[^\/]+\/[^\/]+\/./;
+
+/**
+ * Path of a request without origin, query and hash, at most ROUTE_MAX characters; under /api/files/
+ * the file name (also percent-encoded) is `*`.
+ */
 function routeOf(path) {
   var rest = text(path).replace(/^\s+|\s+$/g, '');
   var origin = /^[a-z][a-z\d+.-]*:\/\/[^\/?#]*/i.exec(rest);
@@ -150,6 +173,10 @@ function routeOf(path) {
   rest = rest.replace(/[^A-Za-z0-9\/._~%{}*-]/g, '_');
   if (rest.charAt(0) !== '/') {
     rest = '/' + rest;
+  }
+  if (FILES_ROUTE.test(rest)) {
+    // '', 'api', 'files', collection, record: everything after them is the name of the file.
+    rest = rest.split('/').slice(0, 5).join('/') + '/*';
   }
   return rest.length > ROUTE_MAX ? rest.slice(0, ROUTE_MAX) : rest;
 }
@@ -173,9 +200,10 @@ function routePattern(route) {
 /**
  * The context of an entry with only the keys of CONTEXT_KEYS: `connection` and `rule` as IDs,
  * `channel` a kind of connection, `job` a short name, `method` an HTTP method, `route` a path
- * without query (routeOf), `status` a status from 500 to 599. Everything else is dropped.
+ * without query (routeOf), `status` a status from 500 to 599, or 400 for the code `code` of
+ * UNEXPECTED_400 only. Everything else is dropped.
  */
-function contextOf(input) {
+function contextOf(input, code) {
   var source = input !== null && typeof input === 'object' ? input : {};
   var context = {};
   if (ID_PATTERN.test(text(source.connection))) {
@@ -198,7 +226,7 @@ function contextOf(input) {
     context.route = routeOf(source.route);
   }
   var status = Number(source.status);
-  if (Math.floor(status) === status && status >= 500 && status <= 599) {
+  if ((Math.floor(status) === status && status >= 500 && status <= 599) || (status === 400 && cleanCode(code) === UNEXPECTED_400)) {
     context.status = status;
   }
   return context;
@@ -275,7 +303,7 @@ function eventOf(input, now) {
     household: household,
     code: cleanCode(source.code),
     message: cleanMessage(source.message),
-    context: contextOf(source.context),
+    context: contextOf(source.context, source.code),
     at: pocketBaseTime(now)
   };
 }
@@ -302,24 +330,99 @@ function holdersOf(err) {
   return list;
 }
 
-/**
- * The status PocketBase 0.40.4 answers a thrown error with (ToApiError of its router): the status of
- * an ApiError, 404 for "no rows" of the database and 400 ("Something went wrong …") for any other
- * error, also a plain Error of a hook. Only an ApiError can therefore be a 5xx.
- */
-function statusOf(err) {
+// What PocketBase 0.40.4 answers with 404 instead of 400 (ToApiError: sql.ErrNoRows, fs.ErrNotExist).
+var NOT_FOUND = /no rows in result set|file does not exist|no such file or directory|cannot find the (?:file|path) specified/i;
+// A request the client cancelled (context.Canceled of Go).
+var CANCELLED = /\bcontext canceled\b/;
+// A body that is too large or cannot be read: the JSON of PocketBase 0.40.4 fails with "jsontext: …"
+// or "json: …", a form with "multipart"/"mime: …"/an escape of the URL.
+var UNREADABLE_BODY = /^(?:jsontext|json|mime): |multipart|request body too large|entity too large|invalid URL escape|invalid semicolon separator/i;
+// The record API answers a failed save of create and update with these messages (apis/record_crud.go of
+// PocketBase 0.40.4); the check of its create rule uses the first one too, with "create rule …" or
+// "dummy DBExport …" behind it.
+var RECORD_SAVE = /^Failed to (?:create|update) record\.$/;
+var RULE_CHECK = /^(?:create rule|dummy DBExport)/;
+
+/** The ApiError of a thrown value, also wrapped in a GoError (`value`), or null. */
+function apiErrorOf(err) {
   var holders = holdersOf(err);
   for (var i = 0; i < holders.length; i++) {
     if (typeof holders[i].status === 'number') {
-      return holders[i].status;
+      return holders[i];
     }
   }
-  return /no rows in result set/.test(errorText(err)) ? 404 : 400;
+  return null;
+}
+
+/** The error of Go behind a thrown value (`value` of a GoError), or null for a value of JavaScript. */
+function goErrorOf(err) {
+  return err !== null && typeof err === 'object' && err.value !== null && typeof err.value === 'object' ? err.value : null;
+}
+
+/** Whether the data of an ApiError holds field errors; when in doubt yes. */
+function hasFieldErrors(data) {
+  try {
+    return data !== null && typeof data === 'object' && Object.keys(data).length > 0;
+  } catch (err) {
+    return true;
+  }
+}
+
+/**
+ * Whether a refused save of the record API (400 "Failed to create record." or "Failed to update
+ * record." without field errors) failed in the app: an error of a model hook or of the database behind
+ * it. Not the check of the create rule, no ApiError behind it, nothing missing, no cancelled request.
+ */
+function isFailedSave(apiError) {
+  if (apiError.status !== 400 || !RECORD_SAVE.test(text(apiError.message)) || hasFieldErrors(apiError.data)) {
+    return false;
+  }
+  try {
+    var raw = typeof apiError.rawData === 'function' ? apiError.rawData() : null;
+    if (raw === null || raw === undefined || (typeof raw === 'object' && typeof raw.status === 'number')) {
+      return false;
+    }
+    var rawText = text(raw);
+    return rawText !== '' && rawText !== '<nil>' && !RULE_CHECK.test(rawText) && !NOT_FOUND.test(rawText) && !CANCELLED.test(rawText);
+  } catch (err) {
+    return false;
+  }
 }
 
 /** Whether a request that ended with `status` failed unexpectedly: 5xx except the deliberate ones. */
 function isUnexpectedStatus(status) {
   return typeof status === 'number' && status >= 500 && status <= 599 && DELIBERATE_STATUSES.indexOf(status) === -1;
+}
+
+/**
+ * How the error log takes a failed request (ADR-0077 §2), from what PocketBase 0.40.4 answers (ToApiError
+ * of its router): `{ code, status }` of its entry, or null when the failure is expected.
+ * - An ApiError (also in a GoError) with 500 to 599 except the deliberate 502 and 503: `http_<status>`.
+ * - A thrown value without the status of an ApiError, which PocketBase answers with 400 ("Something went
+ *   wrong …"): an Error, TypeError or RangeError of a hook, a failure() of a client, an error of Go from
+ *   save() or the database ("database is locked"): UNEXPECTED_400. Not an error of Go that is a
+ *   validation (`isValidation(goError)`: PocketBase answers it with field errors), a missing record or
+ *   file (404), a cancelled request or a body that is too large or cannot be read.
+ * - An ApiError 400 of the record API whose save failed (isFailedSave), e.g. an Error of a model hook
+ *   behind "Failed to create record.": UNEXPECTED_400.
+ * Any other ApiError (4xx, the deliberate 502 and 503) is expected.
+ */
+function requestFailureOf(err, isValidation) {
+  var apiError = apiErrorOf(err);
+  if (apiError !== null) {
+    if (isUnexpectedStatus(apiError.status)) {
+      return { code: 'http_' + apiError.status, status: apiError.status };
+    }
+    return isFailedSave(apiError) ? { code: UNEXPECTED_400, status: 400 } : null;
+  }
+  var goError = goErrorOf(err);
+  if (goError !== null) {
+    var message = errorText(err);
+    if (NOT_FOUND.test(message) || CANCELLED.test(message) || UNREADABLE_BODY.test(message) || isValidation(goError)) {
+      return null;
+    }
+  }
+  return { code: UNEXPECTED_400, status: 400 };
 }
 
 /** The text of a thrown error: its message and, for an ApiError of PocketBase, the error behind it. */
@@ -362,6 +465,7 @@ module.exports = {
   ROUTE_MAX: ROUTE_MAX,
   DAY_MS: DAY_MS,
   HEADER: HEADER,
+  UNEXPECTED_400: UNEXPECTED_400,
   SOURCES: SOURCES,
   AREAS: AREAS,
   CONTEXT_KEYS: CONTEXT_KEYS,
@@ -377,8 +481,8 @@ module.exports = {
   fingerprintSource: fingerprintSource,
   eventOf: eventOf,
   areaOf: areaOf,
-  statusOf: statusOf,
   isUnexpectedStatus: isUnexpectedStatus,
+  requestFailureOf: requestFailureOf,
   errorText: errorText,
   pocketBaseTime: pocketBaseTime
 };

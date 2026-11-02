@@ -102,12 +102,12 @@ function record(app, input) {
 }
 
 /**
- * An unexpected 5xx of a request (the middleware of problem-events.pb.js): private for a signed-in
- * account (only it sees the entry, ADR-0077 §5), for everything else (no account, a superuser, the
- * mail helper) the area of the administrator. Method, route without query and status; never a body,
- * a header or a token.
+ * An unexpected failure of a request (`failure` of rules.requestFailureOf: code and status): private
+ * for a signed-in account (only it sees the entry, ADR-0077 §5), for everything else (no account, a
+ * superuser, the mail helper) the area of the administrator. Method, route without query and status;
+ * never a body, a header or a token.
  */
-function recordRequest(e, err, status) {
+function recordRequest(e, err, failure) {
   var owner = '';
   try {
     if (e.auth && !e.hasSuperuserAuth()) {
@@ -128,34 +128,44 @@ function recordRequest(e, err, status) {
     source: 'request',
     area: owner === '' ? 'system' : 'private',
     owner: owner,
-    code: 'http_' + status,
+    code: failure.code,
     message: rules.errorText(err),
-    context: { method: method, route: path, status: status }
+    context: { method: method, route: path, status: failure.status }
   });
 }
 
 /**
- * The middleware of every request: a thrown error that PocketBase answers with an unexpected 5xx
- * gets an entry, and its answer the header X-Byl-Problem with the ID of the entry; the error goes
- * on unchanged, so status and body of the answer stay those of PocketBase. 4xx, the deliberate 502
- * and 503 and answers written by a route are no entry.
+ * Whether PocketBase answers the error of Go `value` with field errors, i.e. a validation (ToApiError
+ * of 0.40.4 takes them from it the same way). When in doubt yes: no entry.
  */
-function middleware(e) {
+function isValidation(value) {
   try {
-    return e.next();
+    var data = new ApiError(400, '', value).data;
+    return data !== null && data !== undefined && Object.keys(data).length > 0;
   } catch (err) {
-    try {
-      var status = rules.statusOf(err);
-      if (rules.isUnexpectedStatus(status)) {
-        var id = recordRequest(e, err, status);
-        if (id !== '' && !e.written()) {
-          e.response.header().set(rules.HEADER, id);
-        }
-      }
-    } catch (ignored) {
-      // The log must never change the answer of the request.
+    return true;
+  }
+}
+
+/**
+ * A failed request (the wrapper of every request in static-cache.pb.js calls it in its catch and then
+ * throws `err` on unchanged, so status and body of the answer stay those of PocketBase): an unexpected
+ * failure (rules.requestFailureOf) gets an entry, and its answer the header X-Byl-Problem with the ID
+ * of the entry. Refusals, validations, the deliberate 502 and 503 and answers written by a route are no
+ * entry. Never throws.
+ */
+function onRequestError(e, err) {
+  try {
+    var failure = rules.requestFailureOf(err, isValidation);
+    if (failure === null) {
+      return;
     }
-    throw err;
+    var id = recordRequest(e, err, failure);
+    if (id !== '' && !e.written()) {
+      e.response.header().set(rules.HEADER, id);
+    }
+  } catch (ignored) {
+    // The log must never change the answer of the request.
   }
 }
 
@@ -222,7 +232,7 @@ module.exports = {
   prune: prune,
   record: record,
   recordRequest: recordRequest,
-  middleware: middleware,
+  onRequestError: onRequestError,
   recordChannel: recordChannel,
   recordRule: recordRule,
   recordJob: recordJob

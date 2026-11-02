@@ -3,22 +3,10 @@
 // the background and of other jobs, kept together and for a limited time in problem_events. Only
 // lib/problem-service.js writes it; the SPA reads it through the record API, whose list and view
 // rules show an entry of the private area only to its owner (also not to the administrator), one of
-// a household to its members and one of the app to the administrator.
-
-// Every request: an error that PocketBase answers with an unexpected 5xx gets an entry and its answer
-// the header X-Byl-Problem with the ID of the entry. The error goes on unchanged. After the guard
-// (-1042), CORS and the token of the session (priority 0, like the cache rules), so the account of
-// the request is known. A Middleware is compiled from its source in every VM: the function must not
-// use outer names.
-routerUse(
-  new Middleware(
-    function (e) {
-      return require(`${__hooks}/lib/problem-service.js`).middleware(e);
-    },
-    0,
-    'bylProblemEvents'
-  )
-);
+// a household to its members and one of the app to the administrator. The failures of requests are
+// taken in the existing wrapper of every request (static-cache.pb.js), not in one of their own: each
+// global JS middleware around e.next() holds a runtime of the JSVM pool for the whole request, also
+// for every open realtime connection (ADR-0077, Konsequenzen).
 
 // Entries whose last occurrence is older than 30 days and beyond the newest 5000 go once a day at
 // 11:55 UTC, when the app usually runs (and with every new entry); idempotent, so a missed day is

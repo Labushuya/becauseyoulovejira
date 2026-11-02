@@ -76,6 +76,32 @@ describe('problem-rules.js: cleaning (privacy, ADR-0077 §4)', () => {
 		expect(rules.cleanMessage('Verbindung „Annas Kalender“ scheiterte')).toBe('Verbindung „…“ scheiterte');
 	});
 
+	it('removes single-quoted content and the content of guillemets and low single quotes', () => {
+		expect(rules.cleanMessage("Titel 'Arzt bei Dr. Beispiel' ungültig")).toBe("Titel '…' ungültig");
+		expect(rules.cleanMessage("'Annas Kalender' und ('Bens Liste') fehlen")).toBe("'…' und ('…') fehlen");
+		expect(rules.cleanMessage("Verbindung 'Anna's Kalender' scheiterte")).toBe("Verbindung '…' scheiterte");
+		expect(rules.cleanMessage('Verbindung \u00BBAnnas Kalender\u00AB scheiterte')).toBe('Verbindung \u00BB…\u00AB scheiterte');
+		expect(rules.cleanMessage('Liste \u201AEinkauf\u2018 fehlt')).toBe('Liste \u201A…\u2018 fehlt');
+		// An apostrophe in a word is no quote.
+		for (const kept of ["Das geht's nicht", "can't read Anna's file", 'Feld fehlt']) expect(rules.cleanMessage(kept)).toBe(kept);
+	});
+
+	it('removes a key of 32 characters with letters and digits, but no word and no ID of PocketBase', () => {
+		const hex = 'd41d8cd98f00b204' + 'e9800998ecf8427e';
+		const base64 = 'Q2VoZWltZXJUZXN0' + 'MTIzNDU2Nzg5MDEy';
+		expect(rules.cleanMessage(`Schlüssel ${hex} abgelehnt`)).toBe('Schlüssel [entfernt] abgelehnt');
+		expect(rules.cleanMessage(`Token ${base64}== ungültig`)).toBe('Token [entfernt] ungültig');
+		for (const kept of [
+			// 31 characters with digits, a word of 39 letters, IDs of PocketBase, a route with IDs.
+			`Wert ${hex.slice(0, 31)} bleibt`,
+			'Die Rechtsschutzversicherungsgesellschaften antworten nicht',
+			'Ticket abc123def456ghi und xyz987uvw654rst fehlen',
+			'POST /api/byl/connections/conn00000000001/run'
+		]) {
+			expect(rules.cleanMessage(kept)).toBe(kept);
+		}
+	});
+
 	it('collapses white space and cuts to 300 characters', () => {
 		expect(rules.cleanMessage('  zu   viel\t Raum  ')).toBe('zu viel Raum');
 		const long = rules.cleanMessage('Fehler '.repeat(100));
@@ -113,6 +139,30 @@ describe('problem-rules.js: the context', () => {
 		expect(rules.routeOf(`/api/${'a'.repeat(300)}`)).toHaveLength(rules.ROUTE_MAX);
 		expect(rules.routeOf('/api/byl/x y<z>')).toBe('/api/byl/x_y_z_');
 		expect(rules.routeOf('api/health')).toBe('/api/health');
+	});
+
+	it('hides the file name of /api/files, also percent-encoded', () => {
+		expect(rules.routeOf('/api/files/inbox_items/abc123def456ghi/rechnung_anna.pdf')).toBe('/api/files/inbox_items/abc123def456ghi/*');
+		expect(rules.routeOf('/api/files/inbox_items/abc123def456ghi/Arztbrief%20M%C3%BCller.pdf?thumb=100x100')).toBe(
+			'/api/files/inbox_items/abc123def456ghi/*'
+		);
+		expect(rules.contextOf({ route: '/api/files/tickets/abc123def456ghi/a/b.txt' })).toEqual({ route: '/api/files/tickets/abc123def456ghi/*' });
+		// Without a file name and outside of /api/files the route stays.
+		for (const kept of ['/api/files/token', '/api/byl/files/abc123def456ghi/x.pdf', '/api/byl/tickets/abc123def456ghi/duplicate']) {
+			expect(rules.routeOf(kept)).toBe(kept);
+		}
+	});
+
+	it('keeps the status 400 only for an unexpected failure that PocketBase answers with 400', () => {
+		expect(rules.contextOf({ status: 400 })).toEqual({});
+		expect(rules.contextOf({ status: 400 }, 'http_500')).toEqual({});
+		expect(rules.contextOf({ status: 400 }, rules.UNEXPECTED_400)).toEqual({ status: 400 });
+		expect(rules.contextOf({ status: 404 }, rules.UNEXPECTED_400)).toEqual({});
+		const stored = rules.eventOf(
+			{ source: 'request', area: 'system', code: 'http_400_unexpected', message: 'Kaputt', context: { method: 'GET', route: '/x', status: 400 } },
+			Date.UTC(2026, 10, 2)
+		);
+		expect(stored.context).toEqual({ method: 'GET', route: '/x', status: 400 });
 	});
 
 	it('lists exactly the keys of CONTEXT_KEYS', () => {
@@ -222,12 +272,65 @@ describe('problem-rules.js: entries and areas', () => {
 });
 
 describe('problem-rules.js: failures of a request', () => {
-	it('takes the status of an ApiError, also wrapped, 404 for missing rows and else 400, like PocketBase', () => {
-		expect(rules.statusOf({ status: 500, message: 'x' })).toBe(500);
-		expect(rules.statusOf({ message: 'GoError', value: { status: 503 } })).toBe(503);
-		expect(rules.statusOf({ message: 'sql: no rows in result set' })).toBe(404);
-		expect(rules.statusOf(new TypeError('x is undefined'))).toBe(400);
-		expect(rules.statusOf('kaputt')).toBe(400);
+	// The shapes the catch of the wrapper sees in PocketBase 0.40.4 (tests/fixtures/pb_hooks/
+	// problem-events-probe.pb.js): an Error of JavaScript as it is, an error of Go as GoError with
+	// `value`, an ApiError as that value with status, message, data and rawData().
+	const UNEXPECTED = { code: 'http_400_unexpected', status: 400 };
+	const noValidation = () => false;
+	const goError = (message, value = {}) => ({ name: 'GoError', message, value });
+	const apiError = (status, message, data = {}, raw = null) => goError(message, { status, message, data, rawData: () => raw });
+
+	it('takes an ApiError with an unexpected 5xx by its status, also wrapped', () => {
+		expect(rules.requestFailureOf({ status: 500, message: 'x' }, noValidation)).toEqual({ code: 'http_500', status: 500 });
+		expect(rules.requestFailureOf(apiError(504, 'Zu langsam'), noValidation)).toEqual({ code: 'http_504', status: 504 });
+		for (const status of [400, 401, 403, 404, 429, 502, 503]) {
+			expect(rules.requestFailureOf(apiError(status, 'Erwartet'), noValidation), String(status)).toBeNull();
+		}
+	});
+
+	it('takes every thrown value without the status of an ApiError as an unexpected 400', () => {
+		for (const thrown of [new Error('Kaputt'), new TypeError('x is undefined'), new RangeError('zu groß'), 'kaputt', undefined]) {
+			expect(rules.requestFailureOf(thrown, noValidation)).toEqual(UNEXPECTED);
+		}
+		expect(rules.requestFailureOf(goError('database is locked'), noValidation)).toEqual(UNEXPECTED);
+		expect(rules.requestFailureOf(goError('UNIQUE constraint failed: tickets.key'), noValidation)).toEqual(UNEXPECTED);
+	});
+
+	it('takes no validation, nothing missing, no cancelled request and no unreadable body', () => {
+		const validation = goError('title: cannot be blank.', { title: {} });
+		expect(rules.requestFailureOf(validation, (value) => value === validation.value)).toBeNull();
+		for (const message of [
+			'sql: no rows in result set',
+			'open C:\\x\\y.txt: The system cannot find the file specified.',
+			'open /x/y.txt: no such file or directory',
+			'context canceled',
+			'jsontext: invalid character \'k\' at start of value within "/titel" after offset 10',
+			'jsontext: unexpected EOF within "/titel" after offset 12',
+			'multipart: NextPart: EOF',
+			'http: request body too large'
+		]) {
+			expect(rules.requestFailureOf(goError(message), noValidation), message).toBeNull();
+		}
+		// An Error of JavaScript always counts: only Go names these failures of the client.
+		expect(rules.requestFailureOf(new SyntaxError('jsontext: invalid character'), noValidation)).toEqual(UNEXPECTED);
+	});
+
+	it('takes a failed save of the record API without field errors, not the check of its rule', () => {
+		const hook = 'Error: Kaputt im Model-Hook\n\tat pb.js:3:11(11)';
+		expect(rules.requestFailureOf(apiError(400, 'Failed to create record.', {}, hook), noValidation)).toEqual(UNEXPECTED);
+		expect(rules.requestFailureOf(apiError(400, 'Failed to update record.', {}, 'database is locked'), noValidation)).toEqual(UNEXPECTED);
+		for (const [message, data, raw] of [
+			['Failed to create record.', { title: { code: 'validation_required' } }, 'title: cannot be blank.'],
+			['Failed to create record.', {}, 'create rule failure: sql: no rows in result set'],
+			['Failed to create record.', {}, { status: 400, message: 'Abgelehnt.' }],
+			['Failed to create record.', {}, null],
+			['Failed to update record.', {}, 'sql: no rows in result set'],
+			['Failed to delete record.', {}, hook],
+			['Failed to authenticate.', {}, 'invalid login credentials'],
+			['Something went wrong while processing your request.', {}, 'invalid left operand "fingerprint"']
+		]) {
+			expect(rules.requestFailureOf(apiError(400, message, data, raw), noValidation), `${message} ${String(raw)}`).toBeNull();
+		}
 	});
 
 	it('counts 5xx as unexpected, except the deliberate 502 and 503', () => {
