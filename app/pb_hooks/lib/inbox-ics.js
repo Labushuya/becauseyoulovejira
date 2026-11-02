@@ -14,7 +14,7 @@ var ORIGINAL_NAMES = { event: 'termin.ics', todo: 'aufgabe.ics' };
 var MAX_SELECTION = 5000;
 var MAX_FILE_BYTES = 20 * 1024 * 1024;
 var TOO_LARGE = 'Größer als 20 MB, deshalb nicht übernommen.';
-var UNAVAILABLE = 'Der Eingang steht nach dem nächsten Neustart der App bereit (neu-starten.bat).';
+var UNAVAILABLE = 'Der Eingang steht nach dem nächsten Neustart der App bereit (Einstellungen → System → „Jetzt neu starten“).';
 
 // Parser draft -> draft of inbox-service.ingest; `household` is the area a route checked (E7-3).
 function toInboxDraft(draft, channel, connection, household) {

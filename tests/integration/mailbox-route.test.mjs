@@ -285,7 +285,10 @@ describe('"Jetzt abrufen" of a mailbox and the probe of the helper (package A, i
 		try {
 			const answer = await runConnection(owner.pb, mailbox.id);
 			expect(answer.status).toBe('unavailable');
-			expect(answer.error).toMatch(/^Der Mail-Hilfsprozess läuft nicht .*neu-starten\.bat/);
+			expect(answer.error).toMatch(
+				/^Der Mail-Hilfsprozess läuft nicht .*\(Einstellungen → System → „Jetzt neu starten“\)\.$/
+			);
+			expect(answer.error).not.toMatch(/\.bat\b/);
 			expect(await getMailHelperStatus(owner.pb)).toMatchObject({ state: 'stopped', version: '' });
 			await startHelper('ein-anderer-token');
 			expect(await getMailHelperStatus(owner.pb)).toMatchObject({ state: 'refused' });
@@ -376,7 +379,8 @@ describe('mail helper stopped, restarted or with another token', () => {
 		expect(await listMailbox(owner.pb, mailbox.id, 50)).toEqual({
 			kind: 'unavailable',
 			message: 'Der Mail-Hilfsprozess läuft nicht (byl-mail.exe fehlt oder ist beendet).',
-			hint: expect.stringMatching(/start\.bat/)
+			// Since BW-2 the way in the browser, never a file of the folder app.
+			hint: expect.stringMatching(/sonst hilft ein Neustart \(Einstellungen → System → „Jetzt neu starten“\)\.$/)
 		});
 		expect((await importFromMailbox(owner.pb, mailbox.id, [1])).kind).toBe('unavailable');
 		await startHelper();

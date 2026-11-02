@@ -1,6 +1,7 @@
 // Client of the ingest routes of PocketBase (app/pb_hooks/ingest.pb.js; ADR-0016 section 5). The
 // token goes only into the Authorization header; answers are checked before they are used.
 
+import { RESTART_WAY } from './config';
 import type { IngestDraft } from './mail';
 import { scanStateOf, type ScanState } from './scan-state';
 
@@ -136,7 +137,7 @@ export class IngestClient implements IngestApi {
 		if (status === 404) {
 			throw new IngestError(
 				'no-route',
-				'PocketBase läuft ohne BYL_INGEST_TOKEN; bitte neu-starten.bat ausführen.'
+				`PocketBase läuft ohne BYL_INGEST_TOKEN; bitte die App neu starten (${RESTART_WAY}).`
 			);
 		}
 		if (status !== 200 || !isRecord(json) || !Array.isArray(json.items)) {

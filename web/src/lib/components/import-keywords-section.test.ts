@@ -127,9 +127,13 @@ describe('ImportKeywordsSection', () => {
 		// Since EH-2 a section message with the one restart text.
 		const status = screen.getByRole('status');
 		expect(status.textContent).toMatch(/Nach dem nächsten Neustart verfügbar/);
-		// The section message follows the context of the tab (the administrator at the PC here); the
-		// sentence of the store is worded when the module loads and names no script (KOB-1).
-		expect(status.textContent).toMatch(/neu-starten\.bat im Ordner app/);
+		// The section message follows the context of the tab (the administrator at the PC here) and
+		// names the way in the browser, never a script (BW-2); the sentence of the store is worded when
+		// the module loads and names no way (KOB-1). Outside the (app) layout there is no store, so
+		// only the folded emergency way stands below it.
+		expect(status.textContent).toMatch(/Einstellungen → System → „Jetzt neu starten“/);
+		expect(status.textContent).not.toMatch(/\.bat\b/);
+		expect(screen.getByText('Notfall: Neustart über den Ordner app')).toBeTruthy();
 		expect(IMPORT_KEYWORDS_UNAVAILABLE_MESSAGE).toMatch(/erst nach einem Neustart wirkt\.$/);
 		expect(screen.queryByRole('group', { name: 'Stichwörter' })).toBeNull();
 	});

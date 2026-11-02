@@ -7,7 +7,7 @@
 // to it, newer mails come through the cursor, which moves over every checked mail. Duplicates are
 // recognised by the server (Message-ID), so running again after a crash or an outage is harmless.
 
-import { readSecret } from './config';
+import { RESTART_WAY, readSecret } from './config';
 import type { ImapEndpoint } from './config';
 import { ScanControl } from './gate';
 import type { IngestApi, MailConnection, StatusReport } from './ingest-client';
@@ -151,7 +151,7 @@ export async function pollConnection(
 	if (password === '' || connection.user === '') {
 		outcome.status = 'missing';
 		deps.log.warn(
-			`${label(connection)} ruft nichts ab, solange ${connection.secretEnv} fehlt (Variable anlegen, dann neu-starten.bat).`
+			`${label(connection)} ruft nichts ab, solange ${connection.secretEnv} fehlt (Variable anlegen, dann ${RESTART_WAY}).`
 		);
 		return outcome;
 	}

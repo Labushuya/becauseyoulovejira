@@ -408,8 +408,8 @@ export function continuesAtPc(open: OpenSetup, remote: boolean): boolean {
  * that is missing there, or that the server does not see while the PC does not know it; one that
  * is set there only waits for the restart the text asks for. True in every combination of the two
  * variables of Telegram, e.g. „Zugangsdaten fehlen: Variable BYL_TELEGRAM_ALLOWED_IDS anlegen, dann
- * die App neu starten (neu-starten.bat). BYL_TELEGRAM_TOKEN ist schon gesetzt und wirkt erst nach
- * dem Neustart.“
+ * die App neu starten (Einstellungen → System → „Jetzt neu starten“). BYL_TELEGRAM_TOKEN ist schon
+ * gesetzt und wirkt erst nach dem Neustart.“
  */
 function missingText(
 	connection: Pick<Connection, 'secretEnv' | 'allowlistEnv'>,

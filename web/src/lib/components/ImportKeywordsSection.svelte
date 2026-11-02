@@ -6,11 +6,11 @@
 		MAIL_MATCH_BODY_LABEL,
 		type ImportKind
 	} from '$lib/domain/keywords';
-	import { RESTART_NEEDED } from '$lib/guidance/texts';
 	import type { ImportKeywordsStore } from '$lib/stores/import-keywords.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
 	import KeywordEditor from './KeywordEditor.svelte';
+	import RestartNeededNotice from './system/RestartNeededNotice.svelte';
 
 	// Keywords of the file imports (E4 plan, package 21; ADR-0020): one list per kind of file. They
 	// choose entries of the selection views at first; everything else can still be chosen by hand.
@@ -46,9 +46,12 @@
 	{#if store.state === 'loading'}
 		<p class="hint" role="status">Stichwörter werden geladen …</p>
 	{:else if store.state === 'unavailable'}
-		<SectionMessage tone="info" title={RESTART_NEEDED.title} live headingLevel={4}>
-			{RESTART_NEEDED.text}
-		</SectionMessage>
+		<RestartNeededNotice
+			place="notice:import-keywords"
+			live
+			headingLevel={4}
+			onrestarted={() => void store.load()}
+		/>
 	{:else if store.state === 'error'}
 		<SectionMessage tone="error" live>
 			{store.error}

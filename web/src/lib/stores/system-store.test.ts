@@ -98,8 +98,10 @@ describe('SystemStore: status', () => {
 		});
 		await store.load();
 		expect(store.message?.title).toBe('Nach dem nächsten Neustart verfügbar');
-		expect(store.message?.text).toMatch(
-			/^Die Seite System ist nach dem nächsten Neustart verfügbar\. .*neu-starten\.bat/
+		// Its "Jetzt neu starten" comes with the same update: only the emergency way, without the
+		// file (BW-2).
+		expect(store.message?.text).toBe(
+			'Die Seite System ist nach dem nächsten Neustart verfügbar. Die App hat ein Update bekommen, das erst nach einem Neustart wirkt; bis dahin startet die App nur über den Notfall-Weg im Ordner app neu (Hilfe → Betrieb → „Notfall“).'
 		);
 	});
 

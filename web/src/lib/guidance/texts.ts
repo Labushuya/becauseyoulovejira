@@ -1,10 +1,10 @@
 // Shared texts of the guidance (ADR-0026 section 2, plan EH-2). One wording for the hint after an
-// update whose migration runs only after a restart: while the app runs, start.bat only opens the
-// browser, so the hint names neu-starten.bat, which restarts exactly when an update needs it
-// (ADR-0039 section 5). Since KOB-1 (ADR-0057) a text names a script only where the tab may see one:
-// the administrator on the machine of the app under Windows; elsewhere the same hint without it, the
-// note "nur am PC" or "Bitte den Verwalter fragen." (currentCapabilities of lib/data/context.ts).
-// Module without runes.
+// update whose migration runs only after a restart. Since BW-2 (ADR-0072 addendum) it names the way
+// in the browser, "Jetzt neu starten" on the page System (RESTART_WAY), never a script; the files of
+// the folder app stand only folded under „Notfall“ (RestartEmergency). Since KOB-1 (ADR-0057) the
+// text follows the tab: the way for the administrator on the machine of the app under Windows, "nur
+// am PC" for the administrator elsewhere, "Bitte den Verwalter fragen." for every other account
+// (currentCapabilities of lib/data/context.ts). Module without runes.
 
 import { currentCapabilities } from '../data/context';
 import {
@@ -14,6 +14,7 @@ import {
 	type ContextNeed,
 	type ContextNote
 } from '../domain/context';
+import { RESTART_WAY } from '../domain/system';
 
 /** Texts of the context of the tab (KOB-1, ADR-0057). */
 export const CONTEXT_TEXTS = {
@@ -89,19 +90,21 @@ export function currentNote(need: ContextNeed): string | null {
 }
 
 /**
- * Title and text of the section message "restart needed". The text names neu-starten.bat only for
- * the administrator on the machine of the app under Windows; read in a template it follows the
- * context of the tab.
+ * Title and text of the section message "restart needed" (BW-2): the way in the browser for the
+ * administrator on the machine of the app under Windows, the same page on that machine for the
+ * administrator elsewhere, the administrator for every other account; without a known context only
+ * the sentence. Never a script. Read in a template it follows the context of the tab;
+ * RestartNeededNotice adds the button where the tab may restart.
  */
 export const RESTART_NEEDED = {
 	title: RESTART_TITLE,
 	get text(): string {
 		const capabilities = currentCapabilities();
-		if (capabilities.scripts)
-			return `${RESTART_BASE}: neu-starten.bat im Ordner app doppelklicken.`;
+		if (capabilities.scripts) return `${RESTART_BASE}: ${RESTART_WAY}.`;
 		if (capabilities.mode === 'remote')
-			return `${RESTART_BASE}. ${pcOnlyText(capabilities.localUrl)}`;
-		if (capabilities.mode === 'member') return `${RESTART_BASE}. ${CONTEXT_TEXTS.askAdmin}`;
+			return `${RESTART_BASE}. ${pcOnlyText(capabilities.localUrl)} Dort: ${RESTART_WAY}.`;
+		if (capabilities.mode === 'member')
+			return `${RESTART_BASE}. Neu starten kann nur der Verwalter, direkt am PC unter Einstellungen → System. ${CONTEXT_TEXTS.askAdmin}`;
 		return `${RESTART_BASE}.`;
 	}
 } as const;
@@ -113,6 +116,16 @@ export const RESTART_NEEDED = {
  */
 export function restartNeeded(subject: string): string {
 	return `${subject} nach dem nächsten Neustart verfügbar. ${RESTART_NEEDED.text}`;
+}
+
+/**
+ * The page System before the restart after an update (BW-2): its "Jetzt neu starten" comes with the
+ * same update, so until then only the emergency way of the folder app restarts the app (help
+ * "Betrieb", section „Notfall“), named here without the file. A plain text like every notice of
+ * the page (SystemNotice), so the way to the help stands in words, not as a link.
+ */
+export function systemPageRestartNeeded(): string {
+	return `Die Seite System ist nach dem nächsten Neustart verfügbar. ${RESTART_BASE}; bis dahin startet die App nur über den Notfall-Weg im Ordner app neu (Hilfe → Betrieb → „Notfall“).`;
 }
 
 /** What the tab restarts outside the page System (BW-1, ADR-0072). */
@@ -169,8 +182,8 @@ export const APP_OPENED_AGAIN = {
 } as const;
 
 /**
- * Neutral flag in the open tabs when stop.bat, a restart or neu-starten.bat ends the app (ADR-0035
- * §5, ADR-0039); not an error. After a restart the tab reconnects on its own and the flag goes.
+ * Neutral flag in the open tabs when stop.bat or a restart ends the app (ADR-0035 §5, ADR-0039);
+ * not an error. After a restart the tab reconnects on its own and the flag goes.
  */
 export const APP_STOPPED = {
 	title: 'becauseyoulovejira wurde beendet.',

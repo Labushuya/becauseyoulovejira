@@ -529,7 +529,7 @@ function removeFile(path) {
 
 /**
  * "Liegengebliebenes aufräumen" for the chosen groups: program leftovers (a running helper keeps
- * its file locked until neu-starten.bat; it is skipped), safety copies past their time, and the
+ * its file locked until the next restart; it is skipped), safety copies past their time, and the
  * automatic backups of PocketBase. Returns { removed: { group: { count, bytes } }, skipped: [...] }.
  */
 function leftovers(app, appDir, groups, nowMs) {

@@ -129,14 +129,14 @@ describe('channelHealth', () => {
 		expect(token).toMatchObject({ state: 'unset', label: 'Einrichtung offen', action: 'setup' });
 		expect(token.hint).toEqual({
 			tone: 'warning',
-			text: 'Zugangsdaten fehlen: Variable BYL_TELEGRAM_ALLOWED_IDS anlegen, dann die App neu starten (neu-starten.bat). BYL_TELEGRAM_TOKEN ist schon gesetzt und wirkt erst nach dem Neustart.'
+			text: 'Zugangsdaten fehlen: Variable BYL_TELEGRAM_ALLOWED_IDS anlegen, dann die App neu starten (Einstellungen → System → „Jetzt neu starten“). BYL_TELEGRAM_TOKEN ist schon gesetzt und wirkt erst nach dem Neustart.'
 		});
 		expect(token.hint?.text).not.toMatch(/BYL_TELEGRAM_TOKEN[^.]*anlegen/);
 		const ids = channelHealth(bot, unseen, false, null, {
 			stored: { secret: false, allowlist: true }
 		});
 		expect(ids.hint?.text).toBe(
-			'Zugangsdaten fehlen: Variable BYL_TELEGRAM_TOKEN anlegen, dann die App neu starten (neu-starten.bat). BYL_TELEGRAM_ALLOWED_IDS ist schon gesetzt und wirkt erst nach dem Neustart.'
+			'Zugangsdaten fehlen: Variable BYL_TELEGRAM_TOKEN anlegen, dann die App neu starten (Einstellungen → System → „Jetzt neu starten“). BYL_TELEGRAM_ALLOWED_IDS ist schon gesetzt und wirkt erst nach dem Neustart.'
 		);
 		expect(ids.hint?.text).not.toMatch(/BYL_TELEGRAM_ALLOWED_IDS[^.]*anlegen/);
 		// The server sees one already: nothing about its restart.
@@ -145,14 +145,14 @@ describe('channelHealth', () => {
 				stored: { secret: true, allowlist: false }
 			}).hint?.text
 		).toBe(
-			'Zugangsdaten fehlen: Variable BYL_TELEGRAM_ALLOWED_IDS anlegen, dann die App neu starten (neu-starten.bat).'
+			'Zugangsdaten fehlen: Variable BYL_TELEGRAM_ALLOWED_IDS anlegen, dann die App neu starten (Einstellungen → System → „Jetzt neu starten“).'
 		);
 		// Both missing on the PC: both, as before.
 		expect(
 			channelHealth(bot, unseen, false, null, { stored: { secret: false, allowlist: false } }).hint
 				?.text
 		).toBe(
-			'Zugangsdaten fehlen: Variablen BYL_TELEGRAM_TOKEN und BYL_TELEGRAM_ALLOWED_IDS anlegen, dann die App neu starten (neu-starten.bat).'
+			'Zugangsdaten fehlen: Variablen BYL_TELEGRAM_TOKEN und BYL_TELEGRAM_ALLOWED_IDS anlegen, dann die App neu starten (Einstellungen → System → „Jetzt neu starten“).'
 		);
 	});
 
@@ -295,7 +295,9 @@ describe('channelHealth', () => {
 		}
 		expect(
 			channelHealth(mail, SET, false, { state: 'stopped', version: '', message: '' }).hint?.text
-		).toMatch(/neu-starten\.bat/);
+		).toMatch(
+			/Bitte die App neu starten|sonst hilft ein Neustart \(Einstellungen → System → „Jetzt neu starten“\)/
+		);
 		// Running, unknown, other kinds, and the states before it keep their order.
 		const running = { state: 'running' as const, version: '0.9.0', message: '' };
 		expect(channelHealth(mail, SET, false, running).state).toBe('ok');

@@ -76,7 +76,8 @@ describe('failures', () => {
 	it('explains every status in German without the token', () => {
 		const token = rules.failureOf(401, 'unauthorized', 'connection', 'BYL_NOTION_TOKEN');
 		expect(token).toEqual({
-			message: 'Notion lehnt den Token ab (401). Stimmt der Wert von BYL_NOTION_TOKEN? Neuen Token setzen, dann neu-starten.bat.',
+			message:
+				'Notion lehnt den Token ab (401). Stimmt der Wert von BYL_NOTION_TOKEN? Neuen Token setzen, dann die App neu starten (Einstellungen → System → „Jetzt neu starten“).',
 			connection: true
 		});
 		expect(rules.failureOf(0, '', 'connection', 'X')).toMatchObject({ connection: true, message: expect.stringContaining('nicht erreichbar') });

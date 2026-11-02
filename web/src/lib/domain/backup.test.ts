@@ -32,6 +32,7 @@ import {
 	type BackupOverview,
 	type RestoreState
 } from './backup';
+import { RESTART_WAY } from './system';
 
 const RAW = {
 	appDir: 'C:\\Apps\\app',
@@ -354,17 +355,19 @@ describe('emergency plan (BK-4)', () => {
 		expect(titles[0]).toBe('App holen');
 		expect(titles.at(-1)).toBe('Sicherung prüfen');
 		expect(titles.indexOf('wiederherstellen.bat')).toBeLessThan(titles.indexOf('Passphrase'));
-		expect(titles.indexOf('Passphrase')).toBeLessThan(titles.indexOf('neu-starten.bat'));
-		expect(titles.indexOf('neu-starten.bat')).toBeLessThan(titles.indexOf('Autostart'));
+		expect(titles.indexOf('Passphrase')).toBeLessThan(titles.indexOf('Neu starten'));
+		expect(titles.indexOf('Neu starten')).toBeLessThan(titles.indexOf('Autostart'));
+	});
+
+	it('restarts through the page System after changed access data, not through a file (BW-2)', () => {
+		const restart = EMERGENCY_STEPS.find((step) => step.title === 'Neu starten');
+		expect(restart?.text).toContain(RESTART_WAY);
+		expect(restart?.text).not.toMatch(/\.bat\b|\bsetx\b/);
 	});
 
 	it('names only scripts that lie in the folder app', () => {
 		const scripts = new Set(all.match(/[a-z-]+\.bat/g));
-		expect([...scripts].sort()).toEqual([
-			'autostart-an.bat',
-			'neu-starten.bat',
-			'wiederherstellen.bat'
-		]);
+		expect([...scripts].sort()).toEqual(['autostart-an.bat', 'wiederherstellen.bat']);
 		for (const script of scripts) expect(existsSync(join(ROOT, 'app', script)), script).toBe(true);
 		// The folder of the extension exists only after its build: the plan names the build target of
 		// the extension, checked in its source instead of a built folder (AR-4).

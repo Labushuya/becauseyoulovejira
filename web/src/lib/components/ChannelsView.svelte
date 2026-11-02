@@ -23,7 +23,7 @@
 	import type { InboxKeysStore } from '$lib/stores/inbox-keys.svelte';
 	import type { InboxTargetsStore } from '$lib/stores/inbox-targets.svelte';
 	import type { NotionStore } from '$lib/stores/notion.svelte';
-	import type { RestartStore } from '$lib/stores/restart.svelte';
+	import { setRestartStore, type RestartStore } from '$lib/stores/restart.svelte';
 	import { channelSetupHref } from '$lib/ticket-links';
 	import BookmarkletCard from './channels/BookmarkletCard.svelte';
 	import ChannelCatalog from './channels/ChannelCatalog.svelte';
@@ -130,6 +130,13 @@
 		if (setup === null) return null;
 		if (household) return setup.kind === 'proton' ? setup : null;
 		return admin || setup.kind === 'proton' || setup.kind === 'whatsapp-web' ? setup : null;
+	});
+
+	// One RestartStore for the whole page (BW-2): the store of the page also stands in the context of
+	// its subtree, so the hints "restart needed" of the WhatsApp assistant and of the keyword dialogs
+	// (findRestartStore) use it as well, and one run at a time holds for every button of the page.
+	untrack(() => {
+		if (restart !== null) setRestartStore(restart);
 	});
 
 	const uid = $props.id();

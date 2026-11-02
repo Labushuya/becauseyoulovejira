@@ -27,7 +27,7 @@ import {
 	type SystemNotice,
 	type SystemOverview
 } from '$lib/domain/system';
-import { RESTART_NEEDED, restartNeeded as restartNeededText } from '$lib/guidance/texts';
+import { RESTART_NEEDED, systemPageRestartNeeded } from '$lib/guidance/texts';
 import { SILENT_FLAGS, type FlagSink } from './flags.svelte';
 import {
 	REAL_CLOCK,
@@ -71,10 +71,13 @@ export interface SystemPart<T> {
 	message: SystemNotice | null;
 }
 
-/** What the page says for a refusal; "missing" is the hint to restart after an update. */
+/**
+ * What the page says for a refusal; "missing" is the hint to restart after an update, through the
+ * emergency way, since "Jetzt neu starten" of this page comes only with it (BW-2).
+ */
 export function denialNotice(reason: SystemDenial): SystemNotice {
 	if (reason === 'missing') {
-		return { title: RESTART_NEEDED.title, text: restartNeededText('Die Seite System ist') };
+		return { title: RESTART_NEEDED.title, text: systemPageRestartNeeded() };
 	}
 	return DENIAL_TEXTS[reason];
 }

@@ -31,6 +31,7 @@
 	import FilterSheet from './FilterSheet.svelte';
 	import EmptyState from './guidance/EmptyState.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
+	import RestartNeededNotice from './system/RestartNeededNotice.svelte';
 	import ConfirmDialog from './overlay/ConfirmDialog.svelte';
 	import SectionBar from './SectionBar.svelte';
 	import SelectionBar from './SelectionBar.svelte';
@@ -311,7 +312,13 @@
 	</SectionBar>
 
 	{#if store.state === 'unavailable'}
-		<SectionMessage tone="info" live>{restartNeeded('Der Papierkorb ist')}</SectionMessage>
+		<RestartNeededNotice
+			title=""
+			text={restartNeeded('Der Papierkorb ist')}
+			place="notice:trash"
+			live
+			onrestarted={() => void store.reload()}
+		/>
 	{:else if store.state === 'error' && store.error}
 		<SectionMessage tone="error" live problem={store.errorProblem}>
 			{store.error}

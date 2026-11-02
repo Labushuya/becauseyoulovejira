@@ -6,6 +6,7 @@
 	import { restartElsewhere, type RestartTask } from '$lib/guidance/texts';
 	import type { RestartStore } from '$lib/stores/restart.svelte';
 	import RestartEmergency from './RestartEmergency.svelte';
+	import { findRestartLock } from './restart-lock';
 
 	// "Jetzt neu starten" or "Mail-Helfer neu starten" where it is needed, e.g. in a step of a setup
 	// assistant (BW-1, ADR-0072), with the route, the checks and the waiting of the page System
@@ -16,6 +17,9 @@
 	// (the user's rule: everything from the browser). A tab that may not restart (another device,
 	// another account, a server that is not Windows) gets who does what where instead of the button,
 	// never a script. Without a store (a view that cannot restart) only the emergency way stands.
+	// Without a connection (the outbox, OF-2; findRestartLock) the button stays visible but locked and
+	// says why next to it (BW-2, like "Alle Kanäle jetzt abrufen"). A view that is gone gets no late
+	// `onrestarted`: the store of the layout keeps the run, the view does not wait for it (BW-2).
 	let {
 		store,
 		task = 'restart',
@@ -41,10 +45,19 @@
 
 	const uid = $props.id();
 	const hintId = `${uid}-hint`;
+	const offlineId = `${uid}-offline`;
+	const locked = findRestartLock();
 	let confirming = $state(false);
+	/** False once the component is destroyed: no `onrestarted` of a view that is gone. */
+	let alive = true;
+	$effect(() => () => {
+		alive = false;
+	});
 
 	const elsewhere = $derived(restartElsewhere(task));
 	const busy = $derived((store?.running ?? null) !== null);
+	// A run that is going on keeps its button: the server is gone on purpose then.
+	const offline = $derived(locked() && !busy);
 	const here = $derived(store?.runningAt(place) ?? false);
 	const phase = $derived(store?.phaseAt(place) ?? null);
 	const result = $derived(store?.resultAt(place) ?? null);
@@ -77,11 +90,11 @@
 		onstart?.();
 		const outcome =
 			task === 'restart' ? await store.restart(place) : await store.restartMail(place);
-		if (outcome?.kind === 'restarted' || outcome?.kind === 'mail') onrestarted?.();
+		if (alive && (outcome?.kind === 'restarted' || outcome?.kind === 'mail')) onrestarted?.();
 	}
 
 	function ask() {
-		if (busy) return;
+		if (busy || offline) return;
 		if (task === 'restart') confirming = true;
 		else void start();
 	}
@@ -106,12 +119,15 @@
 					class="button-secondary"
 					type="button"
 					aria-busy={here ? 'true' : undefined}
-					aria-disabled={busy ? 'true' : undefined}
-					aria-describedby={hintId}
+					aria-disabled={busy || offline ? 'true' : undefined}
+					aria-describedby={offline ? `${offlineId} ${hintId}` : hintId}
 					onclick={ask}
 				>
 					{label}
 				</button>
+				{#if offline}
+					<p class="hint" id={offlineId}>{RESTART_TEXTS.offline}</p>
+				{/if}
 				<p class="hint" id={hintId}>{hint}</p>
 			</div>
 

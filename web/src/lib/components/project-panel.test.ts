@@ -619,7 +619,8 @@ describe('project panel: sub projects (ADR-0034, UP-4)', () => {
 		expect(
 			screen.getByText(/Unterprojekte sind nach dem nächsten Neustart verfügbar/)
 		).toBeTruthy();
-		expect(screen.getByText(/neu-starten\.bat im Ordner app/)).toBeTruthy();
+		// Since BW-2 the way in the browser, never a script.
+		expect(screen.getByText(/Einstellungen → System → „Jetzt neu starten“/)).toBeTruthy();
 	});
 
 	describe('color (ADR-0052)', () => {

@@ -160,7 +160,9 @@ describe('mailbox-rules.js: "Jetzt abrufen" and probe of a mailbox (package A)',
 			status: 'error',
 			error: rules.OUTDATED
 		});
-		expect(rules.OUTDATED).toMatch(/neu-starten\.bat/);
+		// Since BW-2 the way in the browser, never the file.
+		expect(rules.OUTDATED).toMatch(/Bitte die App neu starten \(Einstellungen → System → „Jetzt neu starten“\)/);
+		expect(rules.OUTDATED).not.toMatch(/\.bat\b/);
 		expect(rules.runResult({ statusCode: 200, json: { status: 'gone' } }).status).toBe('disabled');
 		expect(rules.runResult({ statusCode: 200, json: { status: 'missing', missing: ['BYL_WEBDE_PASSWORD', 'rm -rf', 7] } })).toEqual({
 			...zero,

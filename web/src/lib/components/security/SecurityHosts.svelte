@@ -4,12 +4,15 @@
 	import Field from '$lib/components/form/Field.svelte';
 	import SectionMessage from '$lib/components/guidance/SectionMessage.svelte';
 	import { extraHostProblem, sameHosts, type SecurityOverview } from '$lib/domain/security';
+	import { RESTART_WAY } from '$lib/domain/system';
 	import type { SecurityStore } from '$lib/stores/security.svelte';
+	import RestartNeededNotice from '../system/RestartNeededNotice.svelte';
 
 	// Further hosts of the page "Sicherheit" (ADR-0055 §3 and §8): empty by default, only for a later
 	// access from other devices (e.g. Tailscale), only names with a dot and HTTPS. The list is edited
 	// here and saved as a whole into byl-config.json by the control script; it applies after a
-	// restart, which the page "System" offers. Checks speak inline at the field (ADR-0009).
+	// restart, which the hint offers in place (RestartNeededNotice, BW-2) like the page "System".
+	// Checks speak inline at the field (ADR-0009).
 	let { store, overview }: { store: SecurityStore; overview: SecurityOverview } = $props();
 
 	// The list starts with the saved hosts; what the user changes stays until it is saved.
@@ -131,13 +134,17 @@
 {/if}
 
 {#if store.restartNeeded}
-	<SectionMessage tone="info" title="Neustart nötig" live>
-		Die gespeicherten Adressen gelten erst nach einem Neustart der App. Auf der Seite „System“
-		startest du sie mit „Jetzt neu starten“ neu, oder mit neu-starten.bat im Ordner app.
+	<RestartNeededNotice
+		title="Neustart nötig"
+		text={`Die gespeicherten Adressen gelten erst nach einem Neustart der App: ${RESTART_WAY}.`}
+		place="notice:security:hosts"
+		live
+		onrestarted={() => void store.load()}
+	>
 		{#snippet actions()}
 			<a href={resolve('/einstellungen/system')}>Zur Seite System</a>
 		{/snippet}
-	</SectionMessage>
+	</RestartNeededNotice>
 {/if}
 
 <style>

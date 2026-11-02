@@ -13,7 +13,7 @@ var errors = require(__hooks + '/lib/errors.js');
 
 var KEYS = 'inbox_keys';
 var RATE_PREFIX = 'byl_inbox_key_rate:';
-var UNAVAILABLE = 'Der eigene Eingang steht nach dem nächsten Neustart der App bereit (neu-starten.bat).';
+var UNAVAILABLE = 'Der eigene Eingang steht nach dem nächsten Neustart der App bereit (Einstellungen → System → „Jetzt neu starten“).';
 
 // Throws 503 until the migration 1790202400 has run.
 function assertAvailable(app) {

@@ -44,7 +44,8 @@
 	// Folders (ADR-0051): their cards load their details and take files of before into the inbox.
 	const folders = new FoldersStore(foldersData(pb), auth, flags);
 	// "Jetzt neu starten" and "Mail-Helfer neu starten" in the assistant (BW-1, ADR-0072): the route
-	// and the checks of the page System.
+	// and the checks of the page System. Since BW-2 the one store of the whole page: ChannelsView
+	// puts it into the context, so the hints "restart needed" of the page use it too.
 	const restart = new RestartStore(systemData(pb), auth);
 	// The access data of the channels in the browser (BW-3, ADR-0075): state, "Setzen", "Entfernen"
 	// and the hint until the next restart; values only on their way to the server, never kept.

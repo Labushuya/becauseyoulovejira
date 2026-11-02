@@ -1,7 +1,7 @@
-// One wording for the restart after an update (ADR-0026 section 2, plan EH-2; since ADR-0039
-// neu-starten.bat): the texts of the stores come from lib/guidance/texts.ts, no hint about a
-// restart names start.bat alone, and none sends the user through "stop.bat, dann start.bat" any
-// more. Messages that the server is not running ("gestartet ist (start.bat)") are a different
+// One wording for the restart after an update (ADR-0026 section 2, plan EH-2; since BW-2 the way in
+// the browser, ADR-0072 addendum): the texts of the stores come from lib/guidance/texts.ts, no hint
+// about a restart names start.bat alone, and none sends the user through "stop.bat, dann start.bat"
+// any more. Messages that the server is not running ("gestartet ist (start.bat)") are a different
 // matter and stay.
 
 import { readdirSync, readFileSync } from 'node:fs';
@@ -11,6 +11,7 @@ import { CONNECTIONS_UNAVAILABLE_MESSAGE } from '$lib/stores/connections.svelte'
 import { IMPORT_KEYWORDS_UNAVAILABLE_MESSAGE } from '$lib/stores/import-keywords.svelte';
 import { INBOX_UNAVAILABLE_MESSAGE } from '$lib/stores/inbox.svelte';
 import { RECURRENCE_UNAVAILABLE } from '$lib/stores/recurrence.svelte';
+import { RESTART_WAY } from '$lib/domain/system';
 import { MEMBER_CONTEXT, PC_CONTEXT, REMOTE_CONTEXT, useContext } from '$lib/test/context';
 import { RESTART_NEEDED, restartNeeded } from './texts';
 
@@ -25,22 +26,36 @@ function sources(dir: string): string[] {
 }
 
 describe('restart hint', () => {
-	it('names neu-starten.bat in the folder app for the administrator at the PC only (KOB-1)', async () => {
+	// BYL-E6-2343
+	it('names "Jetzt neu starten" on the page System, never a script, in every context (BW-2)', async () => {
 		await useContext(PC_CONTEXT);
 		expect(RESTART_NEEDED.title).toBe('Nach dem nächsten Neustart verfügbar');
-		expect(RESTART_NEEDED.text).toMatch(/neu-starten\.bat im Ordner app/);
+		expect(RESTART_WAY).toBe('Einstellungen → System → „Jetzt neu starten“');
+		expect(RESTART_NEEDED.text).toBe(
+			'Die App hat ein Update bekommen, das erst nach einem Neustart wirkt: Einstellungen → System → „Jetzt neu starten“.'
+		);
 		expect(restartNeeded('Der Eingang ist')).toBe(
 			`Der Eingang ist nach dem nächsten Neustart verfügbar. ${RESTART_NEEDED.text}`
 		);
-		await useContext(MEMBER_CONTEXT);
-		expect(RESTART_NEEDED.text).not.toMatch(/\.bat/);
-		expect(restartNeeded('Der Eingang ist')).toMatch(/Bitte den Verwalter fragen\.$/);
+		// The administrator on another device: on the machine of the app, the same page.
 		await useContext(REMOTE_CONTEXT);
-		expect(RESTART_NEEDED.text).not.toMatch(/\.bat/);
+		expect(RESTART_NEEDED.text).toBe(
+			'Die App hat ein Update bekommen, das erst nach einem Neustart wirkt. Nur direkt am PC verfügbar, auf dem becauseyoulovejira läuft (dort über http://127.0.0.1:8090 öffnen). Dort: Einstellungen → System → „Jetzt neu starten“.'
+		);
+		// Every other account: only the administrator restarts.
+		await useContext(MEMBER_CONTEXT);
+		expect(RESTART_NEEDED.text).toBe(
+			'Die App hat ein Update bekommen, das erst nach einem Neustart wirkt. Neu starten kann nur der Verwalter, direkt am PC unter Einstellungen → System. Bitte den Verwalter fragen.'
+		);
+		expect(restartNeeded('Der Eingang ist')).toMatch(/Bitte den Verwalter fragen\.$/);
 		await useContext('pending');
 		expect(RESTART_NEEDED.text).toBe(
 			'Die App hat ein Update bekommen, das erst nach einem Neustart wirkt.'
 		);
+		for (const context of [PC_CONTEXT, REMOTE_CONTEXT, MEMBER_CONTEXT, 'pending'] as const) {
+			await useContext(context);
+			expect(RESTART_NEEDED.text).not.toMatch(/\.bat\b|\.ps1\b|\bsetx\b/);
+		}
 	});
 
 	it.each([

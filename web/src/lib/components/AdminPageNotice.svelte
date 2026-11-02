@@ -1,14 +1,15 @@
 <script lang="ts">
 	import type { Capabilities } from '$lib/domain/context';
-	import { CONTEXT_TEXTS, RESTART_NEEDED, pcOnlyText } from '$lib/guidance/texts';
+	import { CONTEXT_TEXTS, pcOnlyText } from '$lib/guidance/texts';
 	import SectionMessage from './guidance/SectionMessage.svelte';
+	import RestartNeededNotice from './system/RestartNeededNotice.svelte';
 
 	// Instead of a page of the administrator (KOB-1, ADR-0057) when the tab may not show it: no data,
 	// no actions, no request. The administrator on another device gets the way to the machine of the
 	// app, every other account the friendly "Nur für den Verwalter", a server before the restart the
-	// hint after an update; while the context loads only a quiet status, so nothing flashes. In the
-	// phone frame (`frame`, MO-7c2) the administrator at the machine of the app gets the hint that the
-	// page is not made for the phone and how it comes back.
+	// hint after an update (RestartNeededNotice, BW-2); while the context loads only a quiet status,
+	// so nothing flashes. In the phone frame (`frame`, MO-7c2) the administrator at the machine of the
+	// app gets the hint that the page is not made for the phone and how it comes back.
 	let { capabilities, frame = false }: { capabilities: Capabilities; frame?: boolean } = $props();
 </script>
 
@@ -19,7 +20,7 @@
 		{pcOnlyText(capabilities.localUrl)}
 	</SectionMessage>
 {:else if capabilities.mode === 'outdated'}
-	<SectionMessage tone="info" title={RESTART_NEEDED.title}>{RESTART_NEEDED.text}</SectionMessage>
+	<RestartNeededNotice place="notice:admin-page" />
 {:else if frame && capabilities.mode === 'pc'}
 	<SectionMessage tone="info" title={CONTEXT_TEXTS.frameOnlyTitle}>
 		{CONTEXT_TEXTS.frameOnly}
