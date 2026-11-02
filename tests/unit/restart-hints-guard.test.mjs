@@ -2,8 +2,10 @@
 // SPA (web/src without tests), of the hooks (app/pb_hooks) or of the mail helper (helpers/mail/src)
 // names neu-starten.bat, but for the few places in ALLOWED, each with its reason and its exact number
 // of mentions. A restart goes through „Jetzt neu starten“ on the page System (RESTART_WAY); the file of
-// the folder app stands only in the emergency way. The texts of the server and of the mail helper name
-// that way in the same words as the SPA, so a tab without the right drops it (withoutCommands).
+// the folder app stands only in the emergency way and in the catalog of the problems of the scripts.
+// The texts of the server and of the mail helper name that way in the same words as the SPA, so a tab
+// without the right drops it (withoutCommands). The pattern ignores the case and finds other
+// separators too (neu_starten.bat, „Neu starten.bat“, a non-breaking hyphen).
 
 import { readdirSync, readFileSync } from 'node:fs';
 import { extname, join } from 'node:path';
@@ -13,7 +15,10 @@ import { describe, expect, it } from 'vitest';
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const FOLDERS = ['web/src', 'app/pb_hooks', 'helpers/mail/src'];
 const TEXT_FILES = new Set(['.ts', '.js', '.mjs', '.cjs', '.svelte', '.html', '.css', '.json', '.md', '.txt']);
-const FILE = /neu-starten\.bat/g;
+// U+2010 (hyphen) and U+2011 (non-breaking hyphen) by their code points: the source holds no
+// special characters.
+const HYPHENS = String.fromCharCode(0x2010, 0x2011);
+const FILE = new RegExp(`neu[\\s\\-_${HYPHENS}]?starten\\s*\\.\\s*bat`, 'gi');
 const HELP = 'web/src/routes/(app)/einstellungen/hilfe/+page.svelte';
 
 /**
@@ -30,17 +35,11 @@ const ALLOWED = {
 	// The command of the step "Neu starten" in that folded emergency way of the assistants (BW-1),
 	// and the comment of the module that says so.
 	'web/src/lib/domain/channel-setup.ts': 2,
-	// The emergency way at a field of the access data, a text that begins with "Notfall:" (BW-3).
-	'web/src/lib/domain/credentials.ts': 1,
 	// The catalog of the problems of the scripts, word for word as app/byl-problems.ps1 (ADR-0048,
-	// parity test): there a script itself failed, the browser is not the way.
-	'web/src/lib/domain/script-problems.ts': 4,
-	// The note above the guides for a server that is not Windows lists the tools of Windows the
-	// guides name (ADR-0028, plan plattformen S0-3); it names no way to restart.
-	'web/src/lib/domain/host-platform.ts': 3,
-	// The page System itself: how its button differs from the file, and that the files keep working
-	// (ADR-0043).
-	'web/src/lib/components/system/SystemView.svelte': 2
+	// parity test): there a script itself failed, the browser is not the way. The help shows it
+	// under "Probleme mit den Skripten" (ScriptProblemsHelp, #betrieb-probleme), the only place
+	// outside its emergency section where the rendered help names the file.
+	'web/src/lib/domain/script-problems.ts': 4
 };
 
 function sources(dir) {
@@ -73,6 +72,28 @@ describe('restart hints name the way in the browser (BW-2)', () => {
 			if (count > 0) found[path] = count;
 		}
 		expect(found).toEqual(ALLOWED);
+	});
+
+	// BYL-E6-2357
+	it('finds the file in any case and with other separators, but no other name', () => {
+		for (const variant of [
+			'neu-starten.bat',
+			'Neu-starten.bat',
+			'NEU-STARTEN.BAT',
+			'neu_starten.bat',
+			'neu starten.bat',
+			'neustarten.bat',
+			`neu${String.fromCharCode(0x2010)}starten.bat`,
+			`neu${String.fromCharCode(0x2011)}starten.bat`,
+			'neu-starten .bat',
+			'app\\neu-starten.bat',
+			'`neu-starten.bat`'
+		]) {
+			expect(variant.match(FILE), variant).toHaveLength(1);
+		}
+		for (const other of ['start.bat', 'Jetzt neu starten', 'neu-starten.ps1', 'neu starten. Bitte']) {
+			expect(other.match(FILE), other).toBeNull();
+		}
 	});
 
 	// BYL-E6-2349
