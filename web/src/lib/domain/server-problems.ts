@@ -141,9 +141,7 @@ export interface ChannelProblemHit {
  * so "Details" never names an older, other error.
  */
 export const CHANNEL_PROBLEM_TOLERANCE_MS = 1000;
-/** Connections one query of the page asks for at most; a card beyond them shows no link. */
-export const CHANNEL_PROBLEM_CONNECTIONS_MAX = 40;
-/** Entries one query of the page reads at most, newest first. */
+/** Entries one query of the page reads at most, newest first; a card beyond them shows no link. */
 export const CHANNEL_PROBLEM_HITS_MAX = 200;
 
 /**

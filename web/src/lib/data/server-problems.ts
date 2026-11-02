@@ -6,7 +6,6 @@
 
 import type PocketBase from 'pocketbase';
 import {
-	CHANNEL_PROBLEM_CONNECTIONS_MAX,
 	CHANNEL_PROBLEM_HITS_MAX,
 	SERVER_PROBLEMS_PAGE,
 	parseChannelProblemHit,
@@ -65,11 +64,19 @@ function pocketBaseTime(ms: number): string {
 	return new Date(ms).toISOString().replace('T', ' ');
 }
 
+/** The entries of failed runs of a connection since a time, newest first. */
+const CHANNEL_HITS_FILTER = [
+	'source = "channel"',
+	'context.connection != ""',
+	'last_at >= {:since}'
+].join(' && ');
+
 /**
- * The entries of failed runs of the connections `connectionIds` whose last occurrence is not before
- * `since` (ms), newest first, in one query for the whole page "Kanäle" (JSON path of the context): the
- * way of "Details" at the last error of the cards to their entries (domain matchChannelProblems). At
- * most CHANNEL_PROBLEM_CONNECTIONS_MAX connections and CHANNEL_PROBLEM_HITS_MAX entries.
+ * The entries of failed runs whose last occurrence is not before `since` (ms), newest first, of the
+ * connections `connectionIds` (by `context.connection`, the JSON path of the context): one query for
+ * the whole page "Kanäle", the way of "Details" at the last error of the cards to their entries
+ * (domain matchChannelProblems). At most CHANNEL_PROBLEM_HITS_MAX entries; the same failure counts on
+ * one entry, so a few cover every card.
  */
 export function channelProblemHits(
 	pb: PocketBase,
@@ -78,15 +85,10 @@ export function channelProblemHits(
 	{ signal }: RequestOptions = {}
 ): Promise<ChannelProblemHit[]> {
 	return withDataErrors(signal, async () => {
-		const ids = [...new Set(connectionIds)].slice(0, CHANNEL_PROBLEM_CONNECTIONS_MAX);
-		if (ids.length === 0) return [];
-		const params: Record<string, string> = { since: pocketBaseTime(since) };
-		ids.forEach((id, index) => {
-			params[`c${index}`] = id;
-		});
-		const connections = ids.map((_, index) => `context.connection = {:c${index}}`).join(' || ');
+		const asked = new Set(connectionIds);
+		if (asked.size === 0) return [];
 		const page = await pb.collection(EVENTS).getList(1, CHANNEL_PROBLEM_HITS_MAX, {
-			filter: pb.filter(`source = "channel" && last_at >= {:since} && (${connections})`, params),
+			filter: pb.filter(CHANNEL_HITS_FILTER, { since: pocketBaseTime(since) }),
 			sort: '-last_at,-id',
 			fields: 'id,context,last_at',
 			skipTotal: true,
@@ -94,6 +96,6 @@ export function channelProblemHits(
 		});
 		return page.items
 			.map(parseChannelProblemHit)
-			.filter((hit): hit is ChannelProblemHit => hit !== null);
+			.filter((hit): hit is ChannelProblemHit => hit !== null && asked.has(hit.connection));
 	});
 }
