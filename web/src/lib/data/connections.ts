@@ -37,6 +37,7 @@ import {
 	type MailboxOutcome
 } from '../domain/mailbox';
 import type { ProblemEntry } from '../domain/problems';
+import { isServerProblemId } from '../domain/server-problems';
 import { areaOptions, followArea } from './area';
 import { DATA_ERROR_MESSAGES, DataError, problemOf, toDataError, withDataErrors } from './errors';
 import { currentUserId, type RequestOptions } from './options';
@@ -530,7 +531,10 @@ export function runConnection(
 			missing: Array.isArray(result.missing)
 				? result.missing.filter((name): name is string => typeof name === 'string')
 				: [],
-			...(status === 'limited' && typeof result.hint === 'string' ? { hint: result.hint } : {})
+			...(status === 'limited' && typeof result.hint === 'string' ? { hint: result.hint } : {}),
+			...(status === 'error' && isServerProblemId(result.problem)
+				? { problem: result.problem }
+				: {})
 		};
 	});
 }

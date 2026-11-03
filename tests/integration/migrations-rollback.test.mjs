@@ -924,6 +924,10 @@ const CLIENT_OPS_MIGRATION = '1790205000_client_ops.js';
 const CLIENT_OPS_COLLECTION = 'client_ops';
 const OFFLINE_FIELDS = ['offline', 'device_at'];
 const OFFLINE_COLLECTIONS = ['comments', 'ticket_history'];
+// The error log of the server (ADR-0077, 1790205100), which every earlier test runs along as well: a
+// new, empty collection, no row of before changes.
+const PROBLEM_EVENTS_MIGRATION = '1790205100_problem_events.js';
+const PROBLEM_EVENTS_COLLECTION = 'problem_events';
 // [after, before] of the owner branch of 1790203900, of a record and of a record through its ticket.
 const PRIVATE_BRANCHES = [
 	['((owner = @request.auth.id && household = "") || (household != ""', '(owner = @request.auth.id || (household != ""'],
@@ -1149,9 +1153,17 @@ function withoutTicketSources(collections) {
 	return withoutClientOps(collections.filter((collection) => collection.name !== TICKET_SOURCES_COLLECTION));
 }
 
-/** The collections without the notes of the outbox (ADR-0074, 1790205000). */
+/**
+ * The collections without the notes of the outbox (ADR-0074, 1790205000) and without the error log
+ * of the server that follows them (ADR-0077, 1790205100, withoutProblemEvents).
+ */
 function withoutClientOps(collections) {
-	return collections.filter((collection) => collection.name !== CLIENT_OPS_COLLECTION);
+	return withoutProblemEvents(collections.filter((collection) => collection.name !== CLIENT_OPS_COLLECTION));
+}
+
+/** The collections without the error log of the server (ADR-0077, 1790205100). */
+function withoutProblemEvents(collections) {
+	return collections.filter((collection) => collection.name !== PROBLEM_EVENTS_COLLECTION);
 }
 
 /**
@@ -1540,7 +1552,8 @@ describe('migration rollback of "Jeden Termin einzeln anlegen" (plan OR-5)', () 
 				DAY_PLAN_MIGRATION,
 				TICKET_SOURCES_MIGRATION,
 				ASSIGNEES_MIGRATION,
-				CLIENT_OPS_MIGRATION
+				CLIENT_OPS_MIGRATION,
+				PROBLEM_EVENTS_MIGRATION
 			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -1697,7 +1710,8 @@ describe('migration rollback of the trash (ADR-0037)', () => {
 				DAY_PLAN_MIGRATION,
 				TICKET_SOURCES_MIGRATION,
 				ASSIGNEES_MIGRATION,
-				CLIENT_OPS_MIGRATION
+				CLIENT_OPS_MIGRATION,
+				PROBLEM_EVENTS_MIGRATION
 			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -1814,7 +1828,8 @@ describe('migration rollback of the own inbox (ADR-0038)', () => {
 				DAY_PLAN_MIGRATION,
 				TICKET_SOURCES_MIGRATION,
 				ASSIGNEES_MIGRATION,
-				CLIENT_OPS_MIGRATION
+				CLIENT_OPS_MIGRATION,
+				PROBLEM_EVENTS_MIGRATION
 			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -1951,7 +1966,8 @@ describe('migration rollback of "Status beim Anlegen" (plan WV, ADR-0022 addendu
 				DAY_PLAN_MIGRATION,
 				TICKET_SOURCES_MIGRATION,
 				ASSIGNEES_MIGRATION,
-				CLIENT_OPS_MIGRATION
+				CLIENT_OPS_MIGRATION,
+				PROBLEM_EVENTS_MIGRATION
 			]);
 			const ruleFields = [...STATUS_RULE_FIELDS, ...SUBTASKS_RULE_FIELDS];
 
@@ -2059,7 +2075,8 @@ describe('migration rollback of the pinned comment (ADR-0044)', () => {
 				DAY_PLAN_MIGRATION,
 				TICKET_SOURCES_MIGRATION,
 				ASSIGNEES_MIGRATION,
-				CLIENT_OPS_MIGRATION
+				CLIENT_OPS_MIGRATION,
+				PROBLEM_EVENTS_MIGRATION
 			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -2167,7 +2184,8 @@ describe('migration rollback of the sub-tasks of the template (plan WV-3, ADR-00
 				DAY_PLAN_MIGRATION,
 				TICKET_SOURCES_MIGRATION,
 				ASSIGNEES_MIGRATION,
-				CLIENT_OPS_MIGRATION
+				CLIENT_OPS_MIGRATION,
+				PROBLEM_EVENTS_MIGRATION
 			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -2261,7 +2279,7 @@ describe('migration rollback of the target project (ADR-0049)', () => {
 		async () => {
 			// The GitHub channel (ADR-0050, 1790203200) follows and runs along; it changes no row.
 			const fromTarget = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(TARGET_MIGRATION));
-			expect(fromTarget).toEqual([TARGET_MIGRATION, GITHUB_MIGRATION, FOLDER_MIGRATION, COLOR_MIGRATION, SECURITY_MIGRATION, LOGIN_FAILURES_MIGRATION, ACCOUNTS_MIGRATION, ...HOUSEHOLD_MIGRATIONS, CHARM_MIGRATION, TICKET_PINS_MIGRATION, DAY_PLAN_MIGRATION, TICKET_SOURCES_MIGRATION, ASSIGNEES_MIGRATION, CLIENT_OPS_MIGRATION]);
+			expect(fromTarget).toEqual([TARGET_MIGRATION, GITHUB_MIGRATION, FOLDER_MIGRATION, COLOR_MIGRATION, SECURITY_MIGRATION, LOGIN_FAILURES_MIGRATION, ACCOUNTS_MIGRATION, ...HOUSEHOLD_MIGRATIONS, CHARM_MIGRATION, TICKET_PINS_MIGRATION, DAY_PLAN_MIGRATION, TICKET_SOURCES_MIGRATION, ASSIGNEES_MIGRATION, CLIENT_OPS_MIGRATION, PROBLEM_EVENTS_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -2358,7 +2376,7 @@ describe('migration rollback of the GitHub channel (ADR-0050)', () => {
 		async () => {
 			// The folder channel (ADR-0051, 1790203300) follows and runs along; it changes no row.
 			const fromGithub = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(GITHUB_MIGRATION));
-			expect(fromGithub).toEqual([GITHUB_MIGRATION, FOLDER_MIGRATION, COLOR_MIGRATION, SECURITY_MIGRATION, LOGIN_FAILURES_MIGRATION, ACCOUNTS_MIGRATION, ...HOUSEHOLD_MIGRATIONS, CHARM_MIGRATION, TICKET_PINS_MIGRATION, DAY_PLAN_MIGRATION, TICKET_SOURCES_MIGRATION, ASSIGNEES_MIGRATION, CLIENT_OPS_MIGRATION]);
+			expect(fromGithub).toEqual([GITHUB_MIGRATION, FOLDER_MIGRATION, COLOR_MIGRATION, SECURITY_MIGRATION, LOGIN_FAILURES_MIGRATION, ACCOUNTS_MIGRATION, ...HOUSEHOLD_MIGRATIONS, CHARM_MIGRATION, TICKET_PINS_MIGRATION, DAY_PLAN_MIGRATION, TICKET_SOURCES_MIGRATION, ASSIGNEES_MIGRATION, CLIENT_OPS_MIGRATION, PROBLEM_EVENTS_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -2471,7 +2489,7 @@ describe('migration rollback of the folder channel (ADR-0051)', () => {
 		async () => {
 			// The colors (ADR-0052, 1790203400) follow and run along; they change no row.
 			const fromFolder = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(FOLDER_MIGRATION));
-			expect(fromFolder).toEqual([FOLDER_MIGRATION, COLOR_MIGRATION, SECURITY_MIGRATION, LOGIN_FAILURES_MIGRATION, ACCOUNTS_MIGRATION, ...HOUSEHOLD_MIGRATIONS, CHARM_MIGRATION, TICKET_PINS_MIGRATION, DAY_PLAN_MIGRATION, TICKET_SOURCES_MIGRATION, ASSIGNEES_MIGRATION, CLIENT_OPS_MIGRATION]);
+			expect(fromFolder).toEqual([FOLDER_MIGRATION, COLOR_MIGRATION, SECURITY_MIGRATION, LOGIN_FAILURES_MIGRATION, ACCOUNTS_MIGRATION, ...HOUSEHOLD_MIGRATIONS, CHARM_MIGRATION, TICKET_PINS_MIGRATION, DAY_PLAN_MIGRATION, TICKET_SOURCES_MIGRATION, ASSIGNEES_MIGRATION, CLIENT_OPS_MIGRATION, PROBLEM_EVENTS_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -2587,7 +2605,7 @@ describe('migration rollback of the colors (ADR-0052)', () => {
 		'adds a select field of the palette to projects, tickets and rules without changing a row; the way back loses only the colors',
 		async () => {
 			const fromColor = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(COLOR_MIGRATION));
-			expect(fromColor).toEqual([COLOR_MIGRATION, SECURITY_MIGRATION, LOGIN_FAILURES_MIGRATION, ACCOUNTS_MIGRATION, ...HOUSEHOLD_MIGRATIONS, CHARM_MIGRATION, TICKET_PINS_MIGRATION, DAY_PLAN_MIGRATION, TICKET_SOURCES_MIGRATION, ASSIGNEES_MIGRATION, CLIENT_OPS_MIGRATION]);
+			expect(fromColor).toEqual([COLOR_MIGRATION, SECURITY_MIGRATION, LOGIN_FAILURES_MIGRATION, ACCOUNTS_MIGRATION, ...HOUSEHOLD_MIGRATIONS, CHARM_MIGRATION, TICKET_PINS_MIGRATION, DAY_PLAN_MIGRATION, TICKET_SOURCES_MIGRATION, ASSIGNEES_MIGRATION, CLIENT_OPS_MIGRATION, PROBLEM_EVENTS_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -2657,7 +2675,7 @@ describe('migration of the security hardening (ADR-0055)', () => {
 		'switches the rate limiter on with "Normal" and the superusers to this machine, there and back, and keeps settings of the admin UI',
 		async () => {
 			const fromSecurity = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(SECURITY_MIGRATION));
-			expect(fromSecurity).toEqual([SECURITY_MIGRATION, LOGIN_FAILURES_MIGRATION, ACCOUNTS_MIGRATION, ...HOUSEHOLD_MIGRATIONS, CHARM_MIGRATION, TICKET_PINS_MIGRATION, DAY_PLAN_MIGRATION, TICKET_SOURCES_MIGRATION, ASSIGNEES_MIGRATION, CLIENT_OPS_MIGRATION]);
+			expect(fromSecurity).toEqual([SECURITY_MIGRATION, LOGIN_FAILURES_MIGRATION, ACCOUNTS_MIGRATION, ...HOUSEHOLD_MIGRATIONS, CHARM_MIGRATION, TICKET_PINS_MIGRATION, DAY_PLAN_MIGRATION, TICKET_SOURCES_MIGRATION, ASSIGNEES_MIGRATION, CLIENT_OPS_MIGRATION, PROBLEM_EVENTS_MIGRATION]);
 			const settingsOf = (dataDir) => readDataDir(dataDir).settings;
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -2703,7 +2721,7 @@ describe('migration rollback of the protocol of failed sign-ins (ADR-0055 §8)',
 		'adds login_failures without API rules and removes it with its rows on the way back',
 		async () => {
 			const fromLogins = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(LOGIN_FAILURES_MIGRATION));
-			expect(fromLogins).toEqual([LOGIN_FAILURES_MIGRATION, ACCOUNTS_MIGRATION, ...HOUSEHOLD_MIGRATIONS, CHARM_MIGRATION, TICKET_PINS_MIGRATION, DAY_PLAN_MIGRATION, TICKET_SOURCES_MIGRATION, ASSIGNEES_MIGRATION, CLIENT_OPS_MIGRATION]);
+			expect(fromLogins).toEqual([LOGIN_FAILURES_MIGRATION, ACCOUNTS_MIGRATION, ...HOUSEHOLD_MIGRATIONS, CHARM_MIGRATION, TICKET_PINS_MIGRATION, DAY_PLAN_MIGRATION, TICKET_SOURCES_MIGRATION, ASSIGNEES_MIGRATION, CLIENT_OPS_MIGRATION, PROBLEM_EVENTS_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -2742,7 +2760,7 @@ describe('migration rollback of the accounts and the administrator (ADR-0056)', 
 		'gives the right to the account created first (smallest ID on a tie) without other changes, and back',
 		async () => {
 			const fromAccounts = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(ACCOUNTS_MIGRATION));
-			expect(fromAccounts).toEqual([ACCOUNTS_MIGRATION, ...HOUSEHOLD_MIGRATIONS, CHARM_MIGRATION, TICKET_PINS_MIGRATION, DAY_PLAN_MIGRATION, TICKET_SOURCES_MIGRATION, ASSIGNEES_MIGRATION, CLIENT_OPS_MIGRATION]);
+			expect(fromAccounts).toEqual([ACCOUNTS_MIGRATION, ...HOUSEHOLD_MIGRATIONS, CHARM_MIGRATION, TICKET_PINS_MIGRATION, DAY_PLAN_MIGRATION, TICKET_SOURCES_MIGRATION, ASSIGNEES_MIGRATION, CLIENT_OPS_MIGRATION, PROBLEM_EVENTS_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -2822,7 +2840,7 @@ describe('migration rollback of managing a household (ADR-0058)', () => {
 		'adds the codes, the rights and the rule of joining, keeps the owner branch for private records only, and back, without touching a row',
 		async () => {
 			const fromHousehold = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(HOUSEHOLD_INVITES_MIGRATION));
-			expect(fromHousehold).toEqual([...HOUSEHOLD_MIGRATIONS, CHARM_MIGRATION, TICKET_PINS_MIGRATION, DAY_PLAN_MIGRATION, TICKET_SOURCES_MIGRATION, ASSIGNEES_MIGRATION, CLIENT_OPS_MIGRATION]);
+			expect(fromHousehold).toEqual([...HOUSEHOLD_MIGRATIONS, CHARM_MIGRATION, TICKET_PINS_MIGRATION, DAY_PLAN_MIGRATION, TICKET_SOURCES_MIGRATION, ASSIGNEES_MIGRATION, CLIENT_OPS_MIGRATION, PROBLEM_EVENTS_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -2905,7 +2923,7 @@ describe('migration rollback of the retention of a household (ADR-0059 §6)', ()
 		'adds the retention of every household empty (30 days), and back, without touching another row',
 		async () => {
 			const fromRetention = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(AREA_RETENTION_MIGRATION));
-			expect(fromRetention).toEqual([AREA_RETENTION_MIGRATION, PRIVATE_CONNECTIONS_MIGRATION, MOVED_FINGERPRINTS_MIGRATION, CHARM_MIGRATION, TICKET_PINS_MIGRATION, DAY_PLAN_MIGRATION, TICKET_SOURCES_MIGRATION, ASSIGNEES_MIGRATION, CLIENT_OPS_MIGRATION]);
+			expect(fromRetention).toEqual([AREA_RETENTION_MIGRATION, PRIVATE_CONNECTIONS_MIGRATION, MOVED_FINGERPRINTS_MIGRATION, CHARM_MIGRATION, TICKET_PINS_MIGRATION, DAY_PLAN_MIGRATION, TICKET_SOURCES_MIGRATION, ASSIGNEES_MIGRATION, CLIENT_OPS_MIGRATION, PROBLEM_EVENTS_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -2954,7 +2972,7 @@ describe('migration of the connections of a household from before (ADR-0061 §7)
 		'puts a connection of a household into the private area of its active owner, and leaves everything else',
 		async () => {
 			const fromConnections = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(PRIVATE_CONNECTIONS_MIGRATION));
-			expect(fromConnections).toEqual([PRIVATE_CONNECTIONS_MIGRATION, MOVED_FINGERPRINTS_MIGRATION, CHARM_MIGRATION, TICKET_PINS_MIGRATION, DAY_PLAN_MIGRATION, TICKET_SOURCES_MIGRATION, ASSIGNEES_MIGRATION, CLIENT_OPS_MIGRATION]);
+			expect(fromConnections).toEqual([PRIVATE_CONNECTIONS_MIGRATION, MOVED_FINGERPRINTS_MIGRATION, CHARM_MIGRATION, TICKET_PINS_MIGRATION, DAY_PLAN_MIGRATION, TICKET_SOURCES_MIGRATION, ASSIGNEES_MIGRATION, CLIENT_OPS_MIGRATION, PROBLEM_EVENTS_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -3040,7 +3058,7 @@ describe('migration rollback of the fingerprints of moved entries (ADR-0061, add
 		'adds the collection without touching a row, and back with its rows',
 		async () => {
 			const fromMoved = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(MOVED_FINGERPRINTS_MIGRATION));
-			expect(fromMoved).toEqual([MOVED_FINGERPRINTS_MIGRATION, CHARM_MIGRATION, TICKET_PINS_MIGRATION, DAY_PLAN_MIGRATION, TICKET_SOURCES_MIGRATION, ASSIGNEES_MIGRATION, CLIENT_OPS_MIGRATION]);
+			expect(fromMoved).toEqual([MOVED_FINGERPRINTS_MIGRATION, CHARM_MIGRATION, TICKET_PINS_MIGRATION, DAY_PLAN_MIGRATION, TICKET_SOURCES_MIGRATION, ASSIGNEES_MIGRATION, CLIENT_OPS_MIGRATION, PROBLEM_EVENTS_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -3137,7 +3155,7 @@ describe('migration rollback of the charms (ADR-0062)', () => {
 		async () => {
 			// The pins (ADR-0064, 1790204500) follow and run along; they change no row.
 			const fromCharm = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(CHARM_MIGRATION));
-			expect(fromCharm).toEqual([CHARM_MIGRATION, TICKET_PINS_MIGRATION, DAY_PLAN_MIGRATION, TICKET_SOURCES_MIGRATION, ASSIGNEES_MIGRATION, CLIENT_OPS_MIGRATION]);
+			expect(fromCharm).toEqual([CHARM_MIGRATION, TICKET_PINS_MIGRATION, DAY_PLAN_MIGRATION, TICKET_SOURCES_MIGRATION, ASSIGNEES_MIGRATION, CLIENT_OPS_MIGRATION, PROBLEM_EVENTS_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -3207,7 +3225,7 @@ describe('migration rollback of the pinned tickets (ADR-0064)', () => {
 			// The day plan (ADR-0065, 1790204600) follows and runs along: the kind at tickets (not in the
 			// snapshot) and its collections.
 			const fromPins = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(TICKET_PINS_MIGRATION));
-			expect(fromPins).toEqual([TICKET_PINS_MIGRATION, DAY_PLAN_MIGRATION, TICKET_SOURCES_MIGRATION, ASSIGNEES_MIGRATION, CLIENT_OPS_MIGRATION]);
+			expect(fromPins).toEqual([TICKET_PINS_MIGRATION, DAY_PLAN_MIGRATION, TICKET_SOURCES_MIGRATION, ASSIGNEES_MIGRATION, CLIENT_OPS_MIGRATION, PROBLEM_EVENTS_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -3265,7 +3283,7 @@ describe('migration rollback of the day plan (ADR-0065)', () => {
 		async () => {
 			// The tickets as sources (ADR-0067, 1790204800) follow and run along: a new collection.
 			const fromDayPlan = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(DAY_PLAN_MIGRATION));
-			expect(fromDayPlan).toEqual([DAY_PLAN_MIGRATION, TICKET_SOURCES_MIGRATION, ASSIGNEES_MIGRATION, CLIENT_OPS_MIGRATION]);
+			expect(fromDayPlan).toEqual([DAY_PLAN_MIGRATION, TICKET_SOURCES_MIGRATION, ASSIGNEES_MIGRATION, CLIENT_OPS_MIGRATION, PROBLEM_EVENTS_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -3349,7 +3367,7 @@ describe('migration rollback of the tickets as sources (ADR-0067)', () => {
 		async () => {
 			// The assignees (ADR-0068, 1790204900) follow and run along.
 			const fromLinks = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(TICKET_SOURCES_MIGRATION));
-			expect(fromLinks).toEqual([TICKET_SOURCES_MIGRATION, ASSIGNEES_MIGRATION, CLIENT_OPS_MIGRATION]);
+			expect(fromLinks).toEqual([TICKET_SOURCES_MIGRATION, ASSIGNEES_MIGRATION, CLIENT_OPS_MIGRATION, PROBLEM_EVENTS_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -3457,7 +3475,7 @@ describe('migration rollback of the assignees (ADR-0068)', () => {
 			// The outbox (ADR-0074, 1790205000) follows and runs along: a new collection and fields at
 			// comments and the history, which this test does not fill.
 			const fromAssignees = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(ASSIGNEES_MIGRATION));
-			expect(fromAssignees).toEqual([ASSIGNEES_MIGRATION, CLIENT_OPS_MIGRATION]);
+			expect(fromAssignees).toEqual([ASSIGNEES_MIGRATION, CLIENT_OPS_MIGRATION, PROBLEM_EVENTS_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -3559,7 +3577,7 @@ describe('migration rollback of the outbox (ADR-0074)', () => {
 		'adds the notes and the marks without changing a row; the way back loses only them',
 		async () => {
 			const fromOps = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(CLIENT_OPS_MIGRATION));
-			expect(fromOps).toEqual([CLIENT_OPS_MIGRATION]);
+			expect(fromOps).toEqual([CLIENT_OPS_MIGRATION, PROBLEM_EVENTS_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -3610,6 +3628,65 @@ describe('migration rollback of the outbox (ADR-0074)', () => {
 				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromOps);
 				assertSchema(readDataDir(dataDir).collections);
 				expect(withDatabase(dataDir, markedRows).comments.map((row) => row.offline)).toEqual([0]);
+			});
+		}
+	);
+});
+
+describe('migration rollback of the error log of the server (ADR-0077)', () => {
+	const OWNER = 'user00000000001';
+	const SCOPE = 'u:user00000000001';
+	const eventsCollection = (dataDir) =>
+		readDataDir(dataDir).collections.find((collection) => collection.name === PROBLEM_EVENTS_COLLECTION);
+
+	/** An account with a ticket, as before the error log. */
+	function insertData(db) {
+		db.prepare('INSERT INTO users (id, email, tokenKey, password, created, updated) VALUES (?, ?, ?, ?, ?, ?)').run(OWNER, 'eins@example.invalid', 'tk1', 'hash', STAMP, STAMP);
+		db.prepare(
+			'INSERT INTO tickets (id, number, key, title, status, priority, scope, owner, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+		).run('ticket000000001', 1, 'TASK-1', 'Müll rausbringen', 'open', 'medium', SCOPE, OWNER, STAMP, STAMP);
+	}
+
+	it(
+		'adds the empty log with its rules without changing a row; the way back loses only its entries',
+		async () => {
+			const fromEvents = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(PROBLEM_EVENTS_MIGRATION));
+			expect(fromEvents).toEqual([PROBLEM_EVENTS_MIGRATION]);
+
+			await withTempDataDir(async ({ dataDir, args }) => {
+				await migrate(args, 'up');
+				await migrate(args, 'down', String(fromEvents.length));
+				expect(eventsCollection(dataDir)).toBeUndefined();
+				withDatabase(dataDir, insertData);
+				const rows = withDatabase(dataDir, snapshot);
+				const schemaBefore = withoutTimestamps(readDataDir(dataDir).collections);
+
+				const up = await migrate(args, 'up');
+				expect(appliedFiles(up, 'Applied')).toEqual(fromEvents);
+				assertSchema(readDataDir(dataDir).collections);
+				expect(eventsCollection(dataDir)).toMatchObject({ createRule: null, updateRule: null, deleteRule: null });
+				expect(eventsCollection(dataDir).listRule).toContain('(area = "private" && owner = @request.auth.id)');
+				expect(withoutProblemEvents(withoutTimestamps(readDataDir(dataDir).collections))).toEqual(schemaBefore);
+				// Nothing to seed, no row of before changes.
+				expect(withDatabase(dataDir, (db) => db.prepare(`SELECT * FROM ${PROBLEM_EVENTS_COLLECTION}`).all())).toEqual([]);
+				expect(withDatabase(dataDir, snapshot)).toEqual(rows);
+
+				// An entry meanwhile; on the way back it goes, nothing else changes.
+				withDatabase(dataDir, (db) => {
+					db.prepare(
+						`INSERT INTO ${PROBLEM_EVENTS_COLLECTION} (id, source, area, owner, household, code, message, context, fingerprint, count, first_at, last_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+					).run('problem00000001', 'request', 'private', OWNER, '', 'http_500', 'Kaputt', '{}', 'a'.repeat(64), 1, STAMP, STAMP);
+				});
+
+				const down = await migrate(args, 'down', String(fromEvents.length));
+				expect(appliedFiles(down, 'Reverted')).toEqual([...fromEvents].reverse());
+				expect(eventsCollection(dataDir)).toBeUndefined();
+				expect(withoutTimestamps(readDataDir(dataDir).collections)).toEqual(schemaBefore);
+				expect(withDatabase(dataDir, snapshot)).toEqual(rows);
+
+				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromEvents);
+				assertSchema(readDataDir(dataDir).collections);
+				expect(withDatabase(dataDir, (db) => db.prepare(`SELECT COUNT(*) AS n FROM ${PROBLEM_EVENTS_COLLECTION}`).get().n)).toBe(0);
 			});
 		}
 	);

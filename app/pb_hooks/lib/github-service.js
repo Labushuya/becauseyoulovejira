@@ -941,10 +941,22 @@ function summary(record) {
   };
 }
 
+// The error log of the server (FP-2, ADR-0077): an error of the connection that "Verbindung prüfen"
+// stores at the card gets its entry like a failed run (same source and context), so "Details" of the
+// card names it. Never disturbs the check.
+function logProblem(app, record, error) {
+  try {
+    require(__hooks + '/lib/problem-service.js').recordChannel(app, record, error);
+  } catch (err) {
+    // The log of PocketBase has the warning of the check.
+  }
+}
+
 /**
  * "Verbindung prüfen" (ADR-0050 §7): who the token belongs to, the rate limit (GET /rate_limit does
  * not count) and per repository whether it is reachable. Stores the result at the connection like a
- * run: last_ok_at and an empty error after success, the error of the connection otherwise.
+ * run: last_ok_at and an empty error after success, the error of the connection otherwise, which
+ * also gets its entry in the error log of the server (FP-2).
  * Returns { status: 'ok' | 'error' | 'limited', authenticated, login, rate, repos, message }.
  */
 function check(app, record) {
@@ -1006,12 +1018,16 @@ function check(app, record) {
   try {
     var fresh = app.findRecordById(COLLECTION, record.id);
     var stamp = berlin.toPocketBaseDate(Date.now());
+    var lastError = secrets.redact(connectionError, [token]);
     fresh.set('last_run_at', stamp);
-    fresh.set('last_error', secrets.redact(connectionError, [token]));
+    fresh.set('last_error', lastError);
     if (result.status === 'ok') {
       fresh.set('last_ok_at', stamp);
     }
     app.save(fresh);
+    if (lastError !== '') {
+      logProblem(app, fresh, lastError);
+    }
   } catch (err) {
     app.logger().warn('byl-github: Prüfung nicht gespeichert', 'connection', record.id, 'error', secrets.redact(String(err), [token]));
   }

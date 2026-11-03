@@ -238,6 +238,8 @@ export const HELP_SECTIONS = [
 	// The errors of this session (FP-1, ADR-0071 §5), for every account; FP-3 moves the entry to
 	// "Einstellungen → Protokoll".
 	{ id: 'fehler', label: 'Fehler dieser Sitzung' },
+	// The error log of the server (FP-2, ADR-0077), for every account; FP-3 moves it as well.
+	{ id: 'fehlerprotokoll', label: 'Fehlerprotokoll des Servers' },
 	{ id: 'betrieb', label: 'Betrieb' },
 	// Backups and the emergency plan (ADR-0046 §8): linked from the page "Sicherung".
 	{ id: 'sicherung', label: 'Sicherung & Notfall' },

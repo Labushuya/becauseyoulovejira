@@ -546,6 +546,8 @@ export interface RunResult {
 	missing: string[];
 	/** "limited": the neutral hint of the server with the time of the next run. */
 	hint?: string;
+	/** "error": the entry of the log of the server (FP-2, ADR-0077), if it kept one. */
+	problem?: string;
 }
 
 /** Counts of a good run, e.g. "3 neu, 1 schon vorhanden". */

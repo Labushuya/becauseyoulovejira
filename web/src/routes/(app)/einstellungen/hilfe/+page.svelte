@@ -20,6 +20,7 @@
 	import RecurrenceHelp from '$lib/components/help/RecurrenceHelp.svelte';
 	import ScriptProblemsHelp from '$lib/components/help/ScriptProblemsHelp.svelte';
 	import ShortcutList from '$lib/components/help/ShortcutList.svelte';
+	import ServerProblemsEntry from '$lib/components/problems/ServerProblemsEntry.svelte';
 	import SessionProblemsEntry from '$lib/components/problems/SessionProblemsEntry.svelte';
 	import { PRIORITY_NUMBERS, PRIORITY_WORDS } from '$lib/domain/quick-syntax';
 	import { CONTEXT_TEXTS, RESTART_NEEDED } from '$lib/guidance/texts';
@@ -1786,6 +1787,12 @@
 	<section id="fehler" aria-labelledby="fehler-title">
 		<h3 id="fehler-title">Fehler dieser Sitzung</h3>
 		<SessionProblemsEntry />
+	</section>
+
+	<!-- The error log of the server (FP-2, ADR-0077): for every account, kept small for FP-3. -->
+	<section id="fehlerprotokoll" aria-labelledby="fehlerprotokoll-title">
+		<h3 id="fehlerprotokoll-title">Fehlerprotokoll des Servers</h3>
+		<ServerProblemsEntry />
 	</section>
 
 	<section id="betrieb" aria-labelledby="betrieb-title">

@@ -53,6 +53,7 @@
 	import Lozenge from '../guidance/Lozenge.svelte';
 	import SectionMessage from '../guidance/SectionMessage.svelte';
 	import ConfirmDialog from '../overlay/ConfirmDialog.svelte';
+	import ServerProblemLink from '../problems/ServerProblemLink.svelte';
 	import CardTargetProject from './CardTargetProject.svelte';
 	import ChannelCard, { type CardAction, type CardRename } from './ChannelCard.svelte';
 	import CredentialsBlock from './CredentialsBlock.svelte';
@@ -413,7 +414,15 @@
 			{#if connection.lastError !== ''}
 				<div>
 					<dt>Letzter Fehler</dt>
-					<dd>{textForContext(connection.lastError)}</dd>
+					<dd>
+						{textForContext(connection.lastError)}
+						<ServerProblemLink
+							connection={connection.id}
+							name={connection.label}
+							lastError={connection.lastError}
+							lastRunAt={connection.lastRunAt}
+						/>
+					</dd>
 				</div>
 			{/if}
 		</dl>

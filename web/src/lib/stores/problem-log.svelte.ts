@@ -5,7 +5,8 @@
 // ring of at most PROBLEM_LOG_MAX entries; the same problem in quick succession counts on its entry
 // ("3×"). Blocked or full storage never breaks anything, the list then lasts for this page. The one
 // list of the app is the module instance `problemLog`; the dialog "Fehler dieser Sitzung" opens
-// through it (rendered once by the root layout).
+// through it (rendered once by the root layout), since FP-2 (ADR-0077) also with the log of the
+// server first (`openServerLog`). The entries of the server are never stored here.
 
 import { SvelteSet } from 'svelte/reactivity';
 import { version } from '$app/environment';
@@ -21,12 +22,16 @@ import {
 
 export type ProblemStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 
+/** The list the dialog shows first: this tab or the log of the server (FP-2, ADR-0077). */
+export type ProblemView = 'session' | 'server';
+
 export class ProblemLog {
 	readonly #storage: ProblemStorage | null;
 	/** IDs taken on this page: a message that shows again (a flag moving, a re-render) counts once. */
 	readonly #taken = new SvelteSet<string>();
 	#entries = $state.raw<readonly ProblemEntry[]>([]);
 	#dialogOpen = $state(false);
+	#dialogView = $state<ProblemView>('session');
 
 	constructor(storage: ProblemStorage | null) {
 		this.#storage = storage;
@@ -66,7 +71,19 @@ export class ProblemLog {
 		return this.#dialogOpen;
 	}
 
+	/** The list the dialog shows first. */
+	get dialogView(): ProblemView {
+		return this.#dialogView;
+	}
+
 	openDialog(): void {
+		this.#dialogView = 'session';
+		this.#dialogOpen = true;
+	}
+
+	/** The dialog with the log of the server first (FP-2, the help and its entry). */
+	openServerLog(): void {
+		this.#dialogView = 'server';
 		this.#dialogOpen = true;
 	}
 

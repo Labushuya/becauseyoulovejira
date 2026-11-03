@@ -67,6 +67,12 @@ cronAdd('byl-recurrence', '7 * * * *', function () {
     require(`${__hooks}/lib/recurrence-service.js`).runDue($app, Date.now());
   } catch (err) {
     $app.logger().error('Wiederholungen: Cron-Lauf gescheitert', 'error', String(err));
+    // The error log of the server (FP-2, ADR-0077), for the administrator; it never throws.
+    try {
+      require(`${__hooks}/lib/problem-service.js`).recordJob($app, 'recurrence', err);
+    } catch (ignored) {
+      // The log of PocketBase has it.
+    }
   }
 });
 

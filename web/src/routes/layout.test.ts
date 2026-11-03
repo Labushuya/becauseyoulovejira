@@ -3,7 +3,7 @@
 // (ADR-0035 section 6). The auth module is replaced by a plain object per test; its behaviour is
 // covered in src/lib/auth.test.ts.
 
-import { fireEvent, render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { createRawSnippet, tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SessionFailure, SessionStatus } from '$lib/auth.svelte';
@@ -250,5 +250,66 @@ describe('second tab of the same browser (ADR-0035 section 6)', () => {
 		await settle();
 		expect(received).toEqual([]);
 		expect(notice()).toBeNull();
+	});
+});
+
+// The address of an entry of the error log of the server (FP-2, ADR-0077): "Details" at a card leads
+// to ?fehler=<id> on the same page; the dialog opens with that entry once the session is known and
+// takes the parameter out of the address when it closes.
+describe('entry of the error log of the server in the address (FP-2)', () => {
+	useOverlayStubs();
+	const ID = 'abc123def456ghi';
+	const ENTRY = {
+		id: ID,
+		source: 'channel',
+		area: 'private',
+		code: 'channel_error',
+		message: 'Telegram antwortet mit HTTP 401.',
+		context: { connection: 'conn00000000001', channel: 'telegram' },
+		count: 1,
+		first_at: '2026-11-02 09:30:00.000Z',
+		last_at: '2026-11-02 09:30:00.000Z'
+	};
+
+	beforeEach(() => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn<typeof fetch>(async (input) =>
+				new URL(String(input)).pathname.endsWith('/records')
+					? Response.json({ page: 1, perPage: 50, totalItems: -1, totalPages: -1, items: [ENTRY] })
+					: Response.json(ENTRY)
+			)
+		);
+	});
+
+	afterEach(() => {
+		vi.unstubAllGlobals();
+	});
+
+	it('opens the dialog at the entry and takes the parameter out of the address on closing', async () => {
+		await renderLayout(`/einstellungen/kanaele?einrichten=telegram&fehler=${ID}`, {
+			status: 'ready',
+			isLoggedIn: true
+		});
+		const dialog = screen.getByRole('dialog', { name: 'Fehlerprotokoll des Servers' });
+		expect(await screen.findByText('Verlinkter Eintrag')).toBeTruthy();
+		expect(screen.getByText(CONTENT)).toBeTruthy();
+
+		// The footer button; the × of the head has the same name.
+		await fireEvent.click(within(dialog).getByText('Schließen'));
+		expect(mocks.goto).toHaveBeenCalledWith('/einstellungen/kanaele?einrichten=telegram', {
+			replaceState: true,
+			keepFocus: true,
+			noScroll: true
+		});
+	});
+
+	it('opens nothing without a session, for an invalid ID or while the session is checked', async () => {
+		await renderLayout(`/login?fehler=${ID}`, { status: 'ready', isLoggedIn: false });
+		expect(screen.queryByRole('dialog', { name: 'Fehlerprotokoll des Servers' })).toBeNull();
+		await renderLayout('/?fehler=nicht-gueltig', { status: 'ready', isLoggedIn: true });
+		expect(screen.queryByRole('dialog', { name: 'Fehlerprotokoll des Servers' })).toBeNull();
+		await renderLayout(`/?fehler=${ID}`, { status: 'checking', isLoggedIn: true });
+		expect(screen.queryByRole('dialog', { name: 'Fehlerprotokoll des Servers' })).toBeNull();
 	});
 });

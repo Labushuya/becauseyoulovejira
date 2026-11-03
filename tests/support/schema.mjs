@@ -484,6 +484,27 @@ export const EXPECTED_COLLECTIONS = {
 			'CREATE INDEX idx_client_ops_created ON client_ops (created)'
 		]
 	},
+	// The error log of the server (ADR-0077, migration 1790205100): one row per failure, the same one
+	// counts on it; never a body, a header or a token.
+	problem_events: {
+		fields: {
+			source: select(['request', 'channel', 'job'], true),
+			area: select(['private', 'household', 'system'], true),
+			owner: relation('users', { cascadeDelete: true }),
+			household: relation('households', { cascadeDelete: true }),
+			code: text({ max: 60 }),
+			message: text({ max: 300 }),
+			context: { type: 'json', required: false, maxSize: 2000 },
+			fingerprint: text({ required: true, max: 64, pattern: '^[0-9a-f]{64}$', hidden: true }),
+			count: number({ required: true, min: 1 }),
+			first_at: { type: 'date', required: true },
+			last_at: { type: 'date', required: true }
+		},
+		indexes: [
+			'CREATE UNIQUE INDEX idx_problem_events_fingerprint ON problem_events (fingerprint)',
+			'CREATE INDEX idx_problem_events_last_at ON problem_events (last_at)'
+		]
+	},
 	// Failed sign-ins for the page "Sicherheit" (ADR-0055 §8, migration 1790203600); never a password.
 	login_failures: {
 		fields: {
@@ -547,6 +568,12 @@ const TICKET_SOURCES_READ =
 	'@collection.household_members:source_member.household ?= source.household && ' +
 	'@collection.household_members:source_member.user ?= @request.auth.id)) && ' +
 	'ticket.deleted_at = "" && source.deleted_at = ""';
+
+const PROBLEM_EVENTS_READ =
+	`${AUTH} && ((area = "private" && owner = @request.auth.id) || ` +
+	'(area = "household" && household != "" && @collection.household_members.household ?= household && ' +
+	'@collection.household_members.user ?= @request.auth.id) || ' +
+	'(area = "system" && @request.auth.instance_admin = true))';
 
 // Members of the own households see each other (ADR-0056 §4, migration 1790203700; before only the
 // own rows, 'user = @request.auth.id').
@@ -630,7 +657,11 @@ export const EXPECTED_RULES = {
 	// the memberships) and alive, written only by the routes.
 	ticket_sources: { listRule: TICKET_SOURCES_READ, viewRule: TICKET_SOURCES_READ, ...READ_ONLY },
 	// Only the hooks read and write the notes of the outbox (ADR-0074).
-	client_ops: { listRule: null, viewRule: null, ...READ_ONLY }
+	client_ops: { listRule: null, viewRule: null, ...READ_ONLY },
+	// The error log of the server (ADR-0077 §5): a private entry only for its owner (not for the
+	// administrator), one of a household for its members, one of the app for the administrator;
+	// written only by lib/problem-service.js.
+	problem_events: { listRule: PROBLEM_EVENTS_READ, viewRule: PROBLEM_EVENTS_READ, ...READ_ONLY }
 };
 
 // The own record, every record for the administrator of the app and the accounts of the own
