@@ -14,6 +14,12 @@ import { berlinOffsetHours } from './berlin-date';
 export type ProblemSource = 'client' | 'server';
 
 /**
+ * Who sees an entry of the log of the server (FP-2, ADR-0077 §5): only its owner, the members of its
+ * household, the administrator of the app.
+ */
+export type ProblemArea = 'private' | 'household' | 'system';
+
+/**
  * What came back: no connection, an answer with an error status, an answer the app could not
  * read, an exception in the browser, or an answer that reports a failure itself (a channel whose
  * run failed answers "Jetzt abrufen" with 200 and the cleaned error).
@@ -64,6 +70,8 @@ export interface ProblemEntry {
 	readonly serverId: string | null;
 	/** FP-2: what links a request with the log of the server (e.g. a request ID), if known. */
 	readonly correlation: string | null;
+	/** FP-2: who sees an entry of the log of the server; never set for an entry of this tab. */
+	readonly area?: ProblemArea;
 }
 
 /** Key in sessionStorage: the list of this tab survives a reload, nothing else keeps it. */
@@ -106,7 +114,17 @@ export const PROBLEM_TEXTS = Object.freeze({
 	answer: 'Unerwartete Antwort des Servers',
 	exception: 'Unerwartete Ausnahme im Browser',
 	reported: 'Vom Server gemeldeter Fehler',
-	refused: 'Vom Server abgelehnt'
+	refused: 'Vom Server abgelehnt',
+	serverId: 'Server-ID',
+	area: 'Bereich',
+	lastAt: 'Zuletzt'
+});
+
+/** "Bereich" of an entry of the log of the server: who sees it (ADR-0077 §5). */
+export const PROBLEM_AREA_LABELS: Readonly<Record<ProblemArea, string>> = Object.freeze({
+	private: 'Privat, nur für dich',
+	household: 'Haushalt, für alle Mitglieder',
+	system: 'App, nur für den Verwalter'
 });
 
 /** "Alle Fehler dieser Sitzung (3)". */
@@ -340,6 +358,8 @@ export interface ProblemInput {
 	readonly request: ProblemRequest | null;
 	readonly app: string | null;
 	readonly exception: ProblemException | null;
+	/** The entry of the log of the server, when the answer named one (FP-2, header X-Byl-Problem). */
+	readonly serverId?: string | null;
 }
 
 /** A new entry of this tab, seen once. */
@@ -355,7 +375,7 @@ export function clientProblem(input: ProblemInput): ProblemEntry {
 		request: input.request,
 		app: input.app,
 		exception: input.exception,
-		serverId: null,
+		serverId: input.serverId ?? null,
 		correlation: null
 	};
 }
@@ -380,9 +400,15 @@ export function requestText(request: ProblemRequest): string {
 	return request.method === null ? request.path : `${request.method} ${request.path}`;
 }
 
-/** "3× bis 14:03:20" for a merged entry, null for a single occurrence. */
+/**
+ * "3× bis 14:03:20" for a merged entry of this tab, "3×" for one of the server (its last occurrence
+ * has a row of its own, it may be days later), null for a single occurrence.
+ */
 export function countText(entry: ProblemEntry): string | null {
-	return entry.count > 1 ? `${entry.count}× bis ${formatProblemClock(entry.lastAt)}` : null;
+	if (entry.count <= 1) return null;
+	return entry.source === 'server'
+		? `${entry.count}×`
+		: `${entry.count}× bis ${formatProblemClock(entry.lastAt)}`;
 }
 
 /** "Build 1760870400000", or "unbekannt". */
@@ -396,14 +422,22 @@ export interface ProblemFact {
 	readonly value: string;
 }
 
-/** The facts of an entry as label and value, in the order of the details and of the report. */
+/**
+ * The facts of an entry as label and value, in the order of the details and of the report. An entry
+ * of the server names its area and its last occurrence instead of the build of this app; every entry
+ * with an entry on the server ends with its Server-ID (FP-2, ADR-0077).
+ */
 export function problemFacts(entry: ProblemEntry): ProblemFact[] {
+	const server = entry.source === 'server';
 	const facts: ProblemFact[] = [
 		{ label: PROBLEM_TEXTS.intent, value: entry.intent },
 		{ label: PROBLEM_TEXTS.at, value: formatProblemTime(entry.at) }
 	];
 	const count = countText(entry);
 	if (count !== null) facts.push({ label: PROBLEM_TEXTS.count, value: count });
+	if (server && entry.lastAt !== entry.at) {
+		facts.push({ label: PROBLEM_TEXTS.lastAt, value: formatProblemTime(entry.lastAt) });
+	}
 	facts.push({ label: PROBLEM_TEXTS.result, value: outcomeText(entry.outcome) });
 	if (entry.outcome.code !== null) {
 		facts.push({ label: PROBLEM_TEXTS.code, value: entry.outcome.code });
@@ -414,20 +448,28 @@ export function problemFacts(entry: ProblemEntry): ProblemFact[] {
 	if (entry.request !== null) {
 		facts.push({ label: PROBLEM_TEXTS.request, value: requestText(entry.request) });
 	}
-	facts.push({ label: PROBLEM_TEXTS.app, value: appText(entry.app) });
+	if (server && entry.area !== undefined) {
+		facts.push({ label: PROBLEM_TEXTS.area, value: PROBLEM_AREA_LABELS[entry.area] });
+	}
+	if (!server) facts.push({ label: PROBLEM_TEXTS.app, value: appText(entry.app) });
+	if (entry.serverId !== null) facts.push({ label: PROBLEM_TEXTS.serverId, value: entry.serverId });
 	return facts;
 }
 
 /**
- * The report of one entry as plain text for the clipboard: exactly the facts of the details, the
- * time also in UTC, and the technical details of an unexpected exception.
+ * The report of one entry as plain text for the clipboard: exactly the facts of the details (with
+ * the Server-ID where there is one), the times also in UTC, and the technical details of an
+ * unexpected exception.
  */
 export function problemReport(entry: ProblemEntry): string {
-	const utc = new Date(entry.at).toISOString();
+	const utc = (ms: number) => new Date(ms).toISOString();
 	const lines = problemFacts(entry).map(({ label, value }) =>
-		label === PROBLEM_TEXTS.at ? `${label}: ${value} (${utc})` : `${label}: ${value}`
+		label === PROBLEM_TEXTS.at
+			? `${label}: ${value} (${utc(entry.at)})`
+			: label === PROBLEM_TEXTS.lastAt
+				? `${label}: ${value} (${utc(entry.lastAt)})`
+				: `${label}: ${value}`
 	);
-	if (entry.serverId !== null) lines.push(`Server-ID: ${entry.serverId}`);
 	const exception = entry.exception;
 	if (exception !== null) {
 		const head =

@@ -14,8 +14,10 @@
 	import DuplicateTabNotice from '$lib/components/DuplicateTabNotice.svelte';
 	import SessionProblemsDialog from '$lib/components/problems/SessionProblemsDialog.svelte';
 	import SessionNotice from '$lib/components/SessionNotice.svelte';
+	import { serverProblemIdOf } from '$lib/domain/server-problems';
 	import { guardTarget } from '$lib/guard';
 	import { consumeLaunches } from '$lib/launch-queue';
+	import { withoutServerProblem } from '$lib/problem-link';
 	import { problemLog } from '$lib/stores/problem-log.svelte';
 	import {
 		TAB_CHANNEL,
@@ -106,6 +108,21 @@
 		const destination: ResolvedPathname = target;
 		void goto(destination, { replaceState: true });
 	});
+
+	// An entry of the log of the server in the address (`?fehler=<id>`, FP-2, ADR-0077), e.g. from
+	// "Details" at the last error of a channel card: the dialog of the errors opens with it once the
+	// session is known and the page is shown; closing it takes the parameter out of the address.
+	const signedIn = $derived(auth.status === 'ready' && auth.isLoggedIn);
+	const linkedProblem = $derived(
+		signedIn && target === null ? serverProblemIdOf(page.url.searchParams) : null
+	);
+
+	function closeProblems() {
+		problemLog.closeDialog();
+		if (serverProblemIdOf(page.url.searchParams) === null) return;
+		const rest: ResolvedPathname = withoutServerProblem(page.url);
+		void goto(rest, { replaceState: true, keepFocus: true, noScroll: true });
+	}
 </script>
 
 <svelte:head>
@@ -127,9 +144,15 @@
 	<DuplicateTabNotice onkeep={keepThisTab} />
 {/if}
 
-<!-- The list "Fehler dieser Sitzung" (FP-1, ADR-0071 §4), once for every page, the login included. -->
-{#if problemLog.dialogOpen}
-	<SessionProblemsDialog onclose={() => problemLog.closeDialog()} />
+<!-- The list "Fehler dieser Sitzung" (FP-1, ADR-0071 §4), once for every page, the login included;
+	since FP-2 (ADR-0077) with the log of the server, also from the address (?fehler=<id>). -->
+{#if problemLog.dialogOpen || linkedProblem !== null}
+	<SessionProblemsDialog
+		onclose={closeProblems}
+		view={problemLog.dialogView}
+		focus={linkedProblem}
+		{signedIn}
+	/>
 {/if}
 
 <style>

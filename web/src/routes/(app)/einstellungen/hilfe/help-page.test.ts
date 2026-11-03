@@ -71,6 +71,8 @@ describe('help page (EH-9)', () => {
 			'Ordner',
 			'Häufige Fragen',
 			'Fehler dieser Sitzung',
+			// Since FP-2: the error log of the server (ADR-0077).
+			'Fehlerprotokoll des Servers',
 			'Betrieb',
 			'Sicherung & Notfall',
 			'Speicher',
