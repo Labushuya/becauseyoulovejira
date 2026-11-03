@@ -9882,7 +9882,7 @@
           "tests": ["tests/unit/build-helper-install.test.mjs::replaces a changed helper, also one of the same length, and installs a missing one"] },
         { "id": "BYL-E6-2339", "title": "Gesperrte Datei wie bisher: ein laufendes Hilfsprogramm nur bei Änderung umbenannt, eine gehaltene Datei scheitert (BW-2a)", "art": ["unit"], "status": "bestanden",
           "pre": "Windows PowerShell; eine Kopie von Node als app\\byl-mail.exe eines Ordners des Tests läuft; ein zweiter Ordner mit einer Datei, die ohne Freigabe zum Löschen offen ist.", "steps": ["npm run test:unit"],
-          "expect": "Gleiche Bytes bei laufendem Programm: „Unchanged“, nichts umbenannt, Stempel gleich. Anderer Inhalt: die laufende Datei heißt danach byl-mail.exe.old-<14 Ziffern>, die gelbe Zeile nennt sie samt „The new version runs after neu-starten.bat.“, dann „Replaced …“ mit dem neuen Inhalt. Gehaltene Datei: Fehler an den Aufrufer (helper-install), keine Ausgabe, Datei und Stempel unverändert, keine Datei .old-*.",
+          "expect": "Gleiche Bytes bei laufendem Programm: „Unchanged“, nichts umbenannt, Stempel gleich. Anderer Inhalt: die laufende Datei heißt danach byl-mail.exe.old-<14 Ziffern>, die gelbe Zeile nennt sie samt „The new version runs after the next restart (in the browser: Einstellungen > System > \"Jetzt neu starten\"; emergency: app\\neu-starten.bat).“, dann „Replaced …“ mit dem neuen Inhalt. Gehaltene Datei: Fehler an den Aufrufer (helper-install), keine Ausgabe, Datei und Stempel unverändert, keine Datei .old-*.",
           "tests": ["tests/unit/build-helper-install.test.mjs::keeps the way of a locked file: a running helper is renamed only when it changed, a held file fails as before"] }
       ]
     },
