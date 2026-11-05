@@ -1,6 +1,6 @@
 // Failed actions and unexpected errors (FP-1, ADR-0071): the entry behind "Details" of a message
 // and behind the list "Fehler dieser Sitzung". One type for both sources, so the page
-// "Einstellungen → Protokoll" of FP-3 can show the entries of this tab next to the ones the server
+// "Einstellungen → Fehlerprotokoll" (FP-3) shows the entries of this tab next to the ones the server
 // keeps (FP-2, `problem_events`): `source`, `serverId` and `correlation` are the docking points.
 // Pure. Privacy (ADR-0071 §2): an entry holds the intent, the time, the outcome (status, codes and
 // message of the server), method and path of the request without query, the build of the app and,
@@ -76,6 +76,8 @@ export interface ProblemEntry {
 
 /** Key in sessionStorage: the list of this tab survives a reload, nothing else keeps it. */
 export const PROBLEM_LOG_KEY = 'byl-session-errors';
+/** Key in sessionStorage of the account the list belongs to (FP-3): another one empties it. */
+export const PROBLEM_LOG_ACCOUNT_KEY = 'byl-session-errors-account';
 /** At most this many entries; a further one pushes out the oldest. */
 export const PROBLEM_LOG_MAX = 100;
 /** The same problem within this time counts on its entry ("3×") instead of a new one. */

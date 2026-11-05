@@ -775,6 +775,8 @@ test.describe('phone with the default "Automatisch"', () => {
 			['Haushalt', 'Haushalt'],
 			['Datei-Importe', 'Datei-Importe'],
 			['Sicherheit nur am PC', 'Sicherheit'],
+			// FP-3: the switch of the lists and the list of this tab.
+			['Fehlerprotokoll', 'Fehlerprotokoll'],
 			['Mein Konto', 'Mein Konto']
 		];
 		/** A page of the settings under "Mehr": two taps. */

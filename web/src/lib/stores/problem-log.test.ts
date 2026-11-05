@@ -1,8 +1,17 @@
 // The list "Fehler dieser Sitzung" (FP-1, ADR-0071 §4): each entry once, only in sessionStorage
-// (a reload keeps it), "Liste leeren", blocked storage, and the errors nobody caught.
+// (a reload keeps it), "Liste leeren", blocked storage, and the errors nobody caught. Since FP-3 the
+// list of an account goes when it signs out or another account signs in, also after a reload, and
+// the auth flow of the app reports every change of the account to it.
 
+import PocketBase, { BaseAuthStore } from 'pocketbase';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { clientProblem, PROBLEM_LOG_KEY, type ProblemEntry } from '$lib/domain/problems';
+import { Auth } from '$lib/auth.svelte';
+import {
+	clientProblem,
+	PROBLEM_LOG_ACCOUNT_KEY,
+	PROBLEM_LOG_KEY,
+	type ProblemEntry
+} from '$lib/domain/problems';
 import { ProblemLog, watchUnexpectedErrors, type ProblemStorage } from './problem-log.svelte';
 
 /** The errors these tests raise on purpose: a listener of the test, so Vitest leaves them alone. */
@@ -87,6 +96,95 @@ describe('ProblemLog', () => {
 		expect(log.dialogOpen).toBe(true);
 		log.closeDialog();
 		expect(log.dialogOpen).toBe(false);
+	});
+});
+
+describe('the list belongs to the account of the tab (FP-3)', () => {
+	const ANNA = 'user0000000anna';
+	const BERT = 'user0000000bert';
+
+	it('goes when the account signs out, and what failed signed out stays for the next sign-in', () => {
+		const log = new ProblemLog(sessionStorage);
+		log.useAccount(ANNA);
+		log.record(problem('a'));
+		log.useAccount(ANNA);
+		expect(log.count).toBe(1);
+
+		log.useAccount(null);
+		expect(log.count).toBe(0);
+		expect(sessionStorage.getItem(PROBLEM_LOG_KEY)).toBeNull();
+		expect(sessionStorage.getItem(PROBLEM_LOG_ACCOUNT_KEY)).toBeNull();
+
+		// A failed sign-in belongs to nobody; it stays for the account that signs in then.
+		log.record(problem('login', 'Anmelden'));
+		log.useAccount(BERT);
+		expect(log.entries.map((entry) => entry.id)).toEqual(['login']);
+	});
+
+	it('goes when another account signs in without signing out before', () => {
+		const log = new ProblemLog(sessionStorage);
+		log.useAccount(ANNA);
+		log.record(problem('a'));
+		log.useAccount(BERT);
+		expect(log.count).toBe(0);
+		expect(sessionStorage.getItem(PROBLEM_LOG_ACCOUNT_KEY)).toBe(BERT);
+	});
+
+	it('knows the account after a reload: the same one keeps the list, another one empties it', () => {
+		const log = new ProblemLog(sessionStorage);
+		log.useAccount(ANNA);
+		log.record(problem('a'));
+
+		const same = new ProblemLog(sessionStorage);
+		same.useAccount(ANNA);
+		expect(same.count).toBe(1);
+
+		const other = new ProblemLog(sessionStorage);
+		other.useAccount(BERT);
+		expect(other.count).toBe(0);
+		expect(new ProblemLog(sessionStorage).count).toBe(0);
+	});
+
+	it('works on with blocked storage, for this page', () => {
+		const blocked: ProblemStorage = {
+			getItem: () => {
+				throw new DOMException('blocked', 'SecurityError');
+			},
+			setItem: () => {
+				throw new DOMException('full', 'QuotaExceededError');
+			},
+			removeItem: () => {
+				throw new DOMException('blocked', 'SecurityError');
+			}
+		};
+		const log = new ProblemLog(blocked);
+		log.useAccount(ANNA);
+		log.record(problem('a'));
+		log.useAccount(BERT);
+		expect(log.count).toBe(0);
+	});
+
+	it('follows the auth flow: the start, a sign-out and the sign-in of another account', () => {
+		const log = new ProblemLog(sessionStorage);
+		const client = new PocketBase('http://pb.test', new BaseAuthStore());
+		const record = (id: string) => ({
+			id,
+			collectionId: '_pb_users_auth_',
+			collectionName: 'users'
+		});
+		client.authStore.save('token-anna', record(ANNA));
+		new Auth(client, (userId) => log.useAccount(userId));
+		log.record(problem('a'));
+		// A new token of the same account (renewal, new password) keeps the list.
+		client.authStore.save('token-anna-2', record(ANNA));
+		expect(log.count).toBe(1);
+
+		client.authStore.save('token-bert', record(BERT));
+		expect(log.count).toBe(0);
+
+		log.record(problem('b'));
+		client.authStore.clear();
+		expect(log.count).toBe(0);
 	});
 });
 

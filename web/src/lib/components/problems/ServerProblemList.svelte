@@ -5,9 +5,16 @@
 		PROBLEM_TEXTS,
 		formatProblemTime,
 		outcomeText,
-		problemReport
+		problemReport,
+		type ProblemArea
 	} from '$lib/domain/problems';
-	import { SERVER_PROBLEM_TEXTS } from '$lib/domain/server-problems';
+	import {
+		SERVER_PROBLEM_AREA_LABELS,
+		SERVER_PROBLEM_SOURCES,
+		SERVER_PROBLEM_SOURCE_LABELS,
+		SERVER_PROBLEM_TEXTS,
+		type ServerProblemsFilter
+	} from '$lib/domain/server-problems';
 	import { ServerProblemsStore } from '$lib/stores/server-problems.svelte';
 	import SectionMessage from '../guidance/SectionMessage.svelte';
 	import CopyReportButton from './CopyReportButton.svelte';
@@ -19,23 +26,43 @@
 	// "Kopieren". An address `?fehler=<id>` (`focus`) loads that entry, puts it first, unfolds it and
 	// moves the focus there; one that is gone or not visible says so. Loads once when it opens and on
 	// "Erneut laden"; without a connection a hint instead of the list, nothing breaks.
+	// On the page "Fehlerprotokoll" (`browse`, FP-3) above the list the filters "Quelle" and "Bereich"
+	// as segments (state of this component, not in the address; "Bereich" only with more than one of
+	// `areas`), and below it "Mehr laden" in steps of 50; a new filter and "Erneut laden" start anew.
+	// The filters only narrow: what the account sees at all is the decision of the server.
 	let {
 		focus = null,
-		store = new ServerProblemsStore()
+		store = new ServerProblemsStore(),
+		browse = false,
+		areas = []
 	}: {
 		/** ID of the entry of the address, or null. */
 		focus?: string | null;
 		store?: ServerProblemsStore;
+		/** The page "Fehlerprotokoll": filters and "Mehr laden" instead of the newest 50. */
+		browse?: boolean;
+		/** The areas the account may choose (serverProblemAreas). */
+		areas?: readonly ProblemArea[];
 	} = $props();
 
 	const uid = $props.id();
 	const unfolded = new SvelteSet<string>();
 	const items: Partial<Record<string, HTMLElement>> = $state({});
+	let moreButton = $state<HTMLButtonElement>();
+
+	const filtered = $derived(store.filter.source !== null || store.filter.area !== null);
 
 	$effect(() => {
 		const id = focus;
-		untrack(() => void store.load(id));
+		untrack(() => void (browse ? store.browse() : store.load(id)));
 		return () => store.stop();
+	});
+
+	// The chosen area is no longer offered (the account left its household): back to "Alle".
+	$effect(() => {
+		const area = store.filter.area;
+		if (!browse || area === null || areas.includes(area)) return;
+		untrack(() => void store.browse({ ...store.filter, area: null }));
 	});
 
 	// The entry of the address: unfolded, and the focus on it once it is there.
@@ -50,16 +77,96 @@
 		if (unfolded.has(id)) unfolded.delete(id);
 		else unfolded.add(id);
 	}
+
+	function choose(change: Partial<ServerProblemsFilter>) {
+		const next = { ...store.filter, ...change };
+		if (next.source === store.filter.source && next.area === store.filter.area) return;
+		void store.browse(next);
+	}
+
+	function retry() {
+		void (browse ? store.browse() : store.load(focus));
+	}
+
+	/**
+	 * "Mehr laden" (also "Erneut versuchen" after a failure): the focus stays on the button; once the
+	 * last page is there the button goes, and the focus goes to the first new entry, as it does when
+	 * the button it was on went away.
+	 */
+	async function loadMore() {
+		const before = store.entries.length;
+		await store.more();
+		await tick();
+		const active = document.activeElement;
+		const lost = active === null || active === document.body;
+		if (moreButton?.isConnected && !lost) return;
+		const entries = store.entries;
+		const target = entries[before] ?? entries.at(-1);
+		if (target !== undefined) items[target.id]?.focus();
+	}
 </script>
 
+{#snippet segments(
+	key: string,
+	label: string,
+	options: readonly { value: string | null; text: string }[],
+	current: string | null,
+	pick: (value: string | null) => void
+)}
+	<div class="filter">
+		<span class="filter-label" id={`${uid}-${key}`}>{label}</span>
+		<div class="segmented" role="group" aria-labelledby={`${uid}-${key}`}>
+			{#each options as option (option.value ?? '')}
+				<button
+					type="button"
+					aria-pressed={current === option.value}
+					onclick={() => pick(option.value)}
+				>
+					{option.text}
+				</button>
+			{/each}
+		</div>
+	</div>
+{/snippet}
+
 <div class="server-problems">
+	{#if browse}
+		<div class="filters">
+			{@render segments(
+				'source',
+				SERVER_PROBLEM_TEXTS.source,
+				[
+					{ value: null, text: SERVER_PROBLEM_TEXTS.all },
+					...SERVER_PROBLEM_SOURCES.map((value) => ({
+						value,
+						text: SERVER_PROBLEM_SOURCE_LABELS[value]
+					}))
+				],
+				store.filter.source,
+				(value) =>
+					choose({ source: SERVER_PROBLEM_SOURCES.find((source) => source === value) ?? null })
+			)}
+			{#if areas.length > 1}
+				{@render segments(
+					'area',
+					SERVER_PROBLEM_TEXTS.area,
+					[
+						{ value: null, text: SERVER_PROBLEM_TEXTS.all },
+						...areas.map((value) => ({ value, text: SERVER_PROBLEM_AREA_LABELS[value] }))
+					],
+					store.filter.area,
+					(value) => choose({ area: areas.find((area) => area === value) ?? null })
+				)}
+			{/if}
+		</div>
+	{/if}
 	{#if store.state === 'idle' || store.state === 'loading'}
 		<p class="nothing" role="status">{SERVER_PROBLEM_TEXTS.loading}</p>
 	{:else if store.state === 'offline'}
 		<SectionMessage tone="warning" compact live>
 			{SERVER_PROBLEM_TEXTS.offline}
 			{#snippet actions()}
-				<button class="button-subtle" type="button" onclick={() => void store.load(focus)}>
+				<button class="button-subtle" type="button" onclick={retry}>
 					{SERVER_PROBLEM_TEXTS.retry}
 				</button>
 			{/snippet}
@@ -68,7 +175,7 @@
 		<SectionMessage tone="error" compact live problem={store.problem}>
 			{SERVER_PROBLEM_TEXTS.failed}
 			{#snippet actions()}
-				<button class="button-subtle" type="button" onclick={() => void store.load(focus)}>
+				<button class="button-subtle" type="button" onclick={retry}>
 					{SERVER_PROBLEM_TEXTS.retry}
 				</button>
 			{/snippet}
@@ -78,7 +185,9 @@
 			<SectionMessage tone="info" compact live>{SERVER_PROBLEM_TEXTS.missing}</SectionMessage>
 		{/if}
 		{#if store.entries.length === 0}
-			<p class="nothing">{SERVER_PROBLEM_TEXTS.noProblems}</p>
+			<p class="nothing">
+				{filtered ? SERVER_PROBLEM_TEXTS.noMatch : SERVER_PROBLEM_TEXTS.noProblems}
+			</p>
 		{:else}
 			<ol class="entries" aria-label={SERVER_PROBLEM_TEXTS.title}>
 				{#each store.entries as entry (entry.id)}
@@ -138,6 +247,39 @@
 				{/each}
 			</ol>
 		{/if}
+		{#if browse && store.moreState === 'offline'}
+			<SectionMessage tone="warning" compact live>
+				{SERVER_PROBLEM_TEXTS.moreOffline}
+				{#snippet actions()}
+					<button class="button-subtle" type="button" onclick={loadMore}>
+						{SERVER_PROBLEM_TEXTS.moreRetry}
+					</button>
+				{/snippet}
+			</SectionMessage>
+		{:else if browse && store.moreState === 'failed'}
+			<SectionMessage tone="error" compact live problem={store.moreProblem}>
+				{SERVER_PROBLEM_TEXTS.moreFailed}
+				{#snippet actions()}
+					<button class="button-subtle" type="button" onclick={loadMore}>
+						{SERVER_PROBLEM_TEXTS.moreRetry}
+					</button>
+				{/snippet}
+			</SectionMessage>
+		{:else if browse && store.hasMore}
+			<div class="more">
+				<button
+					class="button-secondary"
+					type="button"
+					aria-busy={store.moreState === 'loading' ? 'true' : undefined}
+					bind:this={moreButton}
+					onclick={loadMore}
+				>
+					{store.moreState === 'loading'
+						? SERVER_PROBLEM_TEXTS.loadingMore
+						: SERVER_PROBLEM_TEXTS.more}
+				</button>
+			</div>
+		{/if}
 		<p class="limits">{SERVER_PROBLEM_TEXTS.limits}</p>
 	{/if}
 </div>
@@ -149,6 +291,35 @@
 		gap: 0.75rem;
 		min-width: 0;
 		font-size: var(--font-size-control);
+	}
+
+	.filters {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem 1.25rem;
+		min-width: 0;
+	}
+
+	.filter {
+		display: grid;
+		gap: 0.25rem;
+		min-width: 0;
+	}
+
+	.filter-label {
+		font-weight: 500;
+	}
+
+	/* "Alle" and "App" are short: every segment is at least as wide as a target of the phone frame. */
+	.filter .segmented > button {
+		min-width: var(--control-height-touch);
+	}
+
+	.more {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+		align-items: center;
 	}
 
 	.nothing,

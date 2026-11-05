@@ -8,7 +8,8 @@
 // entry. Who sees what: a private entry only its owner, also not the administrator; one of a household
 // its current members, not those of another household; one of the app the administrator; filters do
 // not widen that, the fingerprint can neither be filtered nor sorted. Writing through the record API is
-// refused to every account. A failed run of a channel, of "Verbindung prüfen" of GitHub and of the mail
+// refused to every account. The list of the page "Fehlerprotokoll" (FP-3): filtered by source and area
+// and paged by the keyset, every entry once, and its filters only narrow. A failed run of a channel, of "Verbindung prüfen" of GitHub and of the mail
 // helper keeps an entry with the connection, without its secrets, and "Details" of the page finds the
 // entry of the error shown. Jobs of the server: a failed cron job and the catch-up at the start keep
 // an entry for the administrator. The limits: 30 days and 5000 entries, by the cron and with every new
@@ -23,8 +24,8 @@ import { startPocketBase } from '../support/pocketbase-harness.mjs';
 import { createAreaScenario } from '../support/scenario.mjs';
 import { scaled } from '../support/timing.mjs';
 import { runConnection } from '../../web/src/lib/data/connections.ts';
-import { channelProblemHits, getServerProblem, listServerProblems } from '../../web/src/lib/data/server-problems.ts';
-import { channelProblemKey, channelProblemsSince, matchChannelProblems } from '../../web/src/lib/domain/server-problems.ts';
+import { channelProblemHits, getServerProblem, listServerProblemPage, listServerProblems } from '../../web/src/lib/data/server-problems.ts';
+import { SERVER_PROBLEMS_PAGE, channelProblemKey, channelProblemsSince, matchChannelProblems } from '../../web/src/lib/domain/server-problems.ts';
 
 const POLL_TIMEOUT_MS = scaled(10_000);
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -374,6 +375,73 @@ describe('who sees an entry (ADR-0077 §5)', () => {
 		expect(await statusOf(events(b).getOne(shared))).toBe(404);
 		expect(await visibleIds(b)).not.toContain(shared);
 		expect((await events(a).getOne(shared)).id).toBe(shared);
+	});
+});
+
+// FP-3 (ADR-0077 addendum FP-3): the list of the page "Fehlerprotokoll" through the data layer of the
+// SPA, filtered by source and area and paged by the keyset of the sort -last_at,-id.
+describe('the page "Fehlerprotokoll" (FP-3)', () => {
+	const at = (ms) => new Date(Date.now() - ms).toISOString().replace('T', ' ');
+	const ids = (page) => page.records.map((entry) => entry.id);
+	let ownOfA;
+	let ofHousehold;
+
+	beforeAll(async () => {
+		// More than one page of entries of the app with the same last occurrence: there the keyset
+		// goes by the ID. An hour old, newer than the entries of the limits below.
+		await superuser.send('/api/byl-test/problems/aged', {
+			method: 'POST',
+			body: { count: SERVER_PROBLEMS_PAGE + 5, prefix: 'fp3k', last_at: at(60 * 60 * 1000) }
+		});
+		ownOfA = (await call('/api/byl-test/problems/fail', a)).problem;
+		ofHousehold = await record({
+			source: 'job',
+			area: 'household',
+			household: householdId,
+			code: 'recurrence_failed',
+			message: 'Regel des Haushalts',
+			context: { job: 'recurrence' }
+		});
+	});
+
+	it('pages through the entries of a filter by the keyset, none twice and none left out', async () => {
+		const expected = (
+			await events(admin).getFullList({ filter: 'source = "job" && area = "system"', sort: '-last_at,-id', fields: 'id' })
+		).map((entry) => entry.id);
+		expect(expected.length).toBeGreaterThan(SERVER_PROBLEMS_PAGE);
+		const seen = [];
+		let after = null;
+		for (let step = 0; step < 5; step++) {
+			const page = await listServerProblemPage(admin.client, { source: 'job', area: 'system', after });
+			expect(page.records.length).toBeLessThanOrEqual(SERVER_PROBLEMS_PAGE);
+			for (const entry of page.records) expect([entry.source, entry.area]).toEqual(['job', 'system']);
+			seen.push(...ids(page));
+			if (page.next === null) break;
+			after = page.next;
+		}
+		expect(seen).toEqual(expected);
+		expect(new Set(seen).size).toBe(seen.length);
+		expect(seen.filter((id) => id.startsWith('fp3k'))).toHaveLength(SERVER_PROBLEMS_PAGE + 5);
+	});
+
+	it('only narrows: no filter shows an entry the rules of the server hide', async () => {
+		const page = (who, source, area) => listServerProblemPage(who.client, { source, area, after: null });
+		// The private entry of A: only A finds it, also with the filter of its source and area.
+		expect(ids(await page(a, 'request', 'private'))).toContain(ownOfA);
+		for (const other of [c, admin]) expect(ids(await page(other, 'request', 'private'))).not.toContain(ownOfA);
+		// The entry of the household: its members only; C and the administrator are in another one.
+		expect(ids(await page(a, null, 'household'))).toContain(ofHousehold);
+		for (const other of [c, admin]) expect(ids(await page(other, null, 'household'))).not.toContain(ofHousehold);
+		// The app only for the administrator.
+		expect(ids(await page(a, null, 'system'))).toEqual([]);
+		expect(ids(await page(c, 'job', 'system'))).toEqual([]);
+		// Whatever a filter finds, the account sees without one, too.
+		for (const who of [a, c, admin]) {
+			const visible = new Set(await visibleIds(who));
+			for (const area of ['private', 'household', 'system']) {
+				for (const id of ids(await page(who, null, area))) expect(visible.has(id), id).toBe(true);
+			}
+		}
 	});
 });
 

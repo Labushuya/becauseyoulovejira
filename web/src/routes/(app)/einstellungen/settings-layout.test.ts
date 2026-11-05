@@ -136,7 +136,9 @@ describe('settings layout', () => {
 			['Sicherung', '/einstellungen/sicherung'],
 			['Speicher', '/einstellungen/speicher'],
 			['System', '/einstellungen/system'],
-			['Hilfe', '/einstellungen/hilfe']
+			['Hilfe', '/einstellungen/hilfe'],
+			// Since FP-3, for every account (ADR-0077 addendum FP-3).
+			['Fehlerprotokoll', '/einstellungen/fehlerprotokoll']
 		]);
 		expect(pages[0]?.hasAttribute('aria-current')).toBe(false);
 		expect(pages[1]?.getAttribute('aria-current')).toBe('page');
@@ -163,7 +165,8 @@ describe('settings layout', () => {
 			// The household is a page of every account on every device (ADR-0058).
 			'Haushalt',
 			'Mein Konto',
-			'Hilfe'
+			'Hilfe',
+			'Fehlerprotokoll'
 		]);
 		expect(nav.queryByRole('link', { name: /Konten verwalten/ })).toBeNull();
 		expect(nav.queryByRole('link', { name: /Sicherheit/ })).toBeNull();
@@ -192,7 +195,8 @@ describe('settings layout', () => {
 			'Sicherung nur am PC',
 			'Speicher nur am PC',
 			'System nur am PC',
-			'Hilfe'
+			'Hilfe',
+			'Fehlerprotokoll'
 		]);
 		// The mark stands once, visibly, at the heading of the group (UI-1); each link keeps it in
 		// its name for screen readers.
@@ -420,7 +424,7 @@ describe('settings layout', () => {
 			// On the PC the navigation stays with every page and the way back, none of them current.
 			const nav = within(screen.getByRole('navigation', { name: 'Einstellungen' }));
 			const pages = nav.getAllByRole('listitem').map((item) => within(item).getByRole('link'));
-			expect(pages).toHaveLength(13);
+			expect(pages).toHaveLength(14);
 			for (const link of pages) expect(link.hasAttribute('aria-current')).toBe(false);
 			expect(nav.getAllByRole('link')[0]?.textContent?.trim()).toBe('Zurück zu Aufgaben');
 			expect(nav.queryByRole('link', { name: 'Zu den Einstellungen' })).toBeNull();
@@ -480,7 +484,8 @@ describe('groups of the settings navigation (UI-1)', () => {
 		['Kanäle', 'Datei-Importe', 'Tags', 'Tickets']
 	];
 	const PERSONAL: [string, string[]] = ['Persönlich', ['Darstellung', 'Haushalt', 'Mein Konto']];
-	const HELP: [string, string[]] = ['', ['Hilfe']];
+	// Since FP-3 "Fehlerprotokoll" after "Hilfe", for every account.
+	const HELP: [string, string[]] = ['', ['Hilfe', 'Fehlerprotokoll']];
 
 	it('shows the administrator at the machine of the app every group with its pages', async () => {
 		mocks.platform = 'windows';
@@ -698,7 +703,7 @@ describe('arrow back to the overview in the phone frame (EU-1)', () => {
 				const nav = within(screen.getByRole('navigation', { name: 'Einstellungen' }));
 				expect(nav.queryByRole('link', { name: 'Zu den Einstellungen' }), path).toBeNull();
 				expect(nav.getAllByRole('list'), path).toHaveLength(4);
-				expect(nav.getAllByRole('listitem'), path).toHaveLength(13);
+				expect(nav.getAllByRole('listitem'), path).toHaveLength(14);
 				// The breadcrumbs stay outside the frame (R-1).
 				const crumbs = screen.getByRole('navigation', { name: 'Brotkrumenpfad' });
 				expect(within(crumbs).getAllByRole('listitem').at(0)?.textContent?.trim(), path).toBe(

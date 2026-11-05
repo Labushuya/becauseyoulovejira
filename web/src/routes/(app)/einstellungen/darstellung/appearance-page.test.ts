@@ -51,8 +51,8 @@ function accentRadios(): HTMLInputElement[] {
 }
 
 describe('appearance page (EH-8)', () => {
-	it('is a page of the settings before "Haushalt" (ADR-0058), "Mein Konto", "Konten verwalten" (ADR-0056, UI-1), "Sicherheit" (ADR-0055), "Sicherung" (ADR-0046), "Speicher" (ADR-0047), "System" (ADR-0043) and "Hilfe"', () => {
-		expect(SETTINGS_SECTIONS.map((section) => section.id).slice(-9)).toEqual([
+	it('is a page of the settings before "Haushalt" (ADR-0058), "Mein Konto", "Konten verwalten" (ADR-0056, UI-1), "Sicherheit" (ADR-0055), "Sicherung" (ADR-0046), "Speicher" (ADR-0047), "System" (ADR-0043), "Hilfe" and "Fehlerprotokoll" (FP-3)', () => {
+		expect(SETTINGS_SECTIONS.map((section) => section.id).slice(-10)).toEqual([
 			'darstellung',
 			'haushalt',
 			'konto',
@@ -61,7 +61,8 @@ describe('appearance page (EH-8)', () => {
 			'sicherung',
 			'speicher',
 			'system',
-			'hilfe'
+			'hilfe',
+			'fehlerprotokoll'
 		]);
 	});
 

@@ -1,8 +1,9 @@
 // The error log of the server in the SPA (FP-2, ADR-0077): the dialog of the errors with the switch
 // "Diese Sitzung" / "Server", the entries of the server with their facts and "Kopieren" (Server-ID),
 // the entry of the address (deep link), a gone entry, no connection (a hint, nothing breaks), no
-// session; "Details" at the last error of a card; the entry on the page "Hilfe". The server answers
-// through a stubbed fetch, as the record API of problem_events would.
+// session; "Details" at the last error of a card; since FP-3 the way from the dialog to the page
+// "Fehlerprotokoll". The server answers through a stubbed fetch, as the record API of problem_events
+// would.
 
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
@@ -15,7 +16,6 @@ import {
 } from '$lib/stores/server-problems.svelte';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import ServerProblemLink from './ServerProblemLink.svelte';
-import ServerProblemsEntry from './ServerProblemsEntry.svelte';
 import SessionProblemsDialog from './SessionProblemsDialog.svelte';
 
 const mocks = vi.hoisted(() => ({
@@ -85,6 +85,13 @@ async function openDialog(props: Record<string, unknown> = {}) {
 	return { onclose };
 }
 
+/** The dialog with the list of the server: opened at this tab, then "Server". */
+async function openServer() {
+	const opened = await openDialog();
+	await fireEvent.click(screen.getByRole('button', { name: 'Server' }));
+	return opened;
+}
+
 beforeEach(() => {
 	problemLog.clear();
 	problemLog.closeDialog();
@@ -127,7 +134,7 @@ describe('dialog of the errors with the log of the server (FP-2)', () => {
 		serve();
 		const writeText = vi.fn(async () => undefined);
 		vi.stubGlobal('navigator', { clipboard: { writeText } });
-		await openDialog({ view: 'server' });
+		await openServer();
 		const list = await screen.findByRole('list', { name: 'Fehlerprotokoll des Servers' });
 		const items = within(list).getAllByRole('listitem');
 		expect(items.map(text)).toEqual([
@@ -168,6 +175,12 @@ describe('dialog of the errors with the log of the server (FP-2)', () => {
 			true
 		);
 		for (const url of urls) expect(url.searchParams.get('filter')).toBeNull();
+		// Unchanged since FP-3: the newest 50, no "Mehr laden" and no filters in the dialog.
+		const listed = urls.find((url) => url.pathname.endsWith('/problem_events/records'));
+		expect(listed?.searchParams.get('perPage')).toBe('50');
+		expect(listed?.searchParams.get('sort')).toBe('-last_at,-id');
+		expect(screen.queryByRole('button', { name: 'Mehr laden' })).toBeNull();
+		expect(screen.queryByRole('group', { name: 'Quelle' })).toBeNull();
 	});
 
 	it('says that a linked entry is gone or not visible and keeps the list', async () => {
@@ -181,7 +194,7 @@ describe('dialog of the errors with the log of the server (FP-2)', () => {
 
 	it('says that the server keeps nothing the account may see', async () => {
 		serve([]);
-		await openDialog({ view: 'server' });
+		await openServer();
 		expect(
 			await screen.findByText('Der Server hat keinen Fehler festgehalten, den du sehen darfst.')
 		).toBeTruthy();
@@ -194,7 +207,7 @@ describe('dialog of the errors with the log of the server (FP-2)', () => {
 				throw new TypeError('Failed to fetch');
 			})
 		);
-		await openDialog({ view: 'server' });
+		await openServer();
 		expect(
 			await screen.findByText(
 				'Ohne Verbindung zum Server lässt sich das Fehlerprotokoll nicht laden.'
@@ -304,19 +317,27 @@ describe('"Details" at the last error of a channel card (FP-2)', () => {
 	});
 });
 
-describe('entry on the page "Hilfe" (FP-2)', () => {
-	it('opens the dialog with the log of the server first and explains who sees what', async () => {
-		render(ServerProblemsEntry);
-		expect(document.body.textContent).toMatch(
-			/Einen Eintrag deines privaten Bereichs siehst nur du, auch nicht der Verwalter/
-		);
-		const button = screen.getByRole('button', { name: 'Fehlerprotokoll des Servers anzeigen' });
-		expect(button.getAttribute('aria-haspopup')).toBe('dialog');
-		await fireEvent.click(button);
-		expect(problemLog.dialogOpen).toBe(true);
-		expect(problemLog.dialogView).toBe('server');
+describe('way from the dialog to the page "Fehlerprotokoll" (FP-3)', () => {
+	it('leads there in the footer and closes the dialog of the list', async () => {
+		serve();
 		problemLog.openDialog();
-		expect(problemLog.dialogView).toBe('session');
-		problemLog.closeDialog();
+		const { onclose } = await openDialog();
+		const link = screen.getByRole('link', { name: 'Fehlerprotokoll öffnen' });
+		expect(link.getAttribute('href')).toBe('/einstellungen/fehlerprotokoll');
+		expect(link.classList.contains('button-subtle')).toBe(true);
+		// jsdom does not navigate; in the app SvelteKit follows the link.
+		const stay = (event: Event) => event.preventDefault();
+		document.addEventListener('click', stay, { capture: true, once: true });
+		await fireEvent.click(link);
+		expect(problemLog.dialogOpen).toBe(false);
+		// Not the closing of the layout: it would take ?fehler out of the address with a navigation of
+		// its own, which could replace the one of the link.
+		expect(onclose).not.toHaveBeenCalled();
+	});
+
+	it('offers no way there without a session: the page needs one', async () => {
+		await openDialog({ signedIn: false });
+		expect(screen.queryByRole('link', { name: 'Fehlerprotokoll öffnen' })).toBeNull();
+		expect(screen.getByText('Schließen')).toBeTruthy();
 	});
 });

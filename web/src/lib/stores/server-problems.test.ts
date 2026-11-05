@@ -1,14 +1,22 @@
 // The store of the error log of the server (FP-2, ADR-0077) on a fake source: the list newest first,
 // the entry of the address first and only once, a gone entry as "missing", no connection as
 // "offline" without breaking anything, any other failure as "failed" with its details, and a newer
-// load that replaces a running one. The store of "Details" at the channel cards: one query for all
-// cards, none for a new run with the same error, a failed query without a link.
+// load that replaces a running one. Since FP-3 the page "Fehlerprotokoll": the first page of the
+// filters, "Mehr laden" after the cursor without an entry twice, a new filter that starts the list
+// and its cursor anew, a failed "Mehr laden" that keeps the list. The store of "Details" at the
+// channel cards: one query for all cards, none for a new run with the same error, a failed query
+// without a link.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DataError } from '$lib/data/errors';
 import type { RunResult } from '$lib/domain/connections';
 import { problemReport } from '$lib/domain/problems';
-import type { ChannelProblemCard, ServerProblemRecord } from '$lib/domain/server-problems';
+import type {
+	ChannelProblemCard,
+	ServerProblemPage,
+	ServerProblemQuery,
+	ServerProblemRecord
+} from '$lib/domain/server-problems';
 import { runProblem } from './connections.svelte';
 import {
 	CHANNEL_PROBLEMS_SETTLE_MS,
@@ -49,6 +57,7 @@ function source(overrides: Partial<ServerProblemsSource> = {}): ServerProblemsSo
 			if (id === NEWER.id) return NEWER;
 			throw new DataError('not_found', { status: 404 });
 		}),
+		page: vi.fn(async (): Promise<ServerProblemPage> => ({ records: [], next: null })),
 		...overrides
 	};
 }
@@ -144,6 +153,151 @@ describe('ServerProblemsStore', () => {
 		void store.load();
 		store.stop();
 		expect(signals[2]?.aborted).toBe(true);
+	});
+
+	it('keeps the dialog on the newest 50: no page of the page, nothing more to load', async () => {
+		const fake = source();
+		const store = new ServerProblemsStore(fake);
+		await store.load();
+		expect(fake.page).not.toHaveBeenCalled();
+		expect(store.hasMore).toBe(false);
+		await store.more();
+		expect(fake.page).not.toHaveBeenCalled();
+		expect(store.filter).toEqual({ source: null, area: null });
+	});
+});
+
+describe('ServerProblemsStore on the page "Fehlerprotokoll" (FP-3)', () => {
+	const at = (minute: number) => Date.UTC(2026, 10, 5, 9, minute, 0);
+	/** Entries newest first, one a minute. */
+	const records = (from: number, count: number) =>
+		Array.from({ length: count }, (_, index) =>
+			record(`page${String(from + index).padStart(11, '0')}`, { lastAt: at(59 - from - index) })
+		);
+	const cursor = (id: string) => ({ lastAt: '2026-11-05 09:00:00.000Z', id });
+
+	it('loads the first page of the filters, then the next one after its cursor, without an entry twice', async () => {
+		const first = records(0, 3);
+		const second = [first[2] as ServerProblemRecord, ...records(3, 2)];
+		const page = vi.fn(async (query: ServerProblemQuery): Promise<ServerProblemPage> =>
+			query.after === null
+				? { records: first, next: cursor(first[2]?.id ?? '') }
+				: { records: second, next: null }
+		);
+		const store = new ServerProblemsStore(source({ page }));
+
+		await store.browse({ source: 'job', area: 'system' });
+		expect(page).toHaveBeenLastCalledWith(
+			{ source: 'job', area: 'system', after: null },
+			expect.any(AbortSignal)
+		);
+		expect(store.state).toBe('ready');
+		expect(store.hasMore).toBe(true);
+
+		await store.more();
+		expect(page).toHaveBeenLastCalledWith(
+			{ source: 'job', area: 'system', after: cursor(first[2]?.id ?? '') },
+			expect.any(AbortSignal)
+		);
+		expect(store.entries.map((entry) => entry.serverId)).toEqual(
+			[...first, ...records(3, 2)].map((entry) => entry.id)
+		);
+		expect(store.hasMore).toBe(false);
+		expect(store.moreState).toBe('idle');
+		// Nothing more to find: "Mehr laden" asks nothing.
+		await store.more();
+		expect(page).toHaveBeenCalledTimes(2);
+	});
+
+	it('starts the list and its cursor anew for a new filter and on "Erneut laden"', async () => {
+		const page = vi.fn(async (query: ServerProblemQuery): Promise<ServerProblemPage> => ({
+			records: query.source === 'request' ? [NEWER] : records(0, 2),
+			next: query.source === 'request' ? null : cursor('page00000000001')
+		}));
+		const store = new ServerProblemsStore(source({ page }));
+		await store.browse();
+		expect(store.filter).toEqual({ source: null, area: null });
+		expect(store.hasMore).toBe(true);
+
+		const changing = store.browse({ source: 'request', area: null });
+		expect(store.state).toBe('loading');
+		expect(store.hasMore).toBe(false);
+		await changing;
+		expect(store.entries.map((entry) => entry.serverId)).toEqual([NEWER.id]);
+		expect(store.hasMore).toBe(false);
+
+		// "Erneut laden" keeps the filters and starts from the first page.
+		await store.browse();
+		expect(page).toHaveBeenLastCalledWith(
+			{ source: 'request', area: null, after: null },
+			expect.any(AbortSignal)
+		);
+	});
+
+	it('lets a new filter replace a running "Mehr laden"; its late answer changes nothing', async () => {
+		const answers: ((page: ServerProblemPage) => void)[] = [];
+		const signals: AbortSignal[] = [];
+		const page = vi.fn(
+			(_query: ServerProblemQuery, signal: AbortSignal) =>
+				new Promise<ServerProblemPage>((resolve) => {
+					signals.push(signal);
+					answers.push(resolve);
+				})
+		);
+		const store = new ServerProblemsStore(source({ page }));
+		const first = store.browse();
+		answers[0]?.({ records: records(0, 2), next: cursor('page00000000001') });
+		await first;
+		const more = store.more();
+		expect(store.moreState).toBe('loading');
+		const other = store.browse({ source: 'channel', area: null });
+		expect(signals[1]?.aborted).toBe(true);
+		expect(store.moreState).toBe('idle');
+		answers[1]?.({ records: records(2, 2), next: null });
+		answers[2]?.({ records: [NEWER], next: null });
+		await Promise.all([more, other]);
+		expect(store.entries.map((entry) => entry.serverId)).toEqual([NEWER.id]);
+	});
+
+	it('keeps the list when "Mehr laden" fails: offline as a hint, any other failure with its details', async () => {
+		let fail: DataError | null = null;
+		const page = vi.fn(async (query: ServerProblemQuery): Promise<ServerProblemPage> => {
+			if (query.after !== null && fail !== null) throw fail;
+			return query.after === null
+				? { records: records(0, 2), next: cursor('page00000000001') }
+				: { records: records(2, 1), next: null };
+		});
+		const store = new ServerProblemsStore(source({ page }));
+		await store.browse();
+
+		fail = new DataError('network');
+		await store.more();
+		expect(store.state).toBe('ready');
+		expect(store.moreState).toBe('offline');
+		expect(store.moreProblem).toBeNull();
+		expect(store.entries).toHaveLength(2);
+		expect(store.hasMore).toBe(true);
+
+		fail = new DataError('server', { status: 500 });
+		await store.more();
+		expect(store.moreState).toBe('failed');
+		expect(store.moreProblem).toMatchObject({ outcome: { result: 'response', status: 500 } });
+
+		fail = null;
+		await store.more();
+		expect(store.moreState).toBe('idle');
+		expect(store.entries).toHaveLength(3);
+	});
+
+	it('is "offline" or "failed" for the first page as in the dialog', async () => {
+		const page = vi.fn(async (): Promise<ServerProblemPage> => {
+			throw new DataError('network');
+		});
+		const store = new ServerProblemsStore(source({ page }));
+		await store.browse();
+		expect(store.state).toBe('offline');
+		expect(store.entries).toEqual([]);
+		expect(store.hasMore).toBe(false);
 	});
 });
 

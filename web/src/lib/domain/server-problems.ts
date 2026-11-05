@@ -2,7 +2,9 @@
 // through the record API, as an entry of the same type as those of this tab (ProblemEntry with source
 // "server"), so the dialog "Fehler" shows both with the same building blocks. Also the address of an
 // entry (`?fehler=<id>`, the deep link of "Details" at a card) and the header of an answer that names
-// its entry. Pure.
+// its entry. Since FP-3 (ADR-0077 addendum FP-3) the filters of the page "Fehlerprotokoll" (source and
+// area), the cursor of "Mehr laden" (keyset to the sort -last_at,-id) and the areas an account may
+// choose. Pure.
 
 import { intentOf } from './problem-intents';
 import { sanitizeProblemText, type ProblemArea, type ProblemEntry } from './problems';
@@ -42,10 +44,10 @@ export interface ServerProblemRecord {
 export const SERVER_PROBLEM_HEADER = 'X-Byl-Problem';
 /** The parameter of the address that opens an entry of the log: `?fehler=<id>`. */
 export const SERVER_PROBLEM_PARAM = 'fehler';
-/** Entries the dialog loads at once, newest first. */
+/** Entries the dialog loads at once, newest first; on the page also each step of "Mehr laden". */
 export const SERVER_PROBLEMS_PAGE = 50;
 
-/** Texts of the log of the server in the dialog, at the cards and in the help. */
+/** Texts of the log of the server in the dialog, on the page "Fehlerprotokoll" and at the cards. */
 export const SERVER_PROBLEM_TEXTS = Object.freeze({
 	title: 'Fehlerprotokoll des Servers',
 	session: 'Diese Sitzung',
@@ -53,6 +55,7 @@ export const SERVER_PROBLEM_TEXTS = Object.freeze({
 	views: 'Welche Fehler',
 	loading: 'Fehlerprotokoll wird geladen …',
 	noProblems: 'Der Server hat keinen Fehler festgehalten, den du sehen darfst.',
+	noMatch: 'Kein Eintrag passt zu diesen Filtern.',
 	offline: 'Ohne Verbindung zum Server lässt sich das Fehlerprotokoll nicht laden.',
 	failed: 'Das Fehlerprotokoll ließ sich nicht laden.',
 	retry: 'Erneut laden',
@@ -61,8 +64,20 @@ export const SERVER_PROBLEM_TEXTS = Object.freeze({
 	linked: 'Verlinkter Eintrag',
 	signedOut: 'Das Fehlerprotokoll des Servers steht nach der Anmeldung bereit.',
 	details: 'Details',
-	open: 'Fehlerprotokoll des Servers anzeigen',
-	limits: 'Der Server behält einen Eintrag 30 Tage nach seinem letzten Auftreten, höchstens 5000.'
+	limits: 'Der Server behält einen Eintrag 30 Tage nach seinem letzten Auftreten, höchstens 5000.',
+	source: 'Quelle',
+	area: 'Bereich',
+	all: 'Alle',
+	more: 'Mehr laden',
+	loadingMore: 'Wird geladen …',
+	moreOffline: 'Ohne Verbindung zum Server lassen sich keine weiteren Einträge laden.',
+	moreFailed: 'Weitere Einträge ließen sich nicht laden.',
+	moreRetry: 'Erneut versuchen'
+});
+
+/** The page "Einstellungen → Fehlerprotokoll" (FP-3) and the way there from the dialog and the help. */
+export const PROBLEM_LOG_TEXTS = Object.freeze({
+	open: 'Fehlerprotokoll öffnen'
 });
 
 /**
@@ -86,8 +101,67 @@ export function serverProblemIdOf(params: URLSearchParams): string | null {
 	return isServerProblemId(value) ? value : null;
 }
 
-const SOURCES: readonly ServerProblemSource[] = ['request', 'channel', 'job'];
-const AREAS: readonly ProblemArea[] = ['private', 'household', 'system'];
+/** The values of `source` and `area` of the migration (lib/problem-rules.js), in their order. */
+export const SERVER_PROBLEM_SOURCES: readonly ServerProblemSource[] = ['request', 'channel', 'job'];
+export const SERVER_PROBLEM_AREAS: readonly ProblemArea[] = ['private', 'household', 'system'];
+
+/** The choices of the filter "Quelle" on the page "Fehlerprotokoll" (FP-3). */
+export const SERVER_PROBLEM_SOURCE_LABELS: Readonly<Record<ServerProblemSource, string>> =
+	Object.freeze({ request: 'Anfrage', channel: 'Kanal', job: 'Aufgabe' });
+/** The choices of the filter "Bereich" (FP-3): who sees an entry (ADR-0077 §5). */
+export const SERVER_PROBLEM_AREA_LABELS: Readonly<Record<ProblemArea, string>> = Object.freeze({
+	private: 'Privat',
+	household: 'Haushalt',
+	system: 'App'
+});
+
+/**
+ * The filters of the page "Fehlerprotokoll" (FP-3), null for "Alle". They only narrow the list: what
+ * an account sees at all stays the decision of the rules of the record API.
+ */
+export interface ServerProblemsFilter {
+	readonly source: ServerProblemSource | null;
+	readonly area: ProblemArea | null;
+}
+
+export const ALL_SERVER_PROBLEMS: ServerProblemsFilter = Object.freeze({
+	source: null,
+	area: null
+});
+
+/** Where a page of the list ended: last occurrence (form of PocketBase) and ID of its last entry. */
+export interface ServerProblemCursor {
+	readonly lastAt: string;
+	readonly id: string;
+}
+
+/** What one page of the page "Fehlerprotokoll" asks for: the filters, and after which entry. */
+export interface ServerProblemQuery extends ServerProblemsFilter {
+	readonly after: ServerProblemCursor | null;
+}
+
+/** One page of the list: its entries and the cursor of the next one, null when there is none. */
+export interface ServerProblemPage {
+	readonly records: ServerProblemRecord[];
+	readonly next: ServerProblemCursor | null;
+}
+
+/**
+ * The areas the filter "Bereich" offers an account: "Privat" always, "Haushalt" only to a member of
+ * a household, "App" only to the administrator of the app. With only one of them there is nothing to
+ * choose, and the page shows no filter "Bereich".
+ */
+export function serverProblemAreas(account: {
+	readonly member: boolean;
+	readonly admin: boolean;
+}): ProblemArea[] {
+	return SERVER_PROBLEM_AREAS.filter(
+		(area) =>
+			area === 'private' ||
+			(area === 'household' && account.member) ||
+			(area === 'system' && account.admin)
+	);
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -96,6 +170,32 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /** A date of PocketBase (`YYYY-MM-DD HH:MM:SS.mmmZ`) in ms, NaN for anything else. */
 function msOf(value: unknown): number {
 	return typeof value === 'string' && value !== '' ? Date.parse(value.replace(' ', 'T')) : NaN;
+}
+
+/**
+ * The cursor after an entry as the record API gives it (`id`, `last_at`), or null for anything else.
+ * The time stays the text of the server, so the next page compares exactly with what it stored.
+ */
+export function serverProblemCursorOf(raw: unknown): ServerProblemCursor | null {
+	if (!isRecord(raw) || !isServerProblemId(raw.id) || typeof raw.last_at !== 'string') return null;
+	return Number.isNaN(msOf(raw.last_at)) ? null : { lastAt: raw.last_at, id: raw.id };
+}
+
+/**
+ * The next page of the list after the shown entries: only those not yet shown (by their Server-ID),
+ * so an entry never stands twice, also when the server sends one again.
+ */
+export function appendServerProblems(
+	entries: readonly ProblemEntry[],
+	records: readonly ServerProblemRecord[]
+): ProblemEntry[] {
+	const seen = new Set(entries.map((entry) => entry.serverId));
+	const added = records.filter((record) => {
+		if (seen.has(record.id)) return false;
+		seen.add(record.id);
+		return true;
+	});
+	return [...entries, ...added.map(serverProblemEntry)];
 }
 
 function contextOf(value: unknown): ServerProblemContext {
@@ -198,8 +298,8 @@ export function matchChannelProblems(
 /** An entry from the record API, or null when it is none (an older or a broken form). */
 export function parseServerProblem(raw: unknown): ServerProblemRecord | null {
 	if (!isRecord(raw) || !isServerProblemId(raw.id)) return null;
-	const source = SOURCES.find((value) => value === raw.source);
-	const area = AREAS.find((value) => value === raw.area);
+	const source = SERVER_PROBLEM_SOURCES.find((value) => value === raw.source);
+	const area = SERVER_PROBLEM_AREAS.find((value) => value === raw.area);
 	const firstAt = msOf(raw.first_at);
 	const lastAt = msOf(raw.last_at);
 	if (source === undefined || area === undefined || Number.isNaN(firstAt) || Number.isNaN(lastAt)) {

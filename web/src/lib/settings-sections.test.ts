@@ -10,8 +10,10 @@ import {
 	SETTINGS_HOME,
 	SETTINGS_SECTIONS,
 	groupSettingsSections,
+	isAdminSection,
 	isSettingsHome,
 	isSettingsPath,
+	problemLogHref,
 	settingsSectionById,
 	settingsSectionOf,
 	settingsSubpageOf,
@@ -24,6 +26,8 @@ describe('groups of the settings (UI-1)', () => {
 			[
 				'/einstellungen/darstellung',
 				'/einstellungen/datei-importe',
+				// Since FP-3 (ADR-0077 addendum FP-3).
+				'/einstellungen/fehlerprotokoll',
 				'/einstellungen/haushalt',
 				'/einstellungen/hilfe',
 				'/einstellungen/kanaele',
@@ -103,6 +107,34 @@ describe('overview of the settings (EU-1)', () => {
 		}
 		const texts = SETTINGS_SECTIONS.map((section) => section.description);
 		expect(new Set(texts).size).toBe(texts.length);
+	});
+
+	// FP-3 (ADR-0077 addendum FP-3): the errors of this tab and the log of the server, right after
+	// "Hilfe" in the group without a heading, for every account on every server and in the phone frame.
+	it('lists "Fehlerprotokoll" after "Hilfe" for every account and every server', () => {
+		const page = settingsSectionById('fehlerprotokoll');
+		expect(page).toEqual({
+			id: 'fehlerprotokoll',
+			label: 'Fehlerprotokoll',
+			href: '/einstellungen/fehlerprotokoll',
+			group: 'hilfe',
+			description:
+				'Fehler dieser Sitzung und vom Server festgehaltene Fehler ansehen, filtern und als Bericht kopieren.'
+		});
+		expect(problemLogHref()).toBe('/einstellungen/fehlerprotokoll');
+		expect(isAdminSection('fehlerprotokoll')).toBe(false);
+		const ids = SETTINGS_SECTIONS.map((section) => section.id);
+		expect(ids.indexOf('fehlerprotokoll') - ids.indexOf('hilfe')).toBe(1);
+		for (const platform of ['windows', 'linux', 'container'] as const) {
+			for (const adminPages of ['full', 'pc-only', 'hidden'] as const) {
+				const help = groupSettingsSections(visibleSettingsSections(platform, adminPages)).at(-1);
+				expect(help?.sections.map((section) => [section.id, section.pcOnly])).toEqual([
+					['hilfe', false],
+					['fehlerprotokoll', false]
+				]);
+			}
+		}
+		expect(settingsSectionOf('/einstellungen/fehlerprotokoll/')?.label).toBe('Fehlerprotokoll');
 	});
 
 	it('knows the overview itself, with or without a slash at the end', () => {
