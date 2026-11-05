@@ -577,7 +577,8 @@ describe('groups of the settings navigation (UI-1)', () => {
 
 // EU-1 (ADR-0078, decision of the user 2026-11-05): in the phone frame an arrow "Einstellungen"
 // leads from every page back to the overview, instead of the rows of the pages; the overview lists
-// the pages itself. From 40rem, with "Handy-Ansicht: Aus" and on the PC the navigation stays.
+// the pages itself. The breadcrumbs stand there only on a sub page. From 40rem, with "Handy-Ansicht:
+// Aus" and on the PC the navigation and the breadcrumbs stay.
 describe('arrow back to the overview in the phone frame (EU-1)', () => {
 	/** Runs `check` with the width of a phone or not and with the choice "Automatisch" or "Aus". */
 	async function withLayout(narrow: boolean, enabled: boolean, check: () => Promise<void>) {
@@ -633,16 +634,54 @@ describe('arrow back to the overview in the phone frame (EU-1)', () => {
 		});
 	});
 
-	it('shows only the way back on the overview in the frame: the overview lists the pages', async () => {
+	it.each(['/einstellungen', '/einstellungen/'])(
+		'shows only the way back on the overview at %s in the frame: the overview lists the pages',
+		async (path) => {
+			await withLayout(true, true, async () => {
+				await renderSettings(path, '/tagesplan');
+				const nav = within(screen.getByRole('navigation', { name: 'Einstellungen' }));
+				expect(nav.getAllByRole('link').map((link) => link.textContent?.trim())).toEqual([
+					'Zurück zum Tagesplan'
+				]);
+				expect(nav.queryAllByRole('list')).toEqual([]);
+				expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Einstellungen');
+				// No step "Einstellungen" beside the top bar and the heading of the same name.
+				expect(screen.queryByRole('navigation', { name: 'Brotkrumenpfad' })).toBeNull();
+				expect(screen.getByText(CONTENT)).toBeTruthy();
+			});
+		}
+	);
+
+	// Review of EU-1 (R-1, "weniger pro Bildschirm"): on a page the arrow "Einstellungen", the top bar
+	// and the heading say where one is; only a sub page keeps its path.
+	it.each(['/einstellungen/darstellung', '/einstellungen/sicherheit'])(
+		'shows no breadcrumbs on %s in the frame',
+		async (path) => {
+			await withLayout(true, true, async () => {
+				await renderSettings(path);
+				expect(screen.queryByRole('navigation', { name: 'Brotkrumenpfad' })).toBeNull();
+				expect(screen.getByRole('heading', { level: 2 })).toBeTruthy();
+				const nav = within(screen.getByRole('navigation', { name: 'Einstellungen' }));
+				expect(nav.getByRole('link', { name: 'Zu den Einstellungen' })).toBeTruthy();
+			});
+		}
+	);
+
+	it('keeps the path of a sub page in the frame: Einstellungen › Hilfe › Eingabeelemente', async () => {
 		await withLayout(true, true, async () => {
-			await renderSettings('/einstellungen', '/tagesplan');
-			const nav = within(screen.getByRole('navigation', { name: 'Einstellungen' }));
-			expect(nav.getAllByRole('link').map((link) => link.textContent?.trim())).toEqual([
-				'Zurück zum Tagesplan'
+			await renderSettings('/einstellungen/hilfe/elemente');
+			const crumbs = within(screen.getByRole('navigation', { name: 'Brotkrumenpfad' }));
+			expect(crumbs.getAllByRole('listitem').map((item) => item.textContent?.trim())).toEqual([
+				'Einstellungen',
+				'Hilfe',
+				'Eingabeelemente'
 			]);
-			expect(nav.queryAllByRole('list')).toEqual([]);
-			expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Einstellungen');
-			expect(screen.getByText(CONTENT)).toBeTruthy();
+			expect(crumbs.getByRole('link', { name: 'Hilfe' }).getAttribute('href')).toBe(
+				'/einstellungen/hilfe'
+			);
+			expect(crumbs.getByRole('link', { name: 'Einstellungen' }).getAttribute('href')).toBe(
+				'/einstellungen'
+			);
 		});
 	});
 
@@ -660,6 +699,11 @@ describe('arrow back to the overview in the phone frame (EU-1)', () => {
 				expect(nav.queryByRole('link', { name: 'Zu den Einstellungen' }), path).toBeNull();
 				expect(nav.getAllByRole('list'), path).toHaveLength(4);
 				expect(nav.getAllByRole('listitem'), path).toHaveLength(13);
+				// The breadcrumbs stay outside the frame (R-1).
+				const crumbs = screen.getByRole('navigation', { name: 'Brotkrumenpfad' });
+				expect(within(crumbs).getAllByRole('listitem').at(0)?.textContent?.trim(), path).toBe(
+					'Einstellungen'
+				);
 			}
 		});
 	});

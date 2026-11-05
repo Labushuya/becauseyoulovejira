@@ -49,7 +49,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
 		href: resolve('/einstellungen/kanaele'),
 		group: 'arbeit',
 		description:
-			'Kalender, Telegram, Postfächer und weitere Quellen verbinden, die Einträge in den Eingang bringen.'
+			'Quellen verbinden, die Einträge in den Eingang bringen, etwa Kalender, Telegram oder Postfächer.'
 	},
 	{
 		id: 'datei-importe',
@@ -89,7 +89,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
 		href: resolve('/einstellungen/haushalt'),
 		group: 'persoenlich',
 		description:
-			'Einen Haushalt gründen oder mit einem Code beitreten und Mitglieder, Rechte und Einladungen verwalten.'
+			'Einen Haushalt gründen oder mit einem Code beitreten; als Inhaber Mitglieder, Rechte und Einladungen verwalten.'
 	},
 	// The own account (ADR-0056 §3); "Mein", so it is not taken for the accounts of everybody.
 	{
@@ -115,7 +115,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
 		href: resolve('/einstellungen/sicherheit'),
 		group: 'verwaltung',
 		description:
-			'Schutz vor Rateversuchen und Gültigkeit der Anmeldung einstellen, fehlgeschlagene Anmeldungen ansehen.'
+			'Schutz vor Rateversuchen, Gültigkeit der Anmeldung und Zugriff im Heimnetz einstellen, fehlgeschlagene Anmeldungen ansehen.'
 	},
 	// Backups, target folder and passphrase (ADR-0046), only for a server on Windows.
 	{
@@ -124,7 +124,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
 		href: resolve('/einstellungen/sicherung'),
 		group: 'verwaltung',
 		description:
-			'Jetzt sichern oder prüfen und Zielverzeichnis, Passphrase und Aufbewahrung festlegen.'
+			'Jetzt sichern, prüfen oder wiederherstellen und Zielverzeichnis, Passphrase und Aufbewahrung festlegen.'
 	},
 	// What the app takes and what can be cleared (ADR-0047 §6), on every server; the parts of the
 	// folder app under Windows only there.

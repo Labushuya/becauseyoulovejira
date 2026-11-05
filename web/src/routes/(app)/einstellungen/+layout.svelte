@@ -35,6 +35,9 @@
 	// /einstellungen is the overview of the pages: one step "Einstellungen" in the breadcrumbs, the
 	// heading "Einstellungen", no page current in the navigation. In the phone frame the navigation
 	// shows no rows of pages: the overview lists them, every other page has the arrow back to it.
+	// There the breadcrumbs stand only on a sub page ("Einstellungen › Hilfe › Eingabeelemente"): on
+	// the overview and on a page the top bar, the arrow and the heading say the same ("weniger pro
+	// Bildschirm", ADR-0073).
 	let { children } = $props();
 
 	const mobileLayout = getMobileLayoutStore();
@@ -84,6 +87,7 @@
 				]
 	);
 	const phoneNav = $derived(mobileLayout.active ? (home ? 'overview' : 'page') : null);
+	const showCrumbs = $derived(phoneNav === null || subpage !== null);
 	const backHref = $derived(lastView.href);
 	const backLabel = $derived(lastViewLabel(backHref, (id) => tickets.find(id)?.key ?? null));
 	// The open setups of the account as a mark at "Kanäle" (KE-1, ADR-0076 §2).
@@ -135,7 +139,9 @@
 		/>
 	</div>
 	<div class="page">
-		<Breadcrumbs items={crumbs} />
+		{#if showCrumbs}
+			<Breadcrumbs items={crumbs} />
+		{/if}
 		<h2 id={headingId} tabindex="-1" data-view-heading bind:this={heading}>{title}</h2>
 		{#if blocked}
 			<AdminPageNotice {capabilities} frame={mobileLayout.active} />

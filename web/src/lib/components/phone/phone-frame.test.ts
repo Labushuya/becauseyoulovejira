@@ -369,6 +369,22 @@ describe('phone frame: "Mehr"', () => {
 		expect(document.activeElement).toBe(more);
 	});
 
+	// Review of EU-1 (R-6): the rows of the settings come from SettingsGroupList; following one closes
+	// the sheet through `onfollow`, like the views.
+	it('closes with a link of the settings, e.g. "Darstellung"', async () => {
+		await withContext(ADMIN);
+		at('/tagesplan', '/(app)/tagesplan');
+		const { nav } = showBar();
+		const sheet = await openMore(nav);
+		const settings = within(sheet).getByRole('navigation', { name: 'Einstellungen' });
+		// jsdom does not navigate; in the app SvelteKit follows the link.
+		const stay = (event: Event) => event.preventDefault();
+		document.addEventListener('click', stay, { capture: true, once: true });
+		await fireEvent.click(within(settings).getByRole('link', { name: 'Darstellung' }));
+		await tick();
+		expect(screen.queryByRole('dialog', { name: 'Mehr' })).toBeNull();
+	});
+
 	it('signs out like the header of the PC: to the login page with the current page', async () => {
 		at('/tagesplan?tag=2031-05-13', '/(app)/tagesplan');
 		const { nav } = showBar();

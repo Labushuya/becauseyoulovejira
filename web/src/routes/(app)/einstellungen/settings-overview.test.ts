@@ -35,7 +35,7 @@ async function renderOverview() {
 	return result;
 }
 
-/** Each list of the overview: the text of its heading ('' for the help) and the names of its rows. */
+/** Each list of the overview: the text of its heading and the names of its rows. */
 function groups(): [string, string[]][] {
 	return screen.getAllByRole('list').map((list) => [
 		(list.getAttribute('aria-labelledby') ?? '')
@@ -57,7 +57,8 @@ const WORK: [string, string[]] = [
 	['Kanäle', 'Datei-Importe', 'Tags', 'Tickets']
 ];
 const PERSONAL: [string, string[]] = ['Persönlich', ['Darstellung', 'Haushalt', 'Mein Konto']];
-const HELP: [string, string[]] = ['', ['Hilfe']];
+// The help after a line, named by a heading only for screen readers (review of EU-1, R-5).
+const HELP: [string, string[]] = ['Hilfe', ['Hilfe']];
 
 beforeEach(async () => {
 	mocks.platform = 'windows';
@@ -79,8 +80,23 @@ describe('overview of the settings (EU-1)', () => {
 		// The names of the groups are headings below the heading of the page.
 		expect(
 			screen.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent?.trim())
-		).toEqual(['Eingang und Tickets', 'Persönlich', 'Verwaltung']);
+		).toEqual(['Eingang und Tickets', 'Persönlich', 'Verwaltung', 'Hilfe']);
 		expect(screen.queryByText('nur am PC')).toBeNull();
+	});
+
+	// Review of EU-1 (R-5): the help stands after a line without a visible heading, but its list is
+	// named like the others and the list of headings ends with it.
+	it('names the list of the help by a heading only for screen readers', async () => {
+		await renderOverview();
+
+		const heading = screen.getByRole('heading', { level: 3, name: 'Hilfe' });
+		expect(heading.classList.contains('visually-hidden')).toBe(true);
+		const list = screen.getByRole('list', { name: 'Hilfe' });
+		expect(list.getAttribute('aria-labelledby')).toBe(heading.id);
+		expect(list.classList.contains('after-line')).toBe(true);
+		expect(within(list).getByRole('link', { name: 'Hilfe' }).getAttribute('href')).toBe(
+			'/einstellungen/hilfe'
+		);
 	});
 
 	it('names each row by its page, leads there and describes it by its sentence', async () => {
@@ -149,7 +165,7 @@ describe('overview of the settings (EU-1)', () => {
 	it('shows the group once the context is known', async () => {
 		await useContext('pending');
 		await renderOverview();
-		expect(groups().map(([name]) => name)).toEqual(['Eingang und Tickets', 'Persönlich', '']);
+		expect(groups().map(([name]) => name)).toEqual(['Eingang und Tickets', 'Persönlich', 'Hilfe']);
 
 		await useContext(PC_CONTEXT);
 		await tick();
@@ -157,7 +173,7 @@ describe('overview of the settings (EU-1)', () => {
 			'Eingang und Tickets',
 			'Persönlich',
 			'Verwaltung',
-			''
+			'Hilfe'
 		]);
 	});
 

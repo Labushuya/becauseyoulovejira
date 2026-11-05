@@ -5,7 +5,7 @@
 	import { auth } from '$lib/auth.svelte';
 	import { QUICK_CAPTURE_KEYSHORTCUTS } from '$lib/domain/shortcuts';
 	import { loginUrlFor } from '$lib/guard';
-	import { isSettingsPath } from '$lib/settings-sections';
+	import { SETTINGS_HOME, isSettingsPath } from '$lib/settings-sections';
 	import { findSignOut } from '$lib/sign-out';
 	import { NEW_TICKET_LINK_ID, newTicketHref } from '$lib/ticket-links';
 	import AreaSwitch from './AreaSwitch.svelte';
@@ -115,7 +115,7 @@
 	{/if}
 	<a
 		class="button-icon settings"
-		href={resolve('/einstellungen')}
+		href={SETTINGS_HOME}
 		aria-label="Einstellungen"
 		title="Einstellungen"
 		aria-current={inSettings ? 'page' : undefined}

@@ -1,7 +1,10 @@
 <script lang="ts">
-	import { resolve } from '$app/paths';
 	import { CONTEXT_TEXTS } from '$lib/guidance/texts';
-	import { groupSettingsSections, type VisibleSettingsSection } from '$lib/settings-sections';
+	import {
+		SETTINGS_HOME,
+		groupSettingsSections,
+		type VisibleSettingsSection
+	} from '$lib/settings-sections';
 
 	// Navigation of the settings area (ADR-0026 section 1, plan EH-1): first the way back to the last
 	// view, then the pages in groups (UI-1, ADR-0060): "Eingang und Tickets", "Persönlich",
@@ -52,7 +55,7 @@
 		{backLabel}
 	</a>
 	{#if phone === 'page'}
-		<a class="back" href={resolve('/einstellungen')}>
+		<a class="back" href={SETTINGS_HOME}>
 			<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
 				<path d="M13 8H3.5M7.5 4L3.5 8l4 4" />
 			</svg>

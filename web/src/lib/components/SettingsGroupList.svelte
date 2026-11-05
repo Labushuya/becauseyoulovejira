@@ -17,7 +17,8 @@
 	// rows are targets of the phone frame. The component renders the labels and lists side by side
 	// without a wrapper, so they are items of the grid of the caller. For the overview the labels are
 	// headings, each row adds the sentence of its page (named by the row, described by the sentence)
-	// and the help stands after a line.
+	// and the help stands after a line, with a heading "Hilfe" only for screen readers, so its list
+	// is named and the list of headings stays complete. "Mehr" keeps the help without a name.
 	let {
 		current = null,
 		overview = false,
@@ -58,11 +59,13 @@
 				<span class="mark">{CONTEXT_TEXTS.pcOnlyMark}</span>
 			{/if}
 		</svelte:element>
+	{:else if overview}
+		<h3 class="visually-hidden" id={`${uid}-${group.id}`}>Hilfe</h3>
 	{/if}
 	<ul
 		class:described={overview}
 		class:after-line={overview && group.label === null}
-		aria-labelledby={group.label === null ? undefined : `${uid}-${group.id}`}
+		aria-labelledby={group.label === null && !overview ? undefined : `${uid}-${group.id}`}
 	>
 		{#each group.sections as section (section.id)}
 			<li>
