@@ -1,8 +1,9 @@
 // The error log of the server (FP-2, ADR-0077), read only. Stateless functions with the PocketBase
 // instance as first parameter; filters always through pb.filter(). The list and view rules of
 // problem_events decide what an account sees (a private entry only its owner, one of a household its
-// members, one of the app the administrator), so the SPA asks for no area: the log is no list of the
-// area of the tab but of everything the account may see. Writing is not possible through the API.
+// members, one of the app the administrator), so the SPA asks for no area of the tab: the log is no
+// list of the area of the tab but of everything the account may see. The filters of the page
+// "Fehlerprotokoll" (FP-3) only narrow that. Writing is not possible through the API.
 
 import type PocketBase from 'pocketbase';
 import {
@@ -10,7 +11,10 @@ import {
 	SERVER_PROBLEMS_PAGE,
 	parseChannelProblemHit,
 	parseServerProblem,
+	serverProblemCursorOf,
 	type ChannelProblemHit,
+	type ServerProblemPage,
+	type ServerProblemQuery,
 	type ServerProblemRecord
 } from '../domain/server-problems';
 import { DataError, withDataErrors } from './errors';
@@ -40,6 +44,52 @@ export function listServerProblems(
 			signal
 		});
 		return toRecords(page.items);
+	});
+}
+
+/**
+ * The list of the page "Fehlerprotokoll" (FP-3): source and area when chosen, and after the cursor
+ * of the page before only older entries in the order of the sort -last_at,-id (keyset: an earlier
+ * last occurrence, or the same one with a smaller ID). An unset value is '' and switches its
+ * condition off.
+ */
+const SERVER_PROBLEM_PAGE_FILTER = [
+	'({:source} = "" || source = {:source})',
+	'({:area} = "" || area = {:area})',
+	'({:lastAt} = "" || last_at < {:lastAt} || (last_at = {:lastAt} && id < {:id}))'
+].join(' && ');
+
+/**
+ * One page of the page "Fehlerprotokoll" (FP-3), at most SERVER_PROBLEMS_PAGE entries, newest first,
+ * with the cursor of the next page. It asks for one entry more than it shows: only when that one is
+ * there does a next page follow, so a list of exactly 50 offers no "Mehr laden" that finds nothing.
+ * The cursor comes from the last shown entry as the server sent it, also when it could not be read,
+ * so the list always moves on.
+ */
+export function listServerProblemPage(
+	pb: PocketBase,
+	query: ServerProblemQuery,
+	{ signal }: RequestOptions = {}
+): Promise<ServerProblemPage> {
+	return withDataErrors(signal, async () => {
+		const page = await pb.collection(EVENTS).getList(1, SERVER_PROBLEMS_PAGE + 1, {
+			filter: pb.filter(SERVER_PROBLEM_PAGE_FILTER, {
+				source: query.source ?? '',
+				area: query.area ?? '',
+				lastAt: query.after?.lastAt ?? '',
+				id: query.after?.id ?? ''
+			}),
+			sort: '-last_at,-id',
+			fields: SERVER_PROBLEM_FIELDS,
+			skipTotal: true,
+			signal
+		});
+		const shown = page.items.slice(0, SERVER_PROBLEMS_PAGE);
+		const more = page.items.length > SERVER_PROBLEMS_PAGE;
+		return {
+			records: toRecords(shown),
+			next: more ? serverProblemCursorOf(shown.at(-1)) : null
+		};
 	});
 }
 

@@ -145,7 +145,8 @@ describe('breakpoints (MO-1a, ADR-0073)', () => {
 		// month of marks with its days as targets, the rows of the agenda, the line of a move above the
 		// bottom bar) and the settings (their navigation and the links of a section message as targets
 		// of 44 px); since NA-1 (C2-4) the group "Ebenen" in the filter sheet of the calendar, its
-		// width there (before outside of the frame block, although only the sheet renders it).
+		// width there (before outside of the frame block, although only the sheet renders it); since
+		// FP-3 the segments of the filters of the page "Fehlerprotokoll", each at least a target wide.
 		expect([...new Set(places)].sort()).toEqual([
 			'lib/components/Breadcrumbs.svelte',
 			'lib/components/CharmPicker.svelte',
@@ -197,6 +198,7 @@ describe('breakpoints (MO-1a, ADR-0073)', () => {
 			'lib/components/help/KeyboardFold.svelte',
 			'lib/components/overlay/Drawer.svelte',
 			'lib/components/overlay/FlagGroup.svelte',
+			'lib/components/problems/ServerProblemList.svelte',
 			'lib/styles/base.css',
 			'lib/styles/prose.css',
 			'lib/styles/tokens.css',

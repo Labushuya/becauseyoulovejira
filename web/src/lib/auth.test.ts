@@ -8,7 +8,10 @@ import PocketBase, {
 	type AuthRecord
 } from 'pocketbase';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Auth, KEEP_ALIVE_INTERVAL_MS } from './auth.svelte';
+import { clientProblem } from '$lib/domain/problems';
+import { pb } from '$lib/pocketbase';
+import { problemLog } from '$lib/stores/problem-log.svelte';
+import { Auth, KEEP_ALIVE_INTERVAL_MS, auth } from './auth.svelte';
 
 const ORIGIN = 'http://pb.test';
 const USER = {
@@ -257,6 +260,66 @@ describe('Auth.logout', () => {
 		expect(auth.isLoggedIn).toBe(false);
 		expect(auth.email).toBe('');
 		expect(auth.userId).toBeNull();
+	});
+});
+
+describe('the account of the tab (FP-3)', () => {
+	const OTHER = { ...USER, id: 'user0000000002', email: 'bert@example.com' };
+
+	it('names the account at the start and with every change, null without one', () => {
+		const onAccount = vi.fn();
+		const client = clientWithSession();
+		const signedIn = new Auth(client, onAccount);
+		expect(onAccount.mock.calls).toEqual([[USER.id]]);
+
+		client.authStore.save('new-token', USER);
+		client.authStore.save('other-token', OTHER);
+		vi.spyOn(client.realtime, 'unsubscribe').mockResolvedValue();
+		signedIn.logout();
+		expect(onAccount.mock.calls).toEqual([[USER.id], [USER.id], [OTHER.id], [null]]);
+
+		const without = vi.fn();
+		new Auth(new PocketBase(ORIGIN, new BaseAuthStore()), without);
+		expect(without.mock.calls).toEqual([[null]]);
+	});
+
+	it('empties the list "Fehler dieser Sitzung" of the app on a sign-out and for another account', () => {
+		vi.spyOn(pb.realtime, 'unsubscribe').mockResolvedValue();
+		try {
+			pb.authStore.save('token-anna', USER);
+			problemLog.clear();
+			problemLog.record(
+				clientProblem({
+					id: 'auth-1',
+					intent: 'Ticket speichern',
+					at: Date.now(),
+					outcome: { result: 'network', status: null, code: null, message: null },
+					request: null,
+					app: null,
+					exception: null
+				})
+			);
+			pb.authStore.save('token-anna-2', USER);
+			expect(problemLog.count).toBe(1);
+			pb.authStore.save('token-bert', OTHER);
+			expect(problemLog.count).toBe(0);
+
+			problemLog.record(
+				clientProblem({
+					id: 'auth-2',
+					intent: 'Ticket speichern',
+					at: Date.now(),
+					outcome: { result: 'network', status: null, code: null, message: null },
+					request: null,
+					app: null,
+					exception: null
+				})
+			);
+			auth.logout();
+			expect(problemLog.count).toBe(0);
+		} finally {
+			pb.authStore.clear();
+		}
 	});
 });
 

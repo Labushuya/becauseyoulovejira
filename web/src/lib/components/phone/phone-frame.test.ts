@@ -297,7 +297,9 @@ describe('phone frame: "Mehr"', () => {
 			'Sicherung',
 			'Speicher',
 			'System',
-			'Hilfe'
+			'Hilfe',
+			// Since FP-3 (ADR-0077 addendum FP-3).
+			'Fehlerprotokoll'
 		]);
 		expect(
 			within(settings).getByRole('link', { name: 'Darstellung' }).getAttribute('aria-current')
@@ -331,7 +333,7 @@ describe('phone frame: "Mehr"', () => {
 		const settings = within(sheet).getByRole('navigation', { name: 'Einstellungen' });
 
 		const links = within(settings).getAllByRole('link');
-		expect(links).toHaveLength(13);
+		expect(links).toHaveLength(14);
 		for (const link of links) {
 			expect(link.hasAttribute('aria-current')).toBe(false);
 			expect(link.hasAttribute('aria-describedby')).toBe(false);

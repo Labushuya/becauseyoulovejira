@@ -1,7 +1,11 @@
 // The error log of the server in the SPA (FP-2, ADR-0077): an entry of the record API as an entry of
 // the dialog, its facts with area, last occurrence and Server-ID, the report, the address
-// `?fehler=<id>` and the entry behind "Details" of a channel card (only for the error shown).
+// `?fehler=<id>` and the entry behind "Details" of a channel card (only for the error shown). Since
+// FP-3 the page "Fehlerprotokoll": the values and choices of the filters, the areas an account may
+// choose, the cursor of "Mehr laden" and the next page without an entry twice.
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
 	PROBLEM_TEXTS,
@@ -12,13 +16,20 @@ import {
 } from './problems';
 import {
 	CHANNEL_PROBLEM_TOLERANCE_MS,
+	SERVER_PROBLEM_AREAS,
+	SERVER_PROBLEM_AREA_LABELS,
 	SERVER_PROBLEM_PARAM,
+	SERVER_PROBLEM_SOURCES,
+	SERVER_PROBLEM_SOURCE_LABELS,
+	appendServerProblems,
 	channelProblemKey,
 	channelProblemsSince,
 	isServerProblemId,
 	matchChannelProblems,
 	parseChannelProblemHit,
 	parseServerProblem,
+	serverProblemAreas,
+	serverProblemCursorOf,
 	serverProblemEntry,
 	serverProblemIdOf
 } from './server-problems';
@@ -262,5 +273,79 @@ describe('server-problems: the entry behind "Details" of a channel card', () => 
 		]) {
 			expect(parseChannelProblemHit(broken)).toBeNull();
 		}
+	});
+});
+
+describe('server-problems: the page "Fehlerprotokoll" (FP-3)', () => {
+	const RULES = readFileSync(
+		join(import.meta.dirname, '..', '..', '..', '..', 'app', 'pb_hooks', 'lib', 'problem-rules.js'),
+		'utf8'
+	);
+	const valuesOf = (name: string) =>
+		[
+			...(new RegExp(`var ${name} = \\[([^\\]]*)\\]`).exec(RULES)?.[1] ?? '').matchAll(
+				/'([a-z]+)'/g
+			)
+		].map(([, value]) => value);
+
+	it('filters by the values of source and area the server writes, with a label for each', () => {
+		expect([...SERVER_PROBLEM_SOURCES]).toEqual(valuesOf('SOURCES'));
+		expect([...SERVER_PROBLEM_AREAS]).toEqual(valuesOf('AREAS'));
+		expect(SERVER_PROBLEM_SOURCE_LABELS).toEqual({
+			request: 'Anfrage',
+			channel: 'Kanal',
+			job: 'Aufgabe'
+		});
+		expect(SERVER_PROBLEM_AREA_LABELS).toEqual({
+			private: 'Privat',
+			household: 'Haushalt',
+			system: 'App'
+		});
+	});
+
+	it('offers "Haushalt" only to a member and "App" only to the administrator', () => {
+		expect(serverProblemAreas({ member: false, admin: false })).toEqual(['private']);
+		expect(serverProblemAreas({ member: true, admin: false })).toEqual(['private', 'household']);
+		expect(serverProblemAreas({ member: false, admin: true })).toEqual(['private', 'system']);
+		expect(serverProblemAreas({ member: true, admin: true })).toEqual([
+			'private',
+			'household',
+			'system'
+		]);
+	});
+
+	it('takes the cursor from the last entry as the server sent it', () => {
+		expect(serverProblemCursorOf(raw())).toEqual({ lastAt: '2026-11-02 09:30:00.000Z', id: ID });
+		// Even an entry the list cannot show moves the list on.
+		expect(serverProblemCursorOf(raw({ source: 'unbekannt' }))).toEqual({
+			lastAt: '2026-11-02 09:30:00.000Z',
+			id: ID
+		});
+		for (const broken of [
+			raw({ id: 'kurz' }),
+			raw({ last_at: '' }),
+			raw({ last_at: 'gestern' }),
+			raw({ last_at: 17 }),
+			null,
+			undefined
+		]) {
+			expect(serverProblemCursorOf(broken)).toBeNull();
+		}
+	});
+
+	it('appends the next page without an entry that is shown already', () => {
+		const first = parseServerProblem(raw());
+		const second = parseServerProblem(
+			raw({ id: 'second000000001', last_at: '2026-11-02 09:00:00.000Z' })
+		);
+		const third = parseServerProblem(
+			raw({ id: 'third0000000001', last_at: '2026-11-02 08:30:00.000Z' })
+		);
+		if (first === null || second === null || third === null) throw new Error('not an entry');
+		const shown = [serverProblemEntry(first), serverProblemEntry(second)];
+		const next = appendServerProblems(shown, [second, third, third]);
+		expect(next.map((entry) => entry.serverId)).toEqual([first.id, second.id, third.id]);
+		expect(next[0]).toBe(shown[0]);
+		expect(appendServerProblems([], [third])).toEqual([serverProblemEntry(third)]);
 	});
 });

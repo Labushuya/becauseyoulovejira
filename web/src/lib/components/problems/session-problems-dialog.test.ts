@@ -1,7 +1,7 @@
 // Dialog "Fehler dieser Sitzung" (FP-1, ADR-0071 §4): the list newest first with intent, time,
 // short result and "3×", each entry unfolding to its details, "Alle kopieren", "Liste leeren" with
-// the empty state and the focus there, a named modal with "Schließen", and the lasting entry of
-// the page "Hilfe".
+// the empty state and the focus there, a named modal with "Schließen". The lasting way to the list
+// is the page "Fehlerprotokoll" since FP-3 (problem-log-page.test.ts).
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
@@ -16,7 +16,6 @@ import {
 import { problemLog } from '$lib/stores/problem-log.svelte';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import SessionProblemsDialog from './SessionProblemsDialog.svelte';
-import SessionProblemsEntry from './SessionProblemsEntry.svelte';
 
 useOverlayStubs();
 
@@ -141,20 +140,5 @@ describe('dialog "Fehler dieser Sitzung"', () => {
 		// The footer button; the × of the head has the same name.
 		await fireEvent.click(within(dialog).getByText('Schließen'));
 		expect(onclose).toHaveBeenCalled();
-	});
-});
-
-describe('entry on the page "Hilfe"', () => {
-	it('opens the dialog of the list with its number', async () => {
-		problemLog.closeDialog();
-		problemLog.record(problem());
-		render(SessionProblemsEntry);
-		const button = screen.getByRole('button', { name: 'Fehler dieser Sitzung anzeigen (1)' });
-		expect(button.getAttribute('aria-haspopup')).toBe('dialog');
-
-		await fireEvent.click(button);
-
-		expect(problemLog.dialogOpen).toBe(true);
-		problemLog.closeDialog();
 	});
 });

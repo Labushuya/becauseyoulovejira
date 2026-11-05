@@ -20,8 +20,7 @@
 	import RecurrenceHelp from '$lib/components/help/RecurrenceHelp.svelte';
 	import ScriptProblemsHelp from '$lib/components/help/ScriptProblemsHelp.svelte';
 	import ShortcutList from '$lib/components/help/ShortcutList.svelte';
-	import ServerProblemsEntry from '$lib/components/problems/ServerProblemsEntry.svelte';
-	import SessionProblemsEntry from '$lib/components/problems/SessionProblemsEntry.svelte';
+	import ProblemLogEntry from '$lib/components/problems/ProblemLogEntry.svelte';
 	import { PRIORITY_NUMBERS, PRIORITY_WORDS } from '$lib/domain/quick-syntax';
 	import { CONTEXT_TEXTS, RESTART_NEEDED } from '$lib/guidance/texts';
 	import { HELP_SECTIONS, helpHref } from '$lib/settings-sections';
@@ -1783,16 +1782,12 @@
 		</div>
 	</section>
 
-	<!-- The errors of this tab (FP-1, ADR-0071 §5): for every account, kept small for FP-3. -->
-	<section id="fehler" aria-labelledby="fehler-title">
-		<h3 id="fehler-title">Fehler dieser Sitzung</h3>
-		<SessionProblemsEntry />
-	</section>
-
-	<!-- The error log of the server (FP-2, ADR-0077): for every account, kept small for FP-3. -->
-	<section id="fehlerprotokoll" aria-labelledby="fehlerprotokoll-title">
-		<h3 id="fehlerprotokoll-title">Fehlerprotokoll des Servers</h3>
-		<ServerProblemsEntry />
+	<!-- The errors of this tab and of the server (FP-1, FP-2), one section since FP-3 with the way to
+		the page "Fehlerprotokoll", for every account. Its heading keeps the anchor #fehler of the
+		section "Fehler dieser Sitzung" before, so older links still land here. -->
+	<section id="fehlerprotokoll" aria-labelledby="fehler">
+		<h3 id="fehler" class="anchor">Fehlerprotokoll</h3>
+		<ProblemLogEntry />
 	</section>
 
 	<section id="betrieb" aria-labelledby="betrieb-title">
@@ -2515,10 +2510,14 @@
 		gap: 1.75rem;
 	}
 
+	section,
+	.anchor {
+		scroll-margin-top: calc(var(--app-header-height, 0px) + 1rem);
+	}
+
 	section {
 		display: grid;
 		gap: 0.625rem;
-		scroll-margin-top: calc(var(--app-header-height, 0px) + 1rem);
 	}
 
 	h3 {

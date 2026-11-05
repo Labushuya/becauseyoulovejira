@@ -1,6 +1,7 @@
 import PocketBase, { ClientResponseError, isTokenExpired, type AuthRecord } from 'pocketbase';
 import { adminOf } from '$lib/domain/accounts';
 import { pb } from '$lib/pocketbase';
+import { problemLog } from '$lib/stores/problem-log.svelte';
 
 /**
  * checking: the stored session is being verified; ready: the session state is known
@@ -55,10 +56,14 @@ function endsSession(status: number | undefined): boolean {
 
 /**
  * Session state of the app as runes, fed by `authStore.onChange` (login, logout, refresh and
- * changes from other tabs through the LocalAuthStore). The token itself stays in the store.
+ * changes from other tabs through the LocalAuthStore). The token itself stays in the store. Since
+ * FP-3 every change names the signed-in account to `onAccount` (null without one), at the start as
+ * well: the app empties the list "Fehler dieser Sitzung" with it when the account signs out or
+ * another one signs in (ProblemLog.useAccount).
  */
 export class Auth {
 	readonly #client: PocketBase;
+	readonly #onAccount: (userId: string | null) => void;
 	#restoring: Promise<void> | null = null;
 	#renewing: Promise<void> | null = null;
 
@@ -76,8 +81,9 @@ export class Auth {
 		typeof this.#record?.id === 'string' && this.#record.id !== '' ? this.#record.id : null
 	);
 
-	constructor(client: PocketBase) {
+	constructor(client: PocketBase, onAccount: (userId: string | null) => void = () => undefined) {
 		this.#client = client;
+		this.#onAccount = onAccount;
 		this.#sync();
 		let token = client.authStore.token;
 		client.authStore.onChange(() => {
@@ -85,6 +91,7 @@ export class Auth {
 			const before = { token, userId: this.#userId };
 			this.#sync();
 			token = client.authStore.token;
+			this.#onAccount(this.userId);
 			// The session ended elsewhere (other tab, expired or revoked token): stop the realtime
 			// subscriptions as well, so none keeps running without permission (ADR-0007 section 2).
 			if (hadToken && !this.#hasToken) this.#stopRealtime();
@@ -97,6 +104,7 @@ export class Auth {
 				this.#rebindRealtime();
 			}
 		});
+		this.#onAccount(this.userId);
 	}
 
 	get status(): SessionStatus {
@@ -288,4 +296,4 @@ export class Auth {
 	}
 }
 
-export const auth = new Auth(pb);
+export const auth = new Auth(pb, (userId) => problemLog.useAccount(userId));

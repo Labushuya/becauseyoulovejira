@@ -5,13 +5,17 @@
 // ring of at most PROBLEM_LOG_MAX entries; the same problem in quick succession counts on its entry
 // ("3×"). Blocked or full storage never breaks anything, the list then lasts for this page. The one
 // list of the app is the module instance `problemLog`; the dialog "Fehler dieser Sitzung" opens
-// through it (rendered once by the root layout), since FP-2 (ADR-0077) also with the log of the
-// server first (`openServerLog`). The entries of the server are never stored here.
+// through it (rendered once by the root layout). The entries of the server are never stored here.
+// Since FP-3 the list belongs to the account it was recorded for: the auth flow reports every change
+// of the account (`useAccount`, from lib/auth.svelte.ts), and the list goes when the account signs
+// out or another one signs in, also after a reload (the account is kept next to the list under
+// PROBLEM_LOG_ACCOUNT_KEY), so the next person at the same tab never reads the errors of the last.
 
 import { SvelteSet } from 'svelte/reactivity';
 import { version } from '$app/environment';
 import { provideAppVersion, unexpectedProblem } from '$lib/data/errors';
 import {
+	PROBLEM_LOG_ACCOUNT_KEY,
 	PROBLEM_LOG_KEY,
 	addProblem,
 	isIgnorableGlobalError,
@@ -22,7 +26,7 @@ import {
 
 export type ProblemStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 
-/** The list the dialog shows first: this tab or the log of the server (FP-2, ADR-0077). */
+/** The list shown: this tab or the log of the server (FP-2, ADR-0077; the switch of FP-3). */
 export type ProblemView = 'session' | 'server';
 
 export class ProblemLog {
@@ -31,11 +35,13 @@ export class ProblemLog {
 	readonly #taken = new SvelteSet<string>();
 	#entries = $state.raw<readonly ProblemEntry[]>([]);
 	#dialogOpen = $state(false);
-	#dialogView = $state<ProblemView>('session');
+	/** The account the list belongs to; null while nobody is signed in. */
+	#account: string | null = null;
 
 	constructor(storage: ProblemStorage | null) {
 		this.#storage = storage;
 		this.#entries = this.#read();
+		this.#account = this.#readAccount();
 	}
 
 	/** The entries, newest first. */
@@ -67,23 +73,28 @@ export class ProblemLog {
 		this.#write();
 	}
 
+	/**
+	 * The account of the tab (FP-3), null without one: signing out or another account empties the
+	 * list of the account before; the first sign-in after none keeps it (what failed while signed
+	 * out, e.g. at the login, belongs to nobody), the same account again changes nothing.
+	 */
+	useAccount(userId: string | null): void {
+		if (userId === this.#account) return;
+		if (this.#account !== null) this.clear();
+		this.#account = userId;
+		try {
+			if (userId === null) this.#storage?.removeItem(PROBLEM_LOG_ACCOUNT_KEY);
+			else this.#storage?.setItem(PROBLEM_LOG_ACCOUNT_KEY, userId);
+		} catch {
+			// Blocked or full storage: the account counts for this page.
+		}
+	}
+
 	get dialogOpen(): boolean {
 		return this.#dialogOpen;
 	}
 
-	/** The list the dialog shows first. */
-	get dialogView(): ProblemView {
-		return this.#dialogView;
-	}
-
 	openDialog(): void {
-		this.#dialogView = 'session';
-		this.#dialogOpen = true;
-	}
-
-	/** The dialog with the log of the server first (FP-2, the help and its entry). */
-	openServerLog(): void {
-		this.#dialogView = 'server';
 		this.#dialogOpen = true;
 	}
 
@@ -96,6 +107,15 @@ export class ProblemLog {
 			return parseStoredProblems(this.#storage?.getItem(PROBLEM_LOG_KEY) ?? null);
 		} catch {
 			return [];
+		}
+	}
+
+	#readAccount(): string | null {
+		try {
+			const value = this.#storage?.getItem(PROBLEM_LOG_ACCOUNT_KEY) ?? null;
+			return value === null || value === '' ? null : value;
+		} catch {
+			return null;
 		}
 	}
 

@@ -145,14 +145,10 @@
 {/if}
 
 <!-- The list "Fehler dieser Sitzung" (FP-1, ADR-0071 §4), once for every page, the login included;
-	since FP-2 (ADR-0077) with the log of the server, also from the address (?fehler=<id>). -->
+	since FP-2 (ADR-0077) with the log of the server, also from the address (?fehler=<id>); since FP-3
+	with the way to the page "Fehlerprotokoll". -->
 {#if problemLog.dialogOpen || linkedProblem !== null}
-	<SessionProblemsDialog
-		onclose={closeProblems}
-		view={problemLog.dialogView}
-		focus={linkedProblem}
-		{signedIn}
-	/>
+	<SessionProblemsDialog onclose={closeProblems} focus={linkedProblem} {signedIn} />
 {/if}
 
 <style>

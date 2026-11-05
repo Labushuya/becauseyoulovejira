@@ -151,6 +151,17 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
 		group: 'hilfe',
 		description:
 			'Tastaturkürzel, Kurzsyntax, Anleitungen zu den Kanälen und Antworten auf häufige Fragen nachlesen.'
+	},
+	// The errors of this tab and the log of the server (FP-3, ADR-0077 addendum FP-3), for every
+	// account on every device and in the phone frame; "Fehlerprotokoll", not "Protokoll", so it is not
+	// taken for "Logs ansehen" on the page "System".
+	{
+		id: 'fehlerprotokoll',
+		label: 'Fehlerprotokoll',
+		href: resolve('/einstellungen/fehlerprotokoll'),
+		group: 'hilfe',
+		description:
+			'Fehler dieser Sitzung und vom Server festgehaltene Fehler ansehen, filtern und als Bericht kopieren.'
 	}
 ];
 
@@ -298,11 +309,10 @@ export const HELP_SECTIONS = [
 	// Folders (ADR-0051): linked from their card.
 	{ id: 'ordner', label: 'Ordner' },
 	{ id: 'fragen', label: 'Häufige Fragen' },
-	// The errors of this session (FP-1, ADR-0071 §5), for every account; FP-3 moves the entry to
-	// "Einstellungen → Fehlerprotokoll".
-	{ id: 'fehler', label: 'Fehler dieser Sitzung' },
-	// The error log of the server (FP-2, ADR-0077), for every account; FP-3 moves it as well.
-	{ id: 'fehlerprotokoll', label: 'Fehlerprotokoll des Servers' },
+	// What the error log keeps and who sees what (FP-1, FP-2), for every account, with the way to the
+	// page "Fehlerprotokoll" (FP-3). One section since FP-3; its heading keeps the anchor "fehler" of
+	// the section "Fehler dieser Sitzung" before, so older links still land here.
+	{ id: 'fehlerprotokoll', label: 'Fehlerprotokoll' },
 	{ id: 'betrieb', label: 'Betrieb' },
 	// Backups and the emergency plan (ADR-0046 §8): linked from the page "Sicherung".
 	{ id: 'sicherung', label: 'Sicherung & Notfall' },
@@ -325,6 +335,11 @@ export type HelpSection = (typeof HELP_SECTIONS)[number]['id'];
 /** Address of a section of the help page, e.g. "/einstellungen/hilfe#kurzsyntax". */
 export function helpHref(section: HelpSection): ResolvedPathname {
 	return `${resolve('/einstellungen/hilfe')}#${section}` as ResolvedPathname;
+}
+
+/** The page "Fehlerprotokoll" (FP-3), from the dialog of the errors and the help. */
+export function problemLogHref(): ResolvedPathname {
+	return resolve('/einstellungen/fehlerprotokoll');
 }
 
 /** The protocol of failed sign-ins on the page "Sicherheit" (ADR-0055 §8). */

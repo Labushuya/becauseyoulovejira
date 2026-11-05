@@ -57,8 +57,9 @@ const WORK: [string, string[]] = [
 	['Kanäle', 'Datei-Importe', 'Tags', 'Tickets']
 ];
 const PERSONAL: [string, string[]] = ['Persönlich', ['Darstellung', 'Haushalt', 'Mein Konto']];
-// The help after a line, named by a heading only for screen readers (review of EU-1, R-5).
-const HELP: [string, string[]] = ['Hilfe', ['Hilfe']];
+// The help after a line, named by a heading only for screen readers (review of EU-1, R-5); since
+// FP-3 with "Fehlerprotokoll" after it, for every account.
+const HELP: [string, string[]] = ['Hilfe', ['Hilfe', 'Fehlerprotokoll']];
 
 beforeEach(async () => {
 	mocks.platform = 'windows';

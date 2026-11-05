@@ -6,7 +6,7 @@
 // emergency plan (ADR-0046 §8) and the storage (ADR-0047 §6). No table (description lists).
 
 import { readFileSync } from 'node:fs';
-import { fireEvent, render, screen, within } from '@testing-library/svelte';
+import { render, screen, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { page } from '$app/state';
 import { MOVE_TEXTS } from '$lib/domain/area-move';
@@ -22,7 +22,6 @@ import {
 import { SCRIPT_PROBLEMS } from '$lib/domain/script-problems';
 import { RESTART_NEEDED } from '$lib/guidance/texts';
 import { HELP_SECTIONS, SETTINGS_SECTIONS, helpHref } from '$lib/settings-sections';
-import { problemLog } from '$lib/stores/problem-log.svelte';
 import Page from './+page.svelte';
 
 function text(element: Element): string {
@@ -48,7 +47,7 @@ describe('help page (EH-9)', () => {
 		}
 	});
 
-	it('jumps to the sections that exist on the page, twenty-two since "Fehler dieser Sitzung"', () => {
+	it('jumps to the sections that exist on the page, twenty-four since "Fehlerprotokoll"', () => {
 		const { container } = render(Page);
 
 		const jump = within(screen.getByRole('navigation', { name: 'Auf dieser Seite' }));
@@ -70,9 +69,8 @@ describe('help page (EH-9)', () => {
 			'GitHub',
 			'Ordner',
 			'Häufige Fragen',
-			'Fehler dieser Sitzung',
-			// Since FP-2: the error log of the server (ADR-0077).
-			'Fehlerprotokoll des Servers',
+			// Since FP-3 one section for the errors of this tab (FP-1) and of the server (FP-2).
+			'Fehlerprotokoll',
 			'Betrieb',
 			'Sicherung & Notfall',
 			'Speicher',
@@ -1874,24 +1872,49 @@ describe('the parts about the keyboard in the phone frame (MO-7c1)', () => {
 	});
 });
 
-describe('errors of this session (FP-1)', () => {
-	it('offers the list to every account, with the number of errors', async () => {
+describe('error log (FP-1, FP-2, one section since FP-3)', () => {
+	it('explains both lists to every account and leads to the page "Fehlerprotokoll"', async () => {
 		for (const context of [MEMBER_CONTEXT, PC_CONTEXT]) {
 			await useContext(context);
-			problemLog.clear();
-			problemLog.closeDialog();
 			const { unmount } = render(Page);
 
-			const section = screen.getByRole('region', { name: 'Fehler dieser Sitzung' });
-			expect(text(section)).toMatch(/Unter „Details“ einer Fehlermeldung steht/);
-			const button = within(section).getByRole('button', {
-				name: 'Fehler dieser Sitzung anzeigen (0)'
-			});
-			await fireEvent.click(button);
-			expect(problemLog.dialogOpen).toBe(true);
-			problemLog.closeDialog();
+			const section = screen.getByRole('region', { name: 'Fehlerprotokoll' });
+			// One paragraph with the core of the privacy of both lists (ADR-0071 §2 and addendum FP-3,
+			// ADR-0077 §3 to §5), then the link; nothing else of the lists is explained here.
+			const paragraphs = [...section.querySelectorAll('p')];
+			expect(paragraphs).toHaveLength(2);
+			const core = text(paragraphs[0] as HTMLElement).trim();
+			expect(core).toMatch(/^Die Fehler dieses Tabs bleiben im Browser: /);
+			expect(core).toMatch(
+				/Die Liste übersteht das Neuladen und verschwindet, wenn du den Tab schließt, die Anmeldung endet oder sich ein anderes Konto anmeldet\./
+			);
+			expect(core).toMatch(
+				/Unerwartete Fehler des Servers sowie Fehler der Kanäle und der Aufgaben im Hintergrund behält der Server 30 Tage nach dem letzten Auftreten, höchstens 5000\./
+			);
+			expect(core).toMatch(
+				/Einen Eintrag deines privaten Bereichs siehst nur du, nicht einmal der Verwalter; einen des Haushalts sehen alle Mitglieder, einen der App nur der Verwalter\./
+			);
+			expect(core).toMatch(
+				/Inhalte, Zugangsdaten, Tokens, E-Mail-Adressen und der Teil einer Adresse nach „\?“ kommen nie hinein\.$/
+			);
+			expect(text(section)).not.toMatch(/Unter „Details“|Häufigkeit|Server-ID|Beide Listen stehen/);
+			const link = within(section).getByRole('link', { name: 'Fehlerprotokoll öffnen' });
+			expect(paragraphs[1]?.contains(link)).toBe(true);
+			expect(text(paragraphs[1] as HTMLElement).trim()).toBe('Fehlerprotokoll öffnen');
+			expect(link.getAttribute('href')).toBe('/einstellungen/fehlerprotokoll');
+			expect(link.classList.contains('button-secondary')).toBe(true);
+			// No dialog from the help any more: the page is the lasting way.
+			expect(within(section).queryByRole('button')).toBeNull();
 			unmount();
 		}
-		expect(helpHref('fehler')).toBe('/einstellungen/hilfe#fehler');
+	});
+
+	it('keeps both anchors of before: #fehlerprotokoll is the section, #fehler its heading', () => {
+		const { container } = render(Page);
+		const section = container.querySelector('section#fehlerprotokoll');
+		expect(helpHref('fehlerprotokoll')).toBe('/einstellungen/hilfe#fehlerprotokoll');
+		expect(section?.querySelector('h3#fehler')?.textContent).toBe('Fehlerprotokoll');
+		expect(container.querySelectorAll('#fehler')).toHaveLength(1);
+		expect(HELP_SECTIONS.map((entry) => entry.id)).not.toContain('fehler');
 	});
 });
