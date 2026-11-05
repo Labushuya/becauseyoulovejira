@@ -95,7 +95,7 @@ try {
     # Only a changed helper replaces the installed one (scripts\build-functions.ps1): an unchanged
     # build keeps the file and its time, so the page "System" asks for no restart.
     try {
-        [void](Install-BylHelper -Built $built -Target $target -RunningHint 'The new version runs after neu-starten.bat.')
+        [void](Install-BylHelper -Built $built -Target $target -RunningHint 'The new version runs after the next restart (in the browser: Einstellungen > System > "Jetzt neu starten"; emergency: app\neu-starten.bat).')
     }
     catch {
         exit (Write-BylBuildProblem -Code 'helper-install' -Values ($problemValues + @{ detail = $_.Exception.Message }))

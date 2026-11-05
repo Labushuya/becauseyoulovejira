@@ -41,7 +41,12 @@ async function user() {
 
 const unique = () => randomBytes(6).toString('hex');
 
-/** PocketBase date text `days` days before now. */
+/**
+ * PocketBase date text `days` days before now. The cutoff is the Berlin midnight 30 days back, so
+ * it lies between 30 and 31 days before now, one hour more or less across a change of daylight
+ * saving time. Discarded items that must be cleaned go back 33 days or more, the one that must stay
+ * 28 days, so each is at least a full day away from the cutoff at any time of day.
+ */
 function daysAgo(days) {
 	return new Date(Date.now() - days * DAY_MS).toISOString().replace('T', ' ');
 }
@@ -128,7 +133,7 @@ describe('cleanup of discarded items after 30 days (OF-E4-6)', () => {
 		const messageId = `<${unique()}@example.com>`;
 		const mail = await mailFromMailbox('Rechnung Handwerker für die Renovierung im Erdgeschoss', messageId);
 		expect(existsSync(storagePath(mail))).toBe(true);
-		await discard(owner, mail, 31);
+		await discard(owner, mail, 33);
 
 		const event = await owner.pb.collection('inbox_items').create({
 			owner: owner.id,
@@ -161,7 +166,7 @@ describe('cleanup of discarded items after 30 days (OF-E4-6)', () => {
 			body: 'Auszug',
 			source_url: `https://example.com/${unique()}`
 		});
-		await discard(owner, recent, 29);
+		await discard(owner, recent, 28);
 
 		const fresh = await owner.pb.collection('inbox_items').create({
 			owner: owner.id,

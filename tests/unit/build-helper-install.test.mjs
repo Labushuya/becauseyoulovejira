@@ -20,7 +20,9 @@ import { scaled } from '../support/timing.mjs';
 const ROOT_DIR = resolve(fileURLToPath(new URL('../..', import.meta.url)));
 const FUNCTIONS_FILE = join(ROOT_DIR, 'scripts', 'build-functions.ps1');
 const read = (path) => readFileSync(join(ROOT_DIR, path), 'utf8');
-const MAIL_HINT = 'The new version runs after neu-starten.bat.';
+// The way in the browser first (BW-2), the file of the folder app only as the emergency way.
+const MAIL_HINT =
+	'The new version runs after the next restart (in the browser: Einstellungen > System > "Jetzt neu starten"; emergency: app\\neu-starten.bat).';
 const OLD_NAME = /^byl-mail\.exe\.old-\d{14}$/;
 
 /** Body of a PowerShell function, up to the next top-level function. */
