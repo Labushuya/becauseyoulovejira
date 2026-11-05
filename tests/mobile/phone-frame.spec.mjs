@@ -797,6 +797,19 @@ test.describe('phone with the default "Automatisch"', () => {
 		await expect(page.getByLabel('Name', { exact: true })).toHaveAttribute('enterkeyhint', 'done');
 		await expect(page.getByLabel('Name', { exact: true })).toHaveAttribute('autocapitalize', 'words');
 		await expect(page.getByLabel('Neues Passwort wiederholen')).toHaveAttribute('enterkeyhint', 'done');
+		// EU-1: from a page the arrow "Einstellungen" (44 px) leads to the overview, whose rows with their
+		// sentences are targets of 44 px, without sideways scrolling.
+		/** The overview of the settings through the arrow of the page shown. */
+		async function openOverview() {
+			const arrow = page.getByRole('navigation', { name: 'Einstellungen' }).getByRole('link', { name: 'Zu den Einstellungen' });
+			await expectTarget(arrow);
+			await arrow.tap();
+			await expect(page).toHaveURL(`${url}/einstellungen`);
+			await expect(page.locator('.settings .page').getByRole('link', { name: 'Sicherheit nur am PC' })).toBeVisible();
+			expect(await scrollsSideways(page)).toBe(false);
+			expect(await smallTargets(page.locator('.settings'))).toEqual([]);
+		}
+		await openOverview();
 
 		// A large phone: the lists keep to their width, the titles their share; the help, the settings
 		// and the calendar too.
@@ -806,6 +819,7 @@ test.describe('phone with the default "Automatisch"', () => {
 			await openSetting(link, heading);
 			expect(await scrollsSideways(page), heading).toBe(false);
 		}
+		await openOverview();
 		await openHelp();
 		await expect(page.locator('section#tastaturkuerzel')).toBeVisible();
 		expect(await scrollsSideways(page)).toBe(false);

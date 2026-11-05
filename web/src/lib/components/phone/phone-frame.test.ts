@@ -128,7 +128,9 @@ describe('phone frame: bottom bar', () => {
 		['/kalender?ansicht=woche', '/(app)/kalender', 'Kalender'],
 		['/projekte/abc123def456ghi', '/(app)/projekte/[id]', 'Projekte'],
 		['/papierkorb', '/(app)/papierkorb', 'Papierkorb'],
-		['/einstellungen/darstellung', '/(app)/einstellungen/darstellung', 'Einstellungen']
+		['/einstellungen/darstellung', '/(app)/einstellungen/darstellung', 'Einstellungen'],
+		// The overview of the settings (EU-1, ADR-0078).
+		['/einstellungen', '/(app)/einstellungen', 'Einstellungen']
 	])('marks "Mehr" for %s and says what it stands for', (path, routeId, label) => {
 		at(path, routeId);
 		const { nav } = showBar();
@@ -319,6 +321,33 @@ describe('phone frame: "Mehr"', () => {
 		expect(within(settings).getByRole('link', { name: 'Darstellung' })).toBeTruthy();
 	});
 
+	// EU-1 (ADR-0078): the sheet takes its pages from SettingsGroupList, which the overview shares;
+	// its rows stay as they were (names only, no sentences), and on the overview no page is current.
+	it('lists the pages of the settings like the overview, without their sentences, none current on the overview', async () => {
+		await withContext(ADMIN);
+		at('/einstellungen', '/(app)/einstellungen');
+		const { nav } = showBar();
+		const sheet = await openMore(nav);
+		const settings = within(sheet).getByRole('navigation', { name: 'Einstellungen' });
+
+		const links = within(settings).getAllByRole('link');
+		expect(links).toHaveLength(13);
+		for (const link of links) {
+			expect(link.hasAttribute('aria-current')).toBe(false);
+			expect(link.hasAttribute('aria-describedby')).toBe(false);
+			expect(link.querySelector('.description')).toBeNull();
+		}
+		// The groups keep their quiet labels below the one heading of the part.
+		expect(
+			within(settings)
+				.getAllByRole('heading')
+				.map((heading) => heading.textContent?.trim())
+		).toEqual(['Einstellungen']);
+		expect(sheetSource).toMatch(
+			/<SettingsGroupList current=\{currentSection\} onfollow=\{\(\) => onclose\(\)\} \/>/
+		);
+	});
+
 	it('closes with a link and with ×, the focus back at "Mehr"', async () => {
 		at('/tagesplan', '/(app)/tagesplan');
 		const { nav } = showBar();
@@ -382,7 +411,9 @@ describe('phone frame: top bar', () => {
 		['/tickets/abc123def456ghi', '/(app)/(tickets)/tickets/[id]', 'Aufgaben'],
 		['/kalender/tickets/abc123def456ghi', '/(app)/kalender/tickets/[id]', 'Kalender'],
 		['/erledigt', '/(app)/erledigt', 'Erledigte'],
-		['/einstellungen/hilfe', '/(app)/einstellungen/hilfe', 'Einstellungen']
+		['/einstellungen/hilfe', '/(app)/einstellungen/hilfe', 'Einstellungen'],
+		// The overview of the settings (EU-1, ADR-0078).
+		['/einstellungen', '/(app)/einstellungen', 'Einstellungen']
 	])('names the view of %s once, %s', (path, routeId, title) => {
 		at(path, routeId);
 		render(PhoneTopBar);

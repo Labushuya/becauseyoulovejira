@@ -2,6 +2,8 @@
 // package brings it, so the navigation never has a dead link: "Hilfe" came with EH-9, "Darstellung"
 // and "Konto" with EH-8. "Tags" moved here from the project view (user request after EH-4). Since
 // UI-1 (ADR-0060) the navigation shows the pages in groups with a heading; the addresses stayed.
+// Since EU-1 (ADR-0078) /einstellungen is the overview of the pages, each with one sentence of what
+// is done there.
 
 import { resolve } from '$app/paths';
 import type { ResolvedPathname } from '$app/types';
@@ -36,40 +38,74 @@ export interface SettingsSection {
 	readonly label: string;
 	readonly href: ResolvedPathname;
 	readonly group: SettingsGroupId;
+	/** One sentence of what is done on the page, for the overview (EU-1, ADR-0078). */
+	readonly description: string;
 }
 
 export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
-	{ id: 'kanaele', label: 'Kanäle', href: resolve('/einstellungen/kanaele'), group: 'arbeit' },
+	{
+		id: 'kanaele',
+		label: 'Kanäle',
+		href: resolve('/einstellungen/kanaele'),
+		group: 'arbeit',
+		description:
+			'Kalender, Telegram, Postfächer und weitere Quellen verbinden, die Einträge in den Eingang bringen.'
+	},
 	{
 		id: 'datei-importe',
 		label: 'Datei-Importe',
 		href: resolve('/einstellungen/datei-importe'),
-		group: 'arbeit'
+		group: 'arbeit',
+		description:
+			'Stichwörter für Mail-, Kalender- und WhatsApp-Dateien pflegen und nachlesen, woher die Dateien kommen.'
 	},
-	{ id: 'tags', label: 'Tags', href: resolve('/einstellungen/tags'), group: 'arbeit' },
+	{
+		id: 'tags',
+		label: 'Tags',
+		href: resolve('/einstellungen/tags'),
+		group: 'arbeit',
+		description: 'Tags umbenennen oder löschen; die Tickets folgen sofort.'
+	},
 	// Settings of the tickets, since ADR-0037 the retention of the trash.
-	{ id: 'tickets', label: 'Tickets', href: resolve('/einstellungen/tickets'), group: 'arbeit' },
+	{
+		id: 'tickets',
+		label: 'Tickets',
+		href: resolve('/einstellungen/tickets'),
+		group: 'arbeit',
+		description: 'Festlegen, wie lange deine gelöschten Tickets im Papierkorb bleiben.'
+	},
 	{
 		id: 'darstellung',
 		label: 'Darstellung',
 		href: resolve('/einstellungen/darstellung'),
-		group: 'persoenlich'
+		group: 'persoenlich',
+		description:
+			'Farbschema, Farbe, Glas-Effekt, Handy-Ansicht und Hinweise für dieses Gerät wählen.'
 	},
 	// The household of the account (ADR-0058, E7-2): for every account, on every device.
 	{
 		id: 'haushalt',
 		label: 'Haushalt',
 		href: resolve('/einstellungen/haushalt'),
-		group: 'persoenlich'
+		group: 'persoenlich',
+		description:
+			'Einen Haushalt gründen oder mit einem Code beitreten und Mitglieder, Rechte und Einladungen verwalten.'
 	},
 	// The own account (ADR-0056 §3); "Mein", so it is not taken for the accounts of everybody.
-	{ id: 'konto', label: 'Mein Konto', href: resolve('/einstellungen/konto'), group: 'persoenlich' },
+	{
+		id: 'konto',
+		label: 'Mein Konto',
+		href: resolve('/einstellungen/konto'),
+		group: 'persoenlich',
+		description: 'Anzeigename und Passwort deines App-Kontos ändern.'
+	},
 	// The accounts of the app for its administrator (ADR-0056 §3), on every server.
 	{
 		id: 'konten',
 		label: 'Konten verwalten',
 		href: resolve('/einstellungen/konten'),
-		group: 'verwaltung'
+		group: 'verwaltung',
+		description: 'Konten der App anlegen, Passwörter zurücksetzen und Konten deaktivieren.'
 	},
 	// How the app protects itself and what can be set (ADR-0055 §8), on every server; the further
 	// hosts only for the folder app under Windows.
@@ -77,14 +113,18 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
 		id: 'sicherheit',
 		label: 'Sicherheit',
 		href: resolve('/einstellungen/sicherheit'),
-		group: 'verwaltung'
+		group: 'verwaltung',
+		description:
+			'Schutz vor Rateversuchen und Gültigkeit der Anmeldung einstellen, fehlgeschlagene Anmeldungen ansehen.'
 	},
 	// Backups, target folder and passphrase (ADR-0046), only for a server on Windows.
 	{
 		id: 'sicherung',
 		label: 'Sicherung',
 		href: resolve('/einstellungen/sicherung'),
-		group: 'verwaltung'
+		group: 'verwaltung',
+		description:
+			'Jetzt sichern oder prüfen und Zielverzeichnis, Passphrase und Aufbewahrung festlegen.'
 	},
 	// What the app takes and what can be cleared (ADR-0047 §6), on every server; the parts of the
 	// folder app under Windows only there.
@@ -92,11 +132,26 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
 		id: 'speicher',
 		label: 'Speicher',
 		href: resolve('/einstellungen/speicher'),
-		group: 'verwaltung'
+		group: 'verwaltung',
+		description: 'Sehen, was die App auf dem Rechner belegt, und nicht mehr Benötigtes aufräumen.'
 	},
 	// Operation of the app from the dashboard (ADR-0043), only for a server on Windows.
-	{ id: 'system', label: 'System', href: resolve('/einstellungen/system'), group: 'verwaltung' },
-	{ id: 'hilfe', label: 'Hilfe', href: resolve('/einstellungen/hilfe'), group: 'hilfe' }
+	{
+		id: 'system',
+		label: 'System',
+		href: resolve('/einstellungen/system'),
+		group: 'verwaltung',
+		description:
+			'Die App neu starten, den Autostart schalten, die Umgebung prüfen und Logs ansehen.'
+	},
+	{
+		id: 'hilfe',
+		label: 'Hilfe',
+		href: resolve('/einstellungen/hilfe'),
+		group: 'hilfe',
+		description:
+			'Tastaturkürzel, Kurzsyntax, Anleitungen zu den Kanälen und Antworten auf häufige Fragen nachlesen.'
+	}
 ];
 
 /** A page below a page of the navigation; the navigation marks its parent. */
@@ -182,8 +237,16 @@ export function groupSettingsSections(
 	}).filter((group) => group.sections.length > 0);
 }
 
-/** Start of the settings area; it forwards to the first page. */
+/**
+ * Start of the settings area: the overview of the pages in their groups (EU-1, ADR-0078), the target
+ * of the gear in the header and of the first step of the breadcrumbs.
+ */
 export const SETTINGS_HOME = resolve('/einstellungen');
+
+/** Whether `pathname` is the overview of the settings itself. */
+export function isSettingsHome(pathname: string): boolean {
+	return (pathname.replace(/\/+$/, '') || '/') === SETTINGS_HOME;
+}
 
 /** The page of `pathname`, or null outside the settings or for an unknown page. */
 export function settingsSectionOf(pathname: string): SettingsSection | null {
@@ -236,7 +299,7 @@ export const HELP_SECTIONS = [
 	{ id: 'ordner', label: 'Ordner' },
 	{ id: 'fragen', label: 'Häufige Fragen' },
 	// The errors of this session (FP-1, ADR-0071 §5), for every account; FP-3 moves the entry to
-	// "Einstellungen → Protokoll".
+	// "Einstellungen → Fehlerprotokoll".
 	{ id: 'fehler', label: 'Fehler dieser Sitzung' },
 	// The error log of the server (FP-2, ADR-0077), for every account; FP-3 moves it as well.
 	{ id: 'fehlerprotokoll', label: 'Fehlerprotokoll des Servers' },

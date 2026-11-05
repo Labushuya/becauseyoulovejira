@@ -16,9 +16,11 @@
 	// with the counter of tickets that are not done, area switch, the main button "Neues Ticket",
 	// the help menu "?" (EH-9), the gear "Einstellungen", the theme switcher and the session. The app
 	// name leads to "Aufgaben"; the gear is an icon button like the theme switcher and carries
-	// aria-current in the settings (ADR-0026 section 1, EH-1). From 64rem the header stays at the top
-	// while the page scrolls, and its height goes to --app-header-height, below which the embedded
-	// side panel stands (package UI-6b). While a side panel covers the view (below 64rem) it is inert.
+	// aria-current in the settings (ADR-0026 section 1, EH-1); since EU-1 it leads to the overview of
+	// the settings instead of "Kanäle" (decision of the user, ADR-0078). From 64rem the header stays
+	// at the top while the page scrolls, and its height goes to --app-header-height, below which the
+	// embedded side panel stands (package UI-6b). While a side panel covers the view (below 64rem) it
+	// is inert.
 	let {
 		openCount = null,
 		covered = false,
@@ -113,7 +115,7 @@
 	{/if}
 	<a
 		class="button-icon settings"
-		href={resolve('/einstellungen/kanaele')}
+		href={resolve('/einstellungen')}
 		aria-label="Einstellungen"
 		title="Einstellungen"
 		aria-current={inSettings ? 'page' : undefined}

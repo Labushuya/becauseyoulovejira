@@ -10,6 +10,7 @@
 	import {
 		SETTINGS_HOME,
 		isAdminSection,
+		isSettingsHome,
 		isSettingsPath,
 		settingsSectionById,
 		settingsSectionOf,
@@ -30,7 +31,10 @@
 	// as the views (user decision): no maximum width, not pushed to the left. After a change of the
 	// page the focus goes to the heading, like the section bar of the views. In the phone frame
 	// (MO-1a, ADR-0073) the bottom bar and "Mehr" lead to the views, so the switch is not there; since
-	// MO-7c2 the pages of the administrator show only their hint there.
+	// MO-7c2 the pages of the administrator show only their hint there. Since EU-1 (ADR-0078)
+	// /einstellungen is the overview of the pages: one step "Einstellungen" in the breadcrumbs, the
+	// heading "Einstellungen", no page current in the navigation. In the phone frame the navigation
+	// shows no rows of pages: the overview lists them, every other page has the arrow back to it.
 	let { children } = $props();
 
 	const mobileLayout = getMobileLayoutStore();
@@ -66,12 +70,20 @@
 			isAdminSection(section.id) &&
 			(capabilities.adminPages !== 'full' || mobileLayout.active)
 	);
+	const home = $derived(isSettingsHome(page.url.pathname));
 	const title = $derived(subpage?.label ?? section?.label ?? 'Einstellungen');
-	const crumbs = $derived([
-		{ label: 'Einstellungen', href: SETTINGS_HOME },
-		...(subpage !== null && section !== null ? [{ label: section.label, href: section.href }] : []),
-		{ label: title }
-	]);
+	const crumbs = $derived(
+		home
+			? [{ label: title }]
+			: [
+					{ label: 'Einstellungen', href: SETTINGS_HOME },
+					...(subpage !== null && section !== null
+						? [{ label: section.label, href: section.href }]
+						: []),
+					{ label: title }
+				]
+	);
+	const phoneNav = $derived(mobileLayout.active ? (home ? 'overview' : 'page') : null);
 	const backHref = $derived(lastView.href);
 	const backLabel = $derived(lastViewLabel(backHref, (id) => tickets.find(id)?.key ?? null));
 	// The open setups of the account as a mark at "Kanäle" (KE-1, ADR-0076 §2).
@@ -113,7 +125,14 @@
 
 <div class="settings">
 	<div class="nav-column">
-		<SettingsNav {sections} current={section?.id ?? null} {backHref} {backLabel} {marks} />
+		<SettingsNav
+			{sections}
+			current={section?.id ?? null}
+			{backHref}
+			{backLabel}
+			{marks}
+			phone={phoneNav}
+		/>
 	</div>
 	<div class="page">
 		<Breadcrumbs items={crumbs} />

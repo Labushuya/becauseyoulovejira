@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import { CONTEXT_TEXTS } from '$lib/guidance/texts';
 	import { groupSettingsSections, type VisibleSettingsSection } from '$lib/settings-sections';
 
@@ -12,13 +13,16 @@
 	// "nur am PC" once at the heading of their group (KOB-1, ADR-0057); each link keeps the mark in
 	// its name for screen readers, which read a link on its own. Since KE-1 (ADR-0076) a page can
 	// carry a mark with a number, e.g. the open setups at "Kanäle": the number visible, its meaning
-	// in the name of the link.
+	// in the name of the link. Since EU-1 (ADR-0078) the phone frame shows no rows of links: on the
+	// overview the overview itself lists the pages, on every other page an arrow "Einstellungen"
+	// leads back to the overview (`phone`). From 40rem and on the PC the navigation stays as it was.
 	let {
 		sections,
 		current,
 		backHref,
 		backLabel,
-		marks = {}
+		marks = {},
+		phone = null
 	}: {
 		sections: readonly VisibleSettingsSection[];
 		/** ID of the current page; null for none. */
@@ -27,10 +31,16 @@
 		backLabel: string;
 		/** Marks per page ID: the number and the text for screen readers, e.g. "2 Einrichtungen offen". */
 		marks?: Readonly<Record<string, { count: number; text: string }>>;
+		/**
+		 * The phone frame: on the overview ("overview") only the way back, on a page ("page") the way
+		 * back and the arrow to the overview; null outside the frame, with the rows of the pages.
+		 */
+		phone?: 'overview' | 'page' | null;
 	} = $props();
 
 	const uid = $props.id();
-	const groups = $derived(groupSettingsSections(sections));
+	// The rows of the pages only outside the phone frame.
+	const groups = $derived(phone === null ? groupSettingsSections(sections) : []);
 </script>
 
 <nav class="settings-nav" aria-label="Einstellungen">
@@ -41,7 +51,17 @@
 		</svg>
 		{backLabel}
 	</a>
-	<p class="title" aria-hidden="true">Einstellungen</p>
+	{#if phone === 'page'}
+		<a class="back" href={resolve('/einstellungen')}>
+			<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+				<path d="M13 8H3.5M7.5 4L3.5 8l4 4" />
+			</svg>
+			<span class="visually-hidden">Zu den</span> Einstellungen
+		</a>
+	{/if}
+	{#if phone === null}
+		<p class="title" aria-hidden="true">Einstellungen</p>
+	{/if}
 	{#each groups as group (group.id)}
 		<div class="group" class:unnamed={group.label === null}>
 			{#if group.label !== null}
@@ -232,10 +252,12 @@
 		}
 	}
 
-	/* Phone frame (MO-7c2): the way back and every page are targets of 44 px. */
+	/*
+	 * Phone frame (MO-7c2): the way back is a target of 44 px, since EU-1 also the arrow back to the
+	 * overview. The rows of the pages are not shown there any more (the overview lists them).
+	 */
 	@media (max-width: 39.99rem) {
-		:global(:root[data-mobile-layout='on']) .back,
-		:global(:root[data-mobile-layout='on']) ul a {
+		:global(:root[data-mobile-layout='on']) .back {
 			min-height: var(--control-height-touch);
 		}
 	}
