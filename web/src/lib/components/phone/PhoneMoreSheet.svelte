@@ -3,25 +3,15 @@
 	import { page } from '$app/state';
 	import { auth } from '$lib/auth.svelte';
 	import type { AreaView } from '$lib/domain/area';
-	import { DEFAULT_HOST_PLATFORM } from '$lib/domain/host-platform';
 	import { PHONE_MORE_VIEWS } from '$lib/domain/phone-layout';
 	import { loginUrlFor } from '$lib/guard';
-	import { CONTEXT_TEXTS } from '$lib/guidance/texts';
-	import {
-		groupSettingsSections,
-		settingsSectionOf,
-		settingsSubpageOf,
-		visibleSettingsSections
-	} from '$lib/settings-sections';
-	import { OPEN_SETUP_TEXTS } from '$lib/domain/open-setups';
-	import { appContext } from '$lib/stores/context.svelte';
-	import { findHostStore } from '$lib/stores/host.svelte';
-	import { findOpenSetupsStore } from '$lib/stores/open-setups.svelte';
+	import { settingsSectionOf, settingsSubpageOf } from '$lib/settings-sections';
 	import { findTrashStore } from '$lib/stores/trash.svelte';
 	import { findSignOut } from '$lib/sign-out';
 	import { newTicketHref } from '$lib/ticket-links';
 	import { VIEW_LABELS, viewHref } from '$lib/views';
 	import Modal from '../overlay/Modal.svelte';
+	import SettingsGroupList from '../SettingsGroupList.svelte';
 	import ViewIcon from '../ViewIcon.svelte';
 
 	// "Mehr" of the bottom bar (MO-1a, ADR-0073): the modal as a sheet at the bottom, no new kind of
@@ -31,7 +21,8 @@
 	// (the pages of the administrator "nur am PC" on another device, ADR-0057), so "Darstellung" and
 	// "Hilfe" are here as well; the session. A link closes the sheet and leads there; ×, Esc and the
 	// blanket close it, and the focus goes back to "Mehr". "Kanäle" carries the number of the open
-	// setups like the navigation of the settings (KE-1, ADR-0076).
+	// setups like the navigation of the settings (KE-1, ADR-0076). Since EU-1 (ADR-0078) the pages of
+	// the settings come from SettingsGroupList, which the overview /einstellungen shares.
 	let {
 		current,
 		projectsNewCount = 0,
@@ -47,17 +38,6 @@
 	const uid = $props.id();
 	const trash = findTrashStore();
 	const trashCount = $derived(trash?.count ?? null);
-	const openSetups = findOpenSetupsStore();
-	const openSetupCount = $derived(openSetups?.count ?? 0);
-	const host = findHostStore();
-	const groups = $derived(
-		groupSettingsSections(
-			visibleSettingsSections(
-				host?.platform ?? DEFAULT_HOST_PLATFORM,
-				appContext.capabilities.adminPages
-			)
-		)
-	);
 	const currentSection = $derived(
 		settingsSubpageOf(page.url.pathname)?.parent ?? settingsSectionOf(page.url.pathname)?.id ?? null
 	);
@@ -126,39 +106,7 @@
 
 	<nav class="group" aria-labelledby={`${uid}-settings`}>
 		<h3 class="group-label" id={`${uid}-settings`}>Einstellungen</h3>
-		{#each groups as group (group.id)}
-			{#if group.label !== null}
-				<p class="sub-label" id={`${uid}-${group.id}`}>
-					{group.label}
-					{#if group.pcOnly}
-						<span class="mark">{CONTEXT_TEXTS.pcOnlyMark}</span>
-					{/if}
-				</p>
-			{/if}
-			<ul aria-labelledby={group.label === null ? undefined : `${uid}-${group.id}`}>
-				{#each group.sections as section (section.id)}
-					<li>
-						<a
-							href={section.href}
-							aria-current={section.id === currentSection ? 'page' : undefined}
-							onclick={() => onclose()}
-						>
-							<span class="name">{section.label}</span>
-							{#if section.pcOnly}
-								<span class="visually-hidden">{CONTEXT_TEXTS.pcOnlyMark}</span>
-							{/if}
-							{#if section.id === 'kanaele' && openSetupCount > 0}
-								<span class="count"
-									><span aria-hidden="true">{openSetupCount}</span><span class="visually-hidden"
-										>({OPEN_SETUP_TEXTS.count(openSetupCount)})</span
-									></span
-								>
-							{/if}
-						</a>
-					</li>
-				{/each}
-			</ul>
-		{/each}
+		<SettingsGroupList current={currentSection} onfollow={() => onclose()} />
 	</nav>
 
 	<div class="session">
@@ -174,15 +122,10 @@
 	}
 
 	/* The headings of the groups: quiet, like those of the settings navigation. */
-	.group-label,
-	.sub-label {
+	.group-label {
 		font-size: var(--font-size-caption);
 		font-weight: 600;
 		color: var(--color-text-muted);
-	}
-
-	.sub-label {
-		margin-top: 0.5rem;
 	}
 
 	ul {
@@ -231,12 +174,6 @@
 	.name {
 		min-width: 0;
 		overflow-wrap: anywhere;
-	}
-
-	/* "nur am PC": quiet, after the name of the group, never instead of it. */
-	.mark {
-		margin-left: 0.5rem;
-		font-weight: 400;
 	}
 
 	.count {

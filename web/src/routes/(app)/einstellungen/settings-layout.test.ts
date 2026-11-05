@@ -1,7 +1,8 @@
 // Component tests of the settings area (ADR-0026 section 1, plan EH-1): the switch without a
 // current view, the navigation with the way back, breadcrumbs, the heading as focus target after a
-// change of the page, the forward from /einstellungen and the full width. Page state, navigation
-// and the stores of the (app) layout are fakes; the way back is the real store. The pages of the
+// change of the page, the overview /einstellungen (EU-1, ADR-0078; before a forward to "Kanäle")
+// with the arrow back to it in the phone frame, and the full width. Page state, navigation and the
+// stores of the (app) layout are fakes; the way back is the real store. The pages of the
 // administrator follow the context of the tab (KOB-1, ADR-0057), set like an answer of the server.
 
 import { readFileSync } from 'node:fs';
@@ -9,12 +10,12 @@ import { join } from 'node:path';
 import { render, screen, within } from '@testing-library/svelte';
 import { createRawSnippet, tick } from 'svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import navSource from '$lib/components/SettingsNav.svelte?raw';
 import { PHONE_QUERY } from '$lib/domain/phone-layout';
 import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
 import { LAST_VIEW_KEY, LastViewStore } from '$lib/stores/last-view.svelte';
 import { MEMBER_CONTEXT, PC_CONTEXT, REMOTE_CONTEXT, useContext } from '$lib/test/context';
 import Layout from './+layout.svelte';
-import { load } from './+page';
 
 type Navigation = { from: { url: URL } | null; to: { url: URL } | null };
 
@@ -402,10 +403,44 @@ describe('settings layout', () => {
 		expect(document.activeElement).toBe(heading);
 	});
 
-	it('forwards /einstellungen to the page "Kanäle"', () => {
-		expect(() => load()).toThrow(
-			expect.objectContaining({ status: 307, location: '/einstellungen/kanaele' })
-		);
+	// EU-1 (ADR-0078): /einstellungen is the overview of the pages; before it forwarded to "Kanäle".
+	it.each(['/einstellungen', '/einstellungen/'])(
+		'shows the overview at %s: one step in the breadcrumbs, its heading, no page current',
+		async (path) => {
+			await renderSettings(path);
+
+			const crumbs = within(screen.getByRole('navigation', { name: 'Brotkrumenpfad' }));
+			expect(crumbs.getAllByRole('listitem').map((item) => item.textContent?.trim())).toEqual([
+				'Einstellungen'
+			]);
+			expect(crumbs.queryByRole('link')).toBeNull();
+			expect(crumbs.getByText('Einstellungen').getAttribute('aria-current')).toBe('page');
+			expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Einstellungen');
+			expect(screen.getByText(CONTENT)).toBeTruthy();
+			// On the PC the navigation stays with every page and the way back, none of them current.
+			const nav = within(screen.getByRole('navigation', { name: 'Einstellungen' }));
+			const pages = nav.getAllByRole('listitem').map((item) => within(item).getByRole('link'));
+			expect(pages).toHaveLength(13);
+			for (const link of pages) expect(link.hasAttribute('aria-current')).toBe(false);
+			expect(nav.getAllByRole('link')[0]?.textContent?.trim()).toBe('Zurück zu Aufgaben');
+			expect(nav.queryByRole('link', { name: 'Zu den Einstellungen' })).toBeNull();
+		}
+	);
+
+	it('moves the focus to the heading between the overview and a page, not when coming from a view', async () => {
+		await renderSettings('/einstellungen');
+		const heading = screen.getByRole('heading', { level: 2 });
+		const url = (path: string) => ({ url: new URL(path, 'http://127.0.0.1:8090') });
+
+		for (const callback of mocks.afterNavigate) {
+			callback({ from: url('/tagesplan'), to: url('/einstellungen') });
+		}
+		expect(document.activeElement).not.toBe(heading);
+
+		for (const callback of mocks.afterNavigate) {
+			callback({ from: url('/einstellungen/kanaele'), to: url('/einstellungen') });
+		}
+		expect(document.activeElement).toBe(heading);
 	});
 
 	it('uses the full width like the views: no maximum width, not pushed to the left', () => {
@@ -537,5 +572,145 @@ describe('groups of the settings navigation (UI-1)', () => {
 		const nav = within(screen.getByRole('navigation', { name: 'Einstellungen' }));
 		expect(nav.getByRole('link', { name: 'Hilfe' }).getAttribute('aria-current')).toBe('page');
 		expect(screen.getByText(CONTENT)).toBeTruthy();
+	});
+});
+
+// EU-1 (ADR-0078, decision of the user 2026-11-05): in the phone frame an arrow "Einstellungen"
+// leads from every page back to the overview, instead of the rows of the pages; the overview lists
+// the pages itself. The breadcrumbs stand there only on a sub page. From 40rem, with "Handy-Ansicht:
+// Aus" and on the PC the navigation and the breadcrumbs stay.
+describe('arrow back to the overview in the phone frame (EU-1)', () => {
+	/** Runs `check` with the width of a phone or not and with the choice "Automatisch" or "Aus". */
+	async function withLayout(narrow: boolean, enabled: boolean, check: () => Promise<void>) {
+		vi.stubGlobal('matchMedia', (media: string) => ({
+			matches: media === PHONE_QUERY ? narrow : false,
+			media,
+			addEventListener: () => undefined,
+			removeEventListener: () => undefined
+		}));
+		const stop = getMobileLayoutStore().connect();
+		getMobileLayoutStore().choose(enabled);
+		try {
+			await check();
+		} finally {
+			getMobileLayoutStore().choose(false);
+			stop();
+			vi.unstubAllGlobals();
+			localStorage.clear();
+		}
+	}
+
+	it.each(['/einstellungen/darstellung', '/einstellungen/hilfe/elemente'])(
+		'shows the arrow instead of the rows of the pages on %s in the frame',
+		async (path) => {
+			await withLayout(true, true, async () => {
+				await renderSettings(path, '/tagesplan');
+				expect(getMobileLayoutStore().active).toBe(true);
+				const nav = within(screen.getByRole('navigation', { name: 'Einstellungen' }));
+				const arrow = nav.getByRole('link', { name: 'Zu den Einstellungen' });
+				expect(arrow.getAttribute('href')).toBe('/einstellungen');
+				// Visible "Einstellungen" after the arrow; the name says where it leads.
+				expect(arrow.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+				expect(arrow.textContent?.replace(/\s+/g, ' ').trim()).toBe('Zu den Einstellungen');
+				expect(arrow.querySelector('.visually-hidden')?.textContent).toBe('Zu den');
+				// A target of 44 px like the way back, which stays first.
+				expect(arrow.classList.contains('back')).toBe(true);
+				expect(nav.getAllByRole('link').map((link) => link.textContent?.trim())).toEqual([
+					'Zurück zum Tagesplan',
+					expect.stringMatching(/Einstellungen$/)
+				]);
+				expect(nav.queryAllByRole('list')).toEqual([]);
+			});
+		}
+	);
+
+	it('keeps the arrow beside the hint of a page of the administrator in the frame (MO-7c2)', async () => {
+		await withLayout(true, true, async () => {
+			await renderSettings('/einstellungen/sicherheit');
+			expect(screen.getByText('In der Handy-Ansicht nicht angepasst')).toBeTruthy();
+			expect(screen.queryByText(CONTENT)).toBeNull();
+			const nav = within(screen.getByRole('navigation', { name: 'Einstellungen' }));
+			expect(nav.getByRole('link', { name: 'Zu den Einstellungen' })).toBeTruthy();
+		});
+	});
+
+	it.each(['/einstellungen', '/einstellungen/'])(
+		'shows only the way back on the overview at %s in the frame: the overview lists the pages',
+		async (path) => {
+			await withLayout(true, true, async () => {
+				await renderSettings(path, '/tagesplan');
+				const nav = within(screen.getByRole('navigation', { name: 'Einstellungen' }));
+				expect(nav.getAllByRole('link').map((link) => link.textContent?.trim())).toEqual([
+					'Zurück zum Tagesplan'
+				]);
+				expect(nav.queryAllByRole('list')).toEqual([]);
+				expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Einstellungen');
+				// No step "Einstellungen" beside the top bar and the heading of the same name.
+				expect(screen.queryByRole('navigation', { name: 'Brotkrumenpfad' })).toBeNull();
+				expect(screen.getByText(CONTENT)).toBeTruthy();
+			});
+		}
+	);
+
+	// Review of EU-1 (R-1, "weniger pro Bildschirm"): on a page the arrow "Einstellungen", the top bar
+	// and the heading say where one is; only a sub page keeps its path.
+	it.each(['/einstellungen/darstellung', '/einstellungen/sicherheit'])(
+		'shows no breadcrumbs on %s in the frame',
+		async (path) => {
+			await withLayout(true, true, async () => {
+				await renderSettings(path);
+				expect(screen.queryByRole('navigation', { name: 'Brotkrumenpfad' })).toBeNull();
+				expect(screen.getByRole('heading', { level: 2 })).toBeTruthy();
+				const nav = within(screen.getByRole('navigation', { name: 'Einstellungen' }));
+				expect(nav.getByRole('link', { name: 'Zu den Einstellungen' })).toBeTruthy();
+			});
+		}
+	);
+
+	it('keeps the path of a sub page in the frame: Einstellungen › Hilfe › Eingabeelemente', async () => {
+		await withLayout(true, true, async () => {
+			await renderSettings('/einstellungen/hilfe/elemente');
+			const crumbs = within(screen.getByRole('navigation', { name: 'Brotkrumenpfad' }));
+			expect(crumbs.getAllByRole('listitem').map((item) => item.textContent?.trim())).toEqual([
+				'Einstellungen',
+				'Hilfe',
+				'Eingabeelemente'
+			]);
+			expect(crumbs.getByRole('link', { name: 'Hilfe' }).getAttribute('href')).toBe(
+				'/einstellungen/hilfe'
+			);
+			expect(crumbs.getByRole('link', { name: 'Einstellungen' }).getAttribute('href')).toBe(
+				'/einstellungen'
+			);
+		});
+	});
+
+	it.each([
+		['the PC', false, false],
+		['a wide window with "Automatisch"', false, true],
+		['a phone with "Handy-Ansicht: Aus"', true, false]
+	])('keeps the rows of the pages and shows no arrow on %s', async (_name, narrow, enabled) => {
+		await withLayout(narrow, enabled, async () => {
+			for (const path of ['/einstellungen/darstellung', '/einstellungen']) {
+				document.body.innerHTML = '';
+				await renderSettings(path);
+				expect(getMobileLayoutStore().active).toBe(false);
+				const nav = within(screen.getByRole('navigation', { name: 'Einstellungen' }));
+				expect(nav.queryByRole('link', { name: 'Zu den Einstellungen' }), path).toBeNull();
+				expect(nav.getAllByRole('list'), path).toHaveLength(4);
+				expect(nav.getAllByRole('listitem'), path).toHaveLength(13);
+				// The breadcrumbs stay outside the frame (R-1).
+				const crumbs = screen.getByRole('navigation', { name: 'Brotkrumenpfad' });
+				expect(within(crumbs).getAllByRole('listitem').at(0)?.textContent?.trim(), path).toBe(
+					'Einstellungen'
+				);
+			}
+		});
+	});
+
+	it('gives the way back and the arrow the target of the frame only in the frame', () => {
+		expect(navSource).toMatch(
+			/@media \(max-width: 39\.99rem\) \{\s*:global\(:root\[data-mobile-layout='on'\]\) \.back \{\s*min-height: var\(--control-height-touch\);/
+		);
 	});
 });

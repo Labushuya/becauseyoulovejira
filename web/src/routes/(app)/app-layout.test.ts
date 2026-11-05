@@ -696,25 +696,30 @@ describe('app layout', () => {
 		expect(link.getAttribute('href')).toBe('/');
 	});
 
-	it('offers the settings as a gear icon button, current in the settings (EH-1)', async () => {
+	// Since EU-1 (decision of the user 2026-11-05, ADR-0078) the gear leads to the overview of the
+	// settings instead of "Kanäle".
+	it('offers the settings as a gear icon button to their overview, current in the settings (EH-1, EU-1)', async () => {
 		await renderLayout('/?status=open');
 
 		const header = within(screen.getByRole('banner'));
 		const gear = header.getByRole('link', { name: 'Einstellungen' });
-		expect(gear.getAttribute('href')).toBe('/einstellungen/kanaele');
+		expect(gear.getAttribute('href')).toBe('/einstellungen');
 		expect(gear.classList.contains('button-icon')).toBe(true);
 		expect(gear.getAttribute('title')).toBe('Einstellungen');
 		expect(gear.textContent?.trim()).toBe('');
 		expect(gear.hasAttribute('aria-current')).toBe(false);
 		expect(header.queryByRole('link', { name: 'Kanäle' })).toBeNull();
 
-		document.body.innerHTML = '';
-		await renderLayout('/einstellungen/datei-importe');
-		expect(
-			within(screen.getByRole('banner'))
-				.getByRole('link', { name: 'Einstellungen' })
-				.getAttribute('aria-current')
-		).toBe('page');
+		for (const path of ['/einstellungen/datei-importe', '/einstellungen']) {
+			document.body.innerHTML = '';
+			await renderLayout(path);
+			expect(
+				within(screen.getByRole('banner'))
+					.getByRole('link', { name: 'Einstellungen' })
+					.getAttribute('aria-current'),
+				path
+			).toBe('page');
+		}
 	});
 
 	it('remembers the views for the way back from the settings (EH-1)', async () => {
