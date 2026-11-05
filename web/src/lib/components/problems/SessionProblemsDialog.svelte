@@ -16,6 +16,7 @@
 	// of this tab. Modal M; the focus goes back to the button that opened it. Since FP-3 the footer
 	// leads to the page "Fehlerprotokoll" with filters and more than 50 entries: the link closes the
 	// dialog of the list, and the new address has no entry of the server, so it closes for one as well.
+	// A click for a new tab or window (Strg, Meta, Umschalt, Alt, another button) leaves it open.
 	let {
 		onclose,
 		focus = null,
@@ -36,6 +37,14 @@
 	const title = $derived(
 		current === 'server' ? SERVER_PROBLEM_TEXTS.title : PROBLEM_TEXTS.listTitle
 	);
+
+	/** A plain click follows the link in this tab and closes the dialog; any other leaves it open. */
+	function openLog(event: MouseEvent) {
+		if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) {
+			return;
+		}
+		problemLog.closeDialog();
+	}
 </script>
 
 <Modal open size="m" {title} {onclose}>
@@ -52,10 +61,8 @@
 
 	{#snippet footer({ close })}
 		{#if signedIn}
-			<a
-				class="button-subtle log-link"
-				href={problemLogHref()}
-				onclick={() => problemLog.closeDialog()}>{PROBLEM_LOG_TEXTS.open}</a
+			<a class="button-subtle log-link" href={problemLogHref()} onclick={openLog}
+				>{PROBLEM_LOG_TEXTS.open}</a
 			>
 		{/if}
 		<button class="button-secondary" type="button" onclick={close}>Schließen</button>

@@ -27,9 +27,11 @@
 	// moves the focus there; one that is gone or not visible says so. Loads once when it opens and on
 	// "Erneut laden"; without a connection a hint instead of the list, nothing breaks.
 	// On the page "Fehlerprotokoll" (`browse`, FP-3) above the list the filters "Quelle" and "Bereich"
-	// as segments (state of this component, not in the address; "Bereich" only with more than one of
-	// `areas`), and below it "Mehr laden" in steps of 50; a new filter and "Erneut laden" start anew.
-	// The filters only narrow: what the account sees at all is the decision of the server.
+	// as segments (state of the store, not in the address; "Bereich" only with more than one of
+	// `areas`), and below it "Mehr laden" in steps of 50, told to screen readers in a hidden live line;
+	// a new filter and "Erneut laden" start anew. The page passes its own store, so filters and loaded
+	// pages stay while it shows "Diese Sitzung" (`resume`). The filters only narrow: what the account
+	// sees at all is the decision of the server.
 	let {
 		focus = null,
 		store = new ServerProblemsStore(),
@@ -49,12 +51,13 @@
 	const unfolded = new SvelteSet<string>();
 	const items: Partial<Record<string, HTMLElement>> = $state({});
 	let moreButton = $state<HTMLButtonElement>();
+	let moreRetryButton = $state<HTMLButtonElement>();
 
 	const filtered = $derived(store.filter.source !== null || store.filter.area !== null);
 
 	$effect(() => {
 		const id = focus;
-		untrack(() => void (browse ? store.browse() : store.load(id)));
+		untrack(() => void (browse ? store.resume() : store.load(id)));
 		return () => store.stop();
 	});
 
@@ -91,12 +94,16 @@
 	/**
 	 * "Mehr laden" (also "Erneut versuchen" after a failure): the focus stays on the button; once the
 	 * last page is there the button goes, and the focus goes to the first new entry, as it does when
-	 * the button it was on went away.
+	 * the button it was on went away. A failure puts the focus on "Erneut versuchen" of its message.
 	 */
 	async function loadMore() {
 		const before = store.entries.length;
 		await store.more();
 		await tick();
+		if (store.moreState === 'offline' || store.moreState === 'failed') {
+			moreRetryButton?.focus();
+			return;
+		}
 		const active = document.activeElement;
 		const lost = active === null || active === document.body;
 		if (moreButton?.isConnected && !lost) return;
@@ -251,7 +258,12 @@
 			<SectionMessage tone="warning" compact live>
 				{SERVER_PROBLEM_TEXTS.moreOffline}
 				{#snippet actions()}
-					<button class="button-subtle" type="button" onclick={loadMore}>
+					<button
+						class="button-subtle"
+						type="button"
+						bind:this={moreRetryButton}
+						onclick={loadMore}
+					>
 						{SERVER_PROBLEM_TEXTS.moreRetry}
 					</button>
 				{/snippet}
@@ -260,7 +272,12 @@
 			<SectionMessage tone="error" compact live problem={store.moreProblem}>
 				{SERVER_PROBLEM_TEXTS.moreFailed}
 				{#snippet actions()}
-					<button class="button-subtle" type="button" onclick={loadMore}>
+					<button
+						class="button-subtle"
+						type="button"
+						bind:this={moreRetryButton}
+						onclick={loadMore}
+					>
 						{SERVER_PROBLEM_TEXTS.moreRetry}
 					</button>
 				{/snippet}
@@ -281,6 +298,9 @@
 			</div>
 		{/if}
 		<p class="limits">{SERVER_PROBLEM_TEXTS.limits}</p>
+	{/if}
+	{#if browse}
+		<p class="visually-hidden" aria-live="polite">{store.announcement}</p>
 	{/if}
 </div>
 
@@ -310,9 +330,14 @@
 		font-weight: 500;
 	}
 
-	/* "Alle" and "App" are short: every segment is at least as wide as a target of the phone frame. */
-	.filter .segmented > button {
-		min-width: var(--control-height-touch);
+	/*
+	 * Phone frame (FP-3, ADR-0073): "Alle" and "App" are short, so every segment is at least as wide
+	 * as a target of 44 px; the height comes from base.css.
+	 */
+	@media (max-width: 39.99rem) {
+		:global(:root[data-mobile-layout='on']) .filter .segmented > button {
+			min-width: var(--control-height-touch);
+		}
 	}
 
 	.more {

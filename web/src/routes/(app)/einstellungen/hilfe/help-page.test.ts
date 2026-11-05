@@ -1879,18 +1879,28 @@ describe('error log (FP-1, FP-2, one section since FP-3)', () => {
 			const { unmount } = render(Page);
 
 			const section = screen.getByRole('region', { name: 'Fehlerprotokoll' });
-			// The core of the privacy of both lists stays (ADR-0071 §2, ADR-0077 §4 and §5).
-			expect(text(section)).toMatch(/Unter „Details“ einer Fehlermeldung steht/);
-			expect(text(section)).toMatch(/verschwindet mit dem Tab und verlässt den Browser nicht/);
-			expect(text(section)).toMatch(
-				/Beim Abmelden und wenn sich ein anderes Konto anmeldet, leert die App sie\./
+			// One paragraph with the core of the privacy of both lists (ADR-0071 §2 and addendum FP-3,
+			// ADR-0077 §3 to §5), then the link; nothing else of the lists is explained here.
+			const paragraphs = [...section.querySelectorAll('p')];
+			expect(paragraphs).toHaveLength(2);
+			const core = text(paragraphs[0] as HTMLElement).trim();
+			expect(core).toMatch(/^Die Fehler dieses Tabs bleiben im Browser: /);
+			expect(core).toMatch(
+				/Die Liste übersteht das Neuladen und verschwindet, wenn du den Tab schließt, die Anmeldung endet oder sich ein anderes Konto anmeldet\./
 			);
-			expect(text(section)).toMatch(
-				/Einen Eintrag deines privaten Bereichs siehst nur du, auch nicht der Verwalter/
+			expect(core).toMatch(
+				/Unerwartete Fehler des Servers sowie Fehler der Kanäle und der Aufgaben im Hintergrund behält der Server 30 Tage nach dem letzten Auftreten, höchstens 5000\./
 			);
-			expect(text(section)).toMatch(/30 Tage nach seinem letzten Auftreten, höchstens 5000/);
-			expect(text(section)).toMatch(/Inhalte, Zugangsdaten, Tokens, E-Mail-Adressen/);
+			expect(core).toMatch(
+				/Einen Eintrag deines privaten Bereichs siehst nur du, nicht einmal der Verwalter; einen des Haushalts sehen alle Mitglieder, einen der App nur der Verwalter\./
+			);
+			expect(core).toMatch(
+				/Inhalte, Zugangsdaten, Tokens, E-Mail-Adressen und der Teil einer Adresse nach „\?“ kommen nie hinein\.$/
+			);
+			expect(text(section)).not.toMatch(/Unter „Details“|Häufigkeit|Server-ID|Beide Listen stehen/);
 			const link = within(section).getByRole('link', { name: 'Fehlerprotokoll öffnen' });
+			expect(paragraphs[1]?.contains(link)).toBe(true);
+			expect(text(paragraphs[1] as HTMLElement).trim()).toBe('Fehlerprotokoll öffnen');
 			expect(link.getAttribute('href')).toBe('/einstellungen/fehlerprotokoll');
 			expect(link.classList.contains('button-secondary')).toBe(true);
 			// No dialog from the help any more: the page is the lasting way.

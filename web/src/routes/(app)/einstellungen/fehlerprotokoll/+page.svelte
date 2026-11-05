@@ -7,6 +7,7 @@
 	import { findAreaStore } from '$lib/stores/area.svelte';
 	import { appContext } from '$lib/stores/context.svelte';
 	import type { ProblemView } from '$lib/stores/problem-log.svelte';
+	import { ServerProblemsStore } from '$lib/stores/server-problems.svelte';
 
 	// Settings "Fehlerprotokoll" (FP-3, ADR-0077 addendum FP-3, ADR-0071 addendum FP-3): the lasting
 	// place of both lists of the errors, for every account, on every device and in the phone frame. The
@@ -17,7 +18,10 @@
 	// only narrow, the rules of the server decide what the account sees. Without a connection the list
 	// of this tab stays usable, the one of the server says so with "Erneut laden"; nothing goes into the
 	// outbox. No special case for `?fehler=<id>`: the root layout opens the dialog for it, as everywhere.
+	// The store of the server lives as long as the page: back from "Diese Sitzung", "Server" shows its
+	// filters and loaded pages again without asking anew.
 	let view = $state<ProblemView>('session');
+	const serverProblems = new ServerProblemsStore();
 
 	const area = findAreaStore();
 	const mode = $derived(appContext.capabilities.mode);
@@ -41,7 +45,7 @@
 	</p>
 	<ProblemViewSwitch current={view} onchoose={(next) => (view = next)} />
 	{#if view === 'server'}
-		<ServerProblemList browse {areas} />
+		<ServerProblemList browse {areas} store={serverProblems} />
 	{:else}
 		<SessionProblemList />
 	{/if}

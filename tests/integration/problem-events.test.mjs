@@ -8,12 +8,13 @@
 // entry. Who sees what: a private entry only its owner, also not the administrator; one of a household
 // its current members, not those of another household; one of the app the administrator; filters do
 // not widen that, the fingerprint can neither be filtered nor sorted. Writing through the record API is
-// refused to every account. The list of the page "Fehlerprotokoll" (FP-3): filtered by source and area
-// and paged by the keyset, every entry once, and its filters only narrow. A failed run of a channel, of "Verbindung prüfen" of GitHub and of the mail
-// helper keeps an entry with the connection, without its secrets, and "Details" of the page finds the
-// entry of the error shown. Jobs of the server: a failed cron job and the catch-up at the start keep
-// an entry for the administrator. The limits: 30 days and 5000 entries, by the cron and with every new
-// entry. Before the migration nothing changes. Values of secrets are invented.
+// refused to every account. The list of the page "Fehlerprotokoll" (FP-3): filtered by source and
+// area and paged by the keyset, every entry once, no empty page at the end, and its filters only
+// narrow. A failed run of a channel, of "Verbindung prüfen" of GitHub and of the mail helper keeps an
+// entry with the connection, without its secrets, and "Details" of the page finds the entry of the
+// error shown. Jobs of the server: a failed cron job and the catch-up at the start keep an entry for
+// the administrator. The limits: 30 days and 5000 entries, by the cron and with every new entry.
+// Before the migration nothing changes. Values of secrets are invented.
 
 import { randomBytes } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -410,18 +411,24 @@ describe('the page "Fehlerprotokoll" (FP-3)', () => {
 		).map((entry) => entry.id);
 		expect(expected.length).toBeGreaterThan(SERVER_PROBLEMS_PAGE);
 		const seen = [];
+		const sizes = [];
 		let after = null;
 		for (let step = 0; step < 5; step++) {
 			const page = await listServerProblemPage(admin.client, { source: 'job', area: 'system', after });
 			expect(page.records.length).toBeLessThanOrEqual(SERVER_PROBLEMS_PAGE);
 			for (const entry of page.records) expect([entry.source, entry.area]).toEqual(['job', 'system']);
 			seen.push(...ids(page));
+			sizes.push(page.records.length);
 			if (page.next === null) break;
 			after = page.next;
 		}
 		expect(seen).toEqual(expected);
 		expect(new Set(seen).size).toBe(seen.length);
 		expect(seen.filter((id) => id.startsWith('fp3k'))).toHaveLength(SERVER_PROBLEMS_PAGE + 5);
+		// Full pages, then the rest; no empty page after it (the 51st entry decides whether one follows).
+		expect(sizes).toHaveLength(Math.ceil(expected.length / SERVER_PROBLEMS_PAGE));
+		expect(sizes.slice(0, -1).every((size) => size === SERVER_PROBLEMS_PAGE)).toBe(true);
+		expect(sizes.at(-1)).toBeGreaterThan(0);
 	});
 
 	it('only narrows: no filter shows an entry the rules of the server hide', async () => {

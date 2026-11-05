@@ -3,9 +3,9 @@
 // "offline" without breaking anything, any other failure as "failed" with its details, and a newer
 // load that replaces a running one. Since FP-3 the page "Fehlerprotokoll": the first page of the
 // filters, "Mehr laden" after the cursor without an entry twice, a new filter that starts the list
-// and its cursor anew, a failed "Mehr laden" that keeps the list. The store of "Details" at the
-// channel cards: one query for all cards, none for a new run with the same error, a failed query
-// without a link.
+// and its cursor anew, a failed "Mehr laden" that keeps the list, the line for screen readers after
+// "Mehr laden", and `resume`, which keeps a shown list. The store of "Details" at the channel cards:
+// one query for all cards, none for a new run with the same error, a failed query without a link.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DataError } from '$lib/data/errors';
@@ -287,6 +287,82 @@ describe('ServerProblemsStore on the page "Fehlerprotokoll" (FP-3)', () => {
 		await store.more();
 		expect(store.moreState).toBe('idle');
 		expect(store.entries).toHaveLength(3);
+	});
+
+	it('tells screen readers how many "Mehr laden" brought, empty while it runs and for a new list', async () => {
+		const first = records(0, 2);
+		let next: ServerProblemRecord[] = records(2, 3);
+		const page = vi.fn(async (query: ServerProblemQuery): Promise<ServerProblemPage> =>
+			query.after === null
+				? { records: first, next: cursor('page00000000001') }
+				: { records: next, next: cursor('page00000000004') }
+		);
+		const store = new ServerProblemsStore(source({ page }));
+		await store.browse();
+		expect(store.announcement).toBe('');
+
+		const loading = store.more();
+		expect(store.announcement).toBe('');
+		await loading;
+		expect(store.announcement).toBe('3 weitere geladen.');
+
+		// A page with only entries shown already, e.g. after a cleanup of the server in between.
+		next = [first[0] as ServerProblemRecord];
+		await store.more();
+		expect(store.announcement).toBe('Keine weiteren Einträge.');
+		expect(store.entries).toHaveLength(5);
+
+		await store.browse({ source: 'job', area: null });
+		expect(store.announcement).toBe('');
+	});
+
+	it('keeps a shown list with its filters and pages on "resume", and loads anew in any other state', async () => {
+		let offline = false;
+		const page = vi.fn(async (query: ServerProblemQuery): Promise<ServerProblemPage> => {
+			if (offline) throw new DataError('network');
+			return query.after === null
+				? { records: records(0, 2), next: cursor('page00000000001') }
+				: { records: records(2, 1), next: null };
+		});
+		const store = new ServerProblemsStore(source({ page }));
+		// Never loaded: the first page.
+		await store.resume();
+		expect(page).toHaveBeenCalledTimes(1);
+		await store.browse({ source: 'channel', area: 'private' });
+		await store.more();
+		expect(page).toHaveBeenCalledTimes(3);
+
+		store.stop();
+		await store.resume();
+		expect(page).toHaveBeenCalledTimes(3);
+		expect(store.filter).toEqual({ source: 'channel', area: 'private' });
+		expect(store.entries).toHaveLength(3);
+
+		// Offline: "resume" tries the first page of the same filters again.
+		offline = true;
+		await store.browse();
+		expect(store.state).toBe('offline');
+		offline = false;
+		await store.resume();
+		expect(page).toHaveBeenLastCalledWith(
+			{ source: 'channel', area: 'private', after: null },
+			expect.any(AbortSignal)
+		);
+		expect(store.state).toBe('ready');
+
+		// Stopped while the first page was loading: loads again.
+		const running = store.browse();
+		store.stop();
+		await running;
+		expect(store.state).toBe('loading');
+		await store.resume();
+		expect(store.state).toBe('ready');
+
+		// The newest 50 of the dialog are no list of the page.
+		await store.load();
+		const calls = page.mock.calls.length;
+		await store.resume();
+		expect(page).toHaveBeenCalledTimes(calls + 1);
 	});
 
 	it('is "offline" or "failed" for the first page as in the dialog', async () => {

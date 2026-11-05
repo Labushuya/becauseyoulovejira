@@ -72,8 +72,17 @@ export const SERVER_PROBLEM_TEXTS = Object.freeze({
 	loadingMore: 'Wird geladen …',
 	moreOffline: 'Ohne Verbindung zum Server lassen sich keine weiteren Einträge laden.',
 	moreFailed: 'Weitere Einträge ließen sich nicht laden.',
-	moreRetry: 'Erneut versuchen'
+	moreRetry: 'Erneut versuchen',
+	noMore: 'Keine weiteren Einträge.'
 });
+
+/**
+ * What screen readers hear after "Mehr laden" on the page (FP-3): how many entries came, or that
+ * none did (the next page only held entries already shown, or they went in between).
+ */
+export function moreLoadedText(added: number): string {
+	return added > 0 ? `${added} weitere geladen.` : SERVER_PROBLEM_TEXTS.noMore;
+}
 
 /** The page "Einstellungen → Fehlerprotokoll" (FP-3) and the way there from the dialog and the help. */
 export const PROBLEM_LOG_TEXTS = Object.freeze({

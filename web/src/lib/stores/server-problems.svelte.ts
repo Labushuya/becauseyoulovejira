@@ -6,8 +6,10 @@
 // and on "Erneut laden". On the page "Fehlerprotokoll" (FP-3) the same store browses instead: the
 // first page of the chosen filters (`browse`, also on "Erneut laden" and for every new filter, which
 // starts the list and its cursor anew) and "Mehr laden" (`more`) in steps of 50 after the cursor of
-// the last page, without an entry twice. ChannelProblemsStore finds the entries behind "Details" of
-// the channel cards of the page "Kanäle" in one query.
+// the last page, without an entry twice, with a line for screen readers (`announcement`). The page
+// keeps its store while it shows "Diese Sitzung": back at "Server", `resume` keeps filters and loaded
+// pages. ChannelProblemsStore finds the entries behind "Details" of the channel cards of the page
+// "Kanäle" in one query.
 
 import { pb } from '$lib/pocketbase';
 import { problemOf, toDataError } from '$lib/data/errors';
@@ -24,6 +26,7 @@ import {
 	channelProblemKey,
 	channelProblemsSince,
 	matchChannelProblems,
+	moreLoadedText,
 	serverProblemEntry,
 	type ChannelProblemCard,
 	type ChannelProblemHit,
@@ -67,6 +70,9 @@ export class ServerProblemsStore {
 	#next = $state.raw<ServerProblemCursor | null>(null);
 	#more = $state<ServerProblemsMoreState>('idle');
 	#moreProblem = $state.raw<ProblemEntry | null>(null);
+	#announcement = $state('');
+	/** The list is one of the page (`browse`), not the newest 50 of the dialog (`load`). */
+	#browsing = false;
 	#controller: AbortController | null = null;
 
 	constructor(source: ServerProblemsSource = DATA_SOURCE) {
@@ -116,8 +122,17 @@ export class ServerProblemsStore {
 		return this.#moreProblem;
 	}
 
+	/**
+	 * What screen readers hear after "Mehr laden" ("3 weitere geladen.", "Keine weiteren
+	 * Einträge."); empty while it runs, so the same text again is heard again.
+	 */
+	get announcement(): string {
+		return this.#announcement;
+	}
+
 	/** Loads the list and, with `focusId`, that entry; a newer call replaces a running one. */
 	async load(focusId: string | null = null): Promise<void> {
+		this.#browsing = false;
 		const controller = this.#start();
 		try {
 			const [list, focus] = await Promise.all([
@@ -146,6 +161,7 @@ export class ServerProblemsStore {
 	 */
 	async browse(filter: ServerProblemsFilter = this.#filter): Promise<void> {
 		this.#filter = filter;
+		this.#browsing = true;
 		const controller = this.#start();
 		try {
 			const page = await this.#source.page({ ...filter, after: null }, controller.signal);
@@ -163,6 +179,16 @@ export class ServerProblemsStore {
 	}
 
 	/**
+	 * The page shows the log of the server again (FP-3, "Server" → "Diese Sitzung" → "Server"): a
+	 * list it already shows stays with its filters and the pages of "Mehr laden"; in any other state
+	 * (never loaded, stopped while loading, offline, failed) the first page of the filters.
+	 */
+	async resume(): Promise<void> {
+		if (this.#browsing && this.#state === 'ready') return;
+		await this.browse();
+	}
+
+	/**
 	 * "Mehr laden": the next page after the cursor with the same filters, appended without an entry
 	 * twice. Only on a shown list with more to find and not twice at once; a failure keeps the list.
 	 */
@@ -173,10 +199,13 @@ export class ServerProblemsStore {
 		this.#controller = controller;
 		this.#more = 'loading';
 		this.#moreProblem = null;
+		this.#announcement = '';
 		try {
 			const page = await this.#source.page({ ...this.#filter, after }, controller.signal);
 			if (controller.signal.aborted) return;
-			this.#entries = appendServerProblems(this.#entries, page.records);
+			const entries = appendServerProblems(this.#entries, page.records);
+			this.#announcement = moreLoadedText(entries.length - this.#entries.length);
+			this.#entries = entries;
 			this.#next = page.next;
 			this.#more = 'idle';
 		} catch (error) {
@@ -207,6 +236,7 @@ export class ServerProblemsStore {
 		this.#next = null;
 		this.#more = 'idle';
 		this.#moreProblem = null;
+		this.#announcement = '';
 		return controller;
 	}
 

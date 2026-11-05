@@ -2,8 +2,8 @@
 // "Diese Sitzung" / "Server", the entries of the server with their facts and "Kopieren" (Server-ID),
 // the entry of the address (deep link), a gone entry, no connection (a hint, nothing breaks), no
 // session; "Details" at the last error of a card; since FP-3 the way from the dialog to the page
-// "Fehlerprotokoll". The server answers through a stubbed fetch, as the record API of problem_events
-// would.
+// "Fehlerprotokoll" (a click for a new tab leaves the dialog open). The server answers through a
+// stubbed fetch, as the record API of problem_events would.
 
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
@@ -332,6 +332,31 @@ describe('way from the dialog to the page "Fehlerprotokoll" (FP-3)', () => {
 		expect(problemLog.dialogOpen).toBe(false);
 		// Not the closing of the layout: it would take ?fehler out of the address with a navigation of
 		// its own, which could replace the one of the link.
+		expect(onclose).not.toHaveBeenCalled();
+	});
+
+	it('stays open for a click that opens the page in a new tab or window', async () => {
+		serve();
+		problemLog.openDialog();
+		const { onclose } = await openDialog();
+		const link = screen.getByRole('link', { name: 'Fehlerprotokoll öffnen' });
+		// jsdom does not open tabs; in the browser the page opens beside the dialog.
+		const stay = (event: Event) => event.preventDefault();
+		document.addEventListener('click', stay, { capture: true });
+		try {
+			for (const click of [
+				{ ctrlKey: true },
+				{ metaKey: true },
+				{ shiftKey: true },
+				{ altKey: true },
+				{ button: 1 }
+			]) {
+				await fireEvent.click(link, click);
+				expect(problemLog.dialogOpen, JSON.stringify(click)).toBe(true);
+			}
+		} finally {
+			document.removeEventListener('click', stay, { capture: true });
+		}
 		expect(onclose).not.toHaveBeenCalled();
 	});
 

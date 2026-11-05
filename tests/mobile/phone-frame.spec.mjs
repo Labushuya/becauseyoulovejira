@@ -775,7 +775,7 @@ test.describe('phone with the default "Automatisch"', () => {
 			['Haushalt', 'Haushalt'],
 			['Datei-Importe', 'Datei-Importe'],
 			['Sicherheit nur am PC', 'Sicherheit'],
-			// FP-3: the switch of the lists and the list of this tab.
+			// FP-3: the switch of the lists, the list of this tab and, below, that of the server.
 			['Fehlerprotokoll', 'Fehlerprotokoll'],
 			['Mein Konto', 'Mein Konto']
 		];
@@ -790,6 +790,14 @@ test.describe('phone with the default "Automatisch"', () => {
 			expect(await scrollsSideways(page), heading).toBe(false);
 			expect(await smallTargets(page.locator('.settings')), heading).toEqual([]);
 			if (heading === 'Sicherheit') await expect(page.locator('.settings .page')).toContainText('Nur direkt am PC verfügbar');
+			// FP-3: "Server" with the filters as segments, once its list is there.
+			if (heading === 'Fehlerprotokoll') {
+				await page.getByRole('group', { name: 'Welche Fehler' }).getByRole('button', { name: 'Server' }).tap();
+				await expect(page.locator('.server-problems .limits')).toBeVisible();
+				await expect(page.getByRole('group', { name: 'Quelle' })).toBeVisible();
+				expect(await scrollsSideways(page), 'Fehlerprotokoll: Server').toBe(false);
+				expect(await smallTargets(page.locator('.settings')), 'Fehlerprotokoll: Server').toEqual([]);
+			}
 			// Package "Einschalten": "Automatisch" by default, and the answer of the start as the switch.
 			if (heading === 'Darstellung') {
 				await expect(page.getByRole('radio', { name: 'Automatisch' })).toBeChecked();

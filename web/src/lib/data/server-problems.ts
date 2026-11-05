@@ -61,8 +61,10 @@ const SERVER_PROBLEM_PAGE_FILTER = [
 
 /**
  * One page of the page "Fehlerprotokoll" (FP-3), at most SERVER_PROBLEMS_PAGE entries, newest first,
- * with the cursor of the next page; a page that is not full is the last one. The cursor comes from
- * the last entry as the server sent it, also when it could not be read, so the list always moves on.
+ * with the cursor of the next page. It asks for one entry more than it shows: only when that one is
+ * there does a next page follow, so a list of exactly 50 offers no "Mehr laden" that finds nothing.
+ * The cursor comes from the last shown entry as the server sent it, also when it could not be read,
+ * so the list always moves on.
  */
 export function listServerProblemPage(
 	pb: PocketBase,
@@ -70,7 +72,7 @@ export function listServerProblemPage(
 	{ signal }: RequestOptions = {}
 ): Promise<ServerProblemPage> {
 	return withDataErrors(signal, async () => {
-		const page = await pb.collection(EVENTS).getList(1, SERVER_PROBLEMS_PAGE, {
+		const page = await pb.collection(EVENTS).getList(1, SERVER_PROBLEMS_PAGE + 1, {
 			filter: pb.filter(SERVER_PROBLEM_PAGE_FILTER, {
 				source: query.source ?? '',
 				area: query.area ?? '',
@@ -82,10 +84,11 @@ export function listServerProblemPage(
 			skipTotal: true,
 			signal
 		});
-		const full = page.items.length >= SERVER_PROBLEMS_PAGE;
+		const shown = page.items.slice(0, SERVER_PROBLEMS_PAGE);
+		const more = page.items.length > SERVER_PROBLEMS_PAGE;
 		return {
-			records: toRecords(page.items),
-			next: full ? serverProblemCursorOf(page.items.at(-1)) : null
+			records: toRecords(shown),
+			next: more ? serverProblemCursorOf(shown.at(-1)) : null
 		};
 	});
 }
