@@ -27,7 +27,7 @@
 	} from '$lib/domain/storage';
 	import { formatPointInTime } from '$lib/domain/system';
 	import { helpHref } from '$lib/settings-sections';
-	import type { StorageStore } from '$lib/stores/storage.svelte';
+	import { isStorageFailure, type StorageStore } from '$lib/stores/storage.svelte';
 	import { inboxItemHref, trashHref } from '$lib/ticket-links';
 
 	// Page "Einstellungen → Speicher" (ADR-0047 §6 to §9): what the app takes, measured when the page
@@ -37,7 +37,8 @@
 	// Three actions, each with what it touches and a question first (no red, ADR-0009): compact the
 	// databases, clear what was left behind (old automatic backups of PocketBase only when chosen),
 	// empty discarded entries early. Original files at sources are never deleted one by one; tickets
-	// go through the trash, which deletes for good only without dependencies (ADR-0047 §1).
+	// go through the trash, which deletes for good only without dependencies (ADR-0047 §1). A refusal
+	// is a warning; a failure (a failed request, "script") an error with "Details" (FP-3b).
 	let { store, platform }: { store: StorageStore; platform: HostPlatform } = $props();
 
 	const uid = $props.id();
@@ -100,7 +101,11 @@
 	<p class="note" role="status">Speicher wird gemessen …</p>
 {:else if overview === null}
 	{#if store.message !== null}
-		<SectionMessage tone={store.state === 'error' ? 'error' : 'info'} title={store.message.title}>
+		<SectionMessage
+			tone={store.state === 'error' || isStorageFailure(store.message) ? 'error' : 'info'}
+			title={store.message.title}
+			problem={store.message.problem ?? null}
+		>
 			{store.message.text}
 			{#snippet actions()}
 				<button class="button-subtle" type="button" onclick={() => void store.load()}>
@@ -292,7 +297,12 @@
 	<section class="part" aria-labelledby={`${uid}-actions`}>
 		<h3 id={`${uid}-actions`}>Aufräumen</h3>
 		{#if store.actionMessage !== null}
-			<SectionMessage tone="warning" live title={store.actionMessage.title}>
+			<SectionMessage
+				tone={isStorageFailure(store.actionMessage) ? 'error' : 'warning'}
+				live
+				title={store.actionMessage.title}
+				problem={store.actionMessage.problem ?? null}
+			>
 				{store.actionMessage.text}
 			</SectionMessage>
 		{/if}

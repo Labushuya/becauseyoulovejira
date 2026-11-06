@@ -400,6 +400,16 @@ export const ACTION_TEXTS = Object.freeze({
 	}
 });
 
+/**
+ * The flag after "Verworfene jetzt leeren" when entries stayed as they were (`failed` of the result
+ * of the route, FP-3b): a failure the server reports, with "Details".
+ */
+export function discardedFailedText(count: number): string {
+	return count === 1
+		? '1 verworfener Eintrag ließ sich nicht leeren.'
+		: `${count} verworfene Einträge ließen sich nicht leeren.`;
+}
+
 /** What the page cannot show on this server, and why. */
 export const PARTIAL_NOTICE = {
 	title: 'Nur ein Teil des Speichers',

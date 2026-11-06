@@ -7,12 +7,14 @@
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { parseOverview, type StorageOverview } from '$lib/domain/storage';
 import { RESTART_NEEDED, restartNeeded } from '$lib/guidance/texts';
 import { SILENT_FLAGS } from '$lib/stores/flags.svelte';
+import { problemLog } from '$lib/stores/problem-log.svelte';
 import { StorageStore, type StorageData } from '$lib/stores/storage.svelte';
 import { danglingReferences, duplicateIds } from '$lib/test/aria-ids';
+import { failedRequest, scriptRefusal } from '$lib/test/failures';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import { storageAnswer } from '$lib/test/storage-answer';
 import StorageView from './StorageView.svelte';
@@ -217,5 +219,70 @@ describe('actions of the page "Speicher"', () => {
 		);
 		expect(screen.queryByText(/Nicht dabei:/)).toBeNull();
 		expect(screen.queryByRole('link', { name: 'Im Papierkorb entscheiden' })).toBeNull();
+	});
+});
+
+describe('page "Speicher": failures with "Details" (FP-3b, P5)', () => {
+	beforeEach(() => problemLog.clear());
+
+	async function vacuum() {
+		await fireEvent.click(screen.getByRole('button', { name: 'Datenbank verdichten …' }));
+		await tick();
+		const dialog = screen.getByRole('dialog', { name: 'Datenbank verdichten?' });
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Datenbank verdichten' }));
+	}
+
+	// BYL-E6-2430
+	it('shows a failed action as an error with "Details", a refusal as a warning without', async () => {
+		const act = vi
+			.fn<StorageData['act']>()
+			.mockResolvedValueOnce({ kind: 'denied', reason: 'busy' })
+			.mockRejectedValueOnce(failedRequest('POST', '/api/byl/storage/actions/vacuum'));
+		await show(overviewOf(), { act });
+		const actions = within(screen.getByRole('region', { name: 'Aufräumen' }));
+		await vacuum();
+		const refused = await actions.findByRole('heading', { name: /Es läuft schon eine Aktion/ });
+		expect(refused.closest('[data-tone]')?.getAttribute('data-tone')).toBe('warning');
+		expect(actions.queryByRole('button', { name: /^Details/ })).toBeNull();
+		await vacuum();
+		const details = await actions.findByRole('button', { name: 'Details: Datenbank verdichten' });
+		expect(details.closest('[data-tone]')?.getAttribute('data-tone')).toBe('error');
+		expect(problemLog.entries.map((entry) => entry.intent)).toEqual(['Datenbank verdichten']);
+	});
+
+	// BYL-E6-2430
+	it('shows "script" of the measuring as an error with "Details"', async () => {
+		await show(null, { overview: vi.fn(async () => scriptRefusal('GET', '/api/byl/storage')) });
+		const details = screen.getByRole('button', { name: 'Details: Speicher laden' });
+		expect(details.closest('[data-tone]')?.getAttribute('data-tone')).toBe('error');
+	});
+
+	// BYL-E6-2431
+	it('names discarded entries it could not empty as a failure the server reports', async () => {
+		const flags = { show: vi.fn(() => 'flag'), dismiss: vi.fn() };
+		const data: StorageData = {
+			overview: vi.fn(async () => ({ kind: 'ok' as const, value: overviewOf() })),
+			act: vi
+				.fn<StorageData['act']>()
+				.mockResolvedValueOnce({ kind: 'ok', value: { count: 1, bytes: 10, failed: 2 } })
+				.mockResolvedValueOnce({ kind: 'ok', value: { count: 1, bytes: 10, failed: 0 } })
+		};
+		const store = new StorageStore(data, { ensureValid: () => true, logout: vi.fn() }, flags);
+		await store.load();
+		expect(await store.run('discarded')).toBe(true);
+		expect(flags.show).toHaveBeenLastCalledWith({
+			tone: 'error',
+			title: '2 verworfene Einträge ließen sich nicht leeren.',
+			problem: expect.objectContaining({
+				intent: 'Verworfene jetzt leeren',
+				outcome: expect.objectContaining({ result: 'reported', code: 'failed' }),
+				request: { method: 'POST', path: '/api/byl/storage/actions/discarded' }
+			})
+		});
+		expect(await store.run('discarded')).toBe(true);
+		expect(flags.show).toHaveBeenLastCalledWith({
+			tone: 'success',
+			title: 'Verworfene Einträge geleert.'
+		});
 	});
 });
