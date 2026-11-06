@@ -105,12 +105,14 @@ describe('chosenNewEntries (EG-2 review)', () => {
 		...overrides
 	});
 
+	const none = () => false;
+
 	it('takes the chosen new entries the view shows, in its order, with what the dialogs need', () => {
 		const first = entry('item00000000001');
 		const second = entry('item00000000002', { title: 'Zweiter' });
 		const linked = entry('item00000000003', { state: 'converted', ticketId: 'tick00000000001' });
 		const chosen = [second.id, linked.id, first.id, 'item00000000009'];
-		expect(chosenNewEntries([first, second, linked], chosen)).toEqual([
+		expect(chosenNewEntries([first, second, linked], chosen, none)).toEqual([
 			{
 				id: first.id,
 				title: first.title,
@@ -133,7 +135,18 @@ describe('chosenNewEntries (EG-2 review)', () => {
 			}
 		]);
 		// A chosen entry the search hides is not among the visible ones: it stays out.
-		expect(chosenNewEntries([second], chosen).map((item) => item.id)).toEqual([second.id]);
-		expect(chosenNewEntries([first, second], [])).toEqual([]);
+		expect(chosenNewEntries([second], chosen, none).map((item) => item.id)).toEqual([second.id]);
+		expect(chosenNewEntries([first, second], [], none)).toEqual([]);
+	});
+
+	// After the review of PR #349 (N-7).
+	it('leaves out a chosen entry "＋" of the outbox the server does not have yet', () => {
+		const first = entry('item00000000001');
+		const kept = entry('item00000000002', { title: 'Noch nicht übertragen' });
+		const isCreated = (id: string) => id === kept.id;
+		expect(
+			chosenNewEntries([kept, first], [kept.id, first.id], isCreated).map((item) => item.id)
+		).toEqual([first.id]);
+		expect(chosenNewEntries([kept], [kept.id], isCreated)).toEqual([]);
 	});
 });

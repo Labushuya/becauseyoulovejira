@@ -15,7 +15,8 @@
 // search for a superset (`inboxServerWords`), after a pause of SEARCH_DEBOUNCE_MS, and narrows it
 // exactly; until the answer, or after a failure, the loaded rows stay and are narrowed in the client.
 // Such a new page 1 over loaded rows is a refresh (`handledRefreshing`, EG-2 review): the view stays
-// ready, so its numbers and "Weitere laden" stay.
+// ready, so its numbers and "Weitere laden" stay; so is the pause before it (N-1, after the review of
+// PR #349). A page 1 that ends without an answer makes the view 'error', also without a message (N-5).
 
 import type PocketBase from 'pocketbase';
 import { createContext, untrack } from 'svelte';
@@ -260,6 +261,11 @@ export class InboxStore {
 	 * `#handledLoad` stays 'ready' meanwhile, so the rows, their numbers and "Weitere laden" stay.
 	 */
 	#handledRefreshing = $state(false);
+	/**
+	 * The pause of a changed search runs (`#searchTimer`); it counts as a refresh, so no empty state
+	 * stands before the answer (after the review of PR #349, N-1).
+	 */
+	#searchPending = $state(false);
 	#handledError = $state<string | null>(null);
 	#handledHasMore = $state(false);
 	#loadingMoreHandled = $state(false);
@@ -407,10 +413,11 @@ export class InboxStore {
 
 	/**
 	 * Page 1 of the paged view loads again over the loaded rows (EG-2 review): `handledLoad` stays
-	 * 'ready', the list is busy.
+	 * 'ready', the list is busy. So does the pause before it (N-1): the loaded rows do not answer the
+	 * new search yet.
 	 */
 	get handledRefreshing(): boolean {
-		return this.#handledRefreshing;
+		return this.#handledRefreshing || this.#searchPending;
 	}
 
 	get handledError(): string | null {
@@ -518,8 +525,10 @@ export class InboxStore {
 	#searchChanged(): void {
 		this.#stopSearchPause();
 		if (sameWords(this.#serverWords(this.#query), this.#handledWords)) return;
+		this.#searchPending = true;
 		this.#searchTimer = setTimeout(() => {
 			this.#searchTimer = null;
+			this.#searchPending = false;
 			void this.#loadHandled(1);
 		}, SEARCH_DEBOUNCE_MS);
 	}
@@ -527,6 +536,7 @@ export class InboxStore {
 	#stopSearchPause(): void {
 		if (this.#searchTimer !== null) clearTimeout(this.#searchTimer);
 		this.#searchTimer = null;
+		this.#searchPending = false;
 	}
 
 	/**
@@ -1312,9 +1322,12 @@ export class InboxStore {
 		} catch (error) {
 			if (controller.signal.aborted) return;
 			const message = this.#failureMessage(error, true);
-			if (message === null) return;
-			this.#handledError = message;
+			// The logout of an ended session may have reset the store and aborted this load.
+			if (controller.signal.aborted) return;
+			// Page 1 ended without an answer, also without a message (an ended session, an abort from
+			// elsewhere): the server words of the loaded pages are no longer known (N-5).
 			if (first) this.#handledLoad = 'error';
+			if (message !== null) this.#handledError = message;
 		} finally {
 			if (this.#handledController === controller) {
 				this.#handledController = null;

@@ -130,9 +130,12 @@
 		linkItems = [{ id, title, scope }];
 	}
 
-	/** The chosen new entries the view shows (EG-2): the dialogs act on the visible ones only. */
+	/**
+	 * The chosen new entries the view shows (EG-2): the dialogs act on the visible ones only, never on
+	 * one "＋" of the outbox (N-7).
+	 */
 	function chosenItems(): ChosenNewEntry[] {
-		return chosenNewEntries(inbox.visible, selected);
+		return chosenNewEntries(inbox.visible, selected, (id) => inbox.isCreated(id));
 	}
 
 	/** Text for the dialog "Aus der Zwischenablage", null while it is closed. */

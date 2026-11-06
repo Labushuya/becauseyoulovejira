@@ -86,6 +86,8 @@ function setup(
 		onlink?: () => void;
 		/** Entries of the paged views instead of the one default entry. */
 		handled?: InboxItemSummary[];
+		/** Whether further pages wait after the first one; default true. */
+		hasMore?: boolean;
 		/** Projects of the catalog (target projects, ADR-0049). */
 		projects?: Project[];
 		/** The connection is missing (OF-3): the bulk actions of EG-1 are locked. */
@@ -104,7 +106,7 @@ function setup(
 				})
 			],
 			page,
-			hasMore: true
+			hasMore: options.hasMore ?? true
 		})),
 		get: vi.fn<InboxData['get']>(async (id) => ({ ...item(id), body: '' })),
 		create: vi.fn<InboxData['create']>(),
@@ -1448,5 +1450,120 @@ describe('search (EG-2)', () => {
 		await tick();
 		expect(document.activeElement).toBe(search);
 		expect(search.value).toBe('');
+	});
+
+	// After the review of PR #349 (N-1, N-2, N-3 and N-5).
+	const DISCARDED: InboxQuery = { source: null, state: 'discarded' };
+	const old = (id: string, title: string) =>
+		item(id, { title, state: 'discarded', handledAt: '2026-09-20 10:00:00.000Z' });
+	const more = () => screen.getByRole<HTMLButtonElement>('button', { name: 'Weitere laden' });
+
+	it('shows no empty state during the pause of a changed search, and the list is busy (N-1)', async () => {
+		mocks.page.url = new URL('http://localhost:3000/eingang?zustand=verworfen');
+		const { store, data } = setup({
+			query: DISCARDED,
+			handled: [old('item00000000008', 'Alte Rechnung'), old('item00000000009', 'Neuer Brief')],
+			hasMore: false
+		});
+		await table();
+		vi.useFakeTimers();
+		store.activate({ ...DISCARDED, search: 'rechnung' });
+		await tick();
+		// Before the timer: the rows that fit stay and the list is busy; nothing is asked yet.
+		expect(shown()).toEqual(['Alte Rechnung']);
+		expect(screen.getByRole('table').getAttribute('aria-busy')).toBe('true');
+		store.activate({ ...DISCARDED, search: 'zahnarzt' });
+		await tick();
+		expect(screen.queryByRole('heading', { name: /passt zu/ })).toBeNull();
+		expect(screen.getByText('Eingang wird geladen …')).toBeTruthy();
+		expect(data.listHandled).toHaveBeenCalledTimes(1);
+
+		// Only the answer of the server says that nothing fits.
+		data.listHandled.mockResolvedValueOnce({ items: [], page: 1, hasMore: false });
+		await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
+		await tick();
+		expect(data.listHandled).toHaveBeenCalledTimes(2);
+		expect(screen.getByRole('heading', { name: 'Kein Eintrag passt zu „zahnarzt“' })).toBeTruthy();
+	});
+
+	it('locks "Weitere laden" during the pause and while page 1 loads again, so it asks nothing (N-2)', async () => {
+		mocks.page.url = new URL('http://localhost:3000/eingang?zustand=verworfen');
+		const { store, data } = setup({
+			query: DISCARDED,
+			handled: [old('item00000000008', 'Alte Rechnung'), old('item00000000009', 'Neuer Brief')]
+		});
+		await table();
+		expect(more().disabled).toBe(false);
+		expect(more().hasAttribute('aria-disabled')).toBe(false);
+		data.listHandled.mockImplementationOnce(() => new Promise(() => undefined));
+		vi.useFakeTimers();
+		store.activate({ ...DISCARDED, search: 'rechnung' });
+		await tick();
+		expect(more().disabled).toBe(true);
+		await fireEvent.click(more());
+		expect(data.listHandled).toHaveBeenCalledTimes(1);
+
+		await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
+		await tick();
+		expect(data.listHandled).toHaveBeenCalledTimes(2);
+		expect(more().disabled).toBe(true);
+		expect(more().getAttribute('aria-disabled')).toBe('true');
+		await fireEvent.click(more());
+		expect(data.listHandled).toHaveBeenCalledTimes(2);
+	});
+
+	it('is busy while "Erneut versuchen" asks page 1 again over kept rows (N-3)', async () => {
+		mocks.page.url = new URL('http://localhost:3000/eingang?zustand=verworfen');
+		const { store, data } = setup({
+			query: DISCARDED,
+			handled: [old('item00000000008', 'Alte Rechnung'), old('item00000000009', 'Neuer Brief')]
+		});
+		await table();
+		data.listHandled.mockRejectedValueOnce(new DataError('network'));
+		vi.useFakeTimers();
+		store.activate({ ...DISCARDED, search: 'rechnung' });
+		await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
+		await tick();
+		expect(store.handledLoad).toBe('error');
+		expect(shown()).toEqual(['Alte Rechnung']);
+		expect(screen.getByRole('table').hasAttribute('aria-busy')).toBe(false);
+
+		let answer: (page: HandledItemPage) => void = () => undefined;
+		data.listHandled.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					answer = resolve;
+				})
+		);
+		await fireEvent.click(screen.getByRole('button', { name: 'Erneut versuchen' }));
+		await tick();
+		expect(store.handledLoad).toBe('loading');
+		expect(shown()).toEqual(['Alte Rechnung']);
+		expect(screen.getByRole('table').getAttribute('aria-busy')).toBe('true');
+		answer({ items: [old('item00000000008', 'Alte Rechnung')], page: 1, hasMore: false });
+		await vi.advanceTimersByTimeAsync(0);
+		await tick();
+		expect(store.handledLoad).toBe('ready');
+		expect(screen.getByRole('table').hasAttribute('aria-busy')).toBe(false);
+	});
+
+	it('offers no "Weitere laden" after page 1 ended without an answer and without a message (N-5)', async () => {
+		mocks.page.url = new URL('http://localhost:3000/eingang?zustand=verworfen');
+		const { store, data } = setup({
+			query: DISCARDED,
+			handled: [old('item00000000008', 'Alte Rechnung')]
+		});
+		await table();
+		expect(more()).toBeTruthy();
+		// An abort from elsewhere, not the own signal.
+		data.listHandled.mockRejectedValueOnce(new DataError('aborted'));
+		vi.useFakeTimers();
+		store.activate({ ...DISCARDED, search: 'rechnung' });
+		await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
+		await tick();
+		expect(store.handledLoad).toBe('error');
+		expect(shown()).toEqual(['Alte Rechnung']);
+		expect(screen.queryByRole('button', { name: 'Weitere laden' })).toBeNull();
+		expect(screen.queryByRole('table')?.hasAttribute('aria-busy')).toBe(false);
 	});
 });

@@ -805,6 +805,36 @@ describe('search of the paged views (EG-2)', () => {
 		expect(hidden.kept).toEqual([]);
 		expect(hidden.server).toEqual(expect.arrayContaining(hidden.kept));
 	});
+
+	// After the review of PR #349 (N-8).
+	it('takes words with "_", a backslash and a quote to the server without an error and answers a superset', async () => {
+		const fresh = await createOwner(superuser);
+		const REPORT = 'Bericht_final.pdf';
+		const FOLDER = 'Ordner C:\\Daten\\Belege';
+		const QUOTE = 'Zitat \\"Hallo\\" im Text';
+		await discardedOf(fresh.client, [
+			mail({ title: REPORT, sourceMeta: { from: 'Büro "Nord" <nord@example.com>' } }),
+			mail({ title: FOLDER, sourceMeta: { from: 'Server\\Admin <admin@example.com>' } }),
+			mail({ title: QUOTE })
+		]);
+		for (const [text, titles] of [
+			['bericht_final', [REPORT]],
+			['_', [REPORT]],
+			['daten\\belege', [FOLDER]],
+			['server\\admin', [FOLDER]],
+			['\\', [FOLDER, QUOTE]],
+			['"nord"', [REPORT]],
+			['\\"hallo\\"', [QUOTE]],
+			['"', [REPORT, QUOTE]],
+			['_\\" \\\\ ""', []]
+		]) {
+			// Every word goes to the server as it is written.
+			expect(patternsOf(text), text).toHaveLength(searchWords(text).length);
+			const result = await found(fresh.client, 'discarded', text);
+			expect(result.kept, text).toEqual(titles);
+			expect(result.server, text).toEqual(expect.arrayContaining(result.kept));
+		}
+	});
 });
 
 describe('realtime', () => {

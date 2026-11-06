@@ -1348,10 +1348,13 @@ describe('search (EG-2, ADR-0014 addendum EG-2)', () => {
 		expect(store.handledRefreshing).toBe(true);
 		expect(store.handledHasMore).toBe(true);
 		expect(ids(store.visible)).toEqual([bill.id]);
+		expect(ids(store.handled)).toEqual([bill.id, roof.id]);
 		answer.resolve({ items: [bill], page: 1, hasMore: false });
 		await vi.advanceTimersByTimeAsync(0);
 		expect(store.handledRefreshing).toBe(false);
 		expect(store.handledHasMore).toBe(false);
+		// The answer replaces the loaded rows: no old row stays.
+		expect(ids(store.handled)).toEqual([bill.id]);
 
 		// Another view ends a running refresh at once.
 		data.listHandled.mockImplementationOnce(() => new Promise(() => undefined));
@@ -1426,5 +1429,158 @@ describe('search (EG-2, ADR-0014 addendum EG-2)', () => {
 		store.activate({ source: null, state: 'discarded', search: 'privat' });
 		expect(ids(store.visible)).toEqual([bill.id]);
 		expect(data.listHandled).toHaveBeenCalledTimes(1);
+	});
+
+	// After the review of PR #349 (N-1, N-5 and further cases).
+	it('counts the pause of a changed search as a refresh until page 1 answers (N-1)', async () => {
+		vi.useFakeTimers();
+		const { store, data } = setup();
+		await store.load();
+		const bill = discarded(item('item00000000060', { title: 'Rechnung Strom' }), T2);
+		data.listHandled.mockResolvedValueOnce({ items: [bill], page: 1, hasMore: false });
+		store.activate({ source: null, state: 'discarded' });
+		await vi.advanceTimersByTimeAsync(0);
+		expect(store.handledRefreshing).toBe(false);
+
+		const answer = deferred<HandledItemPage>();
+		data.listHandled.mockImplementationOnce(() => answer.promise);
+		store.activate({ source: null, state: 'discarded', search: 'zahnarzt' });
+		// No request yet, and the loaded rows do not answer the new search: the view counts as busy.
+		expect(store.visible).toEqual([]);
+		expect(store.handledLoad).toBe('ready');
+		expect(store.handledRefreshing).toBe(true);
+		expect(data.listHandled).toHaveBeenCalledTimes(1);
+		await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
+		expect(data.listHandled).toHaveBeenCalledTimes(2);
+		expect(store.handledRefreshing).toBe(true);
+		answer.resolve({ items: [], page: 1, hasMore: false });
+		await vi.advanceTimersByTimeAsync(0);
+		expect(store.handledRefreshing).toBe(false);
+
+		// Words of the client alone start no pause; another view ends a waiting one.
+		store.activate({ source: null, state: 'discarded', search: 'zahnarzt 2026' });
+		expect(store.handledRefreshing).toBe(false);
+		store.activate({ source: null, state: 'discarded', search: 'strom' });
+		expect(store.handledRefreshing).toBe(true);
+		store.activate({ source: null, state: 'new' });
+		expect(store.handledRefreshing).toBe(false);
+		await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
+		expect(data.listHandled).toHaveBeenCalledTimes(2);
+	});
+
+	it('makes the view "error" when page 1 ends without an answer and without a message (N-5)', async () => {
+		vi.useFakeTimers();
+		for (const failure of [new DataError('aborted'), new DataError('session', { status: 401 })]) {
+			const { store, data, session } = setup();
+			await store.load();
+			const bill = discarded(item('item00000000061', { title: 'Rechnung Strom' }), T2);
+			data.listHandled.mockResolvedValueOnce({ items: [bill], page: 1, hasMore: true });
+			store.activate({ source: null, state: 'discarded' });
+			await vi.advanceTimersByTimeAsync(0);
+
+			// An abort from elsewhere or an ended session, not the own signal.
+			data.listHandled.mockRejectedValueOnce(failure);
+			store.activate({ source: null, state: 'discarded', search: 'rechnung' });
+			await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
+			expect(store.handledLoad, failure.kind).toBe('error');
+			expect(store.handledError).toBeNull();
+			expect(store.handledRefreshing).toBe(false);
+			expect(ids(store.visible)).toEqual([bill.id]);
+			expect(session.logout).toHaveBeenCalledTimes(failure.kind === 'session' ? 1 : 0);
+			// The server words of the loaded pages are no longer known: no further page.
+			const calls = data.listHandled.mock.calls.length;
+			await store.loadMoreHandled();
+			expect(data.listHandled).toHaveBeenCalledTimes(calls);
+		}
+
+		// The first page of a view as well: it does not stay "loading".
+		const { store, data } = setup();
+		await store.load();
+		data.listHandled.mockRejectedValueOnce(new DataError('aborted'));
+		store.activate({ source: null, state: 'converted' });
+		await vi.advanceTimersByTimeAsync(0);
+		expect(store.handledLoad).toBe('error');
+		expect(store.handledError).toBeNull();
+	});
+
+	it('merges no page of a reconciliation while page 1 loads again', async () => {
+		vi.useFakeTimers();
+		const { store, data } = setup();
+		await store.load();
+		const bill = discarded(item('item00000000062', { title: 'Rechnung Strom' }), T1);
+		const roof = discarded(item('item00000000063', { title: 'Dach' }), T0);
+		data.listHandled.mockResolvedValueOnce({ items: [bill, roof], page: 1, hasMore: false });
+		store.activate({ source: null, state: 'discarded' });
+		await vi.advanceTimersByTimeAsync(0);
+
+		// A reconciliation during the refresh asks no page.
+		const answer = deferred<HandledItemPage>();
+		data.listHandled.mockImplementationOnce(() => answer.promise);
+		store.activate({ source: null, state: 'discarded', search: 'rechnung' });
+		await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
+		const calls = data.listHandled.mock.calls.length;
+		await store.reconcile();
+		expect(data.listHandled).toHaveBeenCalledTimes(calls);
+		expect(ids(store.handled)).toEqual([bill.id, roof.id]);
+		answer.resolve({ items: [bill], page: 1, hasMore: false });
+		await vi.advanceTimersByTimeAsync(0);
+		expect(ids(store.handled)).toEqual([bill.id]);
+
+		// A reconciliation that started before a refresh merges none of its older pages.
+		const page = deferred<HandledItemPage>();
+		data.listHandled.mockImplementationOnce(() => page.promise);
+		const running = store.reconcile();
+		await vi.advanceTimersByTimeAsync(0);
+		expect(data.listHandled).toHaveBeenLastCalledWith(
+			'discarded',
+			1,
+			expect.objectContaining({ patterns: [loosePattern('rechnung')] })
+		);
+		const fresh = deferred<HandledItemPage>();
+		data.listHandled.mockImplementationOnce(() => fresh.promise);
+		store.activate({ source: null, state: 'discarded', search: 'dach' });
+		await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
+		page.resolve({ items: [bill, roof], page: 1, hasMore: false });
+		await running;
+		expect(ids(store.handled)).toEqual([bill.id]);
+		fresh.resolve({ items: [roof], page: 1, hasMore: false });
+		await vi.advanceTimersByTimeAsync(0);
+		expect(ids(store.handled)).toEqual([roof.id]);
+	});
+
+	it('sends every chosen entry of "Verwerfen (n)" and "Wiederherstellen (n)" when the search changes meanwhile', async () => {
+		vi.useFakeTimers();
+		const { store, data } = setup({ newItems: [A, B, MILK] });
+		await store.load();
+		const chosen = (entries: readonly InboxItemSummary[]) =>
+			entries.map(({ id, title }) => ({ id, title }));
+		const first = deferred<InboxItemSummary>();
+		data.discard.mockReturnValueOnce(first.promise);
+		const run = store.discardMany(chosen([A, MILK, B]));
+		// The search hides B meanwhile; the run keeps its choice.
+		store.activate({ source: null, state: 'new', search: 'milch' });
+		expect(ids(store.visible)).toEqual([MILK.id]);
+		first.resolve(discarded(A, T2));
+		await run;
+		expect(data.discard.mock.calls).toEqual([[A.id], [MILK.id], [B.id]]);
+		expect(store.bulkResult).toBeNull();
+
+		const roof = discarded(item('item00000000064', { title: 'Dach' }), T1);
+		const bill = discarded(item('item00000000065', { title: 'Rechnung' }), T0);
+		data.listHandled.mockResolvedValueOnce({ items: [roof, bill], page: 1, hasMore: false });
+		store.activate({ source: null, state: 'discarded' });
+		await vi.advanceTimersByTimeAsync(0);
+		const restored = deferred<InboxItemSummary>();
+		data.restore.mockReturnValueOnce(restored.promise);
+		const back = store.restoreMany(chosen([roof, bill]));
+		// A search with other server words loads page 1 anew, without the second entry.
+		data.listHandled.mockResolvedValueOnce({ items: [roof], page: 1, hasMore: false });
+		store.activate({ source: null, state: 'discarded', search: 'dach' });
+		await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
+		expect(ids(store.handled)).toEqual([roof.id]);
+		restored.resolve(item(roof.id, { updated: T2 }));
+		await back;
+		expect(data.restore.mock.calls).toEqual([[roof.id], [bill.id]]);
+		expect(store.bulkResult).toBeNull();
 	});
 });

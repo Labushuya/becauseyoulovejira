@@ -148,8 +148,9 @@
 	// Eintrag passt zu „…“" with "Suche zurücksetzen". Escape empties the field; "Filter zurücksetzen"
 	// and "Zurücksetzen" of the sheet empty it too, and "Filter (n)" does not count it. Order, groups,
 	// the selection and the bulk actions follow the visible rows only. After the review: while page 1
-	// loads again for a changed search (`handledRefreshing`) the rows, the numbers and "Weitere laden"
-	// stay and the list is busy, "Eingang wird geladen …" stands only without a row; a paged view
+	// loads again for a changed search (`handledRefreshing`, also during its pause) the rows, the
+	// numbers and a locked "Weitere laden" stay and the list is busy, as during a new attempt over kept
+	// rows, "Eingang wird geladen …" stands only without a row; a paged view
 	// without a hit among its loaded pages says so and offers "Weitere laden"; a changed search keeps
 	// only the chosen entries it shows; back and forward show the search of the address again.
 	let {
@@ -291,6 +292,12 @@
 	);
 	/** Page 1 of a paged view loads again for a changed search; the loaded rows stay (EG-2 review). */
 	const refreshing = $derived(!showsNew && store.handledRefreshing);
+	/**
+	 * The list waits for page 1: a refresh, or a new attempt after a failure over kept rows (N-3).
+	 */
+	const busy = $derived(
+		refreshing || (!showsNew && store.handledLoad === 'loading' && rows.length > 0)
+	);
 	const unavailable = $derived(store.state === 'error' && store.error !== null);
 	const countLabel = $derived(
 		rows.length === 1 ? '1 Eintrag' : `${rows.length}${store.handledHasMore ? '+' : ''} Einträge`
@@ -1492,7 +1499,7 @@
 
 	{#if phone && rows.length > 0}
 		<!-- Cards instead of the table (MO-6): the same groups and order. -->
-		<div class="card-list" aria-busy={refreshing ? 'true' : undefined} {@attach rowMenus}>
+		<div class="card-list" aria-busy={busy ? 'true' : undefined} {@attach rowMenus}>
 			<p class="cards-caption" class:visually-hidden={showsNew && !grouped}>{caption}</p>
 			{#each groups as group (group.key)}
 				{#if grouped}
@@ -1520,7 +1527,7 @@
 		</div>
 	{:else if rows.length > 0}
 		<div class="frame" bind:this={frame}>
-			<table aria-busy={refreshing ? 'true' : undefined} {@attach rowMenus}>
+			<table aria-busy={busy ? 'true' : undefined} {@attach rowMenus}>
 				<caption id={ids.caption}
 					>{caption}{#if columnFit.fit.autoHidden.length > 0}<span class="caption-more"
 							>{MORE_COLUMNS_HINT}</span
@@ -1580,13 +1587,17 @@
 	{/if}
 	{#if !showsNew && !noLoadedHit && store.handledLoad === 'ready' && (store.handledHasMore || store.loadingMoreHandled)}
 		<!-- Below the table, so it stays reachable when every loaded row left the view; without a hit
-		     of the search the empty state offers it instead (EG-2 review). -->
+		     of the search the empty state offers it instead (EG-2 review). Locked while page 1 loads
+		     again (N-2): the next page needs the server words of its answer. -->
 		<button
 			class="more"
 			type="button"
-			disabled={store.loadingMoreHandled}
+			disabled={store.loadingMoreHandled || refreshing}
+			aria-disabled={refreshing ? 'true' : undefined}
 			aria-busy={store.loadingMoreHandled ? 'true' : undefined}
-			onclick={() => store.loadMoreHandled()}
+			onclick={() => {
+				if (!refreshing) void store.loadMoreHandled();
+			}}
 		>
 			{store.loadingMoreHandled ? 'Wird geladen …' : 'Weitere laden'}
 		</button>

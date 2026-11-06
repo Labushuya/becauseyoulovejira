@@ -64,15 +64,17 @@ export type ChosenNewEntry = Pick<
 
 /**
  * The chosen new entries the view shows, in its order (EG-2, pure since its review): the dialogs of
- * the layout get those only, so an entry the search hides, or one that left "Neu", stays out.
+ * the layout get those only, so an entry the search hides, or one that left "Neu", stays out, and so
+ * does one "＋" of the outbox the server does not have yet (`isCreated`, as `choosable` of the table).
  */
 export function chosenNewEntries(
 	visible: readonly InboxItemSummary[],
-	selected: readonly string[]
+	selected: readonly string[],
+	isCreated: (id: string) => boolean
 ): ChosenNewEntry[] {
 	const chosen = new Set(selected);
 	return visible
-		.filter((item) => item.state === 'new' && chosen.has(item.id))
+		.filter((item) => item.state === 'new' && chosen.has(item.id) && !isCreated(item.id))
 		.map(({ id, title, kind, channel, sourceDate, scope, targetProjectId, sourceMeta }) => ({
 			id,
 			title,
