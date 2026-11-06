@@ -21,6 +21,7 @@
 		type HouseholdState
 	} from '$lib/domain/household';
 	import { DISSOLVE_TEXTS } from '$lib/domain/area-move';
+	import type { ProblemEntry } from '$lib/domain/problems';
 	import { retentionText } from '$lib/domain/trash';
 	import { helpHref } from '$lib/settings-sections';
 	import type { HouseholdStore } from '$lib/stores/household.svelte';
@@ -37,7 +38,8 @@
 	// trash of the household ("purge", ADR-0059 §6) and "Austreten", since E7-4 for the owner "Haushalt
 	// auflösen …" (ADR-0061 §5). What the server would refuse is left out, not only disabled;
 	// removing, leaving and handing on ask first (no red, ADR-0009). Refusals stand on the page;
-	// results go out as flags.
+	// results go out as flags. A failure (not a refusal) has "Details" at its message, field or
+	// dialog (FP-3b, ADR-0071), also in the phone frame.
 	let { store }: { store: HouseholdStore } = $props();
 
 	type Question = { kind: 'remove' | 'transfer'; member: HouseholdMember } | { kind: 'leave' };
@@ -58,6 +60,7 @@
 	let renaming = $state(false);
 	let draft = $state('');
 	let nameError = $state('');
+	let nameErrorProblem = $state.raw<ProblemEntry | null>(null);
 	let nameInput = $state<HTMLInputElement>();
 	let renameButton = $state<HTMLElement>();
 
@@ -140,9 +143,14 @@
 		else await store.transfer(current.member);
 	}
 
+	function clearNameError() {
+		nameError = '';
+		nameErrorProblem = null;
+	}
+
 	async function startRename(name: string) {
 		draft = name;
-		nameError = '';
+		clearNameError();
 		renaming = true;
 		await tick();
 		nameInput?.focus();
@@ -160,6 +168,7 @@
 		const problem = nameProblem(draft);
 		if (problem !== '') {
 			nameError = problemText(problem);
+			nameErrorProblem = null;
 			nameInput?.focus();
 			return;
 		}
@@ -169,6 +178,7 @@
 			return;
 		}
 		nameError = outcome.message;
+		nameErrorProblem = outcome.problem ?? null;
 		await tick();
 		nameInput?.focus();
 	}
@@ -185,7 +195,11 @@
 	<p class="note" role="status">Haushalt wird geladen …</p>
 {:else if store.state !== 'ready'}
 	{#if store.message !== null}
-		<SectionMessage tone={store.state === 'error' ? 'error' : 'info'} title={store.message.title}>
+		<SectionMessage
+			tone={store.state === 'error' ? 'error' : 'info'}
+			title={store.message.title}
+			problem={store.message.problem ?? null}
+		>
 			{store.message.text}
 		</SectionMessage>
 	{/if}
@@ -200,7 +214,12 @@
 	</p>
 
 	{#if store.message !== null}
-		<SectionMessage tone="error" title={store.message.title} live>
+		<SectionMessage
+			tone="error"
+			title={store.message.title}
+			live
+			problem={store.message.problem ?? null}
+		>
 			{store.message.text}
 		</SectionMessage>
 	{/if}
@@ -222,7 +241,7 @@
 					onsubmit={rename}
 					aria-busy={store.busy?.kind === 'rename' ? 'true' : undefined}
 				>
-					<Field label="Neuer Name" error={nameError}>
+					<Field label="Neuer Name" error={nameError} problem={nameErrorProblem}>
 						{#snippet control(field)}
 							<input
 								{...field}
@@ -233,7 +252,7 @@
 								maxlength="100"
 								bind:this={nameInput}
 								bind:value={draft}
-								oninput={() => (nameError = '')}
+								oninput={clearNameError}
 								onkeydown={renameKey}
 							/>
 						{/snippet}

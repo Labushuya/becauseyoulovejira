@@ -4,6 +4,7 @@
 	import Field from '$lib/components/form/Field.svelte';
 	import SectionMessage from '$lib/components/guidance/SectionMessage.svelte';
 	import Modal from '$lib/components/overlay/Modal.svelte';
+	import ProblemDetails from '$lib/components/problems/ProblemDetails.svelte';
 	import {
 		DISSOLVE_TEXTS,
 		assigneesClearedText,
@@ -12,12 +13,14 @@
 		type DissolveMode,
 		type DissolvePreview
 	} from '$lib/domain/area-move';
+	import type { ProblemEntry } from '$lib/domain/problems';
 	import type { HouseholdStore } from '$lib/stores/household.svelte';
 
 	// "Haushalt auflösen …" (E7-4, ADR-0061 §5), only for the owner: the preview of the server (what
 	// the household holds, its members, the codes that get a suffix) and the two ways, everything into
 	// the own private area or everything deleted for good; deleting needs the name of the household
-	// typed. Modal M on the page "Einstellungen → Haushalt"; a refusal stands in the dialog. Afterwards
+	// typed. Modal M on the page "Einstellungen → Haushalt"; a refusal stands in the dialog (a failure
+	// with "Details", FP-3b, also in the phone frame, where the dialog is a page). Afterwards
 	// the household is gone: the store says so, and the area of the tab becomes "Privat". Since PL-2
 	// "übernehmen" warns when tickets or rules lose their assignee in the private area.
 	let {
@@ -46,6 +49,7 @@
 	let typed = $state('');
 	let nameError = $state('');
 	let message = $state<string | null>(null);
+	let problem = $state.raw<ProblemEntry | null>(null);
 	let nameInput = $state<HTMLInputElement>();
 
 	const busy = $derived(store.busy?.kind === 'dissolve');
@@ -73,8 +77,10 @@
 		if (outcome.ok) {
 			preview = outcome.preview;
 			message = null;
+			problem = null;
 		} else if (outcome.message !== '') {
 			message = outcome.message;
+			problem = outcome.problem ?? null;
 		}
 	}
 
@@ -82,6 +88,7 @@
 		event.preventDefault();
 		if (busy || loading || preview === null) return;
 		message = null;
+		problem = null;
 		if (mode === 'delete' && !nameConfirmed(typed, name)) {
 			nameError = DISSOLVE_TEXTS.nameError;
 			await tick();
@@ -94,6 +101,7 @@
 			return;
 		}
 		message = outcome.message === '' ? null : outcome.message;
+		problem = outcome.problem ?? null;
 	}
 </script>
 
@@ -210,6 +218,7 @@
 
 		{#if message !== null}
 			<div class="alert-error" role="alert"><ErrorIcon /><span>{message}</span></div>
+			<ProblemDetails {problem} />
 		{/if}
 	</form>
 </Modal>
