@@ -1,7 +1,9 @@
 // Page "Einstellungen → Konten" (ADR-0056 §3; ADR-0006): the accounts of the app for its
 // administrator, loaded when the page opens; one change at a time. A new or reset password stays
 // in the store until the page says it was handed over (it never goes into a flag, the address or
-// storage). Results go out as flags, refusals stay on the page.
+// storage). Results go out as flags, refusals stay on the page. Since FP-3b a failure carries its
+// entry for "Details" (ADR-0071): a failed request and a refusal "script" (an answer of another
+// form); a refusal of the route and a refused input (`invalid`) stay without it, like before.
 
 import type PocketBase from 'pocketbase';
 import {
@@ -14,8 +16,9 @@ import {
 	setHouseholdOwner,
 	type AccountsAnswer
 } from '$lib/data/accounts';
-import { toDataError } from '$lib/data/errors';
+import { detailsOf, problemDetails, scriptProblem, toDataError } from '$lib/data/errors';
 import type { RequestOptions } from '$lib/data/options';
+import type { ProblemEntry } from '$lib/domain/problems';
 import {
 	ACCOUNTS_TEXTS,
 	accountLabel,
@@ -84,12 +87,17 @@ export type AccountsBusy =
 	| { kind: 'owner' | 'delete'; householdId: string }
 	| null;
 
-/** Outcome of the dialog "Haushalt löschen": done, or the text of the refusal ('' for none). */
-export type DeleteOutcome = { ok: true } | { ok: false; message: string };
+/**
+ * Outcome of the dialog "Haushalt löschen": done, or the text of the refusal ('' for none) with the
+ * entry of a failure for "Details".
+ */
+export type DeleteOutcome = { ok: true } | { ok: false; message: string; problem?: ProblemEntry };
 
 export interface AccountsMessage {
 	title: string;
 	text: string;
+	/** The failed action behind the message (FP-3b), for "Details"; absent for a refusal. */
+	problem?: ProblemEntry | null;
 }
 
 /** A password shown once: of a new account or after a reset. */
@@ -99,9 +107,13 @@ export interface ShownPassword {
 	password: string;
 }
 
-/** Outcome of "Konto anlegen" for the form: done, or the field the server refused. */
+/**
+ * Outcome of "Konto anlegen" for the form: done, or the field the server refused, or a general text
+ * with the entry of a failure for "Details".
+ */
 export type CreateOutcome =
-	{ ok: true } | { ok: false; field: 'email' | 'name' | null; message: string };
+	| { ok: true }
+	| { ok: false; field: 'email' | 'name' | null; message: string; problem?: ProblemEntry };
 
 /** What the page says for a refusal; "missing" is the hint to restart after an update. */
 export function accountsDenial(reason: SystemDenial): AccountsMessage {
@@ -109,6 +121,18 @@ export function accountsDenial(reason: SystemDenial): AccountsMessage {
 		return { title: RESTART_NEEDED.title, text: restartNeeded('Die Seite Konten ist') };
 	}
 	return denialText(reason);
+}
+
+/** `{ problem }` of a refusal "script" (FP-3b), nothing for every other refusal. */
+function scriptDetails(answer: { kind: 'denied'; reason: SystemDenial }): {
+	problem?: ProblemEntry;
+} {
+	return detailsOf(scriptProblem(answer));
+}
+
+/** A refusal with the entry of "script"; every other refusal stays without one. */
+function refusalMessage(answer: { kind: 'denied'; reason: SystemDenial }): AccountsMessage {
+	return { ...accountsDenial(answer.reason), ...scriptDetails(answer) };
 }
 
 const FIELD_OF_PROBLEM: Readonly<Record<string, 'email' | 'name'>> = {
@@ -198,14 +222,19 @@ export class AccountsStore {
 			} else if (this.#state !== 'ready') {
 				this.#message =
 					answer.kind === 'denied'
-						? accountsDenial(answer.reason)
+						? refusalMessage(answer)
 						: { title: denialText('script').title, text: problemText(answer.problem) };
 				this.#state = 'denied';
 			}
 		} catch (error) {
 			if (this.#handled(error)) return;
 			if (this.#state !== 'ready') {
-				this.#message = { title: denialText('script').title, text: toDataError(error).message };
+				const failure = toDataError(error);
+				this.#message = {
+					title: denialText('script').title,
+					text: failure.message,
+					...problemDetails(failure)
+				};
 				this.#state = 'error';
 			}
 		}
@@ -229,7 +258,12 @@ export class AccountsStore {
 			}
 			if (answer.kind === 'denied') {
 				const message = accountsDenial(answer.reason);
-				return { ok: false, field: null, message: `${message.title}. ${message.text}` };
+				return {
+					ok: false,
+					field: null,
+					message: `${message.title}. ${message.text}`,
+					...scriptDetails(answer)
+				};
 			}
 			this.#shown = {
 				kind: 'created',
@@ -241,7 +275,8 @@ export class AccountsStore {
 			return { ok: true };
 		} catch (error) {
 			if (this.#handled(error)) return { ok: false, field: null, message: '' };
-			return { ok: false, field: null, message: toDataError(error).message };
+			const failure = toDataError(error);
+			return { ok: false, field: null, message: failure.message, ...problemDetails(failure) };
 		} finally {
 			this.#busy = null;
 		}
@@ -318,20 +353,20 @@ export class AccountsStore {
 	async householdDeletePreview(
 		household: OrphanHousehold,
 		signal?: AbortSignal
-	): Promise<{ ok: true; counts: HouseholdCounts } | { ok: false; message: string }> {
+	): Promise<{ ok: true; counts: HouseholdCounts } | Extract<DeleteOutcome, { ok: false }>> {
 		const remove = this.#data.deleteHousehold;
 		if (remove === undefined || !this.#session.ensureValid()) return { ok: false, message: '' };
 		try {
 			const answer = await remove(household.id, { preview: true }, { signal });
 			if (answer.kind === 'ok') return { ok: true, counts: answer.value.counts };
-			return { ok: false, message: this.#refusalText(answer) };
+			return this.#refusalOutcome(answer);
 		} catch (error) {
 			const failure = toDataError(error, signal);
 			if (failure.kind === 'session') this.#session.logout();
-			return {
-				ok: false,
-				message: failure.kind === 'aborted' || failure.kind === 'session' ? '' : failure.message
-			};
+			if (failure.kind === 'aborted' || failure.kind === 'session') {
+				return { ok: false, message: '' };
+			}
+			return { ok: false, message: failure.message, ...problemDetails(failure) };
 		}
 	}
 
@@ -355,23 +390,27 @@ export class AccountsStore {
 			);
 			if (answer.kind !== 'ok') {
 				if (answer.kind === 'invalid' && answer.problem !== 'household-name') void this.load();
-				return { ok: false, message: this.#refusalText(answer) };
+				return this.#refusalOutcome(answer);
 			}
 			if (answer.value.list !== null) this.#applyList(answer.value.list);
 			this.#flags.show({ tone: 'success', title: ACCOUNTS_TEXTS.deleteDone(household.name) });
 			return { ok: true };
 		} catch (error) {
 			if (this.#handled(error)) return { ok: false, message: '' };
-			return { ok: false, message: toDataError(error).message };
+			const failure = toDataError(error);
+			return { ok: false, message: failure.message, ...problemDetails(failure) };
 		} finally {
 			this.#busy = null;
 		}
 	}
 
-	#refusalText(answer: Exclude<AccountsAnswer<unknown>, { kind: 'ok' }>): string {
-		if (answer.kind === 'invalid') return problemText(answer.problem);
+	/** The text of a refusal for the dialog, with the entry of "script" (FP-3b). */
+	#refusalOutcome(
+		answer: Exclude<AccountsAnswer<unknown>, { kind: 'ok' }>
+	): Extract<DeleteOutcome, { ok: false }> {
+		if (answer.kind === 'invalid') return { ok: false, message: problemText(answer.problem) };
 		const message = accountsDenial(answer.reason);
-		return `${message.title}. ${message.text}`;
+		return { ok: false, message: `${message.title}. ${message.text}`, ...scriptDetails(answer) };
 	}
 
 	#applyList(list: AccountList): void {
@@ -393,12 +432,17 @@ export class AccountsStore {
 			if (answer.kind === 'ok') return answer.value;
 			this.#actionMessage =
 				answer.kind === 'denied'
-					? accountsDenial(answer.reason)
+					? refusalMessage(answer)
 					: { title: 'Nicht möglich', text: problemText(answer.problem) };
 			return null;
 		} catch (error) {
 			if (!this.#handled(error)) {
-				this.#actionMessage = { title: 'Nicht möglich', text: toDataError(error).message };
+				const failure = toDataError(error);
+				this.#actionMessage = {
+					title: 'Nicht möglich',
+					text: failure.message,
+					...problemDetails(failure)
+				};
 			}
 			return null;
 		} finally {
