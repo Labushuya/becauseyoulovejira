@@ -285,6 +285,7 @@ describe('help page (EH-9)', () => {
 			'Warum sehe ich im Admin-Bereich andere Konten?',
 			'Wie ändere ich Spalten und ihre Breite?',
 			'Wie wirken die Karten über der Liste?',
+			'Wie durchsuche ich den Eingang?',
 			'Was kann ich schon beim Anlegen eines Tickets einstellen?',
 			'Wie arbeite ich mit Unteraufgaben?',
 			'Wie hole ich ein gelöschtes Ticket zurück?',
@@ -609,6 +610,35 @@ describe('help page (EH-9)', () => {
 		expect(content).toMatch(
 			/„Quelle hinzufügen“ → „Eintrag aus dem Eingang …“ und bei den Quellen von „Neues Ticket“; sie durchsucht alle neuen Einträge des Eingangs/
 		);
+	});
+
+	it('explains the search of the inbox: what it reads, not the content, the hits, offline and resetting (EG-2)', () => {
+		render(Page);
+		const section = screen.getByRole('region', { name: 'Häufige Fragen' });
+		const question = [...section.querySelectorAll('details')].find(
+			(details) =>
+				details.querySelector('summary')?.textContent?.trim() === 'Wie durchsuche ich den Eingang?'
+		);
+		const content = text(question as HTMLElement);
+		expect(content).toMatch(
+			/„Einträge durchsuchen“, am PC in der Zeile der Chips, am Handy in einer eigenen Zeile/
+		);
+		expect(content).toMatch(
+			/Titel, Kanal und Verbindung \(„Postfach · Gmail Arbeit“\), Datum, Absender, Chat oder Adresse und bei verknüpften Einträgen Key und Titel des Tickets/
+		);
+		expect(content).toMatch(
+			/Der Inhalt eines Eintrags, etwa der Text einer Mail, wird nicht durchsucht\./
+		);
+		expect(content).toMatch(/„arzte“ findet „Ärzte“, „strasse“ findet „Straße“/);
+		expect(content).toMatch(/„3 von 12“, in „Verknüpft“, „Verworfen“ und „Alle“ mit „\+“/);
+		expect(content).toMatch(/\?q=…/);
+		expect(content).toMatch(/auch ohne Verbindung/);
+		expect(content).toMatch(/bleiben die geladenen Einträge stehen und werden durchsucht/);
+		expect(content).toMatch(
+			/„Filter zurücksetzen“ und „Zurücksetzen“ unter „Filter“ am Handy leeren auch die Suche/
+		);
+		expect(content).toMatch(/„Kein Eintrag passt zu …“ mit „Suche zurücksetzen“/);
+		expect(content).toMatch(/wirken nur auf die Einträge, die zu sehen sind/);
 	});
 
 	it('explains status, due date and inheritance of new sub-tasks, the status menu and the series line (UT-1)', () => {

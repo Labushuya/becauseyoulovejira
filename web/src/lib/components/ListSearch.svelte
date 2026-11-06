@@ -5,7 +5,9 @@
 	// the field's description), said in a polite live region once typing pauses, like the filter of
 	// ChipList and the ticket picker. Escape empties a field that is not empty and is consumed; an
 	// empty one leaves Escape to the panel or dialog around it. The owner filters (`searchWords`) and
-	// names the hits; `onsearch` follows every change by the user, Escape included.
+	// names the hits; `onsearch` follows every change by the user, Escape included. Since EG-2 the
+	// search of the inbox uses it too, bound to the address: `maxlength` keeps the text within the
+	// limit of the URL, `onblur` lets the owner show the address again once the field is left.
 	let {
 		query = $bindable(''),
 		label,
@@ -13,8 +15,10 @@
 		count,
 		announcement,
 		controls,
+		maxlength,
 		input = $bindable(),
-		onsearch
+		onsearch,
+		onblur
 	}: {
 		query?: string;
 		/** Name of the field for screen readers, e.g. "Quellen durchsuchen". */
@@ -26,9 +30,13 @@
 		announcement: string;
 		/** IDs of the lists the search narrows. */
 		controls?: string;
+		/** Longest text the field takes; without it, any length. */
+		maxlength?: number;
 		/** The field, for the owner to put the focus back into it. */
 		input?: HTMLInputElement;
 		onsearch?: () => void;
+		/** The field lost the focus. */
+		onblur?: () => void;
 	} = $props();
 
 	/** Pause before the hits are said, so typing is not talked over (as ChipList and TicketPicker). */
@@ -70,12 +78,14 @@
 			autocomplete="off"
 			spellcheck="false"
 			{placeholder}
+			{maxlength}
 			aria-controls={controls}
 			aria-describedby={count === '' ? undefined : ids.count}
 			bind:value={query}
 			bind:this={input}
 			oninput={() => onsearch?.()}
 			{onkeydown}
+			onblur={() => onblur?.()}
 		/>
 	</div>
 	{#if count !== ''}

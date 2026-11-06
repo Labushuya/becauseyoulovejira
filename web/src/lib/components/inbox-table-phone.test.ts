@@ -144,11 +144,26 @@ async function setup(
 	} satisfies InboxData;
 	const flags = new FlagStore();
 	const projects = options.projects ?? [];
+	// The names of the connections of the app layout: the cards show them, the search finds them (EG-2).
+	const names = options.withNames
+		? new ConnectionNamesStore(
+				{
+					list: async () => [{ id: 'conn00000000003', label: 'Gmail Arbeit' }],
+					subscribe: async () => async () => undefined,
+					reconnected: async () => async () => undefined
+				},
+				{ ensureValid: () => true, logout: vi.fn() },
+				{ health: new LiveHealth() }
+			)
+		: null;
+	await names?.load();
 	const store = new InboxStore(
 		data,
 		{ ensureValid: () => true, logout: vi.fn() },
 		flags,
-		() => projects
+		() => projects,
+		null,
+		names
 	);
 	store.activate(options.query ?? { source: null, state: 'new' });
 	const onbulk = vi.fn();
@@ -170,17 +185,7 @@ async function setup(
 		tools
 	};
 	let view;
-	if (options.withNames) {
-		const names = new ConnectionNamesStore(
-			{
-				list: async () => [{ id: 'conn00000000003', label: 'Gmail Arbeit' }],
-				subscribe: async () => async () => undefined,
-				reconnected: async () => async () => undefined
-			},
-			{ ensureValid: () => true, logout: vi.fn() },
-			{ health: new LiveHealth() }
-		);
-		await names.load();
+	if (names !== null) {
 		view = render(ConnectionNamesHarness, { props: { names, component: InboxTable, props } });
 	} else {
 		view = render(InboxTable, { props });
@@ -555,6 +560,94 @@ describe('the inbox as cards in the phone frame (MO-6)', () => {
 		const list = view.container.querySelector('.card-list') as HTMLElement;
 		expect(files).not.toBeNull();
 		expect(list.compareDocumentPosition(files) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+	});
+});
+
+// EG-2 (ADR-0014 addendum EG-2, decision E2): the search in its own row over the full width.
+describe('the search in the phone frame (EG-2)', () => {
+	const field = () =>
+		screen.getByRole<HTMLInputElement>('searchbox', { name: 'Einträge durchsuchen' });
+	const titles = () =>
+		[...document.querySelectorAll<HTMLElement>('li[data-item-id] .card-title')].map((title) =>
+			title.textContent?.trim()
+		);
+
+	it('stands in its own row below "Erfassen · Filter · •••", narrows the cards and does not count as filter', async () => {
+		useWindow(true, true);
+		mocks.page.url = new URL('http://localhost:3000/eingang?q=rechnung');
+		const { view, store } = await setup({
+			withNames: true,
+			query: { source: null, state: 'new', search: 'rechnung' }
+		});
+		const tools = view.container.querySelector('.phone-tools') as HTMLElement;
+		const row = view.container.querySelector('.phone-search') as HTMLElement;
+		expect(row.contains(field())).toBe(true);
+		expect(tools.contains(field())).toBe(false);
+		expect(tools.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+		expect(titles()).toEqual(['Rechnung September']);
+		expect(screen.getByText('1 von 3')).toBeTruthy();
+		// "Filter (n)" counts source and target only.
+		expect(within(tools).getByRole('button', { name: 'Filter' })).toBeTruthy();
+
+		// The name of the connection finds the card as well (as the card shows it).
+		store.activate({ source: null, state: 'new', search: 'gmail arbeit' });
+		await tick();
+		expect(titles()).toEqual(['Rechnung September']);
+		store.activate({ source: 'mail', state: 'new', search: 'gmail' });
+		await tick();
+		expect(within(tools).getByRole('button', { name: 'Filter, 1 aktiv' })).toBeTruthy();
+	});
+
+	it('resets the search with "Zurücksetzen" of the sheet, which a search alone unlocks', async () => {
+		useWindow(true, true);
+		mocks.page.url = new URL('http://localhost:3000/eingang?gruppe=zielprojekt&q=milch');
+		await setup({ query: { source: null, state: 'new', grouped: true, search: 'milch' } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Filter' }));
+		await tick();
+		const sheet = screen.getByRole('dialog', { name: 'Filter' });
+		const reset = within(sheet).getByRole('button', { name: 'Zurücksetzen' });
+		expect(reset.getAttribute('aria-disabled')).toBeNull();
+		expect(within(sheet).getByRole('button', { name: '1 Eintrag anzeigen' })).toBeTruthy();
+		await fireEvent.click(reset);
+		expect(mocks.goto).toHaveBeenLastCalledWith('/eingang?gruppe=zielprojekt', {
+			keepFocus: true,
+			noScroll: true
+		});
+	});
+
+	it('shows "Kein Eintrag passt zu …" with "Suche zurücksetzen" and chooses the visible cards only', async () => {
+		useWindow(true, true);
+		mocks.page.url = new URL('http://localhost:3000/eingang?q=paket');
+		const { store } = await setup({ query: { source: null, state: 'new', search: 'paket' } });
+		expect(screen.getByRole('heading', { name: 'Kein Eintrag passt zu „paket“' })).toBeTruthy();
+		await fireEvent.click(screen.getByRole('button', { name: 'Suche zurücksetzen' }));
+		expect(mocks.goto).toHaveBeenLastCalledWith('/eingang', { keepFocus: true, noScroll: true });
+		expect(document.activeElement).toBe(field());
+
+		store.activate({ source: null, state: 'new', search: 'artikel' });
+		await tick();
+		const menu = menuOf(screen.getByRole('button', { name: 'Weitere Aktionen der Liste' }));
+		await fireEvent.click(within(menu).getByRole('menuitem', { name: 'Auswählen', hidden: true }));
+		await tick();
+		const bar = screen.getByRole('group', { name: 'Auswahl' });
+		await fireEvent.click(
+			within(bar).getByRole('checkbox', { name: 'Alle angezeigten Einträge auswählen' })
+		);
+		expect(screen.getByRole('region', { name: '1 Eintrag ausgewählt' })).toBeTruthy();
+	});
+
+	it('gives the row the full width inside the block of the frame', () => {
+		const source = readFileSync(join(import.meta.dirname, 'InboxTable.svelte'), 'utf8');
+		const start = source.indexOf('@media (max-width: 39.99rem) {');
+		const frame = source.slice(start);
+		const FRAME = ":global(:root[data-mobile-layout='on'])";
+		expect(frame).toMatch(
+			new RegExp(
+				`${FRAME.replace(/[()[\]]/g, '\\$&')} \\.phone-search :global\\(\\.search-field\\) \\{\\s*width: 100%;`
+			)
+		);
+		// No rule of the row outside the block: the PC stays as it was.
+		expect(source.slice(0, start).includes('.phone-search')).toBe(false);
 	});
 });
 

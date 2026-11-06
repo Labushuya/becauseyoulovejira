@@ -175,3 +175,11 @@ export function noSourceMatchText(query: string): string {
 export function noEntryMatchText(query: string): string {
 	return `Kein Eintrag passt zu „${query.trim()}“.`;
 }
+
+/**
+ * Heading of the empty state of the inbox without a hit (EG-2), without a full stop like every
+ * heading of an empty state: "Kein Eintrag passt zu „Rechnung“".
+ */
+export function noEntryMatchTitle(query: string): string {
+	return `Kein Eintrag passt zu „${query.trim()}“`;
+}

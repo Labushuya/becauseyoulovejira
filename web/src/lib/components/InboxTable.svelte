@@ -12,6 +12,7 @@
 		CHANNEL_LABELS,
 		KIND_LABELS,
 		VIEW_LABELS,
+		linkedTicketOf,
 		type InboxItemSummary,
 		type InboxView
 	} from '$lib/domain/inbox';
@@ -27,12 +28,14 @@
 		bulkSkippedTitle,
 		type InboxBulkKind
 	} from '$lib/domain/inbox-bulk';
-	import { type InboxQuery } from '$lib/domain/inbox-query';
+	import { parseInboxQuery, type InboxQuery } from '$lib/domain/inbox-query';
 	import { MORE_COLUMNS_HINT } from '$lib/domain/labels';
+	import { SEARCH_MAX_LENGTH } from '$lib/domain/list-query';
 	import type { ProblemEntry } from '$lib/domain/problems';
 	import type { Project } from '$lib/domain/project';
 	import { projectChoiceLabel, treeOrder } from '$lib/domain/project-tree';
 	import { SOURCE_FAMILY_CHIPS, SOURCE_FAMILY_LABELS, type SourceFamily } from '$lib/domain/source';
+	import { noEntryMatchText, noEntryMatchTitle, searchHitsText } from '$lib/domain/source-search';
 	import { canLeaveTicket, canSavePage, isMainSource } from '$lib/domain/sources';
 	import { SYNC_OFFLINE_LABEL } from '$lib/domain/sync-all';
 	import {
@@ -63,6 +66,7 @@
 	import FilterButton from './FilterButton.svelte';
 	import FilterSheet from './FilterSheet.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
+	import ListSearch from './ListSearch.svelte';
 	import MoveSourceDialog from './MoveSourceDialog.svelte';
 	import PendingMark from './offline/PendingMark.svelte';
 	import ProblemDetails from './problems/ProblemDetails.svelte';
@@ -129,6 +133,14 @@
 	// that leaves the state of the view drops out; progress and result stand only in the views with a
 	// selection; while a run goes on, every bulk action on the PC names the progress as its reason and
 	// a click or Enter says so in a flag; a failure of the result offers "Details" (FP-1).
+	// The search (EG-2, ADR-0014 addendum EG-2): "Einträge durchsuchen" (ListSearch) in the row of the
+	// chips on the PC, in its own row over the full width below "Erfassen · Filter · •••" in the phone
+	// frame; bound to `q` of the address like the search of "Aufgaben" (the typed text while the field
+	// has the focus, `goto` with replaceState). The store narrows the rows; next to the field stand the
+	// hits ("3 von 12", "3 von 50+" while further pages wait), without a hit the empty state "Kein
+	// Eintrag passt zu „…“" with "Suche zurücksetzen". Escape empties the field; "Filter zurücksetzen"
+	// and "Zurücksetzen" of the sheet empty it too, and "Filter (n)" does not count it. Order, groups,
+	// the selection and the bulk actions follow the visible rows only.
 	let {
 		store,
 		flags,
@@ -270,6 +282,23 @@
 	const countLabel = $derived(
 		rows.length === 1 ? '1 Eintrag' : `${rows.length}${store.handledHasMore ? '+' : ''} Einträge`
 	);
+	/**
+	 * The hits of the search next to its field (EG-2): "3 von 12" of the rows it narrows, in a paged
+	 * view "3 von 50+" while further pages wait; nothing without a search or while loading.
+	 */
+	const searchCount = $derived(
+		store.searching && ready
+			? searchHitsText(rows.length, store.searchTotal, !showsNew && store.handledHasMore)
+			: ''
+	);
+	/** What is said once typing pauses: the hits, or that no entry fits. */
+	const searchAnnouncement = $derived(
+		searchCount === ''
+			? ''
+			: rows.length === 0 && !store.handledHasMore
+				? noEntryMatchText(query.search ?? '')
+				: searchCount
+	);
 	const caption = $derived(
 		`${
 			showsNew
@@ -318,10 +347,39 @@
 		await goto(withInboxQuery(page.url, next), { keepFocus: true, noScroll: true });
 	}
 
-	/** "Filter zurücksetzen": source and target project; state and grouping stay. */
+	/** "Filter zurücksetzen": source, target project and the search (EG-2); state and grouping stay. */
 	async function clearFilters() {
-		await navigate({ ...query, source: null, target: null });
+		typed = null;
+		await navigate({ ...query, source: null, target: null, search: null });
 		heading?.focus();
+	}
+
+	/** The search field (EG-2), for the focus after "Suche zurücksetzen". */
+	let searchInput = $state<HTMLInputElement>();
+	/** Text in the search field while it has the focus; else the field shows the address. */
+	let typed = $state<string | null>(null);
+	const searchValue = $derived(typed ?? query.search ?? '');
+	const searching = $derived(store.searching);
+
+	/**
+	 * Typing replaces the entry of the history (as in "Aufgaben", FilterBar): back does not go through
+	 * every letter. The address keeps the trimmed text; the store narrows after it.
+	 */
+	async function search(text: string) {
+		typed = text;
+		const current = parseInboxQuery(page.url.searchParams);
+		await goto(withInboxQuery(page.url, { ...current, search: text }), {
+			replaceState: true,
+			keepFocus: true,
+			noScroll: true
+		});
+	}
+
+	/** "Suche zurücksetzen" of the empty state: the search goes, the focus goes into its field. */
+	async function clearSearch() {
+		typed = null;
+		await navigate({ ...query, search: null });
+		searchInput?.focus();
 	}
 
 	function toggle(id: string, on: boolean) {
@@ -611,13 +669,17 @@
 	/** Names of the connections (ADR-0026, addendum KK-3), as the panel names the source. */
 	const connectionNames = findConnectionNames();
 
-	/** The filter sheet and the number of the filters "Zurücksetzen" clears (source, target). */
+	/**
+	 * The filter sheet and the number of its filters (source, target). The search stands in its own
+	 * row and does not count, like in "Aufgaben" (`activeFilterCount`); "Zurücksetzen" empties it too.
+	 */
 	let filtersOpen = $state(false);
 	const filterCount = $derived((query.source !== null ? 1 : 0) + (target !== null ? 1 : 0));
 
 	/** "Zurücksetzen" of the sheet: like "Filter zurücksetzen", the sheet stays open. */
 	function resetInSheet() {
-		void navigate({ ...query, source: null, target: null });
+		typed = null;
+		void navigate({ ...query, source: null, target: null, search: null });
 	}
 
 	// "Auswählen" in the phone frame (MO-6, the way of MO-3): the boxes of the selection show on the
@@ -724,8 +786,7 @@
 	{@const pending = store.isPending(item.id)}
 	{@const sourceDate = sourceDateOf(item)}
 	{@const arrival = byArrival ? item.created : (item.handledAt ?? item.created)}
-	{@const linkedTicket =
-		item.state === 'converted' && item.ticket?.id === item.ticketId ? item.ticket : null}
+	{@const linkedTicket = linkedTicketOf(item)}
 	<tr
 		class="row"
 		class:active={item.id === activeId}
@@ -859,8 +920,7 @@
 	{@const pending = store.isPending(item.id)}
 	{@const sourceDate = sourceDateOf(item)}
 	{@const arrival = byArrival ? item.created : (item.handledAt ?? item.created)}
-	{@const linkedTicket =
-		item.state === 'converted' && item.ticket?.id === item.ticketId ? item.ticket : null}
+	{@const linkedTicket = linkedTicketOf(item)}
 	{@const targetLabel = targetsReady ? targetText(targetOfItem(item, projects)) : ''}
 	{@const choosing = selecting && choosable(item)}
 	<!-- The title link is the keyboard target of the card; the tap on the card is a shortcut for it. -->
@@ -1152,6 +1212,25 @@
 	<div class="sheet-filters">{@render filterParts()}</div>
 {/snippet}
 
+<!-- "Filter zurücksetzen" beside "Suche zurücksetzen" in the empty state of a search (EG-2). -->
+{#snippet resetFiltersAction()}
+	<button class="button-subtle" type="button" onclick={clearFilters}>Filter zurücksetzen</button>
+{/snippet}
+
+<!-- "Einträge durchsuchen" (EG-2): in the row of the chips on the PC, in its own row in the phone frame. -->
+{#snippet searchField()}
+	<ListSearch
+		bind:query={() => searchValue, (text) => void search(text)}
+		bind:input={searchInput}
+		label="Einträge durchsuchen"
+		placeholder="Titel, Absender, Kanal oder Datum"
+		maxlength={SEARCH_MAX_LENGTH}
+		count={searchCount}
+		announcement={searchAnnouncement}
+		onblur={() => (typed = null)}
+	/>
+{/snippet}
+
 <!-- The row of the view in the phone frame (MO-6): "Erfassen", "Filter (n)" and the menu of the list. -->
 {#snippet phoneTools()}
 	<a class="button-secondary" href={captureHref(page.url)}>Erfassen</a>
@@ -1193,6 +1272,8 @@
 	</SectionBar>
 
 	{#if phone}
+		<!-- The search in its own row over the full width, below the row of the view (EG-2, E2). -->
+		<div class="phone-search">{@render searchField()}</div>
 		{#if syncAll !== null}
 			<!-- The status of "Alle Kanäle jetzt abrufen" from the menu of the list; the result is a flag. -->
 			<p class="sync-status" role="status">{syncAll.running ? syncAll.status : ''}</p>
@@ -1216,6 +1297,7 @@
 	{:else}
 		<div class="chips">
 			{@render filterParts()}
+			{@render searchField()}
 		</div>
 
 		{@render tools?.()}
@@ -1253,7 +1335,22 @@
 	{:else if !showsNew && store.handledLoad === 'error' && store.handledError}
 		{@render failure(store.handledError)}
 	{:else if ready && rows.length === 0 && !store.handledHasMore}
-		{#if filtered}
+		{#if searching}
+			<!-- No hit (EG-2): the search goes first; with filters set, "Filter zurücksetzen" empties both. -->
+			<EmptyState
+				size="narrow"
+				icon="search"
+				title={noEntryMatchTitle(query.search ?? '')}
+				description="Gesucht wird in Titel, Absender, Chat, Adresse, Kanal, Datum und Ticket, nicht im Inhalt."
+				secondary={filtered ? resetFiltersAction : undefined}
+			>
+				{#snippet primary()}
+					<button class="button-primary" type="button" onclick={clearSearch}>
+						Suche zurücksetzen
+					</button>
+				{/snippet}
+			</EmptyState>
+		{:else if filtered}
 			<EmptyState
 				size="narrow"
 				icon="search"
@@ -1422,7 +1519,7 @@
 {#if phone && filtersOpen}
 	<FilterSheet
 		count={ready && !store.handledHasMore ? rows.length : null}
-		{filtered}
+		filtered={filtered || searching}
 		onreset={resetInSheet}
 		onclose={() => (filtersOpen = false)}
 		filters={sheetFilters}
@@ -1768,6 +1865,19 @@
 	 * 44 px. Off, or from 40rem, the table stays as it was.
 	 */
 	@media (max-width: 39.99rem) {
+		/* The search in its own row over the full width (EG-2, like "Erledigte"); 44 px from base.css. */
+		:global(:root[data-mobile-layout='on']) .phone-search {
+			margin-bottom: 0.75rem;
+		}
+
+		:global(:root[data-mobile-layout='on']) .phone-search :global(.list-search) {
+			flex-basis: 100%;
+		}
+
+		:global(:root[data-mobile-layout='on']) .phone-search :global(.search-field) {
+			width: 100%;
+		}
+
 		:global(:root[data-mobile-layout='on']) .sync-status {
 			margin: 0;
 			font-size: var(--font-size-small);

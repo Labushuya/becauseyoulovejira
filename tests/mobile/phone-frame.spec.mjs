@@ -66,6 +66,9 @@
 // focus on "Nein", no database of the outbox before the answer) and sees it no more in a new document;
 // `switchOn` stores only the answer "yes" ahead; the case of the phone with the view of today stores
 // "off" and chooses "Automatisch"; the PC stores nothing and gets no question and no database.
+// Since EG-2 (ADR-0014 addendum EG-2) without a case of its own: in the case of the inbox the search
+// in its own row over the full width below "Erfassen · Filter · •••" (44 px; typing narrows the cards
+// and writes `q` into the address, Escape empties it); on the PC the field beside the chips.
 //
 // The phone stands for another device in the home network (header X-Byl-Test-Remote-Address of the
 // test hooks, only in instances of the harness), so the pages of the administrator are "nur am PC".
@@ -1560,6 +1563,23 @@ test.describe('small phone with the switch on: the inbox (MO-6)', () => {
 		await sheet.getByRole('button', { name: /Einträge? anzeigen$/ }).click();
 		await expect(sheet).toHaveCount(0);
 
+		// EG-2: the search in its own row over the full width below the row of the view, 44 px; typing
+		// narrows the cards and writes `q` into the address, Escape empties it.
+		const search = page.getByRole('searchbox', { name: 'Einträge durchsuchen' });
+		await expectTarget(search);
+		expect((await search.boundingBox()).y).toBeGreaterThan((await tools.boundingBox()).y);
+		const searchRow = await page.locator('.phone-search .search-field').boundingBox();
+		const cardList = await page.locator('.card-list').boundingBox();
+		expect(Math.abs(searchRow.width - cardList.width)).toBeLessThanOrEqual(1);
+		await search.fill(note.title);
+		await expect(page).toHaveURL(/[?&]q=Paket\+abholen\+/);
+		await expect(cardOf(mail.title)).toHaveCount(0);
+		await expect(cardOf(note.title)).toBeVisible();
+		await search.press('Escape');
+		await expect(search).toHaveValue('');
+		await expect(page).toHaveURL(`${url}/eingang`);
+		await expect(cardOf(mail.title)).toBeVisible();
+
 		// A tap on the card opens the entry as a page: the arrow instead of ×, nothing scrolls sideways.
 		const entries = () => page.evaluate(() => history.length);
 		const start = await entries();
@@ -2074,6 +2094,7 @@ test.describe('PC with the default "Automatisch"', () => {
 		await expect(page.locator('li[data-item-id]')).toHaveCount(0);
 		await expect(page.getByRole('group', { name: 'Quelle' })).toBeVisible();
 		await expect(page.getByRole('group', { name: 'Zustand' })).toBeVisible();
+		await expect(page.locator('.chips').getByRole('searchbox', { name: 'Einträge durchsuchen' })).toBeVisible();
 		await expect(page.getByRole('button', { name: /^Gesammelt umwandeln/ })).toBeVisible();
 		await expect(page.getByRole('button', { name: 'Spalten' })).toBeVisible();
 		await expect(page.getByRole('button', { name: 'Filter', exact: true })).toHaveCount(0);

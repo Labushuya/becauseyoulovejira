@@ -14,10 +14,13 @@ import type { Project } from '$lib/domain/project';
 import type { TicketSummary } from '$lib/domain/ticket';
 import { FLAG_DURATION_MS, FlagStore } from '$lib/stores/flags.svelte';
 import { InboxStore, type InboxData } from '$lib/stores/inbox.svelte';
+import { SEARCH_MAX_LENGTH } from '$lib/domain/list-query';
+import { loosePattern } from '$lib/domain/ticket-picker';
 import { resize, useResizeObserverStub } from '$lib/test/resize-observer-stub';
 import InboxTable from './InboxTable.svelte';
 import FlagGroup from './overlay/FlagGroup.svelte';
 import source from './InboxTable.svelte?raw';
+import inboxLayout from '../../routes/(app)/eingang/+layout.svelte?raw';
 
 const mocks = vi.hoisted(() => ({
 	goto: vi.fn(async () => undefined),
@@ -1176,5 +1179,125 @@ describe('target project of the entries (ADR-0049)', () => {
 		expect(data.listHandled.mock.calls.at(-1)?.[2]).toMatchObject({
 			target: { project: HAUS.id }
 		});
+	});
+});
+
+// EG-2 (ADR-0014 addendum EG-2): the search of the inbox in the row of the chips, bound to `q`.
+describe('search (EG-2)', () => {
+	const field = () =>
+		screen.getByRole<HTMLInputElement>('searchbox', { name: 'Einträge durchsuchen' });
+	const shown = () => screen.queryAllByRole('rowheader').map((cell) => cell.textContent?.trim());
+	const box = (title: string) =>
+		screen.getByRole<HTMLInputElement>('checkbox', { name: `Eintrag „${title}“ auswählen` });
+	const REPLACE = { replaceState: true, keepFocus: true, noScroll: true };
+
+	it('stands in the row of the chips, writes `q` with replaceState, names the hits and empties with Escape', async () => {
+		const { store } = setup();
+		await table();
+		const search = field();
+		expect(search.closest('.chips')).not.toBeNull();
+		expect(search.placeholder).toBe('Titel, Absender, Kanal oder Datum');
+		expect(search.maxLength).toBe(SEARCH_MAX_LENGTH);
+
+		await fireEvent.input(search, { target: { value: 'kaufen Milch ' } });
+		expect(mocks.goto).toHaveBeenLastCalledWith('/eingang?q=kaufen+Milch', REPLACE);
+		// The layout follows the address (eingang/+layout.svelte); the store narrows.
+		mocks.page.url = new URL('http://localhost:3000/eingang?q=kaufen+Milch');
+		store.activate({ source: null, state: 'new', search: 'kaufen Milch' });
+		await tick();
+		expect(shown()).toEqual(['Milch kaufen']);
+		// The typed text stays while the field has the focus.
+		expect(search.value).toBe('kaufen Milch ');
+		const count = screen.getByText('1 von 3');
+		expect(search.getAttribute('aria-describedby')).toBe(count.id);
+		// The number "neu" of the switch stays the number of every new entry.
+		expect(store.newCount).toBe(3);
+
+		await fireEvent.keyDown(search, { key: 'Escape' });
+		expect(mocks.goto).toHaveBeenLastCalledWith('/eingang', REPLACE);
+		expect(search.value).toBe('');
+	});
+
+	it('shows the address again once the field is left', async () => {
+		mocks.page.url = new URL('http://localhost:3000/eingang?q=Milch');
+		setup({ query: { source: null, state: 'new', search: 'Milch' } });
+		await table();
+		const search = field();
+		expect(search.value).toBe('Milch');
+		await fireEvent.input(search, { target: { value: 'Milch  ' } });
+		expect(search.value).toBe('Milch  ');
+		await fireEvent.blur(search);
+		expect(search.value).toBe('Milch');
+	});
+
+	it('says that no entry fits and resets the search, with the focus in its field', async () => {
+		mocks.page.url = new URL('http://localhost:3000/eingang?q=Zahnarzt');
+		setup({ query: { source: null, state: 'new', search: 'Zahnarzt' } });
+		const heading = await screen.findByRole('heading', {
+			name: 'Kein Eintrag passt zu „Zahnarzt“'
+		});
+		expect(heading).toBeTruthy();
+		expect(screen.queryByRole('table')).toBeNull();
+		expect(screen.getByText('0 von 3')).toBeTruthy();
+		// Without a filter only the search goes.
+		expect(screen.queryByRole('button', { name: 'Filter zurücksetzen' })).toBeNull();
+		await fireEvent.click(screen.getByRole('button', { name: 'Suche zurücksetzen' }));
+		expect(mocks.goto).toHaveBeenLastCalledWith('/eingang', { keepFocus: true, noScroll: true });
+		expect(document.activeElement).toBe(field());
+	});
+
+	it('empties the search with "Filter zurücksetzen" as well', async () => {
+		mocks.page.url = new URL('http://localhost:3000/eingang?quelle=mail&zustand=neu&q=Milch');
+		setup({ query: { source: 'mail', state: 'new', search: 'Milch' } });
+		await screen.findByRole('heading', { name: 'Kein Eintrag passt zu „Milch“' });
+		await fireEvent.click(screen.getByRole('button', { name: 'Filter zurücksetzen' }));
+		expect(lastTarget()).toBe('/eingang');
+	});
+
+	it('names the hits of a paged view with "+" while further pages wait, asked with the server words', async () => {
+		mocks.page.url = new URL('http://localhost:3000/eingang?zustand=verworfen&q=alt');
+		const old = (id: string, title: string) =>
+			item(id, { title, state: 'discarded', handledAt: '2026-09-20 10:00:00.000Z' });
+		const { data } = setup({
+			query: { source: null, state: 'discarded', search: 'alt' },
+			handled: [old('item00000000008', 'Alt'), old('item00000000009', 'Neuer Brief')]
+		});
+		await vi.waitFor(() => expect(screen.getByText('1 von 2+')).toBeTruthy());
+		expect(shown()).toEqual(['Alt']);
+		expect(data.listHandled.mock.calls.at(-1)?.[2]).toMatchObject({
+			patterns: [loosePattern('alt')]
+		});
+		expect(screen.getByRole('button', { name: 'Weitere laden' })).toBeTruthy();
+	});
+
+	it('chooses and acts on the visible entries only', async () => {
+		const { store, data } = setup({ onlink: vi.fn() });
+		await table();
+		const narrow = async (search: string | null) => {
+			store.activate({ source: null, state: 'new', search });
+			await tick();
+		};
+		const all = () => screen.getByRole('checkbox', { name: 'Alle angezeigten Einträge auswählen' });
+
+		await narrow('milch');
+		await fireEvent.click(all());
+		expect(screen.getByRole('button', { name: 'Verwerfen (1)' })).toBeTruthy();
+		await narrow(null);
+		expect(screen.getByRole('button', { name: 'Verwerfen (1)' })).toBeTruthy();
+		expect(box('Artikel').checked).toBe(false);
+
+		await fireEvent.click(all());
+		expect(screen.getByRole('button', { name: 'Verwerfen (3)' })).toBeTruthy();
+		// The search hides two chosen entries: every bulk action takes the visible one only.
+		await narrow('milch');
+		expect(screen.getByRole('button', { name: 'Gesammelt umwandeln (1)' })).toBeTruthy();
+		expect(screen.getByRole('button', { name: 'Mit Ticket verknüpfen … (1)' })).toBeTruthy();
+		await fireEvent.click(screen.getByRole('button', { name: 'Verwerfen (1)' }));
+		await vi.waitFor(() => expect(data.discard).toHaveBeenCalledTimes(1));
+		expect(data.discard).toHaveBeenCalledWith(A.id);
+		// The dialogs of "Gesammelt umwandeln" and "Mit Ticket verknüpfen …" get the visible ones.
+		expect(inboxLayout).toMatch(
+			/return inbox\.visible\s*\.filter\(\(item\) => item\.state === 'new' && selected\.includes\(item\.id\)\)/
+		);
 	});
 });
