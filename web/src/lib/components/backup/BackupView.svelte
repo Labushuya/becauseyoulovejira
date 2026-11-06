@@ -13,6 +13,7 @@
 	import { formatPointInTime } from '$lib/domain/system';
 	import { helpHref } from '$lib/settings-sections';
 	import { backupDenialNotice, type BackupStore } from '$lib/stores/backup.svelte';
+	import { isFailureNotice } from '$lib/stores/system.svelte';
 	import BackupList from './BackupList.svelte';
 	import BackupPassphrase from './BackupPassphrase.svelte';
 	import BackupSettings from './BackupSettings.svelte';
@@ -21,7 +22,8 @@
 	// last restore, warnings (red only for real errors, ADR-0009), a running restore, "Jetzt
 	// sichern", "Jetzt prüfen", target folder, passphrase, access data, generations, the backups here
 	// and in the target and the safety copies. A server that is not on Windows gets the hint instead
-	// (the target, the passphrase and the access data need the scripts of the folder app).
+	// (the target, the passphrase and the access data need the scripts of the folder app). A failure
+	// of this tab has "Details" (FP-3b); the warnings are values of the server from earlier runs.
 	let { store, platform }: { store: BackupStore; platform: HostPlatform } = $props();
 
 	const uid = $props.id();
@@ -48,7 +50,11 @@
 	<p class="note" role="status">Sicherung wird geladen …</p>
 {:else if overview === null}
 	{#if store.message !== null}
-		<SectionMessage tone={store.state === 'error' ? 'error' : 'info'} title={store.message.title}>
+		<SectionMessage
+			tone={store.state === 'error' || isFailureNotice(store.message) ? 'error' : 'info'}
+			title={store.message.title}
+			problem={store.message.problem ?? null}
+		>
 			{store.message.text}
 			{#snippet actions()}
 				<button class="button-subtle" type="button" onclick={() => void store.load()}>
@@ -126,6 +132,7 @@
 				tone={store.actionMessage.tone}
 				live
 				title={store.actionMessage.message.title}
+				problem={store.actionMessage.message.problem ?? null}
 			>
 				{store.actionMessage.message.text}
 			</SectionMessage>

@@ -8,11 +8,13 @@
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BackupAnswer } from '$lib/data/backup';
 import { parseOverview, type BackupOverview, type VerifyResult } from '$lib/domain/backup';
 import { BackupStore, type BackupData } from '$lib/stores/backup.svelte';
+import { problemLog } from '$lib/stores/problem-log.svelte';
 import type { SystemClock } from '$lib/stores/system.svelte';
+import { failedRequest } from '$lib/test/failures';
 import BackupView from './BackupView.svelte';
 
 /** A clock that moves on with every wait, so a restore is followed without real time. */
@@ -500,5 +502,47 @@ describe('page Sicherung', () => {
 		expect(
 			screen.getByRole('button', { name: 'Jetzt sichern' }).getAttribute('aria-disabled')
 		).toBe('true');
+	});
+});
+
+describe('page Sicherung: failures with "Details" (FP-3b)', () => {
+	beforeEach(() => problemLog.clear());
+
+	// BYL-E6-2432
+	it('shows a failed "Jetzt sichern" next to the actions with "Details", a refusal without', async () => {
+		const run = vi
+			.fn<BackupData['run']>()
+			.mockResolvedValueOnce({ kind: 'denied', reason: 'busy' })
+			.mockRejectedValueOnce(failedRequest('POST', '/api/byl/backup/run'));
+		await show({ run });
+		const state = within(screen.getByRole('region', { name: 'Zustand' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Jetzt sichern' }));
+		const refused = await state.findByRole('heading', { name: /Eine Aktion läuft gerade/ });
+		expect(refused.closest('[data-tone]')?.getAttribute('data-tone')).toBe('warning');
+		expect(state.queryByRole('button', { name: /^Details/ })).toBeNull();
+		await fireEvent.click(screen.getByRole('button', { name: 'Jetzt sichern' }));
+		await state.findByRole('button', { name: 'Details: Jetzt sichern' });
+		expect(problemLog.entries.map((entry) => entry.intent)).toEqual(['Jetzt sichern']);
+	});
+
+	// BYL-E6-2432
+	it('keeps the warnings of the server from earlier runs out of the list of the session', async () => {
+		await show(
+			{},
+			'windows',
+			overview({
+				warnings: [
+					{
+						code: 'backup-failed',
+						tone: 'error',
+						since: '2026-09-28T10:00:00.000Z',
+						reason: ''
+					}
+				]
+			})
+		);
+		expect(document.body.querySelector('[data-tone="error"]')).not.toBeNull();
+		expect(screen.queryByRole('button', { name: /^Details/ })).toBeNull();
+		expect(problemLog.entries).toEqual([]);
 	});
 });

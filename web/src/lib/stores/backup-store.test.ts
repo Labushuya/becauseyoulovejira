@@ -7,7 +7,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import type { BackupAnswer } from '$lib/data/backup';
-import { DataError } from '$lib/data/errors';
+import { DataError, keepAnswerProblem, unreadableProblem } from '$lib/data/errors';
 import {
 	parseOverview,
 	parseRestoreState,
@@ -136,8 +136,13 @@ describe('BackupStore: state', () => {
 		expect(failed.store.state).toBe('error');
 		expect(failed.store.message).toEqual({
 			title: 'Nicht geladen',
-			text: new DataError('network').message
+			text: new DataError('network').message,
+			problem: expect.objectContaining({
+				outcome: expect.objectContaining({ result: 'network' })
+			})
 		});
+		// A refusal of the route has no "Details" (FP-3b).
+		expect(owner.store.message?.problem).toBeUndefined();
 	});
 });
 
@@ -248,10 +253,16 @@ describe('BackupStore: changes', () => {
 			description: 'Das Zielverzeichnis war nicht erreichbar.'
 		});
 		await store.runNow();
+		// The failure the server reports has "Details" (FP-3b).
 		expect(flags.show).toHaveBeenLastCalledWith({
 			tone: 'error',
 			title: 'Die Sicherung ist gescheitert.',
-			description: 'try again later'
+			description: 'try again later',
+			problem: expect.objectContaining({
+				intent: 'Jetzt sichern',
+				outcome: expect.objectContaining({ result: 'reported', message: 'try again later' }),
+				request: { method: 'POST', path: '/api/byl/backup/run' }
+			})
 		});
 	});
 
@@ -315,7 +326,12 @@ describe('BackupStore: changes', () => {
 		expect(flags.show).toHaveBeenLastCalledWith({
 			tone: 'error',
 			title: 'Die Prüfung der Sicherung ist gescheitert.',
-			description: 'In der Sicherung fehlen Originaldateien.'
+			description: 'In der Sicherung fehlen Originaldateien.',
+			problem: expect.objectContaining({
+				intent: 'Sicherung prüfen',
+				outcome: expect.objectContaining({ result: 'reported', code: 'files' }),
+				request: { method: 'POST', path: '/api/byl/backup/verify' }
+			})
 		});
 		expect(store.passphraseRequest).toBeNull();
 	});
@@ -412,7 +428,12 @@ describe('BackupStore: restore (BK-3)', () => {
 		expect(flags.show).toHaveBeenLastCalledWith({
 			tone: 'error',
 			title: 'Diese Sicherung lässt sich nicht wiederherstellen.',
-			description: 'Die Datenbank in der Sicherung ist beschädigt.'
+			description: 'Die Datenbank in der Sicherung ist beschädigt.',
+			problem: expect.objectContaining({
+				intent: 'Sicherung wiederherstellen',
+				outcome: expect.objectContaining({ result: 'reported', code: 'integrity' }),
+				request: { method: 'POST', path: '/api/byl/backup/verify' }
+			})
 		});
 		await store.prepareRestore(local);
 		expect(store.restoreDraft).toMatchObject({
@@ -534,8 +555,120 @@ describe('BackupStore: restore (BK-3)', () => {
 		await store.restore('none', 'WIEDERHERSTELLEN');
 		expect(store.actionMessage).toEqual({
 			tone: 'error',
-			message: { title: 'Wiederherstellung zurückgenommen', text: RESTORE_START_FAILED }
+			message: {
+				title: 'Wiederherstellung zurückgenommen',
+				text: RESTORE_START_FAILED,
+				problem: expect.objectContaining({
+					intent: 'Sicherung wiederherstellen',
+					outcome: expect.objectContaining({
+						result: 'reported',
+						code: 'start',
+						message: RESTORE_START_FAILED
+					}),
+					request: { method: 'GET', path: '/api/byl/backup/restore' }
+				})
+			}
 		});
+	});
+
+	// BYL-E6-2433
+	it('names a cancelled restore and a missing passphrase without "Details" (FP-3b)', async () => {
+		const { store, flags } = setup({
+			verify: vi
+				.fn<BackupData['verify']>()
+				.mockResolvedValueOnce(
+					ok({ overview: overview(), result: verified({ ok: false, reason: 'no-passphrase' }) })
+				)
+				.mockResolvedValue(ok({ overview: overview(), result: verified() })),
+			restoreState: vi.fn(async () =>
+				ok({
+					restore: restoreAt('2026-10-01T10:02:00.000Z', 'failed', { reason: 'cancel' }),
+					safety: []
+				})
+			)
+		});
+		await store.load();
+		// A backup here has no passphrase to ask for: the flag says it, without an entry.
+		await store.verify({ source: 'local', name: 'x.zip' });
+		expect(flags.show).toHaveBeenLastCalledWith(
+			expect.objectContaining({ tone: 'error', problem: null })
+		);
+		await store.prepareRestore(local);
+		await store.restore('none', 'WIEDERHERSTELLEN');
+		expect(store.actionMessage).toEqual({
+			tone: 'error',
+			message: {
+				title: 'Wiederherstellung nicht möglich',
+				text: 'Abgebrochen; nichts wurde geändert.'
+			}
+		});
+	});
+
+	// BYL-E6-2433
+	it('names a restore without a result after 15 minutes with "Details" (FP-3b)', async () => {
+		const running = ok({ restore: restoreAt('2026-10-01T10:00:05.000Z', 'restoring'), safety: [] });
+		const away = setup({
+			restoreState: vi
+				.fn<BackupData['restoreState']>()
+				.mockResolvedValueOnce(running)
+				.mockRejectedValue(new DataError('network'))
+		});
+		await away.store.load();
+		await away.store.prepareRestore(local);
+		await away.store.restore('none', 'WIEDERHERSTELLEN');
+		expect(away.store.actionMessage?.message.title).toBe('Kein Ergebnis der Wiederherstellung');
+		expect(away.store.actionMessage?.message.problem).toMatchObject({
+			intent: 'Sicherung wiederherstellen',
+			outcome: { result: 'network' },
+			request: { method: 'GET', path: '/api/byl/backup/restore' }
+		});
+
+		const stuck = setup({ restoreState: vi.fn(async () => running) });
+		await stuck.store.load();
+		await stuck.store.prepareRestore(local);
+		await stuck.store.restore('none', 'WIEDERHERSTELLEN');
+		expect(stuck.store.actionMessage?.message.problem).toMatchObject({
+			intent: 'Sicherung wiederherstellen',
+			outcome: {
+				result: 'reported',
+				message: 'Nach 15 Minuten kam kein Ergebnis der Wiederherstellung.'
+			}
+		});
+	});
+
+	// BYL-E6-2433
+	it('names the check before a restore „Sicherung wiederherstellen“ in "Details" (FP-3b)', async () => {
+		const refused = setup({
+			verify: vi.fn(async () =>
+				keepAnswerProblem<Awaited<ReturnType<BackupData['verify']>>>(
+					{ kind: 'denied', reason: 'script' },
+					unreadableProblem('POST', '/api/byl/backup/verify')
+				)
+			)
+		});
+		await refused.store.load();
+		await refused.store.prepareRestore(local);
+		expect(refused.store.actionMessage?.tone).toBe('error');
+		expect(refused.store.actionMessage?.message.problem).toMatchObject({
+			intent: 'Sicherung wiederherstellen',
+			outcome: { result: 'answer' },
+			request: { method: 'POST', path: '/api/byl/backup/verify' }
+		});
+
+		const offline = setup({
+			verify: vi.fn(async () => Promise.reject(new DataError('network')))
+		});
+		await offline.store.load();
+		await offline.store.prepareRestore(local);
+		expect(offline.store.actionMessage?.message.problem).toMatchObject({
+			intent: 'Sicherung wiederherstellen',
+			outcome: { result: 'network' }
+		});
+		// "Prüfen" alone keeps the intent of its route.
+		await offline.store.verify({ source: 'local', name: 'x.zip' });
+		expect(offline.store.actionMessage?.message.problem?.intent).not.toBe(
+			'Sicherung wiederherstellen'
+		);
 	});
 
 	it('follows a restore that runs when the page opens, and signs out when the restored app does not know the account', async () => {
