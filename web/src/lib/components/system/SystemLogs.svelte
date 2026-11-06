@@ -9,12 +9,13 @@
 		type LogSetName,
 		type SystemLogs
 	} from '$lib/domain/system';
-	import type { SystemPart } from '$lib/stores/system.svelte';
+	import { isFailureNotice, type SystemPart } from '$lib/stores/system.svelte';
 
 	// "Logs ansehen" on the page System (ADR-0043): the last lines of the logs of the server, the
 	// mail helper and the control script, one log at a time (segmented switch), each file with size
 	// and time of its last change. The server has removed access data, paths of addresses, e-mail
-	// addresses and tokens; the lines are shown as text only. "Aktualisieren" reads them again.
+	// addresses and tokens; the lines are shown as text only. "Aktualisieren" reads them again. Logs
+	// that could not be read (a failed request, "script") are an error with "Details" (FP-3b).
 	let { part, onload }: { part: SystemPart<SystemLogs>; onload: () => void } = $props();
 
 	const uid = $props.id();
@@ -56,8 +57,9 @@
 			<p class="note">Logs werden geladen …</p>
 		{:else if part.message !== null}
 			<SectionMessage
-				tone={part.state === 'error' ? 'error' : 'warning'}
+				tone={part.state === 'error' || isFailureNotice(part.message) ? 'error' : 'warning'}
 				title={part.message.title}
+				problem={part.message.problem ?? null}
 			>
 				{part.message.text}
 			</SectionMessage>

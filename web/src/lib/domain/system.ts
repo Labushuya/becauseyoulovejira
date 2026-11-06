@@ -5,6 +5,7 @@
 // no runes.
 
 import { formatBerlinDateTime } from './format';
+import type { ProblemEntry } from './problems';
 
 export const SYSTEM_STATES = ['running', 'starting', 'unhealthy', 'stopped'] as const;
 export type SystemState = (typeof SYSTEM_STATES)[number];
@@ -196,6 +197,11 @@ export const DOCTOR_LEVEL_LABELS: Readonly<Record<DoctorLevel, string>> = {
 export interface SystemNotice {
 	title: string;
 	text: string;
+	/**
+	 * The failed action behind a message of a failure (FP-3b, ADR-0071): its row "Details"; absent or
+	 * null for a refusal of the route, which stays a hint.
+	 */
+	problem?: ProblemEntry | null;
 }
 
 /** What the page says instead of its content when the route refuses. */

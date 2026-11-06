@@ -6,7 +6,7 @@
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SystemAnswer } from '$lib/data/system';
 import {
 	parseOverview,
@@ -14,7 +14,9 @@ import {
 	type SystemOverview,
 	type SystemStatus
 } from '$lib/domain/system';
+import { problemLog } from '$lib/stores/problem-log.svelte';
 import { SystemStore, type SystemData } from '$lib/stores/system.svelte';
+import { scriptRefusal } from '$lib/test/failures';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import SystemView from './SystemView.svelte';
 
@@ -485,5 +487,42 @@ describe('page System', () => {
 		expect(mail.querySelector('b')).toBeNull();
 		await fireEvent.click(screen.getByRole('button', { name: 'Aktualisieren' }));
 		expect(data.logs).toHaveBeenCalledTimes(2);
+	});
+});
+
+describe('page System: failures with "Details" (FP-3b)', () => {
+	beforeEach(() => problemLog.clear());
+
+	// BYL-E6-2428
+	it('shows "script" of "Umgebung prüfen" as an error with "Details", a refusal as a warning', async () => {
+		const doctor = vi
+			.fn<SystemData['doctor']>()
+			.mockResolvedValueOnce({ kind: 'denied', reason: 'rate' })
+			.mockResolvedValueOnce(scriptRefusal('GET', '/api/byl/system/doctor'));
+		await show({ doctor });
+		const section = within(screen.getByRole('region', { name: 'Umgebung prüfen' }));
+		await fireEvent.click(section.getByRole('button', { name: 'Umgebung prüfen' }));
+		const refused = await section.findByRole('heading', { name: /Zu viele Anfragen/ });
+		expect(refused.closest('[data-tone]')?.getAttribute('data-tone')).toBe('warning');
+		expect(section.queryByRole('button', { name: /^Details/ })).toBeNull();
+		await fireEvent.click(section.getByRole('button', { name: 'Umgebung prüfen' }));
+		const details = await section.findByRole('button', { name: 'Details: Umgebung prüfen' });
+		expect(details.closest('[data-tone]')?.getAttribute('data-tone')).toBe('error');
+		expect(problemLog.entries.map((entry) => entry.intent)).toEqual(['Umgebung prüfen']);
+	});
+
+	// BYL-E6-2429
+	it('shows a restart that did not come back with "Details"', async () => {
+		await show({
+			act: vi.fn(async () => ok('restarting' as const)),
+			health: vi.fn(async () => false)
+		});
+		await fireEvent.click(screen.getByRole('button', { name: 'Jetzt neu starten' }));
+		const dialog = screen.getByRole('dialog', { name: 'becauseyoulovejira jetzt neu starten?' });
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Neu starten' }));
+		await screen.findByRole('heading', { name: /Die App antwortet nach dem Neustart nicht/ });
+		await fireEvent.click(screen.getByRole('button', { name: 'Details: App neu starten' }));
+		expect(screen.getByText('GET /api/health')).toBeTruthy();
+		expect(problemLog.entries[0]?.outcome.result).toBe('network');
 	});
 });

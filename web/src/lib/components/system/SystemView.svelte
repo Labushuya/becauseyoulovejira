@@ -18,7 +18,7 @@
 		verdictText
 	} from '$lib/domain/system';
 	import { helpHref } from '$lib/settings-sections';
-	import type { SystemStore } from '$lib/stores/system.svelte';
+	import { isFailureNotice, type SystemStore } from '$lib/stores/system.svelte';
 	import ScriptProblemDetails from './ScriptProblemDetails.svelte';
 	import SystemDoctor from './SystemDoctor.svelte';
 	import SystemLogs from './SystemLogs.svelte';
@@ -30,7 +30,8 @@
 	// each other; their buttons stay focusable (aria-disabled), so the focus stays where it was. An
 	// error of the last run without window (autostart, restart or restore from the app) stands above
 	// the state with its entry of the catalog of the scripts (ADR-0048 §4), as a warning: the app
-	// runs again by now, the error is one of the past run.
+	// runs again by now, the error is one of the past run. A failure of this tab (a failed request,
+	// "script", a restart without a result) is an error with "Details" (FP-3b, ADR-0071).
 	let { store, platform }: { store: SystemStore; platform: HostPlatform } = $props();
 
 	const uid = $props.id();
@@ -87,7 +88,11 @@
 	<p class="note" role="status">Zustand wird geladen …</p>
 {:else if status === null || overview === null || mail === null}
 	{#if store.message !== null}
-		<SectionMessage tone={store.state === 'error' ? 'error' : 'info'} title={store.message.title}>
+		<SectionMessage
+			tone={store.state === 'error' || isFailureNotice(store.message) ? 'error' : 'info'}
+			title={store.message.title}
+			problem={store.message.problem ?? null}
+		>
 			{store.message.text}
 			{#snippet actions()}
 				<button class="button-subtle" type="button" onclick={() => void store.load()}>
@@ -112,11 +117,21 @@
 		{/if}
 	</div>
 	{#if store.restartPhase === 'failed'}
-		<SectionMessage tone="error" live title={RESTART_TEXTS.failedTitle}>
+		<SectionMessage
+			tone="error"
+			live
+			title={RESTART_TEXTS.failedTitle}
+			problem={store.restartProblem}
+		>
 			{RESTART_TEXTS.failed}
 		</SectionMessage>
 	{:else if store.restartPhase === 'not-started'}
-		<SectionMessage tone="error" live title={RESTART_TEXTS.notStartedTitle}>
+		<SectionMessage
+			tone="error"
+			live
+			title={RESTART_TEXTS.notStartedTitle}
+			problem={store.restartProblem}
+		>
 			{RESTART_TEXTS.notStarted}
 		</SectionMessage>
 	{/if}
@@ -240,6 +255,7 @@
 				tone={store.actionMessage.tone}
 				live
 				title={store.actionMessage.message.title}
+				problem={store.actionMessage.message.problem ?? null}
 			>
 				{store.actionMessage.message.text}
 			</SectionMessage>
