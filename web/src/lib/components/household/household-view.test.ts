@@ -8,7 +8,7 @@
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
 	HouseholdMember,
 	HouseholdRight,
@@ -21,7 +21,9 @@ import {
 	type HouseholdData,
 	type HouseholdNotice
 } from '$lib/stores/household.svelte';
+import { problemLog } from '$lib/stores/problem-log.svelte';
 import { danglingReferences, duplicateIds } from '$lib/test/aria-ids';
+import { failedRequest } from '$lib/test/failures';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import HouseholdView from './HouseholdView.svelte';
 
@@ -377,6 +379,132 @@ describe('page "Haushalt" for a member', () => {
 		await vi.waitFor(() =>
 			expect(data.setRights).toHaveBeenCalledWith(BERT.id, ['invite', 'rename'], expect.anything())
 		);
+	});
+});
+
+describe('page "Haushalt": failures with "Details" (FP-3b)', () => {
+	beforeEach(() => problemLog.clear());
+
+	// BYL-E6-2424
+	it('shows "Details" at the field of a failed founding, none for the neutral text of a code', async () => {
+		const join = vi.fn().mockResolvedValueOnce({ kind: 'invalid', problem: 'code' });
+		await show(null, {
+			found: vi.fn(async () => {
+				throw failedRequest('POST', '/api/byl/household');
+			}),
+			join
+		});
+		await fireEvent.input(screen.getByLabelText('Name des Haushalts'), {
+			target: { value: 'Haus' }
+		});
+		await fireEvent.click(screen.getByRole('button', { name: 'Haushalt gründen' }));
+		const region = screen.getByRole('region', { name: 'Haushalt gründen' });
+		await within(region).findByRole('button', { name: 'Details: Haushalt gründen' });
+		expect(screen.getByLabelText('Name des Haushalts').getAttribute('aria-invalid')).toBe('true');
+		expect(problemLog.entries.map((entry) => entry.intent)).toEqual(['Haushalt gründen']);
+
+		await fireEvent.input(screen.getByLabelText('Einladungscode'), {
+			target: { value: 'ZZZZZZZZ' }
+		});
+		await fireEvent.click(screen.getByRole('button', { name: 'Beitreten' }));
+		const joinRegion = screen.getByRole('region', { name: 'Mit Code beitreten' });
+		await within(joinRegion).findByText('Code ungültig oder abgelaufen.');
+		expect(within(joinRegion).queryByRole('button', { name: /^Details/ })).toBeNull();
+		expect(problemLog.entries).toHaveLength(1);
+	});
+
+	// BYL-E6-2424
+	it('shows a failed action on the page with "Details", a refusal without', async () => {
+		const revoke = vi
+			.fn<HouseholdData['revoke']>()
+			.mockResolvedValueOnce({ kind: 'invalid', problem: 'right' })
+			.mockRejectedValueOnce(
+				failedRequest('POST', '/api/byl/household/invites/invite00000001/revoke')
+			);
+		await show(stateFor(CHRIS), { revoke });
+		await fireEvent.click(screen.getAllByRole('button', { name: /, widerrufen$/ })[0]!);
+		await screen.findByText('Dafür fehlt dir das Recht im Haushalt.');
+		expect(screen.queryByRole('button', { name: /^Details/ })).toBeNull();
+		await fireEvent.click(screen.getAllByRole('button', { name: /, widerrufen$/ })[0]!);
+		await screen.findByRole('button', { name: 'Details: Einladungscode zurückziehen' });
+		expect(problemLog.entries.map((entry) => entry.intent)).toEqual([
+			'Einladungscode zurückziehen'
+		]);
+	});
+
+	// BYL-E6-2424
+	it('shows "Details" at the field of a failed rename', async () => {
+		await show(stateFor(CHRIS), {
+			rename: vi.fn(async () => {
+				throw failedRequest('POST', '/api/byl/household/rename', 'server');
+			})
+		});
+		await fireEvent.click(screen.getByRole('button', { name: 'Umbenennen …' }));
+		await fireEvent.input(screen.getByLabelText('Neuer Name'), { target: { value: 'Neu' } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Speichern' }));
+		await screen.findByRole('button', { name: 'Details: Haushalt umbenennen' });
+		expect(screen.getByLabelText('Neuer Name').getAttribute('aria-invalid')).toBe('true');
+	});
+
+	// BYL-E6-2445
+	it('shows "Haushalt nicht geladen" with "Details", "rate" and "missing" without (R-B6)', async () => {
+		await show(null, {
+			fetch: vi.fn(async () => {
+				throw failedRequest('GET', '/api/byl/household');
+			})
+		});
+		const title = screen.getByRole('heading', { name: /Haushalt nicht geladen/ });
+		const message = title.closest('[data-tone]') as HTMLElement;
+		expect(message.getAttribute('data-tone')).toBe('error');
+		expect(within(message).getByRole('button', { name: 'Details: Haushalt laden' })).toBeTruthy();
+		expect(problemLog.entries.map((entry) => entry.intent)).toEqual(['Haushalt laden']);
+		document.body.innerHTML = '';
+		problemLog.clear();
+
+		// A refusal of the route stays a hint: the rate limit and the route before the restart.
+		const revoke = vi
+			.fn<HouseholdData['revoke']>()
+			.mockResolvedValueOnce({ kind: 'rate' })
+			.mockResolvedValueOnce({ kind: 'missing' });
+		await show(stateFor(CHRIS), { revoke });
+		await fireEvent.click(screen.getAllByRole('button', { name: /, widerrufen$/ })[0]!);
+		await screen.findByText(/Zu viele Versuche/);
+		expect(screen.queryByRole('button', { name: /^Details/ })).toBeNull();
+		await fireEvent.click(screen.getAllByRole('button', { name: /, widerrufen$/ })[0]!);
+		await screen.findByText(/Der Haushalt ist nach dem nächsten Neustart verfügbar/);
+		expect(screen.queryByRole('button', { name: /^Details/ })).toBeNull();
+		document.body.innerHTML = '';
+		await show(null, { fetch: vi.fn(async () => ({ kind: 'missing' as const })) });
+		expect(screen.getByText(/Der Haushalt ist nach dem nächsten Neustart verfügbar/)).toBeTruthy();
+		expect(screen.queryByRole('button', { name: /^Details/ })).toBeNull();
+		expect(problemLog.entries).toEqual([]);
+	});
+
+	// BYL-E6-2425
+	it('says nothing for an aborted request and signs out when the session ended', async () => {
+		const logout = vi.fn();
+		const data = {
+			fetch: vi.fn(async () => ({ kind: 'ok' as const, value: stateFor(CHRIS) })),
+			found: vi.fn(),
+			rename: vi.fn(async () => {
+				throw failedRequest('POST', '/api/byl/household/rename', 'aborted');
+			}),
+			invite: vi.fn(),
+			revoke: vi.fn(),
+			join: vi.fn(),
+			setRights: vi.fn(),
+			remove: vi.fn(async () => {
+				throw failedRequest('POST', '/api/byl/household/members/member00000002/remove', 'session');
+			}),
+			transfer: vi.fn(),
+			leave: vi.fn()
+		} satisfies HouseholdData;
+		const store = new HouseholdStore(data, { ensureValid: () => true, logout });
+		await store.load();
+		expect(await store.rename('Neu')).toEqual({ ok: false, message: '' });
+		expect(await store.remove(ANNA)).toBe(false);
+		expect(store.message).toBeNull();
+		expect(logout).toHaveBeenCalledTimes(1);
 	});
 });
 

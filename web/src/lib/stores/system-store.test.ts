@@ -8,10 +8,12 @@ import { PC_CONTEXT, useContext } from '$lib/test/context';
 import { DataError } from '$lib/data/errors';
 import type { SystemAnswer } from '$lib/data/system';
 import { parseOverview, type SystemOverview, type SystemStatus } from '$lib/domain/system';
+import { failedRequest, scriptRefusal } from '$lib/test/failures';
 import {
 	RESTART_POLL_MS,
 	RESTART_TIMEOUT_MS,
 	SystemStore,
+	isFailureNotice,
 	type SystemClock,
 	type SystemData
 } from './system.svelte';
@@ -342,5 +344,92 @@ describe('SystemStore: restart', () => {
 		await store.load();
 		await store.restart();
 		expect(data.health).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe('SystemStore: "Details" of failures (FP-3b)', () => {
+	// BYL-E6-2429
+	it('gives a restart without a result the entry of BW-1: no answer, or the error of the run', async () => {
+		const gone = setup({
+			act: vi.fn(async () => ok('restarting' as const)),
+			health: vi.fn(async () => false)
+		});
+		await gone.store.load();
+		await gone.store.restart();
+		expect(gone.store.restartProblem).toMatchObject({
+			intent: 'App neu starten',
+			outcome: { result: 'network' },
+			request: { method: 'GET', path: '/api/health' }
+		});
+
+		const report = {
+			code: 'start-failed',
+			level: 'error' as const,
+			exitCode: 1,
+			problem: 'Der Neustart hat nicht begonnen.',
+			facts: [],
+			cause: '',
+			remedy: { steps: [], command: 'powershell -File "C:\\Apps\\app\\byl-control.ps1" restart' },
+			log: ''
+		};
+		const stuck = setup({
+			act: vi.fn(async () => ok('restarting' as const)),
+			health: vi.fn(async () => true),
+			status: vi.fn(async () =>
+				ok(overview({ backgroundProblem: { atUtc: null, run: 'restart', report } }))
+			)
+		});
+		await stuck.store.load();
+		await stuck.store.restart();
+		expect(stuck.store.restartPhase).toBe('not-started');
+		expect(stuck.store.restartProblem).toMatchObject({
+			intent: 'App neu starten',
+			outcome: {
+				result: 'reported',
+				code: 'start-failed',
+				message: 'Der Neustart hat nicht begonnen.'
+			},
+			request: { method: 'GET', path: '/api/byl/system' }
+		});
+		expect(JSON.stringify(stuck.store.restartProblem)).not.toContain('byl-control');
+		// A new restart begins without the old entry.
+		stuck.data.act = vi.fn(async () => ({ kind: 'denied', reason: 'busy' }) as const);
+		await stuck.store.restart();
+		expect(stuck.store.restartProblem).toBeNull();
+	});
+
+	// BYL-E6-2428
+	it('shows "script" of the checks and the logs with an entry, a refusal without', async () => {
+		const { store } = setup({
+			doctor: vi.fn(async () => scriptRefusal('GET', '/api/byl/system/doctor')),
+			logs: vi.fn(async () => ({ kind: 'denied', reason: 'rate' }) as const)
+		});
+		await store.load();
+		await store.runDoctor();
+		expect(store.doctor.message?.problem).toMatchObject({
+			intent: 'Umgebung prüfen',
+			outcome: { result: 'answer' }
+		});
+		expect(isFailureNotice(store.doctor.message)).toBe(true);
+		await store.loadLogs();
+		expect(store.logs.message?.problem).toBeUndefined();
+		expect(isFailureNotice(store.logs.message)).toBe(false);
+	});
+
+	// BYL-E6-2428
+	it('gives a failed action an entry, a refusal of the route none', async () => {
+		const { store } = setup({
+			act: vi
+				.fn<SystemData['act']>()
+				.mockResolvedValueOnce({ kind: 'denied', reason: 'owner' })
+				.mockRejectedValueOnce(failedRequest('POST', '/api/byl/system/actions/mail-restart'))
+		});
+		await store.load();
+		await store.restartMail();
+		expect(store.actionMessage).toMatchObject({ tone: 'warning' });
+		expect(store.actionMessage?.message.problem).toBeUndefined();
+		await store.restartMail();
+		expect(store.actionMessage?.tone).toBe('error');
+		expect(store.actionMessage?.message.problem?.intent).toBe('Mail-Helfer neu starten');
 	});
 });

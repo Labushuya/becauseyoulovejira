@@ -1,12 +1,15 @@
 <script lang="ts">
 	import ErrorIcon from '$lib/components/ErrorIcon.svelte';
 	import Field from '$lib/components/form/Field.svelte';
+	import ProblemDetails from '$lib/components/problems/ProblemDetails.svelte';
 	import { emailProblem, nameProblem, problemText } from '$lib/domain/accounts';
+	import type { ProblemEntry } from '$lib/domain/problems';
 	import type { AccountsStore } from '$lib/stores/accounts.svelte';
 
 	// "Konto anlegen" (ADR-0056 §3): name and e-mail address of the person; the server makes the start
 	// password and the page shows it once. Checks before sending with the rules of the hook, refusals
-	// of the server at their field (ADR-0009), a general one below the form.
+	// of the server at their field (ADR-0009), a general one below the form; a failure there has
+	// "Details" (FP-3b, ADR-0071).
 	let { store, oncreated }: { store: AccountsStore; oncreated: () => void } = $props();
 
 	let name = $state('');
@@ -14,6 +17,7 @@
 	let nameError = $state('');
 	let emailError = $state('');
 	let formError = $state('');
+	let formProblem = $state.raw<ProblemEntry | null>(null);
 	let nameInput = $state<HTMLInputElement>();
 	let emailInput = $state<HTMLInputElement>();
 
@@ -27,6 +31,7 @@
 		nameError = nameCheck === '' ? '' : problemText(nameCheck);
 		emailError = emailCheck === '' ? '' : problemText(emailCheck);
 		formError = '';
+		formProblem = null;
 		if (nameError !== '') {
 			nameInput?.focus();
 			return;
@@ -50,6 +55,7 @@
 			emailInput?.focus();
 		} else {
 			formError = outcome.message;
+			formProblem = outcome.problem ?? null;
 		}
 	}
 </script>
@@ -87,6 +93,7 @@
 	</Field>
 	{#if formError !== ''}
 		<p class="alert-error" role="alert"><ErrorIcon /><span>{formError}</span></p>
+		<ProblemDetails problem={formProblem} />
 	{/if}
 	<div>
 		<button

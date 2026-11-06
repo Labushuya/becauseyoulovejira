@@ -5,7 +5,8 @@
 // after an update) come as `denied` with their reason; the session, the network and an aborted
 // signal are DataErrors. The browser sends Origin itself; nothing here names an address.
 // Since BW-1 (ADR-0072) a refusal and an answer the app could not read keep the entry behind
-// "Details" (FP-1, ADR-0071) beside the answer (`denialProblem`), so the answer keeps its form.
+// "Details" (FP-1, ADR-0071) beside the answer (`denialProblem` of data/errors.ts, since FP-3b
+// shared with the other pages of the administration), so the answer keeps its form.
 
 import type PocketBase from 'pocketbase';
 import type { ProblemEntry } from '../domain/problems';
@@ -21,7 +22,7 @@ import {
 	type SystemOverview
 } from '../domain/system';
 import { reportRefusal } from './context';
-import { DataError, noteRequest, problemOf, toDataError } from './errors';
+import { keepAnswerProblem, problemOf, toDataError, unreadableProblem } from './errors';
 import type { RequestOptions } from './options';
 
 const ROUTE = '/api/byl/system';
@@ -36,22 +37,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/** The entries of refusals, beside the answers (the answers keep their form). */
-const denialProblems = new WeakMap<object, ProblemEntry>();
-
-/**
- * The entry behind "Details" of a refusal of the route or of an answer the app could not read
- * (FP-1, ADR-0071): the failed request with status, reason and message of the server; null for
- * an answer without one (a fake of the tests, or `ok`).
- */
-export function denialProblem(answer: SystemAnswer<unknown>): ProblemEntry | null {
-	return denialProblems.get(answer) ?? null;
-}
-
 function denied(reason: SystemDenial, problem: ProblemEntry | null): SystemAnswer<never> {
-	const answer: SystemAnswer<never> = { kind: 'denied', reason };
-	if (problem !== null) denialProblems.set(answer, problem);
-	return answer;
+	return keepAnswerProblem<SystemAnswer<never>>({ kind: 'denied', reason }, problem);
 }
 
 async function ask<T>(
@@ -75,9 +62,7 @@ async function ask<T>(
 	const value = parse(answer);
 	if (value !== null) return { kind: 'ok', value };
 	// The script answered, but not in the form of the route: "Unerwartete Antwort des Servers".
-	const unreadable = new DataError('server');
-	noteRequest(unreadable, request.method, request.path);
-	return denied('script', problemOf(unreadable));
+	return denied('script', unreadableProblem(request.method, request.path));
 }
 
 /** Status of the app: state, address, mail helper, start fingerprint, autostart, other copies. */

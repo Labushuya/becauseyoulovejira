@@ -31,7 +31,8 @@
 	// means for the household, and "Haushalte ohne aktiven Inhaber" lets the administrator make an
 	// active member the owner of a household whose owner is disabled or gone. Since E7-4c a household
 	// in which no member has an account any more (orphaned) offers only "Haushalt löschen …" with a
-	// preview and the typed name; it never goes into an account.
+	// preview and the typed name; it never goes into an account. Since FP-3b a failure (not a refusal
+	// or a refused input) has "Details" (ADR-0071).
 	let { store }: { store: AccountsStore } = $props();
 
 	type Question =
@@ -177,7 +178,11 @@
 	<p class="note" role="status">Konten werden geladen …</p>
 {:else if store.state !== 'ready'}
 	{#if store.message !== null}
-		<SectionMessage tone={store.state === 'error' ? 'error' : 'info'} title={store.message.title}>
+		<SectionMessage
+			tone={store.state === 'error' || (store.message.problem ?? null) !== null ? 'error' : 'info'}
+			title={store.message.title}
+			problem={store.message.problem ?? null}
+		>
 			{store.message.text}
 		</SectionMessage>
 	{/if}
@@ -209,7 +214,12 @@
 	<section class="part" aria-labelledby={listId}>
 		<h3 id={listId} tabindex="-1" bind:this={listHeading}>Konten</h3>
 		{#if store.actionMessage !== null}
-			<SectionMessage tone="error" title={store.actionMessage.title} live>
+			<SectionMessage
+				tone="error"
+				title={store.actionMessage.title}
+				live
+				problem={store.actionMessage.problem ?? null}
+			>
 				{store.actionMessage.text}
 			</SectionMessage>
 		{/if}

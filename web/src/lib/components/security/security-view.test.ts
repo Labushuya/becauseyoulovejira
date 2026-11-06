@@ -5,13 +5,15 @@
 
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { parseSecurity, type SecurityOverview } from '$lib/domain/security';
 import { RESTART_NEEDED, restartNeeded } from '$lib/guidance/texts';
 import { securityLoginsHref } from '$lib/settings-sections';
 import type { FlagInput } from '$lib/stores/flags.svelte';
+import { problemLog } from '$lib/stores/problem-log.svelte';
 import { SecurityStore, type SecurityData } from '$lib/stores/security.svelte';
 import { danglingReferences, duplicateIds } from '$lib/test/aria-ids';
+import { failedRequest, scriptRefusal } from '$lib/test/failures';
 import { securityAnswer } from '$lib/test/security-answer';
 import SecurityView from './SecurityView.svelte';
 
@@ -245,5 +247,43 @@ describe('page "Sicherheit"', () => {
 		});
 		expect(screen.getByText(RESTART_NEEDED.title)).toBeTruthy();
 		expect(screen.getByText(restartNeeded('Die Seite Sicherheit ist'))).toBeTruthy();
+	});
+});
+
+describe('page "Sicherheit": failures with "Details" (FP-3b)', () => {
+	beforeEach(() => problemLog.clear());
+
+	// BYL-E6-2426
+	it('shows a failed load and an answer of another form as an error with "Details"', async () => {
+		await show(null, {
+			overview: vi.fn(async () => {
+				throw failedRequest('GET', '/api/byl/security');
+			})
+		});
+		const details = screen.getByRole('button', { name: 'Details: Sicherheit laden' });
+		expect(details.closest('.section-message')?.getAttribute('data-tone')).toBe('error');
+		cleanup();
+		await show(null, {
+			overview: vi.fn(async () => scriptRefusal('GET', '/api/byl/security'))
+		});
+		const script = screen.getByRole('button', { name: 'Details: Sicherheit laden' });
+		expect(script.closest('.section-message')?.getAttribute('data-tone')).toBe('error');
+		expect(problemLog.entries.map((entry) => entry.outcome.result)).toEqual(['answer', 'network']);
+	});
+
+	// BYL-E6-2426
+	it('shows a failed change at its part with "Details", a refused input without', async () => {
+		const settings = vi
+			.fn<SecurityData['settings']>()
+			.mockResolvedValueOnce({ kind: 'invalid', problem: 'days', invalid: [] })
+			.mockRejectedValueOnce(failedRequest('POST', '/api/byl/security/settings'));
+		await show(overviewOf(), { settings });
+		const select = screen.getByRole('combobox', { name: 'Gültigkeit der Anmeldung' });
+		await fireEvent.change(select, { target: { value: '14' } });
+		await screen.findByText('Nicht gespeichert');
+		expect(screen.queryByRole('button', { name: /^Details/ })).toBeNull();
+		await fireEvent.change(select, { target: { value: '30' } });
+		await screen.findByRole('button', { name: 'Details: Einstellungen der Sicherheit speichern' });
+		expect(problemLog.entries).toHaveLength(1);
 	});
 });

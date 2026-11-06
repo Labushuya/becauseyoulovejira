@@ -17,6 +17,8 @@ import {
 	type HouseholdLive,
 	type HouseholdNotice
 } from '$lib/stores/household.svelte';
+import { problemLog } from '$lib/stores/problem-log.svelte';
+import { failedRequest } from '$lib/test/failures';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import HouseholdView from './HouseholdView.svelte';
 
@@ -203,6 +205,22 @@ describe('"Haushalt auflösen" on the page (ADR-0061 §5)', () => {
 				/Auflösen kann nur der Inhaber des Haushalts/
 			)
 		);
+		// A refusal has no "Details" (FP-3b).
+		expect(within(dialog).queryByRole('button', { name: /^Details/ })).toBeNull();
+	});
+
+	// BYL-E6-2424
+	it('shows a failure in the dialog with "Details" (FP-3b)', async () => {
+		problemLog.clear();
+		await setup('owner', async (body) => {
+			if (body.preview === true) return { kind: 'ok', value: preview(body.mode) };
+			throw failedRequest('POST', '/api/byl/household/dissolve');
+		});
+		const dialog = await openDialog();
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Auflösen und übernehmen' }));
+		await within(dialog).findByRole('button', { name: 'Details: Haushalt auflösen' });
+		expect(within(dialog).getByRole('alert').textContent).toMatch(/Server nicht erreichbar/);
+		expect(problemLog.entries.map((entry) => entry.intent)).toEqual(['Haushalt auflösen']);
 	});
 });
 

@@ -9,10 +9,14 @@
 // `membershipChanged` with what to say; since E7-3 (ADR-0059 §8) the layout reloads no page: the
 // stores show one area only, the area follows the household (lost: "Privat"), and the notice
 // stands as a flag. Founding a household changes nothing there: it is empty.
+//
+// Since FP-3b a failure (no connection, an error answer, an answer of another form) carries its
+// entry for "Details" (ADR-0071) to the message, the field or the dialog; a refusal (`invalid`,
+// also the neutral text of a code), the rate limit and the hint before the restart stay without.
 
 import type PocketBase from 'pocketbase';
 import { createContext } from 'svelte';
-import { toDataError } from '$lib/data/errors';
+import { detailsOf, problemDetails, toDataError } from '$lib/data/errors';
 import {
 	createHouseholdInvite,
 	dissolveHousehold,
@@ -38,6 +42,7 @@ import {
 } from '$lib/domain/area-move';
 import type { RequestOptions } from '$lib/data/options';
 import { onReconnect, type Unsubscribe } from '$lib/data/realtime';
+import type { ProblemEntry } from '$lib/domain/problems';
 import {
 	HOUSEHOLD_TEXTS,
 	memberLabel,
@@ -130,6 +135,8 @@ export type HouseholdBusy =
 export interface HouseholdMessage {
 	title: string;
 	text: string;
+	/** The failed action behind the message (FP-3b), for "Details"; absent for a refusal. */
+	problem?: ProblemEntry | null;
 }
 
 /** A code of this tab, shown once. */
@@ -138,8 +145,15 @@ export interface ShownCode {
 	invite: HouseholdInvite | null;
 }
 
-/** Outcome of a form: done, or the text for its field. */
-export type FieldOutcome = { ok: true } | { ok: false; message: string };
+/**
+ * Outcome of a form or a dialog: done, or the text for its field (or the dialog) with the entry of
+ * a failure for "Details" (null for a refusal or an input).
+ */
+export type FieldOutcome =
+	{ ok: true } | { ok: false; message: string; problem?: ProblemEntry | null };
+
+/** An action that did not run because of a failure (no refusal of the route). */
+type Failed = { kind: 'failed'; message: string; problem: ProblemEntry | null };
 
 const REFUSED_TITLE = 'Nicht möglich';
 
@@ -261,7 +275,11 @@ export class HouseholdStore {
 			const failure = toDataError(error, controller.signal);
 			if (failure.kind === 'session') this.#session.logout();
 			else if (failure.kind !== 'aborted' && this.#state !== 'ready') {
-				this.#message = { title: 'Haushalt nicht geladen', text: failure.message };
+				this.#message = {
+					title: 'Haushalt nicht geladen',
+					text: failure.message,
+					...problemDetails(failure)
+				};
 				this.#state = 'error';
 			}
 		} finally {
@@ -416,7 +434,7 @@ export class HouseholdStore {
 	async dissolvePreview(
 		mode: DissolveMode,
 		signal?: AbortSignal
-	): Promise<{ ok: true; preview: DissolvePreview } | { ok: false; message: string }> {
+	): Promise<{ ok: true; preview: DissolvePreview } | Extract<FieldOutcome, { ok: false }>> {
 		const dissolve = this.#data.dissolve;
 		if (dissolve === undefined || !this.#session.ensureValid()) return { ok: false, message: '' };
 		try {
@@ -424,12 +442,7 @@ export class HouseholdStore {
 			if (answer.kind === 'ok') return { ok: true, preview: answer.value };
 			return { ok: false, message: this.#dissolveText(answer) };
 		} catch (error) {
-			const failure = toDataError(error, signal);
-			if (failure.kind === 'session') this.#session.logout();
-			return {
-				ok: false,
-				message: failure.kind === 'aborted' || failure.kind === 'session' ? '' : failure.message
-			};
+			return this.#failed(error, signal);
 		}
 	}
 
@@ -444,7 +457,7 @@ export class HouseholdStore {
 		const answer = await this.#run({ kind: 'dissolve' }, () =>
 			dissolve({ mode, ...(mode === 'delete' && { name }) }, this.#options())
 		);
-		if (answer.kind !== 'ok') return { ok: false, message: this.#dissolveText(answer) };
+		if (answer.kind !== 'ok') return this.#fieldFailure(answer, this.#dissolveText(answer));
 		this.#apply(null, {
 			title: DISSOLVE_TEXTS.done(answer.value.household.name),
 			text: mode === 'adopt' ? DISSOLVE_TEXTS.doneAdopt : DISSOLVE_TEXTS.doneDelete
@@ -452,9 +465,7 @@ export class HouseholdStore {
 		return { ok: true };
 	}
 
-	#dissolveText(
-		answer: Exclude<HouseholdAnswer<unknown>, { kind: 'ok' }> | { kind: 'failed'; message: string }
-	): string {
+	#dissolveText(answer: Exclude<HouseholdAnswer<unknown>, { kind: 'ok' }> | Failed): string {
 		return answer.kind === 'invalid' ? moveProblemText(answer.problem) : this.#textOf(answer);
 	}
 
@@ -492,31 +503,38 @@ export class HouseholdStore {
 		return { signal: this.#actions.signal };
 	}
 
-	/** One action at a time; a lost session signs out, other failures count as refusals. */
+	/**
+	 * One action at a time; a lost session signs out (no text), an aborted request says nothing,
+	 * every other failure keeps its text and its entry for "Details".
+	 */
 	async #run<T>(
 		busy: Exclude<HouseholdBusy, null>,
 		call: () => Promise<HouseholdAnswer<T>>
-	): Promise<HouseholdAnswer<T> | { kind: 'failed'; message: string }> {
-		if (this.#busy !== null || !this.#session.ensureValid()) return { kind: 'failed', message: '' };
+	): Promise<HouseholdAnswer<T> | Failed> {
+		if (this.#busy !== null || !this.#session.ensureValid()) {
+			return { kind: 'failed', message: '', problem: null };
+		}
 		this.#busy = busy;
 		this.#message = null;
 		try {
 			return await call();
 		} catch (error) {
-			const failure = toDataError(error, this.#actions.signal);
-			if (failure.kind === 'session') this.#session.logout();
-			return {
-				kind: 'failed',
-				message: failure.kind === 'aborted' || failure.kind === 'session' ? '' : failure.message
-			};
+			const failed = this.#failed(error, this.#actions.signal);
+			return { kind: 'failed', message: failed.message, problem: failed.problem ?? null };
 		} finally {
 			this.#busy = null;
 		}
 	}
 
-	#textOf(
-		answer: Exclude<HouseholdAnswer<unknown>, { kind: 'ok' }> | { kind: 'failed'; message: string }
-	): string {
+	/** A failure as text and entry; a lost session signs out, both say nothing then. */
+	#failed(error: unknown, signal: AbortSignal | undefined): Extract<FieldOutcome, { ok: false }> {
+		const failure = toDataError(error, signal);
+		if (failure.kind === 'session') this.#session.logout();
+		if (failure.kind === 'aborted' || failure.kind === 'session') return { ok: false, message: '' };
+		return { ok: false, message: failure.message, ...problemDetails(failure) };
+	}
+
+	#textOf(answer: Exclude<HouseholdAnswer<unknown>, { kind: 'ok' }> | Failed): string {
 		switch (answer.kind) {
 			case 'invalid':
 				return problemText(answer.problem);
@@ -529,17 +547,27 @@ export class HouseholdStore {
 		}
 	}
 
+	/** The outcome for a field or a dialog, with the entry of a failure (none for a refusal). */
 	#fieldFailure(
-		answer: Exclude<HouseholdAnswer<unknown>, { kind: 'ok' }> | { kind: 'failed'; message: string }
-	): FieldOutcome {
-		return { ok: false, message: this.#textOf(answer) };
+		answer: Exclude<HouseholdAnswer<unknown>, { kind: 'ok' }> | Failed,
+		text: string = this.#textOf(answer)
+	): Extract<FieldOutcome, { ok: false }> {
+		return {
+			ok: false,
+			message: text,
+			...detailsOf(answer.kind === 'failed' ? answer.problem : null)
+		};
 	}
 
-	#refused(
-		answer: Exclude<HouseholdAnswer<unknown>, { kind: 'ok' }> | { kind: 'failed'; message: string }
-	): false {
+	#refused(answer: Exclude<HouseholdAnswer<unknown>, { kind: 'ok' }> | Failed): false {
 		const text = this.#textOf(answer);
-		if (text !== '') this.#message = { title: REFUSED_TITLE, text };
+		if (text !== '') {
+			this.#message = {
+				title: REFUSED_TITLE,
+				text,
+				...detailsOf(answer.kind === 'failed' ? answer.problem : null)
+			};
+		}
 		// A refusal says the page knew too much: read the household again.
 		if (answer.kind === 'invalid') void this.load();
 		return false;

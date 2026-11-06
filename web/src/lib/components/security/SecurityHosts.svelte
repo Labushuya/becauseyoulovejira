@@ -112,7 +112,7 @@
 	</form>
 
 	{#if message !== null}
-		<SectionMessage tone="error" title={message.title} live>
+		<SectionMessage tone="error" title={message.title} live problem={message.problem ?? null}>
 			{message.text}
 			{#if store.invalidHosts.length > 0}
 				Abgelehnt: {store.invalidHosts.join(', ')}.

@@ -12,14 +12,8 @@
 // one into the context of its subtree, so one store and one run at a time hold for the whole page.
 
 import { createContext } from 'svelte';
-import {
-	problemOf,
-	reportedProblem,
-	toDataError,
-	unansweredProblem,
-	withIntent
-} from '$lib/data/errors';
-import { denialProblem, type SystemAnswer } from '$lib/data/system';
+import { denialProblem, problemOf, toDataError, withIntent } from '$lib/data/errors';
+import type { SystemAnswer } from '$lib/data/system';
 import type { ProblemEntry } from '$lib/domain/problems';
 import {
 	RESTART_DENIAL_TEXTS,
@@ -31,7 +25,9 @@ import {
 import type { RestartTask } from '$lib/guidance/texts';
 import {
 	REAL_CLOCK,
+	RESTART_INTENTS,
 	followRestart,
+	restartNoResultProblem,
 	type RestartBefore,
 	type RestartData,
 	type SystemClock
@@ -39,11 +35,7 @@ import {
 import { denialNotice } from './system.svelte';
 import type { SessionGuard } from './ticket-list.svelte';
 
-/** Intents of the two actions in "Details" (the words of the catalog, problem-intents.ts). */
-export const RESTART_INTENTS: Readonly<Record<RestartTask, string>> = Object.freeze({
-	restart: 'App neu starten',
-	'mail-restart': 'Mail-Helfer neu starten'
-});
+export { RESTART_INTENTS } from './restart-follow';
 
 /** preparing: the status is read; stopping: the restart runs; starting: the server is gone. */
 export type RestartPhase = 'preparing' | 'stopping' | 'starting';
@@ -135,7 +127,7 @@ export class RestartStore {
 					overview: follow.answer?.kind === 'ok' ? follow.answer.value : null
 				};
 			}
-			return follow.gone ? this.#notBack() : this.#notStarted(follow.last);
+			return this.#noResult(follow.gone, follow.last);
 		});
 	}
 
@@ -204,37 +196,18 @@ export class RestartStore {
 		};
 	}
 
-	/** The server went and did not come back within the time. */
-	#notBack(): RestartResult {
-		return {
-			kind: 'failed',
-			message: { title: RESTART_TEXTS.failedTitle, text: RESTART_TEXTS.failedHere },
-			problem: unansweredProblem({
-				intent: RESTART_INTENTS.restart,
-				method: 'GET',
-				path: '/api/health'
-			})
-		};
-	}
-
 	/**
-	 * The same server kept answering: the detached restart did not begin. The control script keeps
-	 * the error of a run without window (ADR-0048 §4); the last status names it, if it has one.
+	 * No result within the time: the server went and did not come back (`gone`), or the same server
+	 * kept answering and the detached restart did not begin (the last status names the error of the
+	 * run without window, ADR-0048 §4, if it has one).
 	 */
-	#notStarted(last: SystemAnswer<SystemOverview> | null): RestartResult {
-		const background = last?.kind === 'ok' ? last.value.status.backgroundProblem : null;
+	#noResult(gone: boolean, last: SystemAnswer<SystemOverview> | null): RestartResult {
 		return {
 			kind: 'failed',
-			message: { title: RESTART_TEXTS.notStartedTitle, text: RESTART_TEXTS.notStarted },
-			problem: reportedProblem({
-				intent: RESTART_INTENTS.restart,
-				method: 'GET',
-				path: '/api/byl/system',
-				code: background?.report.code ?? null,
-				message:
-					background?.report.problem ??
-					'Der Server läuft nach 90 Sekunden noch mit demselben Start.'
-			})
+			message: gone
+				? { title: RESTART_TEXTS.failedTitle, text: RESTART_TEXTS.failedHere }
+				: { title: RESTART_TEXTS.notStartedTitle, text: RESTART_TEXTS.notStarted },
+			problem: restartNoResultProblem(gone, last)
 		};
 	}
 

@@ -2,9 +2,11 @@
 // app/pb_hooks/backup.pb.js. Stateless functions with the PocketBase instance as first parameter.
 // A refusal of the route (like the page System: Windows only, this machine, the address of the app,
 // the owner, rate limit, not available, busy, script) and a missing route (404 before the restart
-// after an update) come as `denied`; a refused input (400) as `invalid` with its problem; the
-// session, the network and an aborted signal are DataErrors. The passphrase only goes in the body
-// of one POST and is never kept here.
+// after an update) come as `denied`; a refused input (400 with `reason: 'invalid'`) as `invalid`
+// with its problem; the session, the network, an aborted signal and every other error answer are
+// DataErrors. A refusal and an answer of another form keep the entry behind "Details" beside the
+// answer (`denialProblem`, FP-3b). The passphrase only goes in the body of one POST and is never
+// kept here.
 
 import type PocketBase from 'pocketbase';
 import {
@@ -24,7 +26,7 @@ import {
 } from '../domain/backup';
 import { denialOf, type SystemDenial } from '../domain/system';
 import { reportRefusal } from './context';
-import { toDataError } from './errors';
+import { keepAnswerProblem, problemOf, toDataError, unreadableProblem } from './errors';
 import type { RequestOptions } from './options';
 
 const ROUTE = '/api/byl/backup';
@@ -42,6 +44,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 async function ask<T>(
 	signal: AbortSignal | undefined,
+	request: { method: 'GET' | 'POST'; path: string },
 	call: () => Promise<unknown>,
 	parse: (answer: unknown) => T | null
 ): Promise<BackupAnswer<T>> {
@@ -59,12 +62,19 @@ async function ask<T>(
 		}
 		if (!signal?.aborted && DENIAL_STATUSES.includes(status)) {
 			reportRefusal(response.reason);
-			return { kind: 'denied', reason: denialOf(status, response.reason) };
+			return keepAnswerProblem<BackupAnswer<T>>(
+				{ kind: 'denied', reason: denialOf(status, response.reason) },
+				problemOf(error)
+			);
 		}
 		throw toDataError(error, signal);
 	}
 	const value = parse(answer);
-	return value === null ? { kind: 'denied', reason: 'script' } : { kind: 'ok', value };
+	if (value !== null) return { kind: 'ok', value };
+	return keepAnswerProblem<BackupAnswer<T>>(
+		{ kind: 'denied', reason: 'script' },
+		unreadableProblem(request.method, request.path)
+	);
 }
 
 /** Settings, passphrase, target, backups, last runs and warnings. */
@@ -74,6 +84,7 @@ export function fetchBackupOverview(
 ): Promise<BackupAnswer<BackupOverview>> {
 	return ask(
 		options.signal,
+		{ method: 'GET', path: ROUTE },
 		() => pb.send(ROUTE, { method: 'GET', requestKey: null, signal: options.signal }),
 		parseOverview
 	);
@@ -86,6 +97,7 @@ export function runBackupNow(
 ): Promise<BackupAnswer<{ overview: BackupOverview; result: RunResult }>> {
 	return ask(
 		options.signal,
+		{ method: 'POST', path: `${ROUTE}/run` },
 		() => pb.send(`${ROUTE}/run`, { method: 'POST', requestKey: null, signal: options.signal }),
 		(answer) => {
 			const overview = parseOverview(answer);
@@ -103,6 +115,7 @@ export function saveBackupSettings(
 ): Promise<BackupAnswer<BackupOverview>> {
 	return ask(
 		options.signal,
+		{ method: 'POST', path: `${ROUTE}/settings` },
 		() =>
 			pb.send(`${ROUTE}/settings`, {
 				method: 'POST',
@@ -123,6 +136,7 @@ export function saveBackupPassphrase(
 ): Promise<BackupAnswer<BackupOverview>> {
 	return ask(
 		options.signal,
+		{ method: 'POST', path: `${ROUTE}/passphrase` },
 		() =>
 			pb.send(`${ROUTE}/passphrase`, {
 				method: 'POST',
@@ -149,6 +163,7 @@ export function verifyBackup(
 		body.passphrase = backup.passphrase;
 	return ask(
 		options.signal,
+		{ method: 'POST', path: `${ROUTE}/verify` },
 		() =>
 			pb.send(`${ROUTE}/verify`, {
 				method: 'POST',
@@ -185,6 +200,7 @@ export function startRestore(
 ): Promise<BackupAnswer<{ since: string }>> {
 	return ask(
 		options.signal,
+		{ method: 'POST', path: `${ROUTE}/restore` },
 		() =>
 			pb.send(`${ROUTE}/restore`, {
 				method: 'POST',
@@ -206,6 +222,7 @@ export function fetchRestoreState(
 ): Promise<BackupAnswer<{ restore: RestoreState | null; safety: SafetyCopy[] }>> {
 	return ask(
 		options.signal,
+		{ method: 'GET', path: `${ROUTE}/restore` },
 		() => pb.send(`${ROUTE}/restore`, { method: 'GET', requestKey: null, signal: options.signal }),
 		(answer) =>
 			isRecord(answer)

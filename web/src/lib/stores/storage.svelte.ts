@@ -1,14 +1,26 @@
 // Page "Einstellungen → Speicher" (ADR-0047 §6 to §9; ADR-0006): what the app takes, measured when
 // the page opens and again on "Neu messen" and after every action; the actions one at a time. The
 // store lives with the page and ends its requests when the page goes. Results go out as flags.
+// Since FP-3b a failure (a failed request, a refusal "script", an answer of another form) carries
+// its entry for "Details" (ADR-0071) and is shown as an error; a refusal of the route and a refused
+// choice stay a warning without one. "Verworfene jetzt leeren" names entries it could not empty
+// (`failed` of its result) as a failure the server reports.
 
 import type PocketBase from 'pocketbase';
-import { toDataError } from '$lib/data/errors';
+import {
+	detailsOf,
+	problemDetails,
+	reportedProblem,
+	scriptProblem,
+	toDataError
+} from '$lib/data/errors';
 import type { RequestOptions } from '$lib/data/options';
 import { fetchStorage, runStorageAction, type StorageAnswer } from '$lib/data/storage';
+import type { ProblemEntry } from '$lib/domain/problems';
 import {
 	ACTION_TEXTS,
 	denialText,
+	discardedFailedText,
 	type LeftoverGroup,
 	type StorageAction,
 	type StorageOverview
@@ -39,6 +51,8 @@ export type StorageState = 'idle' | 'loading' | 'ready' | 'denied' | 'error';
 export interface StorageMessage {
 	title: string;
 	text: string;
+	/** The failed action behind the message (FP-3b), for "Details"; absent for a refusal. */
+	problem?: ProblemEntry | null;
 }
 
 /** What the page says for a refusal; "missing" is the hint to restart after an update. */
@@ -47,6 +61,22 @@ export function storageDenial(reason: SystemDenial): StorageMessage {
 		return { title: RESTART_NEEDED.title, text: restartNeeded('Die Seite Speicher ist') };
 	}
 	return denialText(reason);
+}
+
+/** A refusal with the entry of "script" (FP-3b); every other one stays without. */
+function storageRefusal(answer: { kind: 'denied'; reason: SystemDenial }): StorageMessage {
+	return { ...storageDenial(answer.reason), ...detailsOf(scriptProblem(answer)) };
+}
+
+/** Whether a message is a failure with "Details": an error, not a warning (FP-3b, P5). */
+export function isStorageFailure(message: StorageMessage | null): boolean {
+	return (message?.problem ?? null) !== null;
+}
+
+/** How many entries "Verworfene jetzt leeren" could not empty (`failed` of its result). */
+function failedCount(result: Record<string, unknown>): number {
+	const failed = result.failed;
+	return typeof failed === 'number' && Number.isInteger(failed) && failed > 0 ? failed : 0;
 }
 
 export class StorageStore {
@@ -108,7 +138,7 @@ export class StorageStore {
 			} else if (this.#overview === null) {
 				this.#message =
 					answer.kind === 'denied'
-						? storageDenial(answer.reason)
+						? storageRefusal(answer)
 						: { title: denialText('script').title, text: answer.message };
 				this.#state = 'denied';
 			}
@@ -120,7 +150,11 @@ export class StorageStore {
 				return;
 			}
 			if (this.#overview === null) {
-				this.#message = { title: denialText('script').title, text: failure.message };
+				this.#message = {
+					title: denialText('script').title,
+					text: failure.message,
+					...problemDetails(failure)
+				};
 				this.#state = 'error';
 			}
 		}
@@ -137,21 +171,42 @@ export class StorageStore {
 		try {
 			const answer = await this.#data.act(action, groups, { signal: this.#controller.signal });
 			if (answer.kind === 'denied') {
-				this.#actionMessage = storageDenial(answer.reason);
+				this.#actionMessage = storageRefusal(answer);
 				return false;
 			}
 			if (answer.kind === 'invalid') {
 				this.#actionMessage = { title: ACTION_TEXTS[action].title, text: answer.message };
 				return false;
 			}
-			this.#flags.show({ tone: 'success', title: ACTION_TEXTS[action].done });
+			const failed = action === 'discarded' ? failedCount(answer.value) : 0;
+			if (failed > 0) {
+				// The action ran, but some entries stayed: the server reports it in its result.
+				const text = discardedFailedText(failed);
+				this.#flags.show({
+					tone: 'error',
+					title: text,
+					problem: reportedProblem({
+						intent: ACTION_TEXTS[action].title,
+						method: 'POST',
+						path: `/api/byl/storage/actions/${action}`,
+						code: 'failed',
+						message: text
+					})
+				});
+			} else {
+				this.#flags.show({ tone: 'success', title: ACTION_TEXTS[action].done });
+			}
 			await this.load();
 			return true;
 		} catch (error) {
 			const failure = toDataError(error, this.#controller.signal);
 			if (failure.kind === 'session') this.#session.logout();
 			if (failure.kind !== 'aborted' && failure.kind !== 'session') {
-				this.#actionMessage = { title: ACTION_TEXTS[action].title, text: failure.message };
+				this.#actionMessage = {
+					title: ACTION_TEXTS[action].title,
+					text: failure.message,
+					...problemDetails(failure)
+				};
 			}
 			return false;
 		} finally {

@@ -6,11 +6,13 @@
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Account } from '$lib/domain/accounts';
 import { AccountsStore, type AccountsData } from '$lib/stores/accounts.svelte';
 import type { FlagInput, FlagSink } from '$lib/stores/flags.svelte';
+import { problemLog } from '$lib/stores/problem-log.svelte';
 import { danglingReferences, duplicateIds } from '$lib/test/aria-ids';
+import { failedRequest, scriptRefusal } from '$lib/test/failures';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import AccountsView from './AccountsView.svelte';
 
@@ -450,6 +452,143 @@ describe('page "Konten": households without an active owner (E7-4, ADR-0061 §6)
 				.getByRole('button', { name: 'Endgültig löschen' })
 				.getAttribute('aria-disabled')
 		).toBe('true');
+	});
+});
+
+describe('page "Konten": failures with "Details" (FP-3b)', () => {
+	beforeEach(() => problemLog.clear());
+
+	async function grantAnna() {
+		await choose('Anna Beispiel', 'Zum Verwalter machen …');
+		const dialog = screen.getByRole('dialog', { name: 'Anna Beispiel zum Verwalter machen?' });
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Zum Verwalter machen' }));
+	}
+
+	// BYL-E6-2422
+	it('shows a failed action with "Details" and takes it into the list of the session', async () => {
+		await show({
+			setAdmin: vi.fn(async () => {
+				throw failedRequest('POST', `/api/byl/accounts/${ANNA.id}/admin`);
+			})
+		});
+		await grantAnna();
+		const details = await screen.findByRole('button', {
+			name: 'Details: Recht „Verwalter der App“ ändern'
+		});
+		expect(details.closest('.section-message')?.getAttribute('data-tone')).toBe('error');
+		expect(problemLog.entries.map((entry) => entry.intent)).toEqual([
+			'Recht „Verwalter der App“ ändern'
+		]);
+	});
+
+	// BYL-E6-2422
+	it('gives an answer of another form "Details", a refusal and a refused input none', async () => {
+		const setAdmin = vi
+			.fn<AccountsData['setAdmin']>()
+			.mockResolvedValueOnce({ kind: 'invalid', problem: 'last-admin' })
+			.mockResolvedValueOnce({ kind: 'denied', reason: 'rate' })
+			.mockResolvedValueOnce(scriptRefusal('POST', `/api/byl/accounts/${ANNA.id}/admin`));
+		await show({ setAdmin });
+		await grantAnna();
+		await screen.findByText(/Mindestens ein aktives Konto muss Verwalter bleiben/);
+		await grantAnna();
+		await screen.findByText('Gerade zu viele Änderungen');
+		expect(screen.queryByRole('button', { name: /^Details/ })).toBeNull();
+		expect(problemLog.entries).toEqual([]);
+		await grantAnna();
+		await screen.findByRole('button', { name: 'Details: Recht „Verwalter der App“ ändern' });
+		expect(problemLog.entries[0]?.outcome.result).toBe('answer');
+	});
+
+	// BYL-E6-2444
+	it('shows a failed load and "script" of loading in red with "Details" (R-B6)', async () => {
+		await show({
+			list: vi.fn(async () => {
+				throw failedRequest('GET', '/api/byl/accounts');
+			})
+		});
+		const failed = await screen.findByRole('button', { name: 'Details: Konten laden' });
+		expect(failed.closest('[data-tone]')?.getAttribute('data-tone')).toBe('error');
+		expect(screen.getByText(/Server nicht erreichbar/)).toBeTruthy();
+		document.body.innerHTML = '';
+
+		await show({ list: vi.fn(async () => scriptRefusal('GET', '/api/byl/accounts')) });
+		const script = await screen.findByRole('button', { name: 'Details: Konten laden' });
+		expect(script.closest('[data-tone]')?.getAttribute('data-tone')).toBe('error');
+		// The newest first.
+		expect(problemLog.entries.map((entry) => entry.outcome.result)).toEqual(['answer', 'network']);
+	});
+
+	// BYL-E6-2422
+	it('says nothing for an aborted request and signs out when the session ended', async () => {
+		const logout = vi.fn();
+		const data: AccountsData = {
+			list: vi.fn(async () => ({
+				kind: 'ok' as const,
+				value: { accounts: [SELF, ANNA], passwordMin: 8 }
+			})),
+			create: vi.fn(),
+			resetPassword: vi.fn(),
+			setDisabled: vi.fn(async () => {
+				throw failedRequest('POST', `/api/byl/accounts/${ANNA.id}/disabled`, 'aborted');
+			}),
+			setAdmin: vi.fn(async () => {
+				throw failedRequest('POST', `/api/byl/accounts/${ANNA.id}/admin`, 'session');
+			})
+		};
+		const store = new AccountsStore(data, { ensureValid: () => true, logout });
+		await store.load();
+		expect(await store.setDisabled(ANNA, true)).toBe(false);
+		expect(store.actionMessage).toBeNull();
+		expect(await store.setAdmin(ANNA, true)).toBe(false);
+		expect(store.actionMessage).toBeNull();
+		expect(logout).toHaveBeenCalledTimes(1);
+	});
+
+	// BYL-E6-2423
+	it('shows "Details" below a failure of "Konto anlegen", not below a taken address', async () => {
+		await show({
+			create: vi
+				.fn<AccountsData['create']>()
+				.mockRejectedValueOnce(failedRequest('POST', '/api/byl/accounts'))
+				.mockResolvedValueOnce({ kind: 'invalid', problem: 'email-taken' })
+		});
+		await fireEvent.input(screen.getByLabelText('Name'), { target: { value: 'Dora' } });
+		await fireEvent.input(screen.getByLabelText('E-Mail-Adresse'), {
+			target: { value: 'dora@example.com' }
+		});
+		await fireEvent.click(screen.getByRole('button', { name: 'Konto anlegen' }));
+		const form = screen.getByRole('button', { name: 'Konto anlegen' }).closest('form')!;
+		await within(form).findByRole('button', { name: 'Details: Konto anlegen' });
+		expect(within(form).getByRole('alert').textContent).toMatch(/Server nicht erreichbar/);
+		await fireEvent.click(screen.getByRole('button', { name: 'Konto anlegen' }));
+		await within(form).findByText('Für diese E-Mail-Adresse gibt es schon ein Konto.');
+		expect(within(form).queryByRole('button', { name: /^Details/ })).toBeNull();
+	});
+
+	// BYL-E6-2423
+	it('shows "Details" below a failure in the dialog "Haushalt löschen"', async () => {
+		const ORPHANED = {
+			id: 'house000000003',
+			name: 'Altbau',
+			owner: null,
+			members: [],
+			orphaned: true
+		};
+		await show({
+			list: vi.fn(async () => ({
+				kind: 'ok' as const,
+				value: { accounts: [SELF, ANNA], passwordMin: 8, households: [ORPHANED] }
+			})),
+			deleteHousehold: vi.fn(async () => {
+				throw failedRequest('POST', '/api/byl/accounts/households/house000000003/delete');
+			})
+		});
+		await fireEvent.click(screen.getByRole('button', { name: 'Haushalt löschen …' }));
+		const dialog = screen.getByRole('dialog', { name: 'Haushalt „Altbau“ löschen' });
+		await within(dialog).findByRole('button', { name: 'Details: Verwaisten Haushalt löschen' });
+		expect(within(dialog).getByRole('alert').textContent).toMatch(/Server nicht erreichbar/);
+		expect(danglingReferences(dialog)).toEqual([]);
 	});
 });
 

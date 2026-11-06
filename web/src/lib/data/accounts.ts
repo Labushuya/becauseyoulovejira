@@ -2,8 +2,11 @@
 // Konten" (app/pb_hooks/accounts.pb.js) and the own account through the Record API (name and
 // password on "Einstellungen → Konto"). A refusal of a route (this machine, the address of the
 // app, not the administrator, rate limit, before the restart) comes as `denied` with its reason, a
-// refused input as `invalid` with its problem; the session, the network and an aborted signal are
-// DataErrors. The browser sends Origin itself; nothing here names an address.
+// refused input (`reason: 'invalid'`, also with 404 and 409) as `invalid` with its problem; the
+// session, the network, an aborted signal and every other error answer (also a 400 without
+// `reason: 'invalid'`, e.g. a failure of the hook, FP-3b) are DataErrors. A refusal and an answer of
+// another form keep the entry behind "Details" beside the answer (`denialProblem`, FP-3b). The
+// browser sends Origin itself; nothing here names an address.
 
 import type PocketBase from 'pocketbase';
 import {
@@ -18,7 +21,13 @@ import {
 } from '../domain/accounts';
 import { denialOf, type SystemDenial } from '../domain/system';
 import { reportRefusal } from './context';
-import { toDataError, withDataErrors } from './errors';
+import {
+	keepAnswerProblem,
+	problemOf,
+	toDataError,
+	unreadableProblem,
+	withDataErrors
+} from './errors';
 import type { RequestOptions } from './options';
 
 const ROUTE = '/api/byl/accounts';
@@ -35,31 +44,42 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 async function ask<T>(
-	signal: AbortSignal | undefined,
-	call: () => Promise<unknown>,
+	pb: PocketBase,
+	method: 'GET' | 'POST',
+	path: string,
+	options: { body?: unknown; signal?: AbortSignal },
 	parse: (answer: unknown) => T | null
 ): Promise<AccountsAnswer<T>> {
+	const signal = options.signal;
 	let answer: unknown;
 	try {
-		answer = await call();
+		answer = await pb.send(path, {
+			method,
+			...(options.body !== undefined && { body: options.body }),
+			requestKey: null,
+			signal
+		});
 	} catch (error) {
 		const status = isRecord(error) && typeof error.status === 'number' ? error.status : 0;
 		const response = isRecord(error) && isRecord(error.response) ? error.response : {};
 		if (!signal?.aborted && response.reason === 'invalid' && typeof response.problem === 'string') {
 			return { kind: 'invalid', problem: response.problem };
 		}
-		if (!signal?.aborted && (status === 400 || DENIAL_STATUSES.includes(status))) {
+		if (!signal?.aborted && DENIAL_STATUSES.includes(status)) {
 			reportRefusal(response.reason);
-			return { kind: 'denied', reason: denialOf(status, response.reason) };
+			return keepAnswerProblem<AccountsAnswer<T>>(
+				{ kind: 'denied', reason: denialOf(status, response.reason) },
+				problemOf(error)
+			);
 		}
 		throw toDataError(error, signal);
 	}
 	const value = parse(answer);
-	return value === null ? { kind: 'denied', reason: 'script' } : { kind: 'ok', value };
-}
-
-function post(pb: PocketBase, path: string, body: unknown, signal?: AbortSignal) {
-	return () => pb.send(path, { method: 'POST', body, requestKey: null, signal });
+	if (value !== null) return { kind: 'ok', value };
+	return keepAnswerProblem<AccountsAnswer<T>>(
+		{ kind: 'denied', reason: 'script' },
+		unreadableProblem(method, path)
+	);
 }
 
 /** Every account with e-mail, right, switch and creation (administrator only). */
@@ -67,11 +87,7 @@ export function fetchAccounts(
 	pb: PocketBase,
 	options: RequestOptions = {}
 ): Promise<AccountsAnswer<AccountList>> {
-	return ask(
-		options.signal,
-		() => pb.send(ROUTE, { method: 'GET', requestKey: null, signal: options.signal }),
-		parseAccountList
-	);
+	return ask(pb, 'GET', ROUTE, { signal: options.signal }, parseAccountList);
 }
 
 /** A new account; the answer has the start password, once. */
@@ -80,7 +96,7 @@ export function createAccount(
 	input: { email: string; name: string },
 	options: RequestOptions = {}
 ): Promise<AccountsAnswer<PasswordGrant>> {
-	return ask(options.signal, post(pb, ROUTE, input, options.signal), parsePasswordGrant);
+	return ask(pb, 'POST', ROUTE, { body: input, signal: options.signal }, parsePasswordGrant);
 }
 
 /** A new password for another account, once; its sessions end. */
@@ -90,8 +106,10 @@ export function resetAccountPassword(
 	options: RequestOptions = {}
 ): Promise<AccountsAnswer<PasswordGrant>> {
 	return ask(
-		options.signal,
-		post(pb, `${ROUTE}/${encodeURIComponent(id)}/password`, {}, options.signal),
+		pb,
+		'POST',
+		`${ROUTE}/${encodeURIComponent(id)}/password`,
+		{ body: {}, signal: options.signal },
 		parsePasswordGrant
 	);
 }
@@ -104,8 +122,10 @@ export function setAccountDisabled(
 	options: RequestOptions = {}
 ): Promise<AccountsAnswer<Account>> {
 	return ask(
-		options.signal,
-		post(pb, `${ROUTE}/${encodeURIComponent(id)}/disabled`, { disabled }, options.signal),
+		pb,
+		'POST',
+		`${ROUTE}/${encodeURIComponent(id)}/disabled`,
+		{ body: { disabled }, signal: options.signal },
 		parseAccountAnswer
 	);
 }
@@ -118,8 +138,10 @@ export function setAccountAdmin(
 	options: RequestOptions = {}
 ): Promise<AccountsAnswer<Account>> {
 	return ask(
-		options.signal,
-		post(pb, `${ROUTE}/${encodeURIComponent(id)}/admin`, { admin }, options.signal),
+		pb,
+		'POST',
+		`${ROUTE}/${encodeURIComponent(id)}/admin`,
+		{ body: { admin }, signal: options.signal },
 		parseAccountAnswer
 	);
 }
@@ -135,13 +157,10 @@ export function setHouseholdOwner(
 	options: RequestOptions = {}
 ): Promise<AccountsAnswer<AccountList>> {
 	return ask(
-		options.signal,
-		post(
-			pb,
-			`${ROUTE}/households/${encodeURIComponent(householdId)}/owner`,
-			{ member: memberId },
-			options.signal
-		),
+		pb,
+		'POST',
+		`${ROUTE}/households/${encodeURIComponent(householdId)}/owner`,
+		{ body: { member: memberId }, signal: options.signal },
 		parseAccountList
 	);
 }
@@ -157,13 +176,13 @@ export function deleteOrphanedHousehold(
 	options: RequestOptions = {}
 ): Promise<AccountsAnswer<HouseholdDeletion>> {
 	return ask(
-		options.signal,
-		post(
-			pb,
-			`${ROUTE}/households/${encodeURIComponent(householdId)}/delete`,
-			input.preview ? { preview: true } : { name: input.name ?? '' },
-			options.signal
-		),
+		pb,
+		'POST',
+		`${ROUTE}/households/${encodeURIComponent(householdId)}/delete`,
+		{
+			body: input.preview ? { preview: true } : { name: input.name ?? '' },
+			signal: options.signal
+		},
 		parseHouseholdDeletion
 	);
 }

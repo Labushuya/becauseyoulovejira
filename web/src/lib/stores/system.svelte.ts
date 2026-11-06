@@ -2,10 +2,12 @@
 // prüfen", the logs and the actions. Loaded when the page opens and gone with it. The restart ends
 // the server this page talks to, so after starting it the store waits for the server to go and
 // come back (followRestart of restart-follow.ts, shared with "Jetzt neu starten" in the setup
-// assistants since BW-1), then loads the status again.
+// assistants since BW-1), then loads the status again. Since FP-3b every failure carries its entry
+// for "Details" (ADR-0071): a failed request, a refusal "script" (also of the checks and the logs,
+// shown as an error) and a restart without a result in time; the other refusals stay hints.
 
 import type PocketBase from 'pocketbase';
-import { toDataError } from '$lib/data/errors';
+import { detailsOf, problemDetails, scriptProblem, toDataError } from '$lib/data/errors';
 import type { RequestOptions } from '$lib/data/options';
 import {
 	checkServerHealth,
@@ -15,6 +17,7 @@ import {
 	runSystemAction,
 	type SystemAnswer
 } from '$lib/data/system';
+import type { ProblemEntry } from '$lib/domain/problems';
 import {
 	DENIAL_TEXTS,
 	RESTART_TEXTS,
@@ -32,6 +35,7 @@ import { SILENT_FLAGS, type FlagSink } from './flags.svelte';
 import {
 	REAL_CLOCK,
 	followRestart,
+	restartNoResultProblem,
 	type RestartBefore,
 	type RestartData,
 	type SystemClock
@@ -82,6 +86,19 @@ export function denialNotice(reason: SystemDenial): SystemNotice {
 	return DENIAL_TEXTS[reason];
 }
 
+/**
+ * The message of a refusal with the entry of "script" (FP-3b): the control script answered badly or
+ * the answer had not the form of the route; every other refusal stays a hint without "Details".
+ */
+function refusalNotice(answer: { kind: 'denied'; reason: SystemDenial }): SystemNotice {
+	return { ...denialNotice(answer.reason), ...detailsOf(scriptProblem(answer)) };
+}
+
+/** Whether a message is shown as an error: a failed request or a refusal "script" (FP-3b). */
+export function isFailureNotice(message: SystemNotice | null): boolean {
+	return (message?.problem ?? null) !== null;
+}
+
 const idlePart = <T>(): SystemPart<T> => ({ state: 'idle', value: null, message: null });
 
 export class SystemStore {
@@ -97,6 +114,7 @@ export class SystemStore {
 	#busy = $state<SystemAction | null>(null);
 	#actionMessage = $state<{ tone: 'warning' | 'error'; message: SystemNotice } | null>(null);
 	#restart = $state<RestartPhase>('idle');
+	#restartProblem = $state.raw<ProblemEntry | null>(null);
 	#doctor = $state<SystemPart<DoctorResult>>(idlePart());
 	#logs = $state<SystemPart<SystemLogs>>(idlePart());
 
@@ -139,6 +157,11 @@ export class SystemStore {
 		return this.#restart;
 	}
 
+	/** The entry of "Details" of a restart without a result ('failed', 'not-started'), or null. */
+	get restartProblem(): ProblemEntry | null {
+		return this.#restartProblem;
+	}
+
 	get doctor(): SystemPart<DoctorResult> {
 		return this.#doctor;
 	}
@@ -168,7 +191,9 @@ export class SystemStore {
 				this.#session.logout();
 				return null;
 			}
-			return { failure: { title: 'Nicht geladen', text: failure.message } };
+			return {
+				failure: { title: 'Nicht geladen', text: failure.message, ...problemDetails(failure) }
+			};
 		}
 	}
 
@@ -185,7 +210,7 @@ export class SystemStore {
 		const answer = result.value;
 		if (answer.kind === 'denied') {
 			this.#state = 'denied';
-			this.#message = denialNotice(answer.reason);
+			this.#message = refusalNotice(answer);
 			return;
 		}
 		this.#overview = answer.value;
@@ -210,7 +235,7 @@ export class SystemStore {
 		}
 		const answer = result.value;
 		if (answer.kind === 'denied') {
-			set({ state: 'denied', value: current.value, message: denialNotice(answer.reason) });
+			set({ state: 'denied', value: current.value, message: refusalNotice(answer) });
 			return;
 		}
 		set({ state: 'ready', value: answer.value, message: null });
@@ -234,10 +259,10 @@ export class SystemStore {
 		);
 	}
 
-	#refuse(reason: SystemDenial): void {
+	#refuse(answer: { kind: 'denied'; reason: SystemDenial }): void {
 		this.#actionMessage = {
-			tone: reason === 'script' ? 'error' : 'warning',
-			message: denialNotice(reason)
+			tone: answer.reason === 'script' ? 'error' : 'warning',
+			message: refusalNotice(answer)
 		};
 	}
 
@@ -255,7 +280,7 @@ export class SystemStore {
 			}
 			const answer = result.value;
 			if (answer.kind === 'denied') {
-				this.#refuse(answer.reason);
+				this.#refuse(answer);
 				return null;
 			}
 			if (answer.value === 'restarting') return null;
@@ -299,6 +324,7 @@ export class SystemStore {
 		this.#busy = 'restart';
 		this.#actionMessage = null;
 		this.#restart = 'idle';
+		this.#restartProblem = null;
 		try {
 			const result = await this.#guarded(() => this.#data.act('restart', { signal: this.#signal }));
 			if (result === null) return;
@@ -307,7 +333,7 @@ export class SystemStore {
 				return;
 			}
 			if (result.value.kind === 'denied') {
-				this.#refuse(result.value.reason);
+				this.#refuse(result.value);
 				return;
 			}
 			this.#restart = 'stopping';
@@ -328,6 +354,7 @@ export class SystemStore {
 		if (follow.kind === 'aborted') return;
 		if (follow.kind === 'timeout') {
 			this.#restart = follow.gone ? 'failed' : 'not-started';
+			this.#restartProblem = restartNoResultProblem(follow.gone, follow.last);
 			return;
 		}
 		const answer = follow.answer;
@@ -338,7 +365,11 @@ export class SystemStore {
 			this.#message = null;
 		} else if (answer?.kind === 'denied') {
 			this.#state = 'denied';
-			this.#message = denialNotice(answer.reason);
+			this.#message = refusalNotice(answer);
+			// The page still shows the status from before, so the message of the page would stay
+			// hidden: it stands next to the actions, "script" as an error with "Details" (FP-3b, R-B5).
+			// The server answered, so the restart itself counts as done.
+			this.#refuse(answer);
 		}
 		this.#restart = 'idle';
 		this.#flags.show({

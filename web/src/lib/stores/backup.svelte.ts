@@ -5,6 +5,13 @@
 // as flags. A passphrase lives only in the call that sends it, or for a restore between its check
 // and its confirmation in a private field of this store. A restore stops and starts the app: the
 // store follows its state file through the restart (short polling of the server, CLAUDE.md §7).
+// Since FP-3b every failure carries its entry for "Details" (ADR-0071): a failed request, a refusal
+// "script", a backup, copy into the target, check or restore that failed by the answer of the
+// server (also a start of a restore that failed, beyond RESTORE_REFUSALS), and a restore without a
+// result after 15 minutes; not a refusal of the route, a refused input or an unmet precondition, a
+// missing setting of the copy (EXPORT_UNSET_REASONS), a passphrase that is missing or wrong, and a
+// restore the person cancelled (her own choices). The warnings of the overview are values of the
+// server from earlier runs, no failure of this tab, and stay without.
 
 import type PocketBase from 'pocketbase';
 import {
@@ -18,13 +25,24 @@ import {
 	type BackupAnswer,
 	type RestoreRequest
 } from '$lib/data/backup';
-import { toDataError } from '$lib/data/errors';
-import type { RequestOptions } from '$lib/data/options';
 import {
+	detailsOf,
+	problemDetails,
+	problemWithIntent,
+	reportedProblem,
+	scriptProblem,
+	toDataError,
+	withIntent
+} from '$lib/data/errors';
+import type { RequestOptions } from '$lib/data/options';
+import type { ProblemEntry } from '$lib/domain/problems';
+import {
+	EXPORT_UNSET_REASONS,
 	exportReasonText,
 	isRestoreRunning,
 	PASSPHRASE_PROBLEMS,
 	RESTORE_CONFIRM_WORD,
+	RESTORE_REFUSALS,
 	restoreDoneText,
 	restoreReasonText,
 	verifyCountsText,
@@ -44,8 +62,45 @@ import {
 import { DENIAL_TEXTS, type SystemDenial, type SystemNotice } from '$lib/domain/system';
 import { RESTART_NEEDED, restartNeeded } from '$lib/guidance/texts';
 import { SILENT_FLAGS, type FlagSink } from './flags.svelte';
+import { noResultProblem } from './restart-follow';
 import { REAL_CLOCK, type SystemClock } from './system.svelte';
 import type { SessionGuard } from './ticket-list.svelte';
+
+/** Intents of the actions in "Details" (the words of the catalog, problem-intents.ts). */
+export const BACKUP_INTENTS = Object.freeze({
+	run: 'Jetzt sichern',
+	verify: 'Sicherung prüfen',
+	restore: 'Sicherung wiederherstellen'
+});
+
+const ROUTE = '/api/byl/backup';
+
+/**
+ * Reasons of a check or a restore that are the person's own choice or answer, no failure: the
+ * passphrase is missing or does not fit (she types it), and the restore was cancelled.
+ */
+const OWN_CHOICES: ReadonlySet<string> = new Set(['no-passphrase', 'passphrase', 'cancel']);
+
+/**
+ * The entry of a failure the server reports in a successful answer (FP-3b): the reason as code and
+ * the words of the page; null for the person's own choices (OWN_CHOICES).
+ */
+function reportedBackupProblem(input: {
+	intent: string;
+	method: 'GET' | 'POST';
+	path: string;
+	reason: string;
+	message: string;
+}): ProblemEntry | null {
+	if (OWN_CHOICES.has(input.reason)) return null;
+	return reportedProblem({
+		intent: input.intent,
+		method: input.method,
+		path: input.path,
+		code: input.reason === '' ? null : input.reason,
+		message: input.message
+	});
+}
 
 /** What the page says for a refusal; "missing" is the hint to restart after an update. */
 export function backupDenialNotice(reason: SystemDenial): SystemNotice {
@@ -254,7 +309,9 @@ export class BackupStore {
 				this.#session.logout();
 				return null;
 			}
-			return { failure: { title: 'Nicht geladen', text: failure.message } };
+			return {
+				failure: { title: 'Nicht geladen', text: failure.message, ...problemDetails(failure) }
+			};
 		}
 	}
 
@@ -271,7 +328,10 @@ export class BackupStore {
 		const answer = result.value;
 		if (answer.kind !== 'ok') {
 			this.#state = 'denied';
-			this.#message = backupDenialNotice(answer.kind === 'denied' ? answer.reason : 'script');
+			this.#message =
+				answer.kind === 'denied'
+					? { ...backupDenialNotice(answer.reason), ...detailsOf(scriptProblem(answer)) }
+					: backupDenialNotice('script');
 			return;
 		}
 		this.#overview = answer.value;
@@ -282,38 +342,56 @@ export class BackupStore {
 		if (this.#busy === null && restore !== null && restore.running) void this.#follow(restore.at);
 	}
 
-	#refuse(reason: SystemDenial): void {
+	/**
+	 * A refusal next to the actions: a warning, "script" an error with its entry (FP-3b), named by
+	 * `intent` when the action is not the one of its route (the check before a restore).
+	 */
+	#refuse(answer: { kind: 'denied'; reason: SystemDenial }, intent: string | null): void {
+		const problem = scriptProblem(answer);
 		this.#actionMessage = {
-			tone: reason === 'script' ? 'error' : 'warning',
-			message: backupDenialNotice(reason)
+			tone: answer.reason === 'script' ? 'error' : 'warning',
+			message: {
+				...backupDenialNotice(answer.reason),
+				...detailsOf(intent === null ? problem : problemWithIntent(problem, intent))
+			}
 		};
 	}
 
 	/**
 	 * Runs a change: one at a time; the answer of an accepted change, or null after a refusal (shown)
-	 * or a refused input (handed to `invalid`).
+	 * or a refused input (handed to `invalid`). `intent` names the action in "Details" when it is not
+	 * the one of its route (the check before a restore runs through /verify).
 	 */
 	async #change<T>(
 		busy: BackupBusy,
 		call: (options: RequestOptions) => Promise<BackupAnswer<T>>,
-		invalid: (problem: string) => void
+		invalid: (problem: string) => void,
+		intent: string | null = null
 	): Promise<T | null> {
 		if (this.#busy !== null) return null;
 		this.#busy = busy;
 		this.#actionMessage = null;
 		try {
-			const result = await this.#guarded(() => call({ signal: this.#signal }));
+			const result = await this.#guarded(() =>
+				intent === null
+					? call({ signal: this.#signal })
+					: withIntent(intent, () => call({ signal: this.#signal }))
+			);
 			if (result === null) return null;
 			if ('failure' in result) {
 				this.#actionMessage = {
 					tone: 'error',
-					message: { title: 'Nicht gespeichert', text: result.failure.text }
+					message: {
+						title: 'Nicht gespeichert',
+						text: result.failure.text,
+						...detailsOf(result.failure.problem ?? null)
+					}
 				};
 				return null;
 			}
 			const answer = result.value;
 			if (answer.kind === 'denied') {
-				this.#refuse(answer.reason);
+				this.#refuse(answer, intent);
 				return null;
 			}
 			if (answer.kind === 'invalid') {
@@ -440,10 +518,18 @@ export class BackupStore {
 		this.#accept(answer.overview);
 		const { result } = answer;
 		if (result.backup === '') {
+			const title = 'Die Sicherung ist gescheitert.';
 			this.#flags.show({
 				tone: 'error',
-				title: 'Die Sicherung ist gescheitert.',
-				description: result.backupError
+				title,
+				description: result.backupError,
+				problem: reportedProblem({
+					intent: BACKUP_INTENTS.run,
+					method: 'POST',
+					path: `${ROUTE}/run`,
+					code: null,
+					message: result.backupError === '' ? title : result.backupError
+				})
 			});
 			return;
 		}
@@ -455,10 +541,28 @@ export class BackupStore {
 			});
 			return;
 		}
+		// The copy into the target did not happen. A setting still to make (no target, no passphrase)
+		// is a hint; any other reason of the answer of this action is a failure the server reports:
+		// red with "Details" and an entry (FP-3b, R-B3). Flags show "Details" only in red, like every
+		// message of the app (ADR-0009); the warnings of the overview stay without.
+		const { reason } = result.export;
+		const description = exportReasonText(reason);
+		const title = 'Gesichert, aber nicht im Zielverzeichnis.';
+		if (EXPORT_UNSET_REASONS.has(reason)) {
+			this.#flags.show({ tone: 'info', title, description });
+			return;
+		}
 		this.#flags.show({
-			tone: 'info',
-			title: 'Gesichert, aber nicht im Zielverzeichnis.',
-			description: exportReasonText(result.export.reason)
+			tone: 'error',
+			title,
+			description,
+			problem: reportedProblem({
+				intent: BACKUP_INTENTS.run,
+				method: 'POST',
+				path: `${ROUTE}/run`,
+				code: reason === '' ? null : reason,
+				message: description
+			})
 		});
 	}
 
@@ -496,10 +600,14 @@ export class BackupStore {
 		this.#passphraseRequest = null;
 	}
 
-	/** The check of "Prüfen" (restoreAt null) or of a restore that follows it. */
+	/**
+	 * The check of "Prüfen" (restoreAt null) or of a restore that follows it; the latter names its
+	 * failures "Sicherung wiederherstellen" (it runs through /verify first).
+	 */
 	async #check(backup: BackupRef, passphrase: string | undefined, restoreAt: string | null) {
 		if (this.#busy !== null) return;
 		this.#verifying = { ...backup, restore: restoreAt !== null };
+		const intent = restoreAt === null ? BACKUP_INTENTS.verify : BACKUP_INTENTS.restore;
 		let answer: { overview: BackupOverview; result: VerifyResult } | null;
 		try {
 			answer = await this.#change(
@@ -510,7 +618,8 @@ export class BackupStore {
 					(this.#actionMessage = {
 						tone: 'error',
 						message: { title: 'Nicht geprüft', text: verifyReasonText('name') }
-					})
+					}),
+				restoreAt === null ? null : intent
 			);
 		} finally {
 			this.#verifying = null;
@@ -530,6 +639,14 @@ export class BackupStore {
 			return;
 		}
 		this.#passphraseRequest = null;
+		const failed = () =>
+			reportedBackupProblem({
+				intent,
+				method: 'POST',
+				path: `${ROUTE}/verify`,
+				reason: result.reason,
+				message: verifyReasonText(result.reason)
+			});
 		if (restoreAt !== null) {
 			if (result.ok) {
 				this.#restoreDraft = { ...backup, at: restoreAt, result };
@@ -540,7 +657,8 @@ export class BackupStore {
 			this.#flags.show({
 				tone: 'error',
 				title: 'Diese Sicherung lässt sich nicht wiederherstellen.',
-				description: verifyReasonText(result.reason)
+				description: verifyReasonText(result.reason),
+				problem: failed()
 			});
 			return;
 		}
@@ -556,7 +674,8 @@ export class BackupStore {
 		this.#flags.show({
 			tone: 'error',
 			title: 'Die Prüfung der Sicherung ist gescheitert.',
-			description: verifyReasonText(result.reason)
+			description: verifyReasonText(result.reason),
+			problem: failed()
 		});
 	}
 
@@ -598,14 +717,29 @@ export class BackupStore {
 					this.#restoreProblem = problem;
 					return;
 				}
+				// A refused input or an unmet precondition stays without "Details"; a start that
+				// failed (detach, input, failed, an unknown problem) gets its entry (FP-3b, R-A2).
+				const text = restoreReasonText({ phase: 'failed', reason: problem });
 				this.#actionMessage = {
 					tone: 'error',
 					message: {
 						title: 'Wiederherstellung nicht möglich',
-						text: restoreReasonText({ phase: 'failed', reason: problem })
+						text,
+						...detailsOf(
+							RESTORE_REFUSALS.has(problem)
+								? null
+								: reportedBackupProblem({
+										intent: BACKUP_INTENTS.restore,
+										method: 'POST',
+										path: `${ROUTE}/restore`,
+										reason: problem,
+										message: text
+									})
+						)
 					}
 				};
-			}
+			},
+			BACKUP_INTENTS.restore
 		);
 		if (started === null) return;
 		this.cancelRestore();
@@ -624,6 +758,8 @@ export class BackupStore {
 			for (;;) {
 				if (this.#signal.aborted) return;
 				let state: RestoreState | null = null;
+				// Whether this question went unanswered (the app is away), for "Details" of a timeout.
+				let gone = false;
 				try {
 					const answer = await this.#data.restoreState({ signal: this.#signal });
 					if (
@@ -640,6 +776,9 @@ export class BackupStore {
 						this.#session.logout();
 						return;
 					}
+					// Only a question without an answer means the app is away; a 5xx is an answer of
+					// the server (FP-3b, R-B4).
+					if (failure.kind === 'network') gone = true;
 					this.#restoreProgress = 'offline';
 				}
 				if (state !== null) {
@@ -650,11 +789,20 @@ export class BackupStore {
 					if (isRestoreRunning(state.phase)) this.#restoreProgress = state.phase;
 				}
 				if (this.#clock.now() - begun >= RESTORE_TIMEOUT_MS) {
+					const asked = { method: 'GET', path: `${ROUTE}/restore` };
 					this.#actionMessage = {
 						tone: 'error',
 						message: {
 							title: 'Kein Ergebnis der Wiederherstellung',
-							text: 'Nach 15 Minuten kam kein Ergebnis. status.bat zeigt, ob die App läuft; logs\\byl-control.log nennt den Ablauf.'
+							text: 'Nach 15 Minuten kam kein Ergebnis. status.bat zeigt, ob die App läuft; logs\\byl-control.log nennt den Ablauf.',
+							problem: noResultProblem({
+								intent: BACKUP_INTENTS.restore,
+								gone,
+								unanswered: asked,
+								answered: asked,
+								background: null,
+								fallback: 'Nach 15 Minuten kam kein Ergebnis der Wiederherstellung.'
+							})
 						}
 					};
 					return;
@@ -679,6 +827,7 @@ export class BackupStore {
 			});
 			return;
 		}
+		const text = restoreReasonText(state);
 		this.#actionMessage = {
 			tone: 'error',
 			message: {
@@ -686,7 +835,16 @@ export class BackupStore {
 					state.phase === 'rolled-back'
 						? 'Wiederherstellung zurückgenommen'
 						: 'Wiederherstellung nicht möglich',
-				text: restoreReasonText(state)
+				text,
+				...detailsOf(
+					reportedBackupProblem({
+						intent: BACKUP_INTENTS.restore,
+						method: 'GET',
+						path: `${ROUTE}/restore`,
+						reason: state.reason,
+						message: text
+					})
+				)
 			}
 		};
 	}

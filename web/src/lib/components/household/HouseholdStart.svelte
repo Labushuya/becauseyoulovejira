@@ -2,13 +2,14 @@
 	import { tick } from 'svelte';
 	import Field from '$lib/components/form/Field.svelte';
 	import { groupCodeInput, nameProblem, problemText } from '$lib/domain/household';
+	import type { ProblemEntry } from '$lib/domain/problems';
 	import type { HouseholdStore } from '$lib/stores/household.svelte';
 
 	// Without a household (ADR-0058 §1, §2): "Haushalt gründen" with a name, or "Mit Code beitreten"
 	// with the code of a member. The code is grouped while it is typed ("ABCD-EFGH"); case and hyphen
 	// do not count. Every unknown or ended code gets the same text at the field (the server never
 	// says which case it is), too many attempts the hint to wait. Errors stay at their field
-	// (ADR-0009).
+	// (ADR-0009); a failure there (not a refusal) has "Details" (FP-3b, ADR-0071).
 	let { store }: { store: HouseholdStore } = $props();
 
 	const uid = $props.id();
@@ -19,8 +20,10 @@
 
 	let name = $state('');
 	let nameError = $state('');
+	let nameProblemEntry = $state.raw<ProblemEntry | null>(null);
 	let code = $state('');
 	let codeError = $state('');
+	let codeProblem = $state.raw<ProblemEntry | null>(null);
 	let nameInput = $state<HTMLInputElement>();
 	let codeInput = $state<HTMLInputElement>();
 
@@ -33,12 +36,14 @@
 		const problem = nameProblem(name);
 		if (problem !== '') {
 			nameError = problemText(problem);
+			nameProblemEntry = null;
 			nameInput?.focus();
 			return;
 		}
 		const outcome = await store.found(name);
 		if (outcome.ok) return;
 		nameError = outcome.message;
+		nameProblemEntry = outcome.problem ?? null;
 		await tick();
 		nameInput?.focus();
 	}
@@ -49,6 +54,7 @@
 		const outcome = await store.join(code);
 		if (outcome.ok) return;
 		codeError = outcome.message;
+		codeProblem = outcome.problem ?? null;
 		await tick();
 		codeInput?.focus();
 	}
@@ -60,6 +66,7 @@
 		input.value = grouped.value;
 		input.setSelectionRange(grouped.caret, grouped.caret);
 		codeError = '';
+		codeProblem = null;
 	}
 </script>
 
@@ -73,7 +80,7 @@
 		<h3 id={ids.found}>Haushalt gründen</h3>
 		<p class="note">Du wirst Inhaber und lädst andere mit einem Code ein.</p>
 		<form novalidate onsubmit={found} aria-busy={founding ? 'true' : undefined}>
-			<Field label="Name des Haushalts" error={nameError}>
+			<Field label="Name des Haushalts" error={nameError} problem={nameProblemEntry}>
 				{#snippet control(field)}
 					<input
 						{...field}
@@ -84,7 +91,10 @@
 						maxlength="100"
 						bind:this={nameInput}
 						bind:value={name}
-						oninput={() => (nameError = '')}
+						oninput={() => {
+							nameError = '';
+							nameProblemEntry = null;
+						}}
 					/>
 				{/snippet}
 			</Field>
@@ -109,6 +119,7 @@
 				label="Einladungscode"
 				hint="8 Zeichen; Groß- und Kleinschreibung und Bindestrich sind egal."
 				error={codeError}
+				problem={codeProblem}
 			>
 				{#snippet control(field)}
 					<input

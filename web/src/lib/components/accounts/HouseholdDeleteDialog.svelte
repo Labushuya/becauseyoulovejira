@@ -3,7 +3,9 @@
 	import ErrorIcon from '$lib/components/ErrorIcon.svelte';
 	import Field from '$lib/components/form/Field.svelte';
 	import Modal from '$lib/components/overlay/Modal.svelte';
+	import ProblemDetails from '$lib/components/problems/ProblemDetails.svelte';
 	import { ACCOUNTS_TEXTS, type OrphanHousehold } from '$lib/domain/accounts';
+	import type { ProblemEntry } from '$lib/domain/problems';
 	import {
 		DISSOLVE_TEXTS,
 		dissolveCountLines,
@@ -16,7 +18,8 @@
 	// an orphaned household, in which no member has an account any more. The preview of the server
 	// counts what it holds; deleting needs the name of the household typed and deletes everything for
 	// good, with the logic of dissolving with "delete". Nobody takes the data over, the administrator
-	// neither. Modal M; a refusal stands in the dialog, success closes it with a flag.
+	// neither. Modal M; a refusal stands in the dialog (a failure with "Details", FP-3b), success
+	// closes it with a flag.
 	let {
 		store,
 		household,
@@ -36,6 +39,7 @@
 	let typed = $state('');
 	let nameError = $state('');
 	let message = $state<string | null>(null);
+	let problem = $state.raw<ProblemEntry | null>(null);
 	let nameInput = $state<HTMLInputElement>();
 
 	const busy = $derived(store.busy?.kind === 'delete');
@@ -57,8 +61,10 @@
 		if (outcome.ok) {
 			counts = outcome.counts;
 			message = null;
+			problem = null;
 		} else if (outcome.message !== '') {
 			message = outcome.message;
+			problem = outcome.problem ?? null;
 		}
 	}
 
@@ -66,6 +72,7 @@
 		event.preventDefault();
 		if (busy || loading || counts === null) return;
 		message = null;
+		problem = null;
 		if (!nameConfirmed(typed, household.name)) {
 			nameError = DISSOLVE_TEXTS.nameError;
 			await tick();
@@ -78,6 +85,7 @@
 			return;
 		}
 		message = outcome.message === '' ? null : outcome.message;
+		problem = outcome.problem ?? null;
 	}
 </script>
 
@@ -141,6 +149,7 @@
 
 		{#if message !== null}
 			<div class="alert-error" role="alert"><ErrorIcon /><span>{message}</span></div>
+			<ProblemDetails {problem} />
 		{/if}
 	</form>
 </Modal>

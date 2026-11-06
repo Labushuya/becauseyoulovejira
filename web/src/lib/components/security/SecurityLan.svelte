@@ -19,6 +19,7 @@
 	import type { SecurityOverview } from '$lib/domain/security';
 	import { restartNeeded } from '$lib/guidance/texts';
 	import type { SecurityLanStore } from '$lib/stores/security-lan.svelte';
+	import { isSecurityFailure } from '$lib/stores/security.svelte';
 	import RestartNeededNotice from '../system/RestartNeededNotice.svelte';
 
 	// Access in the home network on the page "Sicherheit" (plan heimnetz, ADR-0055 addendum): the
@@ -27,7 +28,8 @@
 	// the page "System", RestartNeededNotice since BW-2), the firewall rule (Windows asks for
 	// administrator rights after a confirmation here), the network category of each address and how to
 	// keep the address in the FRITZ!Box. Off by default; only the own instance under Windows can
-	// change it. Checks speak at the field (ADR-0009), nothing is red but a real failure.
+	// change it. Checks speak at the field (ADR-0009), nothing is red but a real failure; a failure
+	// has "Details" (FP-3b), a declined prompt for administrator rights not (her own choice).
 	let {
 		overview,
 		store,
@@ -167,7 +169,11 @@
 	<p class="note" role="status">Adressen und Firewall werden geprüft …</p>
 {:else if info === null}
 	{#if store.message !== null}
-		<SectionMessage tone={store.state === 'error' ? 'error' : 'info'} title={store.message.title}>
+		<SectionMessage
+			tone={store.state === 'error' || isSecurityFailure(store.message) ? 'error' : 'info'}
+			title={store.message.title}
+			problem={store.message.problem ?? null}
+		>
 			{store.message.text}
 			{#snippet actions()}
 				<button class="button-subtle" type="button" onclick={() => void store?.load()}>
@@ -226,7 +232,12 @@
 		</fieldset>
 
 		{#if message !== null && message.part === 'save'}
-			<SectionMessage tone="error" title={message.message.title} live>
+			<SectionMessage
+				tone="error"
+				title={message.message.title}
+				live
+				problem={message.message.problem ?? null}
+			>
 				{message.message.text}
 				{#if store.invalid.length > 0}
 					Abgelehnt: {store.invalid.join(', ')}.
@@ -288,14 +299,25 @@
 		</div>
 	{/if}
 	{#if message !== null && message.part === 'firewall'}
-		<SectionMessage tone="error" title={message.message.title} live>
+		<SectionMessage
+			tone="error"
+			title={message.message.title}
+			live
+			problem={message.message.problem ?? null}
+		>
 			{message.message.text}
 		</SectionMessage>
 	{/if}
 	{#if store.failed !== null}
 		{@const failed = store.failed}
 		{@const command = failed.action === 'add' ? info.firewall.add : info.firewall.remove}
-		<SectionMessage tone="error" title={firewallFailureTitle(failed)} live headingLevel={4}>
+		<SectionMessage
+			tone="error"
+			title={firewallFailureTitle(failed)}
+			live
+			headingLevel={4}
+			problem={store.failedProblem}
+		>
 			{#if failed.report !== null}
 				<ScriptProblemDetails report={failed.report} />
 			{:else}

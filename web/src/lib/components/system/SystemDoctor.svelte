@@ -3,13 +3,14 @@
 	import SectionMessage from '$lib/components/guidance/SectionMessage.svelte';
 	import type { GuidanceIconName } from '$lib/components/guidance/GuidanceIcon.svelte';
 	import { DOCTOR_LEVEL_LABELS, type DoctorLevel, type DoctorResult } from '$lib/domain/system';
-	import type { SystemPart } from '$lib/stores/system.svelte';
+	import { isFailureNotice, type SystemPart } from '$lib/stores/system.svelte';
 	import ScriptProblemDetails from './ScriptProblemDetails.svelte';
 
 	// Result of "Umgebung prüfen" on the page System (ADR-0043): the checks of doctor as a list, each
 	// with a lozenge for its level and the German text of the control script. Red only for a real
 	// error (ADR-0009); a warning is neutral with its icon. A check that found a problem opens its
-	// entry of the catalog of the scripts under "Was tun?" (ADR-0048): cause, steps and command.
+	// entry of the catalog of the scripts under "Was tun?" (ADR-0048): cause, steps and command. A
+	// check that could not run (a failed request, "script") is an error with "Details" (FP-3b).
 	let { part }: { part: SystemPart<DoctorResult> } = $props();
 
 	const LOOK: Readonly<
@@ -37,7 +38,11 @@
 	{#if part.state === 'loading'}
 		<p class="note">Wird geprüft …</p>
 	{:else if part.message !== null}
-		<SectionMessage tone={part.state === 'error' ? 'error' : 'warning'} title={part.message.title}>
+		<SectionMessage
+			tone={part.state === 'error' || isFailureNotice(part.message) ? 'error' : 'warning'}
+			title={part.message.title}
+			problem={part.message.problem ?? null}
+		>
 			{part.message.text}
 		</SectionMessage>
 	{:else if part.value !== null}

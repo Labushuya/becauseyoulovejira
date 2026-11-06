@@ -4,10 +4,21 @@
 // server was gone and answers again, or answers with a new start time (a restart so fast that it
 // never seemed gone), and gives up after RESTART_TIMEOUT_MS. The short polling concerns the server,
 // not data (CLAUDE.md §7), and ends with the restart. Module without runes; tests pass a fake clock.
+// Since FP-3b `noResultProblem` is the one entry of "Details" for a restart (page System and
+// "Jetzt neu starten") and a restore of a backup that gave no result in time.
 
+import { reportedScriptProblem, unansweredProblem } from '$lib/data/errors';
 import type { RequestOptions } from '$lib/data/options';
 import type { SystemAnswer } from '$lib/data/system';
-import type { SystemAction, SystemOverview } from '$lib/domain/system';
+import type { ProblemEntry } from '$lib/domain/problems';
+import type { BackgroundProblem, SystemAction, SystemOverview } from '$lib/domain/system';
+import type { RestartTask } from '$lib/guidance/texts';
+
+/** Intents of the two actions in "Details" (the words of the catalog, problem-intents.ts). */
+export const RESTART_INTENTS: Readonly<Record<RestartTask, string>> = Object.freeze({
+	restart: 'App neu starten',
+	'mail-restart': 'Mail-Helfer neu starten'
+});
 
 /** What a restart needs of the data layer (data/system.ts); the page "System" needs more. */
 export interface RestartData {
@@ -99,4 +110,56 @@ export async function followRestart(
 		if (elapsed >= RESTART_TIMEOUT_MS) return { kind: 'timeout', gone, last };
 		await clock.wait(RESTART_POLL_MS, signal);
 	}
+}
+
+/** The request a place kept asking while it waited for a result. */
+export interface AskedRequest {
+	method: string;
+	path: string;
+}
+
+/**
+ * The entry behind "Details" of a restart or a restore that gave no result in time (BW-1, ADR-0072
+ * §6; since FP-3b also the page System and the restore of a backup):
+ * - `gone`: the server went and did not come back, `unanswered` got no answer: "Keine Verbindung
+ *   zum Server" with that request;
+ * - otherwise the server kept answering `answered` without a result (the restart did not begin, the
+ *   restore did not end): "Vom Server gemeldeter Fehler" with the error of the last run without
+ *   window the control script keeps (ADR-0048 §4, only its code and problem), else `fallback`.
+ */
+export function noResultProblem(input: {
+	intent: string;
+	gone: boolean;
+	unanswered: AskedRequest;
+	answered: AskedRequest;
+	background: BackgroundProblem | null;
+	fallback: string;
+}): ProblemEntry {
+	if (input.gone) return unansweredProblem({ intent: input.intent, ...input.unanswered });
+	return reportedScriptProblem({
+		intent: input.intent,
+		...input.answered,
+		report: input.background?.report ?? null,
+		code: null,
+		message: input.fallback
+	});
+}
+
+/**
+ * The entry of a restart without a result in time, the same on the page System and at every
+ * "Jetzt neu starten": the server did not come back (`gone`, GET /api/health without an answer) or
+ * kept running with the same start (the last status names the error of the run without window).
+ */
+export function restartNoResultProblem(
+	gone: boolean,
+	last: SystemAnswer<SystemOverview> | null
+): ProblemEntry {
+	return noResultProblem({
+		intent: RESTART_INTENTS.restart,
+		gone,
+		unanswered: { method: 'GET', path: '/api/health' },
+		answered: { method: 'GET', path: '/api/byl/system' },
+		background: last?.kind === 'ok' ? last.value.status.backgroundProblem : null,
+		fallback: 'Der Server läuft nach 90 Sekunden noch mit demselben Start.'
+	});
 }

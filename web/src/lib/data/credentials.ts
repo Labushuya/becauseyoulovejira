@@ -2,14 +2,19 @@
 // app/pb_hooks/credentials.pb.js. Stateless functions with the PocketBase instance as first
 // parameter. A value goes only into the body of the POST of "Setzen" (never into the address, a
 // store or a log of the app) and never comes back. Refusals of the checks of the page System come
-// as `denied` with their reason, problems of a name or value (400) as `invalid` with the words of
-// the server; the session, the network and an aborted signal are DataErrors. These requests never
+// as `denied` with their reason, problems of a name or value (400 with a problem of the route,
+// CREDENTIAL_PROBLEMS; the route sends no `reason` there) as `invalid` with the words of the
+// server, `write` (Windows did not keep the value) with the entry behind "Details" (FP-3b, R-A1);
+// the session, the network, an aborted signal and every other error answer (also a 400
+// without such a problem, e.g. a failure of the hook, FP-3b) are DataErrors. These requests never
 // go into the outbox of the app (ADR-0074): it takes only the actions it knows, and this module
 // gives it none. The browser sends Origin itself; nothing here names an address.
 
 import type PocketBase from 'pocketbase';
 import {
 	credentialProblemOf,
+	isCredentialFailure,
+	isCredentialProblem,
 	parseCredentialStatus,
 	type CredentialProblem,
 	type CredentialStatus
@@ -17,17 +22,27 @@ import {
 import type { ProblemEntry } from '../domain/problems';
 import { denialOf, type SystemDenial } from '../domain/system';
 import { reportRefusal } from './context';
-import { DataError, noteRequest, problemOf, toDataError } from './errors';
+import { problemOf, toDataError, unreadableProblem } from './errors';
 import type { RequestOptions } from './options';
 
 const ROUTE = '/api/byl/credentials';
 // Statuses with which the routes refuse like the page System (403, 404, 409, 429, 502, 503).
 const DENIAL_STATUSES = [403, 404, 409, 429, 502, 503];
 
+/**
+ * `invalid` keeps the problem of the route in `problem` (its own field of the answer, not kept beside
+ * it like `keepAnswerProblem`); `details` is the entry behind "Details", only for a problem that is a
+ * failure (`write`, CREDENTIAL_FAILURES, FP-3b R-A1), null for a refused input.
+ */
 export type CredentialAnswer<T> =
 	| { kind: 'ok'; value: T }
 	| { kind: 'denied'; reason: SystemDenial; problem: ProblemEntry | null }
-	| { kind: 'invalid'; problem: CredentialProblem; message: string | null };
+	| {
+			kind: 'invalid';
+			problem: CredentialProblem;
+			message: string | null;
+			details: ProblemEntry | null;
+	  };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -45,11 +60,13 @@ async function ask<T>(
 	} catch (error) {
 		const status = isRecord(error) && typeof error.status === 'number' ? error.status : 0;
 		const response = isRecord(error) && isRecord(error.response) ? error.response : {};
-		if (!signal?.aborted && status === 400) {
+		if (!signal?.aborted && status === 400 && isCredentialProblem(response.problem)) {
+			const problem = credentialProblemOf(response);
 			return {
 				kind: 'invalid',
-				problem: credentialProblemOf(response),
-				message: typeof response.message === 'string' ? response.message : null
+				problem,
+				message: typeof response.message === 'string' ? response.message : null,
+				details: isCredentialFailure(problem) ? problemOf(error) : null
 			};
 		}
 		if (!signal?.aborted && DENIAL_STATUSES.includes(status)) {
@@ -62,9 +79,11 @@ async function ask<T>(
 	const value = parse(answer);
 	if (value !== null) return { kind: 'ok', value };
 	// The server answered, but not in the form of the route: "Unerwartete Antwort des Servers".
-	const unreadable = new DataError('server');
-	noteRequest(unreadable, request.method, request.path);
-	return { kind: 'denied', reason: 'script', problem: problemOf(unreadable) };
+	return {
+		kind: 'denied',
+		reason: 'script',
+		problem: unreadableProblem(request.method, request.path)
+	};
 }
 
 /**

@@ -14,8 +14,8 @@ import {
 	restartOverview,
 	restartStoreOf
 } from '$lib/test/restart-fake';
-import { DataError, noteRequest } from '$lib/data/errors';
-import { denialProblem, runSystemAction } from '$lib/data/system';
+import { DataError, denialProblem, noteRequest } from '$lib/data/errors';
+import { runSystemAction } from '$lib/data/system';
 import { RESTART_TIMEOUT_MS } from './restart-follow';
 import { RESTART_INTENTS, RestartStore } from './restart.svelte';
 import { systemData } from './system.svelte';
