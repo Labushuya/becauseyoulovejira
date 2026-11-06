@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { tick, type Snippet } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { tick, untrack, type Snippet } from 'svelte';
+	import { afterNavigate, goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { areaMover } from '$lib/area-move-entry';
@@ -13,6 +13,7 @@
 		KIND_LABELS,
 		VIEW_LABELS,
 		linkedTicketOf,
+		listedTime,
 		type InboxItemSummary,
 		type InboxView
 	} from '$lib/domain/inbox';
@@ -35,7 +36,13 @@
 	import type { Project } from '$lib/domain/project';
 	import { projectChoiceLabel, treeOrder } from '$lib/domain/project-tree';
 	import { SOURCE_FAMILY_CHIPS, SOURCE_FAMILY_LABELS, type SourceFamily } from '$lib/domain/source';
-	import { noEntryMatchText, noEntryMatchTitle, searchHitsText } from '$lib/domain/source-search';
+	import {
+		noEntryMatchText,
+		noEntryMatchTitle,
+		noLoadedEntryMatchText,
+		noLoadedEntryMatchTitle,
+		searchHitsText
+	} from '$lib/domain/source-search';
 	import { canLeaveTicket, canSavePage, isMainSource } from '$lib/domain/sources';
 	import { SYNC_OFFLINE_LABEL } from '$lib/domain/sync-all';
 	import {
@@ -140,7 +147,11 @@
 	// hits ("3 von 12", "3 von 50+" while further pages wait), without a hit the empty state "Kein
 	// Eintrag passt zu „…“" with "Suche zurücksetzen". Escape empties the field; "Filter zurücksetzen"
 	// and "Zurücksetzen" of the sheet empty it too, and "Filter (n)" does not count it. Order, groups,
-	// the selection and the bulk actions follow the visible rows only.
+	// the selection and the bulk actions follow the visible rows only. After the review: while page 1
+	// loads again for a changed search (`handledRefreshing`) the rows, the numbers and "Weitere laden"
+	// stay and the list is busy, "Eingang wird geladen …" stands only without a row; a paged view
+	// without a hit among its loaded pages says so and offers "Weitere laden"; a changed search keeps
+	// only the chosen entries it shows; back and forward show the search of the address again.
 	let {
 		store,
 		flags,
@@ -278,6 +289,8 @@
 	const ready = $derived(
 		showsNew ? store.state === 'ready' : store.state === 'ready' && store.handledLoad === 'ready'
 	);
+	/** Page 1 of a paged view loads again for a changed search; the loaded rows stay (EG-2 review). */
+	const refreshing = $derived(!showsNew && store.handledRefreshing);
 	const unavailable = $derived(store.state === 'error' && store.error !== null);
 	const countLabel = $derived(
 		rows.length === 1 ? '1 Eintrag' : `${rows.length}${store.handledHasMore ? '+' : ''} Einträge`
@@ -291,13 +304,22 @@
 			? searchHitsText(rows.length, store.searchTotal, !showsNew && store.handledHasMore)
 			: ''
 	);
-	/** What is said once typing pauses: the hits, or that no entry fits. */
+	/**
+	 * No row of the loaded pages fits the search while further pages wait (EG-2 review): the empty
+	 * state then speaks of the loaded entries only and offers "Weitere laden".
+	 */
+	const noLoadedHit = $derived(
+		store.searching && ready && !refreshing && rows.length === 0 && store.handledHasMore
+	);
+	/** What is said once typing pauses: the hits, or that no entry (of the loaded ones) fits. */
 	const searchAnnouncement = $derived(
 		searchCount === ''
 			? ''
-			: rows.length === 0 && !store.handledHasMore
+			: rows.length === 0 && !store.handledHasMore && !refreshing
 				? noEntryMatchText(query.search ?? '')
-				: searchCount
+				: noLoadedHit
+					? noLoadedEntryMatchText(query.search ?? '')
+					: searchCount
 	);
 	const caption = $derived(
 		`${
@@ -381,6 +403,42 @@
 		await navigate({ ...query, search: null });
 		searchInput?.focus();
 	}
+
+	// Back and forward (EG-2 review): the field shows the search of the address again, also while it
+	// has the focus. FilterBar keeps its own way for now (a point noted in the review).
+	afterNavigate(({ type }) => {
+		if (type === 'popstate') typed = null;
+	});
+
+	/** "Weitere laden" of the empty state of a paged view without a hit on its loaded pages. */
+	let moreFromEmpty = $state<HTMLButtonElement | null>(null);
+
+	/**
+	 * "Weitere laden" from that empty state: a page with a hit removes it, so a focus lost with it
+	 * goes to the first row, else back to the button, else to the heading.
+	 */
+	async function loadMoreFromEmpty() {
+		await store.loadMoreHandled();
+		await tick();
+		const active = document.activeElement;
+		if (active !== null && active !== document.body) return;
+		(titleLinks()[0] ?? moreFromEmpty ?? heading)?.focus();
+	}
+
+	// A changed search keeps only the chosen entries it shows (EG-2 review): an entry it hides does not
+	// come back chosen when the search goes.
+	let selectionSearch: string | null | undefined;
+	$effect(() => {
+		const search = query.search ?? null;
+		const previous = selectionSearch;
+		selectionSearch = search;
+		if (previous === undefined || previous === search) return;
+		untrack(() => {
+			const shownIds = new Set(rows.map((item) => item.id));
+			const kept = selected.filter((id) => shownIds.has(id));
+			if (kept.length !== selected.length) selected = kept;
+		});
+	});
 
 	function toggle(id: string, on: boolean) {
 		selected = on
@@ -785,7 +843,7 @@
 {#snippet row(item: InboxItemSummary)}
 	{@const pending = store.isPending(item.id)}
 	{@const sourceDate = sourceDateOf(item)}
-	{@const arrival = byArrival ? item.created : (item.handledAt ?? item.created)}
+	{@const arrival = listedTime(item, query.state)}
 	{@const linkedTicket = linkedTicketOf(item)}
 	<tr
 		class="row"
@@ -919,7 +977,7 @@
 {#snippet card(item: InboxItemSummary)}
 	{@const pending = store.isPending(item.id)}
 	{@const sourceDate = sourceDateOf(item)}
-	{@const arrival = byArrival ? item.created : (item.handledAt ?? item.created)}
+	{@const arrival = listedTime(item, query.state)}
 	{@const linkedTicket = linkedTicketOf(item)}
 	{@const targetLabel = targetsReady ? targetText(targetOfItem(item, projects)) : ''}
 	{@const choosing = selecting && choosable(item)}
@@ -1334,7 +1392,34 @@
 		{/if}
 	{:else if !showsNew && store.handledLoad === 'error' && store.handledError}
 		{@render failure(store.handledError)}
-	{:else if ready && rows.length === 0 && !store.handledHasMore}
+	{:else if noLoadedHit}
+		<!-- No hit on the loaded pages while further ones wait (EG-2 review): it never says that no
+		     entry fits at all. -->
+		<EmptyState
+			size="narrow"
+			icon="search"
+			title={noLoadedEntryMatchTitle(query.search ?? '')}
+			description="Weitere Einträge sind noch nicht geladen; „Weitere laden“ holt die nächsten."
+		>
+			{#snippet primary()}
+				<button
+					class="button-primary"
+					type="button"
+					disabled={store.loadingMoreHandled}
+					aria-busy={store.loadingMoreHandled ? 'true' : undefined}
+					bind:this={moreFromEmpty}
+					onclick={() => void loadMoreFromEmpty()}
+				>
+					{store.loadingMoreHandled ? 'Wird geladen …' : 'Weitere laden'}
+				</button>
+			{/snippet}
+			{#snippet secondary()}
+				<button class="button-subtle" type="button" onclick={clearSearch}>
+					Suche zurücksetzen
+				</button>
+			{/snippet}
+		</EmptyState>
+	{:else if ready && !refreshing && rows.length === 0 && !store.handledHasMore}
 		{#if searching}
 			<!-- No hit (EG-2): the search goes first; with filters set, "Filter zurücksetzen" empties both. -->
 			<EmptyState
@@ -1400,13 +1485,14 @@
 				description="Was du in ein Ticket umwandelst oder mit einem Ticket verknüpfst, steht danach hier mit einem Link zum Ticket."
 			/>
 		{/if}
-	{:else if !ready}
+	{:else if (!ready || refreshing) && rows.length === 0}
+		<!-- Only without a row: while page 1 loads again, the loaded rows stay (EG-2 review). -->
 		<p class="loading" role="status">Eingang wird geladen …</p>
 	{/if}
 
 	{#if phone && rows.length > 0}
 		<!-- Cards instead of the table (MO-6): the same groups and order. -->
-		<div class="card-list" {@attach rowMenus}>
+		<div class="card-list" aria-busy={refreshing ? 'true' : undefined} {@attach rowMenus}>
 			<p class="cards-caption" class:visually-hidden={showsNew && !grouped}>{caption}</p>
 			{#each groups as group (group.key)}
 				{#if grouped}
@@ -1434,7 +1520,7 @@
 		</div>
 	{:else if rows.length > 0}
 		<div class="frame" bind:this={frame}>
-			<table {@attach rowMenus}>
+			<table aria-busy={refreshing ? 'true' : undefined} {@attach rowMenus}>
 				<caption id={ids.caption}
 					>{caption}{#if columnFit.fit.autoHidden.length > 0}<span class="caption-more"
 							>{MORE_COLUMNS_HINT}</span
@@ -1492,8 +1578,9 @@
 			</table>
 		</div>
 	{/if}
-	{#if !showsNew && store.handledLoad === 'ready' && (store.handledHasMore || store.loadingMoreHandled)}
-		<!-- Below the table, so it stays reachable when every loaded row left the view. -->
+	{#if !showsNew && !noLoadedHit && store.handledLoad === 'ready' && (store.handledHasMore || store.loadingMoreHandled)}
+		<!-- Below the table, so it stays reachable when every loaded row left the view; without a hit
+		     of the search the empty state offers it instead (EG-2 review). -->
 		<button
 			class="more"
 			type="button"
@@ -1868,10 +1955,6 @@
 		/* The search in its own row over the full width (EG-2, like "Erledigte"); 44 px from base.css. */
 		:global(:root[data-mobile-layout='on']) .phone-search {
 			margin-bottom: 0.75rem;
-		}
-
-		:global(:root[data-mobile-layout='on']) .phone-search :global(.list-search) {
-			flex-basis: 100%;
 		}
 
 		:global(:root[data-mobile-layout='on']) .phone-search :global(.search-field) {

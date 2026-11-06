@@ -14,20 +14,26 @@ import type { Project } from '$lib/domain/project';
 import type { TicketSummary } from '$lib/domain/ticket';
 import { FLAG_DURATION_MS, FlagStore } from '$lib/stores/flags.svelte';
 import { InboxStore, type InboxData } from '$lib/stores/inbox.svelte';
+import type { HandledItemPage } from '$lib/data/inbox';
 import { SEARCH_MAX_LENGTH } from '$lib/domain/list-query';
 import { loosePattern } from '$lib/domain/ticket-picker';
 import { resize, useResizeObserverStub } from '$lib/test/resize-observer-stub';
 import InboxTable from './InboxTable.svelte';
 import FlagGroup from './overlay/FlagGroup.svelte';
 import source from './InboxTable.svelte?raw';
-import inboxLayout from '../../routes/(app)/eingang/+layout.svelte?raw';
+import { SEARCH_DEBOUNCE_MS } from '$lib/stores/ticket-list.svelte';
 
 const mocks = vi.hoisted(() => ({
 	goto: vi.fn(async () => undefined),
-	page: { url: new URL('http://localhost:3000/eingang') }
+	page: { url: new URL('http://localhost:3000/eingang') },
+	/** Callbacks of afterNavigate (back and forward of the search, EG-2 review), called by the tests. */
+	after: [] as ((navigation: { type: string }) => void)[]
 }));
 
-vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
+vi.mock('$app/navigation', () => ({
+	goto: mocks.goto,
+	afterNavigate: (callback: (navigation: { type: string }) => void) => mocks.after.push(callback)
+}));
 vi.mock('$app/state', () => ({ page: mocks.page }));
 
 function item(id: string, overrides: Partial<InboxItemSummary> = {}): InboxItemSummary {
@@ -178,6 +184,7 @@ function lastTarget(): string {
 beforeEach(() => {
 	mocks.goto.mockClear();
 	mocks.page.url = new URL('http://localhost:3000/eingang');
+	mocks.after.length = 0;
 });
 
 afterEach(() => {
@@ -1292,12 +1299,154 @@ describe('search (EG-2)', () => {
 		await narrow('milch');
 		expect(screen.getByRole('button', { name: 'Gesammelt umwandeln (1)' })).toBeTruthy();
 		expect(screen.getByRole('button', { name: 'Mit Ticket verknüpfen … (1)' })).toBeTruthy();
+		// The changed search kept only the chosen entry it shows (EG-2 review): the others do not
+		// come back chosen when it goes.
+		await narrow(null);
+		expect(screen.getByRole('button', { name: 'Verwerfen (1)' })).toBeTruthy();
+		expect(box('Artikel').checked).toBe(false);
+		expect(box('Milch kaufen').checked).toBe(true);
+		await narrow('milch');
 		await fireEvent.click(screen.getByRole('button', { name: 'Verwerfen (1)' }));
 		await vi.waitFor(() => expect(data.discard).toHaveBeenCalledTimes(1));
 		expect(data.discard).toHaveBeenCalledWith(A.id);
-		// The dialogs of "Gesammelt umwandeln" and "Mit Ticket verknüpfen …" get the visible ones.
-		expect(inboxLayout).toMatch(
-			/return inbox\.visible\s*\.filter\(\(item\) => item\.state === 'new' && selected\.includes\(item\.id\)\)/
+	});
+
+	it('keeps rows, numbers and "Weitere laden" while page 1 loads again, and the list is busy (EG-2 review)', async () => {
+		mocks.page.url = new URL('http://localhost:3000/eingang?zustand=verworfen');
+		const old = (id: string, title: string) =>
+			item(id, { title, state: 'discarded', handledAt: '2026-09-20 10:00:00.000Z' });
+		const { store, data } = setup({
+			query: { source: null, state: 'discarded' },
+			handled: [old('item00000000008', 'Alte Rechnung'), old('item00000000009', 'Neuer Brief')]
+		});
+		await table();
+		expect(screen.getByRole('button', { name: 'Weitere laden' })).toBeTruthy();
+		let answer: (page: HandledItemPage) => void = () => undefined;
+		data.listHandled.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					answer = resolve;
+				})
 		);
+		vi.useFakeTimers({ shouldAdvanceTime: true });
+		store.activate({ source: null, state: 'discarded', search: 'rechnung' });
+		await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
+		expect(data.listHandled).toHaveBeenCalledTimes(2);
+		expect(store.handledRefreshing).toBe(true);
+		// The loaded rows stay, narrowed; numbers and "Weitere laden" stay; nothing says "geladen".
+		expect(shown()).toEqual(['Alte Rechnung']);
+		expect(screen.getByRole('table').getAttribute('aria-busy')).toBe('true');
+		expect(screen.getByText('1 von 2+')).toBeTruthy();
+		expect(document.querySelector('.section-bar .count')?.textContent).toContain('1+');
+		expect(screen.getByRole('button', { name: 'Weitere laden' })).toBeTruthy();
+		expect(screen.queryByText('Eingang wird geladen …')).toBeNull();
+
+		answer({
+			items: [old('item00000000008', 'Alte Rechnung'), old('item00000000007', 'Rechnung neu')],
+			page: 1,
+			hasMore: false
+		});
+		await vi.advanceTimersByTimeAsync(0);
+		await tick();
+		expect(store.handledRefreshing).toBe(false);
+		expect(screen.getByRole('table').hasAttribute('aria-busy')).toBe(false);
+		expect(shown()).toEqual(['Alte Rechnung', 'Rechnung neu']);
+		expect(screen.getByText('2 von 2')).toBeTruthy();
+		expect(screen.queryByRole('button', { name: 'Weitere laden' })).toBeNull();
+	});
+
+	it('says "Eingang wird geladen …" while page 1 loads again only without a row (EG-2 review)', async () => {
+		mocks.page.url = new URL('http://localhost:3000/eingang?zustand=verworfen&q=xyz');
+		const { store, data } = setup({
+			query: { source: null, state: 'discarded', search: 'xyz' },
+			handled: []
+		});
+		await screen.findByRole('heading', {
+			name: 'Von den bisher geladenen Einträgen passt keiner zu „xyz“'
+		});
+		data.listHandled.mockImplementationOnce(() => new Promise(() => undefined));
+		vi.useFakeTimers({ shouldAdvanceTime: true });
+		store.activate({ source: null, state: 'discarded', search: 'abc' });
+		await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
+		expect(store.handledRefreshing).toBe(true);
+		// Without a row there is nothing to keep: it loads, it does not claim that nothing fits.
+		expect(screen.getByText('Eingang wird geladen …')).toBeTruthy();
+		expect(screen.queryByRole('heading', { name: /passt zu/ })).toBeNull();
+	});
+
+	it('speaks of the loaded entries only when none of them fits while further pages wait (EG-2 review)', async () => {
+		mocks.page.url = new URL('http://localhost:3000/eingang?zustand=verworfen&q=zahnarzt');
+		const old = (id: string, title: string) =>
+			item(id, { title, state: 'discarded', handledAt: '2026-09-20 10:00:00.000Z' });
+		const { data } = setup({
+			query: { source: null, state: 'discarded', search: 'zahnarzt' },
+			handled: [old('item00000000008', 'Alte Rechnung')]
+		});
+		const heading = await screen.findByRole('heading', {
+			name: 'Von den bisher geladenen Einträgen passt keiner zu „zahnarzt“'
+		});
+		expect(heading).toBeTruthy();
+		expect(screen.queryByRole('heading', { name: 'Kein Eintrag passt zu „zahnarzt“' })).toBeNull();
+		expect(screen.getByText('0 von 1+')).toBeTruthy();
+		// One "Weitere laden", in the empty state, beside "Suche zurücksetzen".
+		const more = screen.getAllByRole('button', { name: 'Weitere laden' });
+		expect(more).toHaveLength(1);
+		expect(screen.getByRole('button', { name: 'Suche zurücksetzen' })).toBeTruthy();
+
+		data.listHandled.mockResolvedValueOnce({
+			items: [old('item00000000005', 'Zahnarzt Termin')],
+			page: 2,
+			hasMore: false
+		});
+		more[0]!.focus();
+		await fireEvent.click(more[0]!);
+		await vi.waitFor(() => expect(shown()).toEqual(['Zahnarzt Termin']));
+		expect(data.listHandled).toHaveBeenLastCalledWith(
+			'discarded',
+			2,
+			expect.objectContaining({ patterns: [loosePattern('zahnarzt')] })
+		);
+		// The empty state went with the button: the focus goes to the row that fits.
+		await vi.waitFor(() =>
+			expect(document.activeElement).toBe(screen.getByRole('link', { name: 'Zahnarzt Termin' }))
+		);
+	});
+
+	it('says the hits once typing pauses for 500 ms, and that nothing fits (EG-2 review)', async () => {
+		const { store } = setup();
+		await table();
+		vi.useFakeTimers();
+		const region = () =>
+			field().closest('.list-search')?.querySelector('[aria-live="polite"]')?.textContent ?? '';
+		store.activate({ source: null, state: 'new', search: 'milch' });
+		await tick();
+		await vi.advanceTimersByTimeAsync(499);
+		expect(region()).toBe('');
+		await vi.advanceTimersByTimeAsync(1);
+		expect(region()).toBe('1 von 3');
+
+		store.activate({ source: null, state: 'new', search: 'zahnarzt' });
+		await tick();
+		await vi.advanceTimersByTimeAsync(500);
+		expect(region()).toBe('Kein Eintrag passt zu „zahnarzt“.');
+	});
+
+	it('shows the search of the address again after back or forward, also in the focused field (EG-2 review)', async () => {
+		const { store } = setup();
+		await table();
+		const search = field();
+		search.focus();
+		await fireEvent.input(search, { target: { value: 'milch' } });
+		expect(search.value).toBe('milch');
+		// Back: the address has no search any more, the field keeps the focus.
+		mocks.page.url = new URL('http://localhost:3000/eingang');
+		store.activate({ source: null, state: 'new', search: null });
+		for (const callback of mocks.after) callback({ type: 'link' });
+		await tick();
+		expect(search.value).toBe('milch');
+		for (const callback of mocks.after) callback({ type: 'popstate' });
+		await tick();
+		expect(document.activeElement).toBe(search);
+		expect(search.value).toBe('');
 	});
 });

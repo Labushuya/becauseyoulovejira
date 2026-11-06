@@ -4,7 +4,7 @@
 // (stores/inbox.svelte.ts) runs the entries one after the other through the Record API; there is no
 // batch API (ADR-0014 §4).
 
-import type { InboxState, InboxView } from './inbox';
+import type { InboxItemSummary, InboxState, InboxView } from './inbox';
 import type { ProblemEntry } from './problems';
 
 export type InboxBulkKind = 'discard' | 'restore';
@@ -54,6 +54,35 @@ export function bulkSkipReason(kind: InboxBulkKind, state: InboxState | null): s
 	if (state === BULK_STATES[kind]) return null;
 	if (kind === 'discard') return state === 'discarded' ? 'Schon verworfen.' : 'Schon verknüpft.';
 	return state === 'new' ? 'Schon im Eingang.' : 'Verknüpft, nicht verworfen.';
+}
+
+/** What the dialogs "Gesammelt umwandeln" and "Mit Ticket verknüpfen …" take of a chosen entry. */
+export type ChosenNewEntry = Pick<
+	InboxItemSummary,
+	'id' | 'title' | 'kind' | 'channel' | 'sourceDate' | 'scope' | 'targetProjectId' | 'sourceMeta'
+>;
+
+/**
+ * The chosen new entries the view shows, in its order (EG-2, pure since its review): the dialogs of
+ * the layout get those only, so an entry the search hides, or one that left "Neu", stays out.
+ */
+export function chosenNewEntries(
+	visible: readonly InboxItemSummary[],
+	selected: readonly string[]
+): ChosenNewEntry[] {
+	const chosen = new Set(selected);
+	return visible
+		.filter((item) => item.state === 'new' && chosen.has(item.id))
+		.map(({ id, title, kind, channel, sourceDate, scope, targetProjectId, sourceMeta }) => ({
+			id,
+			title,
+			kind,
+			channel,
+			sourceDate,
+			scope,
+			targetProjectId,
+			sourceMeta
+		}));
 }
 
 /** A chosen entry: its ID and the title that names it in the result. */

@@ -14,6 +14,8 @@
 // entries "＋" of the outbox included. A paged view asks the server with the server words of the
 // search for a superset (`inboxServerWords`), after a pause of SEARCH_DEBOUNCE_MS, and narrows it
 // exactly; until the answer, or after a failure, the loaded rows stay and are narrowed in the client.
+// Such a new page 1 over loaded rows is a refresh (`handledRefreshing`, EG-2 review): the view stays
+// ready, so its numbers and "Weitere laden" stay.
 
 import type PocketBase from 'pocketbase';
 import { createContext, untrack } from 'svelte';
@@ -253,6 +255,11 @@ export class InboxStore {
 	#errorProblem = $state.raw<ProblemEntry | null>(null);
 	#query = $state<InboxQuery>(DEFAULT_INBOX_QUERY);
 	#handledLoad = $state<LoadState>('idle');
+	/**
+	 * Page 1 of the paged view loads again over loaded rows (a changed search, EG-2 review):
+	 * `#handledLoad` stays 'ready' meanwhile, so the rows, their numbers and "Weitere laden" stay.
+	 */
+	#handledRefreshing = $state(false);
 	#handledError = $state<string | null>(null);
 	#handledHasMore = $state(false);
 	#loadingMoreHandled = $state(false);
@@ -398,6 +405,14 @@ export class InboxStore {
 		return this.#handledLoad;
 	}
 
+	/**
+	 * Page 1 of the paged view loads again over the loaded rows (EG-2 review): `handledLoad` stays
+	 * 'ready', the list is busy.
+	 */
+	get handledRefreshing(): boolean {
+		return this.#handledRefreshing;
+	}
+
 	get handledError(): string | null {
 		return this.#handledError;
 	}
@@ -474,16 +489,19 @@ export class InboxStore {
 		this.#handledError = null;
 		this.#loadingMoreHandled = false;
 		this.#handledLoad = 'idle';
+		this.#handledRefreshing = false;
 		if (query.state !== 'new') void this.#loadHandled(1);
 	}
 
 	/**
 	 * Next page of handled entries ("Weitere laden"). While a changed search waits for its pause, its
-	 * page 1 loads instead, so every page belongs to the same server words (EG-2).
+	 * page 1 loads instead, so every page belongs to the same server words (EG-2). Only after a page 1
+	 * that answered (EG-2 review): after a failed one the server words of the loaded pages are no
+	 * longer known, and "Erneut versuchen" or the reconciliation loads page 1 again.
 	 */
 	async loadMoreHandled(): Promise<void> {
 		if (this.handledState === null || !this.#handledHasMore) return;
-		if (this.#handledController !== null) return;
+		if (this.#handledLoad !== 'ready' || this.#handledController !== null) return;
 		if (this.#searchTimer !== null) {
 			this.#stopSearchPause();
 			await this.#loadHandled(1);
@@ -857,7 +875,8 @@ export class InboxStore {
 	/**
 	 * Reconciles after events may have been lost (ADR-0007 section 3): loads the new entries and
 	 * the loaded pages of handled entries again and merges them without a loading state. A second
-	 * call aborts a running one; an inbox that failed to load is simply loaded again.
+	 * call aborts a running one; an inbox that failed to load is simply loaded again, and so is page 1
+	 * of a shown paged view that failed (EG-2 review).
 	 */
 	async reconcile(): Promise<void> {
 		this.#reconcileController?.abort();
@@ -867,6 +886,13 @@ export class InboxStore {
 			return;
 		}
 		if (this.#state !== 'ready' || !this.#session.ensureValid()) return;
+		const retry =
+			this.handledState !== null && this.#handledLoad === 'error' ? this.#loadHandled(1) : null;
+		await Promise.all([this.#reconcileLoaded(), retry]);
+	}
+
+	/** The reconciliation of `reconcile`: the new entries and the loaded pages of the paged view. */
+	async #reconcileLoaded(): Promise<void> {
 		const controller = new AbortController();
 		this.#reconcileController = controller;
 		const touched = new SvelteSet<string>();
@@ -874,7 +900,9 @@ export class InboxStore {
 		const options = { signal: controller.signal };
 		const query = this.#query;
 		const handledState = this.handledState;
-		const pagesLoaded = this.#handledLoad === 'ready' ? this.#handledPage : 0;
+		// No page while page 1 loads (again): its answer replaces them.
+		const pagesLoaded =
+			this.#handledLoad === 'ready' && !this.#handledRefreshing ? this.#handledPage : 0;
 		// The loaded pages again, with the server words they were asked with (EG-2).
 		const words = this.#handledWords;
 		try {
@@ -960,6 +988,7 @@ export class InboxStore {
 		this.#error = null;
 		this.#query = DEFAULT_INBOX_QUERY;
 		this.#handledLoad = 'idle';
+		this.#handledRefreshing = false;
 		this.#handledError = null;
 		this.#handledHasMore = false;
 		this.#loadingMoreHandled = false;
@@ -1240,7 +1269,8 @@ export class InboxStore {
 	/**
 	 * Loads one page of the paged view. Page 1 takes the server words of the search of the query
 	 * (EG-2), every further page those of page 1. A failure keeps the loaded rows (narrowed in the
-	 * client); only an answer replaces them.
+	 * client); only an answer replaces them. Page 1 over a ready view is a refresh (EG-2 review): the
+	 * view stays 'ready' until the answer, a failure makes it 'error' as before.
 	 */
 	async #loadHandled(page: number): Promise<void> {
 		const query = this.#query;
@@ -1253,7 +1283,8 @@ export class InboxStore {
 		this.#handledController = controller;
 		const first = page === 1;
 		if (first) {
-			this.#handledLoad = 'loading';
+			if (this.#handledLoad === 'ready') this.#handledRefreshing = true;
+			else this.#handledLoad = 'loading';
 			this.#handledWords = this.#serverWords(query);
 		} else {
 			this.#loadingMoreHandled = true;
@@ -1288,6 +1319,7 @@ export class InboxStore {
 			if (this.#handledController === controller) {
 				this.#handledController = null;
 				this.#loadingMoreHandled = false;
+				this.#handledRefreshing = false;
 			}
 		}
 	}

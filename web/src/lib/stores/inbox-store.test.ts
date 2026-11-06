@@ -1323,4 +1323,108 @@ describe('search (EG-2, ADR-0014 addendum EG-2)', () => {
 		await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
 		expect(data.listHandled).toHaveBeenCalledTimes(calls);
 	});
+
+	// The review of EG-2 (R-B1, R-A5, R-A6, R-A7).
+	it('refreshes page 1 over loaded rows without leaving "ready", and loads when there were none', async () => {
+		vi.useFakeTimers();
+		const { store, data } = setup();
+		await store.load();
+		const bill = discarded(item('item00000000050', { title: 'Rechnung Strom' }), T2);
+		const roof = discarded(item('item00000000051', { title: 'Dach' }), T1);
+		const first = deferred<HandledItemPage>();
+		data.listHandled.mockImplementationOnce(() => first.promise);
+		store.activate({ source: null, state: 'discarded' });
+		// The first page of a view is no refresh: there is nothing to keep.
+		expect(store.handledLoad).toBe('loading');
+		expect(store.handledRefreshing).toBe(false);
+		first.resolve({ items: [bill, roof], page: 1, hasMore: true });
+		await vi.advanceTimersByTimeAsync(0);
+
+		const answer = deferred<HandledItemPage>();
+		data.listHandled.mockImplementationOnce(() => answer.promise);
+		store.activate({ source: null, state: 'discarded', search: 'rechnung' });
+		await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
+		expect(store.handledLoad).toBe('ready');
+		expect(store.handledRefreshing).toBe(true);
+		expect(store.handledHasMore).toBe(true);
+		expect(ids(store.visible)).toEqual([bill.id]);
+		answer.resolve({ items: [bill], page: 1, hasMore: false });
+		await vi.advanceTimersByTimeAsync(0);
+		expect(store.handledRefreshing).toBe(false);
+		expect(store.handledHasMore).toBe(false);
+
+		// Another view ends a running refresh at once.
+		data.listHandled.mockImplementationOnce(() => new Promise(() => undefined));
+		store.activate({ source: null, state: 'discarded', search: 'strom' });
+		await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
+		expect(store.handledRefreshing).toBe(true);
+		store.activate({ source: null, state: 'new' });
+		expect(store.handledRefreshing).toBe(false);
+		expect(store.handledLoad).toBe('idle');
+	});
+
+	it('loads no further page after a failed page 1, and the reconciliation asks page 1 again', async () => {
+		vi.useFakeTimers();
+		const { store, data } = setup();
+		await store.load();
+		const bill = discarded(item('item00000000052', { title: 'Rechnung Strom' }), T2);
+		data.listHandled.mockResolvedValueOnce({ items: [bill], page: 1, hasMore: true });
+		store.activate({ source: null, state: 'discarded' });
+		await vi.advanceTimersByTimeAsync(0);
+
+		data.listHandled.mockRejectedValueOnce(new DataError('network'));
+		store.activate({ source: null, state: 'discarded', search: 'rechnung' });
+		await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
+		expect(store.handledLoad).toBe('error');
+		expect(store.handledHasMore).toBe(true);
+		const calls = data.listHandled.mock.calls.length;
+		// The words of the loaded pages are no longer those of the failed page 1: no page 2.
+		await store.loadMoreHandled();
+		expect(data.listHandled).toHaveBeenCalledTimes(calls);
+
+		data.listHandled.mockResolvedValueOnce({ items: [bill], page: 1, hasMore: false });
+		await store.reconcile();
+		expect(data.listHandled).toHaveBeenCalledTimes(calls + 1);
+		expect(data.listHandled).toHaveBeenLastCalledWith(
+			'discarded',
+			1,
+			expect.objectContaining({ patterns: [loosePattern('rechnung')] })
+		);
+		expect(store.handledLoad).toBe('ready');
+		expect(store.handledError).toBeNull();
+		expect(ids(store.visible)).toEqual([bill.id]);
+		// The new entries were reconciled as well.
+		expect(data.listNew).toHaveBeenCalledTimes(2);
+	});
+
+	it('keeps the order of the loaded pages for a changed search and reads a renamed connection', async () => {
+		vi.useFakeTimers();
+		let name = 'Gmail Arbeit';
+		const names: InboxConnectionNames = {
+			nameOf: (id) => (id === 'conn00000000001' ? name : null),
+			get names() {
+				return [name];
+			}
+		};
+		const { store, data } = setup({ names });
+		await store.load();
+		const bill = discarded({ ...BILL, id: 'item00000000053' }, T2);
+		const milk = discarded({ ...MILK, id: 'item00000000054' }, T1);
+		data.listHandled.mockResolvedValue({ items: [milk, bill], page: 1, hasMore: false });
+		store.activate({ source: null, state: 'discarded' });
+		await vi.advanceTimersByTimeAsync(0);
+		const order = store.handled;
+		expect(ids(order)).toEqual([bill.id, milk.id]);
+		// A search of the client alone: the same sorted list, narrowed.
+		store.activate({ source: null, state: 'discarded', search: 'gmail' });
+		expect(store.handled).toBe(order);
+		expect(ids(store.visible)).toEqual([bill.id]);
+		// The connection is renamed: the text of the entry is built anew.
+		name = 'Privat';
+		store.activate({ source: null, state: 'discarded', search: 'gmail ' });
+		expect(store.visible).toEqual([]);
+		store.activate({ source: null, state: 'discarded', search: 'privat' });
+		expect(ids(store.visible)).toEqual([bill.id]);
+		expect(data.listHandled).toHaveBeenCalledTimes(1);
+	});
 });

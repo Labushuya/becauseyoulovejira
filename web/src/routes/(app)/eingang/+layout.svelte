@@ -14,6 +14,7 @@
 	import ViewWithPanel from '$lib/components/ViewWithPanel.svelte';
 	import WhatsAppImport from '$lib/components/WhatsAppImport.svelte';
 	import type { InboxItemSummary } from '$lib/domain/inbox';
+	import { chosenNewEntries, type ChosenNewEntry } from '$lib/domain/inbox-bulk';
 	import { parseInboxQuery } from '$lib/domain/inbox-query';
 	import { clipboardFallback, pastedText, readClipboardText } from '$lib/clipboard';
 	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
@@ -129,22 +130,9 @@
 		linkItems = [{ id, title, scope }];
 	}
 
-	function chosenItems(): Pick<
-		InboxItemSummary,
-		'id' | 'title' | 'kind' | 'channel' | 'sourceDate' | 'scope' | 'targetProjectId' | 'sourceMeta'
-	>[] {
-		return inbox.visible
-			.filter((item) => item.state === 'new' && selected.includes(item.id))
-			.map(({ id, title, kind, channel, sourceDate, scope, targetProjectId, sourceMeta }) => ({
-				id,
-				title,
-				kind,
-				channel,
-				sourceDate,
-				scope,
-				targetProjectId,
-				sourceMeta
-			}));
+	/** The chosen new entries the view shows (EG-2): the dialogs act on the visible ones only. */
+	function chosenItems(): ChosenNewEntry[] {
+		return chosenNewEntries(inbox.visible, selected);
 	}
 
 	/** Text for the dialog "Aus der Zwischenablage", null while it is closed. */
