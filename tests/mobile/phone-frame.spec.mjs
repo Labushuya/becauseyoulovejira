@@ -1564,17 +1564,22 @@ test.describe('small phone with the switch on: the inbox (MO-6)', () => {
 		await expect(sheet).toHaveCount(0);
 
 		// EG-2: the search in its own row over the full width below the row of the view, 44 px; typing
-		// narrows the cards and writes `q` into the address, Escape empties it.
+		// narrows the cards and writes `q` into the address, Escape empties it. Since its review: below
+		// the whole row of the view, both edges on those of the cards, nothing scrolls sideways.
 		const search = page.getByRole('searchbox', { name: 'Einträge durchsuchen' });
 		await expectTarget(search);
-		expect((await search.boundingBox()).y).toBeGreaterThan((await tools.boundingBox()).y);
+		const tBox = await tools.boundingBox();
+		const sBox = await search.boundingBox();
+		expect(sBox.y).toBeGreaterThanOrEqual(tBox.y + tBox.height - 1);
 		const searchRow = await page.locator('.phone-search .search-field').boundingBox();
 		const cardList = await page.locator('.card-list').boundingBox();
-		expect(Math.abs(searchRow.width - cardList.width)).toBeLessThanOrEqual(1);
+		expect(Math.abs(searchRow.x - cardList.x)).toBeLessThanOrEqual(1);
+		expect(Math.abs(searchRow.x + searchRow.width - (cardList.x + cardList.width))).toBeLessThanOrEqual(1);
 		await search.fill(note.title);
 		await expect(page).toHaveURL(/[?&]q=Paket\+abholen\+/);
 		await expect(cardOf(mail.title)).toHaveCount(0);
 		await expect(cardOf(note.title)).toBeVisible();
+		expect(await scrollsSideways(page)).toBe(false);
 		await search.press('Escape');
 		await expect(search).toHaveValue('');
 		await expect(page).toHaveURL(`${url}/eingang`);

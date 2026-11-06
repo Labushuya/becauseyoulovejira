@@ -639,6 +639,21 @@ describe('help page (EH-9)', () => {
 		);
 		expect(content).toMatch(/„Kein Eintrag passt zu …“ mit „Suche zurücksetzen“/);
 		expect(content).toMatch(/wirken nur auf die Einträge, die zu sehen sind/);
+		// The review of EG-2: every date of the row, the refresh, the loaded entries only.
+		expect(content).toMatch(
+			/Als Datum zählt jedes, das die Zeile zeigt: das Datum beim Absender und in „Neu“ und „Alle“ der Eingang, in „Verknüpft“ und „Verworfen“ der Tag der Bearbeitung\./
+		);
+		expect(content).toMatch(/Die Suche steht in der Adresse als \?q=…/);
+		expect(content).toMatch(
+			/bis zur Antwort bleiben die geladenen Einträge mit ihren Zahlen stehen/
+		);
+		expect(content).toMatch(
+			/Ein Datum, ein Kanal oder der Name einer Verbindung grenzt dort nur die geladenen Einträge ein/
+		);
+		expect(content).toMatch(
+			/„Von den bisher geladenen Einträgen passt keiner zu …“, daneben „Weitere laden“/
+		);
+		expect(content).toMatch(/eine Änderung der Suche behält nur die ausgewählten, die sie zeigt/);
 	});
 
 	it('explains status, due date and inheritance of new sub-tasks, the status menu and the series line (UT-1)', () => {
