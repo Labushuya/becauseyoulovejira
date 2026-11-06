@@ -556,13 +556,24 @@
 	// Bulk actions on the chosen rows of the table (plan BI-2, ADR-0036 §3): one request per ticket
 	// through the Record API, results and "Rückgängig" as flags.
 	const bulk = setBulkEditStore(new BulkEditStore(bulkEditData(pb), auth, tickets, flags, rules));
+	// Names of the connections for the inbox and the sources (ADR-0026, addendum KK-3): loaded once
+	// per session, renames arrive through realtime.
+	const connectionNames = setConnectionNames(
+		new ConnectionNamesStore(connectionNamesData(pb), auth)
+	);
+	$effect(() => untrack(() => connectionNames.start()));
 	// The inbox (E4 plan, T-4): new entries in full, for the view and the count at the switch. The
 	// filter "Zielprojekt" takes the sub projects of the catalog in (ADR-0049).
 	// Entries "＋" put into the inbox without a connection show from the outbox until the server has
-	// them (OF-4a).
+	// them (OF-4a). Its search finds an entry by the name of its connection (EG-2); once the names
+	// come in or change, a paged view asks its page 1 again if its search would send other words.
 	const inbox = setInboxStore(
-		new InboxStore(inboxData(pb), auth, flags, () => catalog.projects, outbox)
+		new InboxStore(inboxData(pb), auth, flags, () => catalog.projects, outbox, connectionNames)
 	);
+	$effect(() => {
+		void connectionNames.names;
+		untrack(() => inbox.namesChanged());
+	});
 	// A new comment goes through the outbox while it works for the ticket (OF-4b), also on a ticket "＋"
 	// created; the comments it keeps show from it.
 	const activity = setTicketActivityStore(
@@ -587,12 +598,6 @@
 	// "Ansehen" of a file of a watched folder (ADR-0051 §6): the panel of an entry and the sources of
 	// a ticket open the current file through it.
 	setFolderViewer(new FolderViewer(folderViewData(pb), auth));
-	// Names of the connections for the inbox and the sources (ADR-0026, addendum KK-3): loaded once
-	// per session, renames arrive through realtime.
-	const connectionNames = setConnectionNames(
-		new ConnectionNamesStore(connectionNamesData(pb), auth)
-	);
-	$effect(() => untrack(() => connectionNames.start()));
 	// Names of the visible accounts for comments, history and the trash (ADR-0056 §4): loaded once
 	// per session, new names arrive through realtime; without one a person stays "Anderes Konto".
 	const people = setPeople(new PeopleStore(peopleData(pb), auth));

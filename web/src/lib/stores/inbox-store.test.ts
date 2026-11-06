@@ -3,13 +3,22 @@
 // duplicates as outcome, actions with messages, the missing collection before the migration.
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { DataError } from '$lib/data/errors';
+import { DATA_ERROR_MESSAGES, DataError } from '$lib/data/errors';
+import type { HandledItemPage } from '$lib/data/inbox';
 import type { InboxDraft, InboxItem, InboxItemSummary } from '$lib/domain/inbox';
 import type { InboxQuery } from '$lib/domain/inbox-query';
 import type { TicketSummary } from '$lib/domain/ticket';
-import { INBOX_UNAVAILABLE_MESSAGE, InboxStore, type InboxData } from './inbox.svelte';
+import { loosePattern } from '$lib/domain/ticket-picker';
+import {
+	INBOX_UNAVAILABLE_MESSAGE,
+	InboxStore,
+	type InboxConnectionNames,
+	type InboxData,
+	type InboxOverlay
+} from './inbox.svelte';
 import { FLAG_DURATION_MS, FlagStore } from './flags.svelte';
 import type { LiveSource, RecordChange, Unsubscribe } from './realtime';
+import { SEARCH_DEBOUNCE_MS } from './ticket-list.svelte';
 
 const T0 = '2026-09-25 08:00:00.000Z';
 const T1 = '2026-09-25 09:00:00.000Z';
@@ -56,7 +65,16 @@ function deferred<T>() {
 	return { promise, resolve, reject };
 }
 
-function setup(options: { newItems?: InboxItemSummary[]; valid?: boolean } = {}) {
+function setup(
+	options: {
+		newItems?: InboxItemSummary[];
+		valid?: boolean;
+		/** Entries "＋" of the outbox (OF-4a). */
+		overlay?: InboxOverlay;
+		/** Names of the connections (EG-2). */
+		names?: InboxConnectionNames;
+	} = {}
+) {
 	const data = {
 		listNew: vi.fn<InboxData['listNew']>(async () => options.newItems ?? [A, B]),
 		listHandled: vi.fn<InboxData['listHandled']>(async (_state, page) => ({
@@ -93,7 +111,15 @@ function setup(options: { newItems?: InboxItemSummary[]; valid?: boolean } = {})
 	} satisfies InboxData;
 	const session = { ensureValid: vi.fn(() => options.valid ?? true), logout: vi.fn() };
 	const flags = new FlagStore();
-	return { store: new InboxStore(data, session, flags), data, session, flags };
+	const store = new InboxStore(
+		data,
+		session,
+		flags,
+		() => [],
+		options.overlay ?? null,
+		options.names ?? null
+	);
+	return { store, data, session, flags };
 }
 
 /** Realtime source with inbox events and reconnections only. */
@@ -1073,5 +1099,228 @@ describe('area of the tab (E7-3, ADR-0059 §2)', () => {
 		expect(store.handledState).toBe('discarded');
 		expect(data.listNew).toHaveBeenCalledTimes(2);
 		expect(data.listHandled).toHaveBeenCalledTimes(2);
+	});
+});
+
+describe('search (EG-2, ADR-0014 addendum EG-2)', () => {
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	const MILK = item('item00000000031', { title: 'Milch kaufen', created: T1 });
+	const BILL = item('item00000000032', {
+		title: 'Rechnung März',
+		channel: 'mail',
+		kind: 'mail',
+		connectionId: 'conn00000000001',
+		created: T2
+	});
+	const NAMES: InboxConnectionNames = {
+		nameOf: (id) => (id === 'conn00000000001' ? 'Gmail Arbeit' : null),
+		names: ['Gmail Arbeit']
+	};
+	const ids = (entries: readonly InboxItemSummary[]) => entries.map((entry) => entry.id);
+	/** The patterns of the last request of a paged view. */
+	const lastPatterns = (data: ReturnType<typeof setup>['data']) =>
+		data.listHandled.mock.calls.at(-1)?.[2].patterns;
+
+	it('narrows the new entries in the client without a request; the count of the switch stays', async () => {
+		const { store, data } = setup({ newItems: [A, MILK, BILL], names: NAMES });
+		await store.load();
+		store.activate({ source: null, state: 'new', search: 'märz' });
+		expect(ids(store.visible)).toEqual([BILL.id]);
+		expect(store.searching).toBe(true);
+		expect(store.searchTotal).toBe(3);
+		expect(store.newCount).toBe(3);
+		// The name of the connection, case and order of the words do not matter.
+		store.activate({ source: null, state: 'new', search: 'ARBEIT gmail' });
+		expect(ids(store.visible)).toEqual([BILL.id]);
+		store.activate({ source: null, state: 'new', search: 'kaufen Milch' });
+		expect(ids(store.visible)).toEqual([MILK.id]);
+		// With the chips: the search narrows what they leave.
+		store.activate({ source: 'mail', state: 'new', search: 'milch' });
+		expect(store.visible).toEqual([]);
+		expect(store.searchTotal).toBe(1);
+		store.activate({ source: null, state: 'new', search: null });
+		expect(ids(store.visible)).toEqual([BILL.id, MILK.id, A.id]);
+		expect(store.searching).toBe(false);
+		expect(data.listHandled).not.toHaveBeenCalled();
+		expect(data.listNew).toHaveBeenCalledOnce();
+	});
+
+	it('finds the entries "＋" of the outbox and narrows realtime entries with the same search', async () => {
+		const kept: InboxItem = {
+			...item('item00000000033', { title: 'Paket abholen', created: T2 }),
+			body: ''
+		};
+		const overlay: InboxOverlay = {
+			createdItems: () => [kept],
+			createdItem: (id) => (id === kept.id ? kept : null),
+			isCreatedView: () => false
+		};
+		const { store } = setup({ newItems: [A], overlay });
+		const live = fakeLive();
+		store.connect(live.source);
+		await vi.waitFor(() => expect(live.inbox).toHaveLength(1));
+		await store.load();
+		store.activate({ source: null, state: 'new', search: 'paket' });
+		expect(ids(store.visible)).toEqual([kept.id]);
+
+		live.send({
+			action: 'create',
+			record: item('item00000000034', { title: 'Paket zur Post', created: T1, updated: T1 })
+		});
+		live.send({
+			action: 'create',
+			record: item('item00000000035', { title: 'Brief', updated: T1 })
+		});
+		expect(ids(store.visible)).toEqual([kept.id, 'item00000000034']);
+		expect(store.newCount).toBe(4);
+	});
+
+	it('asks a paged view again after the pause with the server words and narrows its answer exactly', async () => {
+		vi.useFakeTimers();
+		const { store, data } = setup({ names: NAMES });
+		await store.load();
+		const bill = discarded(item('item00000000040', { title: 'Rechnung Strom' }), T2);
+		const roof = discarded(item('item00000000041', { title: 'Dach' }), T1);
+		const loose = discarded(item('item00000000042', { title: 'Rüche nähen' }), T0);
+		data.listHandled.mockResolvedValueOnce({ items: [bill, roof], page: 1, hasMore: true });
+		store.activate({ source: null, state: 'discarded' });
+		await vi.advanceTimersByTimeAsync(0);
+		expect(store.handledLoad).toBe('ready');
+		expect(lastPatterns(data)).toEqual([]);
+
+		// Typing narrows the loaded rows at once; the server is asked only after the pause.
+		const answer = deferred<HandledItemPage>();
+		data.listHandled.mockImplementationOnce(() => answer.promise);
+		store.activate({ source: null, state: 'discarded', search: 'Rech' });
+		expect(ids(store.visible)).toEqual([bill.id]);
+		expect(ids(store.handled)).toEqual([bill.id, roof.id]);
+		await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS - 1);
+		expect(data.listHandled).toHaveBeenCalledTimes(1);
+		await vi.advanceTimersByTimeAsync(1);
+		expect(data.listHandled).toHaveBeenCalledTimes(2);
+		expect(data.listHandled).toHaveBeenLastCalledWith(
+			'discarded',
+			1,
+			expect.objectContaining({ patterns: [loosePattern('rech')] })
+		);
+		// The server sends a superset; only what the search finds is shown.
+		answer.resolve({ items: [bill, loose], page: 1, hasMore: true });
+		await vi.advanceTimersByTimeAsync(0);
+		expect(ids(store.handled)).toEqual([bill.id, loose.id]);
+		expect(ids(store.visible)).toEqual([bill.id]);
+		expect(store.searchTotal).toBe(2);
+		expect(store.handledHasMore).toBe(true);
+
+		// "Weitere laden" and a reconciliation ask with the words of page 1.
+		data.listHandled.mockResolvedValueOnce({ items: [], page: 2, hasMore: false });
+		await store.loadMoreHandled();
+		expect(data.listHandled).toHaveBeenLastCalledWith(
+			'discarded',
+			2,
+			expect.objectContaining({ patterns: [loosePattern('rech')] })
+		);
+		expect(store.handledHasMore).toBe(false);
+		await store.reconcile();
+		expect(data.listHandled).toHaveBeenLastCalledWith(
+			'discarded',
+			2,
+			expect.objectContaining({ patterns: [loosePattern('rech')] })
+		);
+	});
+
+	it('aborts a stale request, starts the pause anew with every change and leaves words of the client alone', async () => {
+		vi.useFakeTimers();
+		const { store, data } = setup({ names: NAMES });
+		await store.load();
+		store.activate({ source: null, state: 'all' });
+		await vi.advanceTimersByTimeAsync(0);
+		const stale = deferred<HandledItemPage>();
+		data.listHandled.mockImplementationOnce(() => stale.promise);
+		store.activate({ source: null, state: 'all', search: 'rech' });
+		await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
+		const staleSignal = data.listHandled.mock.calls.at(-1)?.[2].signal;
+		expect(staleSignal?.aborted).toBe(false);
+
+		store.activate({ source: null, state: 'all', search: 'rechnung' });
+		await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS - 1);
+		expect(staleSignal?.aborted).toBe(false);
+		await vi.advanceTimersByTimeAsync(1);
+		expect(staleSignal?.aborted).toBe(true);
+		expect(lastPatterns(data)).toEqual([loosePattern('rechnung')]);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(store.handledLoad).toBe('ready');
+		const calls = data.listHandled.mock.calls.length;
+
+		// Words with a digit, of a channel or of a connection narrow in the client only.
+		store.activate({ source: null, state: 'all', search: 'rechnung 2026 postfach arbeit' });
+		await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS * 2);
+		expect(data.listHandled).toHaveBeenCalledTimes(calls);
+
+		// Typing on starts the pause anew: one request for the last text.
+		store.activate({ source: null, state: 'all', search: 'strom' });
+		await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS - 50);
+		store.activate({ source: null, state: 'all', search: 'stromz' });
+		await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS - 50);
+		expect(data.listHandled).toHaveBeenCalledTimes(calls);
+		await vi.advanceTimersByTimeAsync(50);
+		expect(data.listHandled).toHaveBeenCalledTimes(calls + 1);
+		expect(lastPatterns(data)).toEqual([loosePattern('stromz')]);
+	});
+
+	it('keeps the loaded rows after a failure or without a connection and narrows them in the client', async () => {
+		vi.useFakeTimers();
+		const { store, data } = setup();
+		await store.load();
+		const linked = (id: string, title: string, at: string) =>
+			item(id, { title, state: 'converted', ticketId: 't', handledAt: at, updated: at });
+		const bill = linked('item00000000043', 'Rechnung Strom', T2);
+		const roof = linked('item00000000044', 'Dach reparieren', T1);
+		data.listHandled.mockResolvedValueOnce({ items: [bill, roof], page: 1, hasMore: false });
+		store.activate({ source: null, state: 'converted' });
+		await vi.advanceTimersByTimeAsync(0);
+
+		data.listHandled.mockRejectedValueOnce(new DataError('network'));
+		store.activate({ source: null, state: 'converted', search: 'dach' });
+		await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
+		expect(store.handledLoad).toBe('error');
+		expect(store.handledError).toBe(DATA_ERROR_MESSAGES.network);
+		expect(ids(store.handled)).toEqual([bill.id, roof.id]);
+		expect(ids(store.visible)).toEqual([roof.id]);
+
+		// "Erneut versuchen" asks again with the search.
+		data.listHandled.mockResolvedValueOnce({ items: [roof], page: 1, hasMore: false });
+		await store.reload();
+		expect(store.handledLoad).toBe('ready');
+		expect(lastPatterns(data)).toEqual([loosePattern('dach')]);
+		expect(ids(store.visible)).toEqual([roof.id]);
+	});
+
+	it('asks again once the names of the connections come in, so no name narrows on the server', async () => {
+		vi.useFakeTimers();
+		const known: string[] = [];
+		const names: InboxConnectionNames = {
+			nameOf: () => null,
+			get names() {
+				return known;
+			}
+		};
+		const { store, data } = setup({ names });
+		await store.load();
+		store.activate({ source: null, state: 'discarded', search: 'arbeit' });
+		await vi.advanceTimersByTimeAsync(0);
+		expect(lastPatterns(data)).toEqual([loosePattern('arbeit')]);
+		known.push('Gmail Arbeit');
+		store.namesChanged();
+		await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
+		expect(lastPatterns(data)).toEqual([]);
+		// Another view or the new entries ask nothing for the names.
+		const calls = data.listHandled.mock.calls.length;
+		store.activate({ source: null, state: 'new', search: 'arbeit' });
+		store.namesChanged();
+		await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
+		expect(data.listHandled).toHaveBeenCalledTimes(calls);
 	});
 });

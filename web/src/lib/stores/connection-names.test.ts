@@ -52,11 +52,15 @@ describe('ConnectionNamesStore', () => {
 		expect(store.nameOf('conn1')).toBe('Gmail Arbeit');
 		emit({ action: 'create', record: { id: 'conn2', label: 'Familienchat' } });
 		expect(store.nameOf('conn2')).toBe('Familienchat');
+		// Every known name, for the search of the inbox (EG-2).
+		expect([...store.names].sort()).toEqual(['Familienchat', 'Gmail Arbeit']);
 		emit({ action: 'delete', id: 'conn1' });
 		expect(store.nameOf('conn1')).toBeNull();
+		expect(store.names).toEqual(['Familienchat']);
 		stop();
 		// The cleanup empties the store (a logout leaves no names behind).
 		expect(store.nameOf('conn2')).toBeNull();
+		expect(store.names).toEqual([]);
 	});
 
 	it('loads again after a reconnection, so missed renames arrive', async () => {

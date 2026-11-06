@@ -20,6 +20,7 @@ import {
 	type ListedView
 } from '../domain/inbox';
 import type { OutboxFields } from '../domain/offline';
+import { PICKER_SERVER_WORDS } from '../domain/ticket-picker';
 import { watchOf } from '../domain/watch';
 import { areaFilter, clientHousehold } from './area';
 import { DATA_ERROR_MESSAGES, DataError, isDataError, toDataError, withDataErrors } from './errors';
@@ -235,16 +236,51 @@ const HANDLED_TARGET_FILTER = [
  */
 export type HandledTarget = { project: string | null } | null;
 
-/** Expression of the handled entries: HANDLED_FILTER, with a target also its clause. */
-function handledExpression(query: { target: HandledTarget }): string {
-	return query.target === null ? HANDLED_FILTER : `${HANDLED_FILTER} && ${HANDLED_TARGET_FILTER}`;
+/**
+ * Fields the loose patterns of the search look into (EG-2, ADR-0014 addendum EG-2): title and
+ * address, the details of `source_meta` the row shows as JSON paths (sender, chat, the key of a
+ * copy), so the name of a key ("from") never matches and the server compares the decoded text, and
+ * key and title of the ticket of a linked entry. Channel, connection and date only the client
+ * builds; their words never reach the server (`inboxServerWords`).
+ */
+const SEARCH_FIELDS = [
+	'title',
+	'source_url',
+	'source_meta.from',
+	'source_meta.sender',
+	'source_meta.chat',
+	'source_meta.copy_of.key',
+	'ticket.key',
+	'ticket.title'
+] as const;
+
+/**
+ * One clause per search word (`{:w1}` to `{:w5}`, PICKER_SERVER_WORDS): its loose pattern matches
+ * one of the fields. Joined only for the words of a search, so a list without one stays as before.
+ */
+const SEARCH_FILTERS = Array.from(
+	{ length: PICKER_SERVER_WORDS },
+	(_, index) => `(${SEARCH_FIELDS.map((field) => `${field} ~ {:w${index + 1}}`).join(' || ')})`
+);
+
+/**
+ * Expression of the handled entries: HANDLED_FILTER, with a target also its clause, and one clause
+ * per pattern of the search.
+ */
+function handledExpression(query: { target: HandledTarget; patterns: readonly string[] }): string {
+	const parts = [HANDLED_FILTER];
+	if (query.target !== null) parts.push(HANDLED_TARGET_FILTER);
+	parts.push(...SEARCH_FILTERS.slice(0, query.patterns.length));
+	return parts.join(' && ');
 }
 
 /**
  * One page of converted or discarded entries, most recently handled first, or of every entry
  * (view "Alle", ADR-0031 addendum C), newest first; with `channels` only those of these channels
- * (the chip "Quelle") and with `target` only those of a target project or without one, filtered
- * by the server so the pages stay full.
+ * (the chip "Quelle"), with `target` only those of a target project or without one, and with
+ * `patterns` (loose patterns of the search, `loosePattern`, at most PICKER_SERVER_WORDS) only those
+ * that match each of them in a field of the search: a superset the client narrows exactly (EG-2).
+ * Filtered by the server so the pages stay full; every value goes through pb.filter.
  */
 export function listHandledItems(
 	pb: PocketBase,
@@ -254,27 +290,33 @@ export function listHandledItems(
 		signal,
 		perPage = HANDLED_PAGE_SIZE,
 		channels = null,
-		target = null
+		target = null,
+		patterns = []
 	}: RequestOptions & {
 		perPage?: number;
 		channels?: readonly InboxChannel[] | null;
 		target?: HandledTarget;
+		patterns?: readonly string[];
 	} = {}
 ): Promise<HandledItemPage> {
 	return withDataErrors(signal, async () => {
 		if (channels !== null && channels.length > MAX_FAMILY_CHANNELS) {
 			throw new RangeError('Too many channels for the filter');
 		}
-		const handled = { target };
+		if (patterns.length > PICKER_SERVER_WORDS) {
+			throw new RangeError('Too many search patterns for the filter');
+		}
+		const words = Object.fromEntries(patterns.map((pattern, index) => [`w${index + 1}`, pattern]));
 		const result = await pb.collection(INBOX).getList<InboxRecord>(page, perPage, {
-			filter: areaFilter(pb, handledExpression(handled), {
+			filter: areaFilter(pb, handledExpression({ target, patterns }), {
 				every: state === 'all' ? '1' : '',
 				state: state === 'all' ? '' : state,
 				all: channels === null ? '1' : '',
 				c1: channels?.[0] ?? '',
 				c2: channels?.[1] ?? '',
 				c3: channels?.[2] ?? '',
-				target: target?.project ?? ''
+				target: target?.project ?? '',
+				...words
 			}),
 			sort: state === 'all' ? '-created,-id' : '-handled_at,-created,-id',
 			fields: INBOX_LIST_FIELDS,

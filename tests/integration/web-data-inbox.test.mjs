@@ -1,6 +1,8 @@
 // Data layer of the inbox against the disposable instance (E4 plan, package 2; ADR-0014): new
 // entries in full, handled ones page by page, duplicates as outcome, actions, the protected
-// original, realtime and the ticket created from an entry.
+// original, realtime and the ticket created from an entry. Since EG-2 the loose patterns of the
+// search of the paged views: title, address, the shown details of source_meta by JSON path and the
+// ticket of a linked entry, as a superset the client narrows.
 
 import { readFileSync } from 'node:fs';
 import PocketBase from 'pocketbase';
@@ -32,6 +34,12 @@ import {
 	buildCapture,
 	captureInboxDraft
 } from '../../web/src/lib/domain/templates.ts';
+import {
+	inboxClientOnlyTexts,
+	inboxServerWords,
+	matchesInboxWords
+} from '../../web/src/lib/domain/source-search.ts';
+import { loosePattern, searchWords } from '../../web/src/lib/domain/ticket-picker.ts';
 import { messageDraft, parseWhatsAppExport } from '../../web/src/lib/domain/whatsapp-export.ts';
 import { readMailFile } from '../../web/src/lib/mail-file.ts';
 
@@ -587,6 +595,120 @@ describe('sources of a ticket (ADR-0031, HK-2)', () => {
 			kind: 'validation',
 			fields: { state: { code: 'validation_inbox_primary_source' } }
 		});
+	});
+});
+
+describe('search of the paged views (EG-2)', () => {
+	/** The patterns of a search as the store sends them, without names of connections. */
+	const patternsOf = (text) =>
+		inboxServerWords(searchWords(text), inboxClientOnlyTexts([])).map(loosePattern);
+
+	/** Titles the server returns for a text, and those the client keeps after the exact check. */
+	async function found(client, state, text) {
+		const { items } = await listHandledItems(client, state, 1, { patterns: patternsOf(text) });
+		const kept = items.filter((item) => matchesInboxWords(item, searchWords(text), null));
+		return {
+			server: items.map((item) => item.title).sort(),
+			kept: kept.map((item) => item.title).sort()
+		};
+	}
+
+	/** Creates the entries and discards them, so the view "Verworfen" pages through them. */
+	async function discardedOf(client, drafts) {
+		for (const draft of drafts) await discardItem(client, (await created(client, draft)).id);
+	}
+
+	it('compares title, address and the shown details with umlauts, ß, % and _, quotes and JSON escapes', async () => {
+		const fresh = await createOwner(superuser);
+		const SENDER = 'Jürgen O\'Brien "JB" <jb@example.com>';
+		await discardedOf(fresh.client, [
+			mail({ title: 'Termin bei den Ärzten', sourceMeta: { from: 'Praxis Dr. Weiß <praxis@example.com>' } }),
+			mail({ title: 'Straßenfest am Südplatz', sourceMeta: { from: SENDER } }),
+			mail({ title: '50% Rabatt_heute' }),
+			mail({ title: '500 Rabatt heute' }),
+			{
+				channel: 'link',
+				kind: 'link',
+				title: 'Artikel',
+				sourceUrl: `https://example.com/rezept-${uniqueSuffix()}?zutat=creme`
+			},
+			{
+				channel: 'whatsapp',
+				kind: 'message',
+				title: `Wochenmarkt ${uniqueSuffix()}`,
+				body: 'Wochenmarkt',
+				sourceDate: '2026-10-03 08:00:00.000Z',
+				sourceMeta: { chat: 'Familie Groß', sender: 'Anna Beispiel' }
+			}
+		]);
+		const kept = async (text) => (await found(fresh.client, 'discarded', text)).kept;
+		for (const text of ['arzten', 'ÄRZTEN', 'weiss praxis']) {
+			expect(await kept(text), text).toEqual(['Termin bei den Ärzten']);
+		}
+		for (const text of ['strasse', 'Südplatz', '"jb"', "o'brien", '<jb@example.com>']) {
+			expect(await kept(text), text).toEqual(['Straßenfest am Südplatz']);
+		}
+		// The server takes "%" and "_" literally.
+		expect((await found(fresh.client, 'discarded', 'rabatt_heute')).server).toEqual(['50% Rabatt_heute']);
+		expect((await found(fresh.client, 'discarded', '%')).server).toEqual(['50% Rabatt_heute']);
+		expect(await kept('zutat=creme')).toEqual(['Artikel']);
+		for (const text of ['familie gross', 'anna beispiel']) {
+			expect((await kept(text))[0], text).toMatch(/^Wochenmarkt /);
+		}
+		// The server answers a superset of what the client keeps; a word of a channel or with a digit
+		// stays in the client.
+		for (const text of ['arzten', 'strasse', 'rabatt', 'mail-datei', '50%', 'beispiel']) {
+			const result = await found(fresh.client, 'discarded', text);
+			expect(result.server, text).toEqual(expect.arrayContaining(result.kept));
+		}
+		expect(patternsOf('mail-datei 50%')).toEqual([]);
+		expect((await kept('mail-datei')).sort()).toEqual(
+			['Straßenfest am Südplatz', 'Termin bei den Ärzten', '50% Rabatt_heute', '500 Rabatt heute'].sort()
+		);
+	});
+
+	it('reads the shown details of source_meta by JSON path, so the name of a key never matches', async () => {
+		const fresh = await createOwner(superuser);
+		await discardedOf(fresh.client, [
+			mail({ title: 'Brief', sourceMeta: { from: 'Anna <anna@example.com>' } }),
+			mail({ title: 'Grüße from Berlin' }),
+			mail({ title: 'Paket', sourceMeta: { to: 'ben@example.com' } })
+		]);
+		expect((await found(fresh.client, 'discarded', 'from')).server).toEqual(['Grüße from Berlin']);
+		expect((await found(fresh.client, 'discarded', 'sender')).server).toEqual([]);
+		// A detail the row does not show (the recipient) is not searched.
+		expect((await found(fresh.client, 'discarded', 'ben@example')).server).toEqual([]);
+		expect((await found(fresh.client, 'discarded', 'anna@example')).server).toEqual(['Brief']);
+	});
+
+	it('finds a linked entry by key and title of its ticket, and keeps entries without a ticket', async () => {
+		const fresh = await createOwner(superuser);
+		const other = await createOwner(superuser);
+		const ticket = await createTicket(fresh.client, ticketDraft({ title: 'Heizung prüfen lassen' }));
+		expect(ticket.key).toMatch(/^TASK-\d+$/);
+		const linked = await created(fresh.client, mail({ title: 'Angebot' }));
+		await assignToTicket(fresh.client, linked.id, ticket.id);
+		await discardedOf(fresh.client, [mail({ title: 'Heizöl bestellen' })]);
+		await created(fresh.client, mail({ title: 'Heizung im Keller' }));
+		await discardedOf(other.client, [mail({ title: 'Heizung fremd' })]);
+
+		expect(await found(fresh.client, 'converted', 'prüfen')).toEqual({
+			server: ['Angebot'],
+			kept: ['Angebot']
+		});
+		expect(await found(fresh.client, 'converted', 'task')).toEqual({
+			server: ['Angebot'],
+			kept: ['Angebot']
+		});
+		// The view "Alle": linked, discarded and new entries alike, never one of another account.
+		expect((await found(fresh.client, 'all', 'heiz')).kept).toEqual([
+			'Angebot',
+			'Heizung im Keller',
+			'Heizöl bestellen'
+		]);
+		await expect(
+			listHandledItems(fresh.client, 'all', 1, { patterns: ['%a%', '%b%', '%c%', '%d%', '%e%', '%f%'] })
+		).rejects.toBeInstanceOf(DataError);
 	});
 });
 

@@ -9,6 +9,11 @@
 // and "Wiederherstellen (n)" run over the chosen entries one after the other, with a progress, a
 // result of failures and skipped entries, and one "Rückgängig" for every entry a run discarded. A
 // result belongs to the view its run started in: another view drops it (round 2 of EG-1).
+// The search of the URL (EG-2, ADR-0014 addendum EG-2) narrows the rows by the words of QS-2. The
+// new entries only in the client, without a request, also without a connection, realtime and the
+// entries "＋" of the outbox included. A paged view asks the server with the server words of the
+// search for a superset (`inboxServerWords`), after a pause of SEARCH_DEBOUNCE_MS, and narrows it
+// exactly; until the answer, or after a failure, the loaded rows stay and are narrowed in the client.
 
 import type PocketBase from 'pocketbase';
 import { createContext, untrack } from 'svelte';
@@ -63,11 +68,17 @@ import {
 import { DEFAULT_INBOX_QUERY, type InboxQuery } from '$lib/domain/inbox-query';
 import type { TreeProject } from '$lib/domain/project-tree';
 import { channelsOf, sourceFamily } from '$lib/domain/source';
+import {
+	inboxClientOnlyTexts,
+	inboxServerWords,
+	matchesInboxWords
+} from '$lib/domain/source-search';
 import { NO_TARGET, matchesTarget } from '$lib/domain/target-project';
 import type { TicketSummary } from '$lib/domain/ticket';
+import { loosePattern, searchWords } from '$lib/domain/ticket-picker';
 import { SILENT_FLAGS, type FlagSink } from './flags.svelte';
 import { hold, type LiveSource } from './realtime';
-import type { LoadState, SessionGuard } from './ticket-list.svelte';
+import { SEARCH_DEBOUNCE_MS, type LoadState, type SessionGuard } from './ticket-list.svelte';
 import { restartNeeded } from '$lib/guidance/texts';
 
 /**
@@ -86,6 +97,8 @@ export interface InboxData {
 			channels: readonly InboxChannel[] | null;
 			/** Filter "Zielprojekt" of the server (ADR-0049); null or absent for every entry. */
 			target?: HandledTarget;
+			/** Loose patterns of the server words of the search (EG-2); empty or absent: none. */
+			patterns?: readonly string[];
 		}
 	): Promise<HandledItemPage>;
 	get(id: string, options: RequestOptions): Promise<InboxItem>;
@@ -153,13 +166,33 @@ interface BulkRun {
 	skipped: InboxBulkProblem[];
 }
 
-/** Whether two queries load the same entries (the grouping only arranges them). */
-function sameQuery(a: InboxQuery, b: InboxQuery): boolean {
+/**
+ * Whether two queries show the same view with the same filters: the grouping only arranges the
+ * entries, and the search (EG-2) only narrows them; in a paged view its server words decide whether
+ * page 1 loads again (`#searchChanged`).
+ */
+function sameView(a: InboxQuery, b: InboxQuery): boolean {
 	return a.source === b.source && a.state === b.state && (a.target ?? null) === (b.target ?? null);
+}
+
+/** Whether two lists of server words are the same, in the same order. */
+function sameWords(a: readonly string[], b: readonly string[]): boolean {
+	return a.length === b.length && a.every((word, index) => word === b[index]);
 }
 
 /** Projects of the catalog for the filter "Zielprojekt" (sub projects, ADR-0034 §6). */
 export type InboxProjects = () => readonly TreeProject[];
+
+/**
+ * Names of the connections (ADR-0026, addendum KK-3; ConnectionNamesStore of the app layout): the
+ * search finds an entry by the name of its connection (EG-2), and none of the names goes to the
+ * server as a word.
+ */
+export interface InboxConnectionNames {
+	nameOf(id: string | null | undefined): string | null;
+	/** Every known name. */
+	readonly names: readonly string[];
+}
 
 /**
  * Entries "＋" put into the inbox that the server does not have yet (OF-4a, concept §3.5): the store
@@ -176,6 +209,7 @@ export class InboxStore {
 	readonly #session: SessionGuard;
 	readonly #projects: InboxProjects;
 	readonly #overlay: InboxOverlay | null;
+	readonly #names: InboxConnectionNames | null;
 
 	readonly #new = new SvelteMap<string, InboxItemSummary>();
 	readonly #handled = new SvelteMap<string, InboxItemSummary>();
@@ -205,6 +239,13 @@ export class InboxStore {
 	#handledController: AbortController | null = null;
 	#reconcileController: AbortController | null = null;
 	#handledPage = 0;
+	/**
+	 * Server words of the search the pages of the paged view were asked with (EG-2); every page of
+	 * one view uses the same ones. A new list for every first page.
+	 */
+	#handledWords: readonly string[] = [];
+	/** The pause before page 1 loads again for a changed search (SEARCH_DEBOUNCE_MS, EG-2). */
+	#searchTimer: ReturnType<typeof setTimeout> | null = null;
 
 	#state = $state<LoadState>('idle');
 	#error = $state<string | null>(null);
@@ -233,7 +274,8 @@ export class InboxStore {
 			(item) => item.withoutTargetField === true
 		)
 	);
-	#visible = $derived.by(() => {
+	/** Rows of the view before the search: the new ones by source and target, or the loaded pages. */
+	#unsearched = $derived.by(() => {
 		const query = this.#query;
 		if (query.state !== 'new') return this.#handledList;
 		const target = this.#targetFilter(query);
@@ -244,19 +286,32 @@ export class InboxStore {
 				matchesTarget(item, target, projects)
 		);
 	});
+	/** Normalised words of the search of the URL (EG-2, `searchWords` of QS-2). */
+	#words = $derived(searchWords(this.#query.search ?? ''));
+	/** The rows narrowed exactly by the words of the search, in the order of the view. */
+	#visible = $derived.by(() => {
+		const words = this.#words;
+		const rows = this.#unsearched;
+		if (words.length === 0) return rows;
+		return rows.filter((item) =>
+			matchesInboxWords(item, words, this.#names?.nameOf(item.connectionId) ?? null)
+		);
+	});
 
 	constructor(
 		data: InboxData,
 		session: SessionGuard,
 		flags: FlagSink = SILENT_FLAGS,
 		projects: InboxProjects = () => [],
-		overlay: InboxOverlay | null = null
+		overlay: InboxOverlay | null = null,
+		names: InboxConnectionNames | null = null
 	) {
 		this.#data = data;
 		this.#session = session;
 		this.#flags = flags;
 		this.#projects = projects;
 		this.#overlay = overlay;
+		this.#names = names;
 	}
 
 	/** The entry is one "＋" put into the inbox that the server does not have yet (OF-4a). */
@@ -282,9 +337,25 @@ export class InboxStore {
 		return this.#state === 'ready' ? this.#new.size + this.#created.length : null;
 	}
 
-	/** Rows of the view for the query of the URL: the new ones or the handled ones. */
+	/**
+	 * Rows of the view for the query of the URL: the new ones or the handled ones, narrowed by the
+	 * search (EG-2).
+	 */
 	get visible(): readonly InboxItemSummary[] {
 		return this.#visible;
+	}
+
+	/** Whether the search of the URL has words (EG-2); the view then names its hits. */
+	get searching(): boolean {
+		return this.#words.length > 0;
+	}
+
+	/**
+	 * Rows the search narrows (EG-2): the new ones of the chips, or the loaded rows of a paged view;
+	 * "3 von 12" names the visible ones of them.
+	 */
+	get searchTotal(): number {
+		return this.#unsearched.length;
 	}
 
 	get query(): InboxQuery {
@@ -363,6 +434,7 @@ export class InboxStore {
 
 	/** Loads everything shown again ("Erneut versuchen"). */
 	async reload(): Promise<void> {
+		this.#stopSearchPause();
 		await Promise.all([
 			this.#loadNew(),
 			this.handledState === null ? undefined : this.#loadHandled(1)
@@ -372,7 +444,9 @@ export class InboxStore {
 	/**
 	 * Shows the view for the query of the URL. New entries are only filtered; converted or
 	 * discarded ones load their first page from the server (with the source family as filter), and
-	 * a request that became stale is aborted. The same query again loads nothing.
+	 * a request that became stale is aborted. The same query again loads nothing. A changed search
+	 * (EG-2) only narrows the new entries; in a paged view the loaded rows stay, narrowed at once, and
+	 * page 1 loads again after SEARCH_DEBOUNCE_MS if its server words changed.
 	 */
 	activate(query: InboxQuery): void {
 		void this.load();
@@ -380,13 +454,16 @@ export class InboxStore {
 		this.#query = query;
 		// The result of a run belongs to its view (EG-1 round 2): another view drops it.
 		if (before.state !== query.state) this.#bulkResult = null;
-		if (sameQuery(before, query) && (query.state === 'new' || this.#handledLoad !== 'idle')) {
+		if (sameView(before, query) && (query.state === 'new' || this.#handledLoad !== 'idle')) {
+			if (query.state !== 'new') this.#searchChanged();
 			return;
 		}
+		this.#stopSearchPause();
 		this.#handledController?.abort();
 		this.#handledController = null;
 		this.#handled.clear();
 		this.#handledPage = 0;
+		this.#handledWords = [];
 		this.#handledHasMore = false;
 		this.#handledError = null;
 		this.#loadingMoreHandled = false;
@@ -394,11 +471,49 @@ export class InboxStore {
 		if (query.state !== 'new') void this.#loadHandled(1);
 	}
 
-	/** Next page of handled entries ("Weitere laden"). */
+	/**
+	 * Next page of handled entries ("Weitere laden"). While a changed search waits for its pause, its
+	 * page 1 loads instead, so every page belongs to the same server words (EG-2).
+	 */
 	async loadMoreHandled(): Promise<void> {
 		if (this.handledState === null || !this.#handledHasMore) return;
 		if (this.#handledController !== null) return;
+		if (this.#searchTimer !== null) {
+			this.#stopSearchPause();
+			await this.#loadHandled(1);
+			return;
+		}
 		await this.#loadHandled(this.#handledPage + 1);
+	}
+
+	/**
+	 * The search of a shown paged view changed (EG-2): with other server words than those of the
+	 * loaded pages, page 1 loads again after SEARCH_DEBOUNCE_MS (a later change starts the pause
+	 * anew); with the same ones the client narrows alone and a waiting pause ends.
+	 */
+	#searchChanged(): void {
+		this.#stopSearchPause();
+		if (sameWords(this.#serverWords(this.#query), this.#handledWords)) return;
+		this.#searchTimer = setTimeout(() => {
+			this.#searchTimer = null;
+			void this.#loadHandled(1);
+		}, SEARCH_DEBOUNCE_MS);
+	}
+
+	#stopSearchPause(): void {
+		if (this.#searchTimer !== null) clearTimeout(this.#searchTimer);
+		this.#searchTimer = null;
+	}
+
+	/**
+	 * Server words of the search of `query` (EG-2, `inboxServerWords`): none for the new entries,
+	 * which are all loaded; the names of the connections known now stay in the client.
+	 */
+	#serverWords(query: InboxQuery): string[] {
+		if (query.state === 'new') return [];
+		const words = searchWords(query.search ?? '');
+		if (words.length === 0) return [];
+		return inboxServerWords(words, inboxClientOnlyTexts(this.#names?.names ?? []));
 	}
 
 	/**
@@ -754,6 +869,8 @@ export class InboxStore {
 		const query = this.#query;
 		const handledState = this.handledState;
 		const pagesLoaded = this.#handledLoad === 'ready' ? this.#handledPage : 0;
+		// The loaded pages again, with the server words they were asked with (EG-2).
+		const words = this.#handledWords;
 		try {
 			const items = await this.#data.listNew(options);
 			const pages: HandledItemPage[] = [];
@@ -762,14 +879,18 @@ export class InboxStore {
 					await this.#data.listHandled(handledState, page, {
 						...options,
 						channels: this.#channels(query),
-						target: this.#targetParam(query)
+						target: this.#targetParam(query),
+						patterns: words.map(loosePattern)
 					})
 				);
 			}
 			if (controller.signal.aborted) return;
 			this.#touched = null;
 			this.#merge(this.#new, items, touched);
-			const same = sameQuery(this.#query, query) && this.#handledPage === pagesLoaded;
+			const same =
+				sameView(this.#query, query) &&
+				this.#handledWords === words &&
+				this.#handledPage === pagesLoaded;
 			if (pagesLoaded > 0 && same) {
 				this.#merge(
 					this.#handled,
@@ -798,6 +919,15 @@ export class InboxStore {
 		this.activate(query);
 	}
 
+	/**
+	 * The names of the connections changed or came in (EG-2): a shown paged view whose search would
+	 * now send other server words loads its page 1 again after the pause, so a name never narrows on
+	 * the server. The app layout calls it.
+	 */
+	namesChanged(): void {
+		if (this.handledState !== null && this.#handledLoad !== 'idle') this.#searchChanged();
+	}
+
 	/** Aborts all requests and timers and empties the store. */
 	reset(): void {
 		this.#newController?.abort();
@@ -806,6 +936,8 @@ export class InboxStore {
 		this.#newController = null;
 		this.#handledController = null;
 		this.#reconcileController = null;
+		this.#stopSearchPause();
+		this.#handledWords = [];
 		this.#touched = null;
 		for (const id of [...this.#undoFlags.keys()]) this.#dropUndo(id);
 		// A running bulk action stops after its current request, its result and "Rückgängig" go.
@@ -1099,6 +1231,11 @@ export class InboxStore {
 		}
 	}
 
+	/**
+	 * Loads one page of the paged view. Page 1 takes the server words of the search of the query
+	 * (EG-2), every further page those of page 1. A failure keeps the loaded rows (narrowed in the
+	 * client); only an answer replaces them.
+	 */
 	async #loadHandled(page: number): Promise<void> {
 		const query = this.#query;
 		const state = this.handledState;
@@ -1109,14 +1246,19 @@ export class InboxStore {
 		const controller = new AbortController();
 		this.#handledController = controller;
 		const first = page === 1;
-		if (first) this.#handledLoad = 'loading';
-		else this.#loadingMoreHandled = true;
+		if (first) {
+			this.#handledLoad = 'loading';
+			this.#handledWords = this.#serverWords(query);
+		} else {
+			this.#loadingMoreHandled = true;
+		}
 		this.#handledError = null;
 		try {
 			const result = await this.#data.listHandled(state, page, {
 				signal: controller.signal,
 				channels: this.#channels(query),
-				target: this.#targetParam(query)
+				target: this.#targetParam(query),
+				patterns: this.#handledWords.map(loosePattern)
 			});
 			if (controller.signal.aborted) return;
 			if (first) this.#handled.clear();
