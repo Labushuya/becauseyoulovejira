@@ -681,7 +681,12 @@ describe('search of the paged views (EG-2)', () => {
 			mail({ title: 'Paket', sourceMeta: { to: 'ben@example.com' } })
 		]);
 		expect((await found(fresh.client, 'discarded', 'from')).server).toEqual(['Grüße from Berlin']);
-		expect((await found(fresh.client, 'discarded', 'sender')).server).toEqual([]);
+		// Every letter of "sender" has accented forms, so its pattern `%______%` takes any field of six
+		// characters or more: the server answers a superset, the client keeps none.
+		const sender = await found(fresh.client, 'discarded', 'sender');
+		expect(loosePattern('sender')).toBe('%______%');
+		expect(sender.server).toEqual(expect.arrayContaining(sender.kept));
+		expect(sender.kept).toEqual([]);
 		// A detail the row does not show (the recipient) is not searched.
 		expect((await found(fresh.client, 'discarded', 'ben@example')).server).toEqual([]);
 		expect((await found(fresh.client, 'discarded', 'anna@example')).server).toEqual(['Brief']);
