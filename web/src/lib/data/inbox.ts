@@ -237,40 +237,52 @@ const HANDLED_TARGET_FILTER = [
 export type HandledTarget = { project: string | null } | null;
 
 /**
- * Fields the loose patterns of the search look into (EG-2, ADR-0014 addendum EG-2): title and
- * address, the details of `source_meta` the row shows as JSON paths (sender, chat, the key of a
- * copy), so the name of a key ("from") never matches and the server compares the decoded text, and
- * key and title of the ticket of a linked entry. Channel, connection and date only the client
- * builds; their words never reach the server (`inboxServerWords`).
+ * One clause per word of the search (EG-2, ADR-0014 addendum EG-2), `{:w1}` to `{:w5}`
+ * (PICKER_SERVER_WORDS): its loose pattern matches one of the fields the server stores of what the
+ * row shows. Title and address; the details of `source_meta` the row shows as JSON paths (sender,
+ * chat, the key of a copy), so the name of a key ("from") never matches and the server compares the
+ * decoded text; key and title of the ticket of a linked entry. Channel, connection and date only the
+ * client builds; their words never reach the server (`inboxServerWords`). Joined only for the words
+ * of a search (handledExpression), so a list without one stays as before.
  */
-const SEARCH_FIELDS = [
-	'title',
-	'source_url',
-	'source_meta.from',
-	'source_meta.sender',
-	'source_meta.chat',
-	'source_meta.copy_of.key',
-	'ticket.key',
-	'ticket.title'
-] as const;
+const SEARCH_FIRST = [
+	'(title ~ {:w1} || source_url ~ {:w1} || source_meta.from ~ {:w1} || source_meta.sender ~ {:w1} || source_meta.chat ~ {:w1} || source_meta.copy_of.key ~ {:w1} || ticket.key ~ {:w1} || ticket.title ~ {:w1})'
+].join(' && ');
 
-/**
- * One clause per search word (`{:w1}` to `{:w5}`, PICKER_SERVER_WORDS): its loose pattern matches
- * one of the fields. Joined only for the words of a search, so a list without one stays as before.
- */
-const SEARCH_FILTERS = Array.from(
-	{ length: PICKER_SERVER_WORDS },
-	(_, index) => `(${SEARCH_FIELDS.map((field) => `${field} ~ {:w${index + 1}}`).join(' || ')})`
-);
+const SEARCH_SECOND = [
+	'(title ~ {:w2} || source_url ~ {:w2} || source_meta.from ~ {:w2} || source_meta.sender ~ {:w2} || source_meta.chat ~ {:w2} || source_meta.copy_of.key ~ {:w2} || ticket.key ~ {:w2} || ticket.title ~ {:w2})'
+].join(' && ');
+
+const SEARCH_THIRD = [
+	'(title ~ {:w3} || source_url ~ {:w3} || source_meta.from ~ {:w3} || source_meta.sender ~ {:w3} || source_meta.chat ~ {:w3} || source_meta.copy_of.key ~ {:w3} || ticket.key ~ {:w3} || ticket.title ~ {:w3})'
+].join(' && ');
+
+const SEARCH_FOURTH = [
+	'(title ~ {:w4} || source_url ~ {:w4} || source_meta.from ~ {:w4} || source_meta.sender ~ {:w4} || source_meta.chat ~ {:w4} || source_meta.copy_of.key ~ {:w4} || ticket.key ~ {:w4} || ticket.title ~ {:w4})'
+].join(' && ');
+
+const SEARCH_FIFTH = [
+	'(title ~ {:w5} || source_url ~ {:w5} || source_meta.from ~ {:w5} || source_meta.sender ~ {:w5} || source_meta.chat ~ {:w5} || source_meta.copy_of.key ~ {:w5} || ticket.key ~ {:w5} || ticket.title ~ {:w5})'
+].join(' && ');
+
+/** What a list of handled entries asks for: the filter "Zielprojekt" and the patterns of a search. */
+interface HandledQuery {
+	target: HandledTarget;
+	patterns: readonly string[];
+}
 
 /**
  * Expression of the handled entries: HANDLED_FILTER, with a target also its clause, and one clause
  * per pattern of the search.
  */
-function handledExpression(query: { target: HandledTarget; patterns: readonly string[] }): string {
+function handledExpression(query: HandledQuery): string {
 	const parts = [HANDLED_FILTER];
 	if (query.target !== null) parts.push(HANDLED_TARGET_FILTER);
-	parts.push(...SEARCH_FILTERS.slice(0, query.patterns.length));
+	if (query.patterns.length > 0) parts.push(SEARCH_FIRST);
+	if (query.patterns.length > 1) parts.push(SEARCH_SECOND);
+	if (query.patterns.length > 2) parts.push(SEARCH_THIRD);
+	if (query.patterns.length > 3) parts.push(SEARCH_FOURTH);
+	if (query.patterns.length > 4) parts.push(SEARCH_FIFTH);
 	return parts.join(' && ');
 }
 
@@ -307,8 +319,9 @@ export function listHandledItems(
 			throw new RangeError('Too many search patterns for the filter');
 		}
 		const words = Object.fromEntries(patterns.map((pattern, index) => [`w${index + 1}`, pattern]));
+		const handled: HandledQuery = { target, patterns };
 		const result = await pb.collection(INBOX).getList<InboxRecord>(page, perPage, {
-			filter: areaFilter(pb, handledExpression({ target, patterns }), {
+			filter: areaFilter(pb, handledExpression(handled), {
 				every: state === 'all' ? '1' : '',
 				state: state === 'all' ? '' : state,
 				all: channels === null ? '1' : '',
