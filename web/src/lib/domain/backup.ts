@@ -529,6 +529,20 @@ export const RESTORE_REASON_TEXTS: Readonly<Record<string, string>> = {
 	detach: 'Die Wiederherstellung ließ sich nicht im Hintergrund starten.'
 };
 
+/**
+ * Problems of POST /restore (400 with `reason: 'invalid'`) that refuse an input or name an unmet
+ * precondition (FP-3b, R-A2): no "Details", no entry. Every other problem (`detach`, `input`,
+ * `failed` and any the app does not know yet) is a failure of the start, with both.
+ */
+export const RESTORE_REFUSALS: ReadonlySet<string> = new Set([
+	'name',
+	'passphrase',
+	'credentials',
+	'confirm',
+	'missing',
+	'unreachable'
+]);
+
 export const RESTORE_START_FAILED =
 	'Mit der wiederhergestellten Sicherung startete die App nicht; der bisherige Stand ist zurück.';
 
@@ -722,6 +736,13 @@ export const EXPORT_REASON_TEXTS: Readonly<Record<string, string>> = {
 	'not-writable': 'In das Zielverzeichnis ließ sich nicht schreiben.',
 	failed: 'Die Sicherung ließ sich nicht verschlüsseln.'
 };
+
+/**
+ * Reasons of a copy into the target that name a setting still to make, no failure (FP-3b, R-B3): no
+ * target folder, no passphrase. Every other reason of the answer of "Jetzt sichern" is a failure
+ * with an entry.
+ */
+export const EXPORT_UNSET_REASONS: ReadonlySet<string> = new Set(['no-target', 'no-passphrase']);
 
 export function exportReasonText(reason: string): string {
 	return EXPORT_REASON_TEXTS[reason] ?? EXPORT_REASON_TEXTS.failed ?? '';

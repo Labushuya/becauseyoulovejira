@@ -23,6 +23,7 @@ import {
 	CREDENTIAL_MESSAGES,
 	CREDENTIAL_TEXTS,
 	credentialDenialText,
+	isCredentialFailure,
 	type CredentialStatus,
 	type CredentialVariable
 } from '$lib/domain/credentials';
@@ -53,7 +54,8 @@ export type CredentialsState = 'idle' | 'loading' | 'ready' | 'failed';
 
 /**
  * The outcome of "Setzen" or "Entfernen": done (the restart question follows), a problem of the
- * value or the name at the field (`field`), or a failure with its text and "Details" (FP-1).
+ * value or the name at the field (`field`), or a failure with its text and "Details" (FP-1; also
+ * `write`, Windows did not keep the value, FP-3b).
  */
 export type CredentialOutcome =
 	| { kind: 'done'; change: CredentialChange }
@@ -147,7 +149,10 @@ export class CredentialsStore {
 				answer.kind === 'denied'
 					? credentialDenialText(answer.reason)
 					: CREDENTIAL_MESSAGES[answer.problem];
-			this.#failure = { message, problem: answer.kind === 'denied' ? answer.problem : null };
+			this.#failure = {
+				message,
+				problem: answer.kind === 'denied' ? answer.problem : answer.details
+			};
 			this.#state = 'failed';
 		} catch (error) {
 			this.#fail(error, signal);
@@ -197,6 +202,16 @@ export class CredentialsStore {
 		try {
 			const answer = await withIntent(INTENTS[intent], run);
 			if (signal.aborted) return null;
+			if (answer.kind === 'invalid' && isCredentialFailure(answer.problem)) {
+				// Windows did not keep the value: a failure in red with "Details", not a hint at the
+				// field (FP-3b, R-A1); the words of the server stay.
+				return {
+					kind: 'failed',
+					message: answer.message ?? CREDENTIAL_MESSAGES.write,
+					problem: answer.details,
+					tone: 'error'
+				};
+			}
 			if (answer.kind === 'invalid') {
 				return { kind: 'field', message: answer.message ?? CREDENTIAL_MESSAGES[answer.problem] };
 			}

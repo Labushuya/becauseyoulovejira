@@ -8,7 +8,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { parseOverview, type StorageOverview } from '$lib/domain/storage';
+import { discardedFailedText, parseOverview, type StorageOverview } from '$lib/domain/storage';
 import { RESTART_NEEDED, restartNeeded } from '$lib/guidance/texts';
 import { SILENT_FLAGS } from '$lib/stores/flags.svelte';
 import { problemLog } from '$lib/stores/problem-log.svelte';
@@ -284,5 +284,38 @@ describe('page "Speicher": failures with "Details" (FP-3b, P5)', () => {
 			tone: 'success',
 			title: 'Verworfene Einträge geleert.'
 		});
+	});
+
+	// BYL-E6-2448
+	it('shows a refused input as a warning without "Details", one entry left in the singular (R-B6)', async () => {
+		const act = vi
+			.fn<StorageData['act']>()
+			.mockResolvedValueOnce({ kind: 'invalid', message: 'Diese Gruppe gibt es nicht.' });
+		await show(overviewOf(), { act });
+		const actions = within(screen.getByRole('region', { name: 'Aufräumen' }));
+		await vacuum();
+		const refused = await actions.findByText('Diese Gruppe gibt es nicht.');
+		expect(refused.closest('[data-tone]')?.getAttribute('data-tone')).toBe('warning');
+		expect(actions.queryByRole('button', { name: /^Details/ })).toBeNull();
+		expect(problemLog.entries).toEqual([]);
+
+		expect(discardedFailedText(1)).toBe('1 verworfener Eintrag ließ sich nicht leeren.');
+		const flags = { show: vi.fn(() => 'flag'), dismiss: vi.fn() };
+		const store = new StorageStore(
+			{
+				overview: vi.fn(async () => ({ kind: 'ok' as const, value: overviewOf() })),
+				act: vi.fn(async () => ({ kind: 'ok' as const, value: { count: 0, bytes: 0, failed: 1 } }))
+			},
+			{ ensureValid: () => true, logout: vi.fn() },
+			flags
+		);
+		await store.load();
+		await store.run('discarded');
+		expect(flags.show).toHaveBeenLastCalledWith(
+			expect.objectContaining({
+				tone: 'error',
+				title: '1 verworfener Eintrag ließ sich nicht leeren.'
+			})
+		);
 	});
 });

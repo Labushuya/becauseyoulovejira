@@ -38,6 +38,19 @@ export const CREDENTIAL_PROBLEMS = [
 ] as const;
 export type CredentialProblem = (typeof CREDENTIAL_PROBLEMS)[number];
 
+/**
+ * Problems that are a failure, not a refused input (FP-3b, R-A1): Windows did not keep the variable.
+ * The hook answers `write` also for a problem of the script it does not know (`input` among them).
+ * Such an answer is a red message with "Details" and an entry; every other problem stays a refusal
+ * at the field, without.
+ */
+export const CREDENTIAL_FAILURES: readonly CredentialProblem[] = Object.freeze(['write']);
+
+/** Whether `problem` is a failure (CREDENTIAL_FAILURES), not a refused input. */
+export function isCredentialFailure(problem: CredentialProblem): boolean {
+	return CREDENTIAL_FAILURES.includes(problem);
+}
+
 /** At most this many characters (UTF-16 code units, as the server counts). */
 export const CREDENTIAL_VALUE_MAX = 4096;
 

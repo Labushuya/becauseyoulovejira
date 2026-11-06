@@ -6,10 +6,12 @@
 // and its confirmation in a private field of this store. A restore stops and starts the app: the
 // store follows its state file through the restart (short polling of the server, CLAUDE.md §7).
 // Since FP-3b every failure carries its entry for "Details" (ADR-0071): a failed request, a refusal
-// "script", a backup, check or restore that failed by the answer of the server, and a restore
-// without a result after 15 minutes; not a refusal of the route, a refused input, a passphrase that
-// is missing or wrong, and a restore the person cancelled (her own choices). The warnings of the
-// overview are values of the server from earlier runs, no failure of this tab, and stay without.
+// "script", a backup, copy into the target, check or restore that failed by the answer of the
+// server (also a start of a restore that failed, beyond RESTORE_REFUSALS), and a restore without a
+// result after 15 minutes; not a refusal of the route, a refused input or an unmet precondition, a
+// missing setting of the copy (EXPORT_UNSET_REASONS), a passphrase that is missing or wrong, and a
+// restore the person cancelled (her own choices). The warnings of the overview are values of the
+// server from earlier runs, no failure of this tab, and stay without.
 
 import type PocketBase from 'pocketbase';
 import {
@@ -35,10 +37,12 @@ import {
 import type { RequestOptions } from '$lib/data/options';
 import type { ProblemEntry } from '$lib/domain/problems';
 import {
+	EXPORT_UNSET_REASONS,
 	exportReasonText,
 	isRestoreRunning,
 	PASSPHRASE_PROBLEMS,
 	RESTORE_CONFIRM_WORD,
+	RESTORE_REFUSALS,
 	restoreDoneText,
 	restoreReasonText,
 	verifyCountsText,
@@ -537,10 +541,28 @@ export class BackupStore {
 			});
 			return;
 		}
+		// The copy into the target did not happen. A setting still to make (no target, no passphrase)
+		// is a hint; any other reason of the answer of this action is a failure the server reports:
+		// red with "Details" and an entry (FP-3b, R-B3). Flags show "Details" only in red, like every
+		// message of the app (ADR-0009); the warnings of the overview stay without.
+		const { reason } = result.export;
+		const description = exportReasonText(reason);
+		const title = 'Gesichert, aber nicht im Zielverzeichnis.';
+		if (EXPORT_UNSET_REASONS.has(reason)) {
+			this.#flags.show({ tone: 'info', title, description });
+			return;
+		}
 		this.#flags.show({
-			tone: 'info',
-			title: 'Gesichert, aber nicht im Zielverzeichnis.',
-			description: exportReasonText(result.export.reason)
+			tone: 'error',
+			title,
+			description,
+			problem: reportedProblem({
+				intent: BACKUP_INTENTS.run,
+				method: 'POST',
+				path: `${ROUTE}/run`,
+				code: reason === '' ? null : reason,
+				message: description
+			})
 		});
 	}
 
@@ -695,11 +717,25 @@ export class BackupStore {
 					this.#restoreProblem = problem;
 					return;
 				}
+				// A refused input or an unmet precondition stays without "Details"; a start that
+				// failed (detach, input, failed, an unknown problem) gets its entry (FP-3b, R-A2).
+				const text = restoreReasonText({ phase: 'failed', reason: problem });
 				this.#actionMessage = {
 					tone: 'error',
 					message: {
 						title: 'Wiederherstellung nicht möglich',
-						text: restoreReasonText({ phase: 'failed', reason: problem })
+						text,
+						...detailsOf(
+							RESTORE_REFUSALS.has(problem)
+								? null
+								: reportedBackupProblem({
+										intent: BACKUP_INTENTS.restore,
+										method: 'POST',
+										path: `${ROUTE}/restore`,
+										reason: problem,
+										message: text
+									})
+						)
 					}
 				};
 			},
@@ -740,7 +776,9 @@ export class BackupStore {
 						this.#session.logout();
 						return;
 					}
-					gone = true;
+					// Only a question without an answer means the app is away; a 5xx is an answer of
+					// the server (FP-3b, R-B4).
+					if (failure.kind === 'network') gone = true;
 					this.#restoreProgress = 'offline';
 				}
 				if (state !== null) {

@@ -524,5 +524,50 @@ describe('page System: failures with "Details" (FP-3b)', () => {
 		await fireEvent.click(screen.getByRole('button', { name: 'Details: App neu starten' }));
 		expect(screen.getByText('GET /api/health')).toBeTruthy();
 		expect(problemLog.entries[0]?.outcome.result).toBe('network');
+		// The many questions to /api/health stay silent: only the restart without a result counts.
+		expect(problemLog.entries).toHaveLength(1);
+	});
+
+	// BYL-E6-2443
+	it('shows "script" of loading and of the logs as an error with "Details" (FP-3b, R-B6)', async () => {
+		await show({ status: vi.fn(async () => scriptRefusal('GET', '/api/byl/system')) });
+		const load = await screen.findByRole('button', { name: 'Details: Status der App laden' });
+		expect(load.closest('[data-tone]')?.getAttribute('data-tone')).toBe('error');
+		expect(screen.getByRole('button', { name: 'Erneut laden' })).toBeTruthy();
+		document.body.innerHTML = '';
+		problemLog.clear();
+
+		await show({ logs: vi.fn(async () => scriptRefusal('GET', '/api/byl/system/logs')) });
+		await fireEvent.click(screen.getByRole('button', { name: 'Logs ansehen' }));
+		const logs = await screen.findByRole('button', { name: 'Details: Logs laden' });
+		expect(logs.closest('[data-tone]')?.getAttribute('data-tone')).toBe('error');
+		expect(problemLog.entries.map((entry) => entry.intent)).toEqual(['Logs laden']);
+	});
+
+	// BYL-E6-2443
+	it('shows "script" of the status after a restart next to the actions, the restart done (FP-3b, R-B5)', async () => {
+		const health = vi
+			.fn<SystemData['health']>()
+			.mockResolvedValueOnce(false)
+			.mockResolvedValue(true);
+		const { flags } = await show({
+			act: vi.fn(async () => ok('restarting' as const)),
+			health,
+			status: vi
+				.fn<SystemData['status']>()
+				.mockResolvedValueOnce(ok(overview()))
+				.mockResolvedValue(scriptRefusal('GET', '/api/byl/system'))
+		});
+		await fireEvent.click(screen.getByRole('button', { name: 'Jetzt neu starten' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Neu starten' }));
+		const actions = within(screen.getByRole('region', { name: 'Aktionen' }));
+		const details = await actions.findByRole('button', { name: 'Details: Status der App laden' });
+		expect(details.closest('[data-tone]')?.getAttribute('data-tone')).toBe('error');
+		// The server answered: the restart counts as done, the page keeps the status from before.
+		expect(flags.show).toHaveBeenCalledWith(
+			expect.objectContaining({ tone: 'success', title: 'becauseyoulovejira wurde neu gestartet.' })
+		);
+		expect(screen.getByText('Läuft seit 30.09.2026 09:15')).toBeTruthy();
+		expect(problemLog.entries.map((entry) => entry.intent)).toEqual(['Status der App laden']);
 	});
 });

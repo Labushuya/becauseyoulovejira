@@ -366,6 +366,10 @@ export class SystemStore {
 		} else if (answer?.kind === 'denied') {
 			this.#state = 'denied';
 			this.#message = refusalNotice(answer);
+			// The page still shows the status from before, so the message of the page would stay
+			// hidden: it stands next to the actions, "script" as an error with "Details" (FP-3b, R-B5).
+			// The server answered, so the restart itself counts as done.
+			this.#refuse(answer);
 		}
 		this.#restart = 'idle';
 		this.#flags.show({

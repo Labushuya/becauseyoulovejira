@@ -247,10 +247,16 @@ describe('BackupStore: changes', () => {
 			description: 'Auch verschlüsselt im Zielverzeichnis.'
 		});
 		await store.runNow();
+		// The copy that failed is a failure the server reports, with "Details" (FP-3b, R-B3).
 		expect(flags.show).toHaveBeenLastCalledWith({
-			tone: 'info',
+			tone: 'error',
 			title: 'Gesichert, aber nicht im Zielverzeichnis.',
-			description: 'Das Zielverzeichnis war nicht erreichbar.'
+			description: 'Das Zielverzeichnis war nicht erreichbar.',
+			problem: expect.objectContaining({
+				intent: 'Jetzt sichern',
+				outcome: expect.objectContaining({ result: 'reported', code: 'unreachable' }),
+				request: { method: 'POST', path: '/api/byl/backup/run' }
+			})
 		});
 		await store.runNow();
 		// The failure the server reports has "Details" (FP-3b).
@@ -263,6 +269,56 @@ describe('BackupStore: changes', () => {
 				outcome: expect.objectContaining({ result: 'reported', message: 'try again later' }),
 				request: { method: 'POST', path: '/api/byl/backup/run' }
 			})
+		});
+	});
+
+	// BYL-E6-2441
+	it('gives a failed copy into the target an entry, a missing setting none (FP-3b, R-B3)', async () => {
+		const reasons = [
+			'space',
+			'not-writable',
+			'helper',
+			'failed',
+			'passphrase-unreadable',
+			'no-target',
+			'no-passphrase'
+		];
+		const { store, flags } = setup({
+			run: vi.fn(async () =>
+				ok({
+					overview: overview(),
+					result: {
+						backup: 'byl-3.zip',
+						backupError: '',
+						export: { ok: false, reason: reasons.shift() ?? '', file: '' }
+					}
+				})
+			)
+		});
+		await store.load();
+		for (const code of ['space', 'not-writable', 'helper', 'failed', 'passphrase-unreadable']) {
+			await store.runNow();
+			expect(flags.show, code).toHaveBeenLastCalledWith(
+				expect.objectContaining({
+					tone: 'error',
+					title: 'Gesichert, aber nicht im Zielverzeichnis.',
+					problem: expect.objectContaining({
+						outcome: expect.objectContaining({ result: 'reported', code })
+					})
+				})
+			);
+		}
+		await store.runNow();
+		expect(flags.show).toHaveBeenLastCalledWith({
+			tone: 'info',
+			title: 'Gesichert, aber nicht im Zielverzeichnis.',
+			description: 'Es ist kein Zielverzeichnis eingestellt.'
+		});
+		await store.runNow();
+		expect(flags.show).toHaveBeenLastCalledWith({
+			tone: 'info',
+			title: 'Gesichert, aber nicht im Zielverzeichnis.',
+			description: 'Es ist keine Passphrase festgelegt.'
 		});
 	});
 
@@ -602,6 +658,62 @@ describe('BackupStore: restore (BK-3)', () => {
 				text: 'Abgebrochen; nichts wurde geändert.'
 			}
 		});
+	});
+
+	// BYL-E6-2440
+	it('gives a start of a restore that failed "Details", a refused input or precondition none (FP-3b, R-A2)', async () => {
+		const restore = vi.fn<BackupData['restore']>();
+		const { store } = setup({ restore });
+		await store.load();
+		for (const problem of ['detach', 'input', 'failed', 'neu-unbekannt']) {
+			restore.mockResolvedValueOnce({ kind: 'invalid', problem });
+			await store.prepareRestore(local);
+			await store.restore('none', 'WIEDERHERSTELLEN');
+			expect(store.actionMessage?.tone, problem).toBe('error');
+			expect(store.actionMessage?.message.problem, problem).toMatchObject({
+				intent: 'Sicherung wiederherstellen',
+				outcome: { result: 'reported', code: problem },
+				request: { method: 'POST', path: '/api/byl/backup/restore' }
+			});
+		}
+		// An unknown problem keeps the words of a failed run.
+		expect(store.actionMessage?.message.text).toBe('Die Prüfung ließ sich nicht ausführen.');
+		for (const problem of ['name', 'passphrase', 'missing', 'unreachable']) {
+			restore.mockResolvedValueOnce({ kind: 'invalid', problem });
+			await store.prepareRestore(local);
+			await store.restore('none', 'WIEDERHERSTELLEN');
+			expect(store.actionMessage?.message.title, problem).toBe('Wiederherstellung nicht möglich');
+			expect(store.actionMessage?.message.problem, problem).toBeUndefined();
+		}
+		// The word and the choice stay at their fields, without an entry.
+		restore.mockResolvedValueOnce({ kind: 'invalid', problem: 'credentials' });
+		await store.prepareRestore(local);
+		await store.restore('none', 'WIEDERHERSTELLEN');
+		expect(store.restoreProblem).toBe('credentials');
+	});
+
+	// BYL-E6-2442
+	it('names a restore whose state answered 500 for 15 minutes no "Keine Verbindung" (FP-3b, R-B4)', async () => {
+		const running = ok({ restore: restoreAt('2026-10-01T10:00:05.000Z', 'restoring'), safety: [] });
+		const { store } = setup({
+			restoreState: vi
+				.fn<BackupData['restoreState']>()
+				.mockResolvedValueOnce(running)
+				.mockRejectedValue(new DataError('server', { status: 500 }))
+		});
+		await store.load();
+		await store.prepareRestore(local);
+		await store.restore('none', 'WIEDERHERSTELLEN');
+		expect(store.actionMessage?.message.title).toBe('Kein Ergebnis der Wiederherstellung');
+		expect(store.actionMessage?.message.problem).toMatchObject({
+			intent: 'Sicherung wiederherstellen',
+			outcome: {
+				result: 'reported',
+				message: 'Nach 15 Minuten kam kein Ergebnis der Wiederherstellung.'
+			},
+			request: { method: 'GET', path: '/api/byl/backup/restore' }
+		});
+		expect(store.actionMessage?.message.problem?.outcome.result).not.toBe('network');
 	});
 
 	// BYL-E6-2433

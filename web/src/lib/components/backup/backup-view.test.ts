@@ -11,10 +11,13 @@ import { tick } from 'svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BackupAnswer } from '$lib/data/backup';
 import { parseOverview, type BackupOverview, type VerifyResult } from '$lib/domain/backup';
+import FlagGroup from '$lib/components/overlay/FlagGroup.svelte';
 import { BackupStore, type BackupData } from '$lib/stores/backup.svelte';
+import { FlagStore } from '$lib/stores/flags.svelte';
 import { problemLog } from '$lib/stores/problem-log.svelte';
 import type { SystemClock } from '$lib/stores/system.svelte';
 import { failedRequest } from '$lib/test/failures';
+import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import BackupView from './BackupView.svelte';
 
 /** A clock that moves on with every wait, so a restore is followed without real time. */
@@ -90,7 +93,9 @@ function verified(overrides: Partial<VerifyResult> = {}): VerifyResult {
 async function show(
 	data: Partial<BackupData> = {},
 	platform: 'windows' | 'linux' = 'windows',
-	first = overview()
+	first = overview(),
+	/** Real flags, shown by a FlagGroup next to the page (for "Details" of a flag). */
+	flagStore: FlagStore | null = null
 ) {
 	const full: BackupData = {
 		overview: vi.fn(async () => ok(first)),
@@ -110,11 +115,12 @@ async function show(
 	const store = new BackupStore(
 		full,
 		{ ensureValid: () => true, logout: vi.fn() },
-		flags,
+		flagStore ?? flags,
 		fakeClock()
 	);
 	if (platform === 'windows') await store.load();
 	render(BackupView, { props: { store, platform } });
+	if (flagStore !== null) render(FlagGroup, { props: { store: flagStore } });
 	await tick();
 	return { store, data: full, flags };
 }
@@ -544,5 +550,149 @@ describe('page Sicherung: failures with "Details" (FP-3b)', () => {
 		expect(document.body.querySelector('[data-tone="error"]')).not.toBeNull();
 		expect(screen.queryByRole('button', { name: /^Details/ })).toBeNull();
 		expect(problemLog.entries).toEqual([]);
+	});
+});
+
+describe('page Sicherung: flags, choices and the restore (FP-3b, R-B6)', () => {
+	useOverlayStubs();
+	beforeEach(() => problemLog.clear());
+
+	const flagsRegion = () => within(screen.getByRole('region', { name: 'Benachrichtigungen' }));
+	const restoreLocal = 'Sicherung vom 01.10.2026 12:00 im Ordner app wiederherstellen …';
+
+	/** Opens the confirmation of the restore of the backup here and confirms it with the word. */
+	async function confirmRestore() {
+		const list = within(screen.getByRole('region', { name: 'Sicherungen' }));
+		await fireEvent.click(list.getByRole('button', { name: restoreLocal }));
+		const form = within(await list.findByRole('form'));
+		await fireEvent.input(form.getByLabelText('Zur Bestätigung WIEDERHERSTELLEN eintippen'), {
+			target: { value: 'WIEDERHERSTELLEN' }
+		});
+		await fireEvent.click(form.getByRole('button', { name: 'Wiederherstellen' }));
+	}
+
+	// BYL-E6-2447
+	it('shows a flag of a failure the server reports with "Details", also a failed copy into the target (R-B3)', async () => {
+		const run = vi
+			.fn<BackupData['run']>()
+			.mockResolvedValueOnce(
+				ok({
+					overview: overview(),
+					result: { backup: '', backupError: 'Kein Platz in pb_data.', export: null }
+				})
+			)
+			.mockResolvedValueOnce(
+				ok({
+					overview: overview(),
+					result: {
+						backup: 'byl-x.zip',
+						backupError: '',
+						export: { ok: false, reason: 'space', file: '' }
+					}
+				})
+			);
+		await show({ run }, 'windows', overview(), new FlagStore());
+		await fireEvent.click(screen.getByRole('button', { name: 'Jetzt sichern' }));
+		const failed = await flagsRegion().findByText('Die Sicherung ist gescheitert.');
+		const flag = failed.closest('li') as HTMLElement;
+		expect(within(flag).getByRole('button', { name: 'Details: Jetzt sichern' })).toBeTruthy();
+		await fireEvent.click(screen.getByRole('button', { name: 'Jetzt sichern' }));
+		const copy = await flagsRegion().findByText('Gesichert, aber nicht im Zielverzeichnis.');
+		const copyFlag = copy.closest('li') as HTMLElement;
+		expect(within(copyFlag).getByText('Im Zielverzeichnis war zu wenig Platz frei.')).toBeTruthy();
+		expect(within(copyFlag).getByRole('button', { name: 'Details: Jetzt sichern' })).toBeTruthy();
+		expect(problemLog.entries.map((entry) => entry.outcome.code)).toEqual(['space', null]);
+	});
+
+	// BYL-E6-2447
+	it('keeps a cancelled restore and a missing passphrase out of the list of the session', async () => {
+		const cancelled = parseOverview({
+			...JSON.parse(JSON.stringify(overview())),
+			restore: {
+				at: '2026-10-01T11:01:00.000Z',
+				phase: 'failed',
+				running: false,
+				name: 'byl-20261001-100000.zip',
+				source: 'local',
+				ok: false,
+				reason: 'cancel'
+			}
+		});
+		await show(
+			{
+				verify: vi
+					.fn<BackupData['verify']>()
+					.mockResolvedValueOnce(
+						ok({ overview: overview(), result: verified({ ok: false, reason: 'passphrase' }) })
+					)
+					.mockResolvedValue(ok({ overview: overview(), result: verified() })),
+				restoreState: vi.fn(async () => ok({ restore: cancelled?.restore ?? null, safety: [] }))
+			},
+			'windows',
+			overview(),
+			new FlagStore()
+		);
+		const list = within(screen.getByRole('region', { name: 'Sicherungen' }));
+		await fireEvent.click(
+			list.getByRole('button', { name: 'Sicherung vom 01.10.2026 12:00 im Zielverzeichnis prüfen' })
+		);
+		await list.findByLabelText('Passphrase dieser Sicherung');
+		await fireEvent.click(list.getByRole('button', { name: 'Abbrechen' }));
+		await confirmRestore();
+		await screen.findByText('Abgebrochen; nichts wurde geändert.');
+		expect(screen.queryByRole('button', { name: /^Details/ })).toBeNull();
+		expect(problemLog.entries).toEqual([]);
+	});
+
+	// BYL-E6-2447
+	it('asks the state of a running restore without an entry until its result', async () => {
+		const done = parseOverview({
+			...JSON.parse(JSON.stringify(overview())),
+			restore: {
+				at: '2026-10-01T11:01:00.000Z',
+				phase: 'done',
+				running: false,
+				name: 'byl-20261001-100000.zip',
+				source: 'local',
+				ok: true,
+				safety: 'pb_data.vor-wiederherstellung-20261001-110030',
+				credentials: { mode: 'missing', written: [], failed: false },
+				config: 'kept'
+			}
+		});
+		const restoreState = vi
+			.fn<BackupData['restoreState']>()
+			.mockRejectedValueOnce(failedRequest('GET', '/api/byl/backup/restore'))
+			.mockRejectedValueOnce(failedRequest('GET', '/api/byl/backup/restore', 'server'))
+			.mockResolvedValue(ok({ restore: done?.restore ?? null, safety: [] }));
+		await show({ restoreState }, 'windows', overview(), new FlagStore());
+		await confirmRestore();
+		await flagsRegion().findByText('Wiederhergestellt.');
+		expect(restoreState).toHaveBeenCalledTimes(3);
+		expect(screen.queryByRole('button', { name: /^Details/ })).toBeNull();
+		expect(problemLog.entries).toEqual([]);
+	});
+
+	// BYL-E6-2440
+	it('gives a start of a restore that failed "Details", a refused precondition none (R-A2)', async () => {
+		const restore = vi
+			.fn<BackupData['restore']>()
+			.mockResolvedValueOnce({ kind: 'invalid', problem: 'detach' })
+			.mockResolvedValueOnce({ kind: 'invalid', problem: 'unreachable' });
+		await show({ restore });
+		const state = within(screen.getByRole('region', { name: 'Zustand' }));
+		await confirmRestore();
+		const details = await state.findByRole('button', {
+			name: 'Details: Sicherung wiederherstellen'
+		});
+		const message = details.closest('[data-tone]') as HTMLElement;
+		expect(message.getAttribute('data-tone')).toBe('error');
+		expect(
+			within(message).getByText(/Die Wiederherstellung ließ sich nicht im Hintergrund starten\./)
+		).toBeTruthy();
+		await confirmRestore();
+		await state.findByText(/Das Zielverzeichnis ist nicht erreichbar\./);
+		expect(state.queryByRole('button', { name: /^Details/ })).toBeNull();
+		expect(problemLog.entries.map((entry) => entry.outcome.code)).toEqual(['detach']);
 	});
 });

@@ -500,6 +500,25 @@ describe('page "Konten": failures with "Details" (FP-3b)', () => {
 		expect(problemLog.entries[0]?.outcome.result).toBe('answer');
 	});
 
+	// BYL-E6-2444
+	it('shows a failed load and "script" of loading in red with "Details" (R-B6)', async () => {
+		await show({
+			list: vi.fn(async () => {
+				throw failedRequest('GET', '/api/byl/accounts');
+			})
+		});
+		const failed = await screen.findByRole('button', { name: 'Details: Konten laden' });
+		expect(failed.closest('[data-tone]')?.getAttribute('data-tone')).toBe('error');
+		expect(screen.getByText(/Server nicht erreichbar/)).toBeTruthy();
+		document.body.innerHTML = '';
+
+		await show({ list: vi.fn(async () => scriptRefusal('GET', '/api/byl/accounts')) });
+		const script = await screen.findByRole('button', { name: 'Details: Konten laden' });
+		expect(script.closest('[data-tone]')?.getAttribute('data-tone')).toBe('error');
+		// The newest first.
+		expect(problemLog.entries.map((entry) => entry.outcome.result)).toEqual(['answer', 'network']);
+	});
+
 	// BYL-E6-2422
 	it('says nothing for an aborted request and signs out when the session ended', async () => {
 		const logout = vi.fn();

@@ -72,7 +72,8 @@ describe('data/credentials.ts', () => {
 		expect(await setCredential(invalid.pb, 'BYL_TELEGRAM_TOKEN', MARKER)).toEqual({
 			kind: 'invalid',
 			problem: 'control',
-			message: 'Steuerzeichen.'
+			message: 'Steuerzeichen.',
+			details: null
 		});
 		const remote = client({ status: 403, response: { reason: 'loopback' } }, true);
 		expect(await removeCredential(remote.pb, 'BYL_TELEGRAM_TOKEN')).toEqual({

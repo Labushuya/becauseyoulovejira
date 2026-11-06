@@ -7,7 +7,7 @@
 import { ClientResponseError } from 'pocketbase';
 import type PocketBase from 'pocketbase';
 import { describe, expect, it, vi } from 'vitest';
-import { problemReport } from '../domain/problems';
+import { problemReport, type ProblemEntry } from '../domain/problems';
 import { createAccount, fetchAccounts, setAccountAdmin } from './accounts';
 import { runBackupNow } from './backup';
 import { setCredential } from './credentials';
@@ -113,7 +113,44 @@ describe('a 400 of the routes of the administration (FP-3b)', () => {
 				'BYL_TELEGRAM_TOKEN',
 				'Wert'
 			)
-		).toEqual({ kind: 'invalid', problem: 'control', message: 'Steuerzeichen.' });
+		).toEqual({ kind: 'invalid', problem: 'control', message: 'Steuerzeichen.', details: null });
+	});
+
+	// BYL-E6-2439
+	it('gives `problem: "write"` of the access data an entry, every other problem none (R-A1)', async () => {
+		const value = 'Marker-Wert-5e1d';
+		const answer = await setCredential(
+			failing(400, {
+				status: 400,
+				problem: 'write',
+				message: 'Windows hat die Variable nicht gespeichert.'
+			}),
+			'BYL_TELEGRAM_TOKEN',
+			value
+		);
+		expect(answer).toMatchObject({
+			kind: 'invalid',
+			problem: 'write',
+			message: 'Windows hat die Variable nicht gespeichert.'
+		});
+		const details = answer.kind === 'invalid' ? answer.details : null;
+		expect(details).toMatchObject({
+			intent: 'Zugangsdaten setzen',
+			outcome: {
+				result: 'response',
+				status: 400,
+				message: 'Windows hat die Variable nicht gespeichert.'
+			},
+			request: { method: 'POST', path: '/api/byl/credentials/set' }
+		});
+		expect(problemReport(details as ProblemEntry)).not.toContain(value);
+		// The other problems are refused inputs: no entry.
+		for (const problem of ['invalid', 'name', 'blocked', 'unknown', 'empty', 'control', 'long']) {
+			expect(
+				await setCredential(failing(400, { status: 400, problem }), 'BYL_TELEGRAM_TOKEN', value),
+				problem
+			).toEqual({ kind: 'invalid', problem, message: null, details: null });
+		}
 	});
 });
 

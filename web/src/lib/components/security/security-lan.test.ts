@@ -14,7 +14,7 @@ import type { FlagInput } from '$lib/stores/flags.svelte';
 import { problemLog } from '$lib/stores/problem-log.svelte';
 import { SecurityLanStore, type SecurityLanData } from '$lib/stores/security-lan.svelte';
 import { danglingReferences, duplicateIds } from '$lib/test/aria-ids';
-import { failedRequest } from '$lib/test/failures';
+import { failedRequest, scriptRefusal } from '$lib/test/failures';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import { securityAnswer } from '$lib/test/security-answer';
 import SecurityLan from './SecurityLan.svelte';
@@ -477,6 +477,35 @@ describe('access in the home network: failures with "Details" (FP-3b)', () => {
 		await screen.findByRole('heading', { name: /nicht angelegt \(cancelled\)/ });
 		expect(screen.queryByRole('button', { name: /^Details/ })).toBeNull();
 		expect(problemLog.entries).toEqual([]);
+	});
+
+	// BYL-E6-2446
+	it('shows a failed load without `info` and "script" of the firewall route in red with "Details" (R-B6)', async () => {
+		await show({
+			data: {
+				info: vi.fn(async () => {
+					throw failedRequest('GET', '/api/byl/security/lan');
+				})
+			}
+		});
+		const load = await screen.findByRole('button', { name: 'Details: Zugriff im Heimnetz laden' });
+		expect(load.closest('[data-tone]')?.getAttribute('data-tone')).toBe('error');
+		expect(screen.getByRole('button', { name: 'Erneut prüfen' })).toBeTruthy();
+		expect(screen.queryByRole('switch')).toBeNull();
+		document.body.innerHTML = '';
+		problemLog.clear();
+
+		await show({
+			info: infoOf({ enabled: true, addresses: ['192.168.178.20'] }),
+			data: {
+				firewall: vi.fn(async () => scriptRefusal('POST', '/api/byl/security/lan/firewall'))
+			}
+		});
+		await addRule();
+		const rule = await screen.findByRole('button', { name: 'Details: Firewall-Regel ändern' });
+		expect(rule.closest('[data-tone]')?.getAttribute('data-tone')).toBe('error');
+		expect(problemLog.entries).toHaveLength(1);
+		expect(problemLog.entries[0]?.outcome.result).toBe('answer');
 	});
 
 	// BYL-E6-2426

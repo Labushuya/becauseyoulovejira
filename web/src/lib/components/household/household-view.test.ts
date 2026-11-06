@@ -446,6 +446,40 @@ describe('page "Haushalt": failures with "Details" (FP-3b)', () => {
 		expect(screen.getByLabelText('Neuer Name').getAttribute('aria-invalid')).toBe('true');
 	});
 
+	// BYL-E6-2445
+	it('shows "Haushalt nicht geladen" with "Details", "rate" and "missing" without (R-B6)', async () => {
+		await show(null, {
+			fetch: vi.fn(async () => {
+				throw failedRequest('GET', '/api/byl/household');
+			})
+		});
+		const title = screen.getByRole('heading', { name: /Haushalt nicht geladen/ });
+		const message = title.closest('[data-tone]') as HTMLElement;
+		expect(message.getAttribute('data-tone')).toBe('error');
+		expect(within(message).getByRole('button', { name: 'Details: Haushalt laden' })).toBeTruthy();
+		expect(problemLog.entries.map((entry) => entry.intent)).toEqual(['Haushalt laden']);
+		document.body.innerHTML = '';
+		problemLog.clear();
+
+		// A refusal of the route stays a hint: the rate limit and the route before the restart.
+		const revoke = vi
+			.fn<HouseholdData['revoke']>()
+			.mockResolvedValueOnce({ kind: 'rate' })
+			.mockResolvedValueOnce({ kind: 'missing' });
+		await show(stateFor(CHRIS), { revoke });
+		await fireEvent.click(screen.getAllByRole('button', { name: /, widerrufen$/ })[0]!);
+		await screen.findByText(/Zu viele Versuche/);
+		expect(screen.queryByRole('button', { name: /^Details/ })).toBeNull();
+		await fireEvent.click(screen.getAllByRole('button', { name: /, widerrufen$/ })[0]!);
+		await screen.findByText(/Der Haushalt ist nach dem nächsten Neustart verfügbar/);
+		expect(screen.queryByRole('button', { name: /^Details/ })).toBeNull();
+		document.body.innerHTML = '';
+		await show(null, { fetch: vi.fn(async () => ({ kind: 'missing' as const })) });
+		expect(screen.getByText(/Der Haushalt ist nach dem nächsten Neustart verfügbar/)).toBeTruthy();
+		expect(screen.queryByRole('button', { name: /^Details/ })).toBeNull();
+		expect(problemLog.entries).toEqual([]);
+	});
+
 	// BYL-E6-2425
 	it('says nothing for an aborted request and signs out when the session ended', async () => {
 		const logout = vi.fn();

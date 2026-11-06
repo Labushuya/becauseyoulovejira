@@ -12,9 +12,10 @@ import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick, type Component } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CredentialAnswer, CredentialChange } from '$lib/data/credentials';
-import { DataError } from '$lib/data/errors';
+import { DataError, problemOf } from '$lib/data/errors';
 import { CREDENTIAL_MESSAGES, CREDENTIAL_TEXTS, PC_ONLY } from '$lib/domain/credentials';
 import { RESTART_TEXTS, RESTART_WAY } from '$lib/domain/system';
+import { problemLog } from '$lib/stores/problem-log.svelte';
 import { connectionOf } from '$lib/test/connections-fake';
 import { MEMBER_CONTEXT, PC_CONTEXT, REMOTE_CONTEXT, useContext } from '$lib/test/context';
 import {
@@ -24,6 +25,7 @@ import {
 	variableOf,
 	type FakeCredentialsData
 } from '$lib/test/credentials-fake';
+import { failedRequest } from '$lib/test/failures';
 import type { OutboxStore } from '$lib/offline/outbox.svelte';
 import OutboxHostHarness from '$lib/test/OutboxHostHarness.svelte';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
@@ -172,7 +174,8 @@ describe('the state and the actions at the field of a channel (V1)', () => {
 		data.set.mockResolvedValueOnce({
 			kind: 'invalid',
 			problem: 'long',
-			message: CREDENTIAL_MESSAGES.long
+			message: CREDENTIAL_MESSAGES.long,
+			details: null
 		});
 		await renderBlock(data);
 		const input = await submit('BYL_TELEGRAM_TOKEN', MARKER);
@@ -180,6 +183,36 @@ describe('the state and the actions at the field of a channel (V1)', () => {
 			expect(within(field('BYL_TELEGRAM_TOKEN')).getByText(CREDENTIAL_MESSAGES.long)).toBeTruthy()
 		);
 		expect(input.value).toBe('');
+		expect(document.body.textContent).not.toContain(MARKER);
+	});
+
+	// BYL-E6-2439
+	it('shows "write" as a failure in red with "Details", not as a hint at the field (FP-3b, R-A1)', async () => {
+		problemLog.clear();
+		const data = fakeCredentialsData([
+			variableOf('BYL_TELEGRAM_TOKEN'),
+			variableOf('BYL_TELEGRAM_ALLOWED_IDS')
+		]);
+		data.set.mockResolvedValueOnce({
+			kind: 'invalid',
+			problem: 'write',
+			message: 'Windows hat die Variable nicht gespeichert (Zugriff verweigert).',
+			details: problemOf(failedRequest('POST', '/api/byl/credentials/set', 'server'))
+		});
+		await renderBlock(data);
+		const input = await submit('BYL_TELEGRAM_TOKEN', MARKER);
+		const group = field('BYL_TELEGRAM_TOKEN');
+		const details = await within(group).findByRole('button', {
+			name: 'Details: Zugangsdaten setzen'
+		});
+		const message = details.closest('.section-message');
+		expect(message?.getAttribute('data-tone')).toBe('error');
+		expect(message?.textContent).toContain(
+			'Windows hat die Variable nicht gespeichert (Zugriff verweigert).'
+		);
+		expect(input.getAttribute('aria-invalid')).toBeNull();
+		expect(input.value).toBe('');
+		expect(problemLog.entries.map((entry) => entry.intent)).toEqual(['Zugangsdaten setzen']);
 		expect(document.body.textContent).not.toContain(MARKER);
 	});
 
