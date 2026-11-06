@@ -1,10 +1,11 @@
 // The search over sources (QS-2, ADR-0031 addendum N): what an entry is found by, the words and
 // the normalisation of the ticket picker, source tickets by key and title, the threshold of the
-// section and its texts. Since EG-2 the search of the inbox: the ticket of a linked entry, the
-// words that go to the server and the invariant that the server answers a superset.
+// section and its texts. Since EG-2 the search of the inbox: the ticket of a linked entry, the date
+// of the row, the words that go to the server and the invariant that the server answers a superset.
 
 import { describe, expect, it } from 'vitest';
-import type { InboxItem, InboxItemSummary } from './inbox';
+import { SEARCH_FIELDS } from '../data/inbox';
+import { INBOX_VIEWS, type InboxItem, type InboxItemSummary } from './inbox';
 import {
 	INBOX_PATTERN_BUDGET,
 	hasSourceSearch,
@@ -14,6 +15,8 @@ import {
 	matchesInboxWords,
 	matchesSourceWords,
 	noEntryMatchText,
+	noLoadedEntryMatchText,
+	noLoadedEntryMatchTitle,
 	noSourceMatchText,
 	searchHitsText,
 	sourceSearchText
@@ -164,6 +167,13 @@ describe('threshold and texts of the search (QS-2)', () => {
 		expect(searchHitsText(3, 50, true)).toBe('3 von 50+');
 		expect(noSourceMatchText('  Rechnung ')).toBe('Keine Quelle passt zu „Rechnung“');
 		expect(noEntryMatchText('Mahnung  ')).toBe('Kein Eintrag passt zu „Mahnung“.');
+		// A paged view with further pages speaks of the loaded entries only (EG-2 review).
+		expect(noLoadedEntryMatchTitle(' Mahnung')).toBe(
+			'Von den bisher geladenen Einträgen passt keiner zu „Mahnung“'
+		);
+		expect(noLoadedEntryMatchText('Mahnung')).toBe(
+			'Von den bisher geladenen Einträgen passt keiner zu „Mahnung“.'
+		);
 	});
 });
 
@@ -172,12 +182,54 @@ const TICKET = { id: 'ticket000000001', key: 'HAUS-12', title: 'Heizung prüfen'
 describe('inboxSearchText (EG-2)', () => {
 	it('adds key and title of the ticket the row of a linked entry shows', () => {
 		const linked = item({ ticket: TICKET });
-		expect(inboxSearchText(linked, null)).toBe(
-			`${sourceSearchText(linked, null)} haus-12 heizung prufen`
+		// The row of "Verknüpft" shows the handling, 09:00 UTC is 11:00 in Berlin (EG-2 review).
+		expect(inboxSearchText(linked, null, 'converted')).toBe(
+			`${sourceSearchText(linked, null)} 25.09.2026 11:00 haus-12 heizung prufen`
 		);
 		for (const text of ['haus-12', 'HAUS', 'heizung prüfen', 'prufen nachricht']) {
-			expect(matchesInboxWords(linked, searchWords(text), null), text).toBe(true);
+			expect(matchesInboxWords(linked, searchWords(text), null, 'converted'), text).toBe(true);
 		}
+	});
+
+	it('finds every date the row shows in its view: the arrival or the handling, and the date at the sender (EG-2 review)', () => {
+		const entry = item({
+			state: 'discarded',
+			ticketId: null,
+			sourceDate: '2026-09-20 06:00:00.000Z',
+			created: '2026-09-22 08:00:00.000Z',
+			handledAt: '2026-09-24 09:00:00.000Z'
+		});
+		const finds = (text: string, view: (typeof INBOX_VIEWS)[number]) =>
+			matchesInboxWords(entry, searchWords(text), null, view);
+		// The date at the sender in every view, as before.
+		for (const view of INBOX_VIEWS) expect(finds('20.09.2026', view), view).toBe(true);
+		// "Verworfen" shows the handling, "Alle" and "Neu" the arrival.
+		expect(finds('24.09.2026 11:00', 'discarded')).toBe(true);
+		expect(finds('24.09.2026', 'all')).toBe(false);
+		expect(finds('22.09.2026 10:00', 'all')).toBe(true);
+		expect(finds('22.09.2026', 'discarded')).toBe(false);
+		// Without a handling the row shows the arrival.
+		const linked = item({ handledAt: null, created: '2026-09-23 08:00:00.000Z' });
+		expect(matchesInboxWords(linked, ['23.09.2026'], null, 'converted')).toBe(true);
+		// Without a date at the sender the arrival stands once in the text.
+		const plain = item({ state: 'new', ticketId: null, handledAt: null });
+		expect(inboxSearchText(plain, null, 'new')).toBe(sourceSearchText(plain, null));
+	});
+
+	it('builds the text of an entry once, and anew for another name of its connection or another view (EG-2 review)', () => {
+		const mail = { ...MAIL, connectionId: 'conn00000000001' };
+		expect(matchesInboxWords(mail, ['gmail'], 'Gmail Arbeit', 'converted')).toBe(true);
+		expect(inboxSearchText(mail, 'Gmail Arbeit', 'converted')).toBe(
+			inboxSearchText(mail, 'Gmail Arbeit', 'converted')
+		);
+		// The connection was renamed: the cached text must not find the old name.
+		expect(matchesInboxWords(mail, ['gmail'], 'Privat', 'converted')).toBe(false);
+		expect(matchesInboxWords(mail, ['privat'], 'Privat', 'converted')).toBe(true);
+		expect(matchesInboxWords(mail, ['gmail'], 'Gmail Arbeit', 'converted')).toBe(true);
+		// Another view shows another date of the same object.
+		expect(matchesInboxWords(mail, ['25.09.2026'], null, 'converted')).toBe(true);
+		expect(matchesInboxWords(mail, ['11:00'], null, 'all')).toBe(false);
+		expect(matchesInboxWords(mail, ['11:00'], null, 'converted')).toBe(true);
 	});
 
 	it('leaves out a ticket the row does not show, the text of the entry and other details', () => {
@@ -187,7 +239,7 @@ describe('inboxSearchText (EG-2)', () => {
 			item({ ticketId: 'ticket000000002', ticket: TICKET }),
 			item({ ticket: null })
 		]) {
-			expect(matchesInboxWords(entry, searchWords('haus-12'), null)).toBe(false);
+			expect(matchesInboxWords(entry, searchWords('haus-12'), null, 'all')).toBe(false);
 		}
 		const loaded: InboxItem = {
 			...item({
@@ -196,16 +248,18 @@ describe('inboxSearchText (EG-2)', () => {
 			body: 'Bitte bis Freitag zahlen'
 		};
 		for (const text of ['freitag', 'einkauf', 'marktplatz', 'anna@']) {
-			expect(matchesInboxWords(loaded, searchWords(text), null), text).toBe(false);
+			expect(matchesInboxWords(loaded, searchWords(text), null, 'converted'), text).toBe(false);
 		}
 	});
 
 	it('finds what the row shows: title, channel with connection, date, sender, every word somewhere', () => {
 		const words = (text: string) => searchWords(text);
-		expect(matchesInboxWords(MAIL, words('rechnung postfach'), null)).toBe(true);
-		expect(matchesInboxWords(MAIL, words('gmail 24.09.2026 grüne'), 'Gmail Arbeit')).toBe(true);
-		expect(matchesInboxWords(MAIL, words('gmail'), null)).toBe(false);
-		expect(matchesInboxWords(MAIL, [], null)).toBe(true);
+		expect(matchesInboxWords(MAIL, words('rechnung postfach'), null, 'converted')).toBe(true);
+		expect(
+			matchesInboxWords(MAIL, words('gmail 24.09.2026 grüne'), 'Gmail Arbeit', 'converted')
+		).toBe(true);
+		expect(matchesInboxWords(MAIL, words('gmail'), null, 'converted')).toBe(false);
+		expect(matchesInboxWords(MAIL, [], null, 'converted')).toBe(true);
 	});
 });
 
@@ -244,11 +298,13 @@ describe('inboxServerWords (EG-2)', () => {
 		expect(server('Arbeit Rechnung')).toEqual(['rechnung']);
 	});
 
-	it('keeps words that may stand in a date, with digits or only dots and colons, in the client', () => {
-		for (const text of ['24.09.2026', '2026', '10:30', 'HAUS-12', 'a1', '.', ':', '.:']) {
+	it('keeps words that may stand in a date, of digits, dots and colons only, in the client', () => {
+		for (const text of ['24.09.2026', '2026', '10:30', '09.2026 10', '4.0', '.', ':', '.:']) {
 			expect(server(text), text).toEqual([]);
 		}
 		expect(server('a.b')).toEqual(['a.b']);
+		// No date holds a letter or another sign: keys and numbers with them narrow on the server.
+		expect(server('HAUS-12 a1 50% 3,5')).toEqual(['haus-12', 'a1', '50%', '3,5']);
 	});
 
 	it('keeps words with characters outside ASCII in the client, after the normalisation', () => {
@@ -267,8 +323,14 @@ describe('inboxServerWords (EG-2)', () => {
 		expect(server(`${long} rechnung`)).toEqual(['rechnung']);
 		const fits = 'q'.repeat(INBOX_PATTERN_BUDGET - 2);
 		expect(server(fits)).toEqual([fits]);
-		// A quote takes two characters in the filter (`pb.filter` writes it as \').
-		expect(server(`'${'q'.repeat(INBOX_PATTERN_BUDGET - 3)}`)).toEqual([]);
+		// `pb.filter` writes a JSON string (EG-2 review): `"` and `\` take two characters in the filter,
+		// `'` one; a `\` of the word is `\\` in the pattern already.
+		const quote = `'${'q'.repeat(INBOX_PATTERN_BUDGET - 3)}`;
+		expect(server(quote)).toEqual([quote]);
+		expect(server(`"${'q'.repeat(INBOX_PATTERN_BUDGET - 3)}`)).toEqual([]);
+		expect(server(`\\${'q'.repeat(INBOX_PATTERN_BUDGET - 5)}`)).toEqual([]);
+		const backslash = `\\${'q'.repeat(INBOX_PATTERN_BUDGET - 6)}`;
+		expect(server(backslash)).toEqual([backslash]);
 	});
 });
 
@@ -336,21 +398,54 @@ describe('the server answers a superset of what the client finds (EG-2 invariant
 				}
 			}),
 			name: null
+		},
+		// Accented forms of d, g, l, r and t (EG-2 review, R-A1).
+		{
+			entry: item({
+				channel: 'mail',
+				kind: 'mail',
+				title: 'Termin bei Doğan',
+				sourceMeta: { from: 'Antonín Dvořák <ad@example.com>' },
+				handledAt: '2026-10-05 16:45:00.000Z'
+			}),
+			name: null
+		},
+		{
+			entry: item({
+				title: 'Țară, Ľubo und Ďakovo',
+				state: 'discarded',
+				ticketId: null,
+				handledAt: null
+			}),
+			name: null
 		}
 	];
 
-	/** The values the server compares with the patterns (data/inbox.ts, SEARCH_FIELDS). */
+	/**
+	 * The value of a field of SEARCH_FIELDS (data/inbox.ts) as the server compares it: the column, a
+	 * JSON path of `source_meta` (text only, as the row), or a field of the ticket. A new field fails
+	 * here until the test knows it.
+	 */
+	function serverValue(entry: InboxItemSummary, field: string): string {
+		const [head = '', ...path] = field.split('.');
+		let value: unknown;
+		if (field === 'title') value = entry.title;
+		else if (field === 'source_url') value = entry.sourceUrl;
+		else if (head === 'source_meta') {
+			value = path.reduce<unknown>(
+				(at, key) =>
+					typeof at === 'object' && at !== null ? (at as Record<string, unknown>)[key] : undefined,
+				entry.sourceMeta
+			);
+		} else if (field === 'ticket.key') value = entry.ticket?.key;
+		else if (field === 'ticket.title') value = entry.ticket?.title;
+		else throw new Error(`Unknown field of the search: ${field}`);
+		return typeof value === 'string' ? value : '';
+	}
+
+	/** The values the server compares with the patterns, one per field of SEARCH_FIELDS. */
 	function serverValues(entry: InboxItemSummary): string[] {
-		const meta = entry.sourceMeta;
-		const copy = meta.copy_of as { key?: unknown } | undefined;
-		return [
-			entry.title,
-			entry.sourceUrl,
-			...['from', 'sender', 'chat'].map((key) => (typeof meta[key] === 'string' ? meta[key] : '')),
-			typeof copy?.key === 'string' ? copy.key : '',
-			entry.ticket?.key ?? '',
-			entry.ticket?.title ?? ''
-		];
+		return SEARCH_FIELDS.map((field) => serverValue(entry, field));
 	}
 
 	/** Every part of every word of the text the client compares, as a search of one word. */
@@ -369,24 +464,49 @@ describe('the server answers a superset of what the client finds (EG-2 invariant
 		let checked = 0;
 		for (const { entry, name } of entries) {
 			const values = serverValues(entry);
-			for (const word of wordsOf(inboxSearchText(entry, name))) {
-				expect(matchesInboxWords(entry, [word], name)).toBe(true);
-				for (const sent of inboxServerWords([word], texts)) {
-					const found = values.some((value) => sqliteLike(loosePattern(sent), value));
-					expect(found, `"${sent}" of ${entry.title}`).toBe(true);
-					checked += 1;
+			// Every view: the row shows the arrival or the handling (EG-2 review).
+			for (const view of INBOX_VIEWS) {
+				for (const word of wordsOf(inboxSearchText(entry, name, view))) {
+					expect(matchesInboxWords(entry, [word], name, view)).toBe(true);
+					for (const sent of inboxServerWords([word], texts)) {
+						const found = values.some((value) => sqliteLike(loosePattern(sent), value));
+						expect(found, `"${sent}" of ${entry.title} in ${view}`).toBe(true);
+						checked += 1;
+					}
 				}
 			}
 		}
 		// Most parts of words reach the server; the check is not empty.
-		expect(checked).toBeGreaterThan(500);
+		expect(checked).toBeGreaterThan(2000);
+	});
+
+	it('finds "dogan", "dvorak" and "tara lubo dakovo" on the server as well (EG-2 review)', () => {
+		const texts = inboxClientOnlyTexts(NAMES);
+		for (const [text, title] of [
+			['dogan', 'Termin bei Doğan'],
+			['dvorak', 'Termin bei Doğan'],
+			['tara lubo dakovo', 'Țară, Ľubo und Ďakovo']
+		] as const) {
+			const { entry, name } = entries.find((candidate) => candidate.entry.title === title)!;
+			const words = searchWords(text);
+			expect(matchesInboxWords(entry, words, name, 'all'), text).toBe(true);
+			const sent = inboxServerWords(words, texts);
+			expect(sent, text).toEqual(words);
+			for (const word of sent) {
+				const values = serverValues(entry);
+				expect(
+					values.some((value) => sqliteLike(loosePattern(word), value)),
+					word
+				).toBe(true);
+			}
+		}
 	});
 
 	it('keeps words found only through the channel, the connection or the date in the client', () => {
 		const texts = inboxClientOnlyTexts(NAMES);
 		const [mail] = entries;
-		for (const text of ['postfach', 'gmail', 'arbeit', '24.09.2026', '10:30']) {
-			expect(matchesInboxWords(mail!.entry, [text], mail!.name), text).toBe(true);
+		for (const text of ['postfach', 'gmail', 'arbeit', '24.09.2026', '10:30', '11:00']) {
+			expect(matchesInboxWords(mail!.entry, [text], mail!.name, 'converted'), text).toBe(true);
 			expect(inboxServerWords([text], texts), text).toEqual([]);
 		}
 	});

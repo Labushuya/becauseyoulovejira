@@ -90,15 +90,40 @@ export function matchesWordsWithParent(
 	return words.every((word) => own.includes(word) || (above !== null && above.includes(word)));
 }
 
-/** Letters whose accented forms normalise to them: vowels, ç, ñ, ś and š, ý, ź and ž. */
-const LOOSE_LETTERS = new Set(['a', 'c', 'e', 'i', 'n', 'o', 'u', 's', 'y', 'z']);
+/**
+ * Letters whose accented forms normalise to them and are common: vowels, ç, ñ, ś and š, ý, ź and ž,
+ * since the review of EG-2 also ď, ğ and ģ, ľ, ĺ and ļ, ř and ŕ, ť and ț ("Doğan", "Dvořák", "Țară").
+ * Other letters stay as they are (k, h, j, w and the rest): every further one makes the pattern match
+ * more, until it is worth nothing; their rare accented forms (ķ, ĥ, ĵ, ŵ) the server misses
+ * (ADR-0014 addendum EG-2).
+ */
+const LOOSE_LETTERS = new Set([
+	'a',
+	'c',
+	'd',
+	'e',
+	'g',
+	'i',
+	'l',
+	'n',
+	'o',
+	'r',
+	's',
+	't',
+	'u',
+	'y',
+	'z'
+]);
 
 /**
  * LIKE pattern of the server (operator `~`, SQLite LIKE with `\` as escape) for a normalised word:
  * a superset of the tickets whose normalised key or title contains it. Letters with accented
  * forms become `_` (one character, "Ä" as well as "a"), "ss" becomes `%` (it may be "ß"), `\`,
- * `%` and `_` are taken literally. The pattern starts and ends with `%`, so PocketBase uses it
- * unchanged (tests/integration/web-data-ticket-picker.test.mjs).
+ * `%` and `_` are taken literally. `{` becomes `_` as well, so a pattern never holds the start `{:`
+ * of a parameter: `pb.filter` of SDK 0.28 replaces them all at once, older versions one after the
+ * other, and a value with `{:w2}` would then take in that parameter (data/inbox.test.ts). The
+ * pattern starts and ends with `%`, so PocketBase uses it unchanged
+ * (tests/integration/web-data-ticket-picker.test.mjs).
  */
 export function loosePattern(word: string): string {
 	let pattern = '';
@@ -107,7 +132,7 @@ export function loosePattern(word: string): string {
 		if (char === 's' && word[index + 1] === 's') {
 			pattern += '%';
 			index += 1;
-		} else if (LOOSE_LETTERS.has(char)) {
+		} else if (LOOSE_LETTERS.has(char) || char === '{') {
 			pattern += '_';
 		} else if (char === '\\' || char === '%' || char === '_') {
 			pattern += `\\${char}`;

@@ -2,13 +2,15 @@
 // entries in full, handled ones page by page, duplicates as outcome, actions, the protected
 // original, realtime and the ticket created from an entry. Since EG-2 the loose patterns of the
 // search of the paged views: title, address, the shown details of source_meta by JSON path and the
-// ticket of a linked entry, as a superset the client narrows.
+// ticket of a linked entry, as a superset the client narrows; since its review also accented forms
+// of d, g, l, r and t, keys and words with digits, the household and details that are no text.
 
 import { readFileSync } from 'node:fs';
 import PocketBase from 'pocketbase';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { superuserClient } from '../support/api.mjs';
-import { createOwner, uniqueSuffix } from '../support/scenario.mjs';
+import { createOwner, createScenario, uniqueSuffix } from '../support/scenario.mjs';
+import { setClientArea } from '../../web/src/lib/data/area.ts';
 import { DataError } from '../../web/src/lib/data/errors.ts';
 import {
 	assignToTicket,
@@ -606,7 +608,7 @@ describe('search of the paged views (EG-2)', () => {
 	/** Titles the server returns for a text, and those the client keeps after the exact check. */
 	async function found(client, state, text) {
 		const { items } = await listHandledItems(client, state, 1, { patterns: patternsOf(text) });
-		const kept = items.filter((item) => matchesInboxWords(item, searchWords(text), null));
+		const kept = items.filter((item) => matchesInboxWords(item, searchWords(text), null, state));
 		return {
 			server: items.map((item) => item.title).sort(),
 			kept: kept.map((item) => item.title).sort()
@@ -655,13 +657,17 @@ describe('search of the paged views (EG-2)', () => {
 		for (const text of ['familie gross', 'anna beispiel']) {
 			expect((await kept(text))[0], text).toMatch(/^Wochenmarkt /);
 		}
-		// The server answers a superset of what the client keeps; a word of a channel or with a digit
-		// stays in the client.
+		// The server answers a superset of what the client keeps; a word of a channel stays in the
+		// client, one with a digit and another sign goes to the server since the review (R-A2).
 		for (const text of ['arzten', 'strasse', 'rabatt', 'mail-datei', '50%', 'beispiel']) {
 			const result = await found(fresh.client, 'discarded', text);
 			expect(result.server, text).toEqual(expect.arrayContaining(result.kept));
 		}
-		expect(patternsOf('mail-datei 50%')).toEqual([]);
+		expect(patternsOf('mail-datei 50%')).toEqual([loosePattern('50%')]);
+		expect(await found(fresh.client, 'discarded', '50%')).toEqual({
+			server: ['50% Rabatt_heute'],
+			kept: ['50% Rabatt_heute']
+		});
 		expect((await kept('mail-datei')).sort()).toEqual(
 			['Straßenfest am Südplatz', 'Termin bei den Ärzten', '50% Rabatt_heute', '500 Rabatt heute'].sort()
 		);
@@ -709,6 +715,90 @@ describe('search of the paged views (EG-2)', () => {
 		await expect(
 			listHandledItems(fresh.client, 'all', 1, { patterns: ['%a%', '%b%', '%c%', '%d%', '%e%', '%f%'] })
 		).rejects.toBeInstanceOf(DataError);
+		// The key of the ticket goes to the server since the review (R-A2) and narrows there.
+		expect(patternsOf(ticket.key)).toEqual([loosePattern(ticket.key.toLowerCase())]);
+		expect(await found(fresh.client, 'converted', ticket.key)).toEqual({
+			server: ['Angebot'],
+			kept: ['Angebot']
+		});
+	});
+
+	// The review of EG-2 (R-A1, R-A2, R-A3).
+	it('finds the accented forms of d, g, l, r and t, and words with a digit narrow on the server', async () => {
+		const fresh = await createOwner(superuser);
+		await discardedOf(fresh.client, [
+			mail({ title: 'Termin bei Doğan', sourceMeta: { from: 'Antonín Dvořák <ad@example.com>' } }),
+			mail({ title: 'Țară, Ľubo und Ďakovo' }),
+			mail({ title: 'Raum A1 buchen' }),
+			mail({ title: 'Raum B2 buchen' })
+		]);
+		for (const [text, title] of [
+			['dogan', 'Termin bei Doğan'],
+			['dvorak', 'Termin bei Doğan'],
+			['tara lubo dakovo', 'Țară, Ľubo und Ďakovo']
+		]) {
+			expect(patternsOf(text), text).toHaveLength(searchWords(text).length);
+			const result = await found(fresh.client, 'discarded', text);
+			expect(result.kept, text).toEqual([title]);
+			expect(result.server, text).toEqual(expect.arrayContaining(result.kept));
+		}
+		expect(patternsOf('a1')).toEqual([loosePattern('a1')]);
+		expect(await found(fresh.client, 'discarded', 'a1')).toEqual({
+			server: ['Raum A1 buchen'],
+			kept: ['Raum A1 buchen']
+		});
+	});
+
+	it('finds a linked entry of the household for the other member by key and title of its ticket', async () => {
+		const s = await createScenario();
+		const ticket = await s.a
+			.collection('tickets')
+			.create({ owner: s.ids.a, household: s.h1.id, title: 'Dachrinne reinigen' });
+		const outcome = await createItem(s.a, mail({ title: 'Angebot Handwerker' }), {
+			household: s.h1.id
+		});
+		expect(outcome.kind).toBe('created');
+		await assignToTicket(s.a, outcome.item.id, ticket.id);
+		// The other member, in the area of the household as the app asks.
+		setClientArea(s.b, `h:${s.h1.id}`);
+		for (const text of [ticket.key, 'dachrinne', 'reinigen angebot']) {
+			expect(await found(s.b, 'converted', text), text).toEqual({
+				server: ['Angebot Handwerker'],
+				kept: ['Angebot Handwerker']
+			});
+		}
+		// The account outside the household finds nothing of it.
+		expect((await found(s.c, 'converted', 'dachrinne')).server).toEqual([]);
+	});
+
+	it('takes sender, chat and address details as object, number or null without an error or a lost entry', async () => {
+		const fresh = await createOwner(superuser);
+		await discardedOf(fresh.client, [
+			mail({
+				title: 'Absender als Objekt',
+				sourceMeta: { from: { name: 'Anna', address: 'anna@example.com' } }
+			}),
+			{
+				channel: 'telegram',
+				kind: 'message',
+				title: 'Absender als Zahl',
+				sourceRef: `1:${uniqueSuffix()}`,
+				sourceMeta: { sender: 42, chat: null }
+			},
+			mail({ title: 'Chat als Objekt', sourceMeta: { chat: { id: 7 }, from: null } })
+		]);
+		expect((await found(fresh.client, 'discarded', 'absender')).kept).toEqual([
+			'Absender als Objekt',
+			'Absender als Zahl'
+		]);
+		expect((await found(fresh.client, 'discarded', 'objekt')).kept).toEqual([
+			'Absender als Objekt',
+			'Chat als Objekt'
+		]);
+		// The row shows no such detail, so the client never finds it; the server may answer more.
+		const hidden = await found(fresh.client, 'discarded', 'anna@example');
+		expect(hidden.kept).toEqual([]);
+		expect(hidden.server).toEqual(expect.arrayContaining(hidden.kept));
 	});
 });
 

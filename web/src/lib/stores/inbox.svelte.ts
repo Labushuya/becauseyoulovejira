@@ -262,8 +262,10 @@ export class InboxStore {
 		(this.#overlay?.createdItems() ?? []).filter((item) => !this.#new.has(item.id))
 	);
 	#newList = $derived([...this.#new.values(), ...this.#created].sort(compareNewest));
+	/** The view of the URL alone: a changed search does not sort the loaded pages again. */
+	#view = $derived(this.#query.state);
 	#handledList = $derived(
-		[...this.#handled.values()].sort(this.#query.state === 'all' ? compareNewest : compareHandled)
+		[...this.#handled.values()].sort(this.#view === 'all' ? compareNewest : compareHandled)
 	);
 	/**
 	 * The server does not know the target project yet (ADR-0049): a loaded entry lacks the field.
@@ -288,13 +290,17 @@ export class InboxStore {
 	});
 	/** Normalised words of the search of the URL (EG-2, `searchWords` of QS-2). */
 	#words = $derived(searchWords(this.#query.search ?? ''));
-	/** The rows narrowed exactly by the words of the search, in the order of the view. */
+	/**
+	 * The rows narrowed exactly by the words of the search, in the order of the view; the text of an
+	 * entry is built once per object, name of its connection and view (`inboxSearchText`).
+	 */
 	#visible = $derived.by(() => {
 		const words = this.#words;
 		const rows = this.#unsearched;
 		if (words.length === 0) return rows;
+		const view = this.#view;
 		return rows.filter((item) =>
-			matchesInboxWords(item, words, this.#names?.nameOf(item.connectionId) ?? null)
+			matchesInboxWords(item, words, this.#names?.nameOf(item.connectionId) ?? null, view)
 		);
 	});
 

@@ -237,13 +237,37 @@ const HANDLED_TARGET_FILTER = [
 export type HandledTarget = { project: string | null } | null;
 
 /**
- * One clause per word of the search (EG-2, ADR-0014 addendum EG-2), `{:w1}` to `{:w5}`
- * (PICKER_SERVER_WORDS): its loose pattern matches one of the fields the server stores of what the
- * row shows. Title and address; the details of `source_meta` the row shows as JSON paths (sender,
- * chat, the key of a copy), so the name of a key ("from") never matches and the server compares the
- * decoded text; key and title of the ticket of a linked entry. Channel, connection and date only the
- * client builds; their words never reach the server (`inboxServerWords`). Joined only for the words
- * of a search (handledExpression), so a list without one stays as before.
+ * The fields the server compares with the loose pattern of a word of the search (EG-2, ADR-0014
+ * addendum EG-2): what it stores of what the row shows. Title and address; the details of
+ * `source_meta` the row shows as JSON paths (sender, chat, the key of a copy), so the name of a key
+ * ("from") never matches and the server compares the decoded text; key and title of the ticket of a
+ * linked entry. Channel, connection and dates only the client builds; their words never reach the
+ * server (`inboxServerWords`). The test of the invariant reads the same list (source-search.test.ts).
+ */
+export const SEARCH_FIELDS: readonly string[] = Object.freeze([
+	'title',
+	'source_url',
+	'source_meta.from',
+	'source_meta.sender',
+	'source_meta.chat',
+	'source_meta.copy_of.key',
+	'ticket.key',
+	'ticket.title'
+]);
+
+/** The clause of the n-th word of the search (`{:wn}`, 1 to PICKER_SERVER_WORDS): one field matches. */
+export const searchClause = (n: number): string => {
+	if (!Number.isInteger(n) || n < 1 || n > PICKER_SERVER_WORDS) {
+		throw new RangeError(`No word ${n} of the search`);
+	}
+	return `(${SEARCH_FIELDS.map((field) => `${field} ~ {:w${n}}`).join(' || ')})`;
+};
+
+/**
+ * One clause per word of the search, `{:w1}` to `{:w5}` (PICKER_SERVER_WORDS): `searchClause(n)`
+ * written out, because the data layer builds its filters from text literals only
+ * (data-layer.test.ts); inbox.test.ts checks every one against SEARCH_FIELDS. Joined only for the
+ * words of a search (handledExpression), so a list without one stays as before.
  */
 const SEARCH_FIRST = [
 	'(title ~ {:w1} || source_url ~ {:w1} || source_meta.from ~ {:w1} || source_meta.sender ~ {:w1} || source_meta.chat ~ {:w1} || source_meta.copy_of.key ~ {:w1} || ticket.key ~ {:w1} || ticket.title ~ {:w1})'
@@ -264,6 +288,15 @@ const SEARCH_FOURTH = [
 const SEARCH_FIFTH = [
 	'(title ~ {:w5} || source_url ~ {:w5} || source_meta.from ~ {:w5} || source_meta.sender ~ {:w5} || source_meta.chat ~ {:w5} || source_meta.copy_of.key ~ {:w5} || ticket.key ~ {:w5} || ticket.title ~ {:w5})'
 ].join(' && ');
+
+/** The clauses of the words in their order, for the check against `searchClause`. */
+export const SEARCH_CLAUSES: readonly string[] = Object.freeze([
+	SEARCH_FIRST,
+	SEARCH_SECOND,
+	SEARCH_THIRD,
+	SEARCH_FOURTH,
+	SEARCH_FIFTH
+]);
 
 /** What a list of handled entries asks for: the filter "Zielprojekt" and the patterns of a search. */
 interface HandledQuery {

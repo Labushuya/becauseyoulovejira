@@ -180,15 +180,27 @@ describe('matchesWordsWithParent: the pool of the day plan (TP-3)', () => {
 
 describe('loosePattern', () => {
 	it('turns letters with accented forms into one-character wildcards', () => {
-		expect(loosePattern('apfel')).toBe('%_pf_l%');
+		expect(loosePattern('apfel')).toBe('%_pf__%');
 		expect(loosePattern('haus-12')).toBe('%h___-12%');
 	});
 
+	it('takes d, g, l, r and t loosely as well, but not k, h, j, w or the other letters (EG-2 review)', () => {
+		expect(loosePattern('dogan')).toBe('%_____%');
+		expect(loosePattern('dvorak')).toBe('%_v___k%');
+		expect(loosePattern('lubo')).toBe('%__b_%');
+		expect(loosePattern('khjwbfmpqvx')).toBe('%khjwbfmpqvx%');
+	});
+
 	it('lets "ss" stand for ß and takes the LIKE characters literally', () => {
-		expect(loosePattern('strasse')).toBe('%_tr_%_%');
+		expect(loosePattern('strasse')).toBe('%____%_%');
 		expect(loosePattern('50%')).toBe('%50\\%%');
 		expect(loosePattern('a_b')).toBe('%_\\_b%');
 		expect(loosePattern('x\\y')).toBe('%x\\\\_%');
+	});
+
+	it('never holds the start "{:" of a parameter of pb.filter', () => {
+		expect(loosePattern('{:w2}')).toBe('%_:w2}%');
+		expect(loosePattern('a{:bylarea}')).not.toContain('{');
 	});
 
 	it('finds a superset: the pattern matches every normalised text that contains the word', () => {
@@ -212,7 +224,12 @@ describe('loosePattern', () => {
 			['strasse', 'Hauptstraße 5'],
 			['creme', 'Crème brûlée'],
 			['zurich', 'Zürich'],
-			['haus-12', 'HAUS-12']
+			['haus-12', 'HAUS-12'],
+			['dogan', 'Termin bei Doğan'],
+			['dvorak', 'Dvořák hören'],
+			['tara', 'Țară'],
+			['lubo', 'Ľubo'],
+			['dakovo', 'Ďakovo']
 		] as const) {
 			expect(like(loosePattern(word), title), `${word} in ${title}`).toBe(true);
 		}

@@ -259,6 +259,19 @@ export function linkedTicketOf(
 	return item.state === 'converted' && item.ticket?.id === item.ticketId ? item.ticket : null;
 }
 
+/**
+ * The point in time a row of the inbox shows in its last date column and a card next to the date at
+ * the sender: the arrival in "Neu" and "Alle", which are ordered by it, else the handling
+ * ("Verknüpft", "Verworfen"). The search of the inbox reads it as well (EG-2 review), so it finds
+ * every date the row shows.
+ */
+export function listedTime(
+	item: Pick<InboxItemSummary, 'created' | 'handledAt'>,
+	view: InboxView
+): string {
+	return view === 'new' || view === 'all' ? item.created : (item.handledAt ?? item.created);
+}
+
 /** Entry with its text (panel, prefill of the ticket). */
 export interface InboxItem extends InboxItemSummary {
 	/** Plain text or Markdown; shown sanitised only (ADR-0008). */
