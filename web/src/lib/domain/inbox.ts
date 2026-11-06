@@ -248,6 +248,17 @@ export interface InboxTicketRef {
 	primary: boolean;
 }
 
+/**
+ * The ticket a row of the inbox shows as chip "→ HAUS-12" (ADR-0031, addendum C): that of a
+ * converted entry whose ticket the server named at loading; null otherwise. The search of the inbox
+ * reads its key and title (EG-2), so it finds what the row shows.
+ */
+export function linkedTicketOf(
+	item: Pick<InboxItemSummary, 'state' | 'ticketId' | 'ticket'>
+): InboxTicketRef | null {
+	return item.state === 'converted' && item.ticket?.id === item.ticketId ? item.ticket : null;
+}
+
 /** Entry with its text (panel, prefill of the ticket). */
 export interface InboxItem extends InboxItemSummary {
 	/** Plain text or Markdown; shown sanitised only (ADR-0008). */

@@ -148,6 +148,13 @@ describe('address after switching the area', () => {
 			view: 'inbox',
 			search: ''
 		});
+		// The search of the inbox (EG-2) names no record and stays.
+		expect(
+			areaSwitchTarget(
+				at(`/eingang/${ID}?zielprojekt=${ID}&zustand=alle&q=Arzt`),
+				'/(app)/eingang/[id]'
+			)
+		).toEqual({ view: 'inbox', search: '?zustand=alle&q=Arzt' });
 		// "Erledigte" (ADR-0066) keeps search and charm, the catalog of charms has no area.
 		expect(
 			areaSwitchTarget(
@@ -163,6 +170,7 @@ describe('address after switching the area', () => {
 	it('stays on a view without such filters and in the settings', () => {
 		expect(areaSwitchTarget(at('/?status=open'), '/(app)/(tickets)')).toBeNull();
 		expect(areaSwitchTarget(at('/kalender?ansicht=monat'), '/(app)/kalender')).toBeNull();
+		expect(areaSwitchTarget(at('/eingang?q=Arzt'), '/(app)/eingang')).toBeNull();
 		expect(areaSwitchTarget(at('/einstellungen/tags'), '/(app)/einstellungen/tags')).toBeNull();
 		expect(areaSwitchTarget(at('/'), null)).toBeNull();
 	});

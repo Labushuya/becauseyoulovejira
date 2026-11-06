@@ -5,6 +5,8 @@ import { EMPTY_LIST_QUERY } from './domain/list-query';
 import {
 	FULL_VIEW_LINK,
 	appHref,
+	areaBackHref,
+	areaTicketHref,
 	calendarFullViewHref,
 	calendarHref,
 	calendarTicketHref,
@@ -234,6 +236,36 @@ describe('inbox links (E4 plan, package 3)', () => {
 		expect(withInboxQuery(at('/eingang/x?y=1#a'), { source: 'link', state: 'converted' })).toBe(
 			'/eingang/x?y=1&quelle=link&zustand=verknuepft#a'
 		);
+	});
+
+	it('carries the search `q` through every link of the inbox (EG-2)', () => {
+		const ITEM = 'item00000000001';
+		const TICKET = 'tick00000000001';
+		const list = at('/eingang?zustand=alle&q=%20Arzt%20Termin%20&status=open');
+		expect(inboxHref(list)).toBe('/eingang?zustand=alle&q=Arzt+Termin');
+		expect(inboxItemHref(ITEM, list)).toBe(`/eingang/${ITEM}?zustand=alle&q=Arzt+Termin`);
+		expect(captureHref(list)).toBe('/eingang/neu?zustand=alle&q=Arzt+Termin');
+		// A ticket opened in the inbox (ADR-0054) and the way back keep it as well.
+		const entry = at(`/eingang/${ITEM}?q=Arzt`);
+		expect(areaTicketHref('eingang', TICKET, entry)).toBe(
+			`/eingang/tickets/${TICKET}?q=Arzt&von=${ITEM}`
+		);
+		expect(areaTicketHref('eingang', TICKET, entry, true)).toBe(
+			`/eingang/tickets/${TICKET}/voll?q=Arzt&von=${ITEM}`
+		);
+		expect(areaBackHref('eingang', at(`/eingang/tickets/${TICKET}?q=Arzt&von=${ITEM}`))).toBe(
+			`/eingang/${ITEM}?q=Arzt`
+		);
+		expect(areaBackHref('eingang', at(`/eingang/tickets/${TICKET}?q=Arzt`))).toBe(
+			'/eingang?q=Arzt'
+		);
+		// Writing a query replaces the search; without one it goes.
+		expect(
+			withInboxQuery(at('/eingang?q=alt&x=1'), { source: null, state: 'new', search: 'Neu' })
+		).toBe('/eingang?x=1&q=Neu');
+		expect(withInboxQuery(at('/eingang?q=alt'), { source: null, state: 'new' })).toBe('/eingang');
+		// Too long, it is no search (SEARCH_MAX_LENGTH, as in "Aufgaben").
+		expect(inboxHref(at(`/eingang?q=${'x'.repeat(201)}`))).toBe('/eingang');
 	});
 
 	it('opens "Neues Ticket" for an entry and reads it back only as record ID', () => {

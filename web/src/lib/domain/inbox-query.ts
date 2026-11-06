@@ -1,8 +1,11 @@
 // State of the inbox view in the URL (E4 plan, T-4; ADR-0019 section 6), with the rules of
 // list-query.ts: invalid, empty or repeated values count as not set, parameters this module does
 // not know stay untouched and in front when writing, the own ones follow in a fixed order. Pure.
+// Since EG-2 (ADR-0014 addendum EG-2) the search `q`: trimmed, at most SEARCH_MAX_LENGTH characters
+// like the search of "Aufgaben"; a longer one counts as not set.
 
 import { INBOX_VIEWS, type InboxView } from './inbox';
+import { SEARCH_MAX_LENGTH } from './list-query';
 import { SOURCE_FAMILIES, SOURCE_FAMILY_VALUES, type SourceFamily } from './source';
 import { NO_TARGET } from './target-project';
 
@@ -18,20 +21,27 @@ export interface InboxQuery {
 	target?: string | null;
 	/** Grouped by target project ("Nach Zielprojekt gruppieren", ADR-0049 §5); absent: not grouped. */
 	grouped?: boolean;
+	/**
+	 * Search text of the field "Einträge durchsuchen" (EG-2), trimmed, 1 to SEARCH_MAX_LENGTH
+	 * characters; null or absent: no search.
+	 */
+	search?: string | null;
 }
 
 export const DEFAULT_INBOX_QUERY: Readonly<InboxQuery> = Object.freeze({
 	source: null,
 	state: 'new',
 	target: null,
-	grouped: false
+	grouped: false,
+	search: null
 });
 
 export const INBOX_PARAMS = Object.freeze({
 	source: 'quelle',
 	state: 'zustand',
 	target: 'zielprojekt',
-	group: 'gruppe'
+	group: 'gruppe',
+	search: 'q'
 } as const);
 
 /** URL value of the grouping by target project. */
@@ -75,18 +85,26 @@ function targetOf(value: string | null | undefined): string | null {
 	return typeof value === 'string' && (value === NO_TARGET || RECORD_ID.test(value)) ? value : null;
 }
 
+/** The trimmed search text; an empty or too long one counts as not set (as in list-query.ts). */
+function searchOf(value: string | null | undefined): string | null {
+	const text = value?.trim() ?? '';
+	return text === '' || text.length > SEARCH_MAX_LENGTH ? null : text;
+}
+
 export function parseInboxQuery(params: URLSearchParams): InboxQuery {
 	return {
 		source: keyOf(SOURCE_FAMILIES, SOURCE_FAMILY_VALUES, single(params, INBOX_PARAMS.source)),
 		state: viewOf(single(params, INBOX_PARAMS.state)),
 		target: targetOf(single(params, INBOX_PARAMS.target)),
-		grouped: single(params, INBOX_PARAMS.group) === GROUP_BY_TARGET
+		grouped: single(params, INBOX_PARAMS.group) === GROUP_BY_TARGET,
+		search: searchOf(single(params, INBOX_PARAMS.search))
 	};
 }
 
 /**
  * Query string of `query` (`?…` or ''); unknown parameters of `base` stay in front, in their
- * order. The default view "neu", no target and no grouping are not written.
+ * order. The default view "neu", no target, no grouping and no search are not written; the search
+ * comes last, trimmed.
  */
 export function serializeInboxQuery(query: InboxQuery, base?: URLSearchParams): string {
 	const params = new URLSearchParams();
@@ -99,6 +117,8 @@ export function serializeInboxQuery(query: InboxQuery, base?: URLSearchParams): 
 	const target = targetOf(query.target);
 	if (target !== null) params.append(INBOX_PARAMS.target, target);
 	if (query.grouped === true) params.append(INBOX_PARAMS.group, GROUP_BY_TARGET);
+	const text = searchOf(query.search);
+	if (text !== null) params.append(INBOX_PARAMS.search, text);
 	const search = params.toString();
 	return search === '' ? '' : `?${search}`;
 }
