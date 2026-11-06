@@ -3,10 +3,13 @@
 // rule, loaded when the page opens and only for the own instance under Windows (the control script
 // answers). One change at a time: the setting (after a restart) or the firewall rule (Windows asks
 // for administrator rights on the machine of the app). Saved changes go out as flags; refusals and
-// a change of the rule that did not happen stay at the part with what to do by hand.
+// a change of the rule that did not happen stay at the part with what to do by hand. Since FP-3b a
+// failure carries its entry for "Details" (ADR-0071), also a change of the rule the script reports
+// as not done (`ok: false`, only code and problem of its entry of the catalog), except a prompt
+// for administrator rights the person declined (`cancelled`, her own choice).
 
 import type PocketBase from 'pocketbase';
-import { toDataError } from '$lib/data/errors';
+import { problemDetails, reportedScriptProblem, toDataError } from '$lib/data/errors';
 import type { RequestOptions } from '$lib/data/options';
 import {
 	changeSecurityFirewall,
@@ -16,16 +19,38 @@ import {
 } from '$lib/data/security';
 import {
 	firewallDoneTitle,
+	firewallFailureTitle,
 	lanInvalidText,
 	savedTitle,
 	type FirewallAction,
 	type FirewallResult,
 	type LanInfo
 } from '$lib/domain/lan';
+import type { ProblemEntry } from '$lib/domain/problems';
 import { denialText } from '$lib/domain/security';
 import { SILENT_FLAGS, type FlagSink } from './flags.svelte';
-import { securityDenial, type SecurityMessage } from './security.svelte';
+import { securityRefusal, type SecurityMessage } from './security.svelte';
 import type { SessionGuard } from './ticket-list.svelte';
+
+/** The intent of a change of the firewall rule (the words of the catalog, problem-intents.ts). */
+const FIREWALL_INTENT = 'Firewall-Regel ändern';
+
+/**
+ * The entry of a change of the rule that did not happen (FP-3b): "Vom Server gemeldeter Fehler"
+ * with the code and the problem of the entry of the catalog (never its command), else the outcome;
+ * null when the person declined the prompt for administrator rights (`cancelled`).
+ */
+export function firewallProblem(result: FirewallResult): ProblemEntry | null {
+	if (result.ok || result.outcome === 'cancelled') return null;
+	return reportedScriptProblem({
+		intent: FIREWALL_INTENT,
+		method: 'POST',
+		path: '/api/byl/security/lan/firewall',
+		report: result.report,
+		code: result.outcome === '' ? null : result.outcome,
+		message: firewallFailureTitle(result)
+	});
+}
 
 export interface SecurityLanData {
 	info(options: RequestOptions): Promise<SecurityAnswer<LanInfo>>;
@@ -63,6 +88,7 @@ export class SecurityLanStore {
 	#partMessage = $state<{ part: SecurityLanPart; message: SecurityMessage } | null>(null);
 	#invalid = $state.raw<readonly string[]>([]);
 	#failed = $state.raw<FirewallResult | null>(null);
+	#failedProblem = $state.raw<ProblemEntry | null>(null);
 
 	constructor(data: SecurityLanData, session: SessionGuard, flags: FlagSink = SILENT_FLAGS) {
 		this.#data = data;
@@ -103,6 +129,11 @@ export class SecurityLanStore {
 		return this.#failed;
 	}
 
+	/** The entry of "Details" of that change (`firewallProblem`), null when it was declined. */
+	get failedProblem(): ProblemEntry | null {
+		return this.#failedProblem;
+	}
+
 	/** Ends the requests of the page. */
 	dispose(): void {
 		this.#controller.abort();
@@ -119,8 +150,7 @@ export class SecurityLanStore {
 				this.#message = null;
 				this.#state = 'ready';
 			} else if (this.#info === null) {
-				this.#message =
-					answer.kind === 'denied' ? securityDenial(answer.reason) : denialText('script');
+				this.#message = answer.kind === 'denied' ? securityRefusal(answer) : denialText('script');
 				this.#state = 'denied';
 			}
 		} catch (error) {
@@ -131,7 +161,11 @@ export class SecurityLanStore {
 				return;
 			}
 			if (this.#info === null) {
-				this.#message = { title: denialText('script').title, text: failure.message };
+				this.#message = {
+					title: denialText('script').title,
+					text: failure.message,
+					...problemDetails(failure)
+				};
 				this.#state = 'error';
 			}
 		}
@@ -148,10 +182,11 @@ export class SecurityLanStore {
 			if (answer.kind === 'ok') {
 				this.#info = answer.value;
 				this.#failed = null;
+				this.#failedProblem = null;
 			} else {
 				this.#partMessage = {
 					part: 'firewall',
-					message: answer.kind === 'denied' ? securityDenial(answer.reason) : denialText('script')
+					message: answer.kind === 'denied' ? securityRefusal(answer) : denialText('script')
 				};
 			}
 		} catch (error) {
@@ -167,7 +202,7 @@ export class SecurityLanStore {
 		try {
 			const answer = await this.#data.save({ enabled, addresses }, this.#options());
 			if (answer.kind === 'denied') {
-				this.#partMessage = { part: 'save', message: securityDenial(answer.reason) };
+				this.#partMessage = { part: 'save', message: securityRefusal(answer) };
 				return false;
 			}
 			if (answer.kind === 'invalid') {
@@ -200,10 +235,11 @@ export class SecurityLanStore {
 	async firewall(action: FirewallAction): Promise<boolean> {
 		if (!this.#begin('firewall')) return false;
 		this.#failed = null;
+		this.#failedProblem = null;
 		try {
 			const answer = await this.#data.firewall(action, this.#options());
 			if (answer.kind === 'denied') {
-				this.#partMessage = { part: 'firewall', message: securityDenial(answer.reason) };
+				this.#partMessage = { part: 'firewall', message: securityRefusal(answer) };
 				return false;
 			}
 			if (answer.kind === 'invalid') {
@@ -216,6 +252,7 @@ export class SecurityLanStore {
 			if (answer.value.lan !== null) this.#info = answer.value.lan;
 			if (!answer.value.result.ok) {
 				this.#failed = answer.value.result;
+				this.#failedProblem = firewallProblem(answer.value.result);
 				return false;
 			}
 			this.#flags.show({ tone: 'success', title: firewallDoneTitle(action) });
@@ -244,7 +281,10 @@ export class SecurityLanStore {
 		const failure = toDataError(error, this.#controller.signal);
 		if (failure.kind === 'session') this.#session.logout();
 		if (failure.kind !== 'aborted' && failure.kind !== 'session') {
-			this.#partMessage = { part, message: { title, text: failure.message } };
+			this.#partMessage = {
+				part,
+				message: { title, text: failure.message, ...problemDetails(failure) }
+			};
 		}
 	}
 }

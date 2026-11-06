@@ -6,13 +6,15 @@
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { parseLanInfo, type LanInfo } from '$lib/domain/lan';
 import { parseSecurity, type SecurityOverview } from '$lib/domain/security';
 import { RESTART_NEEDED } from '$lib/guidance/texts';
 import type { FlagInput } from '$lib/stores/flags.svelte';
+import { problemLog } from '$lib/stores/problem-log.svelte';
 import { SecurityLanStore, type SecurityLanData } from '$lib/stores/security-lan.svelte';
 import { danglingReferences, duplicateIds } from '$lib/test/aria-ids';
+import { failedRequest } from '$lib/test/failures';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import { securityAnswer } from '$lib/test/security-answer';
 import SecurityLan from './SecurityLan.svelte';
@@ -419,5 +421,79 @@ describe('access in the home network', () => {
 		await show({ overview: overviewOf(null) });
 		expect(screen.getByText(RESTART_NEEDED.title)).toBeTruthy();
 		expect(screen.queryByRole('switch')).toBeNull();
+	});
+});
+
+describe('access in the home network: failures with "Details" (FP-3b)', () => {
+	beforeEach(() => problemLog.clear());
+
+	/** A change of the rule with `outcome` that did not happen. */
+	function notDone(outcome: 'cancelled' | 'failed') {
+		const missing = infoOf({ enabled: true, addresses: ['192.168.178.20'] });
+		return {
+			info: missing,
+			data: {
+				firewall: vi.fn(async () => ({
+					kind: 'ok' as const,
+					value: {
+						result: {
+							ok: false,
+							action: 'add' as const,
+							outcome,
+							report: reportOf(outcome, `Die Firewall-Regel wurde nicht angelegt (${outcome}).`)
+						},
+						lan: missing
+					}
+				}))
+			}
+		};
+	}
+
+	async function addRule() {
+		await fireEvent.click(screen.getByRole('button', { name: 'Firewall-Regel anlegen …' }));
+		const dialog = await screen.findByRole('dialog', { name: 'Firewall-Regel anlegen?' });
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Regel anlegen' }));
+	}
+
+	// BYL-E6-2427
+	it('gives a failed change of the rule "Details" with code and problem, never the command', async () => {
+		await show(notDone('failed'));
+		await addRule();
+		await screen.findByRole('button', { name: 'Details: Firewall-Regel ändern' });
+		const [entry] = problemLog.entries;
+		expect(entry?.outcome).toEqual({
+			result: 'reported',
+			status: null,
+			code: 'lan-firewall-failed',
+			message: 'Die Firewall-Regel wurde nicht angelegt (failed).'
+		});
+		expect(JSON.stringify(entry)).not.toContain('netsh');
+	});
+
+	// BYL-E6-2427
+	it('gives a declined prompt for administrator rights no "Details" (her own choice)', async () => {
+		await show(notDone('cancelled'));
+		await addRule();
+		await screen.findByRole('heading', { name: /nicht angelegt \(cancelled\)/ });
+		expect(screen.queryByRole('button', { name: /^Details/ })).toBeNull();
+		expect(problemLog.entries).toEqual([]);
+	});
+
+	// BYL-E6-2426
+	it('gives a failed save "Details", a refusal of the route none', async () => {
+		const save = vi
+			.fn<SecurityLanData['save']>()
+			.mockResolvedValueOnce({ kind: 'denied', reason: 'busy' })
+			.mockRejectedValueOnce(failedRequest('POST', '/api/byl/security/lan'));
+		await show({ data: { save } });
+		await fireEvent.click(screen.getByRole('switch', { name: 'Zugriff im Heimnetz' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Einstellung speichern' }));
+		await screen.findByRole('heading', { name: /Es läuft schon eine Aktion/ });
+		expect(screen.queryByRole('button', { name: /^Details/ })).toBeNull();
+		await fireEvent.click(screen.getByRole('button', { name: 'Einstellung speichern' }));
+		await screen.findByRole('button', { name: 'Details: Zugriff im Heimnetz speichern' });
+		expect(problemLog.entries.map((item) => item.intent)).toEqual([
+			'Zugriff im Heimnetz speichern'
+		]);
 	});
 });

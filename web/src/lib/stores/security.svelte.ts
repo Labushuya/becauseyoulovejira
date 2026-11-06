@@ -2,10 +2,13 @@
 // opens, and the three settings, one change at a time: level of the protection and validity of a
 // sign-in (both at once), further hosts (after a restart). The store lives with the page and ends
 // its requests when the page goes. Saved changes go out as flags, refusals stay at their part.
+// Since FP-3b a failure (a failed request, a refusal "script", an answer of another form) carries
+// its entry for "Details" (ADR-0071); a refusal of the route and a refused input stay without.
 
 import type PocketBase from 'pocketbase';
-import { toDataError } from '$lib/data/errors';
+import { detailsOf, problemDetails, scriptProblem, toDataError } from '$lib/data/errors';
 import type { RequestOptions } from '$lib/data/options';
+import type { ProblemEntry } from '$lib/domain/problems';
 import {
 	fetchSecurity,
 	saveSecurityHosts,
@@ -52,6 +55,8 @@ export type SecurityPart = 'level' | 'session' | 'hosts';
 export interface SecurityMessage {
 	title: string;
 	text: string;
+	/** The failed action behind the message (FP-3b), for "Details"; absent for a refusal. */
+	problem?: ProblemEntry | null;
 }
 
 /** What the page says for a refusal; "missing" is the hint to restart after an update. */
@@ -60,6 +65,16 @@ export function securityDenial(reason: SystemDenial): SecurityMessage {
 		return { title: RESTART_NEEDED.title, text: restartNeeded('Die Seite Sicherheit ist') };
 	}
 	return denialText(reason);
+}
+
+/** A refusal of the route with the entry of "script" (FP-3b); every other one stays without. */
+export function securityRefusal(answer: { kind: 'denied'; reason: SystemDenial }): SecurityMessage {
+	return { ...securityDenial(answer.reason), ...detailsOf(scriptProblem(answer)) };
+}
+
+/** Whether a message is shown as an error with "Details" (a failure, not a refusal). */
+export function isSecurityFailure(message: SecurityMessage | null): boolean {
+	return (message?.problem ?? null) !== null;
 }
 
 export class SecurityStore {
@@ -135,8 +150,7 @@ export class SecurityStore {
 				this.#message = null;
 				this.#state = 'ready';
 			} else if (this.#overview === null) {
-				this.#message =
-					answer.kind === 'denied' ? securityDenial(answer.reason) : denialText('script');
+				this.#message = answer.kind === 'denied' ? securityRefusal(answer) : denialText('script');
 				this.#state = 'denied';
 			}
 		} catch (error) {
@@ -147,7 +161,11 @@ export class SecurityStore {
 				return;
 			}
 			if (this.#overview === null) {
-				this.#message = { title: denialText('script').title, text: failure.message };
+				this.#message = {
+					title: denialText('script').title,
+					text: failure.message,
+					...problemDetails(failure)
+				};
 				this.#state = 'error';
 			}
 		}
@@ -192,7 +210,7 @@ export class SecurityStore {
 		try {
 			const answer = await call();
 			if (answer.kind === 'denied') {
-				this.#partMessage = { part, message: securityDenial(answer.reason) };
+				this.#partMessage = { part, message: securityRefusal(answer) };
 				return false;
 			}
 			if (answer.kind === 'invalid') {
@@ -215,7 +233,7 @@ export class SecurityStore {
 			if (failure.kind !== 'aborted' && failure.kind !== 'session') {
 				this.#partMessage = {
 					part,
-					message: { title: 'Nicht gespeichert', text: failure.message }
+					message: { title: 'Nicht gespeichert', text: failure.message, ...problemDetails(failure) }
 				};
 			}
 			return false;

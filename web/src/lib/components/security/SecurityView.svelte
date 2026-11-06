@@ -15,7 +15,7 @@
 	import { restartNeeded } from '$lib/guidance/texts';
 	import { helpHref } from '$lib/settings-sections';
 	import type { SecurityLanStore } from '$lib/stores/security-lan.svelte';
-	import type { SecurityStore } from '$lib/stores/security.svelte';
+	import { isSecurityFailure, type SecurityStore } from '$lib/stores/security.svelte';
 	import RestartNeededNotice from '../system/RestartNeededNotice.svelte';
 	import SecurityHosts from './SecurityHosts.svelte';
 	import SecurityLan from './SecurityLan.svelte';
@@ -61,7 +61,11 @@
 	<p class="note" role="status">Sicherheit wird geladen …</p>
 {:else if overview === null}
 	{#if store.message !== null}
-		<SectionMessage tone={store.state === 'error' ? 'error' : 'info'} title={store.message.title}>
+		<SectionMessage
+			tone={store.state === 'error' || isSecurityFailure(store.message) ? 'error' : 'info'}
+			title={store.message.title}
+			problem={store.message.problem ?? null}
+		>
 			{store.message.text}
 			{#snippet actions()}
 				<button class="button-subtle" type="button" onclick={() => void store.load()}>
@@ -166,7 +170,12 @@
 		</div>
 
 		{#if levelMessage !== null}
-			<SectionMessage tone="error" title={levelMessage.title} live>
+			<SectionMessage
+				tone="error"
+				title={levelMessage.title}
+				live
+				problem={levelMessage.problem ?? null}
+			>
 				{levelMessage.text}
 			</SectionMessage>
 		{/if}
