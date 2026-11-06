@@ -7,6 +7,8 @@
 // (`withIntent`), otherwise the catalog of domain/problem-intents.ts names it. Since FP-2
 // (ADR-0077) an answer with an unexpected failure (5xx, or 400 of a failure of the app) names its
 // entry of the log of the server (`noteServerProblem`), and the entry carries it as Server-ID.
+// Since FP-3b the routes of the pages of the administration keep the entry of a refusal or of an
+// unreadable answer beside the answer (`keepAnswerProblem`, `denialProblem`, `scriptProblem`).
 
 import { ACCOUNT_MESSAGES } from '../domain/accounts';
 import { SCOPE_FIELD_MESSAGES, SCOPE_MESSAGE } from '../domain/area';
@@ -321,6 +323,7 @@ const requests = new WeakMap<object, ProblemRequest>();
 const intents = new WeakMap<object, string>();
 const problems = new WeakMap<object, ProblemEntry | null>();
 const serverIds = new WeakMap<object, string>();
+const answerProblems = new WeakMap<object, ProblemEntry>();
 let problemCount = 0;
 let appVersion: string | null = null;
 
@@ -517,6 +520,85 @@ export function unansweredProblem(input: {
 		app: appVersion,
 		exception: null
 	});
+}
+
+/**
+ * The entry of a failure an entry of the catalog of the scripts reports (ADR-0048), e.g. a change
+ * of the firewall rule that did not happen or the error of the last run without window: only its
+ * code and its problem, never the command, the facts, the cause or the log (they name paths of
+ * this machine). Without a report `code` and `message` stand in.
+ */
+export function reportedScriptProblem(input: {
+	intent: string;
+	method: string;
+	path: string;
+	report: { readonly code: string; readonly problem: string } | null;
+	code: string | null;
+	message: string;
+}): ProblemEntry {
+	return reportedProblem({
+		intent: input.intent,
+		method: input.method,
+		path: input.path,
+		code: input.report?.code ?? input.code,
+		message: input.report?.problem ?? input.message
+	});
+}
+
+// Answers of the routes of the pages of the administration (BW-1, ADR-0072; since FP-3b every page):
+// a refusal of a route and an answer the app could not read keep the entry behind "Details" beside
+// the answer, so the answer keeps its form (the integration tests compare it as it is).
+
+/** `answer` with `problem` kept beside it (nothing for null); the answer itself is unchanged. */
+export function keepAnswerProblem<T extends object>(answer: T, problem: ProblemEntry | null): T {
+	if (problem !== null) answerProblems.set(answer, problem);
+	return answer;
+}
+
+/**
+ * The entry kept beside a refusal of a route or an answer the app could not read (FP-1, ADR-0071):
+ * the failed request with status, reason and message of the server; null for an answer without
+ * one (a fake of the tests, or `ok`).
+ */
+export function denialProblem(answer: object): ProblemEntry | null {
+	return answerProblems.get(answer) ?? null;
+}
+
+/** `{ problem }` for an entry, nothing for null: a message keeps its form without one. */
+export function detailsOf(problem: ProblemEntry | null): { problem?: ProblemEntry } {
+	return problem === null ? {} : { problem };
+}
+
+/**
+ * The entry of a refusal that is a failure: "script" (the control script answered badly, or the
+ * answer had not the form of the route). Every other refusal (this machine, the address of the
+ * app, the administrator, rate limit, busy, before the restart …) is a hint without "Details", like
+ * on the page System (ADR-0072 §1, FP-3b).
+ */
+export function scriptProblem(answer: { readonly reason: string }): ProblemEntry | null {
+	return answer.reason === 'script' ? denialProblem(answer) : null;
+}
+
+/**
+ * The entry of an answer of `method` `path` that had not the form of the route: "Unerwartete
+ * Antwort des Servers" with the request.
+ */
+export function unreadableProblem(method: string, path: string): ProblemEntry | null {
+	const unreadable = new DataError('server');
+	noteRequest(unreadable, method, path);
+	return problemOf(unreadable);
+}
+
+/**
+ * The entry with another intent, e.g. the check of a backup that prepares its restore ("Sicherung
+ * wiederherstellen" instead of "Sicherung prüfen"), when the entry was made beside an answer and no
+ * `withIntent` could name it.
+ */
+export function problemWithIntent(
+	problem: ProblemEntry | null,
+	intent: string
+): ProblemEntry | null {
+	return problem === null ? null : { ...problem, intent: sanitizeProblemText(intent, 120) };
 }
 
 /**

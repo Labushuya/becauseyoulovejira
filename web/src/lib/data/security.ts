@@ -1,9 +1,11 @@
 // Page "Einstellungen → Sicherheit" (ADR-0055 §8; ADR-0006 sections 1 to 5): the routes of
 // app/pb_hooks/security.pb.js. A refusal of the route (this machine, the address of the app, the
 // administrator of the app, rate limit, no own instance for the hosts) and a missing route (404 before
-// the restart after an update) come as `denied` with their reason, a 400 as `invalid` with its
-// problem; the session, the network and an aborted signal are DataErrors. The browser sends Origin
-// itself; nothing here names an address.
+// the restart after an update) come as `denied` with their reason, a 400 with `reason: 'invalid'` as
+// `invalid` with its problem; the session, the network, an aborted signal and every other error
+// answer (also a 400 without `reason: 'invalid'`, e.g. a failure of the hook, FP-3b) are DataErrors.
+// A refusal and an answer of another form keep the entry behind "Details" beside the answer
+// (`denialProblem`, FP-3b). The browser sends Origin itself; nothing here names an address.
 
 import type PocketBase from 'pocketbase';
 import {
@@ -22,7 +24,7 @@ import {
 } from '../domain/security';
 import { denialOf, type SystemDenial } from '../domain/system';
 import { reportRefusal } from './context';
-import { toDataError } from './errors';
+import { keepAnswerProblem, problemOf, toDataError, unreadableProblem } from './errors';
 import type { RequestOptions } from './options';
 
 const ROUTE = '/api/byl/security';
@@ -39,17 +41,25 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 async function ask<T>(
-	signal: AbortSignal | undefined,
-	call: () => Promise<unknown>,
+	pb: PocketBase,
+	method: 'GET' | 'POST',
+	path: string,
+	options: { body?: unknown; signal?: AbortSignal },
 	parse: (answer: unknown) => T | null
 ): Promise<SecurityAnswer<T>> {
+	const signal = options.signal;
 	let answer: unknown;
 	try {
-		answer = await call();
+		answer = await pb.send(path, {
+			method,
+			...(options.body !== undefined && { body: options.body }),
+			requestKey: null,
+			signal
+		});
 	} catch (error) {
 		const status = isRecord(error) && typeof error.status === 'number' ? error.status : 0;
 		const response = isRecord(error) && isRecord(error.response) ? error.response : {};
-		if (!signal?.aborted && status === 400) {
+		if (!signal?.aborted && status === 400 && response.reason === 'invalid') {
 			const invalid = Array.isArray(response.invalid)
 				? response.invalid.filter((entry): entry is string => typeof entry === 'string')
 				: [];
@@ -58,12 +68,19 @@ async function ask<T>(
 		}
 		if (!signal?.aborted && DENIAL_STATUSES.includes(status)) {
 			reportRefusal(response.reason);
-			return { kind: 'denied', reason: denialOf(status, response.reason) };
+			return keepAnswerProblem<SecurityAnswer<T>>(
+				{ kind: 'denied', reason: denialOf(status, response.reason) },
+				problemOf(error)
+			);
 		}
 		throw toDataError(error, signal);
 	}
 	const value = parse(answer);
-	return value === null ? { kind: 'denied', reason: 'script' } : { kind: 'ok', value };
+	if (value !== null) return { kind: 'ok', value };
+	return keepAnswerProblem<SecurityAnswer<T>>(
+		{ kind: 'denied', reason: 'script' },
+		unreadableProblem(method, path)
+	);
 }
 
 /** Everything the page shows. */
@@ -71,11 +88,7 @@ export function fetchSecurity(
 	pb: PocketBase,
 	options: RequestOptions = {}
 ): Promise<SecurityAnswer<SecurityOverview>> {
-	return ask(
-		options.signal,
-		() => pb.send(ROUTE, { method: 'GET', requestKey: null, signal: options.signal }),
-		parseSecurity
-	);
+	return ask(pb, 'GET', ROUTE, { signal: options.signal }, parseSecurity);
 }
 
 /** Level of the protection and/or the validity of a sign-in; answers the new overview. */
@@ -85,14 +98,10 @@ export function saveSecuritySettings(
 	options: RequestOptions = {}
 ): Promise<SecurityAnswer<SecurityOverview>> {
 	return ask(
-		options.signal,
-		() =>
-			pb.send(`${ROUTE}/settings`, {
-				method: 'POST',
-				body: settings,
-				requestKey: null,
-				signal: options.signal
-			}),
+		pb,
+		'POST',
+		`${ROUTE}/settings`,
+		{ body: settings, signal: options.signal },
 		parseSecurity
 	);
 }
@@ -104,14 +113,10 @@ export function saveSecurityHosts(
 	options: RequestOptions = {}
 ): Promise<SecurityAnswer<SecurityOverview>> {
 	return ask(
-		options.signal,
-		() =>
-			pb.send(`${ROUTE}/hosts`, {
-				method: 'POST',
-				body: { hosts },
-				requestKey: null,
-				signal: options.signal
-			}),
+		pb,
+		'POST',
+		`${ROUTE}/hosts`,
+		{ body: { hosts }, signal: options.signal },
 		parseSecurity
 	);
 }
@@ -121,11 +126,7 @@ export function fetchSecurityLan(
 	pb: PocketBase,
 	options: RequestOptions = {}
 ): Promise<SecurityAnswer<LanInfo>> {
-	return ask(
-		options.signal,
-		() => pb.send(`${ROUTE}/lan`, { method: 'GET', requestKey: null, signal: options.signal }),
-		parseLanInfo
-	);
+	return ask(pb, 'GET', `${ROUTE}/lan`, { signal: options.signal }, parseLanInfo);
 }
 
 /** Switches the access in the home network on or off with its addresses; applies after a restart. */
@@ -135,14 +136,13 @@ export function saveSecurityLan(
 	options: RequestOptions = {}
 ): Promise<SecurityAnswer<LanInfo>> {
 	return ask(
-		options.signal,
-		() =>
-			pb.send(`${ROUTE}/lan`, {
-				method: 'POST',
-				body: { enabled: setting.enabled, addresses: setting.addresses },
-				requestKey: null,
-				signal: options.signal
-			}),
+		pb,
+		'POST',
+		`${ROUTE}/lan`,
+		{
+			body: { enabled: setting.enabled, addresses: setting.addresses },
+			signal: options.signal
+		},
 		parseLanInfo
 	);
 }
@@ -157,14 +157,10 @@ export function changeSecurityFirewall(
 	options: RequestOptions = {}
 ): Promise<SecurityAnswer<{ result: FirewallResult; lan: LanInfo | null }>> {
 	return ask(
-		options.signal,
-		() =>
-			pb.send(`${ROUTE}/lan/firewall`, {
-				method: 'POST',
-				body: { action },
-				requestKey: null,
-				signal: options.signal
-			}),
+		pb,
+		'POST',
+		`${ROUTE}/lan/firewall`,
+		{ body: { action }, signal: options.signal },
 		parseFirewallAnswer
 	);
 }

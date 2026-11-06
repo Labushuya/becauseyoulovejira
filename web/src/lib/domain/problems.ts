@@ -219,7 +219,9 @@ export const INPUT_VALIDATION_CODES: ReadonlySet<string> = new Set([
 	'validation_duplicate_title',
 	'validation_follow_up_title',
 	'validation_recurrence_subtask_title',
-	'validation_recurrence_subtask_title_max'
+	'validation_recurrence_subtask_title_max',
+	// "Mein Konto": a wrong current password is a hint at its field (FP-3b), the record API of users.
+	'validation_invalid_old_password'
 ]);
 
 /** Whether a refusal with these codes of fields is only a check of the input (no details). */
@@ -237,10 +239,34 @@ const SECRET_PARAM =
  */
 const QUERY_AFTER_PATH = /((?:[a-z][a-z\d+.-]*:\/\/|\/)[^\s?#"'<>]*)\?[^\s#"'<>():]*/gi;
 const REDACTED = '[entfernt]';
+/** The mark of an e-mail address, the same as `cleanMessage` of the server (ADR-0077 §4). */
+export const EMAIL_MARK = '[E-Mail]';
+// E-mail addresses and the paths of this computer, the same patterns as `cleanMessage` of the
+// server (app/pb_hooks/lib/problem-rules.js): a drive (`C:\…`, `C:/…`) or a share (`\\server\…`),
+// and absolute POSIX paths below the folders of accounts and data (`/home`, `/Users`, `/tmp` …).
+// A URL keeps its path: `http://…` has no drive, and `/api/…` or `/_app/…` are no such folder.
+// Unlike the server an address is never followed by `:<line>`: a frame of a stack of Firefox and
+// Safari (`run@b.js:3:4`, `f@x.js.map:1:2`) stays.
+const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}(?![\w.-]*:\d)/g;
+const WINDOWS_PATH = /(?:\b[A-Za-z]:|\\\\[^\\\s"'<>]+)[\\/][^\s"'<>]*/g;
+const POSIX_PATH =
+	/(?:^|[\s(])\/(?:home|Users|root|tmp|private|var|mnt|media|opt|srv)\/[^\s"'<>)]*/g;
+
+/** The last part of a path (`C:\Users\anna\data.db` gives `data.db`). */
+function lastSegment(path: string): string {
+	return (
+		path
+			.split(/[\\/]/)
+			.filter((part) => part !== '')
+			.at(-1) ?? ''
+	);
+}
 
 /**
  * A text for an entry: queries after paths and URLs, tokens, bearer values and secrets in
- * `name=value` removed, white space collapsed, at most `max` characters.
+ * `name=value` removed, e-mail addresses as „[E-Mail]“, the paths of this computer only with their
+ * file name (`…\data.db`, no name of a Windows account), white space collapsed, at most `max`
+ * characters (FP-3b: e-mail addresses and paths like the server, ADR-0077 §4).
  */
 export function sanitizeProblemText(text: string, max = PROBLEM_TEXT_MAX): string {
 	const clean = text
@@ -248,6 +274,12 @@ export function sanitizeProblemText(text: string, max = PROBLEM_TEXT_MAX): strin
 		.replace(BEARER, `$1 ${REDACTED}`)
 		.replace(SECRET_PARAM, `$1=${REDACTED}`)
 		.replace(QUERY_AFTER_PATH, '$1')
+		.replace(EMAIL, EMAIL_MARK)
+		.replace(WINDOWS_PATH, (path) => `…\\${lastSegment(path)}`)
+		.replace(POSIX_PATH, (path) => {
+			const lead = /^[\s(]/.test(path) ? path.charAt(0) : '';
+			return `${lead}…/${lastSegment(path)}`;
+		})
 		.replace(/\s+/g, ' ')
 		.trim();
 	return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;

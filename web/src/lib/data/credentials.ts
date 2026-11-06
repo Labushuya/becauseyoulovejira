@@ -2,14 +2,17 @@
 // app/pb_hooks/credentials.pb.js. Stateless functions with the PocketBase instance as first
 // parameter. A value goes only into the body of the POST of "Setzen" (never into the address, a
 // store or a log of the app) and never comes back. Refusals of the checks of the page System come
-// as `denied` with their reason, problems of a name or value (400) as `invalid` with the words of
-// the server; the session, the network and an aborted signal are DataErrors. These requests never
+// as `denied` with their reason, problems of a name or value (400 with a problem of the route,
+// CREDENTIAL_PROBLEMS; the route sends no `reason` there) as `invalid` with the words of the
+// server; the session, the network, an aborted signal and every other error answer (also a 400
+// without such a problem, e.g. a failure of the hook, FP-3b) are DataErrors. These requests never
 // go into the outbox of the app (ADR-0074): it takes only the actions it knows, and this module
 // gives it none. The browser sends Origin itself; nothing here names an address.
 
 import type PocketBase from 'pocketbase';
 import {
 	credentialProblemOf,
+	isCredentialProblem,
 	parseCredentialStatus,
 	type CredentialProblem,
 	type CredentialStatus
@@ -17,7 +20,7 @@ import {
 import type { ProblemEntry } from '../domain/problems';
 import { denialOf, type SystemDenial } from '../domain/system';
 import { reportRefusal } from './context';
-import { DataError, noteRequest, problemOf, toDataError } from './errors';
+import { problemOf, toDataError, unreadableProblem } from './errors';
 import type { RequestOptions } from './options';
 
 const ROUTE = '/api/byl/credentials';
@@ -45,7 +48,7 @@ async function ask<T>(
 	} catch (error) {
 		const status = isRecord(error) && typeof error.status === 'number' ? error.status : 0;
 		const response = isRecord(error) && isRecord(error.response) ? error.response : {};
-		if (!signal?.aborted && status === 400) {
+		if (!signal?.aborted && status === 400 && isCredentialProblem(response.problem)) {
 			return {
 				kind: 'invalid',
 				problem: credentialProblemOf(response),
@@ -62,9 +65,11 @@ async function ask<T>(
 	const value = parse(answer);
 	if (value !== null) return { kind: 'ok', value };
 	// The server answered, but not in the form of the route: "Unerwartete Antwort des Servers".
-	const unreadable = new DataError('server');
-	noteRequest(unreadable, request.method, request.path);
-	return { kind: 'denied', reason: 'script', problem: problemOf(unreadable) };
+	return {
+		kind: 'denied',
+		reason: 'script',
+		problem: unreadableProblem(request.method, request.path)
+	};
 }
 
 /**

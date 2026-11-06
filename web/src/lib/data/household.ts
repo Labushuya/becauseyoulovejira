@@ -2,7 +2,8 @@
 // Haushalt" (app/pb_hooks/household.pb.js) and the realtime topic byl/household. A refused request
 // comes as `invalid` with its problem (the texts in domain/household.ts), the rate limit of joining
 // as `rate`, the server before the restart (503, or 404 without the route) as `missing`; the
-// session, the network and an aborted signal are DataErrors. Answers are read strictly.
+// session, the network, an aborted signal and every other error answer are DataErrors. Answers are
+// read strictly; one of another form is a DataError with its request (FP-3b, "Details").
 
 import type PocketBase from 'pocketbase';
 import { parseDissolvePreview, type DissolveMode, type DissolvePreview } from '../domain/area-move';
@@ -12,7 +13,7 @@ import {
 	type HouseholdState,
 	type InviteGrant
 } from '../domain/household';
-import { DataError, toDataError } from './errors';
+import { DataError, noteRequest, toDataError } from './errors';
 import type { RequestOptions } from './options';
 import type { Unsubscribe } from './realtime';
 
@@ -31,14 +32,21 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/**
+ * Sends `body` with POST to `path` (GET without a body) and reads the answer. An answer of another
+ * form is a DataError with the request noted, so its "Details" name it.
+ */
 async function ask<T>(
+	pb: PocketBase,
+	path: string,
+	body: unknown,
 	signal: AbortSignal | undefined,
-	call: () => Promise<unknown>,
 	parse: (answer: unknown) => T | undefined
 ): Promise<HouseholdAnswer<T>> {
+	const method = body === undefined ? 'GET' : 'POST';
 	let answer: unknown;
 	try {
-		answer = await call();
+		answer = await pb.send(path, { method, body, requestKey: null, signal });
 	} catch (error) {
 		const status = isRecord(error) && typeof error.status === 'number' ? error.status : 0;
 		const response = isRecord(error) && isRecord(error.response) ? error.response : {};
@@ -52,18 +60,12 @@ async function ask<T>(
 		throw toDataError(error, signal);
 	}
 	const value = parse(answer);
-	if (value === undefined) throw new DataError('server');
+	if (value === undefined) {
+		const unreadable = new DataError('server');
+		noteRequest(unreadable, method, path);
+		throw unreadable;
+	}
 	return { kind: 'ok', value };
-}
-
-function send(pb: PocketBase, path: string, body: unknown, signal?: AbortSignal) {
-	return () =>
-		pb.send(path, {
-			method: body === undefined ? 'GET' : 'POST',
-			body,
-			requestKey: null,
-			signal
-		});
 }
 
 const state = (answer: unknown) => parseHouseholdAnswer(answer);
@@ -73,7 +75,7 @@ export function fetchHousehold(
 	pb: PocketBase,
 	options: RequestOptions = {}
 ): Promise<HouseholdAnswer<HouseholdState | null>> {
-	return ask(options.signal, send(pb, ROUTE, undefined, options.signal), state);
+	return ask(pb, ROUTE, undefined, options.signal, state);
 }
 
 /** Founds a household; the account becomes its owner. */
@@ -82,7 +84,7 @@ export function foundHousehold(
 	name: string,
 	options: RequestOptions = {}
 ): Promise<HouseholdAnswer<HouseholdState | null>> {
-	return ask(options.signal, send(pb, ROUTE, { name }, options.signal), state);
+	return ask(pb, ROUTE, { name }, options.signal, state);
 }
 
 /** Renames the household (right "rename"). */
@@ -91,7 +93,7 @@ export function renameHousehold(
 	name: string,
 	options: RequestOptions = {}
 ): Promise<HouseholdAnswer<HouseholdState | null>> {
-	return ask(options.signal, send(pb, `${ROUTE}/rename`, { name }, options.signal), state);
+	return ask(pb, `${ROUTE}/rename`, { name }, options.signal, state);
 }
 
 /** A new invitation code (right "invite"); the answer carries it once. */
@@ -100,8 +102,10 @@ export function createHouseholdInvite(
 	options: RequestOptions = {}
 ): Promise<HouseholdAnswer<InviteGrant>> {
 	return ask(
+		pb,
+		`${ROUTE}/invites`,
+		{},
 		options.signal,
-		send(pb, `${ROUTE}/invites`, {}, options.signal),
 		(answer) => parseInviteGrant(answer) ?? undefined
 	);
 }
@@ -112,11 +116,7 @@ export function revokeHouseholdInvite(
 	id: string,
 	options: RequestOptions = {}
 ): Promise<HouseholdAnswer<HouseholdState | null>> {
-	return ask(
-		options.signal,
-		send(pb, `${ROUTE}/invites/${encodeURIComponent(id)}/revoke`, {}, options.signal),
-		state
-	);
+	return ask(pb, `${ROUTE}/invites/${encodeURIComponent(id)}/revoke`, {}, options.signal, state);
 }
 
 /** Joins the household of a code; case, spaces and hyphens do not count. */
@@ -125,7 +125,7 @@ export function joinHousehold(
 	code: string,
 	options: RequestOptions = {}
 ): Promise<HouseholdAnswer<HouseholdState | null>> {
-	return ask(options.signal, send(pb, `${ROUTE}/join`, { code }, options.signal), state);
+	return ask(pb, `${ROUTE}/join`, { code }, options.signal, state);
 }
 
 /** The rights of a member (right "delegate"). */
@@ -136,8 +136,10 @@ export function setHouseholdRights(
 	options: RequestOptions = {}
 ): Promise<HouseholdAnswer<HouseholdState | null>> {
 	return ask(
+		pb,
+		`${ROUTE}/members/${encodeURIComponent(memberId)}/rights`,
+		{ rights },
 		options.signal,
-		send(pb, `${ROUTE}/members/${encodeURIComponent(memberId)}/rights`, { rights }, options.signal),
 		state
 	);
 }
@@ -149,8 +151,10 @@ export function removeHouseholdMember(
 	options: RequestOptions = {}
 ): Promise<HouseholdAnswer<HouseholdState | null>> {
 	return ask(
+		pb,
+		`${ROUTE}/members/${encodeURIComponent(memberId)}/remove`,
+		{},
 		options.signal,
-		send(pb, `${ROUTE}/members/${encodeURIComponent(memberId)}/remove`, {}, options.signal),
 		state
 	);
 }
@@ -162,8 +166,10 @@ export function transferHousehold(
 	options: RequestOptions = {}
 ): Promise<HouseholdAnswer<HouseholdState | null>> {
 	return ask(
+		pb,
+		`${ROUTE}/members/${encodeURIComponent(memberId)}/transfer`,
+		{},
 		options.signal,
-		send(pb, `${ROUTE}/members/${encodeURIComponent(memberId)}/transfer`, {}, options.signal),
 		state
 	);
 }
@@ -174,7 +180,7 @@ export function setHouseholdRetention(
 	retention: string,
 	options: RequestOptions = {}
 ): Promise<HouseholdAnswer<HouseholdState | null>> {
-	return ask(options.signal, send(pb, `${ROUTE}/retention`, { retention }, options.signal), state);
+	return ask(pb, `${ROUTE}/retention`, { retention }, options.signal, state);
 }
 
 /** Leaves the household (every member but the owner). */
@@ -182,7 +188,7 @@ export function leaveHousehold(
 	pb: PocketBase,
 	options: RequestOptions = {}
 ): Promise<HouseholdAnswer<HouseholdState | null>> {
-	return ask(options.signal, send(pb, `${ROUTE}/leave`, {}, options.signal), state);
+	return ask(pb, `${ROUTE}/leave`, {}, options.signal, state);
 }
 
 /**
@@ -196,8 +202,10 @@ export function dissolveHousehold(
 	options: RequestOptions = {}
 ): Promise<HouseholdAnswer<DissolvePreview>> {
 	return ask(
+		pb,
+		`${ROUTE}/dissolve`,
+		body,
 		options.signal,
-		send(pb, `${ROUTE}/dissolve`, body, options.signal),
 		(answer) => parseDissolvePreview(answer) ?? undefined
 	);
 }

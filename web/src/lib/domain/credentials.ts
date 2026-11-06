@@ -99,12 +99,15 @@ export function parseCredentialStatus(answer: unknown): CredentialStatus | null 
 	return { variables, restartNeeded: answer.restartNeeded === true };
 }
 
+/** Whether `value` is one of the problems the routes answer with 400 (CREDENTIAL_PROBLEMS). */
+export function isCredentialProblem(value: unknown): value is CredentialProblem {
+	return typeof value === 'string' && (CREDENTIAL_PROBLEMS as readonly string[]).includes(value);
+}
+
 /** The problem of a 400 answer of set or remove; 'invalid' for one the app does not know. */
 export function credentialProblemOf(answer: unknown): CredentialProblem {
 	const problem = isRecord(answer) ? answer.problem : undefined;
-	return typeof problem === 'string' && (CREDENTIAL_PROBLEMS as readonly string[]).includes(problem)
-		? (problem as CredentialProblem)
-		: 'invalid';
+	return isCredentialProblem(problem) ? problem : 'invalid';
 }
 
 /** "Nur am PC möglich" (V5): the actions on another device and instead of a state it cannot read. */
