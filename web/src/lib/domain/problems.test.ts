@@ -3,11 +3,14 @@
 // and the line between a failed action and a hint at an input.
 
 import { describe, expect, it } from 'vitest';
+import { reportedScriptProblem } from '../data/errors';
 import {
 	EMAIL_MARK,
 	INPUT_VALIDATION_CODES,
+	PROBLEM_INPUT_MAX,
 	PROBLEM_LOG_MAX,
 	PROBLEM_MERGE_MS,
+	PROBLEM_TEXT_MAX,
 	STACK_MAX_LINES,
 	UNEXPECTED_INTENT,
 	addProblem,
@@ -262,6 +265,123 @@ describe('cleaning', () => {
 		);
 		expect(report).toContain('Servermeldung: Sicherung für [E-Mail] nach …\\x.age gescheitert');
 		expect(report).not.toMatch(/anna|Users/);
+	});
+
+	// BYL-E6-2436
+	it('takes paths with spaces whole and shows only "…" for a root (FP-3b, R-A4, R-A5)', () => {
+		const cases: Array<[string, string]> = [
+			['Ziel C:\\Users\\Anna Maria\\Backups\\x.age voll', 'Ziel …\\x.age voll'],
+			[
+				"Zugriff auf 'C:\\Users\\Anna Maria\\byl\\pb_data' verweigert",
+				"Zugriff auf '…\\pb_data' verweigert"
+			],
+			[
+				'Zugriff auf "C:\\Users\\Anna Maria\\byl\\pb_data" verweigert',
+				'Zugriff auf "…\\pb_data" verweigert'
+			],
+			['Ordner C:\\Users\\Anna\\ fehlt', 'Ordner … fehlt'],
+			['Ordner C:\\Users\\Anna fehlt', 'Ordner … fehlt'],
+			['Laufwerk C:\\ voll', 'Laufwerk … voll'],
+			['Ziel \\\\nas\\Familie Bott\\x.age fehlt', 'Ziel …\\x.age fehlt'],
+			['Freigabe \\\\nas\\Familie fehlt', 'Freigabe … fehlt'],
+			['Ziel D:/Sicherung Anna/byl.age voll', 'Ziel …\\byl.age voll'],
+			['Pfad \\\\?\\C:\\Users\\Anna Maria\\x.age zu lang', 'Pfad …\\x.age zu lang'],
+			['Pfad \\\\?\\UNC\\nas\\Familie Bott\\x.age zu lang', 'Pfad …\\x.age zu lang'],
+			['Datei file:///C:/Users/Anna%20Maria/x.age fehlt', 'Datei file:///…\\x.age fehlt'],
+			['JSON {"path":"C:\\\\Users\\\\Anna\\\\x.age"}', 'JSON {"path":"…\\x.age"}'],
+			['open /home/anna maria/x.age: denied', 'open …/x.age: denied'],
+			['open /home/anna/: denied', 'open …: denied'],
+			['open /Users/anna fehlt', 'open … fehlt'],
+			['open /tmp/byl.lock fehlt', 'open …/byl.lock fehlt'],
+			['open file:///home/anna/x.age fehlt', 'open file://…/x.age fehlt'],
+			// A path ends at ":", so the line of a file stays.
+			['bei C:\\Users\\Anna Maria\\byl\\x.js:3:4', 'bei …\\x.js:3:4']
+		];
+		for (const [text, clean] of cases) expect(sanitizeProblemText(text), text).toBe(clean);
+		// Times, dates, fractions, versions, routes of the app, URLs and frames of a stack stay.
+		for (const text of [
+			'um 12:30 am 06/11/2026',
+			'Schritt 1/2',
+			'Build v1.4.2+42',
+			'POST /api/byl/backup/run fehlgeschlagen',
+			'GET /_app/immutable/x.js',
+			'siehe https://example.org/hilfe/sicherung',
+			'at f (http://127.0.0.1:8090/_app/immutable/x.js:2:3)',
+			'run@http://127.0.0.1:8090/_app/a.js:1:2'
+		]) {
+			expect(sanitizeProblemText(text), text).toBe(text);
+		}
+		// Two paths with the same separator may take the text between them: the safe direction.
+		expect(sanitizeProblemText('von \\\\nas\\a\\b nach \\\\nas\\c\\d.age')).toBe('von …\\d.age');
+		// Known rest (ADR-0071): a folder with a space at the end of a sentence keeps its last word.
+		expect(sanitizeProblemText('Ordner C:\\Users\\Anna Maria')).toBe('Ordner … Maria');
+	});
+
+	// BYL-E6-2438
+	it('cleans a path with spaces in the problem of a report of the catalog (FP-3b, R-A9)', () => {
+		const problem = reportedScriptProblem({
+			intent: 'App neu starten',
+			method: 'GET',
+			path: '/api/byl/system',
+			report: {
+				code: 'app-incomplete',
+				problem:
+					'Im Ordner C:\\Users\\Anna Maria\\byl\\app fehlt byl-control.ps1; der Ordner app ist unvollständig.'
+			},
+			code: null,
+			message: 'Fehler'
+		});
+		expect(problem.outcome.message).toBe(
+			'Im Ordner …\\app fehlt byl-control.ps1; der Ordner app ist unvollständig.'
+		);
+		expect(problemReport(problem)).not.toMatch(/Anna|Maria|Users/);
+	});
+
+	// BYL-E6-2437
+	it('marks masked addresses and an address before a port, frames of a stack stay (FP-3b, R-A6, R-A7)', () => {
+		expect(sanitizeProblemText('Mail an ***@example.com abgelehnt')).toBe(
+			'Mail an [E-Mail] abgelehnt'
+		);
+		expect(sanitizeProblemText('SMTP anna@example.de:587 abgelehnt')).toBe(
+			'SMTP [E-Mail]:587 abgelehnt'
+		);
+		for (const frame of [
+			'run@b.js:3:4',
+			'f@x.js.map:1:2',
+			'g@app.mjs:1:2',
+			'h@lib.cjs:1:2',
+			'i@store.ts:10:2',
+			'j@Page.svelte:4:5'
+		]) {
+			expect(sanitizeProblemText(frame), frame).toBe(frame);
+		}
+	});
+
+	// BYL-E6-2437
+	it('cuts a long input before the cleaning, without a cut word, in a few milliseconds (FP-3b, R-A8)', () => {
+		expect(PROBLEM_INPUT_MAX).toBeGreaterThan(PROBLEM_TEXT_MAX * 10);
+		// A cut word goes whole: the half of a secret or of a path never stays (`C:\Users\` here).
+		const kept = 'x'.repeat(PROBLEM_INPUT_MAX - 10);
+		expect(sanitizeProblemText(`${kept} C:\\Users\\Anna\\x.age geheim`, PROBLEM_INPUT_MAX)).toBe(
+			kept
+		);
+		// A text of exactly the longest input is not cut.
+		const full = `${'x'.repeat(PROBLEM_INPUT_MAX - 7)} geheim`;
+		expect(sanitizeProblemText(full, PROBLEM_INPUT_MAX)).toBe(full);
+		// Long words without "@" and "?" read the patterns once per start: the cut keeps that short.
+		const rest = 'b'.repeat(200_000);
+		for (const text of [
+			'a'.repeat(200_000),
+			`${'a'.repeat(PROBLEM_INPUT_MAX - 1)} ${rest}`,
+			`${'/a'.repeat(PROBLEM_INPUT_MAX / 2 - 1)} ${rest}`,
+			`${'x.'.repeat(PROBLEM_INPUT_MAX / 2 - 1)} ${rest}`
+		]) {
+			const start = performance.now();
+			const clean = sanitizeProblemText(text);
+			expect(performance.now() - start).toBeLessThan(50);
+			expect(clean.length).toBeLessThanOrEqual(PROBLEM_TEXT_MAX);
+			expect(clean).not.toContain('b');
+		}
 	});
 
 	it('keeps name, message and at most ten lines of the stack of an exception', () => {

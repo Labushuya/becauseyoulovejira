@@ -526,7 +526,10 @@ export function unansweredProblem(input: {
  * The entry of a failure an entry of the catalog of the scripts reports (ADR-0048), e.g. a change
  * of the firewall rule that did not happen or the error of the last run without window: only its
  * code and its problem, never the command, the facts, the cause or the log (they name paths of
- * this machine). Without a report `code` and `message` stand in.
+ * this machine). The problem may name a folder too (`{app}` of the catalog): like every message it
+ * passes `sanitizeProblemText`, which keeps only the last part of a path, also of one with spaces
+ * (`C:\Users\Anna Maria\byl\app` gives `…\app`, ADR-0071). Without a report `code` and `message`
+ * stand in.
  */
 export function reportedScriptProblem(input: {
 	intent: string;

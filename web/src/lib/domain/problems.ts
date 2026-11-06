@@ -241,25 +241,81 @@ const QUERY_AFTER_PATH = /((?:[a-z][a-z\d+.-]*:\/\/|\/)[^\s?#"'<>]*)\?[^\s#"'<>(
 const REDACTED = '[entfernt]';
 /** The mark of an e-mail address, the same as `cleanMessage` of the server (ADR-0077 §4). */
 export const EMAIL_MARK = '[E-Mail]';
-// E-mail addresses and the paths of this computer, the same patterns as `cleanMessage` of the
-// server (app/pb_hooks/lib/problem-rules.js): a drive (`C:\…`, `C:/…`) or a share (`\\server\…`),
-// and absolute POSIX paths below the folders of accounts and data (`/home`, `/Users`, `/tmp` …).
-// A URL keeps its path: `http://…` has no drive, and `/api/…` or `/_app/…` are no such folder.
-// Unlike the server an address is never followed by `:<line>`: a frame of a stack of Firefox and
-// Safari (`run@b.js:3:4`, `f@x.js.map:1:2`) stays.
-const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}(?![\w.-]*:\d)/g;
-const WINDOWS_PATH = /(?:\b[A-Za-z]:|\\\\[^\\\s"'<>]+)[\\/][^\s"'<>]*/g;
+// E-mail addresses and the paths of this computer, like `cleanMessage` of the server
+// (app/pb_hooks/lib/problem-rules.js). An address may be masked already (`***@example.com`, as
+// `maskLogLine` of the server writes it). It starts only where no character of an address stands
+// before it: the match starts there anyway, and so a long word without `@` is read once, not once
+// per character. Unlike the server an address is never followed by `:<line>` when its last part is
+// a file of a script (`js`, `mjs`, `cjs`, `ts`, `svelte`, `map`): a frame of a stack of Firefox and
+// Safari (`run@b.js:3:4`, `f@x.js.map:1:2`) stays, `anna@example.de:587` does not. The domain is
+// taken whole (no letter and no `.part` behind it), so it cannot shrink to `x.js.ma` or `x.js`.
+const EMAIL =
+	/(?<![A-Za-z0-9._%+*-])[A-Za-z0-9._%+*-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}(?![A-Za-z]|\.[A-Za-z0-9-])(?!(?<=\.(?:js|mjs|cjs|ts|svelte|map)):\d)/g;
+// The paths of this computer (FP-3b, R-A4): a drive (`C:\…`, `C:/…`, also in `file:///C:/…`), a
+// share (`\\server\share\…`), a long path (`\\?\C:\…`, `\\?\UNC\…`), and absolute POSIX paths below
+// the folders of accounts and data (`/home`, `/Users`, `/tmp` …, also in `file://`). A URL keeps its
+// path: `http://…` has no drive, and `/api/…` or `/_app/…` are no such folder. A path keeps its
+// first separator; a part before a further separator may hold spaces (`C:\Users\Anna Maria\x.age`),
+// the last part ends at a space. A path ends at `:`, a quote, `<>|?*` and at the end of a line, so
+// `12:30`, `06/11/2026`, `1/2` and `v1.4.2+42` stay. Known excess, the safe direction: a later
+// separator of the same kind in the same line (a second path, a date `06/11/2026` behind a path with
+// `/`) belongs to the path, and the text up to it goes. Known rest: a folder with a space at the end
+// of a sentence (`C:\Users\Anna Maria`) keeps the words after the space (`… Maria`, ADR-0071).
+const WINDOWS_PATH =
+	/(\\\\[?.]\\[A-Za-z]:|\b[A-Za-z]:|\\\\[^\\/\s"'<>:|*]+)([\\/])((?:[^\\/\r\n"'<>:|?*]*\2)*[^\s\\/"'<>:|?*]*)/g;
 const POSIX_PATH =
-	/(?:^|[\s(])\/(?:home|Users|root|tmp|private|var|mnt|media|opt|srv)\/[^\s"'<>)]*/g;
+	/(^|[\s(]|file:\/\/)\/(home|Users|root|tmp|private|var|mnt|media|opt|srv)\/((?:[^/\r\n"'<>:|?*()]*\/)*[^\s/"'<>:|?*)]*)/g;
+/**
+ * Longest input before the cleaning (R-A8): the pattern of queries (and the cut of the last word)
+ * read a long word once per start, so their time grows with the square of its length. 4096
+ * characters keep that in a few milliseconds and are more than thirteen times the longest kept text
+ * (PROBLEM_TEXT_MAX = 300): only a text that loses more than that much to the cleaning (long runs of
+ * white space, many removed values) could lose a part that would have been shown.
+ */
+export const PROBLEM_INPUT_MAX = 4096;
 
-/** The last part of a path (`C:\Users\anna\data.db` gives `data.db`). */
-function lastSegment(path: string): string {
-	return (
-		path
-			.split(/[\\/]/)
-			.filter((part) => part !== '')
-			.at(-1) ?? ''
+/**
+ * What stays of a path (R-A4, R-A5): "…", the separator and the last part (`…\data.db`), only "…"
+ * when the path ends with a separator or is only a root that names an account or a share (`C:\`,
+ * `C:\Users\anna`, `\\nas\share`, `/home/anna`, `/Users/anna`). `rest` is the path behind its root
+ * and its first separator; a Windows path shows `\` like the server, whatever it was written with.
+ * Doubled separators (a path in JSON, `C:\\Users\\anna`) count as one.
+ */
+function maskedPath(
+	rest: string,
+	separator: string,
+	isRoot: (parts: readonly string[]) => boolean,
+	shown: string
+): string {
+	const last = rest.slice(rest.lastIndexOf(separator) + 1);
+	const parts = rest.split(separator).filter((part) => part !== '');
+	return last === '' || isRoot(parts) ? '…' : `…${shown}${last}`;
+}
+
+function maskedWindowsPath(_path: string, root: string, separator: string, rest: string): string {
+	const share = root.startsWith('\\\\') && !root.endsWith(':');
+	return maskedPath(
+		rest,
+		separator,
+		(parts) => (share ? parts.length === 1 : parts.length === 2 && /^users$/i.test(parts[0] ?? '')),
+		'\\'
 	);
+}
+
+function maskedPosixPath(_path: string, lead: string, folder: string, rest: string): string {
+	const account = folder === 'home' || folder === 'Users';
+	return `${lead}${maskedPath(rest, '/', (parts) => account && parts.length === 1, '/')}`;
+}
+
+/**
+ * At most PROBLEM_INPUT_MAX characters; a word cut in the middle goes (R-A8), it could be the half
+ * of a secret or of a path. Read backwards once: `/\S*$/` would read a long word once per start.
+ */
+function capped(text: string): string {
+	if (text.length <= PROBLEM_INPUT_MAX) return text;
+	let end = PROBLEM_INPUT_MAX;
+	while (end > 0 && /\S/.test(text.charAt(end - 1))) end -= 1;
+	return text.slice(0, end);
 }
 
 /**
@@ -269,17 +325,14 @@ function lastSegment(path: string): string {
  * characters (FP-3b: e-mail addresses and paths like the server, ADR-0077 §4).
  */
 export function sanitizeProblemText(text: string, max = PROBLEM_TEXT_MAX): string {
-	const clean = text
+	const clean = capped(text)
 		.replace(JWT, REDACTED)
 		.replace(BEARER, `$1 ${REDACTED}`)
 		.replace(SECRET_PARAM, `$1=${REDACTED}`)
 		.replace(QUERY_AFTER_PATH, '$1')
 		.replace(EMAIL, EMAIL_MARK)
-		.replace(WINDOWS_PATH, (path) => `…\\${lastSegment(path)}`)
-		.replace(POSIX_PATH, (path) => {
-			const lead = /^[\s(]/.test(path) ? path.charAt(0) : '';
-			return `${lead}…/${lastSegment(path)}`;
-		})
+		.replace(WINDOWS_PATH, maskedWindowsPath)
+		.replace(POSIX_PATH, maskedPosixPath)
 		.replace(/\s+/g, ' ')
 		.trim();
 	return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
