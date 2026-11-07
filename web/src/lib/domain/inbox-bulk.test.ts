@@ -2,7 +2,9 @@
 // which entry an action applies to, why it skips the others, and the words of progress and result.
 
 import { describe, expect, it } from 'vitest';
+import type { InboxItemSummary } from './inbox';
 import {
+	chosenNewEntries,
 	bulkFailureTitle,
 	bulkKindOf,
 	bulkOfflineText,
@@ -79,5 +81,72 @@ describe('rules of several entries at once (EG-1)', () => {
 		expect(bulkRunningText('Gesammelt umwandeln (3)', 'Verwerfen')).toBe(
 			'„Gesammelt umwandeln (3)“ geht erst, wenn „Verwerfen“ fertig ist.'
 		);
+	});
+});
+
+describe('chosenNewEntries (EG-2 review)', () => {
+	const entry = (id: string, overrides: Partial<InboxItemSummary> = {}): InboxItemSummary => ({
+		id,
+		channel: 'mail',
+		kind: 'mail',
+		title: `Eintrag ${id.slice(-1)}`,
+		sourceUrl: 'https://example.com/a',
+		sourceRef: 'ref',
+		sourceDate: '2026-09-24 08:30:00.000Z',
+		sourceMeta: { from: 'Anna Beispiel <anna@example.com>' },
+		original: 'mail.eml',
+		state: 'new',
+		ticketId: null,
+		handledAt: null,
+		scope: 'u:user00000000001',
+		targetProjectId: 'proj00000000001',
+		created: '2026-09-25 08:00:00.000Z',
+		updated: '2026-09-25 08:00:00.000Z',
+		...overrides
+	});
+
+	const none = () => false;
+
+	it('takes the chosen new entries the view shows, in its order, with what the dialogs need', () => {
+		const first = entry('item00000000001');
+		const second = entry('item00000000002', { title: 'Zweiter' });
+		const linked = entry('item00000000003', { state: 'converted', ticketId: 'tick00000000001' });
+		const chosen = [second.id, linked.id, first.id, 'item00000000009'];
+		expect(chosenNewEntries([first, second, linked], chosen, none)).toEqual([
+			{
+				id: first.id,
+				title: first.title,
+				kind: 'mail',
+				channel: 'mail',
+				sourceDate: first.sourceDate,
+				scope: first.scope,
+				targetProjectId: first.targetProjectId,
+				sourceMeta: first.sourceMeta
+			},
+			{
+				id: second.id,
+				title: 'Zweiter',
+				kind: 'mail',
+				channel: 'mail',
+				sourceDate: second.sourceDate,
+				scope: second.scope,
+				targetProjectId: second.targetProjectId,
+				sourceMeta: second.sourceMeta
+			}
+		]);
+		// A chosen entry the search hides is not among the visible ones: it stays out.
+		expect(chosenNewEntries([second], chosen, none).map((item) => item.id)).toEqual([second.id]);
+		expect(chosenNewEntries([first, second], [], none)).toEqual([]);
+	});
+
+	// After the review of PR #349 (N-7).
+	it('leaves out a chosen entry "＋" of the outbox the server does not have yet', () => {
+		const first = entry('item00000000001');
+		const kept = entry('item00000000002', { title: 'Noch nicht übertragen' });
+		const isCreated = (id: string) => id === kept.id;
+		expect(
+			chosenNewEntries([kept, first], [kept.id, first.id], isCreated).map((item) => item.id)
+		).toEqual([first.id]);
+		expect(chosenNewEntries([kept], [kept.id], isCreated)).toEqual([]);
 	});
 });

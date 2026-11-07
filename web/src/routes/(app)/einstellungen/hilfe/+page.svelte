@@ -1232,6 +1232,44 @@
 				</ul>
 			</details>
 			<details>
+				<summary>Wie durchsuche ich den Eingang?</summary>
+				<ul>
+					<li>
+						Über der Liste steht „Einträge durchsuchen“, am PC in der Zeile der Chips, am Handy in
+						einer eigenen Zeile unter „Erfassen“, „Filter“ und „•••“. Gesucht wird, was die Zeile
+						zeigt: Titel, Kanal und Verbindung („Postfach · Gmail Arbeit“), Datum, Absender, Chat
+						oder Adresse und bei verknüpften Einträgen Key und Titel des Tickets. Als Datum zählt
+						jedes, das die Zeile zeigt: das Datum beim Absender und in „Neu“ und „Alle“ der Eingang,
+						in „Verknüpft“ und „Verworfen“ der Tag der Bearbeitung. Der Inhalt eines Eintrags, etwa
+						der Text einer Mail, wird nicht durchsucht.
+					</li>
+					<li>
+						Groß- und Kleinschreibung, Akzente und Umlaut-Punkte zählen nicht („arzte“ findet
+						„Ärzte“, „strasse“ findet „Straße“), und mehrere Wörter müssen alle vorkommen, gleich
+						wo. Neben dem Feld steht, wie viele passen („3 von 12“, in „Verknüpft“, „Verworfen“ und
+						„Alle“ mit „+“, solange „Weitere laden“ mehr bringt). Die Suche steht in der Adresse als
+						<code>?q=…</code> und bleibt beim Wechsel der Ansicht und des Bereichs.
+					</li>
+					<li>
+						Die neuen Einträge durchsucht die App sofort, auch ohne Verbindung. In „Verknüpft“,
+						„Verworfen“ und „Alle“ fragt sie nach einer kurzen Pause den Server; bis zur Antwort
+						bleiben die geladenen Einträge mit ihren Zahlen stehen. Ein Datum, ein Kanal oder der
+						Name einer Verbindung grenzt dort nur die geladenen Einträge ein, „Weitere laden“ holt
+						die nächsten. Ohne Verbindung bleiben die geladenen Einträge stehen und werden
+						durchsucht, darüber steht der Hinweis mit „Erneut versuchen“.
+					</li>
+					<li>
+						Esc leert das Feld; „Filter zurücksetzen“ und „Zurücksetzen“ unter „Filter“ am Handy
+						leeren auch die Suche, die Zahl an „Filter“ zählt sie nicht mit. Passt nichts, steht
+						dort „Kein Eintrag passt zu …“ mit „Suche zurücksetzen“; warten in „Verknüpft“,
+						„Verworfen“ oder „Alle“ noch weitere Seiten, heißt es „Von den bisher geladenen
+						Einträgen passt keiner zu …“, daneben „Weitere laden“. Auswahl und Sammelaktionen wie
+						„Gesammelt umwandeln“ oder „Verwerfen“ wirken nur auf die Einträge, die zu sehen sind;
+						eine Änderung der Suche behält nur die ausgewählten, die sie zeigt.
+					</li>
+				</ul>
+			</details>
+			<details>
 				<summary>Was kann ich schon beim Anlegen eines Tickets einstellen?</summary>
 				<ul>
 					<li>

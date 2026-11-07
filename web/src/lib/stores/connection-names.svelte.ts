@@ -50,6 +50,11 @@ export class ConnectionNamesStore {
 		return this.#names.get(id) ?? null;
 	}
 
+	/** Every known name; the search of the inbox keeps them in the client (EG-2). */
+	get names(): readonly string[] {
+		return [...this.#names.values()];
+	}
+
 	/**
 	 * Loads every name; a second call replaces a running one. A failure (before the migration of the
 	 * connections, a passing error) leaves the names as they were: entries then name their channel.

@@ -1,12 +1,16 @@
 // Data layer of the inbox against the disposable instance (E4 plan, package 2; ADR-0014): new
 // entries in full, handled ones page by page, duplicates as outcome, actions, the protected
-// original, realtime and the ticket created from an entry.
+// original, realtime and the ticket created from an entry. Since EG-2 the loose patterns of the
+// search of the paged views: title, address, the shown details of source_meta by JSON path and the
+// ticket of a linked entry, as a superset the client narrows; since its review also accented forms
+// of d, g, l, r and t, keys and words with digits, the household and details that are no text.
 
 import { readFileSync } from 'node:fs';
 import PocketBase from 'pocketbase';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { superuserClient } from '../support/api.mjs';
-import { createOwner, uniqueSuffix } from '../support/scenario.mjs';
+import { createOwner, createScenario, uniqueSuffix } from '../support/scenario.mjs';
+import { setClientArea } from '../../web/src/lib/data/area.ts';
 import { DataError } from '../../web/src/lib/data/errors.ts';
 import {
 	assignToTicket,
@@ -32,6 +36,12 @@ import {
 	buildCapture,
 	captureInboxDraft
 } from '../../web/src/lib/domain/templates.ts';
+import {
+	inboxClientOnlyTexts,
+	inboxServerWords,
+	matchesInboxWords
+} from '../../web/src/lib/domain/source-search.ts';
+import { loosePattern, searchWords } from '../../web/src/lib/domain/ticket-picker.ts';
 import { messageDraft, parseWhatsAppExport } from '../../web/src/lib/domain/whatsapp-export.ts';
 import { readMailFile } from '../../web/src/lib/mail-file.ts';
 
@@ -587,6 +597,243 @@ describe('sources of a ticket (ADR-0031, HK-2)', () => {
 			kind: 'validation',
 			fields: { state: { code: 'validation_inbox_primary_source' } }
 		});
+	});
+});
+
+describe('search of the paged views (EG-2)', () => {
+	/** The patterns of a search as the store sends them, without names of connections. */
+	const patternsOf = (text) =>
+		inboxServerWords(searchWords(text), inboxClientOnlyTexts([])).map(loosePattern);
+
+	/** Titles the server returns for a text, and those the client keeps after the exact check. */
+	async function found(client, state, text) {
+		const { items } = await listHandledItems(client, state, 1, { patterns: patternsOf(text) });
+		const kept = items.filter((item) => matchesInboxWords(item, searchWords(text), null, state));
+		return {
+			server: items.map((item) => item.title).sort(),
+			kept: kept.map((item) => item.title).sort()
+		};
+	}
+
+	/** Creates the entries and discards them, so the view "Verworfen" pages through them. */
+	async function discardedOf(client, drafts) {
+		for (const draft of drafts) await discardItem(client, (await created(client, draft)).id);
+	}
+
+	it('compares title, address and the shown details with umlauts, ß, % and _, quotes and JSON escapes', async () => {
+		const fresh = await createOwner(superuser);
+		const SENDER = 'Jürgen O\'Brien "JB" <jb@example.com>';
+		await discardedOf(fresh.client, [
+			mail({ title: 'Termin bei den Ärzten', sourceMeta: { from: 'Praxis Dr. Weiß <praxis@example.com>' } }),
+			mail({ title: 'Straßenfest am Südplatz', sourceMeta: { from: SENDER } }),
+			mail({ title: '50% Rabatt_heute' }),
+			mail({ title: '500 Rabatt heute' }),
+			{
+				channel: 'link',
+				kind: 'link',
+				title: 'Artikel',
+				sourceUrl: `https://example.com/rezept-${uniqueSuffix()}?zutat=creme`
+			},
+			{
+				channel: 'whatsapp',
+				kind: 'message',
+				title: `Wochenmarkt ${uniqueSuffix()}`,
+				body: 'Wochenmarkt',
+				sourceDate: '2026-10-03 08:00:00.000Z',
+				sourceMeta: { chat: 'Familie Groß', sender: 'Anna Beispiel' }
+			}
+		]);
+		const kept = async (text) => (await found(fresh.client, 'discarded', text)).kept;
+		for (const text of ['arzten', 'ÄRZTEN', 'weiss praxis']) {
+			expect(await kept(text), text).toEqual(['Termin bei den Ärzten']);
+		}
+		for (const text of ['strasse', 'Südplatz', '"jb"', "o'brien", '<jb@example.com>']) {
+			expect(await kept(text), text).toEqual(['Straßenfest am Südplatz']);
+		}
+		// The server takes "%" and "_" literally.
+		expect((await found(fresh.client, 'discarded', 'rabatt_heute')).server).toEqual(['50% Rabatt_heute']);
+		expect((await found(fresh.client, 'discarded', '%')).server).toEqual(['50% Rabatt_heute']);
+		expect(await kept('zutat=creme')).toEqual(['Artikel']);
+		for (const text of ['familie gross', 'anna beispiel']) {
+			expect((await kept(text))[0], text).toMatch(/^Wochenmarkt /);
+		}
+		// The server answers a superset of what the client keeps; a word of a channel stays in the
+		// client, one with a digit and another sign goes to the server since the review (R-A2).
+		for (const text of ['arzten', 'strasse', 'rabatt', 'mail-datei', '50%', 'beispiel']) {
+			const result = await found(fresh.client, 'discarded', text);
+			expect(result.server, text).toEqual(expect.arrayContaining(result.kept));
+		}
+		expect(patternsOf('mail-datei 50%')).toEqual([loosePattern('50%')]);
+		expect(await found(fresh.client, 'discarded', '50%')).toEqual({
+			server: ['50% Rabatt_heute'],
+			kept: ['50% Rabatt_heute']
+		});
+		expect((await kept('mail-datei')).sort()).toEqual(
+			['Straßenfest am Südplatz', 'Termin bei den Ärzten', '50% Rabatt_heute', '500 Rabatt heute'].sort()
+		);
+	});
+
+	it('reads the shown details of source_meta by JSON path, so the name of a key never matches', async () => {
+		const fresh = await createOwner(superuser);
+		await discardedOf(fresh.client, [
+			mail({ title: 'Brief', sourceMeta: { from: 'Anna <anna@example.com>' } }),
+			mail({ title: 'Grüße from Berlin' }),
+			mail({ title: 'Paket', sourceMeta: { to: 'ben@example.com' } })
+		]);
+		expect((await found(fresh.client, 'discarded', 'from')).server).toEqual(['Grüße from Berlin']);
+		// Every letter of "sender" has accented forms, so its pattern `%______%` takes any field of six
+		// characters or more: the server answers a superset, the client keeps none.
+		const sender = await found(fresh.client, 'discarded', 'sender');
+		expect(loosePattern('sender')).toBe('%______%');
+		expect(sender.server).toEqual(expect.arrayContaining(sender.kept));
+		expect(sender.kept).toEqual([]);
+		// A detail the row does not show (the recipient) is not searched.
+		expect((await found(fresh.client, 'discarded', 'ben@example')).server).toEqual([]);
+		expect((await found(fresh.client, 'discarded', 'anna@example')).server).toEqual(['Brief']);
+	});
+
+	it('finds a linked entry by key and title of its ticket, and keeps entries without a ticket', async () => {
+		const fresh = await createOwner(superuser);
+		const other = await createOwner(superuser);
+		const ticket = await createTicket(fresh.client, ticketDraft({ title: 'Heizung prüfen lassen' }));
+		expect(ticket.key).toMatch(/^TASK-\d+$/);
+		const linked = await created(fresh.client, mail({ title: 'Angebot' }));
+		await assignToTicket(fresh.client, linked.id, ticket.id);
+		await discardedOf(fresh.client, [mail({ title: 'Heizöl bestellen' })]);
+		await created(fresh.client, mail({ title: 'Heizung im Keller' }));
+		await discardedOf(other.client, [mail({ title: 'Heizung fremd' })]);
+
+		expect(await found(fresh.client, 'converted', 'prüfen')).toEqual({
+			server: ['Angebot'],
+			kept: ['Angebot']
+		});
+		expect(await found(fresh.client, 'converted', 'task')).toEqual({
+			server: ['Angebot'],
+			kept: ['Angebot']
+		});
+		// The view "Alle": linked, discarded and new entries alike, never one of another account.
+		expect((await found(fresh.client, 'all', 'heiz')).kept).toEqual([
+			'Angebot',
+			'Heizung im Keller',
+			'Heizöl bestellen'
+		]);
+		await expect(
+			listHandledItems(fresh.client, 'all', 1, { patterns: ['%a%', '%b%', '%c%', '%d%', '%e%', '%f%'] })
+		).rejects.toBeInstanceOf(DataError);
+		// The key of the ticket goes to the server since the review (R-A2) and narrows there.
+		expect(patternsOf(ticket.key)).toEqual([loosePattern(ticket.key.toLowerCase())]);
+		expect(await found(fresh.client, 'converted', ticket.key)).toEqual({
+			server: ['Angebot'],
+			kept: ['Angebot']
+		});
+	});
+
+	// The review of EG-2 (R-A1, R-A2, R-A3).
+	it('finds the accented forms of d, g, l, r and t, and words with a digit narrow on the server', async () => {
+		const fresh = await createOwner(superuser);
+		await discardedOf(fresh.client, [
+			mail({ title: 'Termin bei Doğan', sourceMeta: { from: 'Antonín Dvořák <ad@example.com>' } }),
+			mail({ title: 'Țară, Ľubo und Ďakovo' }),
+			mail({ title: 'Raum A1 buchen' }),
+			mail({ title: 'Raum B2 buchen' })
+		]);
+		for (const [text, title] of [
+			['dogan', 'Termin bei Doğan'],
+			['dvorak', 'Termin bei Doğan'],
+			['tara lubo dakovo', 'Țară, Ľubo und Ďakovo']
+		]) {
+			expect(patternsOf(text), text).toHaveLength(searchWords(text).length);
+			const result = await found(fresh.client, 'discarded', text);
+			expect(result.kept, text).toEqual([title]);
+			expect(result.server, text).toEqual(expect.arrayContaining(result.kept));
+		}
+		expect(patternsOf('a1')).toEqual([loosePattern('a1')]);
+		expect(await found(fresh.client, 'discarded', 'a1')).toEqual({
+			server: ['Raum A1 buchen'],
+			kept: ['Raum A1 buchen']
+		});
+	});
+
+	it('finds a linked entry of the household for the other member by key and title of its ticket', async () => {
+		const s = await createScenario();
+		const ticket = await s.a
+			.collection('tickets')
+			.create({ owner: s.ids.a, household: s.h1.id, title: 'Dachrinne reinigen' });
+		const outcome = await createItem(s.a, mail({ title: 'Angebot Handwerker' }), {
+			household: s.h1.id
+		});
+		expect(outcome.kind).toBe('created');
+		await assignToTicket(s.a, outcome.item.id, ticket.id);
+		// The other member, in the area of the household as the app asks.
+		setClientArea(s.b, `h:${s.h1.id}`);
+		for (const text of [ticket.key, 'dachrinne', 'reinigen angebot']) {
+			expect(await found(s.b, 'converted', text), text).toEqual({
+				server: ['Angebot Handwerker'],
+				kept: ['Angebot Handwerker']
+			});
+		}
+		// The account outside the household finds nothing of it.
+		expect((await found(s.c, 'converted', 'dachrinne')).server).toEqual([]);
+	});
+
+	it('takes sender, chat and address details as object, number or null without an error or a lost entry', async () => {
+		const fresh = await createOwner(superuser);
+		await discardedOf(fresh.client, [
+			mail({
+				title: 'Absender als Objekt',
+				sourceMeta: { from: { name: 'Anna', address: 'anna@example.com' } }
+			}),
+			{
+				channel: 'telegram',
+				kind: 'message',
+				title: 'Absender als Zahl',
+				sourceRef: `1:${uniqueSuffix()}`,
+				sourceMeta: { sender: 42, chat: null }
+			},
+			mail({ title: 'Chat als Objekt', sourceMeta: { chat: { id: 7 }, from: null } })
+		]);
+		expect((await found(fresh.client, 'discarded', 'absender')).kept).toEqual([
+			'Absender als Objekt',
+			'Absender als Zahl'
+		]);
+		expect((await found(fresh.client, 'discarded', 'objekt')).kept).toEqual([
+			'Absender als Objekt',
+			'Chat als Objekt'
+		]);
+		// The row shows no such detail, so the client never finds it; the server may answer more.
+		const hidden = await found(fresh.client, 'discarded', 'anna@example');
+		expect(hidden.kept).toEqual([]);
+		expect(hidden.server).toEqual(expect.arrayContaining(hidden.kept));
+	});
+
+	// After the review of PR #349 (N-8).
+	it('takes words with "_", a backslash and a quote to the server without an error and answers a superset', async () => {
+		const fresh = await createOwner(superuser);
+		const REPORT = 'Bericht_final.pdf';
+		const FOLDER = 'Ordner C:\\Daten\\Belege';
+		const QUOTE = 'Zitat \\"Hallo\\" im Text';
+		await discardedOf(fresh.client, [
+			mail({ title: REPORT, sourceMeta: { from: 'Büro "Nord" <nord@example.com>' } }),
+			mail({ title: FOLDER, sourceMeta: { from: 'Server\\Admin <admin@example.com>' } }),
+			mail({ title: QUOTE })
+		]);
+		for (const [text, titles] of [
+			['bericht_final', [REPORT]],
+			['_', [REPORT]],
+			['daten\\belege', [FOLDER]],
+			['server\\admin', [FOLDER]],
+			['\\', [FOLDER, QUOTE]],
+			['"nord"', [REPORT]],
+			['\\"hallo\\"', [QUOTE]],
+			['"', [REPORT, QUOTE]],
+			['_\\" \\\\ ""', []]
+		]) {
+			// Every word goes to the server as it is written.
+			expect(patternsOf(text), text).toHaveLength(searchWords(text).length);
+			const result = await found(fresh.client, 'discarded', text);
+			expect(result.kept, text).toEqual(titles);
+			expect(result.server, text).toEqual(expect.arrayContaining(result.kept));
+		}
 	});
 });
 

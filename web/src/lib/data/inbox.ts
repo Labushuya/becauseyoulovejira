@@ -20,6 +20,7 @@ import {
 	type ListedView
 } from '../domain/inbox';
 import type { OutboxFields } from '../domain/offline';
+import { PICKER_SERVER_WORDS } from '../domain/ticket-picker';
 import { watchOf } from '../domain/watch';
 import { areaFilter, clientHousehold } from './area';
 import { DATA_ERROR_MESSAGES, DataError, isDataError, toDataError, withDataErrors } from './errors';
@@ -235,16 +236,96 @@ const HANDLED_TARGET_FILTER = [
  */
 export type HandledTarget = { project: string | null } | null;
 
-/** Expression of the handled entries: HANDLED_FILTER, with a target also its clause. */
-function handledExpression(query: { target: HandledTarget }): string {
-	return query.target === null ? HANDLED_FILTER : `${HANDLED_FILTER} && ${HANDLED_TARGET_FILTER}`;
+/**
+ * The fields the server compares with the loose pattern of a word of the search (EG-2, ADR-0014
+ * addendum EG-2): what it stores of what the row shows. Title and address; the details of
+ * `source_meta` the row shows as JSON paths (sender, chat, the key of a copy), so the name of a key
+ * ("from") never matches and the server compares the decoded text; key and title of the ticket of a
+ * linked entry. Channel, connection and dates only the client builds; their words never reach the
+ * server (`inboxServerWords`). The test of the invariant reads the same list (source-search.test.ts).
+ */
+export const SEARCH_FIELDS: readonly string[] = Object.freeze([
+	'title',
+	'source_url',
+	'source_meta.from',
+	'source_meta.sender',
+	'source_meta.chat',
+	'source_meta.copy_of.key',
+	'ticket.key',
+	'ticket.title'
+]);
+
+/** The clause of the n-th word of the search (`{:wn}`, 1 to PICKER_SERVER_WORDS): one field matches. */
+export const searchClause = (n: number): string => {
+	if (!Number.isInteger(n) || n < 1 || n > PICKER_SERVER_WORDS) {
+		throw new RangeError(`No word ${n} of the search`);
+	}
+	return `(${SEARCH_FIELDS.map((field) => `${field} ~ {:w${n}}`).join(' || ')})`;
+};
+
+/**
+ * One clause per word of the search, `{:w1}` to `{:w5}` (PICKER_SERVER_WORDS): `searchClause(n)`
+ * written out, because the data layer builds its filters from text literals only
+ * (data-layer.test.ts); inbox.test.ts checks every one against SEARCH_FIELDS. Joined only for the
+ * words of a search (handledExpression), so a list without one stays as before.
+ */
+const SEARCH_FIRST = [
+	'(title ~ {:w1} || source_url ~ {:w1} || source_meta.from ~ {:w1} || source_meta.sender ~ {:w1} || source_meta.chat ~ {:w1} || source_meta.copy_of.key ~ {:w1} || ticket.key ~ {:w1} || ticket.title ~ {:w1})'
+].join(' && ');
+
+const SEARCH_SECOND = [
+	'(title ~ {:w2} || source_url ~ {:w2} || source_meta.from ~ {:w2} || source_meta.sender ~ {:w2} || source_meta.chat ~ {:w2} || source_meta.copy_of.key ~ {:w2} || ticket.key ~ {:w2} || ticket.title ~ {:w2})'
+].join(' && ');
+
+const SEARCH_THIRD = [
+	'(title ~ {:w3} || source_url ~ {:w3} || source_meta.from ~ {:w3} || source_meta.sender ~ {:w3} || source_meta.chat ~ {:w3} || source_meta.copy_of.key ~ {:w3} || ticket.key ~ {:w3} || ticket.title ~ {:w3})'
+].join(' && ');
+
+const SEARCH_FOURTH = [
+	'(title ~ {:w4} || source_url ~ {:w4} || source_meta.from ~ {:w4} || source_meta.sender ~ {:w4} || source_meta.chat ~ {:w4} || source_meta.copy_of.key ~ {:w4} || ticket.key ~ {:w4} || ticket.title ~ {:w4})'
+].join(' && ');
+
+const SEARCH_FIFTH = [
+	'(title ~ {:w5} || source_url ~ {:w5} || source_meta.from ~ {:w5} || source_meta.sender ~ {:w5} || source_meta.chat ~ {:w5} || source_meta.copy_of.key ~ {:w5} || ticket.key ~ {:w5} || ticket.title ~ {:w5})'
+].join(' && ');
+
+/** The clauses of the words in their order, for the check against `searchClause`. */
+export const SEARCH_CLAUSES: readonly string[] = Object.freeze([
+	SEARCH_FIRST,
+	SEARCH_SECOND,
+	SEARCH_THIRD,
+	SEARCH_FOURTH,
+	SEARCH_FIFTH
+]);
+
+/** What a list of handled entries asks for: the filter "Zielprojekt" and the patterns of a search. */
+interface HandledQuery {
+	target: HandledTarget;
+	patterns: readonly string[];
+}
+
+/**
+ * Expression of the handled entries: HANDLED_FILTER, with a target also its clause, and one clause
+ * per pattern of the search.
+ */
+function handledExpression(query: HandledQuery): string {
+	const parts = [HANDLED_FILTER];
+	if (query.target !== null) parts.push(HANDLED_TARGET_FILTER);
+	if (query.patterns.length > 0) parts.push(SEARCH_FIRST);
+	if (query.patterns.length > 1) parts.push(SEARCH_SECOND);
+	if (query.patterns.length > 2) parts.push(SEARCH_THIRD);
+	if (query.patterns.length > 3) parts.push(SEARCH_FOURTH);
+	if (query.patterns.length > 4) parts.push(SEARCH_FIFTH);
+	return parts.join(' && ');
 }
 
 /**
  * One page of converted or discarded entries, most recently handled first, or of every entry
  * (view "Alle", ADR-0031 addendum C), newest first; with `channels` only those of these channels
- * (the chip "Quelle") and with `target` only those of a target project or without one, filtered
- * by the server so the pages stay full.
+ * (the chip "Quelle"), with `target` only those of a target project or without one, and with
+ * `patterns` (loose patterns of the search, `loosePattern`, at most PICKER_SERVER_WORDS) only those
+ * that match each of them in a field of the search: a superset the client narrows exactly (EG-2).
+ * Filtered by the server so the pages stay full; every value goes through pb.filter.
  */
 export function listHandledItems(
 	pb: PocketBase,
@@ -254,18 +335,24 @@ export function listHandledItems(
 		signal,
 		perPage = HANDLED_PAGE_SIZE,
 		channels = null,
-		target = null
+		target = null,
+		patterns = []
 	}: RequestOptions & {
 		perPage?: number;
 		channels?: readonly InboxChannel[] | null;
 		target?: HandledTarget;
+		patterns?: readonly string[];
 	} = {}
 ): Promise<HandledItemPage> {
 	return withDataErrors(signal, async () => {
 		if (channels !== null && channels.length > MAX_FAMILY_CHANNELS) {
 			throw new RangeError('Too many channels for the filter');
 		}
-		const handled = { target };
+		if (patterns.length > PICKER_SERVER_WORDS) {
+			throw new RangeError('Too many search patterns for the filter');
+		}
+		const words = Object.fromEntries(patterns.map((pattern, index) => [`w${index + 1}`, pattern]));
+		const handled: HandledQuery = { target, patterns };
 		const result = await pb.collection(INBOX).getList<InboxRecord>(page, perPage, {
 			filter: areaFilter(pb, handledExpression(handled), {
 				every: state === 'all' ? '1' : '',
@@ -274,7 +361,8 @@ export function listHandledItems(
 				c1: channels?.[0] ?? '',
 				c2: channels?.[1] ?? '',
 				c3: channels?.[2] ?? '',
-				target: target?.project ?? ''
+				target: target?.project ?? '',
+				...words
 			}),
 			sort: state === 'all' ? '-created,-id' : '-handled_at,-created,-id',
 			fields: INBOX_LIST_FIELDS,

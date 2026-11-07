@@ -1,5 +1,5 @@
-// Inbox view state in the URL (E4 plan, T-4; ADR-0019 section 6) and the source families
-// (ADR-0019 section 1).
+// Inbox view state in the URL (E4 plan, T-4; ADR-0019 section 6), the search `q` (EG-2) and the
+// source families (ADR-0019 section 1).
 
 import { describe, expect, it } from 'vitest';
 import { INBOX_CHANNELS } from './inbox';
@@ -9,6 +9,7 @@ import {
 	serializeInboxQuery,
 	type InboxQuery
 } from './inbox-query';
+import { SEARCH_MAX_LENGTH } from './list-query';
 import { SOURCE_FAMILIES, SOURCE_FAMILY_CHIPS, channelsOf, sourceFamily } from './source';
 
 const parse = (search: string) => parseInboxQuery(new URLSearchParams(search));
@@ -57,6 +58,16 @@ describe('parseInboxQuery', () => {
 		);
 		expect(parse('quelle=Mail')).toEqual(DEFAULT_INBOX_QUERY);
 	});
+
+	it('reads the search trimmed, up to SEARCH_MAX_LENGTH characters (EG-2)', () => {
+		expect(parse('q=%20Rechnung%20M%C3%A4rz%20')).toEqual(query({ search: 'Rechnung März' }));
+		expect(parse('zustand=alle&q=Arzt')).toEqual(query({ state: 'all', search: 'Arzt' }));
+		const longest = 'x'.repeat(SEARCH_MAX_LENGTH);
+		expect(parse(`q=${longest}`).search).toBe(longest);
+		for (const search of ['q=', 'q=%20%20', `q=${'x'.repeat(SEARCH_MAX_LENGTH + 1)}`, 'q=a&q=b']) {
+			expect(parse(search).search, search).toBeNull();
+		}
+	});
 });
 
 describe('serializeInboxQuery', () => {
@@ -83,13 +94,33 @@ describe('serializeInboxQuery', () => {
 		expect(serializeInboxQuery(query({ target: 'Haus' }))).toBe('');
 	});
 
+	it('writes the search last, trimmed, and leaves out an empty or too long one (EG-2)', () => {
+		expect(
+			serializeInboxQuery(
+				query({ source: 'mail', state: 'all', target: HAUS, grouped: true, search: '  Arzt  ' })
+			)
+		).toBe(`?quelle=mail&zustand=alle&zielprojekt=${HAUS}&gruppe=zielprojekt&q=Arzt`);
+		expect(serializeInboxQuery(query({ search: 'Straße 50% a&b' }))).toBe(
+			'?q=Stra%C3%9Fe+50%25+a%26b'
+		);
+		for (const search of ['', '   ', 'x'.repeat(SEARCH_MAX_LENGTH + 1), null, undefined]) {
+			expect(serializeInboxQuery(query({ search })), String(search)).toBe('');
+		}
+		// The own parameter is replaced, never doubled; unknown ones stay in front.
+		const base = new URLSearchParams('q=alt&x=1');
+		expect(serializeInboxQuery(query({ search: 'neu' }), base)).toBe('?x=1&q=neu');
+		expect(serializeInboxQuery(query({ search: null }), base)).toBe('?x=1');
+	});
+
 	it('round-trips every combination', () => {
 		for (const source of [null, ...SOURCE_FAMILIES]) {
 			for (const state of ['new', 'discarded', 'converted', 'all'] as const) {
 				for (const target of [null, 'ohne', HAUS]) {
 					for (const grouped of [false, true]) {
-						const value = { source, state, target, grouped };
-						expect(parse(serializeInboxQuery(value).slice(1))).toEqual(value);
+						for (const search of [null, 'Arzt', 'Ärzte & Straße 50%']) {
+							const value = { source, state, target, grouped, search };
+							expect(parse(serializeInboxQuery(value).slice(1))).toEqual(value);
+						}
 					}
 				}
 			}

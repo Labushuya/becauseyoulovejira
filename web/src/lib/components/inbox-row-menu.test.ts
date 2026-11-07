@@ -28,7 +28,7 @@ const mocks = vi.hoisted(() => ({
 	page: { url: new URL('http://localhost:3000/eingang') }
 }));
 
-vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
+vi.mock('$app/navigation', () => ({ goto: mocks.goto, afterNavigate: vi.fn() }));
 vi.mock('$app/state', () => ({ page: mocks.page }));
 
 useOverlayStubs();

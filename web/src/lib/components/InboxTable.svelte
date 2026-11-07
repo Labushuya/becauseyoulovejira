@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { tick, type Snippet } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { tick, untrack, type Snippet } from 'svelte';
+	import { afterNavigate, goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { areaMover } from '$lib/area-move-entry';
@@ -12,6 +12,8 @@
 		CHANNEL_LABELS,
 		KIND_LABELS,
 		VIEW_LABELS,
+		linkedTicketOf,
+		listedTime,
 		type InboxItemSummary,
 		type InboxView
 	} from '$lib/domain/inbox';
@@ -27,12 +29,20 @@
 		bulkSkippedTitle,
 		type InboxBulkKind
 	} from '$lib/domain/inbox-bulk';
-	import { type InboxQuery } from '$lib/domain/inbox-query';
+	import { parseInboxQuery, type InboxQuery } from '$lib/domain/inbox-query';
 	import { MORE_COLUMNS_HINT } from '$lib/domain/labels';
+	import { SEARCH_MAX_LENGTH } from '$lib/domain/list-query';
 	import type { ProblemEntry } from '$lib/domain/problems';
 	import type { Project } from '$lib/domain/project';
 	import { projectChoiceLabel, treeOrder } from '$lib/domain/project-tree';
 	import { SOURCE_FAMILY_CHIPS, SOURCE_FAMILY_LABELS, type SourceFamily } from '$lib/domain/source';
+	import {
+		noEntryMatchText,
+		noEntryMatchTitle,
+		noLoadedEntryMatchText,
+		noLoadedEntryMatchTitle,
+		searchHitsText
+	} from '$lib/domain/source-search';
 	import { canLeaveTicket, canSavePage, isMainSource } from '$lib/domain/sources';
 	import { SYNC_OFFLINE_LABEL } from '$lib/domain/sync-all';
 	import {
@@ -63,6 +73,7 @@
 	import FilterButton from './FilterButton.svelte';
 	import FilterSheet from './FilterSheet.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
+	import ListSearch from './ListSearch.svelte';
 	import MoveSourceDialog from './MoveSourceDialog.svelte';
 	import PendingMark from './offline/PendingMark.svelte';
 	import ProblemDetails from './problems/ProblemDetails.svelte';
@@ -129,6 +140,19 @@
 	// that leaves the state of the view drops out; progress and result stand only in the views with a
 	// selection; while a run goes on, every bulk action on the PC names the progress as its reason and
 	// a click or Enter says so in a flag; a failure of the result offers "Details" (FP-1).
+	// The search (EG-2, ADR-0014 addendum EG-2): "Einträge durchsuchen" (ListSearch) in the row of the
+	// chips on the PC, in its own row over the full width below "Erfassen · Filter · •••" in the phone
+	// frame; bound to `q` of the address like the search of "Aufgaben" (the typed text while the field
+	// has the focus, `goto` with replaceState). The store narrows the rows; next to the field stand the
+	// hits ("3 von 12", "3 von 50+" while further pages wait), without a hit the empty state "Kein
+	// Eintrag passt zu „…“" with "Suche zurücksetzen". Escape empties the field; "Filter zurücksetzen"
+	// and "Zurücksetzen" of the sheet empty it too, and "Filter (n)" does not count it. Order, groups,
+	// the selection and the bulk actions follow the visible rows only. After the review: while page 1
+	// loads again for a changed search (`handledRefreshing`, also during its pause) the rows, the
+	// numbers and a locked "Weitere laden" stay and the list is busy, as during a new attempt over kept
+	// rows, "Eingang wird geladen …" stands only without a row; a paged view
+	// without a hit among its loaded pages says so and offers "Weitere laden"; a changed search keeps
+	// only the chosen entries it shows; back and forward show the search of the address again.
 	let {
 		store,
 		flags,
@@ -266,9 +290,43 @@
 	const ready = $derived(
 		showsNew ? store.state === 'ready' : store.state === 'ready' && store.handledLoad === 'ready'
 	);
+	/** Page 1 of a paged view loads again for a changed search; the loaded rows stay (EG-2 review). */
+	const refreshing = $derived(!showsNew && store.handledRefreshing);
+	/**
+	 * The list waits for page 1: a refresh, or a new attempt after a failure over kept rows (N-3).
+	 */
+	const busy = $derived(
+		refreshing || (!showsNew && store.handledLoad === 'loading' && rows.length > 0)
+	);
 	const unavailable = $derived(store.state === 'error' && store.error !== null);
 	const countLabel = $derived(
 		rows.length === 1 ? '1 Eintrag' : `${rows.length}${store.handledHasMore ? '+' : ''} Einträge`
+	);
+	/**
+	 * The hits of the search next to its field (EG-2): "3 von 12" of the rows it narrows, in a paged
+	 * view "3 von 50+" while further pages wait; nothing without a search or while loading.
+	 */
+	const searchCount = $derived(
+		store.searching && ready
+			? searchHitsText(rows.length, store.searchTotal, !showsNew && store.handledHasMore)
+			: ''
+	);
+	/**
+	 * No row of the loaded pages fits the search while further pages wait (EG-2 review): the empty
+	 * state then speaks of the loaded entries only and offers "Weitere laden".
+	 */
+	const noLoadedHit = $derived(
+		store.searching && ready && !refreshing && rows.length === 0 && store.handledHasMore
+	);
+	/** What is said once typing pauses: the hits, or that no entry (of the loaded ones) fits. */
+	const searchAnnouncement = $derived(
+		searchCount === ''
+			? ''
+			: rows.length === 0 && !store.handledHasMore && !refreshing
+				? noEntryMatchText(query.search ?? '')
+				: noLoadedHit
+					? noLoadedEntryMatchText(query.search ?? '')
+					: searchCount
 	);
 	const caption = $derived(
 		`${
@@ -318,11 +376,76 @@
 		await goto(withInboxQuery(page.url, next), { keepFocus: true, noScroll: true });
 	}
 
-	/** "Filter zurücksetzen": source and target project; state and grouping stay. */
+	/** "Filter zurücksetzen": source, target project and the search (EG-2); state and grouping stay. */
 	async function clearFilters() {
-		await navigate({ ...query, source: null, target: null });
+		typed = null;
+		await navigate({ ...query, source: null, target: null, search: null });
 		heading?.focus();
 	}
+
+	/** The search field (EG-2), for the focus after "Suche zurücksetzen". */
+	let searchInput = $state<HTMLInputElement>();
+	/** Text in the search field while it has the focus; else the field shows the address. */
+	let typed = $state<string | null>(null);
+	const searchValue = $derived(typed ?? query.search ?? '');
+	const searching = $derived(store.searching);
+
+	/**
+	 * Typing replaces the entry of the history (as in "Aufgaben", FilterBar): back does not go through
+	 * every letter. The address keeps the trimmed text; the store narrows after it.
+	 */
+	async function search(text: string) {
+		typed = text;
+		const current = parseInboxQuery(page.url.searchParams);
+		await goto(withInboxQuery(page.url, { ...current, search: text }), {
+			replaceState: true,
+			keepFocus: true,
+			noScroll: true
+		});
+	}
+
+	/** "Suche zurücksetzen" of the empty state: the search goes, the focus goes into its field. */
+	async function clearSearch() {
+		typed = null;
+		await navigate({ ...query, search: null });
+		searchInput?.focus();
+	}
+
+	// Back and forward (EG-2 review): the field shows the search of the address again, also while it
+	// has the focus. FilterBar keeps its own way for now (a point noted in the review).
+	afterNavigate(({ type }) => {
+		if (type === 'popstate') typed = null;
+	});
+
+	/** "Weitere laden" of the empty state of a paged view without a hit on its loaded pages. */
+	let moreFromEmpty = $state<HTMLButtonElement | null>(null);
+
+	/**
+	 * "Weitere laden" from that empty state: a page with a hit removes it, so a focus lost with it
+	 * goes to the first row, else back to the button, else to the heading.
+	 */
+	async function loadMoreFromEmpty() {
+		await store.loadMoreHandled();
+		await tick();
+		const active = document.activeElement;
+		if (active !== null && active !== document.body) return;
+		(titleLinks()[0] ?? moreFromEmpty ?? heading)?.focus();
+	}
+
+	// A changed search keeps only the chosen entries it shows (EG-2 review): an entry it hides does not
+	// come back chosen when the search goes.
+	let selectionSearch: string | null | undefined;
+	$effect(() => {
+		const search = query.search ?? null;
+		const previous = selectionSearch;
+		selectionSearch = search;
+		if (previous === undefined || previous === search) return;
+		untrack(() => {
+			const shownIds = new Set(rows.map((item) => item.id));
+			const kept = selected.filter((id) => shownIds.has(id));
+			if (kept.length !== selected.length) selected = kept;
+		});
+	});
 
 	function toggle(id: string, on: boolean) {
 		selected = on
@@ -611,13 +734,17 @@
 	/** Names of the connections (ADR-0026, addendum KK-3), as the panel names the source. */
 	const connectionNames = findConnectionNames();
 
-	/** The filter sheet and the number of the filters "Zurücksetzen" clears (source, target). */
+	/**
+	 * The filter sheet and the number of its filters (source, target). The search stands in its own
+	 * row and does not count, like in "Aufgaben" (`activeFilterCount`); "Zurücksetzen" empties it too.
+	 */
 	let filtersOpen = $state(false);
 	const filterCount = $derived((query.source !== null ? 1 : 0) + (target !== null ? 1 : 0));
 
 	/** "Zurücksetzen" of the sheet: like "Filter zurücksetzen", the sheet stays open. */
 	function resetInSheet() {
-		void navigate({ ...query, source: null, target: null });
+		typed = null;
+		void navigate({ ...query, source: null, target: null, search: null });
 	}
 
 	// "Auswählen" in the phone frame (MO-6, the way of MO-3): the boxes of the selection show on the
@@ -723,9 +850,8 @@
 {#snippet row(item: InboxItemSummary)}
 	{@const pending = store.isPending(item.id)}
 	{@const sourceDate = sourceDateOf(item)}
-	{@const arrival = byArrival ? item.created : (item.handledAt ?? item.created)}
-	{@const linkedTicket =
-		item.state === 'converted' && item.ticket?.id === item.ticketId ? item.ticket : null}
+	{@const arrival = listedTime(item, query.state)}
+	{@const linkedTicket = linkedTicketOf(item)}
 	<tr
 		class="row"
 		class:active={item.id === activeId}
@@ -858,9 +984,8 @@
 {#snippet card(item: InboxItemSummary)}
 	{@const pending = store.isPending(item.id)}
 	{@const sourceDate = sourceDateOf(item)}
-	{@const arrival = byArrival ? item.created : (item.handledAt ?? item.created)}
-	{@const linkedTicket =
-		item.state === 'converted' && item.ticket?.id === item.ticketId ? item.ticket : null}
+	{@const arrival = listedTime(item, query.state)}
+	{@const linkedTicket = linkedTicketOf(item)}
 	{@const targetLabel = targetsReady ? targetText(targetOfItem(item, projects)) : ''}
 	{@const choosing = selecting && choosable(item)}
 	<!-- The title link is the keyboard target of the card; the tap on the card is a shortcut for it. -->
@@ -1152,6 +1277,25 @@
 	<div class="sheet-filters">{@render filterParts()}</div>
 {/snippet}
 
+<!-- "Filter zurücksetzen" beside "Suche zurücksetzen" in the empty state of a search (EG-2). -->
+{#snippet resetFiltersAction()}
+	<button class="button-subtle" type="button" onclick={clearFilters}>Filter zurücksetzen</button>
+{/snippet}
+
+<!-- "Einträge durchsuchen" (EG-2): in the row of the chips on the PC, in its own row in the phone frame. -->
+{#snippet searchField()}
+	<ListSearch
+		bind:query={() => searchValue, (text) => void search(text)}
+		bind:input={searchInput}
+		label="Einträge durchsuchen"
+		placeholder="Titel, Absender, Kanal oder Datum"
+		maxlength={SEARCH_MAX_LENGTH}
+		count={searchCount}
+		announcement={searchAnnouncement}
+		onblur={() => (typed = null)}
+	/>
+{/snippet}
+
 <!-- The row of the view in the phone frame (MO-6): "Erfassen", "Filter (n)" and the menu of the list. -->
 {#snippet phoneTools()}
 	<a class="button-secondary" href={captureHref(page.url)}>Erfassen</a>
@@ -1193,6 +1337,8 @@
 	</SectionBar>
 
 	{#if phone}
+		<!-- The search in its own row over the full width, below the row of the view (EG-2, E2). -->
+		<div class="phone-search">{@render searchField()}</div>
 		{#if syncAll !== null}
 			<!-- The status of "Alle Kanäle jetzt abrufen" from the menu of the list; the result is a flag. -->
 			<p class="sync-status" role="status">{syncAll.running ? syncAll.status : ''}</p>
@@ -1216,6 +1362,7 @@
 	{:else}
 		<div class="chips">
 			{@render filterParts()}
+			{@render searchField()}
 		</div>
 
 		{@render tools?.()}
@@ -1252,8 +1399,50 @@
 		{/if}
 	{:else if !showsNew && store.handledLoad === 'error' && store.handledError}
 		{@render failure(store.handledError)}
-	{:else if ready && rows.length === 0 && !store.handledHasMore}
-		{#if filtered}
+	{:else if noLoadedHit}
+		<!-- No hit on the loaded pages while further ones wait (EG-2 review): it never says that no
+		     entry fits at all. -->
+		<EmptyState
+			size="narrow"
+			icon="search"
+			title={noLoadedEntryMatchTitle(query.search ?? '')}
+			description="Weitere Einträge sind noch nicht geladen; „Weitere laden“ holt die nächsten."
+		>
+			{#snippet primary()}
+				<button
+					class="button-primary"
+					type="button"
+					disabled={store.loadingMoreHandled}
+					aria-busy={store.loadingMoreHandled ? 'true' : undefined}
+					bind:this={moreFromEmpty}
+					onclick={() => void loadMoreFromEmpty()}
+				>
+					{store.loadingMoreHandled ? 'Wird geladen …' : 'Weitere laden'}
+				</button>
+			{/snippet}
+			{#snippet secondary()}
+				<button class="button-subtle" type="button" onclick={clearSearch}>
+					Suche zurücksetzen
+				</button>
+			{/snippet}
+		</EmptyState>
+	{:else if ready && !refreshing && rows.length === 0 && !store.handledHasMore}
+		{#if searching}
+			<!-- No hit (EG-2): the search goes first; with filters set, "Filter zurücksetzen" empties both. -->
+			<EmptyState
+				size="narrow"
+				icon="search"
+				title={noEntryMatchTitle(query.search ?? '')}
+				description="Gesucht wird in Titel, Absender, Chat, Adresse, Kanal, Datum und Ticket, nicht im Inhalt."
+				secondary={filtered ? resetFiltersAction : undefined}
+			>
+				{#snippet primary()}
+					<button class="button-primary" type="button" onclick={clearSearch}>
+						Suche zurücksetzen
+					</button>
+				{/snippet}
+			</EmptyState>
+		{:else if filtered}
 			<EmptyState
 				size="narrow"
 				icon="search"
@@ -1303,13 +1492,14 @@
 				description="Was du in ein Ticket umwandelst oder mit einem Ticket verknüpfst, steht danach hier mit einem Link zum Ticket."
 			/>
 		{/if}
-	{:else if !ready}
+	{:else if (!ready || refreshing) && rows.length === 0}
+		<!-- Only without a row: while page 1 loads again, the loaded rows stay (EG-2 review). -->
 		<p class="loading" role="status">Eingang wird geladen …</p>
 	{/if}
 
 	{#if phone && rows.length > 0}
 		<!-- Cards instead of the table (MO-6): the same groups and order. -->
-		<div class="card-list" {@attach rowMenus}>
+		<div class="card-list" aria-busy={busy ? 'true' : undefined} {@attach rowMenus}>
 			<p class="cards-caption" class:visually-hidden={showsNew && !grouped}>{caption}</p>
 			{#each groups as group (group.key)}
 				{#if grouped}
@@ -1337,7 +1527,7 @@
 		</div>
 	{:else if rows.length > 0}
 		<div class="frame" bind:this={frame}>
-			<table {@attach rowMenus}>
+			<table aria-busy={busy ? 'true' : undefined} {@attach rowMenus}>
 				<caption id={ids.caption}
 					>{caption}{#if columnFit.fit.autoHidden.length > 0}<span class="caption-more"
 							>{MORE_COLUMNS_HINT}</span
@@ -1395,14 +1585,19 @@
 			</table>
 		</div>
 	{/if}
-	{#if !showsNew && store.handledLoad === 'ready' && (store.handledHasMore || store.loadingMoreHandled)}
-		<!-- Below the table, so it stays reachable when every loaded row left the view. -->
+	{#if !showsNew && !noLoadedHit && store.handledLoad === 'ready' && (store.handledHasMore || store.loadingMoreHandled)}
+		<!-- Below the table, so it stays reachable when every loaded row left the view; without a hit
+		     of the search the empty state offers it instead (EG-2 review). Locked while page 1 loads
+		     again (N-2): the next page needs the server words of its answer. -->
 		<button
 			class="more"
 			type="button"
-			disabled={store.loadingMoreHandled}
+			disabled={store.loadingMoreHandled || refreshing}
+			aria-disabled={refreshing ? 'true' : undefined}
 			aria-busy={store.loadingMoreHandled ? 'true' : undefined}
-			onclick={() => store.loadMoreHandled()}
+			onclick={() => {
+				if (!refreshing) void store.loadMoreHandled();
+			}}
 		>
 			{store.loadingMoreHandled ? 'Wird geladen …' : 'Weitere laden'}
 		</button>
@@ -1422,7 +1617,7 @@
 {#if phone && filtersOpen}
 	<FilterSheet
 		count={ready && !store.handledHasMore ? rows.length : null}
-		{filtered}
+		filtered={filtered || searching}
 		onreset={resetInSheet}
 		onclose={() => (filtersOpen = false)}
 		filters={sheetFilters}
@@ -1768,6 +1963,15 @@
 	 * 44 px. Off, or from 40rem, the table stays as it was.
 	 */
 	@media (max-width: 39.99rem) {
+		/* The search in its own row over the full width (EG-2, like "Erledigte"); 44 px from base.css. */
+		:global(:root[data-mobile-layout='on']) .phone-search {
+			margin-bottom: 0.75rem;
+		}
+
+		:global(:root[data-mobile-layout='on']) .phone-search :global(.search-field) {
+			width: 100%;
+		}
+
 		:global(:root[data-mobile-layout='on']) .sync-status {
 			margin: 0;
 			font-size: var(--font-size-small);

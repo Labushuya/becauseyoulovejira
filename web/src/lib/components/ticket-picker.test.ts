@@ -328,7 +328,8 @@ describe('ticket picker', () => {
 		await type(input, 'straße');
 		await vi.waitFor(() =>
 			expect(listDone).toHaveBeenLastCalledWith(
-				{ patterns: ['%_tr_%_%'], project: null, withSubProjects: false },
+				// t and r count as letters with accented forms since the review of EG-2.
+				{ patterns: ['%____%_%'], project: null, withSubProjects: false },
 				1,
 				expect.anything()
 			)

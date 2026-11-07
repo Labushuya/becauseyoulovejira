@@ -69,7 +69,8 @@ describe('tables without sideways scrolling', () => {
 	// Every table has the menu "•••" in its rows and opens it with a right click and Shift+F10
 	// (plan aktionsmenues, AM-2 to AM-4): one way for all five, lib/overlay/context-menu.ts.
 	it.each(tables)('%s ends its rows with the menu "•••" and its context menu', (_path, source) => {
-		expect(source).toContain('<table {@attach rowMenus}>');
+		// Other attributes may stand beside it (aria-busy of the inbox while page 1 loads again, EG-2).
+		expect(source).toMatch(/<table\b[^>]*\{@attach rowMenus\}[^>]*>/);
 		expect(source).toContain('buttonClass="button-icon row-menu"');
 	});
 });
