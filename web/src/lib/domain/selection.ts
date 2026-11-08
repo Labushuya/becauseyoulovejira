@@ -91,3 +91,11 @@ export function chooseAllText(hidden: boolean): string {
 export function chooseAllName(hidden: boolean, plural: string, whole: string): string {
 	return hidden ? `${chooseAllText(true)} ${plural} auswählen` : whole;
 }
+
+/**
+ * What a screen reader hears when chosen tickets left the selection without a tap (TV-2): folding,
+ * the filters or the search took them out. "1 Ticket abgewählt.", "3 Tickets abgewählt."
+ */
+export function deselectedText(count: number): string {
+	return count === 1 ? '1 Ticket abgewählt.' : `${count} Tickets abgewählt.`;
+}

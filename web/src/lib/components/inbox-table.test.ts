@@ -1191,6 +1191,54 @@ describe('target project of the entries (ADR-0049)', () => {
 	});
 });
 
+// TV-2 (ADR-0036 addendum TV-2): like the search, a changed chip keeps only the chosen entries it
+// shows.
+describe('the chips "Quelle" and "Zielprojekt" narrow the selection (TV-2)', () => {
+	const box = (title: string) =>
+		screen.getByRole<HTMLInputElement>('checkbox', { name: `Eintrag „${title}“ auswählen` });
+	const all = () => screen.getByRole('checkbox', { name: 'Alle angezeigten Einträge auswählen' });
+
+	it('keeps the chosen entries the chip "Quelle" shows; the hidden ones do not come back chosen', async () => {
+		const { store } = setup();
+		await table();
+		await fireEvent.click(all());
+		expect(screen.getByRole('button', { name: 'Verwerfen (3)' })).toBeTruthy();
+
+		store.activate({ source: 'mail', state: 'new' });
+		await tick();
+		expect(screen.getByRole('button', { name: 'Verwerfen (1)' })).toBeTruthy();
+		store.activate({ source: null, state: 'new' });
+		await tick();
+		expect(screen.getByRole('button', { name: 'Verwerfen (1)' })).toBeTruthy();
+		expect(box('Rechnung September').checked).toBe(true);
+		expect(box('Artikel').checked).toBe(false);
+		expect(box('Milch kaufen').checked).toBe(false);
+	});
+
+	it('keeps the chosen entries the chip "Zielprojekt" shows; the hidden one does not come back chosen', async () => {
+		const { store } = setup({
+			items: [
+				item('item00000000001', { title: 'Haus-Eintrag', targetProjectId: HAUS.id }),
+				item('item00000000002', { title: 'Garten-Eintrag', targetProjectId: GARTEN.id }),
+				item('item00000000003', { title: 'Ohne Ziel', targetProjectId: null })
+			],
+			projects: [HAUS, GARTEN]
+		});
+		await table();
+		await fireEvent.click(all());
+		expect(screen.getByRole('button', { name: 'Verwerfen (3)' })).toBeTruthy();
+
+		store.activate({ source: null, state: 'new', target: HAUS.id });
+		await tick();
+		expect(screen.getByRole('button', { name: 'Verwerfen (2)' })).toBeTruthy();
+		store.activate({ source: null, state: 'new' });
+		await tick();
+		expect(screen.getByRole('button', { name: 'Verwerfen (2)' })).toBeTruthy();
+		expect(box('Ohne Ziel').checked).toBe(false);
+		expect([box('Haus-Eintrag').checked, box('Garten-Eintrag').checked]).toEqual([true, true]);
+	});
+});
+
 // EG-2 (ADR-0014 addendum EG-2): the search of the inbox in the row of the chips, bound to `q`.
 describe('search (EG-2)', () => {
 	const field = () =>

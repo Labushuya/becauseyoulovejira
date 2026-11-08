@@ -610,6 +610,40 @@ describe('"Aufgaben" as cards in the phone frame (MO-3)', () => {
 		expect(words()).toBe('Alle sichtbaren');
 	});
 
+	it('turns "Bereich" off once folding takes its start away, so the next tap chooses one card (TV-2)', async () => {
+		useWindow(true, true);
+		const tickets = [ticket(1, { priority: 'high' }), ticket(2), ticket(3, { priority: 'low' })];
+		await showTable(tickets, { path: '/?gruppe=prio' });
+		const trigger = screen.getByRole('button', { name: 'Weitere Aktionen der Liste' });
+		const menu = document.getElementById(
+			trigger.getAttribute('aria-controls') ?? ''
+		) as HTMLElement;
+		await fireEvent.click(within(menu).getByRole('menuitem', { name: 'Auswählen', hidden: true }));
+		await tick();
+		const bar = screen.getByRole('group', { name: 'Auswahl' });
+		const range = within(bar).getByRole('button', { name: 'Bereich' });
+		const chosen = (key: string) =>
+			screen.queryByRole<HTMLInputElement>('checkbox', { name: `${key} auswählen` })?.checked ??
+			null;
+
+		await fireEvent.click(card('TASK-1').querySelector('.meta') as HTMLElement);
+		await fireEvent.click(range);
+		expect(range.getAttribute('aria-pressed')).toBe('true');
+
+		// Folding "Hoch" takes TASK-1, the start of the range, out: "Bereich" is off and locked.
+		await fireEvent.click(screen.getByRole('button', { name: /^Hoch/ }));
+		await tick();
+		expect(range.getAttribute('aria-pressed')).toBe('false');
+		expect(range.getAttribute('aria-disabled')).toBe('true');
+		expect(within(bar).getByText(/^Bereich: erst ein Ticket wählen/)).toBeTruthy();
+		expect(screen.getByRole('region', { name: '0 Tickets ausgewählt' })).toBeTruthy();
+		expect(screen.getByText('1 Ticket abgewählt.').closest('[role="status"]')).not.toBeNull();
+
+		await fireEvent.click(card('TASK-3').querySelector('.meta') as HTMLElement);
+		expect([chosen('TASK-2'), chosen('TASK-3')]).toEqual([false, true]);
+		expect(screen.getByRole('region', { name: '1 Ticket ausgewählt' })).toBeTruthy();
+	});
+
 	// MO-7b round 2 (P-1, P-4): after an action the actions are closed; "Fertig" leaves "Auswählen"
 	// and the result stays alone with "Ergebnis schließen", like the bar of the PC after ×.
 	it('closes the actions after an action; "Fertig" leaves "Auswählen" and the result stands alone, as on the PC', async () => {

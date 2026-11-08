@@ -1,7 +1,8 @@
 // Selection and bulk actions of the ticket table (plan BI-2, ADR-0036 §2 and §3): a checkbox per
 // row apart from the check mark, Shift ranges, the head checkbox with its indeterminate state,
 // filter changes, Escape, a click in the cell that never opens the ticket, and the bar with its
-// menus and questions. Since TV-2 only rendered rows count: none of a folded group.
+// menus and questions. Since TV-2 only rendered rows count: none of a folded group, and a status
+// region says how many chosen rows left.
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
@@ -247,22 +248,49 @@ describe('only rendered rows are chosen (TV-2)', () => {
 	});
 
 	it('takes the rows of a group out of the selection when it folds', async () => {
-		const { run } = await showGroups();
+		const { run, bulkData } = await showGroups();
 		await fireEvent.click(headBox());
 		expect(screen.getByText('4 Tickets ausgewählt')).toBeTruthy();
 
 		await fold(/^Niedrig/);
 		expect(screen.getByText('2 Tickets ausgewählt')).toBeTruthy();
-		await fold(/^Niedrig/);
-		expect([chosen('TASK-3'), chosen('TASK-4')]).toEqual([false, false]);
 
-		// A bulk action takes only the chosen rows that are shown.
+		// A bulk action while the group is folded takes only the chosen rows that are shown.
 		await fireEvent.click(screen.getByRole('button', { name: 'Priorität' }));
 		await fireEvent.click(screen.getByRole('menuitem', { hidden: true, name: 'Dringend' }));
 		expect(run).toHaveBeenCalledWith({ kind: 'priority', value: 'urgent' }, [
 			't00000000000001',
 			't00000000000002'
 		]);
+		await vi.waitFor(() => expect(bulkData.update).toHaveBeenCalledTimes(2));
+		const changed = vi.mocked(bulkData.update).mock.calls.map(([id]) => id);
+		expect(changed.sort()).toEqual(['t00000000000001', 't00000000000002']);
+
+		// Opened again, its rows are not chosen; nothing changed them.
+		await fold(/^Niedrig/);
+		expect([chosen('TASK-3'), chosen('TASK-4')]).toEqual([false, false]);
+	});
+
+	it('says how many chosen tickets folding or a filter took out, also once nothing stays chosen', async () => {
+		const { store } = await showGroups();
+		const said = () => document.querySelector('.visually-hidden[role="status"] p');
+		await fireEvent.click(headBox());
+
+		await fold(/^Niedrig/);
+		expect(said()?.textContent).toBe('2 Tickets abgewählt.');
+
+		store.activate({ ...parseListQuery(new URLSearchParams('gruppe=prio')), priority: 'high' });
+		await vi.advanceTimersByTimeAsync(0);
+		expect(screen.getByText('1 Ticket ausgewählt')).toBeTruthy();
+		const first = said();
+		expect(first?.textContent).toBe('1 Ticket abgewählt.');
+
+		// The last chosen ticket goes: the bar goes with it, the status still speaks, as a new message.
+		store.activate({ ...parseListQuery(new URLSearchParams('gruppe=prio')), priority: 'medium' });
+		await vi.advanceTimersByTimeAsync(0);
+		expect(bar()).toBeNull();
+		expect(said()?.textContent).toBe('1 Ticket abgewählt.');
+		expect(said()).not.toBe(first);
 	});
 
 	it('chooses a Shift range over the rendered rows only, not through a folded group', async () => {

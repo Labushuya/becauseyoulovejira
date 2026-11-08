@@ -60,8 +60,9 @@
 	//    (pages) count for every chosen source; "Datum aus" stands in the group of each database,
 	//    whose properties differ. Since TV-2 (ADR-0036 addendum TV-2) only entries of open groups
 	//    are chosen: the head checkbox and a range take those ("Alle sichtbaren …" while a group
-	//    with such entries is folded), folding takes a group's entries out of the choice, and "Alle
-	//    aus …" opens a folded group when it chooses.
+	//    with such entries is folded), folding takes a group's entries out of the choice, a group
+	//    folded when its preview arrives starts without the choice made in advance, and "Alle aus …"
+	//    opens a folded group when it chooses.
 	// "N Einträge in den Eingang übernehmen" runs over every source, one after the other, in blocks
 	// (ADR-0041 addendum of 2026-09-30): one progress bar for all, "Nach diesem Block anhalten" or
 	// Esc stop after the current block, an error of one source ends only that source. An entry leaves
@@ -364,7 +365,11 @@
 			group.view = { kind: 'ready', preview: outcome.value };
 			if (isDatabase) group.dateProperty = outcome.value.dateProperty;
 			const ownedHere = (ref: string) => (ownerOf.get(ref) ?? group.source.id) === group.source.id;
-			const wanted = preselectedRefs(outcome.value.items, skipDone).filter(ownedHere);
+			// The choice made in advance only for a group that is open when its preview arrives: a group
+			// folded while it waited starts without one (TV-2).
+			const wanted = group.open
+				? preselectedRefs(outcome.value.items, skipDone).filter(ownedHere)
+				: [];
 			// What this group listed before goes, unless a group above lists it now (its choice).
 			const kept = selection.ids.filter((ref) => !before.has(ref) || !ownedHere(ref));
 			selection = {
@@ -422,9 +427,9 @@
 		selection = toggleAll(selection, own);
 	}
 
+	// The effect above takes the entries out that "Erledigte überspringen" now blocks.
 	function changeSkipDone(value: boolean) {
 		skipDone = value;
-		selection = keepShown(selection, chosable);
 	}
 
 	function changeSubpages(value: boolean) {
@@ -566,6 +571,8 @@
 				open: done === undefined ? request.refs.length : done.open.length
 			};
 		});
+		// The effect above does the same once the results block their entries; here it settles the
+		// selection at the place that sends, before the button of the next run shows again.
 		selection = keepShown(selection, chosable);
 		lastRun = run;
 		await tick();

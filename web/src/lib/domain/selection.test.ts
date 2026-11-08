@@ -1,5 +1,6 @@
 // Selection of rows in the ticket table (plan BI-2, ADR-0036 §2): click, Shift range, head
-// checkbox and filter changes; since TV-2 the words of a box that chooses only the shown rows.
+// checkbox and filter changes; since TV-2 the words of a box that chooses only the shown rows and
+// of the announcement when chosen rows leave the selection.
 
 import { describe, expect, it } from 'vitest';
 import {
@@ -7,6 +8,7 @@ import {
 	chooseAllName,
 	chooseAllText,
 	clickRow,
+	deselectedText,
 	headState,
 	keepShown,
 	toggleAll,
@@ -114,5 +116,11 @@ describe('words of a box that chooses the shown rows (TV-2)', () => {
 				new RegExp(`^${chooseAllText(hidden)} `)
 			);
 		}
+	});
+
+	it('says how many chosen tickets left the selection without a tap', () => {
+		expect(deselectedText(1)).toBe('1 Ticket abgewählt.');
+		expect(deselectedText(2)).toBe('2 Tickets abgewählt.');
+		expect(deselectedText(12)).toBe('12 Tickets abgewählt.');
 	});
 });

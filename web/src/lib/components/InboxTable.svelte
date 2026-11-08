@@ -153,7 +153,8 @@
 	// numbers and a locked "Weitere laden" stay and the list is busy, as during a new attempt over kept
 	// rows, "Eingang wird geladen …" stands only without a row; a paged view
 	// without a hit among its loaded pages says so and offers "Weitere laden"; a changed search keeps
-	// only the chosen entries it shows; back and forward show the search of the address again.
+	// only the chosen entries it shows (since TV-2 a changed chip "Quelle" or "Zielprojekt" too); back
+	// and forward show the search of the address again.
 	let {
 		store,
 		flags,
@@ -440,14 +441,17 @@
 		(titleLinks()[0] ?? moreFromEmpty ?? heading)?.focus();
 	}
 
-	// A changed search keeps only the chosen entries it shows (EG-2 review): an entry it hides does not
-	// come back chosen when the search goes.
-	let selectionSearch: string | null | undefined;
+	// A changed search (EG-2 review) or chip "Quelle" or "Zielprojekt" (TV-2) keeps only the chosen
+	// entries it shows: an entry it hides does not come back chosen when it goes. Only on such a
+	// change, not whenever the rows change: a reload or a reconnection keeps the selection.
+	let selectionNarrowing: readonly (string | null)[] | undefined;
 	$effect(() => {
-		const search = query.search ?? null;
-		const previous = selectionSearch;
-		selectionSearch = search;
-		if (previous === undefined || previous === search) return;
+		const narrowing = [query.search ?? null, query.source, target];
+		const previous = selectionNarrowing;
+		selectionNarrowing = narrowing;
+		if (previous === undefined || narrowing.every((value, index) => value === previous[index])) {
+			return;
+		}
 		untrack(() => {
 			const shownIds = new Set(rows.map((item) => item.id));
 			const kept = selected.filter((id) => shownIds.has(id));
