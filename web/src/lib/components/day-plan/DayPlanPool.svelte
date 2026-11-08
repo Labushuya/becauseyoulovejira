@@ -27,11 +27,11 @@
 	// or by dragging it onto the plan, at the place where it is dropped. A long pool shows the first
 	// 60 tickets in whole blocks of a parent with its sub-tasks; since TV-1 (ADR-0065 addendum TV-1)
 	// "… weitere Tickets anzeigen" below it reveals about 60 more, never hiding only 1 or 2, and puts
-	// the focus on the first new ticket; a changed search starts again at 60. On a wide screen the
-	// pool stands next to the plan, on a narrow one below it (the view decides). In the phone frame
-	// (MO-2, ADR-0073 addendum MO-2) it is the section "Hinzufügen …" below the plan, folded like the
-	// suggestions (the heading is the button, aria-expanded), with the same search and "+"; nothing is
-	// dragged there, a long press stays the browser's.
+	// the focus on the title of the first new ticket; a changed search starts again at 60. On a wide
+	// screen the pool stands next to the plan, on a narrow one below it (the view decides). In the
+	// phone frame (MO-2, ADR-0073 addendum MO-2) it is the section "Hinzufügen …" below the plan,
+	// folded like the suggestions (the heading is the button, aria-expanded), with the same search
+	// and "+"; nothing is dragged there, a long press stays the browser's.
 	let {
 		store,
 		open = $bindable(false)
@@ -64,14 +64,21 @@
 	const rows = $derived(store.arrange(matching, (ticket) => ticket));
 	const view = $derived(revealBlocks(rows, limit, POOL_STEP, REVEAL_SLACK));
 
-	/** Reveals the next tickets and puts the focus on the first focusable element of the first. */
+	/**
+	 * Reveals the next tickets and puts the focus on the title of the first of them, never on the
+	 * link of the parent in the line above the title of a sub-task (TP-2); without a title link on
+	 * its first button.
+	 */
 	async function showMore() {
 		const first = view.shown.length;
 		limit = view.nextLimit;
 		await tick();
 		const entries = list?.querySelectorAll<HTMLElement>('[data-pool-ticket]') ?? [];
 		const entry = entries[first] ?? entries[entries.length - 1];
-		entry?.querySelector<HTMLElement>('a[href], button')?.focus();
+		const target =
+			entry?.querySelector<HTMLElement>('a.title-link') ??
+			entry?.querySelector<HTMLElement>('button');
+		target?.focus();
 	}
 
 	function onDragStart(event: DragEvent, ticket: TicketSummary) {

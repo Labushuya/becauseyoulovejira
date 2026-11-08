@@ -22,16 +22,17 @@
 	// "Vorschläge" of the plan of today (ADR-0065 §3), a section that folds (the heading is the button,
 	// aria-expanded). Each suggestion names its reason ("heute fällig", "überfällig seit 05.10.", …);
 	// chosen ones go into the plan with "Übernehmen", the shown ones with "Alle übernehmen", in the
-	// order shown. What is in the plan is no suggestion any more. The sources are set next to the heading
-	// ("Einstellen"). Arranged like the table "Aufgaben" (TP-3): a suggested sub-task stands indented
-	// with the corner directly below its suggested parent, the parent with the chip "2/5"; choosing
-	// the parent chooses none of its sub-tasks. A sub-task whose parent is no suggestion names it
-	// above its title (TP-2). Since TV-1 (ADR-0065 addendum TV-1) the list shows the first 5 in whole
-	// blocks, never hiding only 1 or 2; "… weitere Vorschläge anzeigen" below it reveals about 10
-	// more and puts the focus on the check box of the first new one. Only shown suggestions are
-	// chosen and adopted: one that leaves the shown part loses its check mark, and "Alle übernehmen"
-	// becomes "Alle sichtbaren übernehmen (N)" while some are hidden. The heading counts all of them.
-	// Folding resets to 5; the view starts the section anew on another day.
+	// order shown. What is in the plan is no suggestion any more. The sources are set next to the
+	// heading ("Einstellen"). Arranged like the table "Aufgaben" (TP-3): a suggested sub-task stands
+	// indented with the corner directly below its suggested parent, the parent with the chip "2/5";
+	// choosing the parent chooses none of its sub-tasks. A sub-task whose parent is no suggestion
+	// names it above its title (TP-2). Since TV-1 (ADR-0065 addendum TV-1) the list shows the first 5
+	// in whole blocks, never hiding only 1 or 2; "… weitere Vorschläge anzeigen" below it reveals
+	// about 10 more and puts the focus on the check box of the first new one. Only shown suggestions
+	// are chosen and adopted: one that leaves the shown part loses its check mark, and "Alle
+	// übernehmen" becomes "Alle sichtbaren übernehmen (N)" while some are hidden. The heading counts
+	// all of them. Folding resets to 5; a new day (midnight) resets to 5 and clears the choice, and
+	// the section stays folded or open.
 	let {
 		store,
 		household = false,
@@ -54,6 +55,19 @@
 	/** Only shown suggestions count as chosen. */
 	const picked = $derived(shownIds.filter((id) => chosen.has(id)));
 	const busy = $derived(rows.some((row) => store.isPending(row.entry.ticket.id)));
+	/** The day of the suggestions; it changes at midnight, not with a reload of the same day. */
+	const today = $derived(store.today);
+
+	// A new day starts the list anew: 5 shown, nothing chosen. The section stays as it is (folded or
+	// open, "Einstellen" with its focus); only the day counts, so a reload of the same day, an event
+	// of the server or a changed ticket resets nothing.
+	$effect(() => {
+		void today;
+		untrack(() => {
+			limit = SUGGESTIONS_SHOWN;
+			chosen.clear();
+		});
+	});
 
 	// A suggestion that leaves the shown part (a new one ranked above it, folding) loses its check
 	// mark, so it does not come back chosen.

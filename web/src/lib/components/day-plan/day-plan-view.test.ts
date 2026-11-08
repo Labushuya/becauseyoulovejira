@@ -487,6 +487,14 @@ describe('showing more suggestions (TV-1)', () => {
 		await fireEvent.click(box('TASK-01'));
 		expect(screen.getByRole('button', { name: 'Übernehmen (1)' })).toBeTruthy();
 
+		// A reload of the same day (a new answer, the same today) keeps what is shown and chosen.
+		data.fetch.mockResolvedValueOnce({ kind: 'ok', value: planAnswer() });
+		await store.reload();
+		await tick();
+		expect(shownKeys()).toHaveLength(12);
+		expect(box('TASK-01').checked).toBe(true);
+		expect(screen.getByRole('button', { name: 'Übernehmen (1)' })).toBeTruthy();
+
 		const next = '2031-05-15';
 		data.fetch.mockResolvedValueOnce({
 			kind: 'ok',
@@ -509,6 +517,32 @@ describe('showing more suggestions (TV-1)', () => {
 		expect(screen.getByRole('button', { name: 'Übernehmen' }).getAttribute('aria-disabled')).toBe(
 			'true'
 		);
+		// Only the list starts anew: the section stays open.
+		expect(toggle().getAttribute('aria-expanded')).toBe('true');
+	});
+
+	it('shows a parent with its two sub-tasks in full when the block ends at the limit, names the rest exactly and puts the focus on the first new check box', async () => {
+		// TASK-00 and TASK-01 alone, then TASK-02 with its sub-tasks TASK-03 and TASK-04, then TASK-05
+		// to TASK-11 alone: the block fills the rows 3 to 5, so the limit of 5 takes it whole.
+		const parentRef = { id: idOf(2), key: 'TASK-02', title: 'Fällig 02' };
+		const tickets = dueTickets(12).map((ticket, index) =>
+			index === 3 || index === 4 ? { ...ticket, parentId: idOf(2), parentRef } : ticket
+		);
+		await renderPlan({ tickets, items: [], ongoing: [] });
+		const shape = () =>
+			[...document.querySelectorAll('li.suggestion')].map(
+				(row) =>
+					`${row.classList.contains('nested') ? '  ' : ''}${row.querySelector('.key')?.textContent}`
+			);
+
+		expect(shape()).toEqual(['TASK-00', 'TASK-01', 'TASK-02', '  TASK-03', '  TASK-04']);
+		expect(toggle().textContent).toContain('(12 Vorschläge)');
+		expect(moreButton()?.textContent?.trim()).toBe('7 weitere Vorschläge anzeigen');
+		expect(screen.getByRole('button', { name: 'Alle sichtbaren übernehmen (5)' })).toBeTruthy();
+		await fireEvent.click(moreButton() as HTMLElement);
+		await vi.waitFor(() => expect(document.activeElement).toBe(box('TASK-05')));
+		expect(shownKeys()).toEqual(keys(...range(0, 11)));
+		expect(moreButton()).toBeNull();
 	});
 });
 
@@ -1161,6 +1195,35 @@ describe('sub-tasks below their parent (TP-3)', () => {
 		await searchFor('');
 		expect(poolRows()).toHaveLength(60);
 		expect(poolMore()?.textContent?.trim()).toBe('10 weitere Tickets anzeigen');
+	});
+
+	it('puts the focus on the own title of a sub-task that stands alone as the first new ticket of the pool, not on the link of its parent (TV-1)', async () => {
+		const ticketOf = (index: number, title: string) =>
+			planTicket(`t0000000000${String(index).padStart(4, '0')}`, { title });
+		const singles = Array.from({ length: 60 }, (_, index) => ticketOf(index, `Einzeln ${index}`));
+		const after = Array.from({ length: 3 }, (_, index) => ticketOf(60 + index, `Danach ${index}`));
+		const family = familyTickets();
+		const parent = family.find((ticket) => ticket.id === PARENT) as TicketSummary;
+		const sub = family.find((ticket) => ticket.id === S1) as TicketSummary;
+		// The parent is in the plan, so its sub-task stands alone in the pool, its parent above it.
+		await renderPlan({
+			tickets: [parent, ...singles, sub, ...after],
+			items: [planItem('item00000000001', PARENT, 0)],
+			ongoing: []
+		});
+
+		expect(poolRows()).toHaveLength(60);
+		await fireEvent.click(
+			within(pool()).getByRole('button', { name: '4 weitere Tickets anzeigen' })
+		);
+		await vi.waitFor(() => expect(poolRows()).toHaveLength(64));
+		expect(poolRows()[60]).toBe('HAUS-8');
+		expect(contextOf(poolItem(S1))).toBe('HAUS-7 › Wochenputz');
+		const own = within(poolItem(S1)).getByRole('link', { name: 'Fenster putzen' });
+		await vi.waitFor(() => expect(document.activeElement).toBe(own));
+		expect(within(poolItem(S1)).getByRole('link', { name: 'HAUS-7' })).not.toBe(
+			document.activeElement
+		);
 	});
 
 	it('finds sub-tasks over key or title of their parent, the words spread over both', async () => {

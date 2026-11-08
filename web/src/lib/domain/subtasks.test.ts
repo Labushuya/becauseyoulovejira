@@ -305,11 +305,19 @@ describe('revealBlocks (TV-1)', () => {
 		expect(after.hidden).toBe(4);
 		expect(after.nextCount).toBe(4);
 
-		// A single row before a block longer than the step: the click reveals that row alone.
-		const lone = revealBlocks([...singles(6), ...block('q', 12)], 5, 10, 2);
+		// A single row before a block longer than the step: alone it would be less than half a step,
+		// so the click takes the block as well; the rows after it stay hidden.
+		const loneList = [...singles(6), ...block('q', 12), ...singles(4, 't')];
+		const lone = revealBlocks(loneList, 5, 10, 2);
 		expect(lone.shown).toHaveLength(5);
-		expect(lone.nextCount).toBe(1);
-		expect(lone.nextLimit).toBe(6);
+		expect(lone.nextCount).toBe(14);
+		expect(lone.nextLimit).toBe(19);
+		const afterLone = revealBlocks(loneList, lone.nextLimit, 10, 2);
+		expect(ids(afterLone.shown.slice(5))).toBe(ids([...singles(6).slice(5), ...block('q', 12)]));
+		expect(afterLone.hidden).toBe(4);
+		// Four rows are still less than half of 10 and take the block; five are half and come alone.
+		expect(revealBlocks([...singles(9), ...block('q', 12)], 5, 10, 2).nextCount).toBe(17);
+		expect(revealBlocks([...singles(10), ...block('q', 12)], 5, 10, 2).nextCount).toBe(5);
 	});
 
 	it('takes about a step per click and the rest with the last one', () => {
@@ -348,13 +356,28 @@ describe('revealBlocks (TV-1)', () => {
 			while (end < list.length && list[end]?.nested === true) end += 1;
 			return end - start;
 		};
+		/** From `start` to the end of the block with the row `offset` after it; 0 past the list. */
+		const reachOf = (list: readonly Row[], start: number, offset: number) =>
+			start + offset < list.length ? offset + blockLength(list, start + offset) : 0;
+		// The bounds follow from revealBlocks. The first view takes whole blocks up to the limit, or
+		// the first block alone when it is longer, and at most `slack` rows more. A click takes whole
+		// blocks up to the step, or the next block alone when it is longer; in the end at least half
+		// a step or all that is hidden. Had it stopped before half a step (at most `half` =
+		// floor((step - 1) / 2) rows in) at a block that does not fit into the step, it takes that
+		// block as well: the block that holds the row `half` after the shown ones. A next block
+		// longer than the step holds that row, too. So no click goes beyond the step or the end of
+		// that block, plus at most `slack` rows.
 		for (let index = 0; index < 300; index++) {
 			const list = Array.from({ length: next(14) }, (_, number) =>
 				block(`b${number}x`, next(4) === 0 ? next(14) : next(2))
 			).flat();
 			const [limit, step, slack] = [1 + next(8), 1 + next(12), next(4)];
 			const name = `list ${index}: ${list.length} rows, ${limit}/${step}/${slack}`;
+			const half = Math.floor((step - 1) / 2);
 			let view = revealBlocks(list, limit, step, slack);
+			expect(view.shown.length, name).toBeLessThanOrEqual(
+				Math.max(limit, blockLength(list, 0)) + slack
+			);
 			for (;;) {
 				expect(view.shown, name).toEqual(list.slice(0, view.shown.length));
 				expect(view.shown.length + view.hidden, name).toBe(list.length);
@@ -366,6 +389,10 @@ describe('revealBlocks (TV-1)', () => {
 					break;
 				}
 				expect(view.nextCount, name).toBeGreaterThanOrEqual(blockLength(list, view.shown.length));
+				expect(2 * view.nextCount >= step || view.nextCount === view.hidden, name).toBe(true);
+				expect(view.nextCount, name).toBeLessThanOrEqual(
+					Math.max(step, reachOf(list, view.shown.length, half)) + slack
+				);
 				const after = revealBlocks(list, view.nextLimit, step, slack);
 				expect(after.shown.length - view.shown.length, name).toBe(view.nextCount);
 				view = after;

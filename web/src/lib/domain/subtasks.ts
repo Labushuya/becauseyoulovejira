@@ -230,8 +230,11 @@ export interface RevealedRows<R> {
  * The first arranged rows up to `limit` in whole blocks (`limitBlocks`), for a list that reveals
  * more on demand (TV-1: the suggestions and the pool of the day plan). It never hides only a few:
  * when at most `slack` rows would stay hidden, it shows all of them. The next click takes up to
- * `step` rows more in whole blocks, but always at least the next block, also one longer than `step`,
- * and again all of them when at most `slack` would stay hidden. `nextLimit` shows exactly these rows.
+ * `step` rows more in whole blocks, but always at least the next block, also one longer than `step`.
+ * Would that be fewer than half of `step` while a block stays hidden behind them (a few rows before
+ * a block longer than the rest of the step), the click takes that block as well, so it never shows
+ * only a row or two of a long list. Again it takes all of them when at most `slack` would stay
+ * hidden. `nextLimit` shows exactly these rows.
  */
 export function revealBlocks<R extends { nested: boolean }>(
 	rows: readonly R[],
@@ -242,7 +245,13 @@ export function revealBlocks<R extends { nested: boolean }>(
 	const orAll = (end: number) => (rows.length - end <= slack ? rows.length : end);
 	const end = orAll(limitBlocks(rows, limit).length);
 	if (end >= rows.length) return { shown: rows.slice(), hidden: 0, nextLimit: limit, nextCount: 0 };
-	const next = orAll(end + limitBlocks(rows.slice(end), step).length);
+	let reach = end + limitBlocks(rows.slice(end), step).length;
+	// Less than half a step while a block stays hidden: that block comes along, whole (limitBlocks
+	// always takes the first block of a list in full).
+	if (2 * (reach - end) < step && reach < rows.length) {
+		reach += limitBlocks(rows.slice(reach), 1).length;
+	}
+	const next = orAll(reach);
 	return {
 		shown: rows.slice(0, end),
 		hidden: rows.length - end,

@@ -102,9 +102,9 @@ Die Vorschläge hatten keine Obergrenze und schoben am PC den Plan nach unten. G
 
 | Bereich | Inhalt |
 |---|---|
-| Vorschläge | Zuerst 5, am PC wie am Handy; „{n} weitere Vorschläge anzeigen“ unter der Liste deckt etwa 10 weitere auf. Nie nur 1 oder 2 verborgen (bis 7 erscheinen alle), ganze Blöcke aus Hauptticket und Unteraufgaben. Die Zahl an der Überschrift nennt alle. |
+| Vorschläge | Zuerst 5, am PC wie am Handy; „{n} weitere Vorschläge anzeigen“ unter der Liste deckt etwa 10 weitere auf, genau n. Nie nur 1 oder 2 verborgen (bis 7 erscheinen alle), ganze Blöcke aus Hauptticket und Unteraufgaben; vor einem großen Block deckt ein Klick nie nur ein paar Zeilen auf, sondern nimmt den Block mit. Die Zahl an der Überschrift nennt alle. |
 | Übernehmen | „Alle übernehmen“ nimmt nur die sichtbaren und heißt „Alle sichtbaren übernehmen (N)“, solange welche verborgen sind. Verborgene sind nie gewählt; wer aus dem sichtbaren Teil rutscht, verliert seinen Haken. Danach bleibt die aufgedeckte Zahl, die nächsten rücken nach. |
-| Zurücksetzen | Zuklappen und ein neuer Tag zeigen wieder 5; nichts wird gespeichert, keine Einstellung. |
+| Zurücksetzen | Zuklappen und ein neuer Tag zeigen wieder 5, ein neuer Tag ohne Auswahl und so auf- oder zugeklappt wie vorher; nichts wird gespeichert, keine Einstellung. |
 | Pool | Zuerst 60, „{n} weitere Tickets anzeigen“ deckt etwa 60 auf (ersetzt „N weitere – die Suche grenzt ein.“); eine geänderte Suche beginnt wieder bei 60. Ziehen bleibt. |
 
 Entscheidung in [ADR-0065](../adr/0065-tagesplan.md), Nachtrag TV-1; Test-Manifest: Paket „TV-1“ (BYL-E6-2482 bis BYL-E6-2487, manuell BYL-E6-2488 und BYL-E6-2489). Nur Oberfläche, kein Hook, keine Migration: nach dem Build F5. Die übrigen Listen der App folgen mit TV-2.

@@ -559,7 +559,9 @@ describe('help page (EH-9)', () => {
 		expect(content).toMatch(
 			/Zuerst stehen fünf Vorschläge da, ein Ticket mit seinen Unteraufgaben immer ganz; die Zahl an der Überschrift nennt alle\./
 		);
-		expect(content).toMatch(/„7 weitere Vorschläge anzeigen“ unter der Liste deckt etwa zehn/);
+		expect(content).toMatch(
+			/„… weitere Vorschläge anzeigen“ unter der Liste deckt jeweils etwa zehn weitere auf, genau so viele, wie der Knopf nennt;/
+		);
 		expect(content).toMatch(/wären nur ein oder zwei verborgen, stehen alle da/);
 		expect(content).toMatch(
 			/heißt der Knopf „Alle sichtbaren übernehmen \(5\)“ und übernimmt nur die sichtbaren/
