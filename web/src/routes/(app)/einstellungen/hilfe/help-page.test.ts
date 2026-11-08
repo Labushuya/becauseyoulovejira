@@ -553,6 +553,28 @@ describe('help page (EH-9)', () => {
 		expect(content).toMatch(/seinen Inhalt zeigt der Plan nicht/);
 	});
 
+	it('explains how suggestions and pool show more and that only shown suggestions are adopted (TV-1)', () => {
+		const { container } = render(Page);
+		const content = text(container.querySelector<HTMLElement>('section#tagesplan')!);
+		expect(content).toMatch(
+			/Zuerst stehen fünf Vorschläge da, ein Ticket mit seinen Unteraufgaben immer ganz; die Zahl an der Überschrift nennt alle\./
+		);
+		expect(content).toMatch(
+			/„… weitere Vorschläge anzeigen“ unter der Liste deckt jeweils etwa zehn weitere auf, genau so viele, wie der Knopf nennt;/
+		);
+		expect(content).toMatch(/wären nur ein oder zwei verborgen, stehen alle da/);
+		expect(content).toMatch(
+			/heißt der Knopf „Alle sichtbaren übernehmen \(5\)“ und übernimmt nur die sichtbaren/
+		);
+		expect(content).toMatch(
+			/Rutscht ein gewählter aus dem sichtbaren Teil, verliert er seinen Haken/
+		);
+		expect(content).toMatch(/Zuklappen zeigt wieder fünf/);
+		expect(content).toMatch(
+			/Er zeigt zuerst 60 Tickets; „… weitere Tickets anzeigen“ deckt jeweils etwa 60 weitere auf, eine geänderte Suche beginnt wieder bei 60/
+		);
+	});
+
 	it('explains the order of a ticket and the pages of its sources and follow-ups (TD-1)', () => {
 		render(Page);
 		const section = screen.getByRole('region', { name: 'Häufige Fragen' });

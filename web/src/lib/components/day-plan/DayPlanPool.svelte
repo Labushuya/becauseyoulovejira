@@ -1,6 +1,8 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import { page } from '$app/state';
-	import { limitBlocks } from '$lib/domain/subtasks';
+	import { POOL_SHOWN, POOL_STEP, REVEAL_SLACK, morePoolText } from '$lib/domain/day-plan';
+	import { revealBlocks } from '$lib/domain/subtasks';
 	import { matchesWordsWithParent, searchWords } from '$lib/domain/ticket-picker';
 	import type { TicketSummary } from '$lib/domain/ticket';
 	import { getMobileLayoutStore } from '$lib/mobile-layout.svelte';
@@ -23,14 +25,13 @@
 	// title of a ticket and of its parent (TP-3; the normalisation of the ticket picker, ADR-0042):
 	// every word in one of them. Each ticket goes into the plan with "+" (the way on a phone, 44 px)
 	// or by dragging it onto the plan, at the place where it is dropped. A long pool shows the first
-	// POOL_LIMIT tickets in whole blocks of a parent with its sub-tasks and says how many more the
-	// search can find. On a wide screen the pool stands next to the plan, on a narrow one below it
-	// (the view decides). In the phone frame (MO-2, ADR-0073 addendum MO-2) it is the section
-	// "Hinzufügen …" below the plan, folded like the suggestions (the heading is the button,
-	// aria-expanded), with the same search and "+"; nothing is dragged there, a long press stays the
-	// browser's.
-	const POOL_LIMIT = 60;
-
+	// 60 tickets in whole blocks of a parent with its sub-tasks; since TV-1 (ADR-0065 addendum TV-1)
+	// "… weitere Tickets anzeigen" below it reveals about 60 more, never hiding only 1 or 2, and puts
+	// the focus on the title of the first new ticket; a changed search starts again at 60. On a wide
+	// screen the pool stands next to the plan, on a narrow one below it (the view decides). In the
+	// phone frame (MO-2, ADR-0073 addendum MO-2) it is the section "Hinzufügen …" below the plan,
+	// folded like the suggestions (the heading is the button, aria-expanded), with the same search
+	// and "+"; nothing is dragged there, a long press stays the browser's.
 	let {
 		store,
 		open = $bindable(false)
@@ -50,6 +51,9 @@
 	const phone = $derived(mobileLayout.active);
 
 	let text = $state('');
+	let list = $state<HTMLUListElement>();
+	/** How many tickets show; back to POOL_SHOWN when the search changes. */
+	let limit = $state(POOL_SHOWN);
 
 	const words = $derived(searchWords(text));
 	const matching = $derived(
@@ -58,8 +62,24 @@
 		)
 	);
 	const rows = $derived(store.arrange(matching, (ticket) => ticket));
-	const shown = $derived(limitBlocks(rows, POOL_LIMIT));
-	const more = $derived(rows.length - shown.length);
+	const view = $derived(revealBlocks(rows, limit, POOL_STEP, REVEAL_SLACK));
+
+	/**
+	 * Reveals the next tickets and puts the focus on the title of the first of them, never on the
+	 * link of the parent in the line above the title of a sub-task (TP-2); without a title link on
+	 * its first button.
+	 */
+	async function showMore() {
+		const first = view.shown.length;
+		limit = view.nextLimit;
+		await tick();
+		const entries = list?.querySelectorAll<HTMLElement>('[data-pool-ticket]') ?? [];
+		const entry = entries[first] ?? entries[entries.length - 1];
+		const target =
+			entry?.querySelector<HTMLElement>('a.title-link') ??
+			entry?.querySelector<HTMLElement>('button');
+		target?.focus();
+	}
 
 	function onDragStart(event: DragEvent, ticket: TicketSummary) {
 		if (event.dataTransfer === null) return;
@@ -118,6 +138,7 @@
 			placeholder="Key, Titel oder Hauptticket"
 			aria-describedby={hintId}
 			bind:value={text}
+			oninput={() => (limit = POOL_SHOWN)}
 		/>
 	</div>
 	{#if store.pool.length === 0}
@@ -125,8 +146,8 @@
 	{:else if matching.length === 0}
 		<p class="hint" role="status">Kein Ticket passt zu „{text.trim()}“.</p>
 	{:else}
-		<ul class="tickets">
-			{#each shown as { entry: ticket, nested, parent } (ticket.id)}
+		<ul class="tickets" bind:this={list}>
+			{#each view.shown as { entry: ticket, nested, parent } (ticket.id)}
 				{@const pending = store.isPending(ticket.id)}
 				<li
 					class="ticket"
@@ -176,8 +197,13 @@
 				</li>
 			{/each}
 		</ul>
-		{#if more > 0}
-			<p class="hint">{more} weitere – die Suche grenzt ein.</p>
+		{#if view.hidden > 0}
+			<!-- Like every subtle button, 44 px on touch screens and in the phone frame (base.css). -->
+			<div class="more">
+				<button class="button-subtle button-small" type="button" onclick={() => void showMore()}>
+					{morePoolText(view.nextCount)}
+				</button>
+			</div>
 		{/if}
 	{/if}
 {/snippet}

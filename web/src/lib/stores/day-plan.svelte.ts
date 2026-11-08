@@ -978,9 +978,11 @@ export class DayPlanStore {
 	}
 
 	/**
-	 * "Übernehmen" of chosen suggestions, in the order they are shown: arranged, a sub-task below its
-	 * parent (TP-3). The server places them one after the other in this order (TP-4: a sub-task into
-	 * the block of its parent, else at the end; before its restart all at the end).
+	 * "Übernehmen" of chosen suggestions and "Alle übernehmen" of the shown ones, in the order they are
+	 * shown: arranged, a sub-task below its parent (TP-3). The view names the tickets; the store knows
+	 * no limit of the display (TV-1: only shown suggestions are adopted). The server places them one
+	 * after the other in this order (TP-4: a sub-task into the block of its parent, else at the end;
+	 * before its restart all at the end).
 	 */
 	async adopt(ids: readonly string[]): Promise<boolean> {
 		if (!this.editable || ids.length === 0 || !this.#session.ensureValid()) return false;
@@ -1007,11 +1009,6 @@ export class DayPlanStore {
 		} finally {
 			for (const id of order) this.#pending.delete(id);
 		}
-	}
-
-	/** "Alle übernehmen", in the order they are shown. */
-	adoptAll(): Promise<boolean> {
-		return this.adopt(this.suggestionRows.map((row) => row.entry.ticket.id));
 	}
 
 	/**

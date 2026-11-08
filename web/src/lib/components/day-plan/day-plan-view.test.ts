@@ -3,7 +3,9 @@
 // reasons, "Übernehmen" and "Alle übernehmen"; the plan with its check marks per kind, the badge
 // "Vorhaben", the menus, the order by buttons, by Alt+arrow and by dragging; the pool with its search,
 // "+" and dragging into the plan; "Vorhaben abschließen …" and the question about open sub-tasks; days
-// before read-only; the layout on a phone (44 px, the pool below the plan).
+// before read-only; the layout on a phone (44 px, the pool below the plan). Since TV-1 suggestions and
+// pool show the first 5 and 60 rows and reveal more with a button, and only shown suggestions are
+// chosen and adopted.
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -313,6 +315,9 @@ describe('suggestions', () => {
 		expect(screen.queryByText('– in Arbeit')).toBeNull();
 		const adopt = screen.getByRole('button', { name: 'Übernehmen' });
 		expect(adopt.getAttribute('aria-disabled')).toBe('true');
+		// Nothing hidden with two suggestions (TV-1): no button to show more, "Alle übernehmen" takes
+		// every one.
+		expect(screen.queryByRole('button', { name: /weitere.* anzeigen$/ })).toBeNull();
 		await fireEvent.click(screen.getByRole('checkbox', { name: /Müll rausbringen/ }));
 		await fireEvent.click(screen.getByRole('button', { name: 'Übernehmen (1)' }));
 		await vi.waitFor(() => expect(data.adopt).toHaveBeenCalledWith('u:user00000000001', [A3]));
@@ -347,6 +352,197 @@ describe('suggestions', () => {
 			expect(data.saveSettings).toHaveBeenCalledWith('u:user00000000001', { in_progress: 'off' })
 		);
 		expect(screen.getByText(/Gilt für deinen privaten Tagesplan/, { exact: false })).toBeTruthy();
+	});
+});
+
+describe('showing more suggestions (TV-1)', () => {
+	const two = (number: number) => String(number).padStart(2, '0');
+	/** The ID of the ticket TASK-07 for 7. */
+	const idOf = (number: number) => `t000000000000${two(number)}`;
+	/** `count` tickets due today, ranked by their IDs: TASK-00, TASK-01, … */
+	const dueTickets = (count: number) =>
+		Array.from({ length: count }, (_, index) =>
+			planTicket(idOf(index), { title: `Fällig ${two(index)}`, due: TODAY })
+		);
+	const keys = (...numbers: number[]) => numbers.map((number) => `TASK-${two(number)}`);
+	const range = (from: number, to: number) =>
+		Array.from({ length: to - from + 1 }, (_, index) => from + index);
+	const shownKeys = () =>
+		[...document.querySelectorAll('li.suggestion .key')].map((node) => node.textContent);
+	const toggle = () => screen.getByRole('button', { name: /^Vorschläge/ });
+	const box = (key: string) =>
+		screen.getByRole<HTMLInputElement>('checkbox', { name: new RegExp(`^${key} `) });
+	const moreButton = () => screen.queryByRole('button', { name: /Vorschl(ag|äge) anzeigen$/ });
+	const follows = (first: Element, second: Element) =>
+		(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+
+	function renderDue(count: number) {
+		return renderPlan({ tickets: dueTickets(count), items: [], ongoing: [] });
+	}
+
+	it('shows 5 of 12 suggestions, counts all 12 in the heading and reveals the rest below the list with the focus on the first new check box', async () => {
+		await renderDue(12);
+		expect(toggle().textContent).toContain('(12 Vorschläge)');
+		expect(toggle().querySelector('.count [aria-hidden="true"]')?.textContent).toBe('12');
+		expect(shownKeys()).toEqual(keys(...range(0, 4)));
+		const more = screen.getByRole('button', { name: '7 weitere Vorschläge anzeigen' });
+		expect(more.getAttribute('type')).toBe('button');
+		expect([...more.classList]).toEqual(expect.arrayContaining(['button-subtle', 'button-small']));
+		expect(more.hasAttribute('aria-expanded')).toBe(false);
+		// After the list, before "Übernehmen" and "Alle sichtbaren übernehmen (5)".
+		const all = screen.getByRole('button', { name: 'Alle sichtbaren übernehmen (5)' });
+		expect(follows(box('TASK-04'), more)).toBe(true);
+		expect(follows(more, screen.getByRole('button', { name: 'Übernehmen' }))).toBe(true);
+		expect(follows(more, all)).toBe(true);
+
+		more.focus();
+		await fireEvent.click(more);
+		await vi.waitFor(() => expect(document.activeElement).toBe(box('TASK-05')));
+		expect(shownKeys()).toEqual(keys(...range(0, 11)));
+		expect(moreButton()).toBeNull();
+		expect(screen.getByRole('button', { name: 'Alle übernehmen' })).toBeTruthy();
+		expect(toggle().textContent).toContain('(12 Vorschläge)');
+	});
+
+	it('reveals about 10 per click and keeps the revealed number after "Übernehmen"; the next ones move up', async () => {
+		const { data } = await renderDue(20);
+		await fireEvent.click(screen.getByRole('button', { name: '10 weitere Vorschläge anzeigen' }));
+		await vi.waitFor(() => expect(document.activeElement).toBe(box('TASK-05')));
+		expect(shownKeys()).toEqual(keys(...range(0, 14)));
+		expect(moreButton()?.textContent?.trim()).toBe('5 weitere Vorschläge anzeigen');
+
+		await fireEvent.click(box('TASK-00'));
+		await fireEvent.click(box('TASK-14'));
+		await fireEvent.click(screen.getByRole('button', { name: 'Übernehmen (2)' }));
+		await vi.waitFor(() =>
+			expect(data.adopt).toHaveBeenCalledWith('u:user00000000001', [idOf(0), idOf(14)])
+		);
+		// 18 left, 15 of them shown: the next two moved up, three stay hidden.
+		await vi.waitFor(() => expect(shownKeys()).toEqual(keys(...range(1, 13), 15, 16)));
+		expect(moreButton()?.textContent?.trim()).toBe('3 weitere Vorschläge anzeigen');
+		expect(screen.getByRole('button', { name: 'Alle sichtbaren übernehmen (15)' })).toBeTruthy();
+	});
+
+	it('adopts only the 5 shown suggestions with "Alle sichtbaren übernehmen (5)"', async () => {
+		const { data } = await renderDue(12);
+		await fireEvent.click(screen.getByRole('button', { name: 'Alle sichtbaren übernehmen (5)' }));
+		await vi.waitFor(() => expect(data.adopt).toHaveBeenCalledTimes(1));
+		expect(data.adopt).toHaveBeenCalledWith('u:user00000000001', range(0, 4).map(idOf));
+		// Seven left: never only one or two hidden, so all of them show, and the button is "Alle übernehmen".
+		await vi.waitFor(() => expect(shownKeys()).toEqual(keys(...range(5, 11))));
+		expect(moreButton()).toBeNull();
+		expect(screen.getByRole('button', { name: 'Alle übernehmen' })).toBeTruthy();
+	});
+
+	it('says "Alle übernehmen" and offers no button while nothing is hidden', async () => {
+		const { data } = await renderDue(7);
+		expect(shownKeys()).toEqual(keys(...range(0, 6)));
+		expect(moreButton()).toBeNull();
+		await fireEvent.click(screen.getByRole('button', { name: 'Alle übernehmen' }));
+		await vi.waitFor(() =>
+			expect(data.adopt).toHaveBeenCalledWith('u:user00000000001', range(0, 6).map(idOf))
+		);
+	});
+
+	it('takes the check mark of a suggestion that a new one pushes out of the shown part', async () => {
+		const { list } = await renderDue(8);
+		await fireEvent.click(box('TASK-04'));
+		expect(screen.getByRole('button', { name: 'Übernehmen (1)' })).toBeTruthy();
+		// An overdue ticket ranks above the ones due today and pushes TASK-04 out.
+		const late = 't000000000000n1';
+		list.map.set(late, planTicket(late, { title: 'Überfällig', due: '2031-05-10' }));
+		await vi.waitFor(() => expect(shownKeys()).toEqual(['TASK-n1', ...keys(...range(0, 3))]));
+		const adopt = screen.getByRole('button', { name: 'Übernehmen' });
+		expect(adopt.getAttribute('aria-disabled')).toBe('true');
+		// Shown again, it is not chosen any more.
+		await fireEvent.click(screen.getByRole('button', { name: '4 weitere Vorschläge anzeigen' }));
+		await vi.waitFor(() => expect(shownKeys()).toHaveLength(9));
+		expect(box('TASK-04').checked).toBe(false);
+		expect(screen.getByRole('button', { name: 'Übernehmen' })).toBeTruthy();
+	});
+
+	it('starts again with 5 when the heading folds the section; hidden ones lose their check mark', async () => {
+		await renderDue(12);
+		await fireEvent.click(screen.getByRole('button', { name: '7 weitere Vorschläge anzeigen' }));
+		await vi.waitFor(() => expect(shownKeys()).toHaveLength(12));
+		await fireEvent.click(box('TASK-01'));
+		await fireEvent.click(box('TASK-08'));
+		expect(screen.getByRole('button', { name: 'Übernehmen (2)' })).toBeTruthy();
+		await fireEvent.click(toggle());
+		expect(toggle().getAttribute('aria-expanded')).toBe('false');
+		await fireEvent.click(toggle());
+		await vi.waitFor(() => expect(shownKeys()).toEqual(keys(...range(0, 4))));
+		expect(screen.getByRole('button', { name: '7 weitere Vorschläge anzeigen' })).toBeTruthy();
+		expect(box('TASK-01').checked).toBe(true);
+		expect(screen.getByRole('button', { name: 'Übernehmen (1)' })).toBeTruthy();
+		await fireEvent.click(screen.getByRole('button', { name: '7 weitere Vorschläge anzeigen' }));
+		await vi.waitFor(() => expect(shownKeys()).toHaveLength(12));
+		expect(box('TASK-08').checked).toBe(false);
+	});
+
+	it('starts again with 5 and nothing chosen on a new day (midnight)', async () => {
+		const { store, data } = await renderDue(12);
+		await fireEvent.click(screen.getByRole('button', { name: '7 weitere Vorschläge anzeigen' }));
+		await vi.waitFor(() => expect(shownKeys()).toHaveLength(12));
+		await fireEvent.click(box('TASK-01'));
+		expect(screen.getByRole('button', { name: 'Übernehmen (1)' })).toBeTruthy();
+
+		// A reload of the same day (a new answer, the same today) keeps what is shown and chosen.
+		data.fetch.mockResolvedValueOnce({ kind: 'ok', value: planAnswer() });
+		await store.reload();
+		await tick();
+		expect(shownKeys()).toHaveLength(12);
+		expect(box('TASK-01').checked).toBe(true);
+		expect(screen.getByRole('button', { name: 'Übernehmen (1)' })).toBeTruthy();
+
+		const next = '2031-05-15';
+		data.fetch.mockResolvedValueOnce({
+			kind: 'ok',
+			value: planAnswer({
+				date: next,
+				today: next,
+				tomorrow: '2031-05-16',
+				plan: { ...PLAN, id: 'plan00000000002', date: next }
+			})
+		});
+		await store.reload();
+		await tick();
+		expect(store.today).toBe(next);
+		expect(screen.getByRole('heading', { name: 'Heute, Donnerstag, 15. Mai 2031' })).toBeTruthy();
+		// Yesterday's tickets are overdue now and still suggested, the first 5 of them.
+		await vi.waitFor(() => expect(shownKeys()).toEqual(keys(...range(0, 4))));
+		expect(toggle().textContent).toContain('(12 Vorschläge)');
+		expect(screen.getByRole('button', { name: '7 weitere Vorschläge anzeigen' })).toBeTruthy();
+		expect(box('TASK-01').checked).toBe(false);
+		expect(screen.getByRole('button', { name: 'Übernehmen' }).getAttribute('aria-disabled')).toBe(
+			'true'
+		);
+		// Only the list starts anew: the section stays open.
+		expect(toggle().getAttribute('aria-expanded')).toBe('true');
+	});
+
+	it('shows a parent with its two sub-tasks in full when the block ends at the limit, names the rest exactly and puts the focus on the first new check box', async () => {
+		// TASK-00 and TASK-01 alone, then TASK-02 with its sub-tasks TASK-03 and TASK-04, then TASK-05
+		// to TASK-11 alone: the block fills the rows 3 to 5, so the limit of 5 takes it whole.
+		const parentRef = { id: idOf(2), key: 'TASK-02', title: 'Fällig 02' };
+		const tickets = dueTickets(12).map((ticket, index) =>
+			index === 3 || index === 4 ? { ...ticket, parentId: idOf(2), parentRef } : ticket
+		);
+		await renderPlan({ tickets, items: [], ongoing: [] });
+		const shape = () =>
+			[...document.querySelectorAll('li.suggestion')].map(
+				(row) =>
+					`${row.classList.contains('nested') ? '  ' : ''}${row.querySelector('.key')?.textContent}`
+			);
+
+		expect(shape()).toEqual(['TASK-00', 'TASK-01', 'TASK-02', '  TASK-03', '  TASK-04']);
+		expect(toggle().textContent).toContain('(12 Vorschläge)');
+		expect(moreButton()?.textContent?.trim()).toBe('7 weitere Vorschläge anzeigen');
+		expect(screen.getByRole('button', { name: 'Alle sichtbaren übernehmen (5)' })).toBeTruthy();
+		await fireEvent.click(moreButton() as HTMLElement);
+		await vi.waitFor(() => expect(document.activeElement).toBe(box('TASK-05')));
+		expect(shownKeys()).toEqual(keys(...range(0, 11)));
+		expect(moreButton()).toBeNull();
 	});
 });
 
@@ -866,6 +1062,9 @@ describe('sub-tasks below their parent (TP-3)', () => {
 				`${item.classList.contains('nested') ? '  ' : ''}${item.querySelector('.key')?.textContent}`
 		);
 	const poolRows = () => shapeOf(pool().querySelectorAll<HTMLElement>('[data-pool-ticket]'));
+	/** "… weitere Tickets anzeigen" below the pool (TV-1), null without it. */
+	const poolMore = () =>
+		within(pool()).queryByRole('button', { name: /(Ticket|Tickets) anzeigen$/ });
 	const planRows = () => shapeOf(document.querySelectorAll<HTMLElement>('[data-item-id]'));
 	const suggestionRows = () => shapeOf(document.querySelectorAll<HTMLElement>('li.suggestion'));
 	const searchFor = (value: string) =>
@@ -948,10 +1147,83 @@ describe('sub-tasks below their parent (TP-3)', () => {
 		// 58 single tickets and a block of four: the block would make 62 and stays out as a whole.
 		expect(poolRows()).toHaveLength(58);
 		expect(poolItem(PARENT)).toBeNull();
-		expect(within(pool()).getByText('4 weitere – die Suche grenzt ein.')).toBeTruthy();
+		// Since TV-1 the button below the pool reveals it, the focus on its first focusable element.
+		const more = within(pool()).getByRole('button', { name: '4 weitere Tickets anzeigen' });
+		expect(more.getAttribute('type')).toBe('button');
+		expect([...more.classList]).toEqual(expect.arrayContaining(['button-subtle', 'button-small']));
+		expect(more.hasAttribute('aria-expanded')).toBe(false);
+		await fireEvent.click(more);
+		await vi.waitFor(() =>
+			expect(document.activeElement).toBe(
+				within(poolItem(PARENT)).getByRole('link', { name: 'Wochenputz' })
+			)
+		);
+		expect(poolRows()).toHaveLength(62);
+		expect(poolRows().slice(58)).toEqual(['HAUS-7', '  HAUS-9', '  HAUS-8', '  HAUS-10']);
+		expect(poolMore()).toBeNull();
+		// Dragging from the pool stays as it was.
+		expect(poolItem(S1).getAttribute('draggable')).toBe('true');
 		await searchFor('wochenputz');
 		expect(poolRows()).toEqual(['HAUS-7', '  HAUS-9', '  HAUS-8', '  HAUS-10']);
-		expect(within(pool()).queryByText(/weitere – die Suche grenzt ein/)).toBeNull();
+		expect(poolMore()).toBeNull();
+	});
+
+	it('reveals about 60 more tickets of the pool per click and starts again at 60 when the search changes (TV-1)', async () => {
+		const singles = Array.from({ length: 70 }, (_, index) =>
+			planTicket(`t0000000000${String(index).padStart(4, '0')}`, { title: `Einzeln ${index}` })
+		);
+		await renderPlan({ tickets: singles, items: [], ongoing: [] });
+
+		expect(poolRows()).toHaveLength(60);
+		await fireEvent.click(
+			within(pool()).getByRole('button', { name: '10 weitere Tickets anzeigen' })
+		);
+		await vi.waitFor(() => expect(poolRows()).toHaveLength(70));
+		const first = pool().querySelectorAll<HTMLElement>('[data-pool-ticket]')[60] as HTMLElement;
+		await vi.waitFor(() =>
+			expect(document.activeElement).toBe(first.querySelector('a.title-link'))
+		);
+		expect(poolMore()).toBeNull();
+
+		// Another search starts at 60 again, and so does the empty one.
+		await searchFor('einzeln');
+		expect(poolRows()).toHaveLength(60);
+		await fireEvent.click(
+			within(pool()).getByRole('button', { name: '10 weitere Tickets anzeigen' })
+		);
+		await vi.waitFor(() => expect(poolRows()).toHaveLength(70));
+		await searchFor('');
+		expect(poolRows()).toHaveLength(60);
+		expect(poolMore()?.textContent?.trim()).toBe('10 weitere Tickets anzeigen');
+	});
+
+	it('puts the focus on the own title of a sub-task that stands alone as the first new ticket of the pool, not on the link of its parent (TV-1)', async () => {
+		const ticketOf = (index: number, title: string) =>
+			planTicket(`t0000000000${String(index).padStart(4, '0')}`, { title });
+		const singles = Array.from({ length: 60 }, (_, index) => ticketOf(index, `Einzeln ${index}`));
+		const after = Array.from({ length: 3 }, (_, index) => ticketOf(60 + index, `Danach ${index}`));
+		const family = familyTickets();
+		const parent = family.find((ticket) => ticket.id === PARENT) as TicketSummary;
+		const sub = family.find((ticket) => ticket.id === S1) as TicketSummary;
+		// The parent is in the plan, so its sub-task stands alone in the pool, its parent above it.
+		await renderPlan({
+			tickets: [parent, ...singles, sub, ...after],
+			items: [planItem('item00000000001', PARENT, 0)],
+			ongoing: []
+		});
+
+		expect(poolRows()).toHaveLength(60);
+		await fireEvent.click(
+			within(pool()).getByRole('button', { name: '4 weitere Tickets anzeigen' })
+		);
+		await vi.waitFor(() => expect(poolRows()).toHaveLength(64));
+		expect(poolRows()[60]).toBe('HAUS-8');
+		expect(contextOf(poolItem(S1))).toBe('HAUS-7 › Wochenputz');
+		const own = within(poolItem(S1)).getByRole('link', { name: 'Fenster putzen' });
+		await vi.waitFor(() => expect(document.activeElement).toBe(own));
+		expect(within(poolItem(S1)).getByRole('link', { name: 'HAUS-7' })).not.toBe(
+			document.activeElement
+		);
 	});
 
 	it('finds sub-tasks over key or title of their parent, the words spread over both', async () => {

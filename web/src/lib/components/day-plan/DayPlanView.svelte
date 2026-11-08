@@ -194,6 +194,8 @@
 		{/if}
 		{#snippet suggestions()}
 			{#if store.isToday && store.editable}
+				<!-- A new day (midnight) starts the list anew inside the section (TV-1); it stays mounted,
+				     so folded or open and the focus in "Einstellen" stay. -->
 				<DayPlanSuggestions {store} {household} bind:open={suggestionsOpen} />
 			{/if}
 		{/snippet}

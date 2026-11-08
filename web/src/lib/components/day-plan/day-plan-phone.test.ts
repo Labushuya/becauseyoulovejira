@@ -97,19 +97,21 @@ async function renderPlan({
 	answer = planAnswer(),
 	date = null,
 	sorting = new DayPlanSortStore(),
-	items = standardItems()
+	items = standardItems(),
+	tickets = standardTickets()
 }: {
 	answer?: DayPlanAnswer;
 	date?: string | null;
 	sorting?: DayPlanSortStore;
 	items?: DayPlanItem[];
+	tickets?: TicketSummary[];
 } = {}) {
 	mocks.page.url = new URL(
 		date === null ? '/tagesplan' : `/tagesplan?tag=${date}`,
 		'http://localhost:3000'
 	);
 	const data = fakeDayPlanData(items, answer, [A2]);
-	const store = new DayPlanStore(data, fakeTickets(standardTickets()), fakeSession(), {
+	const store = new DayPlanStore(data, fakeTickets(tickets), fakeSession(), {
 		flags: fakeFlags().flags,
 		scope: () => answer.scope,
 		viewer: () => null,
@@ -285,6 +287,37 @@ describe('the day plan in the phone frame (MO-2)', () => {
 			expect(data.add).toHaveBeenCalledWith({ ticket: A4, scope: 'u:user00000000001', date: TODAY })
 		);
 		await vi.waitFor(() => expect(entryKeys()).toEqual(['TASK-a1', 'TASK-a2', 'TASK-a4']));
+	});
+
+	it('folds 12 suggestions after the plan with their number and shows 5 of them with "7 weitere Vorschläge anzeigen" when open (TV-1)', async () => {
+		useWindow(true, true);
+		const due = Array.from({ length: 12 }, (_, index) => {
+			const number = String(index).padStart(2, '0');
+			return planTicket(`t000000000000${number}`, { title: `Fällig ${number}`, due: TODAY });
+		});
+		// The plan keeps its two entries, so the suggestions start folded (MO-6b).
+		await renderPlan({
+			tickets: [...standardTickets().filter((ticket) => ticket.id !== A3), ...due]
+		});
+		const suggestions = screen.getByRole('button', { name: /^Vorschläge/ });
+		expect(suggestions.getAttribute('aria-expanded')).toBe('false');
+		expect(suggestions.textContent).toContain('(12 Vorschläge)');
+		const list = document.getElementById(
+			suggestions.getAttribute('aria-controls') ?? ''
+		) as HTMLElement;
+		expect(list.hidden).toBe(true);
+
+		await fireEvent.click(suggestions);
+		expect(suggestions.getAttribute('aria-expanded')).toBe('true');
+		expect(list.hidden).toBe(false);
+		expect(
+			[...list.querySelectorAll('li.suggestion .key')].map((node) => node.textContent)
+		).toEqual(['TASK-00', 'TASK-01', 'TASK-02', 'TASK-03', 'TASK-04']);
+		const more = within(list).getByRole('button', { name: '7 weitere Vorschläge anzeigen' });
+		expect(follows(list.querySelector('ul') as HTMLElement, more)).toBe(true);
+		expect(
+			within(list).getByRole('button', { name: 'Alle sichtbaren übernehmen (5)' })
+		).toBeTruthy();
 	});
 
 	it('says how to add without dragging when nothing is planned', async () => {
@@ -568,5 +601,27 @@ describe('styles of the day plan in the phone frame (MO-2)', () => {
 		);
 		expect(rule('DayPlanView.svelte', '.day-nav')).toMatch(/flex: 1 1 100%;\s*min-width: 0;/);
 		expect(rule('DayPlanView.svelte', '.day-title')).toMatch(/flex: 1;\s*min-width: 0;/);
+	});
+
+	it('gives "… weitere … anzeigen" of the suggestions and the pool 44 px from the shared subtle button (TV-1)', () => {
+		const base = read('../../styles/base.css');
+		// In the frame: every shared button with text outside a table cell.
+		expect(base).toMatch(
+			/:root\[data-mobile-layout='on'\]\s*:is\(\.button-primary, \.button-secondary, \.button-subtle\):not\(:is\(td, th\) \*\) \{\s*min-height: var\(--control-height-touch\);/
+		);
+		// On touch screens: after the small button, so the 44 px win over its height.
+		const touch = base.lastIndexOf('@media (pointer: coarse) {');
+		expect(touch).toBeGreaterThan(base.indexOf('.button-small {'));
+		expect(base.slice(touch)).toMatch(
+			/\.button-subtle \{\s*min-height: var\(--control-height-touch\);/
+		);
+		for (const file of ['DayPlanSuggestions.svelte', 'DayPlanPool.svelte']) {
+			const source = read(file);
+			expect(source, file).toMatch(
+				/<div class="more">\s*<button\s+class="button-subtle button-small"\s+type="button"/
+			);
+			// No rule of the component takes the height again.
+			expect(source, file).not.toMatch(/\.more[^{]*\{[^}]*height/);
+		}
 	});
 });

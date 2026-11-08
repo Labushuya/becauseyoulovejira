@@ -1,6 +1,6 @@
 # Plan: Tagesplan (TP-1)
 
-Stand: 2026-10-13 (VH-1) · Entscheidung: [ADR-0065](../adr/0065-tagesplan.md) · Test-Manifest: Paket „TP-1“ (BYL-E6-1530 bis BYL-E6-1538, manuell BYL-E6-1540 bis BYL-E6-1549)
+Stand: 2026-11-08 (TV-1) · Entscheidung: [ADR-0065](../adr/0065-tagesplan.md) · Test-Manifest: Paket „TP-1“ (BYL-E6-1530 bis BYL-E6-1538, manuell BYL-E6-1540 bis BYL-E6-1549)
 
 ## Zweck
 
@@ -45,7 +45,7 @@ Nutzerwunsch vom 2026-10-12: Unteraufgaben sollen im Tagesplan so stehen wie in 
 
 | Bereich | Inhalt |
 |---|---|
-| Pool | Angeordnet wie „Aufgaben“: Hauptticket, darunter eingerückt mit Ecke seine Unteraufgaben im Pool; steht das Hauptticket nicht im Pool, die Unteraufgabe einzeln mit der Kontextzeile aus TP-2. Die Grenze von 60 Einträgen nimmt ein Hauptticket mit seinen Unteraufgaben ganz oder gar nicht. |
+| Pool | Angeordnet wie „Aufgaben“: Hauptticket, darunter eingerückt mit Ecke seine Unteraufgaben im Pool; steht das Hauptticket nicht im Pool, die Unteraufgabe einzeln mit der Kontextzeile aus TP-2. Die Grenze von 60 Einträgen nimmt ein Hauptticket mit seinen Unteraufgaben ganz oder gar nicht (seit TV-1 zuerst 60, dann „… weitere Tickets anzeigen“, unten). |
 | Vorschläge | Ebenso angeordnet, wenn Hauptticket und Unteraufgabe vorgeschlagen sind; der Haken am Hauptticket wählt keine Unteraufgabe mit; „Übernehmen“ und „Alle übernehmen“ in der gezeigten Reihenfolge. |
 | Plan | Nur Anzeige: Die Reihenfolge bleibt die des Nutzers; eine Unteraufgabe direkt unter ihrem Hauptticket oder einer eingerückten Schwester steht eingerückt, sonst mit Kontextzeile. Ziehen, Knöpfe und `Alt`+Pfeil wie bisher (seit TP-4 wandert ein Hauptticket mit seinem Block). |
 | Fortschritt | Der Chip „1/4“ der Tabelle an jedem Hauptticket in Plan, Pool und Vorschlägen, mit demselben Baustein und denselben Zahlen. |
@@ -95,3 +95,16 @@ Aus der Analyse: Im Tagesplan schließt ein Vorhaben nur über „Vorhaben absch
 | Erklärung (V3) | Hilfe-Abschnitt „Laufendes Vorhaben oder Wiederholung?“ mit dem Vergleich (Tickets, Tagesplan, Haken, verpasster Tag, Abschluss) und der Faustregel; ein zweiter Hinweis am Schalter „Laufendes Vorhaben“ mit Link dorthin. |
 
 Entscheidung in [ADR-0065](../adr/0065-tagesplan.md), Nachtrag VH-1 (Filter auch in [ADR-0013](../adr/0013-filter-suche-sortierung-gruppierung.md) Nachtrag G); Test-Manifest: Paket „VH-1“ (BYL-E6-1748 bis BYL-E6-1756, manuell BYL-E6-1757 bis BYL-E6-1761). Nur Oberfläche, kein Hook, keine Migration: nach dem Build F5.
+
+## TV-1 (umgesetzt): Vorschläge begrenzen, nur Sichtbares zählt
+
+Die Vorschläge hatten keine Obergrenze und schoben am PC den Plan nach unten. Grundregel des Nutzers: Zeigt eine Liste nur einen Teil ihrer Einträge, wirken „Alle …“-Aktionen und die Auswahl nur auf die sichtbaren.
+
+| Bereich | Inhalt |
+|---|---|
+| Vorschläge | Zuerst 5, am PC wie am Handy; „{n} weitere Vorschläge anzeigen“ unter der Liste deckt etwa 10 weitere auf, genau n. Nie nur 1 oder 2 verborgen (bis 7 erscheinen alle), ganze Blöcke aus Hauptticket und Unteraufgaben; vor einem großen Block deckt ein Klick nie nur ein paar Zeilen auf, sondern nimmt den Block mit. Die Zahl an der Überschrift nennt alle. |
+| Übernehmen | „Alle übernehmen“ nimmt nur die sichtbaren und heißt „Alle sichtbaren übernehmen (N)“, solange welche verborgen sind. Verborgene sind nie gewählt; wer aus dem sichtbaren Teil rutscht, verliert seinen Haken. Danach bleibt die aufgedeckte Zahl, die nächsten rücken nach. |
+| Zurücksetzen | Zuklappen und ein neuer Tag zeigen wieder 5, ein neuer Tag ohne Auswahl und so auf- oder zugeklappt wie vorher; nichts wird gespeichert, keine Einstellung. |
+| Pool | Zuerst 60, „{n} weitere Tickets anzeigen“ deckt etwa 60 auf (ersetzt „N weitere – die Suche grenzt ein.“); eine geänderte Suche beginnt wieder bei 60. Ziehen bleibt. |
+
+Entscheidung in [ADR-0065](../adr/0065-tagesplan.md), Nachtrag TV-1; Test-Manifest: Paket „TV-1“ (BYL-E6-2482 bis BYL-E6-2487, manuell BYL-E6-2488 und BYL-E6-2489). Nur Oberfläche, kein Hook, keine Migration: nach dem Build F5. Die übrigen Listen der App folgen mit TV-2.

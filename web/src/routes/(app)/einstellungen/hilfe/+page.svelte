@@ -244,23 +244,31 @@
 			Plan von gestern, weder erledigt noch abgehakt), überfällig seit 05.10. (mit dem Termin des
 			Tickets, wie in der Liste), heute fällig, in Arbeit. Eine Wiederholung steht höchstens einmal
 			darin, mit ihrem aktuellen Ticket; mit „Verpasste Termine nachholen“ zählt jeder Termin für
-			sich. Haken setzen und „Übernehmen“ oder gleich „Alle übernehmen“. Mit „Einstellen“ stellst du
-			jede Quelle auf „Aus“, „Vorschlagen“ oder „Automatisch übernehmen“; laufende Vorhaben kommen
-			von Anfang an automatisch beim ersten Öffnen des Tages in den Plan. Eine geänderte Einstellung
-			sehen deine anderen offenen Tabs und im Haushalt alle Mitglieder sofort. Was im Plan steht
-			oder heute daraus entfernt wurde, schlägt der Plan nicht noch einmal vor. „Heute“ ist derselbe
-			Tag wie bei „Heute fällig“. Anheften ändert an den Vorschlägen nichts: Ein angeheftetes
-			Ticket, das heute fällig ist, schlägt der Plan vor wie jedes andere; angeheftet allein ist
-			kein Grund. Das Anheften bleibt deine Ansicht in „Aufgaben“.
+			sich. Haken setzen und „Übernehmen“ oder gleich „Alle übernehmen“. Zuerst stehen fünf
+			Vorschläge da, ein Ticket mit seinen Unteraufgaben immer ganz; die Zahl an der Überschrift
+			nennt alle. „… weitere Vorschläge anzeigen“ unter der Liste deckt jeweils etwa zehn weitere
+			auf, genau so viele, wie der Knopf nennt; wären nur ein oder zwei verborgen, stehen alle da.
+			Solange welche verborgen sind, heißt der Knopf „Alle sichtbaren übernehmen (5)“ und übernimmt
+			nur die sichtbaren. Gewählt sind nur sichtbare Vorschläge: Rutscht ein gewählter aus dem
+			sichtbaren Teil, verliert er seinen Haken. Zuklappen zeigt wieder fünf. Mit „Einstellen“
+			stellst du jede Quelle auf „Aus“, „Vorschlagen“ oder „Automatisch übernehmen“; laufende
+			Vorhaben kommen von Anfang an automatisch beim ersten Öffnen des Tages in den Plan. Eine
+			geänderte Einstellung sehen deine anderen offenen Tabs und im Haushalt alle Mitglieder sofort.
+			Was im Plan steht oder heute daraus entfernt wurde, schlägt der Plan nicht noch einmal vor.
+			„Heute“ ist derselbe Tag wie bei „Heute fällig“. Anheften ändert an den Vorschlägen nichts:
+			Ein angeheftetes Ticket, das heute fällig ist, schlägt der Plan vor wie jedes andere;
+			angeheftet allein ist kein Grund. Das Anheften bleibt deine Ansicht in „Aufgaben“.
 		</p>
 		<h4 id="tagesplan-eingreifen">Plan und Pool</h4>
 		<p>
 			Neben dem Plan (am Handy darunter) steht der Pool: die offenen Tickets des Bereichs, die noch
-			nicht im Plan stehen, mit Suche. Mit „+“ oder per Ziehen auf den Plan kommen sie hinein; „Zum
-			Tagesplan“ im Menü „•••“ eines Tickets tut dasselbe von überall. Die Reihenfolge änderst du
-			durch Ziehen am Griff, mit „nach oben“ und „nach unten“ oder mit <kbd>Alt</kbd>+Pfeil. Je
-			Eintrag gibt es außerdem „Auf morgen schieben“ und „Entfernen“. Mit den Pfeilen im Kopf gehst
-			du zum Vortag oder Folgetag: Vergangene Tage sind nur zu lesen, morgen kannst du schon planen.
+			nicht im Plan stehen, mit Suche. Er zeigt zuerst 60 Tickets; „… weitere Tickets anzeigen“
+			deckt jeweils etwa 60 weitere auf, eine geänderte Suche beginnt wieder bei 60. Mit „+“ oder
+			per Ziehen auf den Plan kommen sie hinein; „Zum Tagesplan“ im Menü „•••“ eines Tickets tut
+			dasselbe von überall. Die Reihenfolge änderst du durch Ziehen am Griff, mit „nach oben“ und
+			„nach unten“ oder mit <kbd>Alt</kbd>+Pfeil. Je Eintrag gibt es außerdem „Auf morgen schieben“
+			und „Entfernen“. Mit den Pfeilen im Kopf gehst du zum Vortag oder Folgetag: Vergangene Tage
+			sind nur zu lesen, morgen kannst du schon planen.
 		</p>
 		<p>
 			Unteraufgaben stehen im Pool und in den Vorschlägen wie in „Aufgaben“: direkt unter ihrem

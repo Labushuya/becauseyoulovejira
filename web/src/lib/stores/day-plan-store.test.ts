@@ -217,9 +217,25 @@ describe('suggestions and pool, live from the open tickets', () => {
 		expect(data.adopt).toHaveBeenCalledWith(SCOPE, ['t000000000000a1', 't000000000000a3']);
 		expect(ids(store)).toEqual(['t000000000000a1', 't000000000000a3']);
 		expect(last()?.title).toBe('2 Vorschläge übernommen.');
-		await store.adoptAll();
+		// "Alle übernehmen" names the shown ones (TV-1); the store adopts exactly those.
+		await store.adopt(store.suggestionRows.map((row) => row.entry.ticket.id));
 		expect(data.adopt).toHaveBeenLastCalledWith(SCOPE, ['t000000000000a2']);
 		expect(store.suggestions).toEqual([]);
+	});
+
+	it('adopts only the suggestions it is given, whatever else is suggested (TV-1)', async () => {
+		const id = (index: number) => `t0000000000000${index}`;
+		const tickets = fakeTickets(
+			Array.from({ length: 8 }, (_, index) => ticket(id(index), { due: TODAY }))
+		);
+		const data = fakeData();
+		const { flags, last } = fakeFlags();
+		const store = await loaded(data, tickets, flags);
+		expect(store.suggestions).toHaveLength(8);
+		await store.adopt([id(4), id(0), id(2)]);
+		expect(data.adopt).toHaveBeenCalledWith(SCOPE, [id(0), id(2), id(4)]);
+		expect(last()?.title).toBe('3 Vorschläge übernommen.');
+		expect(store.suggestions.map((row) => row.ticket.id)).toEqual([1, 3, 5, 6, 7].map(id));
 	});
 
 	it('arranges suggestions and pool like "Aufgaben" and adopts in the order shown (TP-3)', async () => {
@@ -252,7 +268,8 @@ describe('suggestions and pool, live from the open tickets', () => {
 		]);
 		// The chip of the parent counts the done sub-task as well.
 		expect(store.progressOf(parent.id)).toEqual({ done: 1, total: 2 });
-		await store.adoptAll();
+		// Named in another order, they go in the order shown.
+		await store.adopt(['t000000000000s1', 't000000000000a1', 't000000000000p1']);
 		expect(data.adopt).toHaveBeenCalledWith(SCOPE, [
 			't000000000000a1',
 			't000000000000p1',

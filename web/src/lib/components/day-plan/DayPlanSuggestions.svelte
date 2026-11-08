@@ -1,6 +1,15 @@
 <script lang="ts">
+	import { tick, untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { page } from '$app/state';
+	import {
+		REVEAL_SLACK,
+		SUGGESTIONS_SHOWN,
+		SUGGESTIONS_STEP,
+		adoptAllText,
+		moreSuggestionsText
+	} from '$lib/domain/day-plan';
+	import { revealBlocks } from '$lib/domain/subtasks';
 	import type { DayPlanStore } from '$lib/stores/day-plan.svelte';
 	import { ticketLinks } from '$lib/stores/open-mode.svelte';
 	import CharmIcon from '../CharmIcon.svelte';
@@ -12,12 +21,18 @@
 
 	// "Vorschläge" of the plan of today (ADR-0065 §3), a section that folds (the heading is the button,
 	// aria-expanded). Each suggestion names its reason ("heute fällig", "überfällig seit 05.10.", …);
-	// chosen ones go into the plan with "Übernehmen", all with "Alle übernehmen", in the order shown.
-	// What is in the plan is no suggestion any more. The sources are set next to the heading
-	// ("Einstellen"). Arranged like the table "Aufgaben" (TP-3): a suggested sub-task stands indented
-	// with the corner directly below its suggested parent, the parent with the chip "2/5"; choosing
-	// the parent chooses none of its sub-tasks. A sub-task whose parent is no suggestion names it
-	// above its title (TP-2).
+	// chosen ones go into the plan with "Übernehmen", the shown ones with "Alle übernehmen", in the
+	// order shown. What is in the plan is no suggestion any more. The sources are set next to the
+	// heading ("Einstellen"). Arranged like the table "Aufgaben" (TP-3): a suggested sub-task stands
+	// indented with the corner directly below its suggested parent, the parent with the chip "2/5";
+	// choosing the parent chooses none of its sub-tasks. A sub-task whose parent is no suggestion
+	// names it above its title (TP-2). Since TV-1 (ADR-0065 addendum TV-1) the list shows the first 5
+	// in whole blocks, never hiding only 1 or 2; "… weitere Vorschläge anzeigen" below it reveals
+	// about 10 more and puts the focus on the check box of the first new one. Only shown suggestions
+	// are chosen and adopted: one that leaves the shown part loses its check mark, and "Alle
+	// übernehmen" becomes "Alle sichtbaren übernehmen (N)" while some are hidden. The heading counts
+	// all of them. Folding resets to 5; a new day (midnight) resets to 5 and clears the choice, and
+	// the section stays folded or open.
 	let {
 		store,
 		household = false,
@@ -30,27 +45,62 @@
 	const links = ticketLinks();
 	const chosen = new SvelteSet<string>();
 
+	let list = $state<HTMLUListElement>();
+	/** How many rows show; the next ones move up after "Übernehmen". */
+	let limit = $state(SUGGESTIONS_SHOWN);
+
 	const rows = $derived(store.suggestionRows);
-	/** Only suggestions that are still there count as chosen. */
-	const picked = $derived(
-		rows.filter((row) => chosen.has(row.entry.ticket.id)).map((row) => row.entry.ticket.id)
-	);
+	const view = $derived(revealBlocks(rows, limit, SUGGESTIONS_STEP, REVEAL_SLACK));
+	const shownIds = $derived(view.shown.map((row) => row.entry.ticket.id));
+	/** Only shown suggestions count as chosen. */
+	const picked = $derived(shownIds.filter((id) => chosen.has(id)));
 	const busy = $derived(rows.some((row) => store.isPending(row.entry.ticket.id)));
+	/** The day of the suggestions; it changes at midnight, not with a reload of the same day. */
+	const today = $derived(store.today);
+
+	// A new day starts the list anew: 5 shown, nothing chosen. The section stays as it is (folded or
+	// open, "Einstellen" with its focus); only the day counts, so a reload of the same day, an event
+	// of the server or a changed ticket resets nothing.
+	$effect(() => {
+		void today;
+		untrack(() => {
+			limit = SUGGESTIONS_SHOWN;
+			chosen.clear();
+		});
+	});
+
+	// A suggestion that leaves the shown part (a new one ranked above it, folding) loses its check
+	// mark, so it does not come back chosen.
+	$effect(() => {
+		const shown = new Set(shownIds);
+		untrack(() => {
+			for (const id of [...chosen]) if (!shown.has(id)) chosen.delete(id);
+		});
+	});
 
 	function toggle(id: string, on: boolean) {
 		if (on) chosen.add(id);
 		else chosen.delete(id);
 	}
 
-	async function adoptChosen() {
-		if (picked.length === 0 || busy) return;
-		const ids = [...picked];
-		if (await store.adopt(ids)) for (const id of ids) chosen.delete(id);
+	function toggleOpen() {
+		open = !open;
+		if (!open) limit = SUGGESTIONS_SHOWN;
 	}
 
-	async function adoptAll() {
-		if (rows.length === 0 || busy) return;
-		if (await store.adoptAll()) chosen.clear();
+	/** Reveals the next rows and puts the focus on the check box of the first of them. */
+	async function showMore() {
+		const first = view.shown.length;
+		limit = view.nextLimit;
+		await tick();
+		const boxes = list?.querySelectorAll<HTMLInputElement>('input[type="checkbox"]') ?? [];
+		(boxes[first] ?? boxes[boxes.length - 1])?.focus();
+	}
+
+	async function adopt(ids: readonly string[]) {
+		if (ids.length === 0 || busy) return;
+		const sent = [...ids];
+		if (await store.adopt(sent)) for (const id of sent) chosen.delete(id);
 	}
 </script>
 
@@ -62,7 +112,7 @@
 				type="button"
 				aria-expanded={open}
 				aria-controls={listId}
-				onclick={() => (open = !open)}
+				onclick={toggleOpen}
 			>
 				<svg class="chevron" class:open viewBox="0 0 16 16" aria-hidden="true" focusable="false">
 					<path d="M6 4l4 4-4 4" />
@@ -82,8 +132,8 @@
 		{#if rows.length === 0}
 			<p class="hint">Keine Vorschläge für heute.</p>
 		{:else}
-			<ul class="list">
-				{#each rows as { entry, nested, parent } (entry.ticket.id)}
+			<ul class="list" bind:this={list}>
+				{#each view.shown as { entry, nested, parent } (entry.ticket.id)}
 					{@const ticket = entry.ticket}
 					<li class="suggestion" class:nested>
 						{#if parent && !nested}
@@ -126,13 +176,20 @@
 					</li>
 				{/each}
 			</ul>
+			{#if view.hidden > 0}
+				<div class="more">
+					<button class="button-subtle button-small" type="button" onclick={() => void showMore()}>
+						{moreSuggestionsText(view.nextCount)}
+					</button>
+				</div>
+			{/if}
 			<div class="actions">
 				<button
 					class="button-primary button-small"
 					type="button"
 					aria-disabled={picked.length === 0 || busy ? 'true' : undefined}
 					aria-busy={busy ? 'true' : undefined}
-					onclick={() => void adoptChosen()}
+					onclick={() => void adopt(picked)}
 				>
 					Übernehmen{picked.length > 0 ? ` (${picked.length})` : ''}
 				</button>
@@ -140,9 +197,9 @@
 					class="button-secondary button-small"
 					type="button"
 					aria-disabled={busy ? 'true' : undefined}
-					onclick={() => void adoptAll()}
+					onclick={() => void adopt(shownIds)}
 				>
-					Alle übernehmen
+					{adoptAllText(view.shown.length, view.hidden)}
 				</button>
 			</div>
 		{/if}
@@ -298,6 +355,12 @@
 		gap: 0.5rem;
 	}
 
+	/* "… weitere Vorschläge anzeigen" between the list and the buttons (TV-1); like the buttons, its
+	   44 px on touch screens and in the phone frame come from base.css (.button-subtle). */
+	.more {
+		margin-block: 0.25rem;
+	}
+
 	@media (prefers-reduced-motion: reduce) {
 		.chevron {
 			transition: none;
@@ -320,8 +383,8 @@
 
 	/*
 	 * Phone frame (MO-2, ADR-0073 addendum MO-2): the heading that folds is a target of 44 px; the
-	 * choices, "Öffnen" and the buttons have theirs from base.css. The view puts the section after the
-	 * plan, folded.
+	 * choices, "Öffnen" and the buttons (since TV-1 also "… weitere Vorschläge anzeigen") have theirs
+	 * from base.css. The view puts the section after the plan, folded.
 	 */
 	@media (max-width: 39.99rem) {
 		:global(:root[data-mobile-layout='on']) .disclosure {
