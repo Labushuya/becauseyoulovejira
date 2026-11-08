@@ -2,7 +2,8 @@
 // first, in the order of pinning, whatever the filters, never twice; the number of the heading says
 // "+ N angeheftet"; the head folds the section on this device; the pin toggle of a row moves the row
 // and keeps the focus on it; realtime and completing take a ticket out; the head checkbox keeps
-// choosing what passes the filters. List store, pins and catalog run for real on fake data layers.
+// choosing what passes the filters, and since TV-2 nothing of a folded section. List store, pins
+// and catalog run for real on fake data layers.
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
@@ -300,5 +301,40 @@ describe('section "Angeheftet" of the ticket table', () => {
 		expect(chosen(high)).toBe(true);
 		expect(chosen(pinnedLow)).toBe(false);
 		expect(head.checked).toBe(true);
+		// The pinned ticket the filters hide is chosen by its own box only.
+		await fireEvent.click(head);
+		expect([chosen(pinnedHigh), chosen(high), chosen(pinnedLow)]).toEqual([false, false, false]);
+	});
+
+	it('chooses nothing of a folded "Angeheftet" from the head and takes its rows out when it folds (TV-2)', async () => {
+		const pinnedTicket = ticket();
+		const other = ticket();
+		await showTable([pinnedTicket, other], [pinOf(pinnedTicket.id, 10)]);
+		const head = screen.getByRole<HTMLInputElement>('checkbox', {
+			name: 'Alle angezeigten Tickets auswählen'
+		});
+		const box = (row: TicketSummary) =>
+			screen.queryByRole<HTMLInputElement>('checkbox', { name: `${row.key} auswählen` });
+		const toggle = within(pinnedBody()).getByRole('button', { name: /Angeheftet/ });
+
+		await fireEvent.click(toggle);
+		expect(box(pinnedTicket)).toBeNull();
+		await fireEvent.click(head);
+		expect(box(other)?.checked).toBe(true);
+		expect(head.checked).toBe(true);
+		await fireEvent.click(toggle);
+		await tick();
+		expect(box(pinnedTicket)?.checked).toBe(false);
+		expect(head.indeterminate).toBe(true);
+
+		// Chosen by its own box, the pinned ticket leaves the selection when the section folds.
+		await fireEvent.click(box(pinnedTicket) as HTMLInputElement);
+		expect(box(pinnedTicket)?.checked).toBe(true);
+		await fireEvent.click(toggle);
+		await tick();
+		await fireEvent.click(toggle);
+		await tick();
+		expect(box(pinnedTicket)?.checked).toBe(false);
+		expect(box(other)?.checked).toBe(true);
 	});
 });

@@ -32,6 +32,7 @@
 	} from '$lib/domain/notion';
 	import {
 		EMPTY_SELECTION,
+		chooseAllText,
 		clickRow,
 		headState,
 		keepShown,
@@ -57,7 +58,10 @@
 	//    already lists (a sub-page chosen on its own as well) cannot be chosen twice. "Erledigte
 	//    überspringen", "Seiteninhalt als Kopie mitnehmen" (databases) and "Unterseiten einbeziehen"
 	//    (pages) count for every chosen source; "Datum aus" stands in the group of each database,
-	//    whose properties differ.
+	//    whose properties differ. Since TV-2 (ADR-0036 addendum TV-2) only entries of open groups
+	//    are chosen: the head checkbox and a range take those ("Alle sichtbaren …" while a group
+	//    with such entries is folded), folding takes a group's entries out of the choice, and "Alle
+	//    aus …" opens a folded group when it chooses.
 	// "N Einträge in den Eingang übernehmen" runs over every source, one after the other, in blocks
 	// (ADR-0041 addendum of 2026-09-30): one progress bar for all, "Nach diesem Block anhalten" or
 	// Esc stop after the current block, an error of one source ends only that source. An entry leaves
@@ -174,10 +178,17 @@
 				.reverse()
 		)
 	);
+	/** Entries that can be chosen now, of the open groups only (TV-2): a folded group shows none. */
 	const chosable = $derived(
 		readyGroups.flatMap(({ group, preview }) =>
-			preview.items.filter((item) => reasonOf(item, group) === '').map((item) => item.ref)
+			group.open
+				? preview.items.filter((item) => reasonOf(item, group) === '').map((item) => item.ref)
+				: []
 		)
+	);
+	/** A folded group holds entries that could be chosen: the head checkbox says it takes the shown. */
+	const foldedChosable = $derived(
+		readyGroups.some(({ group }) => !group.open && chosableOf(group).length > 0)
 	);
 	const chosen = $derived(selection.ids.filter((ref) => chosable.includes(ref)));
 	const head = $derived(headState(selection, chosable));
@@ -239,6 +250,16 @@
 
 	// The list of sources loads when the dialog opens.
 	$effect(() => untrack(() => void loadSources()));
+
+	// Only entries that can be chosen in an open group stay chosen (TV-2): folding a group takes its
+	// entries out, so they do not come back chosen when it opens again.
+	$effect(() => {
+		const shown = chosable;
+		untrack(() => {
+			const next = keepShown(selection, shown);
+			if (next !== selection) selection = next;
+		});
+	});
 
 	/** Sets `indeterminate` of a checkbox ("some chosen", ADR-0036 §2). */
 	function indeterminate(value: boolean) {
@@ -393,6 +414,12 @@
 	function toggle(ref: string, on: boolean) {
 		selection = clickRow(selection, ref, on, chosable, shift);
 		shift = false;
+	}
+
+	/** "Alle aus …": choosing opens a folded group, so only shown entries are chosen (TV-2). */
+	function toggleGroup(group: Group, own: readonly string[], on: boolean) {
+		if (on) group.open = true;
+		selection = toggleAll(selection, own);
 	}
 
 	function changeSkipDone(value: boolean) {
@@ -780,7 +807,7 @@
 							disabled={chosable.length === 0 || running}
 							onchange={() => (selection = toggleAll(selection, chosable))}
 						/>
-						<span>Alle wählbaren Einträge auswählen</span>
+						<span>{chooseAllText(foldedChosable)} wählbaren Einträge auswählen</span>
 					</label>
 					<span class="hint" aria-live="polite">{chosen.length} ausgewählt</span>
 				</div>
@@ -821,7 +848,7 @@
 									checked={groupHead === 'all'}
 									{@attach indeterminate(groupHead === 'some')}
 									disabled={running}
-									onchange={() => (selection = toggleAll(selection, own))}
+									onchange={(event) => toggleGroup(group, own, event.currentTarget.checked)}
 								/>
 								<span>Alle aus „{group.source.title}“ auswählen</span>
 							</label>

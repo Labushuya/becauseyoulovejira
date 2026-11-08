@@ -1302,7 +1302,11 @@ describe('help page (EH-9)', () => {
 			'„Alle erneut abrufen“ im Menü „•••“ der Karte',
 			'„Unterseiten einbeziehen“',
 			'höchstens 50 Unterseiten bis zur dritten Ebene',
-			'BYL_NOTION_TOKEN_2'
+			'BYL_NOTION_TOKEN_2',
+			// Only shown entries are chosen (TV-2).
+			'Gewählt sind nur Einträge aufgeklappter Gruppen',
+			'„Alle aus …“ klappt sie wieder auf',
+			'„Alle sichtbaren wählbaren Einträge auswählen“'
 		]) {
 			expect(content, phrase).toContain(phrase);
 		}

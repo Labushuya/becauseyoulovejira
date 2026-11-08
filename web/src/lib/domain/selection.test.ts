@@ -1,9 +1,11 @@
 // Selection of rows in the ticket table (plan BI-2, ADR-0036 §2): click, Shift range, head
-// checkbox and filter changes.
+// checkbox and filter changes; since TV-2 the words of a box that chooses only the shown rows.
 
 import { describe, expect, it } from 'vitest';
 import {
 	EMPTY_SELECTION,
+	chooseAllName,
+	chooseAllText,
 	clickRow,
 	headState,
 	keepShown,
@@ -84,5 +86,33 @@ describe('keepShown', () => {
 	it('returns the same object when nothing changes', () => {
 		const selection: Selection = { ids: ['a'], anchor: 'a' };
 		expect(keepShown(selection, ORDER)).toBe(selection);
+	});
+});
+
+describe('words of a box that chooses the shown rows (TV-2)', () => {
+	it('says "Alle sichtbaren" while rows are hidden, else "Alle"', () => {
+		expect(chooseAllText(true)).toBe('Alle sichtbaren');
+		expect(chooseAllText(false)).toBe('Alle');
+		expect(`${chooseAllText(true)} wählbaren Einträge auswählen`).toBe(
+			'Alle sichtbaren wählbaren Einträge auswählen'
+		);
+	});
+
+	it('begins its name with those words while rows are hidden, else keeps the whole name', () => {
+		expect(chooseAllName(true, 'Tickets', 'Alle angezeigten Tickets auswählen')).toBe(
+			'Alle sichtbaren Tickets auswählen'
+		);
+		expect(chooseAllName(true, 'Einträge', 'Alle angezeigten Einträge auswählen')).toBe(
+			'Alle sichtbaren Einträge auswählen'
+		);
+		expect(chooseAllName(false, 'Tickets', 'Alle Tickets im Papierkorb auswählen')).toBe(
+			'Alle Tickets im Papierkorb auswählen'
+		);
+		// The name holds the visible words (WCAG 2.5.3, label in name).
+		for (const hidden of [true, false]) {
+			expect(chooseAllName(hidden, 'Tickets', 'Alle angezeigten Tickets auswählen')).toMatch(
+				new RegExp(`^${chooseAllText(hidden)} `)
+			);
+		}
 	});
 });

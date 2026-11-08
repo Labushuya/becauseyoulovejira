@@ -525,6 +525,8 @@ describe('"Aufgaben" as cards in the phone frame (MO-3)', () => {
 		const all = within(bar).getByRole<HTMLInputElement>('checkbox', {
 			name: 'Alle angezeigten Tickets auswählen'
 		});
+		// Nothing is hidden: the box says "Alle" (TV-2).
+		expect(all.closest('label')?.textContent?.trim()).toBe('Alle');
 		expect(all.indeterminate).toBe(true);
 		await fireEvent.click(all);
 		expect(['TASK-4', 'TASK-3', 'TASK-2', 'TASK-1'].every((key) => box(key).checked)).toBe(true);
@@ -537,6 +539,75 @@ describe('"Aufgaben" as cards in the phone frame (MO-3)', () => {
 		expect(screen.queryByRole('group', { name: 'Auswahl' })).toBeNull();
 		expect(screen.getByRole('checkbox', { name: 'TASK-1 erledigt' })).toBeTruthy();
 		expect(screen.queryByRole('region', { name: /ausgewählt/ })).toBeNull();
+	});
+
+	it('says "Alle sichtbaren" while a group, "Angeheftet" or the filters hide cards, and "Alle" and "Bereich" take the shown cards only (TV-2)', async () => {
+		useWindow(true, true);
+		const { store } = await showTable(
+			[
+				ticket(1, { priority: 'high' }),
+				ticket(2),
+				ticket(3, { priority: 'low' }),
+				ticket(5, { priority: 'low' })
+			],
+			{ path: '/?gruppe=prio', pinned: [pinOf('t00000000000005', 10)] }
+		);
+		const trigger = screen.getByRole('button', { name: 'Weitere Aktionen der Liste' });
+		const menu = document.getElementById(
+			trigger.getAttribute('aria-controls') ?? ''
+		) as HTMLElement;
+		await fireEvent.click(within(menu).getByRole('menuitem', { name: 'Auswählen', hidden: true }));
+		await tick();
+		const bar = screen.getByRole('group', { name: 'Auswahl' });
+		const all = () => within(bar).getByRole<HTMLInputElement>('checkbox', { name: /^Alle / });
+		const words = () => all().closest('label')?.textContent?.trim();
+		const chosen = (key: string) =>
+			screen.queryByRole<HTMLInputElement>('checkbox', { name: `${key} auswählen` })?.checked ??
+			null;
+		const fold = async (name: RegExp) => {
+			await fireEvent.click(screen.getByRole('button', { name }));
+			await tick();
+		};
+		expect(words()).toBe('Alle');
+		expect(all().getAttribute('aria-label')).toBe('Alle angezeigten Tickets auswählen');
+
+		// A folded group: the box says so, in its name too, and chooses the shown cards only.
+		await fold(/^Mittel/);
+		expect(words()).toBe('Alle sichtbaren');
+		expect(all().getAttribute('aria-label')).toBe('Alle sichtbaren Tickets auswählen');
+		await fireEvent.click(all());
+		expect(screen.getByRole('region', { name: '3 Tickets ausgewählt' })).toBeTruthy();
+		await fold(/^Mittel/);
+		expect(words()).toBe('Alle');
+		expect([chosen('TASK-5'), chosen('TASK-1'), chosen('TASK-2'), chosen('TASK-3')]).toEqual([
+			true,
+			true,
+			false,
+			true
+		]);
+
+		// Folding "Angeheftet" takes its card out of the selection and hides cards as well.
+		await fold(/^Angeheftet/);
+		expect(words()).toBe('Alle sichtbaren');
+		expect(screen.getByRole('region', { name: '2 Tickets ausgewählt' })).toBeTruthy();
+		await fold(/^Angeheftet/);
+		expect(chosen('TASK-5')).toBe(false);
+
+		// "Bereich" from TASK-1 to TASK-3 leaves out the card of the folded group between them.
+		await fireEvent.keyDown(all(), { key: 'Escape' });
+		expect(screen.getByRole('region', { name: '0 Tickets ausgewählt' })).toBeTruthy();
+		await fold(/^Mittel/);
+		await fireEvent.click(card('TASK-1').querySelector('.meta') as HTMLElement);
+		await fireEvent.click(within(bar).getByRole('button', { name: 'Bereich' }));
+		await fireEvent.click(card('TASK-3').querySelector('.meta') as HTMLElement);
+		expect(screen.getByRole('region', { name: '2 Tickets ausgewählt' })).toBeTruthy();
+		await fold(/^Mittel/);
+		expect([chosen('TASK-1'), chosen('TASK-2'), chosen('TASK-3')]).toEqual([true, false, true]);
+
+		// Filters hide cards too.
+		store.activate(parseListQuery(new URLSearchParams('gruppe=prio&prio=low')));
+		await tick();
+		expect(words()).toBe('Alle sichtbaren');
 	});
 
 	// MO-7b round 2 (P-1, P-4): after an action the actions are closed; "Fertig" leaves "Auswählen"

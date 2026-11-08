@@ -1,6 +1,8 @@
 // Selection of rows in the ticket table (plan BI-2, ADR-0036 §2): pure rules for a click, a
 // Shift+click range, the head checkbox and filter changes. The table keeps the chosen IDs and the
 // anchor of the last plain click; `order` is the order of the rows as shown (open, then done).
+// Since TV-2 (ADR-0036 addendum TV-2) "shown" means rendered: a list that hides rows (folded groups,
+// filters, the search, entries not loaded yet) chooses only the rest, and says so in its words.
 
 export interface Selection {
 	/** Chosen ticket IDs, in the order they were chosen. */
@@ -71,4 +73,21 @@ export function keepShown(selection: Selection, shown: readonly string[]): Selec
 		selection.anchor !== null && shown.includes(selection.anchor) ? selection.anchor : null;
 	if (ids.length === selection.ids.length && anchor === selection.anchor) return selection;
 	return { ids, anchor };
+}
+
+/**
+ * The words of a box that chooses every shown row (TV-2): "Alle", or "Alle sichtbaren" while the
+ * list hides some of its rows. Either way it chooses only the shown ones.
+ */
+export function chooseAllText(hidden: boolean): string {
+	return hidden ? 'Alle sichtbaren' : 'Alle';
+}
+
+/**
+ * The name of such a box with its words beside it (the phone frame): while rows are hidden it
+ * begins with those words, "Alle sichtbaren Tickets auswählen", so the name holds what the box
+ * says (WCAG 2.5.3); otherwise `whole`, the name it has without hidden rows.
+ */
+export function chooseAllName(hidden: boolean, plural: string, whole: string): string {
+	return hidden ? `${chooseAllText(true)} ${plural} auswählen` : whole;
 }

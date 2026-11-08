@@ -35,6 +35,7 @@
 	import type { ProblemEntry } from '$lib/domain/problems';
 	import type { Project } from '$lib/domain/project';
 	import { projectChoiceLabel, treeOrder } from '$lib/domain/project-tree';
+	import { chooseAllName, chooseAllText } from '$lib/domain/selection';
 	import { SOURCE_FAMILY_CHIPS, SOURCE_FAMILY_LABELS, type SourceFamily } from '$lib/domain/source';
 	import {
 		noEntryMatchText,
@@ -287,6 +288,13 @@
 	const chosen = $derived(rows.filter((item) => choosable(item) && selected.includes(item.id)));
 	const selectable = $derived(rows.filter(choosable));
 	const allChosen = $derived(selectable.length > 0 && chosen.length === selectable.length);
+	/**
+	 * The search or a chip hides entries, or a paged view has more to load: "Alle" then says "Alle
+	 * sichtbaren" (TV-2); it chooses only the shown entries either way.
+	 */
+	const entriesHidden = $derived(
+		filtered || store.searching || (!showsNew && store.handledHasMore)
+	);
 	const ready = $derived(
 		showsNew ? store.state === 'ready' : store.state === 'ready' && store.handledLoad === 'ready'
 	);
@@ -1344,18 +1352,23 @@
 			<p class="sync-status" role="status">{syncAll.running ? syncAll.status : ''}</p>
 		{/if}
 		{#if selecting}
-			<!-- "Auswählen" (MO-6): all new entries shown; the bulk actions and the way out ("Fertig")
-			     are in the bar of the selection at the bottom since MO-7b. -->
+			<!-- "Auswählen" (MO-6): all new entries shown ("Alle sichtbaren" while some are hidden or not
+			     loaded, TV-2); the bulk actions and the way out ("Fertig") are in the bar of the
+			     selection at the bottom since MO-7b. -->
 			<div class="select-mode" role="group" aria-label="Auswahl">
 				<label class="select-all">
 					<input
 						type="checkbox"
-						aria-label="Alle angezeigten Einträge auswählen"
+						aria-label={chooseAllName(
+							entriesHidden,
+							'Einträge',
+							'Alle angezeigten Einträge auswählen'
+						)}
 						checked={allChosen}
 						disabled={selectable.length === 0}
 						onchange={(event) => toggleAll(event.currentTarget.checked)}
 					/>
-					Alle
+					{chooseAllText(entriesHidden)}
 				</label>
 			</div>
 		{/if}

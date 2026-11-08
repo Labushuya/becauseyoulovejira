@@ -538,6 +538,8 @@ describe('the inbox as cards in the phone frame (MO-6)', () => {
 		const all = within(bar).getByRole<HTMLInputElement>('checkbox', {
 			name: 'Alle angezeigten Einträge auswählen'
 		});
+		// Nothing is hidden: the box says "Alle" (TV-2).
+		expect(all.closest('label')?.textContent?.trim()).toBe('Alle');
 		await fireEvent.click(all);
 		expect(
 			['Rechnung September', 'Artikel', 'Milch kaufen'].every((title) => box(title).checked)
@@ -630,9 +632,19 @@ describe('the search in the phone frame (EG-2)', () => {
 		await fireEvent.click(within(menu).getByRole('menuitem', { name: 'Auswählen', hidden: true }));
 		await tick();
 		const bar = screen.getByRole('group', { name: 'Auswahl' });
-		await fireEvent.click(
-			within(bar).getByRole('checkbox', { name: 'Alle angezeigten Einträge auswählen' })
-		);
+		// The search hides entries: the box says "Alle sichtbaren", its name begins so (TV-2).
+		const all = within(bar).getByRole('checkbox', { name: 'Alle sichtbaren Einträge auswählen' });
+		expect(all.closest('label')?.textContent?.trim()).toBe('Alle sichtbaren');
+		await fireEvent.click(all);
+		expect(screen.getByRole('region', { name: '1 Eintrag ausgewählt' })).toBeTruthy();
+
+		// Without the search nothing is hidden; the hidden entries did not come along chosen.
+		store.activate({ source: null, state: 'new', search: null });
+		await tick();
+		const whole = within(bar).getByRole('checkbox', {
+			name: 'Alle angezeigten Einträge auswählen'
+		});
+		expect(whole.closest('label')?.textContent?.trim()).toBe('Alle');
 		expect(screen.getByRole('region', { name: '1 Eintrag ausgewählt' })).toBeTruthy();
 	});
 
