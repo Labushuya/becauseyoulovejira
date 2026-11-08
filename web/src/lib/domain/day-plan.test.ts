@@ -1,7 +1,7 @@
 // Texts and helpers of the day plan in the SPA (TP-1, ADR-0065): the kind, the names of sources and
 // modes, the title of a day, the progress, the hint at the other area and initials; since TP-4 the
-// blocks of the plan, since TP-5 the order of a request of the order. The rules shared with the hook
-// are compared in tests/unit/web-day-plan.test.mjs.
+// blocks of the plan, since TP-5 the order of a request of the order, since TV-1 the limits and texts
+// of showing more. The rules shared with the hook are compared in tests/unit/web-day-plan.test.mjs.
 
 import { describe, expect, it } from 'vitest';
 import {
@@ -9,7 +9,13 @@ import {
 	KIND_LABELS,
 	MODE_LABELS,
 	ONGOING_BADGE,
+	POOL_SHOWN,
+	POOL_STEP,
+	REVEAL_SLACK,
 	SOURCE_LABELS,
+	SUGGESTIONS_SHOWN,
+	SUGGESTIONS_STEP,
+	adoptAllText,
 	blockSize,
 	blockStep,
 	changedRange,
@@ -17,6 +23,8 @@ import {
 	initialsOf,
 	isTicketKind,
 	kindOf,
+	morePoolText,
+	moreSuggestionsText,
 	movedBlock,
 	otherAreaText,
 	progressText,
@@ -72,6 +80,32 @@ describe('the order of a request of the order in the list (TP-5)', () => {
 		expect(withOrder(['x', 'a', 'b'], ['b', 'z', 'a'])).toEqual(['x', 'b', 'a']);
 		expect(withOrder(current, ['b', 'b', 'a'])).toEqual(['b', 'a', 'c', 'd', 'e']);
 		expect(withOrder(current, [])).toEqual(current);
+	});
+});
+
+describe('showing more suggestions and tickets of the pool (TV-1)', () => {
+	it('starts with 5 suggestions and 60 tickets, reveals about 10 and 60 more, never hides only 1 or 2', () => {
+		expect(SUGGESTIONS_SHOWN).toBe(5);
+		expect(SUGGESTIONS_STEP).toBe(10);
+		expect(POOL_SHOWN).toBe(60);
+		expect(POOL_STEP).toBe(60);
+		expect(REVEAL_SLACK).toBe(2);
+	});
+
+	it('names the buttons in the singular and the plural', () => {
+		expect(moreSuggestionsText(1)).toBe('1 weiteren Vorschlag anzeigen');
+		expect(moreSuggestionsText(3)).toBe('3 weitere Vorschläge anzeigen');
+		expect(moreSuggestionsText(10)).toBe('10 weitere Vorschläge anzeigen');
+		expect(morePoolText(1)).toBe('1 weiteres Ticket anzeigen');
+		expect(morePoolText(4)).toBe('4 weitere Tickets anzeigen');
+		expect(morePoolText(60)).toBe('60 weitere Tickets anzeigen');
+	});
+
+	it('says "Alle sichtbaren übernehmen (N)" while suggestions are hidden, else "Alle übernehmen"', () => {
+		expect(adoptAllText(5, 7)).toBe('Alle sichtbaren übernehmen (5)');
+		expect(adoptAllText(1, 3)).toBe('Alle sichtbaren übernehmen (1)');
+		expect(adoptAllText(7, 0)).toBe('Alle übernehmen');
+		expect(adoptAllText(1, 0)).toBe('Alle übernehmen');
 	});
 });
 

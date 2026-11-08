@@ -2,8 +2,9 @@
 // modes, the suggestions of a day, what a check mark means, which days can be planned, the order of
 // the entries and the texts of the page. Mirror of app/pb_hooks/lib/day-plan-rules.js
 // (tests/unit/web-day-plan.test.mjs keeps both equal); the SPA computes the suggestions from its live
-// tickets, the server the same for the automatic sources. Only the blocks of the plan (TP-4) are the
-// SPA's own; where the server puts a new entry, its answers say.
+// tickets, the server the same for the automatic sources. Only the blocks of the plan (TP-4) and how
+// many suggestions and tickets of the pool show (TV-1) are the SPA's own; where the server puts a
+// new entry, its answers say.
 //
 // "Heute" is the Berlin day of berlin-date.ts, the same as "Heute fällig" of the list (domain/filter.ts
 // dueBucket), never a time zone of the runtime (ADR-0005).
@@ -462,6 +463,40 @@ export function withOrder(current: readonly string[], named: readonly string[]):
 	const chosen = new Set(queue);
 	let next = 0;
 	return current.map((id) => (chosen.has(id) ? (queue[next++] ?? id) : id));
+}
+
+// --- Showing more (TV-1, ADR-0065 addendum TV-1; only the SPA) ------------------------------------
+
+/**
+ * Suggestions shown at first, on a PC as on a phone, and about how many more one click on
+ * "… weitere Vorschläge anzeigen" reveals (`revealBlocks` in domain/subtasks.ts, whole blocks).
+ */
+export const SUGGESTIONS_SHOWN = 5;
+export const SUGGESTIONS_STEP = 10;
+
+/** Tickets of the pool shown at first and about how many more one click reveals. */
+export const POOL_SHOWN = 60;
+export const POOL_STEP = 60;
+
+/** A list never hides only this many rows or fewer: it shows them as well. */
+export const REVEAL_SLACK = 2;
+
+/** Below the suggestions: "7 weitere Vorschläge anzeigen", "1 weiteren Vorschlag anzeigen". */
+export function moreSuggestionsText(count: number): string {
+	return count === 1 ? '1 weiteren Vorschlag anzeigen' : `${count} weitere Vorschläge anzeigen`;
+}
+
+/** Below the pool: "4 weitere Tickets anzeigen", "1 weiteres Ticket anzeigen". */
+export function morePoolText(count: number): string {
+	return count === 1 ? '1 weiteres Ticket anzeigen' : `${count} weitere Tickets anzeigen`;
+}
+
+/**
+ * The button that adopts every suggestion shown: "Alle übernehmen", while some are hidden "Alle
+ * sichtbaren übernehmen (5)" with the number of the shown ones, the only ones it adopts.
+ */
+export function adoptAllText(shown: number, hidden: number): string {
+	return hidden > 0 ? `Alle sichtbaren übernehmen (${shown})` : 'Alle übernehmen';
 }
 
 // --- Texts ---------------------------------------------------------------------------------------

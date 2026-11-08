@@ -194,7 +194,10 @@
 		{/if}
 		{#snippet suggestions()}
 			{#if store.isToday && store.editable}
-				<DayPlanSuggestions {store} {household} bind:open={suggestionsOpen} />
+				<!-- A new day (midnight) starts the suggestions anew: 5 shown, nothing chosen (TV-1). -->
+				{#key today}
+					<DayPlanSuggestions {store} {household} bind:open={suggestionsOpen} />
+				{/key}
 			{/if}
 		{/snippet}
 		<div class="day-grid" class:with-pool={store.editable}>

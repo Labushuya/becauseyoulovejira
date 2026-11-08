@@ -25,6 +25,7 @@ import {
 	progressLabel,
 	progressPercent,
 	progressText,
+	revealBlocks,
 	SERIES_ORIGIN_TEXTS,
 	UNKNOWN_PARENT_KEY,
 	subtaskCountText,
@@ -236,6 +237,140 @@ describe('limitBlocks (TP-3)', () => {
 		expect(ids(limitBlocks(rows('p >p1 >p2 >p3 x'), 2))).toBe('p p1 p2 p3');
 		expect(ids(limitBlocks(rows('x y'), 1))).toBe('x');
 		expect(limitBlocks([], 3)).toEqual([]);
+	});
+});
+
+describe('revealBlocks (TV-1)', () => {
+	type Row = { id: string; nested: boolean };
+	const singles = (count: number, prefix = 's'): Row[] =>
+		Array.from({ length: count }, (_, index) => ({ id: `${prefix}${index}`, nested: false }));
+	/** A parent and `children` rows indented below it. */
+	const block = (id: string, children: number): Row[] => [
+		{ id, nested: false },
+		...Array.from({ length: children }, (_, index) => ({ id: `${id}${index}`, nested: true }))
+	];
+	const ids = (list: readonly Row[]) => list.map((row) => row.id).join(' ');
+
+	it('shows nothing of an empty list and offers no click', () => {
+		expect(revealBlocks([], 5, 10, 2)).toEqual({
+			shown: [],
+			hidden: 0,
+			nextLimit: 5,
+			nextCount: 0
+		});
+	});
+
+	it('shows a list shorter than the limit in full', () => {
+		const list = [...singles(2), ...block('p', 2)];
+		expect(revealBlocks(list, 5, 10, 2)).toEqual({
+			shown: list,
+			hidden: 0,
+			nextLimit: 5,
+			nextCount: 0
+		});
+	});
+
+	it('never hides only one or two rows: 7 show in full, 8 show 5 and hide 3', () => {
+		for (const count of [6, 7]) {
+			const view = revealBlocks(singles(count), 5, 10, 2);
+			expect(view.shown, String(count)).toHaveLength(count);
+			expect(view.hidden, String(count)).toBe(0);
+			expect(view.nextCount, String(count)).toBe(0);
+		}
+		const eight = revealBlocks(singles(8), 5, 10, 2);
+		expect(ids(eight.shown)).toBe('s0 s1 s2 s3 s4');
+		expect(eight.hidden).toBe(3);
+		expect(eight.nextCount).toBe(3);
+		expect(eight.nextLimit).toBe(8);
+		// Without slack the same list hides even one row.
+		expect(revealBlocks(singles(6), 5, 10, 0).hidden).toBe(1);
+	});
+
+	it('shows a first block longer than the limit in full; a click always reveals the next whole block, also one longer than the step', () => {
+		const first = revealBlocks([...block('p', 6), ...singles(5)], 5, 10, 2);
+		expect(ids(first.shown)).toBe('p p0 p1 p2 p3 p4 p5');
+		expect(first.hidden).toBe(5);
+		expect(first.nextCount).toBe(5);
+
+		// Five rows, a block of 13 rows, four rows: the block does not fit into a step of 10 and still
+		// comes in full with the click.
+		const big = [...singles(5), ...block('q', 12), ...singles(4, 't')];
+		const view = revealBlocks(big, 5, 10, 2);
+		expect(view.shown).toHaveLength(5);
+		expect(view.hidden).toBe(17);
+		expect(view.nextCount).toBe(13);
+		expect(view.nextLimit).toBe(18);
+		const after = revealBlocks(big, view.nextLimit, 10, 2);
+		expect(ids(after.shown.slice(5))).toBe(ids(block('q', 12)));
+		expect(after.hidden).toBe(4);
+		expect(after.nextCount).toBe(4);
+
+		// A single row before a block longer than the step: the click reveals that row alone.
+		const lone = revealBlocks([...singles(6), ...block('q', 12)], 5, 10, 2);
+		expect(lone.shown).toHaveLength(5);
+		expect(lone.nextCount).toBe(1);
+		expect(lone.nextLimit).toBe(6);
+	});
+
+	it('takes about a step per click and the rest with the last one', () => {
+		const list = singles(30);
+		const clicks: [number, number][] = [];
+		let view = revealBlocks(list, 5, 10, 2);
+		while (view.hidden > 0) {
+			clicks.push([view.shown.length, view.nextCount]);
+			view = revealBlocks(list, view.nextLimit, 10, 2);
+		}
+		expect(clicks).toEqual([
+			[5, 10],
+			[15, 10],
+			[25, 5]
+		]);
+		expect(view.shown).toHaveLength(30);
+		// At most two would stay hidden after the step: the click takes them as well.
+		const seventeen = revealBlocks(singles(17), 5, 10, 2);
+		expect(seventeen.nextCount).toBe(12);
+		expect(seventeen.nextLimit).toBe(17);
+		const pool = revealBlocks(singles(122), 60, 60, 2);
+		expect(pool.shown).toHaveLength(60);
+		expect(pool.nextCount).toBe(62);
+	});
+
+	it('reveals with each click exactly the rows it names, in whole blocks, on 300 generated lists', () => {
+		let state = 20261108;
+		const next = (n: number) => {
+			state ^= state << 13;
+			state ^= state >>> 17;
+			state ^= state << 5;
+			return Math.abs(state) % n;
+		};
+		const blockLength = (list: readonly Row[], start: number) => {
+			let end = start + 1;
+			while (end < list.length && list[end]?.nested === true) end += 1;
+			return end - start;
+		};
+		for (let index = 0; index < 300; index++) {
+			const list = Array.from({ length: next(14) }, (_, number) =>
+				block(`b${number}x`, next(4) === 0 ? next(14) : next(2))
+			).flat();
+			const [limit, step, slack] = [1 + next(8), 1 + next(12), next(4)];
+			const name = `list ${index}: ${list.length} rows, ${limit}/${step}/${slack}`;
+			let view = revealBlocks(list, limit, step, slack);
+			for (;;) {
+				expect(view.shown, name).toEqual(list.slice(0, view.shown.length));
+				expect(view.shown.length + view.hidden, name).toBe(list.length);
+				// Never inside a block, never only a few hidden.
+				expect(list[view.shown.length]?.nested ?? false, name).toBe(false);
+				expect(view.hidden === 0 || view.hidden > slack, name).toBe(true);
+				if (view.hidden === 0) {
+					expect(view.nextCount, name).toBe(0);
+					break;
+				}
+				expect(view.nextCount, name).toBeGreaterThanOrEqual(blockLength(list, view.shown.length));
+				const after = revealBlocks(list, view.nextLimit, step, slack);
+				expect(after.shown.length - view.shown.length, name).toBe(view.nextCount);
+				view = after;
+			}
+		}
 	});
 });
 

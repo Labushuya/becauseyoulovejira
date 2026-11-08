@@ -198,10 +198,10 @@ export function arrangeRows<T extends TicketSummary>(
 }
 
 /**
- * The first arranged rows up to `limit`, in whole blocks (the pool of the day plan, TP-3): a block
- * is a row with the rows indented below it, and it counts in full or not at all. The first block
- * shows in full even when it alone is longer than `limit`; after a block that does not fit, none
- * follows, so the order stays.
+ * The first arranged rows up to `limit`, in whole blocks (the pool of the day plan, TP-3; since TV-1
+ * through `revealBlocks`): a block is a row with the rows indented below it, and it counts in full
+ * or not at all. The first block shows in full even when it alone is longer than `limit`; after a
+ * block that does not fit, none follows, so the order stays.
  */
 export function limitBlocks<R extends { nested: boolean }>(rows: readonly R[], limit: number): R[] {
 	let end = 0;
@@ -212,6 +212,43 @@ export function limitBlocks<R extends { nested: boolean }>(rows: readonly R[], l
 		end = next;
 	}
 	return rows.slice(0, end);
+}
+
+/** What a list shows of its arranged rows when it reveals more on demand (`revealBlocks`). */
+export interface RevealedRows<R> {
+	/** The rows shown, in whole blocks. */
+	shown: R[];
+	/** How many rows stay hidden after them. */
+	hidden: number;
+	/** The limit after the next click: the number of rows it shows; `limit` while none is hidden. */
+	nextLimit: number;
+	/** How many rows the next click reveals, in whole blocks; 0 while none is hidden. */
+	nextCount: number;
+}
+
+/**
+ * The first arranged rows up to `limit` in whole blocks (`limitBlocks`), for a list that reveals
+ * more on demand (TV-1: the suggestions and the pool of the day plan). It never hides only a few:
+ * when at most `slack` rows would stay hidden, it shows all of them. The next click takes up to
+ * `step` rows more in whole blocks, but always at least the next block, also one longer than `step`,
+ * and again all of them when at most `slack` would stay hidden. `nextLimit` shows exactly these rows.
+ */
+export function revealBlocks<R extends { nested: boolean }>(
+	rows: readonly R[],
+	limit: number,
+	step: number,
+	slack: number
+): RevealedRows<R> {
+	const orAll = (end: number) => (rows.length - end <= slack ? rows.length : end);
+	const end = orAll(limitBlocks(rows, limit).length);
+	if (end >= rows.length) return { shown: rows.slice(), hidden: 0, nextLimit: limit, nextCount: 0 };
+	const next = orAll(end + limitBlocks(rows.slice(end), step).length);
+	return {
+		shown: rows.slice(0, end),
+		hidden: rows.length - end,
+		nextLimit: next,
+		nextCount: next - end
+	};
 }
 
 /**

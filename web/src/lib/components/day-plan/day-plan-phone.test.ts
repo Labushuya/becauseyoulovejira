@@ -569,4 +569,26 @@ describe('styles of the day plan in the phone frame (MO-2)', () => {
 		expect(rule('DayPlanView.svelte', '.day-nav')).toMatch(/flex: 1 1 100%;\s*min-width: 0;/);
 		expect(rule('DayPlanView.svelte', '.day-title')).toMatch(/flex: 1;\s*min-width: 0;/);
 	});
+
+	it('gives "… weitere … anzeigen" of the suggestions and the pool 44 px from the shared subtle button (TV-1)', () => {
+		const base = read('../../styles/base.css');
+		// In the frame: every shared button with text outside a table cell.
+		expect(base).toMatch(
+			/:root\[data-mobile-layout='on'\]\s*:is\(\.button-primary, \.button-secondary, \.button-subtle\):not\(:is\(td, th\) \*\) \{\s*min-height: var\(--control-height-touch\);/
+		);
+		// On touch screens: after the small button, so the 44 px win over its height.
+		const touch = base.lastIndexOf('@media (pointer: coarse) {');
+		expect(touch).toBeGreaterThan(base.indexOf('.button-small {'));
+		expect(base.slice(touch)).toMatch(
+			/\.button-subtle \{\s*min-height: var\(--control-height-touch\);/
+		);
+		for (const file of ['DayPlanSuggestions.svelte', 'DayPlanPool.svelte']) {
+			const source = read(file);
+			expect(source, file).toMatch(
+				/<div class="more">\s*<button\s+class="button-subtle button-small"\s+type="button"/
+			);
+			// No rule of the component takes the height again.
+			expect(source, file).not.toMatch(/\.more[^{]*\{[^}]*height/);
+		}
+	});
 });
