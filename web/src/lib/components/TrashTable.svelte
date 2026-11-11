@@ -34,7 +34,8 @@
 	// and "Endgültig löschen …", which has no symbol of its own any more (rare and destructive, it
 	// waits behind the menu instead of next to "Wiederherstellen"). A right click on a row or
 	// Shift+F10 open the same menu (AM-3, rowMenus). The selection follows the rules of the ticket
-	// table (plan BI-2): Shift+click for a range, the head checkbox for every row. A restore that
+	// table (plan BI-2): Shift+click for a range, the head checkbox for every row shown (with "Nur
+	// blockierte" named "Alle angezeigten Tickets auswählen", TV-2). A restore that
 	// needs a choice shows its question inline below the row. Like every table it never scrolls
 	// sideways (ADR-0030); in a narrow frame Von, Gelöscht am, Projekt, the days and the status give
 	// way in this order. A ticket with dependencies (ADR-0047) shows "Blockiert (N)" next to its
@@ -61,6 +62,7 @@
 		onpurge,
 		ondismissneed,
 		selecting = false,
+		filtered = false,
 		columnFit = new ColumnFit(getColumnPrefs('trash'))
 	}: {
 		items: readonly TrashItem[];
@@ -85,6 +87,11 @@
 		ondismissneed: (id: string) => void;
 		/** The phone frame chooses ("Auswählen", MO-7b): a box on every card, a tap chooses. */
 		selecting?: boolean;
+		/**
+		 * `items` are only a part of the trash ("Nur blockierte"): the head checkbox then names the
+		 * shown tickets, the only ones it chooses (TV-2).
+		 */
+		filtered?: boolean;
 		columnFit?: ColumnFit;
 	} = $props();
 
@@ -291,7 +298,9 @@
 							<ResizableHeader column={selectColumn} fit={columnFit} className="select-head">
 								<input
 									type="checkbox"
-									aria-label="Alle Tickets im Papierkorb auswählen"
+									aria-label={filtered
+										? 'Alle angezeigten Tickets auswählen'
+										: 'Alle Tickets im Papierkorb auswählen'}
 									checked={head === 'all'}
 									disabled={items.length === 0}
 									bind:this={headBox}

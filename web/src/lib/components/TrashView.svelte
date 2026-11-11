@@ -5,6 +5,8 @@
 	import { TRASH_TABLE, withKeyDefaults } from '$lib/domain/columns';
 	import {
 		EMPTY_SELECTION,
+		chooseAllName,
+		chooseAllText,
 		headState,
 		keepShown,
 		toggleAll,
@@ -56,7 +58,8 @@
 	// Phone frame (MO-7b, ADR-0073 addendum MO-7b): cards instead of the table (TrashTable); the row of
 	// the view holds "Filter" (the sheet with "Nur blockierte", only while blocked tickets exist, as the
 	// switch of the PC) and the menu of the list with "Auswählen" and "Papierkorb leeren …". The bulk
-	// actions are one level deeper: "Auswählen" shows a box on every card and "Alle" above them, and the
+	// actions are one level deeper: "Auswählen" shows a box on every card and "Alle" above them
+	// ("Alle sichtbaren" with "Nur blockierte", TV-2; both choose only the shown tickets), and the
 	// bar of the selection stands at the bottom after the cards (SelectionBar, shared with "Aufgaben"
 	// and "Eingang"), its actions behind "Aktionen", "Fertig" leaves it. Since MO-7c1 the focus after
 	// "Wiederherstellen" of the chosen tickets and after "Ergebnis schließen" stays in the bar, or goes to
@@ -372,12 +375,16 @@
 					<label class="select-all">
 						<input
 							type="checkbox"
-							aria-label="Alle Tickets im Papierkorb auswählen"
+							aria-label={chooseAllName(
+								onlyBlocked,
+								'Tickets',
+								'Alle Tickets im Papierkorb auswählen'
+							)}
 							checked={head === 'all'}
 							bind:this={headBox}
 							onchange={() => (selection = toggleAll(selection, order))}
 						/>
-						Alle
+						{chooseAllText(onlyBlocked)}
 					</label>
 				</div>
 			{/if}
@@ -390,6 +397,7 @@
 				{activeId}
 				{columnFit}
 				{selecting}
+				filtered={onlyBlocked}
 				hrefOf={trashItemHref}
 				needOf={(id) => store.needOf(id)}
 				isBusy={(id) => store.isBusy(id)}

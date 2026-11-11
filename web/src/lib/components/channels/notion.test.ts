@@ -510,6 +510,28 @@ describe('Notion import dialog', () => {
 		expect(dialog.queryByRole('button', { name: 'Abbrechen' })).toBeNull();
 	});
 
+	it('takes a done entry out of the choice once "Erledigte überspringen" is on again', async () => {
+		const { dialog } = await openDialog();
+		await fireEvent.click(dialog.getByRole('checkbox', { name: /^Wochenplan/ }));
+		await fireEvent.click(dialog.getByRole('button', { name: 'Weiter' }));
+		await vi.waitFor(() => expect(dialog.getByText('3 ausgewählt')).toBeTruthy());
+		const skip = dialog.getByRole('checkbox', { name: 'Erledigte überspringen' });
+		const bread = () => dialog.getByRole('checkbox', { name: /^Brot/ }) as HTMLInputElement;
+
+		await fireEvent.click(skip);
+		await fireEvent.click(bread());
+		expect(dialog.getByText('4 ausgewählt')).toBeTruthy();
+		await fireEvent.click(skip);
+		expect(bread().disabled).toBe(true);
+		expect(dialog.getByText('3 ausgewählt')).toBeTruthy();
+
+		// Off again, the done entry can be chosen, but it left the choice and does not come back.
+		await fireEvent.click(skip);
+		expect(bread().disabled).toBe(false);
+		expect(bread().checked).toBe(false);
+		expect(dialog.getByText('3 ausgewählt')).toBeTruthy();
+	});
+
 	it('offers page content and the date property for a database', async () => {
 		const database: NotionPreview = {
 			...EMPTY_PREVIEW,
@@ -924,6 +946,130 @@ describe('Notion import dialog', () => {
 			expect(fold.getAttribute('aria-expanded')).toBe('false');
 			expect(week.getByRole('checkbox', { name: /^Milch/, hidden: true })).toBeTruthy();
 			expect(week.queryByRole('checkbox', { name: /^Milch/ })).toBeNull();
+		});
+
+		it('chooses with the head checkbox only the entries of open groups and says so while one is folded (TV-2)', async () => {
+			const { dialog, data } = await openDialog(previews);
+			await chooseAndPreview(dialog, ['Aufgaben Haushalt', 'Wochenplan']);
+			const head = (name: string) => dialog.getByRole('checkbox', { name }) as HTMLInputElement;
+			const week = within(dialog.getByRole('region', { name: 'Wochenplan' }));
+			expect(dialog.getByText('5 ausgewählt')).toBeTruthy();
+			await fireEvent.click(head('Alle wählbaren Einträge auswählen'));
+			expect(dialog.getByText('0 ausgewählt')).toBeTruthy();
+
+			await fireEvent.click(week.getByRole('button', { name: 'Wochenplan' }));
+			await fireEvent.click(head('Alle sichtbaren wählbaren Einträge auswählen'));
+			expect(dialog.getByText('2 ausgewählt')).toBeTruthy();
+			expect(head('Alle sichtbaren wählbaren Einträge auswählen').checked).toBe(true);
+			expect(
+				dialog.getByRole('button', { name: '2 Einträge in den Eingang übernehmen' })
+			).toBeTruthy();
+
+			// Opened again, its entries are not chosen; the head shows a part and its old words.
+			await fireEvent.click(week.getByRole('button', { name: 'Wochenplan' }));
+			expect((week.getByRole('checkbox', { name: /^Milch/ }) as HTMLInputElement).checked).toBe(
+				false
+			);
+			expect(head('Alle wählbaren Einträge auswählen').indeterminate).toBe(true);
+			await fireEvent.click(
+				dialog.getByRole('button', { name: '2 Einträge in den Eingang übernehmen' })
+			);
+			await vi.waitFor(() => expect(data.importBatch).toHaveBeenCalledOnce());
+			expect(data.importBatch.mock.calls[0]?.[1].refs).toEqual(['r1', 'r2']);
+		});
+
+		it('takes the entries of a group out of the choice when it folds; "Alle aus …" opens it again (TV-2)', async () => {
+			const { dialog } = await openDialog(previews);
+			await chooseAndPreview(dialog, ['Aufgaben Haushalt', 'Wochenplan']);
+			const week = within(dialog.getByRole('region', { name: 'Wochenplan' }));
+			const fold = week.getByRole('button', { name: 'Wochenplan' });
+			const groupBox = () =>
+				week.getByRole('checkbox', { name: 'Alle aus „Wochenplan“ auswählen' }) as HTMLInputElement;
+			expect(dialog.getByText('5 ausgewählt')).toBeTruthy();
+
+			await fireEvent.click(fold);
+			expect(fold.getAttribute('aria-expanded')).toBe('false');
+			expect(dialog.getByText('2 ausgewählt')).toBeTruthy();
+			expect(groupBox().checked).toBe(false);
+			await fireEvent.click(fold);
+			expect(dialog.getByText('2 ausgewählt')).toBeTruthy();
+			expect((week.getByRole('checkbox', { name: /^Milch/ }) as HTMLInputElement).checked).toBe(
+				false
+			);
+
+			// Choosing a folded group opens it; clearing it leaves it open.
+			await fireEvent.click(fold);
+			await fireEvent.click(groupBox());
+			expect(fold.getAttribute('aria-expanded')).toBe('true');
+			expect(dialog.getByText('5 ausgewählt')).toBeTruthy();
+			expect((week.getByRole('checkbox', { name: /^Milch/ }) as HTMLInputElement).checked).toBe(
+				true
+			);
+			await fireEvent.click(groupBox());
+			expect(fold.getAttribute('aria-expanded')).toBe('true');
+			expect(dialog.getByText('2 ausgewählt')).toBeTruthy();
+		});
+
+		it('chooses in advance only in the groups that are open when their preview arrives (TV-2)', async () => {
+			let release: () => void = () => undefined;
+			const { dialog, data } = await openDialog((fake) => {
+				previews(fake);
+				const answer = fake.preview.getMockImplementation();
+				fake.preview.mockImplementation(async (id, request, options) => {
+					if (request.source.id === DB_ID) await new Promise<void>((done) => (release = done));
+					return answer!(id, request, options);
+				});
+			});
+			await fireEvent.click(dialog.getByRole('checkbox', { name: /^Aufgaben Haushalt/ }));
+			await fireEvent.click(dialog.getByRole('checkbox', { name: /^Wochenplan/ }));
+			await fireEvent.click(dialog.getByRole('button', { name: 'Weiter' }));
+			await vi.waitFor(() => expect(data.preview).toHaveBeenCalledOnce());
+			const week = within(dialog.getByRole('region', { name: 'Wochenplan' }));
+			expect(week.getByText('Wartet …')).toBeTruthy();
+
+			// "Wochenplan" folds while it waits; then both previews arrive.
+			await fireEvent.click(week.getByRole('button', { name: 'Wochenplan' }));
+			release();
+			await vi.waitFor(() => expect(dialog.getByText(/^7 Einträge aus 2 Quellen/)).toBeTruthy());
+			expect(dialog.getByText('2 ausgewählt')).toBeTruthy();
+
+			// Opened, the folded group has nothing chosen; the open one has its choice made in advance.
+			await fireEvent.click(week.getByRole('button', { name: 'Wochenplan' }));
+			expect((week.getByRole('checkbox', { name: /^Milch/ }) as HTMLInputElement).checked).toBe(
+				false
+			);
+			const rows = within(dialog.getByRole('region', { name: 'Aufgaben Haushalt' }));
+			expect(
+				(rows.getByRole('checkbox', { name: /^Fenster putzen/ }) as HTMLInputElement).checked
+			).toBe(true);
+			expect(dialog.getByText('2 ausgewählt')).toBeTruthy();
+		});
+
+		it('chooses a Shift range from one group to another over the open groups only (TV-2)', async () => {
+			const { dialog } = await openDialog(previews);
+			await chooseAndPreview(dialog, ['Aufgaben Haushalt', 'Wochenplan', 'Unterseite']);
+			const head = (name: string) => dialog.getByRole('checkbox', { name }) as HTMLInputElement;
+			const week = within(dialog.getByRole('region', { name: 'Wochenplan' }));
+			await fireEvent.click(head('Alle wählbaren Einträge auswählen'));
+			expect(dialog.getByText('0 ausgewählt')).toBeTruthy();
+
+			// "Wochenplan" between them is folded: the range runs over the shown entries only.
+			await fireEvent.click(week.getByRole('button', { name: 'Wochenplan' }));
+			await fireEvent.click(dialog.getByRole('checkbox', { name: /^Fenster putzen/ }));
+			const tiles = dialog.getByRole('checkbox', { name: /^Fliesen aussuchen/ });
+			await fireEvent.pointerDown(tiles.closest('label') as HTMLElement, { shiftKey: true });
+			await fireEvent.click(tiles);
+			expect(dialog.getByText('3 ausgewählt')).toBeTruthy();
+
+			await fireEvent.click(week.getByRole('button', { name: 'Wochenplan' }));
+			const chosenOf = (region: string) =>
+				within(dialog.getByRole('region', { name: region }))
+					.getAllByRole('checkbox', { name: /^(?!Alle aus)/ })
+					.map((box) => (box as HTMLInputElement).checked);
+			expect(chosenOf('Wochenplan').some(Boolean)).toBe(false);
+			expect(chosenOf('Aufgaben Haushalt')).toEqual([true, true]);
+			expect(chosenOf('Unterseite')).toEqual([true]);
+			expect(dialog.getByText('3 ausgewählt')).toBeTruthy();
 		});
 
 		it('takes several sources in one run and names the result of each; an error of one source ends only that one', async () => {

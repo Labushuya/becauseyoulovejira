@@ -13,6 +13,7 @@ import {
 	groupTicketLevels,
 	groupTickets,
 	readCollapsedGroups,
+	unfoldedTickets,
 	writeCollapsedGroups,
 	type GroupNode,
 	type Grouping
@@ -494,6 +495,43 @@ describe('groupTicketLevels (plan OR-3)', () => {
 			expect(leaves.every((leaf) => leaf.tickets.length > 0)).toBe(true);
 		}
 	);
+});
+
+describe('unfoldedTickets (TV-2)', () => {
+	const tickets = [
+		row('h-wait', { project: HOUSE, status: 'waiting' }),
+		row('none-open'),
+		row('h-open', { project: HOUSE }),
+		row('c-open', { project: CAR })
+	];
+	const ids = (list: TicketSummary[]) => list.map((ticket) => ticket.id);
+
+	it('takes the tickets of every open group in the order of the groups', () => {
+		const groups = groupTicketLevels(tickets, 'project', 'status', TODAY);
+		expect(ids(unfoldedTickets(groups, () => false))).toEqual([
+			'c-open',
+			'h-open',
+			'h-wait',
+			'none-open'
+		]);
+	});
+
+	it('leaves out a folded leaf, and a folded first level with its whole second level', () => {
+		const groups = groupTicketLevels(tickets, 'project', 'status', TODAY);
+		const folded = (paths: string[]) => (path: string) => paths.includes(path);
+		expect(ids(unfoldedTickets(groups, folded([`project:${HOUSE.id}/status:open`])))).toEqual([
+			'c-open',
+			'h-wait',
+			'none-open'
+		]);
+		expect(ids(unfoldedTickets(groups, folded([`project:${HOUSE.id}`])))).toEqual([
+			'c-open',
+			'none-open'
+		]);
+		const single = groupTicketLevels(tickets, 'status', null, TODAY);
+		expect(ids(unfoldedTickets(single, folded(['status:open'])))).toEqual(['h-wait']);
+		expect(unfoldedTickets([], () => false)).toEqual([]);
+	});
 });
 
 describe('folded groups in sessionStorage (plan OR-3)', () => {

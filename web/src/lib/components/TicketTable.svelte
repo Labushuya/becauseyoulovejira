@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { tick, type Snippet } from 'svelte';
+	import { tick, untrack, type Snippet } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
@@ -10,6 +10,7 @@
 	import {
 		GROUPING_LABELS,
 		readCollapsedGroups,
+		unfoldedTickets,
 		writeCollapsedGroups,
 		type GroupNode
 	} from '$lib/domain/grouping';
@@ -66,7 +67,10 @@
 	import { ticketLinks } from '$lib/stores/open-mode.svelte';
 	import {
 		EMPTY_SELECTION,
+		chooseAllName,
+		chooseAllText,
 		clickRow,
+		deselectedText,
 		headState,
 		keepShown,
 		toggleAll,
@@ -119,9 +123,13 @@
 	// the same leaf group (arrangeRows per leaf, ADR-0033 section 5).
 	// Selection (plan BI-2, ADR-0036 §2): a fixed first column with a checkbox per row, apart from
 	// the check mark "erledigt" at the end. Shift+click chooses a range in the order of the rows,
-	// the head checkbox all rows that pass the filters (also in folded groups), indeterminate when
-	// only some are chosen. A filter change keeps only rows that are still shown; Escape in the
-	// table clears the selection. With `bulk` the bar of the bulk actions stands above the table.
+	// the head checkbox all rows that pass the filters, indeterminate when only some are chosen.
+	// Since TV-2 (ADR-0036 addendum TV-2) only rendered rows count: the head checkbox, "Alle" and a
+	// range leave out the rows of a folded group and of a folded "Angeheftet", and folding takes them
+	// out of the selection; a status region says how many left ("2 Tickets abgewählt."), and
+	// "Bereich" goes off without its anchor. A filter change keeps only rows that are still shown;
+	// Escape in the table clears the selection. With `bulk` the bar of the bulk actions stands above
+	// the table.
 	// Menu of a row (plan aktionsmenues, AM-2): with `rowActions` every row ends with "•••" after
 	// "Öffnen": the ticket in the panel or the full view (links, whatever way is remembered, which
 	// they do not change), "Link kopieren", "Duplizieren …" (with `duplicates`), "Folge-Ticket
@@ -148,7 +156,8 @@
 	// filter cards and the filter bar of the PC move into the filter sheet (`filters`, FilterSheet)
 	// together with "Gruppieren" and the sort. "Spalten" has no place without columns; what the card
 	// leaves out is in the ticket. The selection of the bulk actions is one level deeper: "Auswählen"
-	// shows a box on every card, "Alle" chooses every shown ticket, and "Bereich" makes the next tap
+	// shows a box on every card, "Alle" chooses every shown ticket ("Alle sichtbaren" while folding,
+	// filters or the search hide rows, TV-2), and "Bereich" makes the next tap
 	// choose up to there, the way of Shift+click for a finger. The bulk actions stand in the bar of the
 	// selection at the bottom after the cards (MO-7b, SelectionBar, shared with "Eingang" and
 	// "Papierkorb") with "Fertig". No virtualization, as for the table: the cards render the rows the
@@ -483,18 +492,38 @@
 	 * action would need the server (OF-4a round 2, A2).
 	 */
 	const choosable = (ticket: TicketSummary) => !store.isCreated(ticket.id);
-	/** Rows a selection may hold: every ticket that passes the filters and the pinned ones above. */
+	/**
+	 * Open tickets whose rows are rendered (TV-2): none of a folded group, in the order of the
+	 * groups.
+	 */
+	const unfolded = $derived(
+		store.groups === null
+			? store.visible
+			: unfoldedTickets(store.groups, (path) => collapsed.has(path))
+	);
+	/** Rows a selection may hold: the rendered ones, pinned or not; folding takes rows out (TV-2). */
 	const selectable = $derived(
-		[...store.pinned, ...store.visible].filter(choosable).map((ticket) => ticket.id)
+		[...(pinnedFolded ? [] : store.pinned), ...unfolded]
+			.filter(choosable)
+			.map((ticket) => ticket.id)
 	);
 	/**
-	 * Rows of the head checkbox: every ticket that passes the filters, as before the pins; a pinned
-	 * ticket the filters hide is chosen only by its own box.
+	 * Rows of the head checkbox and "Alle": the rendered rows that pass the filters, as before the
+	 * pins; a pinned ticket the filters hide is chosen only by its own box.
 	 */
-	const filteredIds = $derived(
-		[...store.pinnedInFilter, ...store.visible].filter(choosable).map((ticket) => ticket.id)
+	const headIds = $derived(
+		[...(pinnedFolded ? [] : store.pinnedInFilter), ...unfolded]
+			.filter(choosable)
+			.map((ticket) => ticket.id)
 	);
-	const head = $derived(headState(selection, filteredIds));
+	/**
+	 * The list hides rows: a folded group or "Angeheftet", or the filters and the search. "Alle" then
+	 * says "Alle sichtbaren" (TV-2); it chooses only rendered rows either way.
+	 */
+	const rowsHidden = $derived(
+		filtered || (pinnedFolded && hasPinnedRows) || unfolded.length < store.visible.length
+	);
+	const head = $derived(headState(selection, headIds));
 	const chosenTickets = $derived(
 		selection.ids.flatMap((id) => {
 			const ticket = store.find(id);
@@ -503,11 +532,28 @@
 	);
 	let headBox = $state<HTMLInputElement>();
 	const selectColumn = TICKET_TABLE.columns.find((column) => column.id === 'select');
+	/** Name of the head checkbox, and of "Alle" in the phone frame while nothing is hidden. */
+	const HEAD_BOX_NAME = 'Alle angezeigten Tickets auswählen';
+	/**
+	 * The last announcement of chosen rows that left the selection without a tap (TV-2); `id` makes
+	 * the same words a new message.
+	 */
+	let deselected = $state({ id: 0, text: '' });
 
-	// A filter change, a new sort or rows that left the list: only shown rows stay chosen.
+	// A filter change, a new sort, rows that left the list or a folded group or "Angeheftet" (TV-2):
+	// only rendered rows stay chosen, and they do not come back chosen. A screen reader hears how
+	// many left, also when the bar with its number goes with them; not during a bulk action, whose
+	// progress and result speak for it.
 	$effect(() => {
 		const next = keepShown(selection, selectable);
-		if (next !== selection) selection = next;
+		if (next === selection) return;
+		const left = selection.ids.length - next.ids.length;
+		untrack(() => {
+			if (left > 0 && bulk?.busy !== true) {
+				deselected = { id: deselected.id + 1, text: deselectedText(left) };
+			}
+		});
+		selection = next;
 	});
 
 	$effect(() => {
@@ -541,6 +587,12 @@
 	let rangeNext = $state(false);
 	const selecting = $derived(phone && (selectMode || selection.ids.length > 0));
 	let cardHeadBox = $state<HTMLInputElement>();
+
+	// "Bereich" needs the start of its range: without an anchor (folding, a filter or the search took
+	// it out, "Alle", Esc) it goes off, so the next tap chooses one card (TV-2).
+	$effect(() => {
+		if (selection.anchor === null) rangeNext = false;
+	});
 
 	$effect(() => {
 		if (cardHeadBox) cardHeadBox.indeterminate = head === 'some';
@@ -947,21 +999,29 @@
 	{/if}
 
 	<p class="visually-hidden" aria-live="polite">{store.announcement}</p>
+	{#if bulk}
+		<!-- Chosen rows that left the selection without a tap: folding, the filters, the search or rows
+		     that left the list (TV-2). -->
+		<div class="visually-hidden" role="status">
+			{#key deselected.id}<p>{deselected.text}</p>{/key}
+		</div>
+	{/if}
 
 	{#if bulk && selecting}
-		<!-- "Auswählen" in the phone frame (MO-3): all shown and a range by tap; the way out ("Fertig")
-		     is in the bar of the selection at the bottom since MO-7b. -->
+		<!-- "Auswählen" in the phone frame (MO-3): all shown ("Alle sichtbaren" while rows are hidden,
+		     TV-2) and a range by tap; the way out ("Fertig") is in the bar of the selection at the
+		     bottom since MO-7b. -->
 		<div class="select-mode" role="group" aria-label="Auswahl">
 			<label class="select-all">
 				<input
 					type="checkbox"
-					aria-label="Alle angezeigten Tickets auswählen"
+					aria-label={chooseAllName(rowsHidden, 'Tickets', HEAD_BOX_NAME)}
 					checked={head === 'all'}
-					disabled={filteredIds.length === 0}
+					disabled={headIds.length === 0}
 					bind:this={cardHeadBox}
-					onchange={() => (selection = toggleAll(selection, filteredIds))}
+					onchange={() => (selection = toggleAll(selection, headIds))}
 				/>
-				Alle
+				{chooseAllText(rowsHidden)}
 			</label>
 			<button
 				class="button-secondary"
@@ -1142,11 +1202,11 @@
 							<ResizableHeader column={selectColumn} fit={columnFit} className="select-head">
 								<input
 									type="checkbox"
-									aria-label="Alle angezeigten Tickets auswählen"
+									aria-label={HEAD_BOX_NAME}
 									checked={head === 'all'}
-									disabled={filteredIds.length === 0}
+									disabled={headIds.length === 0}
 									bind:this={headBox}
-									onchange={() => (selection = toggleAll(selection, filteredIds))}
+									onchange={() => (selection = toggleAll(selection, headIds))}
 								/>
 							</ResizableHeader>
 						{/if}

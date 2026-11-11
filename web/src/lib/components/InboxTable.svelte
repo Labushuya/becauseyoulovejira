@@ -35,6 +35,7 @@
 	import type { ProblemEntry } from '$lib/domain/problems';
 	import type { Project } from '$lib/domain/project';
 	import { projectChoiceLabel, treeOrder } from '$lib/domain/project-tree';
+	import { chooseAllName, chooseAllText } from '$lib/domain/selection';
 	import { SOURCE_FAMILY_CHIPS, SOURCE_FAMILY_LABELS, type SourceFamily } from '$lib/domain/source';
 	import {
 		noEntryMatchText,
@@ -152,7 +153,8 @@
 	// numbers and a locked "Weitere laden" stay and the list is busy, as during a new attempt over kept
 	// rows, "Eingang wird geladen …" stands only without a row; a paged view
 	// without a hit among its loaded pages says so and offers "Weitere laden"; a changed search keeps
-	// only the chosen entries it shows; back and forward show the search of the address again.
+	// only the chosen entries it shows (since TV-2 a changed chip "Quelle" or "Zielprojekt" too); back
+	// and forward show the search of the address again.
 	let {
 		store,
 		flags,
@@ -287,6 +289,13 @@
 	const chosen = $derived(rows.filter((item) => choosable(item) && selected.includes(item.id)));
 	const selectable = $derived(rows.filter(choosable));
 	const allChosen = $derived(selectable.length > 0 && chosen.length === selectable.length);
+	/**
+	 * The search or a chip hides entries, or a paged view has more to load: "Alle" then says "Alle
+	 * sichtbaren" (TV-2); it chooses only the shown entries either way.
+	 */
+	const entriesHidden = $derived(
+		filtered || store.searching || (!showsNew && store.handledHasMore)
+	);
 	const ready = $derived(
 		showsNew ? store.state === 'ready' : store.state === 'ready' && store.handledLoad === 'ready'
 	);
@@ -432,14 +441,17 @@
 		(titleLinks()[0] ?? moreFromEmpty ?? heading)?.focus();
 	}
 
-	// A changed search keeps only the chosen entries it shows (EG-2 review): an entry it hides does not
-	// come back chosen when the search goes.
-	let selectionSearch: string | null | undefined;
+	// A changed search (EG-2 review) or chip "Quelle" or "Zielprojekt" (TV-2) keeps only the chosen
+	// entries it shows: an entry it hides does not come back chosen when it goes. Only on such a
+	// change, not whenever the rows change: a reload or a reconnection keeps the selection.
+	let selectionNarrowing: readonly (string | null)[] | undefined;
 	$effect(() => {
-		const search = query.search ?? null;
-		const previous = selectionSearch;
-		selectionSearch = search;
-		if (previous === undefined || previous === search) return;
+		const narrowing = [query.search ?? null, query.source, target];
+		const previous = selectionNarrowing;
+		selectionNarrowing = narrowing;
+		if (previous === undefined || narrowing.every((value, index) => value === previous[index])) {
+			return;
+		}
 		untrack(() => {
 			const shownIds = new Set(rows.map((item) => item.id));
 			const kept = selected.filter((id) => shownIds.has(id));
@@ -1344,18 +1356,23 @@
 			<p class="sync-status" role="status">{syncAll.running ? syncAll.status : ''}</p>
 		{/if}
 		{#if selecting}
-			<!-- "Auswählen" (MO-6): all new entries shown; the bulk actions and the way out ("Fertig")
-			     are in the bar of the selection at the bottom since MO-7b. -->
+			<!-- "Auswählen" (MO-6): all new entries shown ("Alle sichtbaren" while some are hidden or not
+			     loaded, TV-2); the bulk actions and the way out ("Fertig") are in the bar of the
+			     selection at the bottom since MO-7b. -->
 			<div class="select-mode" role="group" aria-label="Auswahl">
 				<label class="select-all">
 					<input
 						type="checkbox"
-						aria-label="Alle angezeigten Einträge auswählen"
+						aria-label={chooseAllName(
+							entriesHidden,
+							'Einträge',
+							'Alle angezeigten Einträge auswählen'
+						)}
 						checked={allChosen}
 						disabled={selectable.length === 0}
 						onchange={(event) => toggleAll(event.currentTarget.checked)}
 					/>
-					Alle
+					{chooseAllText(entriesHidden)}
 				</label>
 			</div>
 		{/if}

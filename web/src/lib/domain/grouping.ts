@@ -245,6 +245,22 @@ export function groupTicketLevels<T extends GroupableTicket>(
 	});
 }
 
+/**
+ * The tickets of the groups that are open, in the order of the groups (ADR-0036 addendum TV-2): a
+ * folded group shows none, a folded first level none of its second level either. Only these rows
+ * are rendered, so only these can be chosen.
+ */
+export function unfoldedTickets<T>(
+	groups: readonly GroupNode<T>[],
+	folded: (path: string) => boolean
+): T[] {
+	return groups.flatMap((group) => {
+		if (folded(group.path)) return [];
+		if (group.subgroups === null) return group.tickets;
+		return group.subgroups.flatMap((sub) => (folded(sub.path) ? [] : sub.tickets));
+	});
+}
+
 /** Folded groups per tab in sessionStorage (plan OR-3), default open; like the projects. */
 export const GROUP_COLLAPSED_STORAGE_KEY = 'byl-groups-collapsed';
 

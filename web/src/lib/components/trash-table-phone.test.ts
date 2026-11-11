@@ -229,6 +229,31 @@ describe('"Papierkorb" as cards in the phone frame (MO-7b)', () => {
 		expect(screen.queryByRole('dialog', { name: 'Filter' })).toBeNull();
 	});
 
+	it('says "Alle sichtbaren" above the cards with "Nur blockierte" and chooses the shown ones (TV-2)', async () => {
+		useWindow(true, true);
+		await showView([item(A, { dependencies: 3 }), item(B)]);
+		const trigger = screen.getByRole('button', { name: 'Weitere Aktionen der Liste' });
+		await fireEvent.click(
+			within(menuOf(trigger)).getByRole('menuitem', { name: 'Auswählen', hidden: true })
+		);
+		await tick();
+		const choosing = screen.getByRole('group', { name: 'Auswahl' });
+		const all = () => within(choosing).getByRole<HTMLInputElement>('checkbox', { name: /^Alle / });
+		expect(all().getAttribute('aria-label')).toBe('Alle Tickets im Papierkorb auswählen');
+		expect(all().closest('label')?.textContent?.trim()).toBe('Alle');
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Filter' }));
+		await tick();
+		const sheet = screen.getByRole('dialog', { name: 'Filter' });
+		await fireEvent.click(within(sheet).getByRole('switch', { name: 'Nur blockierte (1)' }));
+		await fireEvent.click(within(sheet).getByRole('button', { name: '1 Ticket anzeigen' }));
+		await tick();
+		expect(all().getAttribute('aria-label')).toBe('Alle sichtbaren Tickets auswählen');
+		expect(all().closest('label')?.textContent?.trim()).toBe('Alle sichtbaren');
+		await fireEvent.click(all());
+		expect(screen.getByRole('region', { name: '1 Ticket ausgewählt' })).toBeTruthy();
+	});
+
 	it('chooses with "Auswählen": boxes on the cards, a tap chooses, "Alle" and the bar at the bottom', async () => {
 		useWindow(true, true);
 		const { data, view } = await showView();

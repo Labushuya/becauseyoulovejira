@@ -1,7 +1,8 @@
 // Selection and bulk actions of the ticket table (plan BI-2, ADR-0036 §2 and §3): a checkbox per
 // row apart from the check mark, Shift ranges, the head checkbox with its indeterminate state,
 // filter changes, Escape, a click in the cell that never opens the ticket, and the bar with its
-// menus and questions.
+// menus and questions. Since TV-2 only rendered rows count: none of a folded group, and a status
+// region says how many chosen rows left.
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
@@ -51,8 +52,8 @@ function ticket(n: number, overrides: Partial<TicketSummary> = {}): TicketSummar
 	};
 }
 
-async function showTable(open: TicketSummary[], bulkData: Partial<BulkEditData> = {}) {
-	mocks.page.url = new URL('/', 'http://localhost:3000');
+async function showTable(open: TicketSummary[], bulkData: Partial<BulkEditData> = {}, path = '/') {
+	mocks.page.url = new URL(path, 'http://localhost:3000');
 	const data: TicketListData = {
 		listOpen: vi.fn(async () => open),
 		listSubtasks: vi.fn(async () => open.filter((entry) => entry.parentId)),
@@ -111,6 +112,7 @@ beforeEach(() => {
 
 afterEach(() => {
 	vi.useRealTimers();
+	sessionStorage.clear();
 	document.body.innerHTML = '';
 });
 
@@ -165,6 +167,7 @@ describe('selection column (plan BI-2)', () => {
 		expect(['TASK-1', 'TASK-2', 'TASK-3'].every((key) => box(key).checked)).toBe(true);
 		expect(headBox().indeterminate).toBe(false);
 		expect(headBox().checked).toBe(true);
+		expect(screen.getByText('3 Tickets ausgewählt')).toBeTruthy();
 
 		await fireEvent.click(headBox());
 		expect(['TASK-1', 'TASK-2', 'TASK-3'].some((key) => box(key).checked)).toBe(false);
@@ -197,6 +200,110 @@ describe('selection column (plan BI-2)', () => {
 		await choose('TASK-2');
 		await fireEvent.click(screen.getByRole('button', { name: 'Auswahl aufheben' }));
 		expect(box('TASK-2').checked).toBe(false);
+	});
+});
+
+describe('only rendered rows are chosen (TV-2)', () => {
+	/** Grouped by priority: "Hoch" with TASK-1, "Mittel" with TASK-2, "Niedrig" with TASK-3 and TASK-4. */
+	const showGroups = () =>
+		showTable(
+			[
+				ticket(1, { priority: 'high' }),
+				ticket(2),
+				ticket(3, { priority: 'low' }),
+				ticket(4, { priority: 'low' })
+			],
+			{},
+			'/?gruppe=prio'
+		);
+	const fold = async (name: RegExp) => {
+		await fireEvent.click(screen.getByRole('button', { name }));
+		await tick();
+	};
+	const chosen = (key: string) =>
+		screen.queryByRole<HTMLInputElement>('checkbox', { name: `${key} auswählen` })?.checked ?? null;
+
+	it('chooses from the head only the rows of open groups and is all once they are chosen', async () => {
+		await showGroups();
+		await fold(/^Niedrig/);
+		expect(screen.queryByRole('checkbox', { name: 'TASK-3 auswählen' })).toBeNull();
+
+		await fireEvent.click(headBox());
+		expect(screen.getByText('2 Tickets ausgewählt')).toBeTruthy();
+		expect(headBox().checked).toBe(true);
+		expect(headBox().indeterminate).toBe(false);
+
+		// Opened again, the rows of the folded group are not chosen; the head shows a part.
+		await fold(/^Niedrig/);
+		expect([chosen('TASK-1'), chosen('TASK-2'), chosen('TASK-3'), chosen('TASK-4')]).toEqual([
+			true,
+			true,
+			false,
+			false
+		]);
+		expect(headBox().indeterminate).toBe(true);
+		expect(screen.getByRole('checkbox', { name: 'Alle angezeigten Tickets auswählen' })).toBe(
+			headBox()
+		);
+	});
+
+	it('takes the rows of a group out of the selection when it folds', async () => {
+		const { run, bulkData } = await showGroups();
+		await fireEvent.click(headBox());
+		expect(screen.getByText('4 Tickets ausgewählt')).toBeTruthy();
+
+		await fold(/^Niedrig/);
+		expect(screen.getByText('2 Tickets ausgewählt')).toBeTruthy();
+
+		// A bulk action while the group is folded takes only the chosen rows that are shown.
+		await fireEvent.click(screen.getByRole('button', { name: 'Priorität' }));
+		await fireEvent.click(screen.getByRole('menuitem', { hidden: true, name: 'Dringend' }));
+		expect(run).toHaveBeenCalledWith({ kind: 'priority', value: 'urgent' }, [
+			't00000000000001',
+			't00000000000002'
+		]);
+		await vi.waitFor(() => expect(bulkData.update).toHaveBeenCalledTimes(2));
+		const changed = vi.mocked(bulkData.update).mock.calls.map(([id]) => id);
+		expect(changed.sort()).toEqual(['t00000000000001', 't00000000000002']);
+
+		// Opened again, its rows are not chosen; nothing changed them.
+		await fold(/^Niedrig/);
+		expect([chosen('TASK-3'), chosen('TASK-4')]).toEqual([false, false]);
+	});
+
+	it('says how many chosen tickets folding or a filter took out, also once nothing stays chosen', async () => {
+		const { store } = await showGroups();
+		const said = () => document.querySelector('.visually-hidden[role="status"] p');
+		await fireEvent.click(headBox());
+
+		await fold(/^Niedrig/);
+		expect(said()?.textContent).toBe('2 Tickets abgewählt.');
+
+		store.activate({ ...parseListQuery(new URLSearchParams('gruppe=prio')), priority: 'high' });
+		await vi.advanceTimersByTimeAsync(0);
+		expect(screen.getByText('1 Ticket ausgewählt')).toBeTruthy();
+		const first = said();
+		expect(first?.textContent).toBe('1 Ticket abgewählt.');
+
+		// The last chosen ticket goes: the bar goes with it, the status still speaks, as a new message.
+		store.activate({ ...parseListQuery(new URLSearchParams('gruppe=prio')), priority: 'medium' });
+		await vi.advanceTimersByTimeAsync(0);
+		expect(bar()).toBeNull();
+		expect(said()?.textContent).toBe('1 Ticket abgewählt.');
+		expect(said()).not.toBe(first);
+	});
+
+	it('chooses a Shift range over the rendered rows only, not through a folded group', async () => {
+		await showGroups();
+		await fold(/^Mittel/);
+		// Rows on screen: TASK-1, then "Niedrig" newest first, TASK-4 and TASK-3.
+		await choose('TASK-1');
+		await choose('TASK-3', true);
+		expect([chosen('TASK-1'), chosen('TASK-4'), chosen('TASK-3')]).toEqual([true, true, true]);
+		expect(screen.getByText('3 Tickets ausgewählt')).toBeTruthy();
+
+		await fold(/^Mittel/);
+		expect(chosen('TASK-2')).toBe(false);
 	});
 });
 

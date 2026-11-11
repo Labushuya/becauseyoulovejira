@@ -338,6 +338,29 @@ describe('blocked tickets in the view (ADR-0047)', () => {
 			)
 		).toBeTruthy();
 	});
+
+	it('names the head checkbox after the shown tickets with "Nur blockierte" and chooses only them (TV-2)', async () => {
+		await showView({}, blocked());
+		await fireEvent.click(
+			screen.getByRole('checkbox', { name: 'Alle Tickets im Papierkorb auswählen' })
+		);
+		expect(screen.getByRole('region', { name: '2 Tickets ausgewählt' })).toBeTruthy();
+
+		await fireEvent.click(screen.getByRole('switch', { name: 'Nur blockierte (1)' }));
+		await tick();
+		expect(
+			screen.queryByRole('checkbox', { name: 'Alle Tickets im Papierkorb auswählen' })
+		).toBeNull();
+		const head = screen.getByRole<HTMLInputElement>('checkbox', {
+			name: 'Alle angezeigten Tickets auswählen'
+		});
+		// The hidden ticket left the selection; the head chooses the shown one only.
+		expect(screen.getByRole('region', { name: '1 Ticket ausgewählt' })).toBeTruthy();
+		expect(head.checked).toBe(true);
+		await fireEvent.click(head);
+		await fireEvent.click(head);
+		expect(screen.getByRole('region', { name: '1 Ticket ausgewählt' })).toBeTruthy();
+	});
 });
 
 describe('preview of a ticket in the trash', () => {

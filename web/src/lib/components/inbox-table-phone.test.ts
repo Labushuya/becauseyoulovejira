@@ -113,6 +113,8 @@ async function setup(
 		query?: InboxQuery;
 		projects?: Project[];
 		handled?: InboxItemSummary[];
+		/** Further pages of a paged view wait after the first one; default false. */
+		hasMore?: boolean;
 		withNames?: boolean;
 		/** The connection is missing (OF-3). */
 		offline?: boolean;
@@ -124,7 +126,7 @@ async function setup(
 		listHandled: vi.fn<InboxData['listHandled']>(async (_state, page) => ({
 			items: options.handled ?? [],
 			page,
-			hasMore: false
+			hasMore: options.hasMore ?? false
 		})),
 		get: vi.fn<InboxData['get']>(async (id) => ({ ...item(id), body: '' })),
 		create: vi.fn<InboxData['create']>(),
@@ -538,6 +540,8 @@ describe('the inbox as cards in the phone frame (MO-6)', () => {
 		const all = within(bar).getByRole<HTMLInputElement>('checkbox', {
 			name: 'Alle angezeigten Einträge auswählen'
 		});
+		// Nothing is hidden: the box says "Alle" (TV-2).
+		expect(all.closest('label')?.textContent?.trim()).toBe('Alle');
 		await fireEvent.click(all);
 		expect(
 			['Rechnung September', 'Artikel', 'Milch kaufen'].every((title) => box(title).checked)
@@ -630,9 +634,19 @@ describe('the search in the phone frame (EG-2)', () => {
 		await fireEvent.click(within(menu).getByRole('menuitem', { name: 'Auswählen', hidden: true }));
 		await tick();
 		const bar = screen.getByRole('group', { name: 'Auswahl' });
-		await fireEvent.click(
-			within(bar).getByRole('checkbox', { name: 'Alle angezeigten Einträge auswählen' })
-		);
+		// The search hides entries: the box says "Alle sichtbaren", its name begins so (TV-2).
+		const all = within(bar).getByRole('checkbox', { name: 'Alle sichtbaren Einträge auswählen' });
+		expect(all.closest('label')?.textContent?.trim()).toBe('Alle sichtbaren');
+		await fireEvent.click(all);
+		expect(screen.getByRole('region', { name: '1 Eintrag ausgewählt' })).toBeTruthy();
+
+		// Without the search nothing is hidden; the hidden entries did not come along chosen.
+		store.activate({ source: null, state: 'new', search: null });
+		await tick();
+		const whole = within(bar).getByRole('checkbox', {
+			name: 'Alle angezeigten Einträge auswählen'
+		});
+		expect(whole.closest('label')?.textContent?.trim()).toBe('Alle');
 		expect(screen.getByRole('region', { name: '1 Eintrag ausgewählt' })).toBeTruthy();
 	});
 
@@ -845,6 +859,60 @@ describe('several entries at once in the phone frame (EG-1)', () => {
 		await vi.waitFor(() => expect(card('Artikel')).toBeDefined());
 		expect(card('Artikel').querySelector('input[type="checkbox"]')).toBeNull();
 		expect(screen.queryByRole('region', { name: /ausgewählt$/ })).toBeNull();
+	});
+});
+
+// TV-2 (ADR-0036 addendum TV-2): "Alle" says "Alle sichtbaren" while entries are hidden or not
+// loaded yet, and chooses the shown ones only.
+describe('"Alle sichtbaren" in the phone frame (TV-2)', () => {
+	/** "Auswählen" from the menu of the list; returns the box above the cards. */
+	async function allBox(): Promise<HTMLInputElement> {
+		const menu = menuOf(screen.getByRole('button', { name: 'Weitere Aktionen der Liste' }));
+		await fireEvent.click(within(menu).getByRole('menuitem', { name: 'Auswählen', hidden: true }));
+		await tick();
+		const bar = screen.getByRole('group', { name: 'Auswahl' });
+		return within(bar).getByRole<HTMLInputElement>('checkbox', { name: /^Alle / });
+	}
+
+	it('says "Alle sichtbaren" in "Verworfen" while further pages wait and chooses the loaded entries only', async () => {
+		useWindow(true, true);
+		mocks.page.url = new URL('http://localhost:3000/eingang?zustand=verworfen');
+		const { store } = await setup({
+			query: { source: null, state: 'discarded' },
+			handled: [
+				item('item00000000007', {
+					title: 'Alt eins',
+					state: 'discarded',
+					handledAt: '2026-09-21 10:00:00.000Z'
+				}),
+				item('item00000000008', {
+					title: 'Alt zwei',
+					state: 'discarded',
+					handledAt: '2026-09-20 10:00:00.000Z'
+				})
+			],
+			hasMore: true
+		});
+		await vi.waitFor(() => expect(card('Alt zwei')).toBeDefined());
+		expect(store.handledHasMore).toBe(true);
+
+		const all = await allBox();
+		expect(all.closest('label')?.textContent?.trim()).toBe('Alle sichtbaren');
+		expect(all.getAttribute('aria-label')).toBe('Alle sichtbaren Einträge auswählen');
+		await fireEvent.click(all);
+		expect(screen.getByRole('region', { name: '2 Einträge ausgewählt' })).toBeTruthy();
+	});
+
+	it('says "Alle sichtbaren" while the chip "Quelle" hides entries and chooses the shown ones only', async () => {
+		useWindow(true, true);
+		mocks.page.url = new URL('http://localhost:3000/eingang?quelle=mail');
+		await setup({ query: { source: 'mail', state: 'new' } });
+
+		const all = await allBox();
+		expect(all.closest('label')?.textContent?.trim()).toBe('Alle sichtbaren');
+		expect(all.getAttribute('aria-label')).toBe('Alle sichtbaren Einträge auswählen');
+		await fireEvent.click(all);
+		expect(screen.getByRole('region', { name: '1 Eintrag ausgewählt' })).toBeTruthy();
 	});
 });
 

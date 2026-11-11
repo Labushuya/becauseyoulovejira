@@ -811,7 +811,10 @@
 				eine oder mehrere Quellen (Umschalt+Klick für einen Bereich); die Wahl bleibt auch nach
 				einer neuen Suche. Danach siehst du die Einträge je Quelle in einer Gruppe, die sich
 				einklappen lässt, mit Datum und Kurztext; was schon im Eingang ist, ist gesperrt. Du wählst
-				einzelne, alle einer Quelle oder alle aus und übernimmst sie in einem Durchgang.
+				einzelne, alle einer Quelle oder alle aus und übernimmst sie in einem Durchgang. Gewählt
+				sind nur Einträge aufgeklappter Gruppen: Zuklappen nimmt die Einträge einer Gruppe aus der
+				Wahl, „Alle aus …“ klappt sie wieder auf, und solange eine Gruppe mit wählbaren Einträgen zu
+				ist, heißt das Kästchen darüber „Alle sichtbaren wählbaren Einträge auswählen“.
 			</li>
 			<li>
 				Die Übernahme läuft Quelle für Quelle in Blöcken. Oben im Dialog siehst du, wie viele
