@@ -11,8 +11,8 @@
 		"check": "tsc --noEmit -p ."
 	},
 	"dependencies": {
-		"imapflow": "^2.10.0",
-		"postal-mime": "^4.2.0"
+		"imapflow": "^2.11.0",
+		"postal-mime": "^4.2.1"
 	},
 	"devDependencies": {
 		"@types/node": "^24.19.2",
